@@ -186,6 +186,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue([]);
     setSegData([]);
     setResData([]);
+    setExcelLoaded(false);
     resetCelebrations();
   }, [resetCelebrations]);
 
