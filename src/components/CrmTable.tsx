@@ -516,8 +516,8 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             </div>
           )}
 
-          {/* Novedad rescue window */}
-          {alertAnalysis.novedadOrders.length > 0 && (
+          {/* Novedad rescue window - only in RESCUE */}
+          {module === 'RESCUE' && alertAnalysis.novedadOrders.length > 0 && (
             <div className="bg-orange-500/5 border border-orange-500/15 rounded-lg p-3">
               <div className="text-[10px] font-bold text-orange-400 mb-1.5">Ventana de rescate — {alertAnalysis.novedadOrders.length} novedades</div>
               {alertAnalysis.novedadOrders.slice(0, 5).map(o => {
