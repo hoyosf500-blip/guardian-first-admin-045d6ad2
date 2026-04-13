@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -20,6 +20,8 @@ export default function AdminTab() {
   const [dropiKeySaved, setDropiKeySaved] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
+  const [testingKey, setTestingKey] = useState(false);
+  const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -64,6 +66,34 @@ export default function AdminTab() {
       toast.error(err.message || 'Error al guardar');
     } finally {
       setSavingKey(false);
+    }
+  }
+
+  async function testDropiConnection() {
+    setTestingKey(true);
+    setTestResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast.error('No hay sesión activa'); return; }
+      const today = new Date().toISOString().split('T')[0];
+      const res = await supabase.functions.invoke('dropi-sync', {
+        body: { from: today, untill: today },
+      });
+      if (res.error) {
+        setTestResult('fail');
+        toast.error(`Error: ${res.error.message}`);
+      } else if (res.data?.error) {
+        setTestResult('fail');
+        toast.error(res.data.error);
+      } else {
+        setTestResult('ok');
+        toast.success(`Conexión exitosa — ${res.data.message || 'API respondió correctamente'}`);
+      }
+    } catch (err: any) {
+      setTestResult('fail');
+      toast.error(err.message || 'Error de conexión');
+    } finally {
+      setTestingKey(false);
     }
   }
 
@@ -134,10 +164,18 @@ export default function AdminTab() {
               </button>
             </div>
             {dropiKeySaved && (
-              <div className="px-5 pb-4">
+              <div className="px-5 pb-4 flex items-center justify-between">
                 <span className="text-xs text-green flex items-center gap-1">
                   <CheckCircle2 size={12} /> Clave configurada
                 </span>
+                <button
+                  onClick={testDropiConnection}
+                  disabled={testingKey}
+                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {testingKey ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-green" /> : testResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Wifi size={12} />}
+                  {testingKey ? 'Probando…' : testResult === 'ok' ? 'Conexión OK' : testResult === 'fail' ? 'Falló' : 'Probar conexión'}
+                </button>
               </div>
             )}
           </motion.div>
