@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Verify user
-    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!);
+    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!);
     const { data: { user }, error: authError } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Token inválido" }), {
