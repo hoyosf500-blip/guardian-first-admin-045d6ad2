@@ -145,6 +145,8 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
+  const delayedCount = useMemo(() => data.filter(order => getOrderStatusAgeDays(order) >= 2).length, [data]);
+
   const filtered = useMemo(() => {
     let list = data;
     if (search) {
@@ -155,10 +157,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       );
     }
     if (onlyDelayed) {
-      list = list.filter(o => {
-        const d = calcDias(o.fechaConf || o.fecha);
-        return d >= 2;
-      });
+      list = list.filter(order => getOrderStatusAgeDays(order) >= 2);
     }
     return list;
   }, [data, search, onlyDelayed]);
@@ -171,7 +170,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       groups[key].push(o);
     });
     for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) => (b.diasConf || b.dias) - (a.diasConf || a.dias));
+      groups[key].sort((a, b) => getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a));
     }
     return groups;
   }, [filtered]);
@@ -190,41 +189,63 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
 
   return (
     <div className="space-y-4">
-      {/* Search bar + delay filter */}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-3 lg:flex-row">
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono, guía, ciudad..."
           className="flex-1 pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
         />
-        <button onClick={() => setOnlyDelayed(!onlyDelayed)}
-          className={`inline-flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-all whitespace-nowrap ${
+        <button
+          type="button"
+          aria-pressed={onlyDelayed}
+          onClick={() => setOnlyDelayed(prev => !prev)}
+          className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
             onlyDelayed
-              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
-              : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
-          }`}>
+              ? 'border-orange bg-orange text-primary-foreground shadow-lg shadow-orange/25'
+              : 'border-border bg-card text-foreground hover:border-orange/40 hover:text-orange'
+          }`}
+        >
           <Clock size={15} />
-          <span className="hidden sm:inline">Retrasados (2d+)</span>
-          <span className="sm:hidden">2d+</span>
+          <span>{onlyDelayed ? 'Viendo retrasados' : 'Retrasados (2d+)'}</span>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-background/20 text-primary-foreground' : 'bg-secondary text-foreground'}`}>
+            {delayedCount}
+          </span>
         </button>
       </div>
 
-      {/* Summary pills */}
-      <div className="flex gap-2 flex-wrap">
-        {activeColumns.map(col => (
-          <div key={col.key} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r ${col.gradient} shadow-lg ${col.glow} text-white text-[11px] font-semibold`}>
-            {col.icon}
-            <span>{col.label}</span>
-            <span className="bg-white/25 backdrop-blur-sm rounded-full px-1.5 py-0.5 text-[10px] font-bold ml-0.5">{columns[col.key].length}</span>
-          </div>
-        ))}
-      </div>
+      {onlyDelayed && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-orange/20 bg-orange/10 px-4 py-3">
+          <div className="text-sm font-semibold text-foreground">Mostrando solo pedidos con 2+ días sin movimiento</div>
+          <div className="text-xs text-muted-foreground">{filtered.length} de {data.length} pedidos</div>
+        </div>
+      )}
 
-      {/* Kanban board */}
-      <div className="overflow-x-auto pb-4 -mx-2 px-2">
-        <div className="flex gap-4" style={{ minWidth: `${activeColumns.length * 290}px` }}>
-          {activeColumns.map((col, colIdx) => {
-            const items = columns[col.key];
-            return (
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+            <Clock size={20} />
+          </div>
+          <h3 className="text-base font-semibold text-foreground">No hay pedidos para este filtro</h3>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            {onlyDelayed ? 'No encontramos pedidos con 2 o más días sin movimiento.' : 'Prueba ajustando la búsqueda para ver resultados.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2 flex-wrap">
+            {activeColumns.map(col => (
+              <div key={col.key} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r ${col.gradient} shadow-lg ${col.glow} text-white text-[11px] font-semibold`}>
+                {col.icon}
+                <span>{col.label}</span>
+                <span className="bg-white/25 backdrop-blur-sm rounded-full px-1.5 py-0.5 text-[10px] font-bold ml-0.5">{columns[col.key].length}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto pb-4 -mx-2 px-2">
+            <div className="flex gap-4" style={{ minWidth: `${activeColumns.length * 290}px` }}>
+              {activeColumns.map((col, colIdx) => {
+                const items = columns[col.key];
+                return (
               <motion.div key={col.key}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
