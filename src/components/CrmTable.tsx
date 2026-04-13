@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { OrderData, truncate, getTrackingUrl, formatPhone } from '@/lib/orderUtils';
-import { getAlertLevel, getFreshness, needsAction, getSuggestedAction, getSegStage, calcCarrierStats, calcToxicCities, AlertInfo, FreshnessInfo } from '@/lib/alertSystem';
+import { getAlertLevel, getFreshness, needsAction, getSuggestedAction, AlertInfo, FreshnessInfo } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
   Tag, AlertTriangle, ExternalLink, ChevronDown, ChevronRight,
