@@ -138,13 +138,22 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   };
 
   const filtered = useMemo(() => {
-    if (!search) return data;
-    const s = search.toLowerCase();
-    return data.filter(o =>
-      o.nombre.toLowerCase().includes(s) || o.phone.includes(s) ||
-      (o.guia || '').toLowerCase().includes(s) || (o.ciudad || '').toLowerCase().includes(s)
-    );
-  }, [data, search]);
+    let list = data;
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(o =>
+        o.nombre.toLowerCase().includes(s) || o.phone.includes(s) ||
+        (o.guia || '').toLowerCase().includes(s) || (o.ciudad || '').toLowerCase().includes(s)
+      );
+    }
+    if (onlyDelayed) {
+      list = list.filter(o => {
+        const d = calcDias(o.fechaConf || o.fecha);
+        return d >= 2;
+      });
+    }
+    return list;
+  }, [data, search, onlyDelayed]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
