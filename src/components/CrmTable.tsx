@@ -216,9 +216,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     });
   }, [baseFiltered, results, getLastTouchTime]);
 
-  // Carrier stats
-  const carrierStats = useMemo(() => calcCarrierStats(data), [data]);
-  const toxicCities = useMemo(() => calcToxicCities(data).filter(c => c.risk >= 25), [data]);
+  // Alert-level analysis only for RESCUE module
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
