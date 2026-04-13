@@ -17,6 +17,7 @@ export default function AdminTab() {
   const [operators, setOperators] = useState<Profile[]>([]);
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncKey, setSyncKey] = useState(0);
 
   const [dropiKey, setDropiKey] = useState('');
   const [dropiKeySaved, setDropiKeySaved] = useState('');
@@ -182,7 +183,9 @@ export default function AdminTab() {
             )}
           </motion.div>
 
-          <SyncHistory />
+          <SyncPanel onSyncComplete={() => setSyncKey(k => k + 1)} />
+
+          <SyncHistory key={syncKey} />
 
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
