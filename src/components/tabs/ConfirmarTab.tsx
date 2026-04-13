@@ -25,6 +25,7 @@ export default function ConfirmarTab({ profile }: Props) {
   const [search, setSearch] = useState('');
   const [aperturaCompleted, setAperturaCompleted] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -95,7 +96,76 @@ export default function ConfirmarTab({ profile }: Props) {
         <AperturaWizard onComplete={() => setAperturaCompleted(true)} />
       )}
 
-      {!excelLoaded && <ExcelUploader onFile={handleFile} />}
+      {!excelLoaded && (
+        <div className="space-y-3">
+          {/* Dropi Sync Button */}
+          <button
+            onClick={async () => {
+              if (!user) return;
+              setSyncing(true);
+              try {
+                const today = new Date().toISOString().split('T')[0];
+                const { data, error } = await supabase.functions.invoke('dropi-sync', {
+                  body: { from: today, untill: today },
+                });
+                if (error) throw error;
+                if (data?.synced > 0) {
+                  // Reload orders from DB
+                  const { data: dbOrders } = await supabase.from('orders')
+                    .select('*')
+                    .eq('uploaded_by', user.id)
+                    .eq('upload_date', today);
+                  if (dbOrders && dbOrders.length > 0) {
+                    const orders = dbOrders.map((o, idx) => ({
+                      idx, id: String(idx), externalId: o.external_id || '', dbId: o.id,
+                      nombre: o.nombre, phone: o.phone, ciudad: o.ciudad || '',
+                      producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
+                      fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,
+                      valor: Number(o.valor) || 0, flete: Number(o.flete) || 0,
+                      costoProd: Number(o.costo_prod) || 0, costoDev: Number(o.costo_dev) || 0,
+                      cantidad: o.cantidad || 1, direccion: o.direccion || '',
+                      novedad: o.novedad || '', guia: o.guia || '',
+                      transportadora: o.transportadora || '', tags: o.tags || '',
+                      departamento: o.departamento || '', tienda: o.tienda || '',
+                      novedadSol: o.novedad_sol || false,
+                    }));
+                    setAllOrders(orders);
+                    buildWorkQueue(orders);
+                    setExcelLoaded(true);
+                    toast.success(`${data.synced} pedidos sincronizados desde Dropi`);
+                  }
+                } else {
+                  toast.info(data?.message || 'No hay pedidos nuevos en Dropi');
+                }
+              } catch (err: any) {
+                toast.error('Error sincronizando: ' + (err.message || 'Error desconocido'));
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing}
+            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl bg-card border border-border hover:border-blue/30 hover:bg-blue/5 transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-blue/10 flex items-center justify-center group-hover:bg-blue/20 transition-colors">
+              {syncing ? <RefreshCw size={20} className="text-blue animate-spin" /> : <CloudDownload size={20} className="text-blue" />}
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-foreground">
+                {syncing ? 'Sincronizando...' : 'Sincronizar desde Dropi'}
+              </div>
+              <div className="text-[10px] text-muted-foreground">Descarga automáticamente los pedidos del día</div>
+            </div>
+          </button>
+
+          <div className="relative flex items-center gap-3 my-2">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">o sube manualmente</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <ExcelUploader onFile={handleFile} />
+        </div>
+      )}
 
       {excelLoaded && (
         <>
