@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, truncate, getTrackingUrl, formatPhone } from '@/lib/orderUtils';
-import { getAlertLevel, getFreshness, needsAction, getSuggestedAction } from '@/lib/alertSystem';
+import { OrderData, truncate, getTrackingUrl } from '@/lib/orderUtils';
+import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
-  AlertTriangle, ExternalLink, ChevronDown, ChevronRight,
+  AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
   Package, Truck, MapPin, RotateCcw, Layers,
-  Send, Tag, CheckCircle, AlertCircle, Archive
+  Send, Tag, CheckCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -40,19 +40,21 @@ interface StatusColumn {
   key: string;
   label: string;
   icon: React.ReactNode;
-  headerColor: string;
+  gradient: string;
+  glow: string;
+  dotColor: string;
   match: (estado: string) => boolean;
 }
 
 const STATUS_COLUMNS: StatusColumn[] = [
-  { key: 'bodega', label: 'En Bodega', icon: <Package size={14} />, headerColor: 'bg-blue-500/80', match: (e) => ['PENDIENTE', 'ALISTAMIENTO', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) || (e.includes('BODEGA') && !e.includes('DEVOL')) },
-  { key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />, headerColor: 'bg-cyan-500/80', match: (e) => e === 'GUIA GENERADA' || e === 'GUIA_GENERADA' || e.includes('PREPARADO') || e === 'ENTREGADO A TRANSPORTADORA' },
-  { key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />, headerColor: 'bg-indigo-500/80', match: (e) => e.includes('REPARTO') || e.includes('DISTRIBUCION') || e.includes('TERMINAL') || e.includes('REEXPEDICION') || e.includes('DESPACHAD') || e.includes('REENVÍO') || e.includes('REENVIO') || e.includes('TRANSPORTE') || e === 'ADMITIDA' || e === 'EN DESPACHO' || e === 'TELEMERCADEO' },
-  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />, headerColor: 'bg-orange-500/80', match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
-  { key: 'oficina', label: 'En Oficina', icon: <MapPin size={14} />, headerColor: 'bg-purple-500/80', match: (e) => e.includes('OFICINA') || e.includes('RECLAME') },
-  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />, headerColor: 'bg-red-500/80', match: (e) => e.includes('DEVOL') },
-  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />, headerColor: 'bg-green-500/80', match: (e) => e === 'ENTREGADO' },
-  { key: 'otros', label: 'Otros', icon: <Layers size={14} />, headerColor: 'bg-muted-foreground/60', match: () => true },
+  { key: 'bodega', label: 'En Bodega', icon: <Package size={15} />, gradient: 'from-blue-600 to-blue-400', glow: 'shadow-blue-500/20', dotColor: 'bg-blue-400', match: (e) => ['PENDIENTE', 'ALISTAMIENTO', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) || (e.includes('BODEGA') && !e.includes('DEVOL')) },
+  { key: 'guia', label: 'Guía Generada', icon: <Tag size={15} />, gradient: 'from-cyan-600 to-cyan-400', glow: 'shadow-cyan-500/20', dotColor: 'bg-cyan-400', match: (e) => e === 'GUIA GENERADA' || e === 'GUIA_GENERADA' || e.includes('PREPARADO') || e === 'ENTREGADO A TRANSPORTADORA' },
+  { key: 'transito', label: 'En Tránsito', icon: <Truck size={15} />, gradient: 'from-violet-600 to-indigo-400', glow: 'shadow-violet-500/20', dotColor: 'bg-violet-400', match: (e) => e.includes('REPARTO') || e.includes('DISTRIBUCION') || e.includes('TERMINAL') || e.includes('REEXPEDICION') || e.includes('DESPACHAD') || e.includes('REENVÍO') || e.includes('REENVIO') || e.includes('TRANSPORTE') || e === 'ADMITIDA' || e === 'EN DESPACHO' || e === 'TELEMERCADEO' },
+  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={15} />, gradient: 'from-amber-600 to-orange-400', glow: 'shadow-orange-500/20', dotColor: 'bg-orange-400', match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
+  { key: 'oficina', label: 'En Oficina', icon: <MapPin size={15} />, gradient: 'from-fuchsia-600 to-purple-400', glow: 'shadow-purple-500/20', dotColor: 'bg-purple-400', match: (e) => e.includes('OFICINA') || e.includes('RECLAME') },
+  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={15} />, gradient: 'from-red-600 to-rose-400', glow: 'shadow-red-500/20', dotColor: 'bg-red-400', match: (e) => e.includes('DEVOL') },
+  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={15} />, gradient: 'from-emerald-600 to-green-400', glow: 'shadow-green-500/20', dotColor: 'bg-green-400', match: (e) => e === 'ENTREGADO' },
+  { key: 'otros', label: 'Otros', icon: <Layers size={15} />, gradient: 'from-slate-600 to-slate-400', glow: 'shadow-slate-500/10', dotColor: 'bg-slate-400', match: () => true },
 ];
 
 function classifyOrder(estado: string): string {
@@ -100,10 +102,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     });
   }, [data, module]);
 
-  const getOperatorName = (opId: string) => {
-    const p = profiles.find(pr => pr.user_id === opId);
-    return p?.display_name || 'Operador';
-  };
+  const getOperatorName = (opId: string) => profiles.find(pr => pr.user_id === opId)?.display_name || 'Operador';
 
   const phoneTouchpoints = useMemo(() => {
     const map: Record<string, Touchpoint[]> = {};
@@ -137,7 +136,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
-  // Filter by search
   const filtered = useMemo(() => {
     if (!search) return data;
     const s = search.toLowerCase();
@@ -147,7 +145,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     );
   }, [data, search]);
 
-  // Group into columns
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
     STATUS_COLUMNS.forEach(c => { groups[c.key] = []; });
@@ -155,7 +152,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       const key = classifyOrder(o.estado);
       groups[key].push(o);
     });
-    // Sort each column by days desc (most urgent first)
     for (const key of Object.keys(groups)) {
       groups[key].sort((a, b) => (b.diasConf || b.dias) - (a.diasConf || a.dias));
     }
@@ -175,34 +171,52 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const activeColumns = STATUS_COLUMNS.filter(c => columns[c.key].length > 0);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Search bar */}
-      <div className="flex gap-2">
+      <div className="relative">
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono, guía, ciudad..."
-          className="flex-1 pl-3 pr-3 py-2 bg-secondary border-none rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
         />
       </div>
 
+      {/* Summary pills */}
+      <div className="flex gap-2 flex-wrap">
+        {activeColumns.map(col => (
+          <div key={col.key} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r ${col.gradient} shadow-lg ${col.glow} text-white text-[11px] font-semibold`}>
+            {col.icon}
+            <span>{col.label}</span>
+            <span className="bg-white/25 backdrop-blur-sm rounded-full px-1.5 py-0.5 text-[10px] font-bold ml-0.5">{columns[col.key].length}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Kanban board */}
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 280}px` }}>
-          {activeColumns.map(col => {
+      <div className="overflow-x-auto pb-4 -mx-2 px-2">
+        <div className="flex gap-4" style={{ minWidth: `${activeColumns.length * 290}px` }}>
+          {activeColumns.map((col, colIdx) => {
             const items = columns[col.key];
             return (
-              <div key={col.key} className="flex-1 min-w-[260px] max-w-[320px] flex flex-col">
+              <motion.div key={col.key}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: colIdx * 0.05, duration: 0.3 }}
+                className="flex-1 min-w-[270px] max-w-[330px] flex flex-col">
+
                 {/* Column header */}
-                <div className={`${col.headerColor} rounded-t-xl px-3 py-2.5 flex items-center justify-between`}>
-                  <div className="flex items-center gap-1.5 text-white">
-                    {col.icon}
-                    <span className="text-xs font-semibold">{col.label}</span>
+                <div className={`bg-gradient-to-r ${col.gradient} rounded-t-2xl px-4 py-3 flex items-center justify-between shadow-lg ${col.glow}`}>
+                  <div className="flex items-center gap-2 text-white">
+                    <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                      {col.icon}
+                    </div>
+                    <span className="text-sm font-bold tracking-tight">{col.label}</span>
                   </div>
-                  <span className="text-white/90 text-xs font-bold bg-white/20 rounded-full px-2 py-0.5">{items.length}</span>
+                  <span className="text-white text-sm font-black bg-white/25 backdrop-blur-sm rounded-xl px-3 py-1">{items.length}</span>
                 </div>
 
                 {/* Cards container */}
-                <div className="bg-secondary/30 rounded-b-xl border border-border border-t-0 flex-1 p-2 space-y-2 max-h-[65vh] overflow-y-auto">
-                  {items.map(o => (
+                <div className="bg-card/30 backdrop-blur-sm rounded-b-2xl border border-border/50 border-t-0 flex-1 p-2.5 space-y-2.5 max-h-[68vh] overflow-y-auto scrollbar-thin">
+                  {items.map((o, i) => (
                     <OrderCard
                       key={o.phone + o.idx}
                       order={o}
@@ -215,10 +229,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                       getOperatorName={getOperatorName}
                       getLastTouchTime={getLastTouchTime}
                       module={module}
+                      index={i}
                     />
                   ))}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
@@ -239,127 +254,150 @@ interface OrderCardProps {
   getOperatorName: (id: string) => string;
   getLastTouchTime: (phone: string) => number | null;
   module: string;
+  index: number;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, getLastTouchTime, module }: OrderCardProps) {
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, index }: OrderCardProps) {
   const diasT = o.diasConf || o.dias;
   const alert = getAlertLevel(o.diasConf, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
   const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
-  const diasColor = diasT >= 7 ? 'text-red-400' : diasT >= 4 ? 'text-yellow-400' : diasT >= 2 ? 'text-orange-400' : 'text-green-400';
-  const borderColor = alert && (alert.level === 'critical' || alert.level === 'lost') ? 'border-l-red-400' : alert?.level === 'alert' ? 'border-l-orange-400' : 'border-l-transparent';
+  const diasBg = diasT >= 7 ? 'bg-red-500' : diasT >= 4 ? 'bg-amber-500' : diasT >= 2 ? 'bg-orange-400' : 'bg-emerald-500';
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className={`bg-card rounded-xl border border-border border-l-[3px] ${borderColor} overflow-hidden ${managed ? 'opacity-60' : ''}`}>
-
-      {/* Card header - clickable */}
-      <div className="px-3 py-2.5 cursor-pointer hover:bg-secondary/30 transition-colors" onClick={onToggle}>
-        <div className="flex items-start justify-between gap-1">
-          <div className="min-w-0">
-            <div className="text-xs font-semibold text-foreground truncate">{o.nombre}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">{o.externalId}</div>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: index * 0.02, duration: 0.2 }}
+      className={`group bg-card rounded-xl border border-border/60 overflow-hidden transition-all duration-200 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 ${managed ? 'opacity-50' : ''}`}
+    >
+      {/* Card body */}
+      <div className="px-3.5 py-3 cursor-pointer" onClick={onToggle}>
+        {/* Top row: name + days badge */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-bold text-foreground truncate leading-tight">{o.nombre}</div>
+            <div className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">{o.externalId}</div>
           </div>
           {diasT > 0 && (
-            <span className={`text-[10px] font-bold ${diasColor} flex-shrink-0`}>D{diasT}</span>
+            <span className={`${diasBg} text-white text-[10px] font-black px-2 py-0.5 rounded-lg shadow-sm flex-shrink-0`}>
+              D{diasT}
+            </span>
           )}
         </div>
 
-        {/* Phone */}
-        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
-          <PhoneIcon size={9} />
-          <span>{o.phone}</span>
+        {/* Phone row */}
+        <div className="flex items-center gap-1.5 mt-2">
+          <div className="flex items-center gap-1 text-[11px] text-muted-foreground bg-secondary/60 rounded-lg px-2 py-1 flex-1 min-w-0">
+            <PhoneIcon size={10} className="flex-shrink-0" />
+            <span className="truncate font-mono">{o.phone}</span>
+          </div>
           <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.phone); toast.success('Tel copiado'); }}
-            className="hover:text-foreground"><Copy size={8} /></button>
+            className="p-1.5 rounded-lg bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            <Copy size={10} />
+          </button>
         </div>
 
-        {/* City & carrier */}
-        <div className="flex items-center gap-2 mt-1 text-[10px] text-muted-foreground">
-          {o.ciudad && <span className="flex items-center gap-0.5"><MapPin size={8} />{o.ciudad}</span>}
-          {o.transportadora && <span className="flex items-center gap-0.5"><Truck size={8} />{o.transportadora}</span>}
+        {/* Location & carrier */}
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {o.ciudad && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/40 rounded-md px-1.5 py-0.5">
+              <MapPin size={8} className="text-primary/60" />{o.ciudad}
+            </span>
+          )}
+          {o.transportadora && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/40 rounded-md px-1.5 py-0.5">
+              <Truck size={8} className="text-primary/60" />{o.transportadora}
+            </span>
+          )}
         </div>
 
-        {/* Guia */}
+        {/* Guía */}
         {o.guia && (
-          <div className="flex items-center gap-1 mt-1 text-[10px]">
-            <span className="font-mono text-muted-foreground">{o.guia.slice(-8)}</span>
-            <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-              className="text-muted-foreground hover:text-foreground"><Copy size={8} /></button>
-            {trackUrl && (
-              <a href={trackUrl} target="_blank" rel="noopener noreferrer"
-                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-                className="text-blue-400 hover:text-blue-300"><ExternalLink size={9} /></a>
-            )}
+          <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-secondary/40 rounded-md px-2 py-1">
+              <Tag size={8} className="text-primary/60" />
+              {o.guia.slice(-10)}
+              <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                className="hover:text-foreground transition-colors"><Copy size={8} /></button>
+              {trackUrl && (
+                <a href={trackUrl} target="_blank" rel="noopener noreferrer"
+                  onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                  className="text-primary hover:text-primary/80 transition-colors"><ExternalLink size={9} /></a>
+              )}
+            </div>
           </div>
         )}
 
         {/* Novedad */}
         {o.novedad && (
-          <div className="text-[10px] text-orange-400 mt-1.5 flex items-start gap-1">
-            <AlertTriangle size={9} className="mt-0.5 flex-shrink-0" />
-            <span>{truncate(o.novedad, 50)}</span>
+          <div className="mt-2 flex items-start gap-1.5 bg-orange-500/5 border border-orange-500/10 rounded-lg px-2 py-1.5">
+            <AlertTriangle size={10} className="text-orange-400 mt-0.5 flex-shrink-0" />
+            <span className="text-[10px] text-orange-300 leading-tight">{truncate(o.novedad, 60)}</span>
           </div>
         )}
 
         {/* Alert badge */}
         {alert && alert.level !== 'ok' && (
-          <div className="mt-1.5">
-            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
-              alert.level === 'lost' ? 'bg-muted/30 text-muted-foreground' :
-              alert.level === 'critical' ? 'bg-red-500/10 text-red-400' :
-              alert.level === 'alert' ? 'bg-orange-500/10 text-orange-400' :
-              'bg-yellow-500/10 text-yellow-400'
+          <div className="mt-2">
+            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold ${
+              alert.level === 'lost' ? 'bg-muted/40 text-muted-foreground border border-muted-foreground/20' :
+              alert.level === 'critical' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+              alert.level === 'alert' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+              'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
             }`}>
               {alert.icon} {alert.label}
             </span>
           </div>
         )}
 
-        {/* Managed status */}
+        {/* Managed badge */}
         {managed && (
-          <div className="mt-1.5">
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-green-500/10 text-green-400">
-              <CheckCircle size={8} /> {managed}
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <CheckCircle size={9} /> {managed}
             </span>
           </div>
         )}
       </div>
 
-      {/* Expanded details */}
+      {/* Expanded panel */}
       <AnimatePresence>
         {expanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-            className="border-t border-border overflow-hidden">
-            <div className="px-3 py-2.5 space-y-2">
-              {/* Details grid */}
-              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+            transition={{ duration: 0.2 }}
+            className="border-t border-border/50 overflow-hidden">
+            <div className="px-3.5 py-3 space-y-2.5 bg-secondary/20">
+              {/* Info grid */}
+              <div className="grid grid-cols-2 gap-1.5">
                 {[
                   { label: 'Producto', value: truncate(o.producto || '—', 25) },
                   { label: 'Valor', value: `$${o.valor.toLocaleString()}` },
-                  { label: 'Dirección', value: truncate(o.direccion || '—', 30) },
+                  { label: 'Dirección', value: truncate(o.direccion || '—', 28) },
                   { label: 'Depto', value: o.departamento || '—' },
                 ].map(d => (
-                  <div key={d.label} className="bg-secondary/50 rounded-lg p-1.5">
-                    <div className="text-[9px] text-muted-foreground">{d.label}</div>
-                    <div className="font-medium text-foreground">{d.value}</div>
+                  <div key={d.label} className="bg-card/80 rounded-lg p-2 border border-border/30">
+                    <div className="text-[9px] text-muted-foreground/70 uppercase tracking-wider font-medium">{d.label}</div>
+                    <div className="text-[11px] font-semibold text-foreground mt-0.5">{d.value}</div>
                   </div>
                 ))}
               </div>
 
-              {/* Touchpoint history */}
+              {/* History */}
               {tps.length > 0 && (
                 <div>
-                  <h4 className="text-[10px] font-semibold text-foreground mb-1 inline-flex items-center gap-1">
+                  <h4 className="text-[10px] font-bold text-foreground/80 mb-1.5 inline-flex items-center gap-1 uppercase tracking-wider">
                     <MessageSquare size={9} /> Historial ({tps.length})
                   </h4>
                   <div className="space-y-1 max-h-24 overflow-y-auto">
                     {tps.slice(0, 5).map(tp => (
-                      <div key={tp.id} className="flex items-center gap-1.5 px-2 py-1 rounded bg-secondary/50 text-[9px]">
-                        <User size={8} className="text-primary flex-shrink-0" />
-                        <span className="font-medium text-foreground">{getOperatorName(tp.operator_id)}</span>
-                        <span className="text-muted-foreground">—</span>
-                        <span className="text-foreground truncate">{tp.action.replace(/^(SEG|RESCUE): ?/, '')}</span>
+                      <div key={tp.id} className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-card/60 border border-border/20 text-[9px]">
+                        <div className="w-4 h-4 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+                          <User size={8} className="text-primary" />
+                        </div>
+                        <span className="font-semibold text-foreground">{getOperatorName(tp.operator_id)}</span>
+                        <span className="text-foreground/60 truncate">{tp.action.replace(/^(SEG|RESCUE): ?/, '')}</span>
                         <span className="ml-auto text-muted-foreground flex-shrink-0 flex items-center gap-0.5">
                           <Clock size={7} /> {tp.action_time || ''}
                         </span>
@@ -370,24 +408,24 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
               )}
 
               {/* Quick actions */}
-              <div className="flex gap-1.5">
+              <div className="flex gap-2">
                 <a href={`https://wa.me/57${o.phone}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
                   onClick={() => onAction('WhatsApp enviado')}
-                  className="flex-1 text-[10px] py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 font-medium hover:bg-emerald-500/20 no-underline inline-flex items-center justify-center gap-1">
-                  <Send size={9} /> WhatsApp
+                  className="flex-1 text-[11px] py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-semibold hover:from-emerald-500 hover:to-emerald-400 no-underline inline-flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all">
+                  <Send size={11} /> WhatsApp
                 </a>
                 <button onClick={() => { navigator.clipboard.writeText(o.phone); toast.success('Tel copiado'); }}
-                  className="flex-1 text-[10px] py-1.5 rounded-lg bg-secondary text-foreground font-medium hover:bg-secondary/80 inline-flex items-center justify-center gap-1">
-                  <PhoneIcon size={9} /> Llamar
+                  className="flex-1 text-[11px] py-2 rounded-xl bg-secondary text-foreground font-semibold hover:bg-secondary/80 inline-flex items-center justify-center gap-1.5 border border-border/50 transition-all">
+                  <PhoneIcon size={11} /> Llamar
                 </button>
               </div>
 
-              {/* Action buttons */}
+              {/* CRM actions */}
               {!managed && (
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5 pt-1">
                   {actions.map(a => (
                     <button key={a} onClick={() => onAction(a)}
-                      className="text-[9px] px-2 py-1 rounded-lg bg-primary/10 text-primary font-medium hover:bg-primary/20 whitespace-nowrap">
+                      className="text-[10px] px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary font-semibold hover:bg-primary/20 border border-primary/15 whitespace-nowrap transition-all hover:scale-[1.02]">
                       {a}
                     </button>
                   ))}
