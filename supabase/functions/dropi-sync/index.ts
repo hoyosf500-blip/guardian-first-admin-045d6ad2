@@ -13,7 +13,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No autorizado" }), {
@@ -24,17 +23,9 @@ Deno.serve(async (req: Request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const dropiApiKey = Deno.env.get("DROPI_API_KEY");
-
-    if (!dropiApiKey) {
-      return new Response(JSON.stringify({ error: "DROPI_API_KEY no configurada" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Verify user
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!);
     const { data: { user }, error: authError } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
     if (authError || !user) {
@@ -44,19 +35,39 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Parse request body for optional filters
+    // Read Dropi API key from app_settings (DB) first, fallback to env
+    let dropiApiKey: string | null = null;
+    const { data: setting } = await supabaseClient
+      .from("app_settings")
+      .select("value")
+      .eq("key", "dropi_api_key")
+      .maybeSingle();
+
+    if (setting?.value) {
+      dropiApiKey = setting.value;
+    } else {
+      dropiApiKey = Deno.env.get("DROPI_API_KEY") || null;
+    }
+
+    if (!dropiApiKey) {
+      return new Response(JSON.stringify({ error: "Clave API de Dropi no configurada. Ve a Admin para agregarla." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Parse request body
     let body: Record<string, unknown> = {};
     try {
       body = await req.json();
     } catch {
-      // No body is fine, we'll use defaults
+      // No body is fine
     }
 
     const from = body.from as string || new Date().toISOString().split("T")[0];
     const untill = body.untill as string || from;
     const status = body.status as string || undefined;
 
-    // Fetch orders from Dropi
     const queryParams: Record<string, string> = {
       result_number: "200",
       start: "0",
@@ -92,7 +103,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const dropiData = await dropiResponse.json();
-
     if (!dropiData.isSuccess) {
       return new Response(JSON.stringify({ error: dropiData.message || "Error de Dropi" }), {
         status: 502,
@@ -108,7 +118,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Map Dropi orders to our schema
+    // Map orders
     const today = new Date().toISOString().split("T")[0];
     const dbOrders = dropiOrders.map((o: Record<string, unknown>) => {
       const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
@@ -120,7 +130,6 @@ Deno.serve(async (req: Request) => {
         (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
         0
       );
-
       const createdAt = String(o.created_at || "");
       const fecha = createdAt ? createdAt.split("T")[0] : today;
 
@@ -153,7 +162,7 @@ Deno.serve(async (req: Request) => {
       };
     });
 
-    // Check for existing orders by external_id to avoid duplicates
+    // Deduplicate
     const externalIds = dbOrders.map((o) => o.external_id).filter(Boolean);
     const { data: existing } = await supabaseClient
       .from("orders")
@@ -170,7 +179,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Insert in batches of 50
+    // Insert in batches
     let inserted = 0;
     for (let i = 0; i < newOrders.length; i += 50) {
       const batch = newOrders.slice(i, i + 50);

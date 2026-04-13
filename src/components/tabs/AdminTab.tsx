@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -15,10 +16,56 @@ export default function AdminTab() {
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [dropiKey, setDropiKey] = useState('');
+  const [dropiKeySaved, setDropiKeySaved] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
+
   useEffect(() => {
     if (!isAdmin) return;
     loadData();
+    loadDropiKey();
   }, [isAdmin]);
+
+  async function loadDropiKey() {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'dropi_api_key')
+      .maybeSingle();
+    if (data) {
+      setDropiKey(data.value);
+      setDropiKeySaved(data.value);
+    }
+  }
+
+  async function saveDropiKey() {
+    if (!dropiKey.trim()) {
+      toast.error('La clave no puede estar vacía');
+      return;
+    }
+    setSavingKey(true);
+    try {
+      if (dropiKeySaved) {
+        const { error } = await supabase
+          .from('app_settings')
+          .update({ value: dropiKey.trim() })
+          .eq('key', 'dropi_api_key');
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('app_settings')
+          .insert({ key: 'dropi_api_key', value: dropiKey.trim() });
+        if (error) throw error;
+      }
+      setDropiKeySaved(dropiKey.trim());
+      toast.success('Clave API de Dropi guardada');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al guardar');
+    } finally {
+      setSavingKey(false);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
@@ -51,6 +98,50 @@ export default function AdminTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Dropi API Key */}
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Key size={16} className="text-primary" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Clave API de Dropi</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Configura la clave de integración para sincronizar pedidos</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex gap-3 items-center">
+              <div className="relative flex-1">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={dropiKey}
+                  onChange={e => setDropiKey(e.target.value)}
+                  placeholder="Pega aquí tu clave de integración Dropi"
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button
+                onClick={saveDropiKey}
+                disabled={savingKey || dropiKey === dropiKeySaved}
+                className="h-10 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Guardar
+              </button>
+            </div>
+            {dropiKeySaved && (
+              <div className="px-5 pb-4">
+                <span className="text-xs text-green flex items-center gap-1">
+                  <CheckCircle2 size={12} /> Clave configurada
+                </span>
+              </div>
+            )}
+          </motion.div>
+
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
