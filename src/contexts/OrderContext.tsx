@@ -37,6 +37,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [counter, setCounter] = useState<Counter>({ conf: 0, canc: 0, noresp: 0 });
   const [timerStart, setTimerStart] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [excelLoaded, setExcelLoaded] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string } | null>(null);
 
   // Request notification permission on mount
