@@ -66,6 +66,7 @@ export default function AdminTab() {
       toast.error(err.message || 'Error al guardar');
     } finally {
       setSavingKey(false);
+    }
   }
 
   async function testDropiConnection() {
