@@ -86,8 +86,14 @@ export function isPendiente(estado: string): boolean {
 export function isDespachado(estado: string): boolean {
   const s = estado.toUpperCase();
   return ['GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'EN BODEGA TRANSPORTADORA',
-    'EN REPARTO', 'EN TERMINAL DESTINO', 'EN DISTRIBUCION', 'EN REEXPEDICION', 'REENVÍO', 'REENVIO'
+    'EN REPARTO', 'EN TERMINAL DESTINO', 'EN DISTRIBUCION', 'EN REEXPEDICION', 'REENVÍO', 'REENVIO',
+    'ADMITIDA', 'EN DESPACHO', 'ENTREGADO A TRANSPORTADORA', 'EN TRANSPORTE', 'TELEMERCADEO'
   ].includes(s) || s.includes('DESPACHAD');
+}
+
+export function isConfirmado(estado: string): boolean {
+  const s = estado.toUpperCase();
+  return ['PENDIENTE', 'ALISTAMIENTO', 'GUIA GENERADA', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(s);
 }
 
 export function isNovedad(estado: string): boolean {
@@ -98,6 +104,11 @@ export function isNovedad(estado: string): boolean {
 export function isOficina(estado: string): boolean {
   const s = estado.toUpperCase();
   return s === 'RECLAME EN OFICINA' || s.includes('RECLAME');
+}
+
+export function isDevolucion(estado: string): boolean {
+  const s = estado.toUpperCase();
+  return s === 'DEVOLUCION' || s.includes('DEVOL');
 }
 
 export function getTrackingUrl(carrier: string, guia: string): string | null {
