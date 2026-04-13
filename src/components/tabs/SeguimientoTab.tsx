@@ -173,7 +173,13 @@ export default function SeguimientoTab() {
                                 <span>{o.guia.slice(-8)}</span>
                                 {o.transportadora && <span className="text-[10px] opacity-60">{o.transportadora}</span>}
                                 {trackUrl && (
-                                  <a href={trackUrl} target="_blank" rel="noopener noreferrer" className="text-blue hover:underline">
+                                  <a href={trackUrl} target="_blank" rel="noopener noreferrer"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(o.guia).then(() => {
+                                        toast.success('Guía copiada: ' + o.guia);
+                                      });
+                                    }}
+                                    className="text-blue hover:underline" title="Abrir rastreo (guía copiada al portapapeles)">
                                     <ExternalLink size={10} />
                                   </a>
                                 )}

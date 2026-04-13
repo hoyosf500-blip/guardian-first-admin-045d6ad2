@@ -80,7 +80,7 @@ export function formatPhone(p: string): string {
 
 export function isPendiente(estado: string): boolean {
   const s = estado.toUpperCase();
-  return s === 'PENDIENTE CONFIRMACION' || s === 'PENDIENTE' || s === 'TELEMERCADEO' || s === 'EN PROCESAMIENTO';
+  return s === 'PENDIENTE CONFIRMACION';
 }
 
 export function isDespachado(estado: string): boolean {
