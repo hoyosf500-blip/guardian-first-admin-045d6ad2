@@ -65,6 +65,14 @@ function classifyOrder(estado: string): string {
   return 'otros';
 }
 
+function getOrderStatusAgeDays(order: OrderData): number {
+  const baseDate = (order.fechaConf || order.fecha || '').trim();
+  if (baseDate && baseDate !== 'undefined') {
+    return calcDias(baseDate);
+  }
+  return order.diasConf || order.dias || 0;
+}
+
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc }: CrmTableProps) {
   const { user } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
