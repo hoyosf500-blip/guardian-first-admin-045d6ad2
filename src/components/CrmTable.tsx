@@ -66,11 +66,18 @@ function classifyOrder(estado: string): string {
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
+  // Use fechaConf (guía date) for dispatched orders, fecha (creation) for bodega/pendiente
   const baseDate = (order.fechaConf || order.fecha || '').trim();
   if (baseDate && baseDate !== 'undefined') {
     return calcDias(baseDate);
   }
   return order.diasConf || order.dias || 0;
+}
+
+/** Returns true if this order's status should be excluded from "delayed" tracking */
+function isExcludedFromDelay(estado: string): boolean {
+  const e = estado.toUpperCase();
+  return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'RECHAZADO';
 }
 
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc }: CrmTableProps) {
@@ -153,7 +160,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
-  const delayedCount = useMemo(() => data.filter(order => getOrderStatusAgeDays(order) >= 2).length, [data]);
+  const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
 
   const filtered = useMemo(() => {
     let list = data;
@@ -165,7 +172,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       );
     }
     if (onlyDelayed) {
-      list = list.filter(order => getOrderStatusAgeDays(order) >= 2);
+      list = list.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2);
     }
     return list;
   }, [data, search, onlyDelayed]);
