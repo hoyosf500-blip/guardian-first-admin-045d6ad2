@@ -87,23 +87,31 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     const phones = [...new Set(data.map(o => o.phone))];
     const prefix = module === 'SEG' ? 'SEG' : 'RESCUE';
 
-    supabase.from('touchpoints')
-      .select('*')
-      .in('phone', phones.slice(0, 100))
-      .order('created_at', { ascending: false })
-      .then(({ data: tp }) => {
-        if (tp) {
-          const moduleTp = tp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
-          setTouchpoints(moduleTp);
-          const managed: Record<string, string> = {};
-          const today = new Date().toISOString().split('T')[0];
-          moduleTp.forEach(t => {
-            if (t.action_date === today && !managed[t.phone]) {
-              managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
-            }
-          });
-          setResults(managed);
+    // Fetch touchpoints in batches of 100 phones to avoid Supabase .in() limit
+    const fetchAllTouchpoints = async () => {
+      const allTp: Touchpoint[] = [];
+      for (let i = 0; i < phones.length; i += 100) {
+        const batch = phones.slice(i, i + 100);
+        const { data: tp } = await supabase.from('touchpoints')
+          .select('*')
+          .in('phone', batch)
+          .order('created_at', { ascending: false });
+        if (tp) allTp.push(...(tp as Touchpoint[]));
+      }
+      return allTp;
+    };
+
+    fetchAllTouchpoints().then(allTp => {
+      const moduleTp = allTp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
+      setTouchpoints(moduleTp);
+      const managed: Record<string, string> = {};
+      const today = new Date().toISOString().split('T')[0];
+      moduleTp.forEach(t => {
+        if (t.action_date === today && !managed[t.phone]) {
+          managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
         }
+      });
+      setResults(managed);
       });
 
     supabase.from('profiles').select('user_id, display_name').then(({ data: p }) => {
@@ -377,7 +385,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 href={trackUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada al portapapeles'); }}
                 className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-orange/30 bg-orange px-3.5 py-2 text-[11px] font-black text-primary-foreground shadow-lg shadow-orange/30 transition-all hover:scale-[1.03] hover:shadow-xl hover:shadow-orange/40 no-underline"
               >
                 <ExternalLink size={12} /> Rastrear
