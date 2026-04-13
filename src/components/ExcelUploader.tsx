@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Upload } from 'lucide-react';
 
 interface Props {
   onFile: (file: File) => void;
@@ -18,11 +19,13 @@ export default function ExcelUploader({ onFile }: Props) {
         onDragOver={e => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className="border-[1.5px] border-dashed border-cyan/30 rounded-lg p-10 text-center cursor-pointer transition-all bg-cyan/[0.03] hover:bg-cyan/[0.08] active:bg-cyan/[0.08]"
+        className="group relative border-2 border-dashed border-border rounded-2xl p-10 text-center cursor-pointer transition-all hover:border-primary/40 hover:bg-primary/[0.02]"
       >
-        <div className="text-4xl mb-2">📁</div>
-        <p className="font-semibold text-sm">Sube el Excel de Dropi</p>
-        <p className="text-[11px] text-muted-foreground mt-1">El mismo archivo que compartieron por WhatsApp</p>
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center mx-auto mb-3 group-hover:scale-105 transition-transform">
+          <Upload size={22} className="text-primary" />
+        </div>
+        <p className="font-semibold text-sm text-foreground">Sube el Excel de Dropi</p>
+        <p className="text-[11px] text-muted-foreground mt-1">Arrastra o haz clic para seleccionar · .xlsx, .xls, .csv</p>
       </div>
       <input
         ref={inputRef}
