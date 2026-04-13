@@ -170,7 +170,7 @@ export default function DashboardTab() {
       </motion.div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+      <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
         <div className="bg-card rounded-xl border border-border p-5">
           <h3 className="text-sm font-semibold text-foreground mb-4">Tasa de confirmación</h3>
           <div className="h-52">
@@ -209,7 +209,7 @@ export default function DashboardTab() {
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Products row */}
       {prods.length > 0 && (
