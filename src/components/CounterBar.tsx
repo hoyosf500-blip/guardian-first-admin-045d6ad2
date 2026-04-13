@@ -12,34 +12,28 @@ export default function CounterBar() {
   const barColor = tasa >= 80 ? 'bg-green' : tasa >= 60 ? 'bg-orange' : 'bg-red';
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-40 bg-surface border-b border-border px-4 py-2 flex items-center gap-3">
-      <div className="flex items-center gap-1 text-sm font-semibold">
-        <span className="text-green">✅</span>
-        <span className="font-mono text-base font-bold">{counter.conf}</span>
+    <div className="bg-card border border-border rounded-xl p-3 mb-4 flex items-center gap-3">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1 text-sm">
+          <span className="text-green text-xs">✅</span>
+          <span className="font-mono text-sm font-bold">{counter.conf}</span>
+        </div>
+        <div className="flex items-center gap-1 text-sm">
+          <span className="text-red text-xs">❌</span>
+          <span className="font-mono text-sm font-bold">{counter.canc}</span>
+        </div>
+        <div className="flex items-center gap-1 text-sm">
+          <span className="text-muted-foreground text-xs">📵</span>
+          <span className="font-mono text-sm font-bold">{counter.noresp}</span>
+        </div>
       </div>
-      <div className="flex items-center gap-1 text-sm font-semibold">
-        <span className="text-red">❌</span>
-        <span className="font-mono text-base font-bold">{counter.canc}</span>
-      </div>
-      <div className="flex items-center gap-1 text-sm font-semibold">
-        <span className="text-muted-foreground">📵</span>
-        <span className="font-mono text-base font-bold">{counter.noresp}</span>
-      </div>
-      <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
+      <div className="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="flex items-center gap-1 text-sm font-semibold">
-        <span className="font-mono text-base font-bold">{total}</span>
+      <div className="flex items-center gap-1.5 text-sm">
+        <span className="font-mono font-bold">{total}</span>
         <span className="text-muted-foreground text-xs">/{goal}</span>
-      </div>
-      <div className="relative w-10 h-10 flex-shrink-0">
-        <svg width="40" height="40" className="-rotate-90">
-          <circle cx="20" cy="20" r="16" fill="none" strokeWidth="4" stroke="hsl(var(--border))" />
-          <circle cx="20" cy="20" r="16" fill="none" strokeWidth="4" stroke="hsl(var(--cyan))" strokeLinecap="round"
-            strokeDasharray={100.5} strokeDashoffset={100.5 * (1 - pct / 100)}
-            className="transition-all duration-500" />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold font-mono">{pct}%</div>
+        <span className="text-xs text-muted-foreground ml-1">({pct}%)</span>
       </div>
     </div>
   );
