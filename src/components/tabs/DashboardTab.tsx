@@ -310,7 +310,7 @@ export default function DashboardTab() {
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
