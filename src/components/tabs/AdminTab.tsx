@@ -163,10 +163,18 @@ export default function AdminTab() {
               </button>
             </div>
             {dropiKeySaved && (
-              <div className="px-5 pb-4">
+              <div className="px-5 pb-4 flex items-center justify-between">
                 <span className="text-xs text-green flex items-center gap-1">
                   <CheckCircle2 size={12} /> Clave configurada
                 </span>
+                <button
+                  onClick={testDropiConnection}
+                  disabled={testingKey}
+                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {testingKey ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-green" /> : testResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Wifi size={12} />}
+                  {testingKey ? 'Probando…' : testResult === 'ok' ? 'Conexión OK' : testResult === 'fail' ? 'Falló' : 'Probar conexión'}
+                </button>
               </div>
             )}
           </motion.div>
