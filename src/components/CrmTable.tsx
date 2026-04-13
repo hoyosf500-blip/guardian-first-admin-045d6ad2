@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, truncate, getTrackingUrl, calcDias } from '@/lib/orderUtils';
+import { OrderData, truncate, getTrackingUrl, calcDias, calcBusinessDays } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
@@ -66,12 +66,14 @@ function classifyOrder(estado: string): string {
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
-  // Use fechaConf (guía date) for dispatched orders, fecha (creation) for bodega/pendiente
+  // Use business days (Mon-Fri) — carriers don't work weekends
   const baseDate = (order.fechaConf || order.fecha || '').trim();
   if (baseDate && baseDate !== 'undefined') {
-    return calcDias(baseDate);
+    return calcBusinessDays(baseDate);
   }
-  return order.diasConf || order.dias || 0;
+  // Fallback: rough estimate from pre-calculated fields (calendar days * 5/7)
+  const calendarDays = order.diasConf || order.dias || 0;
+  return Math.round(calendarDays * 5 / 7);
 }
 
 /** Returns true if this order's status should be excluded from "delayed" tracking */
