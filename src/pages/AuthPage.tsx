@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
+import { Sun, Moon, Check } from 'lucide-react';
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -29,7 +30,6 @@ export default function AuthPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Left panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary items-center justify-center p-12">
         <div className="max-w-md text-primary-foreground">
           <div className="w-12 h-12 rounded-xl bg-primary-foreground/20 flex items-center justify-center text-xl font-bold mb-8">P</div>
@@ -38,18 +38,26 @@ export default function AuthPage() {
             Gestiona tus pedidos, confirma órdenes y rastrea envíos desde una sola plataforma.
           </p>
           <div className="mt-12 space-y-4 text-sm text-primary-foreground/60">
-            <div className="flex items-center gap-3"><span className="w-5 h-5 rounded bg-primary-foreground/10 flex items-center justify-center text-[10px]">✓</span> Confirmación inteligente de pedidos</div>
-            <div className="flex items-center gap-3"><span className="w-5 h-5 rounded bg-primary-foreground/10 flex items-center justify-center text-[10px]">✓</span> Seguimiento y rescate de envíos</div>
-            <div className="flex items-center gap-3"><span className="w-5 h-5 rounded bg-primary-foreground/10 flex items-center justify-center text-[10px]">✓</span> Dashboard con analíticas en tiempo real</div>
+            <div className="flex items-center gap-3">
+              <span className="w-5 h-5 rounded bg-primary-foreground/10 flex items-center justify-center"><Check size={10} /></span>
+              Confirmación inteligente de pedidos
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-5 h-5 rounded bg-primary-foreground/10 flex items-center justify-center"><Check size={10} /></span>
+              Seguimiento y rescate de envíos
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="w-5 h-5 rounded bg-primary-foreground/10 flex items-center justify-center"><Check size={10} /></span>
+              Dashboard con analíticas en tiempo real
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Right panel */}
       <div className="flex-1 flex items-center justify-center p-6">
         <button onClick={toggleTheme}
-          className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground text-sm">
-          {theme === 'dark' ? '☀️' : '🌙'}
+          className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground">
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
         <div className="w-full max-w-sm">

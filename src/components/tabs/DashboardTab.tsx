@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
+import { CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare, Download } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -66,7 +67,7 @@ export default function DashboardTab() {
   const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
     const csv = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    a.download = filename; a.click(); toast.success('📥 CSV descargado');
+    a.download = filename; a.click(); toast.success('CSV descargado');
   };
   const exportarResultadosHoy = () => {
     const managed = workQueue.filter(o => o.result);
@@ -91,14 +92,14 @@ export default function DashboardTab() {
     const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre',
       data: { confirmados: counter.conf, cancelados: counter.canc, no_respondio: counter.noresp, total_gestionados: total, tasa_confirmacion: tasa, pendientes_manana: pendLeft } });
     if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
-    else toast.success('✅ Cierre enviado');
+    else toast.success('Cierre enviado correctamente');
   };
   const copiarResumen = () => {
-    navigator.clipboard.writeText(`📊 Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\n✅ Confirmados: ${counter.conf}\n❌ Cancelados: ${counter.canc}\n📵 No respondió: ${counter.noresp}\n📈 Tasa: ${tasa}%\n⏳ Pendientes: ${pendLeft}\n🎯 Total: ${total}`)
-      .then(() => toast.success('Copiado'));
+    navigator.clipboard.writeText(`Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTasa: ${tasa}%\nPendientes: ${pendLeft}\nTotal: ${total}`)
+      .then(() => toast.success('Copiado al portapapeles'));
   };
   const enviarWA = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(`📊 Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\n✅ ${counter.conf} | ❌ ${counter.canc} | 📵 ${counter.noresp}\n📊 Total: ${total} | Tasa: ${tasa}%\n⏳ Pendientes: ${pendLeft}`)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal: ${total} | Tasa: ${tasa}%\nPendientes: ${pendLeft}`)}`, '_blank');
   };
 
   const tickStyle = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
@@ -120,8 +121,12 @@ export default function DashboardTab() {
           ))}
         </div>
         <div className="flex gap-1.5">
-          <button onClick={exportarResultadosHoy} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground">CSV Hoy</button>
-          <button onClick={exportarHistorico} className="px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground">Histórico</button>
+          <button onClick={exportarResultadosHoy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground">
+            <Download size={12} /> CSV Hoy
+          </button>
+          <button onClick={exportarHistorico} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground">
+            <Download size={12} /> Histórico
+          </button>
         </div>
       </div>
 
@@ -269,26 +274,33 @@ export default function DashboardTab() {
         <div className="p-5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             {[
-              { icon: '✅', label: 'Confirmados', value: counter.conf, color: 'text-green' },
-              { icon: '❌', label: 'Cancelados', value: counter.canc, color: 'text-red' },
-              { icon: '📵', label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground' },
-              { icon: '⏳', label: 'Pendientes', value: pendLeft, color: 'text-orange' },
-            ].map(item => (
-              <div key={item.label} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
-                <span className="text-lg">{item.icon}</span>
-                <div>
-                  <div className={`font-mono text-lg font-bold ${item.color}`}>{item.value}</div>
-                  <div className="text-[10px] text-muted-foreground">{item.label}</div>
+              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-green', iconColor: 'text-green' },
+              { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-red', iconColor: 'text-red' },
+              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconColor: 'text-muted-foreground' },
+              { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-orange', iconColor: 'text-orange' },
+            ].map(item => {
+              const Icon = item.icon;
+              return (
+                <div key={item.label} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
+                  <Icon size={20} className={item.iconColor} />
+                  <div>
+                    <div className={`font-mono text-lg font-bold ${item.color}`}>{item.value}</div>
+                    <div className="text-[10px] text-muted-foreground">{item.label}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={handleCierre} className="flex-1 min-w-[120px] py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 active:scale-[0.98] transition-all">
-              Enviar cierre
+            <button onClick={handleCierre} className="flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 active:scale-[0.98] transition-all">
+              <Send size={14} /> Enviar cierre
             </button>
-            <button onClick={copiarResumen} className="py-2.5 px-4 rounded-lg bg-secondary text-foreground font-medium text-sm hover:bg-secondary/80">Copiar</button>
-            <button onClick={enviarWA} className="py-2.5 px-4 rounded-lg bg-green/10 text-green border border-green/15 font-medium text-sm hover:bg-green/15">WhatsApp</button>
+            <button onClick={copiarResumen} className="inline-flex items-center gap-2 py-2.5 px-4 rounded-lg bg-secondary text-foreground font-medium text-sm hover:bg-secondary/80">
+              <Copy size={14} /> Copiar
+            </button>
+            <button onClick={enviarWA} className="inline-flex items-center gap-2 py-2.5 px-4 rounded-lg bg-green/10 text-green border border-green/15 font-medium text-sm hover:bg-green/15">
+              <MessageSquare size={14} /> WhatsApp
+            </button>
           </div>
         </div>
       </div>

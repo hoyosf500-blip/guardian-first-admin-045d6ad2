@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function RescateTab() {
   const { resData } = useOrders();
@@ -22,7 +23,7 @@ export default function RescateTab() {
         action_time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
       });
     }
-    toast.success(`✅ ${action}`);
+    toast.success(action);
   };
 
   const sinGestionar = resData.filter(o => !results[o.phone]);
@@ -89,7 +90,7 @@ export default function RescateTab() {
 
       {filtered.length === 0 ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center">
-          <div className="text-4xl mb-3">✅</div>
+          <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
           <p className="text-sm text-muted-foreground">No hay pedidos en este filtro</p>
         </div>
       ) : (
@@ -113,7 +114,11 @@ export default function RescateTab() {
                     <td className="px-4 py-3">
                       <div className="font-medium text-foreground">{o.nombre}</div>
                       <div className="text-xs text-muted-foreground">{o.ciudad || '—'}</div>
-                      {o.novedad && <div className="text-xs text-orange mt-0.5">⚠️ {truncate(o.novedad, 40)}</div>}
+                      {o.novedad && (
+                        <div className="text-xs text-orange mt-0.5 inline-flex items-center gap-1">
+                          <AlertTriangle size={10} /> {truncate(o.novedad, 40)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{truncate(o.producto || '—', 20)}</td>
                     <td className="px-4 py-3 hidden md:table-cell">

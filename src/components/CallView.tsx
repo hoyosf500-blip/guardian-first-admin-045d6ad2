@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { toast } from 'sonner';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail } from 'lucide-react';
 
 interface Props {
   items: OrderData[];
@@ -21,7 +22,7 @@ export default function CallView({ items }: Props) {
   if (!items.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
-        <div className="text-5xl mb-3">✅</div>
+        <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
         <p className="text-sm">¡Todos gestionados!</p>
       </div>
     );
@@ -34,11 +35,10 @@ export default function CallView({ items }: Props) {
     await markResult(o, result, reason);
     setShowCancelModal(false);
     toast.success(
-      result === 'conf' ? `✅ Confirmado — ${o.nombre.split(' ')[0]}` :
-      result === 'canc' ? `❌ Cancelado — ${o.nombre.split(' ')[0]}` :
-      `📵 No respondió — ${o.nombre.split(' ')[0]}`,
+      result === 'conf' ? `Confirmado — ${o.nombre.split(' ')[0]}` :
+      result === 'canc' ? `Cancelado — ${o.nombre.split(' ')[0]}` :
+      `No respondió — ${o.nombre.split(' ')[0]}`,
     );
-    // Move to next pending
     setTimeout(() => {
       const nextIdx = items.findIndex((item, i) => i > callIdx && !item.result);
       if (nextIdx >= 0) setCallIdx(nextIdx);
@@ -50,7 +50,7 @@ export default function CallView({ items }: Props) {
   };
 
   const copyPhone = () => {
-    navigator.clipboard.writeText(o.phone).then(() => toast.success(`📱 ${o.phone} copiado`));
+    navigator.clipboard.writeText(o.phone).then(() => toast.success(`${o.phone} copiado`));
   };
 
   return (
@@ -58,8 +58,12 @@ export default function CallView({ items }: Props) {
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-1.5">
-          <button onClick={() => navCall(-1)} disabled={callIdx <= 0} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30">←</button>
-          <button onClick={() => navCall(1)} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold">→</button>
+          <button onClick={() => navCall(-1)} disabled={callIdx <= 0} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center">
+            <ChevronLeft size={14} />
+          </button>
+          <button onClick={() => navCall(1)} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold inline-flex items-center">
+            <ChevronRight size={14} />
+          </button>
         </div>
       </div>
 
@@ -72,47 +76,63 @@ export default function CallView({ items }: Props) {
 
         <div className="text-xl font-bold mb-1">{o.nombre}</div>
 
-        <div className="text-sm text-muted-foreground mb-4 leading-relaxed">
-          <span className="inline-block mr-3">📱 <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button></span>
-          <span className="inline-block mr-3">📍 {o.ciudad || '—'}</span>
-          <br />
-          <span className="inline-block mr-3">📦 {o.producto || '—'}</span>
-          {o.valor > 0 && <span className="inline-block">💰 ${o.valor.toLocaleString()}</span>}
+        <div className="text-sm text-muted-foreground mb-4 leading-relaxed space-y-1">
+          <div className="flex items-center gap-1.5">
+            <Phone size={12} /> <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button>
+            <span className="mx-2" />
+            <MapPin size={12} /> {o.ciudad || '—'}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Package size={12} /> {o.producto || '—'}
+            {o.valor > 0 && <><span className="mx-2" /><DollarSign size={12} /> ${o.valor.toLocaleString()}</>}
+          </div>
         </div>
 
         {o.novedad && (
-          <div className={`p-2.5 rounded-lg mb-3 text-xs ${o.novedadSol ? 'bg-green/10 border border-green/20' : 'bg-orange/10 border border-orange/20'}`}>
-            {o.novedadSol ? '✅ RESUELTA' : '⚠️ NOVEDAD'}: {o.novedad}
+          <div className={`p-2.5 rounded-lg mb-3 text-xs inline-flex items-start gap-1.5 w-full ${o.novedadSol ? 'bg-green/10 border border-green/20' : 'bg-orange/10 border border-orange/20'}`}>
+            {o.novedadSol ? <CheckCircle2 size={12} className="text-green mt-0.5" /> : <AlertTriangle size={12} className="text-orange mt-0.5" />}
+            <span>{o.novedadSol ? 'RESUELTA' : 'NOVEDAD'}: {o.novedad}</span>
           </div>
         )}
 
         {o.guia && (
-          <div className="text-xs mb-2">
-            🏷️ Guía: <a href={getTrackingUrl(o.transportadora, o.guia) || '#'} target="_blank" rel="noreferrer" className="text-cyan">{o.guia}</a>
+          <div className="text-xs mb-2 inline-flex items-center gap-1.5">
+            <Tag size={12} /> Guía: <a href={getTrackingUrl(o.transportadora, o.guia) || '#'} target="_blank" rel="noreferrer" className="text-cyan">{o.guia}</a>
             {o.transportadora && ` (${o.transportadora})`}
           </div>
         )}
 
-        {o.direccion && <div className="text-xs text-muted-foreground mb-3">📫 {o.direccion}</div>}
+        {o.direccion && (
+          <div className="text-xs text-muted-foreground mb-3 inline-flex items-center gap-1.5">
+            <Mail size={12} /> {o.direccion}
+          </div>
+        )}
 
         {!o.result ? (
           <div className="grid grid-cols-3 gap-2 mt-4">
-            <button onClick={() => handleMark('conf')} className="py-3.5 rounded-xl bg-green/15 text-green border border-green/25 font-bold text-sm active:scale-[0.97] transition-transform">✅ Confirmó</button>
-            <button onClick={() => setShowCancelModal(true)} className="py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform">❌ Canceló</button>
-            <button onClick={() => handleMark('noresp')} className="py-3.5 rounded-xl bg-muted text-muted-foreground font-bold text-sm active:scale-[0.97] transition-transform">📵 No contestó</button>
+            <button onClick={() => handleMark('conf')} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-green/15 text-green border border-green/25 font-bold text-sm active:scale-[0.97] transition-transform">
+              <CheckCircle2 size={16} /> Confirmó
+            </button>
+            <button onClick={() => setShowCancelModal(true)} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform">
+              <XCircle size={16} /> Canceló
+            </button>
+            <button onClick={() => handleMark('noresp')} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-muted text-muted-foreground font-bold text-sm active:scale-[0.97] transition-transform">
+              <PhoneOff size={16} /> No contestó
+            </button>
           </div>
         ) : (
-          <div className="text-center py-3 text-sm font-semibold">
-            {o.result === 'conf' ? '✅ Confirmado' : o.result === 'canc' ? '❌ Cancelado' : '📵 No respondió'}
+          <div className="text-center py-3 text-sm font-semibold inline-flex items-center gap-1.5 justify-center w-full">
+            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-green" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-red" /> Cancelado</> : <><PhoneOff size={16} /> No respondió</>}
           </div>
         )}
       </div>
 
-      {/* Cancel Modal */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center" onClick={() => setShowCancelModal(false)}>
           <div className="bg-surface rounded-t-2xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-bold mb-4">❌ Motivo de cancelación</h3>
+            <h3 className="text-base font-bold mb-4 inline-flex items-center gap-2">
+              <XCircle size={18} className="text-red" /> Motivo de cancelación
+            </h3>
             <div className="grid gap-2">
               {CANCEL_REASONS.map(reason => (
                 <button key={reason} onClick={() => handleMark('canc', reason)}
