@@ -40,11 +40,23 @@ export const CARRIER_TRACK: Record<string, string> = {
 };
 
 export const SEG_ACTIONS = [
-  'Llamé cliente', 'Confirmó recepción', 'Verificó dirección',
-  'WhatsApp enviado', 'Reenvío solicitado'
+  'Llame cliente', 'WhatsApp enviado', 'Reclame transportadora',
+  'Esperando respuesta', 'Resuelto', 'Cliente recogera', 'Devolucion solicitada'
 ];
 
 export const RES_ACTIONS = [
-  'Llamé cliente', 'Reclamé transportadora', 'Solicité devolución',
-  'Reenvío', 'Resuelto'
+  'Llame cliente', 'Reclame transportadora', 'Solicite devolucion',
+  'Reenvio', 'Resuelto'
 ];
+
+export const CARRIER_DEADLINES: Record<string, number> = {
+  'INTERRAPIDISIMO': 5,
+  'INTER RAPIDISIMO': 5,
+  'COORDINADORA': 15,
+  'TCC': 7,
+  'SERVIENTREGA': 7,
+  'ENVIA': 5,
+  'ENVÍA': 5,
+  'VELOCES': 5,
+  'DEPRISA': 7,
+};
