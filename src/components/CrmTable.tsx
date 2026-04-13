@@ -246,47 +246,48 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
               {activeColumns.map((col, colIdx) => {
                 const items = columns[col.key];
                 return (
-              <motion.div key={col.key}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: colIdx * 0.05, duration: 0.3 }}
-                className="flex-1 min-w-[270px] max-w-[330px] flex flex-col">
-
-                {/* Column header */}
-                <div className={`bg-gradient-to-r ${col.gradient} rounded-t-2xl px-4 py-3 flex items-center justify-between shadow-lg ${col.glow}`}>
-                  <div className="flex items-center gap-2 text-white">
-                    <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      {col.icon}
+                  <motion.div
+                    key={col.key}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: colIdx * 0.05, duration: 0.3 }}
+                    className="flex-1 min-w-[270px] max-w-[330px] flex flex-col"
+                  >
+                    <div className={`bg-gradient-to-r ${col.gradient} rounded-t-2xl px-4 py-3 flex items-center justify-between shadow-lg ${col.glow}`}>
+                      <div className="flex items-center gap-2 text-white">
+                        <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                          {col.icon}
+                        </div>
+                        <span className="text-sm font-bold tracking-tight">{col.label}</span>
+                      </div>
+                      <span className="text-white text-sm font-black bg-white/25 backdrop-blur-sm rounded-xl px-3 py-1">{items.length}</span>
                     </div>
-                    <span className="text-sm font-bold tracking-tight">{col.label}</span>
-                  </div>
-                  <span className="text-white text-sm font-black bg-white/25 backdrop-blur-sm rounded-xl px-3 py-1">{items.length}</span>
-                </div>
 
-                {/* Cards container */}
-                <div className="bg-card/30 backdrop-blur-sm rounded-b-2xl border border-border/50 border-t-0 flex-1 p-2.5 space-y-2.5 max-h-[68vh] overflow-y-auto scrollbar-thin">
-                  {items.map((o, i) => (
-                    <OrderCard
-                      key={o.phone + o.idx}
-                      order={o}
-                      managed={results[o.phone]}
-                      expanded={expandedPhone === o.phone}
-                      onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
-                      onAction={(action) => markAction(o.phone, action)}
-                      actions={actions}
-                      touchpoints={phoneTouchpoints[o.phone] || []}
-                      getOperatorName={getOperatorName}
-                      getLastTouchTime={getLastTouchTime}
-                      module={module}
-                      index={i}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </div>
+                    <div className="bg-card/30 backdrop-blur-sm rounded-b-2xl border border-border/50 border-t-0 flex-1 p-2.5 space-y-2.5 max-h-[68vh] overflow-y-auto scrollbar-thin">
+                      {items.map((o, i) => (
+                        <OrderCard
+                          key={o.phone + o.idx}
+                          order={o}
+                          managed={results[o.phone]}
+                          expanded={expandedPhone === o.phone}
+                          onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
+                          onAction={(action) => markAction(o.phone, action)}
+                          actions={actions}
+                          touchpoints={phoneTouchpoints[o.phone] || []}
+                          getOperatorName={getOperatorName}
+                          getLastTouchTime={getLastTouchTime}
+                          module={module}
+                          index={i}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
