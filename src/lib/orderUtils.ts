@@ -35,18 +35,34 @@ export interface OrderData {
 export function calcDias(dateStr: string): number {
   if (!dateStr || dateStr === 'undefined') return 0;
   try {
-    let d: Date;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split(/[\s/]+/);
-      if (parts[2] && parts[2].length === 4) {
-        d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-      } else {
-        d = new Date(dateStr);
+    let d: Date | null = null;
+
+    // DD/MM/YYYY or DD-MM-YYYY
+    const dmy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (dmy) {
+      let yearNum = parseInt(dmy[3]);
+      if (yearNum < 100) yearNum += 2000;
+      const monthNum = parseInt(dmy[2]);
+      const dayNum = parseInt(dmy[1]);
+      if (monthNum >= 1 && monthNum <= 12 && dayNum >= 1 && dayNum <= 31) {
+        d = new Date(Date.UTC(yearNum, monthNum - 1, dayNum));
       }
-    } else {
+    }
+
+    // YYYY-MM-DD (ISO)
+    if (!d) {
+      const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) {
+        d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+      }
+    }
+
+    // Fallback
+    if (!d) {
       d = new Date(dateStr);
     }
-    if (isNaN(d.getTime())) return 0;
+
+    if (!d || isNaN(d.getTime())) return 0;
     return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
   } catch {
     return 0;
