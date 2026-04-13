@@ -213,7 +213,7 @@ export default function DashboardTab() {
 
       {/* Products row */}
       {prods.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
+        <motion.div {...fadeUp(0.18)} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
           <div className="md:col-span-2 bg-card rounded-xl border border-border p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Distribución por producto</h3>
             <div className="h-52">
@@ -267,7 +267,7 @@ export default function DashboardTab() {
               </tbody>
             </table>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Cierre */}
