@@ -27,6 +27,7 @@ const OrderContext = createContext<OrderState | undefined>(undefined);
 
 export function OrderProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
   const [segData, setSegData] = useState<OrderData[]>([]);
@@ -35,6 +36,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [timerStart, setTimerStart] = useState(0);
   const [loading, setLoading] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string } | null>(null);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, [requestNotificationPermission]);
 
   const setAllOrders = useCallback((orders: OrderData[]) => {
     setAllOrdersState(orders);
