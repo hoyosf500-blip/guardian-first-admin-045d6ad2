@@ -87,11 +87,21 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     const phones = [...new Set(data.map(o => o.phone))];
     const prefix = module === 'SEG' ? 'SEG' : 'RESCUE';
 
-    supabase.from('touchpoints')
-      .select('*')
-      .in('phone', phones.slice(0, 100))
-      .order('created_at', { ascending: false })
-      .then(({ data: tp }) => {
+    // Fetch touchpoints in batches of 100 phones to avoid Supabase .in() limit
+    const fetchAllTouchpoints = async () => {
+      const allTp: Touchpoint[] = [];
+      for (let i = 0; i < phones.length; i += 100) {
+        const batch = phones.slice(i, i + 100);
+        const { data: tp } = await supabase.from('touchpoints')
+          .select('*')
+          .in('phone', batch)
+          .order('created_at', { ascending: false });
+        if (tp) allTp.push(...(tp as Touchpoint[]));
+      }
+      return allTp;
+    };
+
+    fetchAllTouchpoints().then(allTp => {
         if (tp) {
           const moduleTp = tp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
           setTouchpoints(moduleTp);
