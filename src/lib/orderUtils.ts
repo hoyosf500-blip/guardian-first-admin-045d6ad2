@@ -32,8 +32,9 @@ export interface OrderData {
   assignedTo?: string;
 }
 
-export function calcDias(dateStr: string): number {
-  if (!dateStr || dateStr === 'undefined') return 0;
+/** Parse a date string and return the Date object (UTC), or null */
+export function parseDate(dateStr: string): Date | null {
+  if (!dateStr || dateStr === 'undefined') return null;
   try {
     let d: Date | null = null;
 
@@ -62,11 +63,44 @@ export function calcDias(dateStr: string): number {
       d = new Date(dateStr);
     }
 
-    if (!d || isNaN(d.getTime())) return 0;
-    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+    if (!d || isNaN(d.getTime())) return null;
+    return d;
   } catch {
-    return 0;
+    return null;
   }
+}
+
+/** Calendar days since a date string */
+export function calcDias(dateStr: string): number {
+  const d = parseDate(dateStr);
+  if (!d) return 0;
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+}
+
+/** Business days (Mon-Fri) between a date and today. Carriers don't work weekends. */
+export function calcBusinessDays(dateStr: string): number {
+  const start = parseDate(dateStr);
+  if (!start) return 0;
+  
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  
+  if (start >= today) return 0;
+  
+  let count = 0;
+  const current = new Date(start.getTime());
+  // Move to next day (we count days AFTER the last movement)
+  current.setUTCDate(current.getUTCDate() + 1);
+  
+  while (current <= today) {
+    const dow = current.getUTCDay(); // 0=Sun, 6=Sat
+    if (dow !== 0 && dow !== 6) {
+      count++;
+    }
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  
+  return count;
 }
 
 export function cleanPhone(p: string): string {
