@@ -72,6 +72,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [onlyDelayed, setOnlyDelayed] = useState(false);
 
   useEffect(() => {
     if (!data.length) return;
