@@ -102,11 +102,17 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     // Update local state immediately
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
-    setCounter(prev => ({
-      conf: prev.conf + (result === 'conf' ? 1 : 0),
-      canc: prev.canc + (result === 'canc' ? 1 : 0),
-      noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
-    }));
+    setCounter(prev => {
+      const next = {
+        conf: prev.conf + (result === 'conf' ? 1 : 0),
+        canc: prev.canc + (result === 'canc' ? 1 : 0),
+        noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
+      };
+      // Check milestones after update
+      const newTotal = next.conf + next.canc + next.noresp;
+      setTimeout(() => checkMilestone(newTotal), 300);
+      return next;
+    });
     setLastMark({ order, result, reason });
 
     if (!timerStart) setTimerStart(Date.now());
