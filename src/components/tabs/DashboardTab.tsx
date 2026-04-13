@@ -5,8 +5,8 @@ import { truncate, formatDateES } from '@/lib/orderUtils';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
 interface DailyResult {
@@ -284,6 +284,60 @@ export default function DashboardTab() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Donut: Distribución por producto */}
+      {prods.length > 0 && (() => {
+        const DONUT_COLORS = [
+          'hsl(var(--cyan))', 'hsl(var(--green))', 'hsl(var(--orange))',
+          'hsl(var(--red))', 'hsl(var(--purple, 270 60% 60%))', 'hsl(var(--blue))',
+          'hsl(var(--muted-foreground))'
+        ];
+        const topProds = prods.slice(0, 6);
+        const otherTotal = prods.slice(6).reduce((s, [, d]) => s + d.total, 0);
+        const pieData = topProds.map(([name, d]) => ({ name: truncate(name, 15), value: d.total }));
+        if (otherTotal > 0) pieData.push({ name: 'Otros', value: otherTotal });
+
+        return (
+          <div className="bg-card border border-border rounded-lg p-4 mb-3">
+            <h3 className="text-sm font-semibold text-muted-foreground mb-3">🍩 Distribución por producto</h3>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {pieData.map((_, i) => (
+                      <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                    formatter={(value: number, name: string) => [`${value} pedidos`, name]}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: '11px' }}
+                    layout="vertical"
+                    align="right"
+                    verticalAlign="middle"
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Product table */}
       {prods.length > 0 && (
