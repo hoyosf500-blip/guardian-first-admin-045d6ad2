@@ -117,6 +117,7 @@ export default function PanelPage() {
 
           {/* Page content */}
           <main className="flex-1 overflow-y-auto p-5 md:p-8">
+            {activeTab === 'confirmar' && <CounterBar />}
             {activeTab === 'dashboard' && <DashboardTab />}
             {activeTab === 'confirmar' && <ConfirmarTab profile={profile} onLogout={signOut} />}
             {activeTab === 'seguimiento' && <SeguimientoTab />}
