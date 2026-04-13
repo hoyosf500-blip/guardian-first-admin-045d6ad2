@@ -160,7 +160,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
-  const delayedCount = useMemo(() => data.filter(order => getOrderStatusAgeDays(order) >= 2).length, [data]);
+  const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
 
   const filtered = useMemo(() => {
     let list = data;
