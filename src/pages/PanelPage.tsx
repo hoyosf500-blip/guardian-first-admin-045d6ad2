@@ -9,6 +9,7 @@ import CounterBar from '@/components/CounterBar';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -117,11 +118,21 @@ export default function PanelPage() {
 
           <main className="flex-1 overflow-y-auto p-5 md:p-8">
             {activeTab === 'confirmar' && <CounterBar />}
-            {activeTab === 'dashboard' && <DashboardTab />}
-            {activeTab === 'confirmar' && <ConfirmarTab profile={profile} onLogout={signOut} />}
-            {activeTab === 'seguimiento' && <SeguimientoTab />}
-            {activeTab === 'rescate' && <RescateTab />}
-            {activeTab === 'admin' && isAdmin && <AdminTab />}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+              >
+                {activeTab === 'dashboard' && <DashboardTab />}
+                {activeTab === 'confirmar' && <ConfirmarTab profile={profile} onLogout={signOut} />}
+                {activeTab === 'seguimiento' && <SeguimientoTab />}
+                {activeTab === 'rescate' && <RescateTab />}
+                {activeTab === 'admin' && isAdmin && <AdminTab />}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>

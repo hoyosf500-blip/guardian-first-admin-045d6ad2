@@ -5,6 +5,13 @@ import { truncate, formatDateES } from '@/lib/orderUtils';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare, Download } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
