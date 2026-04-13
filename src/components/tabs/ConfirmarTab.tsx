@@ -19,12 +19,11 @@ interface Props {
 
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded } = useOrders();
   const [view, setView] = useState<'list' | 'call'>('list');
   const [filter, setFilter] = useState('pending');
   const [search, setSearch] = useState('');
   const [aperturaCompleted, setAperturaCompleted] = useState(false);
-  const [excelLoaded, setExcelLoaded] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
