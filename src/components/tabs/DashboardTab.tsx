@@ -5,8 +5,8 @@ import { truncate, formatDateES } from '@/lib/orderUtils';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 
 interface DailyResult {
