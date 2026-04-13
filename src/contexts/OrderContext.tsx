@@ -150,7 +150,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       action_date: today,
       action_time: now,
     });
-  }, [user, timerStart]);
+  }, [user, timerStart, checkMilestone]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
@@ -179,7 +179,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue([]);
     setSegData([]);
     setResData([]);
-  }, []);
+    resetCelebrations();
+  }, [resetCelebrations]);
 
   return (
     <OrderContext.Provider value={{
