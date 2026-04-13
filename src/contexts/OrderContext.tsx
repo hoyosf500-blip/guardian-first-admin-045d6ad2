@@ -193,7 +193,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   return (
     <OrderContext.Provider value={{
       allOrders, workQueue, segData, resData, counter, timerStart,
-      loading, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders
+      loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders
     }}>
       {children}
     </OrderContext.Provider>
