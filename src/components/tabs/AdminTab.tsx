@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import SyncHistory from '@/components/admin/SyncHistory';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -179,6 +180,8 @@ export default function AdminTab() {
               </div>
             )}
           </motion.div>
+
+          <SyncHistory />
 
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">

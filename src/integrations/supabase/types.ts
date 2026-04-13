@@ -264,6 +264,42 @@ export type Database = {
         }
         Relationships: []
       }
+      sync_logs: {
+        Row: {
+          created_at: string
+          duplicates_count: number
+          error_message: string | null
+          id: string
+          source: string
+          status: string
+          synced_count: number
+          total_count: number
+          triggered_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          duplicates_count?: number
+          error_message?: string | null
+          id?: string
+          source?: string
+          status?: string
+          synced_count?: number
+          total_count?: number
+          triggered_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          duplicates_count?: number
+          error_message?: string | null
+          id?: string
+          source?: string
+          status?: string
+          synced_count?: number
+          total_count?: number
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
       touchpoints: {
         Row: {
           action: string

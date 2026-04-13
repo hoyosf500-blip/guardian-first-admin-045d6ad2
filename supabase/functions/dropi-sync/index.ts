@@ -173,6 +173,12 @@ Deno.serve(async (req: Request) => {
     const newOrders = dbOrders.filter((o) => !existingSet.has(o.external_id));
 
     if (newOrders.length === 0) {
+      // Log sync
+      await supabaseClient.from("sync_logs").insert({
+        source: "dropi", status: "success", synced_count: 0,
+        duplicates_count: dbOrders.length, total_count: dropiOrders.length,
+        triggered_by: user.id,
+      });
       return new Response(
         JSON.stringify({ synced: 0, total: dropiOrders.length, message: "Todos los pedidos ya están sincronizados" }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -193,6 +199,13 @@ Deno.serve(async (req: Request) => {
         inserted += (insertedData?.length || 0);
       }
     }
+
+    // Log sync
+    await supabaseClient.from("sync_logs").insert({
+      source: "dropi", status: "success", synced_count: inserted,
+      duplicates_count: dbOrders.length - newOrders.length, total_count: dropiOrders.length,
+      triggered_by: user.id,
+    });
 
     return new Response(
       JSON.stringify({
