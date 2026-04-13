@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
