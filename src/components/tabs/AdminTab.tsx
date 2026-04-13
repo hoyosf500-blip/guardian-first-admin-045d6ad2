@@ -20,6 +20,8 @@ export default function AdminTab() {
   const [dropiKeySaved, setDropiKeySaved] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
+  const [testingKey, setTestingKey] = useState(false);
+  const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
   useEffect(() => {
     if (!isAdmin) return;
