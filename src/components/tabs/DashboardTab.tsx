@@ -271,7 +271,7 @@ export default function DashboardTab() {
       )}
 
       {/* Cierre */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <motion.div {...fadeUp(0.24)} className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Cierre del día</h3>
