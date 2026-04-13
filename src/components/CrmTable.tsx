@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, truncate, getTrackingUrl } from '@/lib/orderUtils';
+import { OrderData, truncate, getTrackingUrl, calcDias } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
@@ -72,6 +72,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [onlyDelayed, setOnlyDelayed] = useState(false);
 
   useEffect(() => {
     if (!data.length) return;
@@ -137,13 +138,22 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   };
 
   const filtered = useMemo(() => {
-    if (!search) return data;
-    const s = search.toLowerCase();
-    return data.filter(o =>
-      o.nombre.toLowerCase().includes(s) || o.phone.includes(s) ||
-      (o.guia || '').toLowerCase().includes(s) || (o.ciudad || '').toLowerCase().includes(s)
-    );
-  }, [data, search]);
+    let list = data;
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(o =>
+        o.nombre.toLowerCase().includes(s) || o.phone.includes(s) ||
+        (o.guia || '').toLowerCase().includes(s) || (o.ciudad || '').toLowerCase().includes(s)
+      );
+    }
+    if (onlyDelayed) {
+      list = list.filter(o => {
+        const d = calcDias(o.fechaConf || o.fecha);
+        return d >= 2;
+      });
+    }
+    return list;
+  }, [data, search, onlyDelayed]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -172,12 +182,22 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
 
   return (
     <div className="space-y-4">
-      {/* Search bar */}
-      <div className="relative">
+      {/* Search bar + delay filter */}
+      <div className="flex gap-2">
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono, guía, ciudad..."
-          className="w-full pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
+          className="flex-1 pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
         />
+        <button onClick={() => setOnlyDelayed(!onlyDelayed)}
+          className={`inline-flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-all whitespace-nowrap ${
+            onlyDelayed
+              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
+              : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+          }`}>
+          <Clock size={15} />
+          <span className="hidden sm:inline">Retrasados (2d+)</span>
+          <span className="sm:hidden">2d+</span>
+        </button>
       </div>
 
       {/* Summary pills */}
