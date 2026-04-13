@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 interface Profile { user_id: string; display_name: string; roles: string[]; }
 interface DayReport { operator_name: string; report_date: string; data: Record<string, number>; }
@@ -48,7 +51,7 @@ export default function AdminTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
               <p className="text-xs text-muted-foreground mt-0.5">{operators.length} usuarios</p>
@@ -75,9 +78,9 @@ export default function AdminTab() {
                 </div>
               ))}
             </div>
-          </div>
+          </motion.div>
 
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.15 }} className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground">Cierres recientes</h3>
               <p className="text-xs text-muted-foreground mt-0.5">{reports.length} reportes</p>
@@ -104,7 +107,7 @@ export default function AdminTab() {
                 ))}
               </div>
             )}
-          </div>
+          </motion.div>
         </div>
       )}
     </div>

@@ -50,7 +50,7 @@ export default function SeguimientoTab() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <p className="text-sm text-muted-foreground mb-5">Pedidos despachados en tránsito</p>
+      <motion.p {...fadeUp} className="text-sm text-muted-foreground mb-5">Pedidos despachados en tránsito</motion.p>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {[
@@ -58,15 +58,16 @@ export default function SeguimientoTab() {
           { label: 'Novedades', value: novCount, color: 'text-orange' },
           { label: 'Oficina', value: ofiCount, color: 'text-purple' },
           { label: 'Gestionados', value: gestCount, color: 'text-green' },
-        ].map(kpi => (
-          <div key={kpi.label} className="bg-card rounded-xl border border-border p-4">
+        ].map((kpi, i) => (
+          <motion.div key={kpi.label} {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 * (i + 1) }}
+            className="bg-card rounded-xl border border-border p-4">
             <div className="text-xs text-muted-foreground font-medium mb-1">{kpi.label}</div>
             <div className={`font-mono text-2xl font-bold ${kpi.color}`}>{kpi.value}</div>
-          </div>
+          </motion.div>
         ))}
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-4 mb-4">
+      <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.25 }} className="bg-card rounded-xl border border-border p-4 mb-4">
         <div className="flex gap-2 flex-wrap mb-3">
           {[
             { id: 'all', label: `Todos (${segData.length})` },
@@ -87,7 +88,7 @@ export default function SeguimientoTab() {
           placeholder="Buscar guía, nombre o teléfono..."
           className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
-      </div>
+      </motion.div>
 
       {filtered.length === 0 ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center">
