@@ -10,7 +10,7 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
-import { AlertTriangle, List, Phone } from 'lucide-react';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload } from 'lucide-react';
 
 interface Props {
   profile: { display_name: string } | null;
