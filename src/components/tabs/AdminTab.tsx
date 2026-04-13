@@ -181,6 +181,8 @@ export default function AdminTab() {
             )}
           </motion.div>
 
+          <SyncHistory />
+
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
