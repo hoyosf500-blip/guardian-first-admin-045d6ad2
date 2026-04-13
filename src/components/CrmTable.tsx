@@ -308,37 +308,11 @@ interface OrderCardProps {
 }
 
 function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, index }: OrderCardProps) {
-  // Calculate days since last status change (fechaConf = confirmation/status change date)
-  // This is "day 1" — if status hasn't changed in 2+ days, it's delayed
-  const diasEnEstatus = useMemo(() => {
-    // Try fechaConf first (confirmation date = when status last changed)
-    const dateStr = o.fechaConf || o.fecha;
-    if (dateStr && dateStr !== 'undefined' && dateStr !== '') {
-      try {
-        let d: Date | null = null;
-        const dmy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-        if (dmy) {
-          let y = parseInt(dmy[3]); if (y < 100) y += 2000;
-          d = new Date(Date.UTC(y, parseInt(dmy[2]) - 1, parseInt(dmy[1])));
-        }
-        if (!d) {
-          const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-          if (iso) d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
-        }
-        if (!d) d = new Date(dateStr);
-        if (d && !isNaN(d.getTime())) {
-          return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
-        }
-      } catch { /* fallback */ }
-    }
-    return o.diasConf || o.dias;
-  }, [o.fechaConf, o.fecha, o.diasConf, o.dias]);
-
+  const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
   const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
-  // Delay detection for ALL statuses — 2+ days without movement = delayed
   const isDelayed = diasEnEstatus >= 2;
   const diasBg = diasEnEstatus >= 7 ? 'bg-red-500' : diasEnEstatus >= 5 ? 'bg-red-400' : diasEnEstatus >= 3 ? 'bg-amber-500' : diasEnEstatus >= 2 ? 'bg-orange-400' : 'bg-emerald-500';
   const borderAlert = diasEnEstatus >= 5 ? 'border-l-red-500' : diasEnEstatus >= 3 ? 'border-l-amber-500' : diasEnEstatus >= 2 ? 'border-l-orange-400' : 'border-l-transparent';
