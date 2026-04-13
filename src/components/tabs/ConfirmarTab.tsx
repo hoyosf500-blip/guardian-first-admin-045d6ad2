@@ -184,25 +184,19 @@ export default function ConfirmarTab({ profile }: Props) {
           </div>
 
           {(() => {
-            const d6 = workQueue.filter(o => o.dias >= 6 && !o.result).length;
-            const d5 = workQueue.filter(o => o.dias === 5 && !o.result).length;
-            const d34 = workQueue.filter(o => o.dias >= 3 && o.dias <= 4 && !o.result).length;
-            if (!d6 && !d5 && !d34) return null;
+            const d7 = workQueue.filter(o => o.dias >= 7 && !o.result).length;
+            const d46 = workQueue.filter(o => o.dias >= 4 && o.dias <= 6 && !o.result).length;
+            if (!d7 && !d46) return null;
             return (
               <div className="flex gap-2 mb-4 flex-wrap">
-                {d6 > 0 && (
+                {d7 > 0 && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red/10 text-red border border-red/15">
-                    <span className="w-2 h-2 rounded-full bg-red" /> {d6} cancelar (D6+)
+                    <span className="w-2 h-2 rounded-full bg-red" /> {d7} cancelar (D7+)
                   </span>
                 )}
-                {d5 > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange/10 text-orange border border-orange/15">
-                    <span className="w-2 h-2 rounded-full bg-orange" /> {d5} último (D5)
-                  </span>
-                )}
-                {d34 > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue/10 text-blue border border-blue/15">
-                    <span className="w-2 h-2 rounded-full bg-blue" /> {d34} urgente (D3-4)
+                {d46 > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-yellow/10 text-yellow border border-yellow/15">
+                    <span className="w-2 h-2 rounded-full bg-yellow" /> {d46} urgente (D4-6)
                   </span>
                 )}
               </div>

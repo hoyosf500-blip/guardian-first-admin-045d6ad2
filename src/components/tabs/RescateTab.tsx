@@ -162,7 +162,7 @@ export default function RescateTab() {
                     {filtered.slice(0, 50).map(o => {
                       const diasT = o.diasConf || o.dias;
                       const managed = results[o.phone];
-                      const riskClass = diasT >= 7 ? 'bg-red/10 text-red' : diasT >= 5 ? 'bg-orange/10 text-orange' : 'bg-red/10 text-red';
+                      const riskClass = diasT >= 7 ? 'bg-red/10 text-red' : diasT >= 4 ? 'bg-yellow/10 text-yellow' : 'bg-green/10 text-green';
                       return (
                         <tr key={o.phone + o.idx} className={`border-b border-border last:border-0 hover:bg-secondary/30 transition-colors ${managed ? 'opacity-50' : ''}`}>
                           <td className="px-4 py-3">

@@ -19,13 +19,13 @@ export default function WorkList({ items, onOpenCall }: Props) {
   return (
     <div className="grid md:grid-cols-2 gap-2">
       {items.slice(0, 50).map((o, i) => {
-        const pClass = o.dias >= 6 ? 'bg-red' : o.dias === 5 ? 'bg-orange' : o.dias >= 3 ? 'bg-yellow' : 'bg-green';
+        const pClass = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
         return (
           <div
             key={o.phone + o.idx}
             onClick={() => onOpenCall(i)}
             className={`flex items-center gap-3 p-3.5 bg-card border border-border rounded-lg cursor-pointer transition-all hover:bg-card2 active:scale-[0.99] ${
-              o.result ? 'opacity-50' : o.dias >= 6 ? 'urgent-pulse' : ''
+              o.result ? 'opacity-50' : o.dias >= 7 ? 'urgent-pulse' : ''
             }`}
           >
             <div className={`w-1.5 h-9 rounded-sm flex-shrink-0 ${pClass}`} />
@@ -36,7 +36,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
                 <span className="inline-flex items-center gap-0.5"><Package size={10} /> {truncate(o.producto || '—', 15)}</span>
               </div>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-bold">D{o.dias}</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${o.dias >= 7 ? 'bg-red/15 text-red' : o.dias >= 4 ? 'bg-yellow/15 text-yellow' : 'bg-green/15 text-green'}`}>D{o.dias}</span>
             {o.result && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold inline-flex items-center ${
                 o.result === 'conf' ? 'bg-green/15 text-green' :
