@@ -126,6 +126,55 @@ export default function DashboardTab() {
     window.open(`https://wa.me/?text=${msg}`, '_blank');
   };
 
+  const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
+    const bom = '\uFEFF';
+    const csv = bom + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('📥 CSV descargado');
+  };
+
+  const exportarResultadosHoy = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const managed = workQueue.filter(o => o.result);
+    if (!managed.length) { toast.error('No hay resultados hoy'); return; }
+    const headers = ['Teléfono', 'Nombre', 'Producto', 'Ciudad', 'Resultado', 'Razón', 'Valor'];
+    const rows = managed.map(o => [
+      o.phone, o.nombre, o.producto, o.ciudad,
+      o.result === 'conf' ? 'Confirmado' : o.result === 'canc' ? 'Cancelado' : 'No respondió',
+      o.reason || '', String(o.valor)
+    ]);
+    downloadCsv(`resultados_${today}.csv`, headers, rows);
+  };
+
+  const exportarHistorico = async () => {
+    if (!user) return;
+    const since = new Date();
+    since.setDate(since.getDate() - period);
+    const sinceStr = since.toISOString().split('T')[0];
+
+    const { data, error } = await supabase.from('order_results')
+      .select('result_date, result_time, phone, result, reason, module')
+      .eq('operator_id', user.id)
+      .gte('result_date', sinceStr)
+      .order('result_date', { ascending: false });
+
+    if (error || !data?.length) { toast.error(error ? 'Error consultando' : 'Sin datos en el período'); return; }
+
+    const headers = ['Fecha', 'Hora', 'Teléfono', 'Resultado', 'Razón', 'Módulo'];
+    const rows = data.map(r => [
+      r.result_date, r.result_time || '', r.phone,
+      r.result === 'conf' ? 'Confirmado' : r.result === 'canc' ? 'Cancelado' : 'No respondió',
+      r.reason || '', r.module
+    ]);
+    downloadCsv(`historico_${sinceStr}_a_${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
+  };
+
   const chartTickStyle = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
 
   return (
