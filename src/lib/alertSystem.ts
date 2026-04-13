@@ -54,7 +54,6 @@ export function getSegStage(estado: string): string {
 
 export function getAlertLevel(diasConf: number, dias: number, estado: string, transportadora: string, novedad?: string): AlertInfo | null {
   const stage = getSegStage(estado);
-  if (stage === 'bodega') return null;
 
   const sinEscaneo = diasConf > 0 ? diasConf : dias;
   if (!sinEscaneo) return null;

@@ -258,36 +258,40 @@ interface OrderCardProps {
 }
 
 function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, index }: OrderCardProps) {
-  // Auto-calculate days in transit from fechaConf (guide generation date)
-  const diasCalc = useMemo(() => {
-    if (o.fechaConf && o.fechaConf !== 'undefined' && o.fechaConf !== '') {
+  // Calculate days since last status change (fechaConf = confirmation/status change date)
+  // This is "day 1" — if status hasn't changed in 2+ days, it's delayed
+  const diasEnEstatus = useMemo(() => {
+    // Try fechaConf first (confirmation date = when status last changed)
+    const dateStr = o.fechaConf || o.fecha;
+    if (dateStr && dateStr !== 'undefined' && dateStr !== '') {
       try {
         let d: Date | null = null;
-        const dmy = o.fechaConf.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+        const dmy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
         if (dmy) {
           let y = parseInt(dmy[3]); if (y < 100) y += 2000;
           d = new Date(Date.UTC(y, parseInt(dmy[2]) - 1, parseInt(dmy[1])));
         }
         if (!d) {
-          const iso = o.fechaConf.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
           if (iso) d = new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
         }
-        if (!d) d = new Date(o.fechaConf);
+        if (!d) d = new Date(dateStr);
         if (d && !isNaN(d.getTime())) {
           return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
         }
       } catch { /* fallback */ }
     }
     return o.diasConf || o.dias;
-  }, [o.fechaConf, o.diasConf, o.dias]);
+  }, [o.fechaConf, o.fecha, o.diasConf, o.dias]);
 
-  const alert = getAlertLevel(diasCalc, o.dias, o.estado, o.transportadora);
+  const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
   const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
-  const isDelayed = diasCalc >= 2;
-  const diasBg = diasCalc >= 7 ? 'bg-red-500' : diasCalc >= 5 ? 'bg-red-400' : diasCalc >= 3 ? 'bg-amber-500' : diasCalc >= 2 ? 'bg-orange-400' : 'bg-emerald-500';
-  const borderAlert = diasCalc >= 5 ? 'border-l-red-500' : diasCalc >= 3 ? 'border-l-amber-500' : diasCalc >= 2 ? 'border-l-orange-400' : 'border-l-transparent';
+  // Delay detection for ALL statuses — 2+ days without movement = delayed
+  const isDelayed = diasEnEstatus >= 2;
+  const diasBg = diasEnEstatus >= 7 ? 'bg-red-500' : diasEnEstatus >= 5 ? 'bg-red-400' : diasEnEstatus >= 3 ? 'bg-amber-500' : diasEnEstatus >= 2 ? 'bg-orange-400' : 'bg-emerald-500';
+  const borderAlert = diasEnEstatus >= 5 ? 'border-l-red-500' : diasEnEstatus >= 3 ? 'border-l-amber-500' : diasEnEstatus >= 2 ? 'border-l-orange-400' : 'border-l-transparent';
 
   return (
     <motion.div
@@ -305,7 +309,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             <div className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">{o.externalId}</div>
           </div>
           <span className={`${diasBg} text-white text-[11px] font-black px-2.5 py-1 rounded-lg shadow-sm flex-shrink-0`}>
-            D{diasCalc}
+            D{diasEnEstatus}
           </span>
         </div>
 
@@ -357,13 +361,13 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Delay warning */}
         {isDelayed && (
           <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 ${
-            diasCalc >= 5 ? 'bg-red-500/10 border border-red-500/20' :
-            diasCalc >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
+            diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
+            diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
             'bg-orange-400/10 border border-orange-400/20'
           }`}>
-            <Clock size={12} className={diasCalc >= 5 ? 'text-red-400' : diasCalc >= 3 ? 'text-amber-400' : 'text-orange-400'} />
-            <span className={`text-[11px] font-bold ${diasCalc >= 5 ? 'text-red-400' : diasCalc >= 3 ? 'text-amber-400' : 'text-orange-400'}`}>
-              {diasCalc}d sin movimiento — {diasCalc >= 5 ? 'Posible pérdida' : diasCalc >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
+            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-400' : diasEnEstatus >= 3 ? 'text-amber-400' : 'text-orange-400'} />
+            <span className={`text-[11px] font-bold ${diasEnEstatus >= 5 ? 'text-red-400' : diasEnEstatus >= 3 ? 'text-amber-400' : 'text-orange-400'}`}>
+              {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
           </div>
         )}
