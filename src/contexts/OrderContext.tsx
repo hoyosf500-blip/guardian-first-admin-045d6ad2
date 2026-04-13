@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { OrderData, isPendiente, isDespachado, isNovedad, isOficina } from '@/lib/orderUtils';
 import { toast } from 'sonner';
+import { useCelebration } from '@/hooks/useCelebration';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -26,6 +27,7 @@ const OrderContext = createContext<OrderState | undefined>(undefined);
 
 export function OrderProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
   const [segData, setSegData] = useState<OrderData[]>([]);
@@ -34,6 +36,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [timerStart, setTimerStart] = useState(0);
   const [loading, setLoading] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string } | null>(null);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    requestNotificationPermission();
+  }, [requestNotificationPermission]);
 
   const setAllOrders = useCallback((orders: OrderData[]) => {
     setAllOrdersState(orders);
@@ -95,11 +102,17 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     // Update local state immediately
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
-    setCounter(prev => ({
-      conf: prev.conf + (result === 'conf' ? 1 : 0),
-      canc: prev.canc + (result === 'canc' ? 1 : 0),
-      noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
-    }));
+    setCounter(prev => {
+      const next = {
+        conf: prev.conf + (result === 'conf' ? 1 : 0),
+        canc: prev.canc + (result === 'canc' ? 1 : 0),
+        noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
+      };
+      // Check milestones after update
+      const newTotal = next.conf + next.canc + next.noresp;
+      setTimeout(() => checkMilestone(newTotal), 300);
+      return next;
+    });
     setLastMark({ order, result, reason });
 
     if (!timerStart) setTimerStart(Date.now());
@@ -137,7 +150,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       action_date: today,
       action_time: now,
     });
-  }, [user, timerStart]);
+  }, [user, timerStart, checkMilestone]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
@@ -166,7 +179,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue([]);
     setSegData([]);
     setResData([]);
-  }, []);
+    resetCelebrations();
+  }, [resetCelebrations]);
 
   return (
     <OrderContext.Provider value={{
