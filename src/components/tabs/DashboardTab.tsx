@@ -5,6 +5,13 @@ import { truncate, formatDateES } from '@/lib/orderUtils';
 import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare, Download } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -131,7 +138,7 @@ export default function DashboardTab() {
       </div>
 
       {/* Top: Rate gauge + KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
+      <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
         <div className="bg-card rounded-xl border border-border p-6 flex flex-col items-center justify-center md:col-span-1">
           <div className="relative w-28 h-28 mb-2">
             <svg viewBox="0 0 120 120" className="-rotate-90 w-full h-full">
@@ -160,10 +167,10 @@ export default function DashboardTab() {
             </div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+      <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
         <div className="bg-card rounded-xl border border-border p-5">
           <h3 className="text-sm font-semibold text-foreground mb-4">Tasa de confirmación</h3>
           <div className="h-52">
@@ -202,11 +209,11 @@ export default function DashboardTab() {
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Products row */}
       {prods.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
+        <motion.div {...fadeUp(0.18)} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
           <div className="md:col-span-2 bg-card rounded-xl border border-border p-5">
             <h3 className="text-sm font-semibold text-foreground mb-4">Distribución por producto</h3>
             <div className="h-52">
@@ -260,11 +267,11 @@ export default function DashboardTab() {
               </tbody>
             </table>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Cierre */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <motion.div {...fadeUp(0.24)} className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Cierre del día</h3>
@@ -303,7 +310,7 @@ export default function DashboardTab() {
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
