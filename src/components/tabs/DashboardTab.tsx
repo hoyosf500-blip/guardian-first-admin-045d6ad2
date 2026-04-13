@@ -138,7 +138,7 @@ export default function DashboardTab() {
       </div>
 
       {/* Top: Rate gauge + KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
+      <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
         <div className="bg-card rounded-xl border border-border p-6 flex flex-col items-center justify-center md:col-span-1">
           <div className="relative w-28 h-28 mb-2">
             <svg viewBox="0 0 120 120" className="-rotate-90 w-full h-full">
@@ -167,7 +167,7 @@ export default function DashboardTab() {
             </div>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
