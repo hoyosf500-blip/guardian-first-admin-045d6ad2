@@ -182,12 +182,22 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
 
   return (
     <div className="space-y-4">
-      {/* Search bar */}
-      <div className="relative">
+      {/* Search bar + delay filter */}
+      <div className="flex gap-2">
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono, guía, ciudad..."
-          className="w-full pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
+          className="flex-1 pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
         />
+        <button onClick={() => setOnlyDelayed(!onlyDelayed)}
+          className={`inline-flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-semibold transition-all whitespace-nowrap ${
+            onlyDelayed
+              ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/25'
+              : 'bg-card border border-border text-muted-foreground hover:text-foreground hover:border-primary/30'
+          }`}>
+          <Clock size={15} />
+          <span className="hidden sm:inline">Retrasados (2d+)</span>
+          <span className="sm:hidden">2d+</span>
+        </button>
       </div>
 
       {/* Summary pills */}
