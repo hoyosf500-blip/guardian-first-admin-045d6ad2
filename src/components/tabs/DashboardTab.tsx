@@ -343,10 +343,14 @@ export default function DashboardTab() {
             <span className="font-semibold">{pendLeft}</span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-2">
           <button onClick={handleCierre} className="flex-1 py-3 rounded-lg bg-gradient-to-r from-cyan to-blue font-semibold text-primary-foreground text-sm active:scale-[0.97] transition-transform">📤 Enviar</button>
           <button onClick={copiarResumen} className="flex-1 py-3 rounded-lg bg-green/15 text-green border border-green/25 font-semibold text-sm active:scale-[0.97] transition-transform">📋 Copiar</button>
           <button onClick={enviarWA} className="flex-1 py-3 rounded-lg bg-green/15 text-green border border-green/25 font-semibold text-sm active:scale-[0.97] transition-transform">💬 WA</button>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={exportarResultadosHoy} className="flex-1 py-2.5 rounded-lg bg-cyan/10 text-cyan border border-cyan/25 font-semibold text-xs active:scale-[0.97] transition-transform">📥 CSV Hoy</button>
+          <button onClick={exportarHistorico} className="flex-1 py-2.5 rounded-lg bg-cyan/10 text-cyan border border-cyan/25 font-semibold text-xs active:scale-[0.97] transition-transform">📊 Histórico ({period}d)</button>
         </div>
       </div>
     </div>
