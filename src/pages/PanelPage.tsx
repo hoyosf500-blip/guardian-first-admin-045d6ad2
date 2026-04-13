@@ -5,6 +5,7 @@ import SeguimientoTab from '@/components/tabs/SeguimientoTab';
 import RescateTab from '@/components/tabs/RescateTab';
 import DashboardTab from '@/components/tabs/DashboardTab';
 import AdminTab from '@/components/tabs/AdminTab';
+import CounterBar from '@/components/CounterBar';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
