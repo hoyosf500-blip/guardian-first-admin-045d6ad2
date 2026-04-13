@@ -15,6 +15,8 @@ interface OrderState {
   counter: Counter;
   timerStart: number;
   loading: boolean;
+  excelLoaded: boolean;
+  setExcelLoaded: (v: boolean) => void;
   setAllOrders: (orders: OrderData[]) => void;
   buildWorkQueue: (orders: OrderData[]) => void;
   markResult: (order: OrderData, result: string, reason?: string) => Promise<void>;
