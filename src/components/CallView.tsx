@@ -28,8 +28,8 @@ export default function CallView({ items }: Props) {
     );
   }
 
-  const pColor = o.dias >= 6 ? 'text-red' : o.dias === 5 ? 'text-orange' : o.dias >= 3 ? 'text-yellow' : 'text-green';
-  const pDot = o.dias >= 6 ? 'bg-red' : o.dias === 5 ? 'bg-orange' : o.dias >= 3 ? 'bg-yellow' : 'bg-green';
+  const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
+  const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
