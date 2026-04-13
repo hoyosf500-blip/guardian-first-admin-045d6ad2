@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
-import { OrderData, isPendiente, isDespachado, isNovedad, isOficina } from '@/lib/orderUtils';
+import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 
@@ -60,7 +60,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     });
 
     setWorkQueue(dedupPendientes);
-    setSegData(orders.filter(o => isDespachado(o.estado)));
+    // Seguimiento: all non-pending orders (matching old app)
+    setSegData(orders.filter(o => {
+      const e = o.estado.toUpperCase();
+      return isConfirmado(e) || isDespachado(e) || isNovedad(e) || isOficina(e) || isDevolucion(e);
+    }));
     setResData(orders.filter(o => {
       const e = o.estado.toUpperCase();
       const diasT = o.diasConf || o.dias;
