@@ -385,7 +385,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 href={trackUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada al portapapeles'); }}
                 className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-orange/30 bg-orange px-3.5 py-2 text-[11px] font-black text-primary-foreground shadow-lg shadow-orange/30 transition-all hover:scale-[1.03] hover:shadow-xl hover:shadow-orange/40 no-underline"
               >
                 <ExternalLink size={12} /> Rastrear
