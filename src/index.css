@@ -118,3 +118,15 @@
   background: hsl(var(--muted));
   border-radius: 2px;
 }
+
+/* Celebration toast animation */
+.celebration-toast {
+  animation: celebrate 0.5s ease-out;
+  border-left: 3px solid hsl(var(--cyan)) !important;
+}
+
+@keyframes celebrate {
+  0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
