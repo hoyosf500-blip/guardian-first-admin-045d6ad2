@@ -365,17 +365,21 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
 
         {/* Guía + PROMINENT tracking button */}
         {o.guia && (
-          <div className="flex items-center gap-2 mt-2.5">
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground bg-secondary/40 rounded-lg px-2.5 py-1.5 flex-1 min-w-0">
+          <div className="mt-2.5 flex items-center gap-2">
+            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-secondary/40 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
               <Tag size={9} className="text-primary/60" />
               <span className="truncate">{o.guia}</span>
               <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-                className="hover:text-foreground transition-colors flex-shrink-0"><Copy size={9} /></button>
+                className="flex-shrink-0 transition-colors hover:text-foreground"><Copy size={9} /></button>
             </div>
             {trackUrl && (
-              <a href={trackUrl} target="_blank" rel="noopener noreferrer"
+              <a
+                href={trackUrl}
+                target="_blank"
+                rel="noopener noreferrer"
                 onClick={e => e.stopPropagation()}
-                className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-[11px] font-bold hover:bg-primary/90 shadow-md shadow-primary/25 transition-all no-underline">
+                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-orange/30 bg-orange px-3.5 py-2 text-[11px] font-black text-primary-foreground shadow-lg shadow-orange/30 transition-all hover:scale-[1.03] hover:shadow-xl hover:shadow-orange/40 no-underline"
+              >
                 <ExternalLink size={12} /> Rastrear
               </a>
             )}
