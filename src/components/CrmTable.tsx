@@ -309,7 +309,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             <div className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">{o.externalId}</div>
           </div>
           <span className={`${diasBg} text-white text-[11px] font-black px-2.5 py-1 rounded-lg shadow-sm flex-shrink-0`}>
-            D{diasCalc}
+            D{diasEnEstatus}
           </span>
         </div>
 
@@ -361,13 +361,13 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Delay warning */}
         {isDelayed && (
           <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 ${
-            diasCalc >= 5 ? 'bg-red-500/10 border border-red-500/20' :
-            diasCalc >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
+            diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
+            diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
             'bg-orange-400/10 border border-orange-400/20'
           }`}>
-            <Clock size={12} className={diasCalc >= 5 ? 'text-red-400' : diasCalc >= 3 ? 'text-amber-400' : 'text-orange-400'} />
-            <span className={`text-[11px] font-bold ${diasCalc >= 5 ? 'text-red-400' : diasCalc >= 3 ? 'text-amber-400' : 'text-orange-400'}`}>
-              {diasCalc}d sin movimiento — {diasCalc >= 5 ? 'Posible pérdida' : diasCalc >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
+            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-400' : diasEnEstatus >= 3 ? 'text-amber-400' : 'text-orange-400'} />
+            <span className={`text-[11px] font-bold ${diasEnEstatus >= 5 ? 'text-red-400' : diasEnEstatus >= 3 ? 'text-amber-400' : 'text-orange-400'}`}>
+              {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
           </div>
         )}
