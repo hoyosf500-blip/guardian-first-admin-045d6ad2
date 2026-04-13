@@ -548,59 +548,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
         ))}
       </div>
 
-      {/* Carrier stats & toxic cities (collapsible) */}
-      {carrierStats.length > 0 && (
-        <details className="bg-card rounded-xl border border-border">
-          <summary className="px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1.5">
-            <Truck size={12} /> Rendimiento por transportadora
-          </summary>
-          <div className="overflow-x-auto border-t border-border">
-            <table className="w-full text-xs">
-              <thead><tr className="text-[10px] text-muted-foreground bg-secondary/30">
-                <th className="text-left px-3 py-2">Carrier</th><th className="text-right px-3 py-2">Total</th>
-                <th className="text-right px-3 py-2">Entregados</th><th className="text-right px-3 py-2">Devol</th>
-                <th className="text-right px-3 py-2">%Devol</th><th className="text-right px-3 py-2">%Efect</th>
-              </tr></thead>
-              <tbody>{carrierStats.map(c => (
-                <tr key={c.carrier} className="border-b border-border/30">
-                  <td className="px-3 py-2 font-semibold">{c.carrier}</td>
-                  <td className="px-3 py-2 text-right">{c.total}</td>
-                  <td className="px-3 py-2 text-right text-green-400">{c.entregado}</td>
-                  <td className="px-3 py-2 text-right text-red-400">{c.devol}</td>
-                  <td className={`px-3 py-2 text-right font-bold ${c.devolRate > 20 ? 'text-red-400' : c.devolRate > 15 ? 'text-orange-400' : 'text-green-400'}`}>{c.devolRate}%</td>
-                  <td className={`px-3 py-2 text-right font-bold ${c.efectividad >= 55 ? 'text-green-400' : c.efectividad >= 40 ? 'text-orange-400' : 'text-red-400'}`}>{c.efectividad}%</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </details>
-      )}
-
-      {toxicCities.length > 0 && (
-        <details className="bg-card rounded-xl border border-border">
-          <summary className="px-4 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground flex items-center gap-1.5">
-            <AlertCircle size={12} /> Ciudades toxicas ({toxicCities.length} con &gt;25% problema)
-          </summary>
-          <div className="overflow-x-auto border-t border-border">
-            <table className="w-full text-xs">
-              <thead><tr className="text-[10px] text-muted-foreground bg-secondary/30">
-                <th className="text-left px-3 py-2">Ciudad</th><th className="text-right px-3 py-2">Total</th>
-                <th className="text-right px-3 py-2">Devol</th><th className="text-right px-3 py-2">Oficina</th>
-                <th className="text-right px-3 py-2">% Riesgo</th>
-              </tr></thead>
-              <tbody>{toxicCities.map(c => (
-                <tr key={c.city} className="border-b border-border/30 cursor-pointer hover:bg-secondary/20" onClick={() => setSearch(c.city)}>
-                  <td className="px-3 py-2 font-semibold">{c.city}</td>
-                  <td className="px-3 py-2 text-right">{c.total}</td>
-                  <td className="px-3 py-2 text-right text-red-400">{c.devol}</td>
-                  <td className="px-3 py-2 text-right text-purple-400">{c.oficina}</td>
-                  <td className={`px-3 py-2 text-right font-bold ${c.risk >= 50 ? 'text-red-400' : c.risk >= 30 ? 'text-orange-400' : 'text-yellow-400'}`}>{c.risk}%</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </details>
-      )}
 
       {/* Grouped tables */}
       {STATUS_GROUPS.filter(g => grouped[g.key].length > 0).map(group => {
