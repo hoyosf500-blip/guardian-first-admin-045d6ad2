@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { Package, Tag, AlertTriangle } from 'lucide-react';
 
 export default function SeguimientoTab() {
   const { segData } = useOrders();
@@ -22,7 +23,7 @@ export default function SeguimientoTab() {
         action_time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
       });
     }
-    toast.success(`✅ ${action}`);
+    toast.success(action);
   };
 
   const filtered = segData.filter(o => {
@@ -48,7 +49,6 @@ export default function SeguimientoTab() {
     <div className="max-w-5xl mx-auto">
       <p className="text-sm text-muted-foreground mb-5">Pedidos despachados en tránsito</p>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {[
           { label: 'Pendientes', value: pendCount, color: 'text-blue' },
@@ -63,7 +63,6 @@ export default function SeguimientoTab() {
         ))}
       </div>
 
-      {/* Filters + Search */}
       <div className="bg-card rounded-xl border border-border p-4 mb-4">
         <div className="flex gap-2 flex-wrap mb-3">
           {[
@@ -87,10 +86,9 @@ export default function SeguimientoTab() {
         />
       </div>
 
-      {/* List */}
       {filtered.length === 0 ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center">
-          <div className="text-4xl mb-3">📦</div>
+          <Package size={40} className="mx-auto mb-3 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No hay pedidos en este filtro</p>
         </div>
       ) : (
@@ -114,8 +112,16 @@ export default function SeguimientoTab() {
                   <tr key={o.phone + o.idx} className={`border-b border-border last:border-0 hover:bg-secondary/30 transition-colors ${managed ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3">
                       <div className="font-medium text-foreground">{o.nombre}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{o.guia ? `🏷️ ${o.guia.slice(-8)}` : ''} {o.transportadora || ''}</div>
-                      {o.novedad && !o.novedadSol && <div className="text-xs text-orange mt-0.5">⚠️ {truncate(o.novedad, 40)}</div>}
+                      {o.guia && (
+                        <div className="text-xs text-muted-foreground mt-0.5 inline-flex items-center gap-1">
+                          <Tag size={10} /> {o.guia.slice(-8)} {o.transportadora || ''}
+                        </div>
+                      )}
+                      {o.novedad && !o.novedadSol && (
+                        <div className="text-xs text-orange mt-0.5 inline-flex items-center gap-1">
+                          <AlertTriangle size={10} /> {truncate(o.novedad, 40)}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{o.ciudad || '—'}</td>
                     <td className="px-4 py-3 hidden md:table-cell">

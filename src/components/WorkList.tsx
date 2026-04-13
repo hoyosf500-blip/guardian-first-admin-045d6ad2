@@ -1,4 +1,5 @@
 import { OrderData, truncate } from '@/lib/orderUtils';
+import { CheckCircle2, XCircle, PhoneOff, MapPin, Package } from 'lucide-react';
 
 interface Props {
   items: OrderData[];
@@ -9,7 +10,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
   if (!items.length) {
     return (
       <div className="text-center py-10 text-muted-foreground">
-        <div className="text-5xl mb-3">✅</div>
+        <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
         <p className="text-sm">No hay pedidos en este filtro</p>
       </div>
     );
@@ -30,19 +31,19 @@ export default function WorkList({ items, onOpenCall }: Props) {
             <div className={`w-1.5 h-9 rounded-sm flex-shrink-0 ${pClass}`} />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold truncate">{o.nombre}</div>
-              <div className="text-[11px] text-muted-foreground flex gap-2 mt-0.5">
-                <span>📍 {o.ciudad || '—'}</span>
-                <span>📦 {truncate(o.producto || '—', 15)}</span>
+              <div className="text-[11px] text-muted-foreground flex gap-2 mt-0.5 items-center">
+                <span className="inline-flex items-center gap-0.5"><MapPin size={10} /> {o.ciudad || '—'}</span>
+                <span className="inline-flex items-center gap-0.5"><Package size={10} /> {truncate(o.producto || '—', 15)}</span>
               </div>
             </div>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-bold">D{o.dias}</span>
             {o.result && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold inline-flex items-center ${
                 o.result === 'conf' ? 'bg-green/15 text-green' :
                 o.result === 'canc' ? 'bg-red/15 text-red' :
                 'bg-muted text-muted-foreground'
               }`}>
-                {o.result === 'conf' ? '✅' : o.result === 'canc' ? '❌' : '📵'}
+                {o.result === 'conf' ? <CheckCircle2 size={12} /> : o.result === 'canc' ? <XCircle size={12} /> : <PhoneOff size={12} />}
               </span>
             )}
           </div>

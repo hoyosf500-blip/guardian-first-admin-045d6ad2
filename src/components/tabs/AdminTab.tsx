@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
 
 interface Profile { user_id: string; display_name: string; roles: string[]; }
 interface DayReport { operator_name: string; report_date: string; data: Record<string, number>; }
@@ -47,7 +48,6 @@ export default function AdminTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Operators */}
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
@@ -77,7 +77,6 @@ export default function AdminTab() {
             </div>
           </div>
 
-          {/* Reports */}
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold text-foreground">Cierres recientes</h3>
@@ -95,8 +94,10 @@ export default function AdminTab() {
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-bold font-mono text-foreground">{r.data.tasa_confirmacion ?? 0}%</div>
-                      <div className="text-[10px] text-muted-foreground">
-                        ✅{r.data.confirmados ?? 0} ❌{r.data.cancelados ?? 0} 📵{r.data.no_respondio ?? 0}
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 justify-end">
+                        <span className="inline-flex items-center gap-0.5"><CheckCircle2 size={10} className="text-green" />{r.data.confirmados ?? 0}</span>
+                        <span className="inline-flex items-center gap-0.5"><XCircle size={10} className="text-red" />{r.data.cancelados ?? 0}</span>
+                        <span className="inline-flex items-center gap-0.5"><PhoneOff size={10} />{r.data.no_respondio ?? 0}</span>
                       </div>
                     </div>
                   </div>

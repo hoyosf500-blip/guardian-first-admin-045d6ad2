@@ -40,11 +40,11 @@ export const CARRIER_TRACK: Record<string, string> = {
 };
 
 export const SEG_ACTIONS = [
-  '📞 Llamé cliente', '✅ Confirmó recepción', '📍 Verificó dirección',
-  '📱 WhatsApp enviado', '🔄 Reenvío solicitado'
+  'Llamé cliente', 'Confirmó recepción', 'Verificó dirección',
+  'WhatsApp enviado', 'Reenvío solicitado'
 ];
 
 export const RES_ACTIONS = [
-  '📞 Llamé cliente', '🏢 Reclamé transportadora', '↩️ Solicité devolución',
-  '🔄 Reenvío', '✅ Resuelto'
+  'Llamé cliente', 'Reclamé transportadora', 'Solicité devolución',
+  'Reenvío', 'Resuelto'
 ];

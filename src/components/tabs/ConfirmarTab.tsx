@@ -10,6 +10,7 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
+import { AlertTriangle, List, Phone } from 'lucide-react';
 
 interface Props {
   profile: { display_name: string } | null;
@@ -28,7 +29,7 @@ export default function ConfirmarTab({ profile }: Props) {
   const today = new Date().toISOString().split('T')[0];
 
   const handleFile = useCallback(async (file: File) => {
-    toast.info('⏳ Procesando Excel...');
+    toast.info('Procesando Excel...');
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -56,7 +57,7 @@ export default function ConfirmarTab({ profile }: Props) {
         setAllOrders(orders);
         buildWorkQueue(orders);
         setExcelLoaded(true);
-        toast.success(`✅ ${orders.length} pedidos cargados`);
+        toast.success(`${orders.length} pedidos cargados`);
       } catch (err: any) { toast.error('Error leyendo Excel: ' + err.message); }
     };
     reader.readAsArrayBuffer(file);
@@ -80,7 +81,6 @@ export default function ConfirmarTab({ profile }: Props) {
 
   return (
     <div className="max-w-5xl mx-auto">
-      {/* Summary bar */}
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-muted-foreground">{formatDateES(today)}</p>
         {excelLoaded && (
@@ -99,7 +99,6 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {excelLoaded && (
         <>
-          {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             {[
               { label: 'Por confirmar', value: pending, color: 'text-blue' },
@@ -114,7 +113,6 @@ export default function ConfirmarTab({ profile }: Props) {
             ))}
           </div>
 
-          {/* Priority badges */}
           {(() => {
             const d6 = workQueue.filter(o => o.dias >= 6 && !o.result).length;
             const d5 = workQueue.filter(o => o.dias === 5 && !o.result).length;
@@ -122,25 +120,39 @@ export default function ConfirmarTab({ profile }: Props) {
             if (!d6 && !d5 && !d34) return null;
             return (
               <div className="flex gap-2 mb-4 flex-wrap">
-                {d6 > 0 && <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red/10 text-red border border-red/15">🔴 {d6} cancelar (D6+)</span>}
-                {d5 > 0 && <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange/10 text-orange border border-orange/15">🟠 {d5} último (D5)</span>}
-                {d34 > 0 && <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue/10 text-blue border border-blue/15">🔵 {d34} urgente (D3-4)</span>}
+                {d6 > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red/10 text-red border border-red/15">
+                    <span className="w-2 h-2 rounded-full bg-red" /> {d6} cancelar (D6+)
+                  </span>
+                )}
+                {d5 > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-orange/10 text-orange border border-orange/15">
+                    <span className="w-2 h-2 rounded-full bg-orange" /> {d5} último (D5)
+                  </span>
+                )}
+                {d34 > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue/10 text-blue border border-blue/15">
+                    <span className="w-2 h-2 rounded-full bg-blue" /> {d34} urgente (D3-4)
+                  </span>
+                )}
               </div>
             );
           })()}
 
-          {/* Controls */}
           <div className="bg-card rounded-xl border border-border p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
             </div>
             <div className="flex gap-2">
-              {(['list', 'call'] as const).map(v => (
-                <button key={v} onClick={() => setView(v)}
-                  className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
-                    view === v ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'
+              {([
+                { key: 'list' as const, icon: List, label: 'Lista' },
+                { key: 'call' as const, icon: Phone, label: 'Llamada' },
+              ]).map(v => (
+                <button key={v.key} onClick={() => setView(v.key)}
+                  className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+                    view === v.key ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'
                   }`}>
-                  {v === 'list' ? '📋 Lista' : '📞 Llamada'}
+                  <v.icon size={14} /> {v.label}
                 </button>
               ))}
             </div>

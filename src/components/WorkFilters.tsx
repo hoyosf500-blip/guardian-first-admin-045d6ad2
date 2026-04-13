@@ -1,5 +1,6 @@
 import { OrderData } from '@/lib/orderUtils';
 import { useMemo } from 'react';
+import { Search, Clock, CheckCircle2, XCircle, PhoneOff, List } from 'lucide-react';
 
 interface Props {
   workQueue: OrderData[];
@@ -26,11 +27,11 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
   }, [workQueue]);
 
   const filters = [
-    { id: 'pending', label: `⏳ Pendientes (${counts.pendCount})` },
-    ...(counts.confCount ? [{ id: 'conf', label: `✅ Confirmados (${counts.confCount})` }] : []),
-    ...(counts.cancCount ? [{ id: 'canc', label: `❌ Cancelados (${counts.cancCount})` }] : []),
-    ...(counts.nrCount ? [{ id: 'noresp', label: `📵 No respondió (${counts.nrCount})` }] : []),
-    { id: 'all', label: `📋 Todos (${workQueue.length})` },
+    { id: 'pending', label: `Pendientes (${counts.pendCount})` },
+    ...(counts.confCount ? [{ id: 'conf', label: `Confirmados (${counts.confCount})` }] : []),
+    ...(counts.cancCount ? [{ id: 'canc', label: `Cancelados (${counts.cancCount})` }] : []),
+    ...(counts.nrCount ? [{ id: 'noresp', label: `No respondió (${counts.nrCount})` }] : []),
+    { id: 'all', label: `Todos (${workQueue.length})` },
     ...counts.products.map(p => {
       const c = workQueue.filter(o => o.producto === p && !o.result).length;
       return c ? { id: `prod_${p}`, label: `${p.slice(0, 16)} (${c})` } : null;
@@ -49,7 +50,7 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
       </div>
 
       <div className="relative mb-3">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm">🔍</span>
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           value={search}

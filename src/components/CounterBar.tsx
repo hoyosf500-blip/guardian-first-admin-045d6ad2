@@ -1,4 +1,5 @@
 import { useOrders } from '@/contexts/OrderContext';
+import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
 
 export default function CounterBar() {
   const { workQueue, counter } = useOrders();
@@ -15,15 +16,15 @@ export default function CounterBar() {
     <div className="bg-card border border-border rounded-xl p-3 mb-4 flex items-center gap-3">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1 text-sm">
-          <span className="text-green text-xs">✅</span>
+          <CheckCircle2 size={14} className="text-green" />
           <span className="font-mono text-sm font-bold">{counter.conf}</span>
         </div>
         <div className="flex items-center gap-1 text-sm">
-          <span className="text-red text-xs">❌</span>
+          <XCircle size={14} className="text-red" />
           <span className="font-mono text-sm font-bold">{counter.canc}</span>
         </div>
         <div className="flex items-center gap-1 text-sm">
-          <span className="text-muted-foreground text-xs">📵</span>
+          <PhoneOff size={14} className="text-muted-foreground" />
           <span className="font-mono text-sm font-bold">{counter.noresp}</span>
         </div>
       </div>
