@@ -102,18 +102,16 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     };
 
     fetchAllTouchpoints().then(allTp => {
-        if (tp) {
-          const moduleTp = tp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
-          setTouchpoints(moduleTp);
-          const managed: Record<string, string> = {};
-          const today = new Date().toISOString().split('T')[0];
-          moduleTp.forEach(t => {
-            if (t.action_date === today && !managed[t.phone]) {
-              managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
-            }
-          });
-          setResults(managed);
+      const moduleTp = allTp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
+      setTouchpoints(moduleTp);
+      const managed: Record<string, string> = {};
+      const today = new Date().toISOString().split('T')[0];
+      moduleTp.forEach(t => {
+        if (t.action_date === today && !managed[t.phone]) {
+          managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
         }
+      });
+      setResults(managed);
       });
 
     supabase.from('profiles').select('user_id, display_name').then(({ data: p }) => {
