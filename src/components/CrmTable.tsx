@@ -172,7 +172,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       );
     }
     if (onlyDelayed) {
-      list = list.filter(order => getOrderStatusAgeDays(order) >= 2);
+      list = list.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2);
     }
     return list;
   }, [data, search, onlyDelayed]);
