@@ -77,29 +77,109 @@ export function calcDias(dateStr: string): number {
   return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
 }
 
-/** Business days (Mon-Fri) between a date and today. Carriers don't work weekends. */
+/**
+ * Colombian public holidays (Ley Emiliani + fixed).
+ * Returns holidays for a given year as "YYYY-MM-DD" strings.
+ */
+function getColombianHolidays(year: number): Set<string> {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // Easter calculation (Anonymous Gregorian algorithm)
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(Date.UTC(year, month, day));
+
+  const addDays = (base: Date, n: number) => {
+    const d = new Date(base.getTime());
+    d.setUTCDate(d.getUTCDate() + n);
+    return d;
+  };
+
+  // Move to next Monday (Ley Emiliani)
+  const nextMonday = (d: Date) => {
+    const dow = d.getUTCDay();
+    if (dow === 1) return d;
+    const diff = dow === 0 ? 1 : (8 - dow);
+    return addDays(d, diff);
+  };
+
+  const holidays = new Set<string>();
+
+  // Fixed holidays
+  holidays.add(`${year}-01-01`); // Año Nuevo
+  holidays.add(`${year}-05-01`); // Día del Trabajo
+  holidays.add(`${year}-07-20`); // Grito de Independencia
+  holidays.add(`${year}-08-07`); // Batalla de Boyacá
+  holidays.add(`${year}-12-08`); // Inmaculada Concepción
+  holidays.add(`${year}-12-25`); // Navidad
+
+  // Ley Emiliani (moved to Monday)
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 0, 6)))));   // Reyes Magos
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 2, 19)))));  // San José
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 5, 29)))));  // San Pedro y San Pablo
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 7, 15)))));  // Asunción
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 9, 12)))));  // Día de la Raza
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 10, 1)))));  // Todos los Santos
+  holidays.add(fmt(nextMonday(new Date(Date.UTC(year, 10, 11))))); // Independencia de Cartagena
+
+  // Easter-based
+  holidays.add(fmt(addDays(easter, -3)));  // Jueves Santo
+  holidays.add(fmt(addDays(easter, -2)));  // Viernes Santo
+  holidays.add(fmt(nextMonday(addDays(easter, 43))));  // Ascensión
+  holidays.add(fmt(nextMonday(addDays(easter, 64))));  // Corpus Christi
+  holidays.add(fmt(nextMonday(addDays(easter, 71))));  // Sagrado Corazón
+
+  return holidays;
+}
+
+/** Business days (Mon-Fri, excluding Colombian holidays) between a date and today. */
 export function calcBusinessDays(dateStr: string): number {
   const start = parseDate(dateStr);
   if (!start) return 0;
-  
+
   const now = new Date();
   const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  
+
   if (start >= today) return 0;
-  
+
+  // Collect holidays for relevant years
+  const startYear = start.getUTCFullYear();
+  const endYear = today.getUTCFullYear();
+  const allHolidays = new Set<string>();
+  for (let y = startYear; y <= endYear; y++) {
+    getColombianHolidays(y).forEach((h) => allHolidays.add(h));
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+
   let count = 0;
   const current = new Date(start.getTime());
-  // Move to next day (we count days AFTER the last movement)
   current.setUTCDate(current.getUTCDate() + 1);
-  
+
   while (current <= today) {
-    const dow = current.getUTCDay(); // 0=Sun, 6=Sat
+    const dow = current.getUTCDay();
     if (dow !== 0 && dow !== 6) {
-      count++;
+      const key = `${current.getUTCFullYear()}-${pad(current.getUTCMonth() + 1)}-${pad(current.getUTCDate())}`;
+      if (!allHolidays.has(key)) {
+        count++;
+      }
     }
     current.setUTCDate(current.getUTCDate() + 1);
   }
-  
+
   return count;
 }
 
