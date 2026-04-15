@@ -124,11 +124,21 @@ export default function ConfirmarTab({ profile }: Props) {
         )}
       </div>
 
-      {!excelLoaded && !aperturaCompleted && (
+      {autoLoading && (
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <RefreshCw size={32} className="text-primary animate-spin" />
+          <div className="text-center">
+            <p className="text-sm font-semibold text-foreground">Cargando pedidos...</p>
+            <p className="text-xs text-muted-foreground mt-1">Recuperando datos de la base de datos</p>
+          </div>
+        </div>
+      )}
+
+      {!autoLoading && !excelLoaded && !aperturaCompleted && (
         <AperturaWizard onComplete={() => setAperturaCompleted(true)} />
       )}
 
-      {!excelLoaded && (
+      {!autoLoading && !excelLoaded && (
         <div className="space-y-3">
           {/* Dropi Sync Button */}
           <button
