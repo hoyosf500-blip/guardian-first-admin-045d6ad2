@@ -146,13 +146,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
     if (error) {
       toast.error('Error guardando resultado');
-      // Revert
       setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
       setCounter(prev => ({
         conf: prev.conf - (result === 'conf' ? 1 : 0),
         canc: prev.canc - (result === 'canc' ? 1 : 0),
         noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
       }));
+    } else if (insertedResult?.id) {
+      setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
     }
 
     // Save touchpoint
@@ -167,7 +168,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
-    const { order, result } = lastMark;
+    const { order, result, resultId } = lastMark;
 
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
     setCounter(prev => ({
@@ -176,12 +177,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
     }));
 
-    const today = new Date().toISOString().split('T')[0];
-    await supabase.from('order_results')
-      .delete()
-      .eq('phone', order.phone)
-      .eq('operator_id', user.id)
-      .eq('result_date', today);
+    if (resultId) {
+      await supabase.from('order_results').delete().eq('id', resultId);
+    }
 
     setLastMark(null);
     toast.success('↩️ Deshecho');
