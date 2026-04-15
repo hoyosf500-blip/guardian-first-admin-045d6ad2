@@ -172,6 +172,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [search, setSearch] = useState('');
   const [onlyDelayed, setOnlyDelayed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [showManaged, setShowManaged] = useState(false);
 
   useEffect(() => {
     if (!data.length) return;
@@ -243,10 +244,15 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
+  const managedCount = useMemo(() => data.filter(o => results[o.phone]).length, [data, results]);
   const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
 
   const filtered = useMemo(() => {
     let list = data;
+    // Hide managed orders unless showManaged is on
+    if (!showManaged) {
+      list = list.filter(o => !results[o.phone]);
+    }
     if (search) {
       const s = search.toLowerCase();
       list = list.filter(o =>
@@ -261,7 +267,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -325,6 +331,24 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             {delayedCount}
           </span>
         </button>
+        {managedCount > 0 && (
+          <button
+            type="button"
+            aria-pressed={showManaged}
+            onClick={() => setShowManaged(prev => !prev)}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+              showManaged
+                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
+                : 'border-border bg-card text-foreground hover:border-emerald-400/40 hover:text-emerald-500'
+            }`}
+          >
+            <CheckCircle size={15} />
+            <span>Gestionados</span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
+              {managedCount}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Status filter pills */}

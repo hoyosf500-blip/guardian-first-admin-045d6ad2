@@ -81,12 +81,42 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (user) {
       const today = new Date().toISOString().split('T')[0];
       supabase.from('order_results')
-        .select('phone, result, reason')
+        .select('phone, result, reason, result_time, created_at')
         .eq('operator_id', user.id)
         .eq('result_date', today)
         .then(({ data }) => {
           if (data) {
-            const resultMap = new Map(data.map(r => [r.phone, { result: r.result, reason: r.reason || '' }]));
+            const now = Date.now();
+            // Group results by phone
+            const phoneResults = new Map<string, typeof data>();
+            data.forEach(r => {
+              if (!phoneResults.has(r.phone)) phoneResults.set(r.phone, []);
+              phoneResults.get(r.phone)!.push(r);
+            });
+
+            const resultMap = new Map<string, { result: string; reason: string }>();
+            data.forEach(r => {
+              // For noresp: check if 3+ hours passed AND fewer than 3 attempts
+              if (r.result === 'noresp') {
+                const attempts = (phoneResults.get(r.phone) || []).filter(x => x.result === 'noresp').length;
+                if (attempts >= 3) {
+                  // Max 3 attempts reached, keep as managed
+                  resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                } else {
+                  // Check time elapsed
+                  const createdAt = new Date(r.created_at).getTime();
+                  const hoursElapsed = (now - createdAt) / (1000 * 60 * 60);
+                  if (hoursElapsed < 3) {
+                    // Less than 3h, keep as managed
+                    resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                  }
+                  // Otherwise: don't set in resultMap — order reappears as pending
+                }
+              } else {
+                resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+              }
+            });
+
             const updated = dedupPendientes.map(o => {
               const r = resultMap.get(o.phone);
               return r ? { ...o, result: r.result, reason: r.reason } : o;
