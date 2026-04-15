@@ -384,7 +384,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
               );
             })}
           </div>
-          </div>
         </div>
         </div>
       )}
