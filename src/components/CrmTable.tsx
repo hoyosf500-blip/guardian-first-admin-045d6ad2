@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
-  Package, Truck, MapPin, RotateCcw, Layers,
+  Package, Truck, MapPin, RotateCcw, Layers, DollarSign,
   Send, Tag, CheckCircle, ChevronDown, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -98,10 +98,28 @@ const STATUS_COLUMNS: StatusColumn[] = [
     match: (e) => e === 'RECHAZADO'
   },
   {
+    key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />,
+    color: 'teal', bgGradient: 'from-teal-500 to-emerald-500',
+    pillBg: 'bg-teal-500/10 border-teal-500/20 hover:bg-teal-500/20', pillText: 'text-teal-600 dark:text-teal-400',
+    match: (e) => e === 'NOVEDAD SOLUCIONADA'
+  },
+  {
+    key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />,
+    color: 'pink', bgGradient: 'from-pink-500 to-rose-500',
+    pillBg: 'bg-pink-500/10 border-pink-500/20 hover:bg-pink-500/20', pillText: 'text-pink-600 dark:text-pink-400',
+    match: (e) => e === 'DEVOLUCION EN TRANSITO'
+  },
+  {
     key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />,
     color: 'rose', bgGradient: 'from-rose-600 to-red-600',
     pillBg: 'bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20', pillText: 'text-rose-600 dark:text-rose-400',
-    match: (e) => e.includes('DEVOL')
+    match: (e) => e === 'DEVOLUCION'
+  },
+  {
+    key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />,
+    color: 'violet', bgGradient: 'from-violet-500 to-purple-600',
+    pillBg: 'bg-violet-500/10 border-violet-500/20 hover:bg-violet-500/20', pillText: 'text-violet-600 dark:text-violet-400',
+    match: (e) => e.includes('INDEMNIZADA')
   },
   {
     key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />,

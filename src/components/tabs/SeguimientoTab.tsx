@@ -31,9 +31,12 @@ function classifyEstado(estado: string) {
   if (['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e)) return 'transito';
   if (['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e)) return 'reparto';
   if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA') return 'novedad';
+  if (e === 'NOVEDAD SOLUCIONADA') return 'novedad_sol';
   if (e.includes('OFICINA') || e.includes('RECLAME')) return 'oficina';
   if (e === 'RECHAZADO') return 'rechazado';
+  if (e === 'DEVOLUCION EN TRANSITO') return 'devolucion_transito';
   if (e.includes('DEVOL')) return 'devolucion';
+  if (e.includes('INDEMNIZADA')) return 'indemnizada';
   if (e === 'ENTREGADO') return 'entregado';
   if (e === 'CANCELADO') return 'cancelado';
   return 'otros';
@@ -72,7 +75,8 @@ export default function SeguimientoTab() {
   const stats = useMemo(() => {
     const s = {
       procesamiento: 0, guia: 0, bodega_trans: 0, transito: 0, reparto: 0,
-      novedad: 0, oficina: 0, rechazado: 0, devolucion: 0,
+      novedad: 0, novedad_sol: 0, oficina: 0, rechazado: 0,
+      devolucion_transito: 0, devolucion: 0, indemnizada: 0,
       entregado: 0, cancelado: 0, otros: 0,
       total: segData.length, valorTotal: 0
     };
@@ -91,9 +95,12 @@ export default function SeguimientoTab() {
     { label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, gradient: 'from-orange-500 to-amber-500' },
     { label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, gradient: 'from-amber-500 to-yellow-500' },
     { label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, gradient: 'from-red-500 to-rose-500' },
+    { label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, gradient: 'from-teal-500 to-emerald-500' },
     { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, gradient: 'from-fuchsia-500 to-purple-600' },
     { label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, gradient: 'from-yellow-600 to-orange-600' },
+    { label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, gradient: 'from-pink-500 to-rose-500' },
     { label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, gradient: 'from-rose-600 to-red-600' },
+    { label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, gradient: 'from-violet-500 to-purple-600' },
     { label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, gradient: 'from-emerald-500 to-green-500' },
     { label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, gradient: 'from-slate-500 to-slate-600' },
   ];
@@ -160,7 +167,7 @@ export default function SeguimientoTab() {
         </div>
 
         {/* Stat cards row */}
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
           {statCards.filter(c => c.value > 0).map((card, i) => (
             <motion.div
               key={card.label}

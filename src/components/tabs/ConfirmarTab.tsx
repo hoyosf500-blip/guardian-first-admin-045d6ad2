@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { parseExcelToOrders, formatDateES, OrderData } from '@/lib/orderUtils';
+import { parseExcelToOrders, formatDateES, OrderData, parseDate } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import ExcelUploader from '@/components/ExcelUploader';
@@ -10,7 +10,7 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload } from 'lucide-react';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, Calendar } from 'lucide-react';
 
 function dbToOrderData(o: any, idx: number): OrderData {
   return {
@@ -43,6 +43,8 @@ export default function ConfirmarTab({ profile }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const today = new Date().toISOString().split('T')[0];
 
   // Auto-load orders from DB on mount if not already loaded
@@ -102,6 +104,14 @@ export default function ConfirmarTab({ profile }: Props) {
     if (filter === 'canc' && o.result !== 'canc') return false;
     if (filter === 'noresp' && o.result !== 'noresp') return false;
     if (filter.startsWith('prod_') && (o.producto !== filter.slice(5) || o.result)) return false;
+    // Date filter
+    if (dateFrom || dateTo) {
+      const orderDate = parseDate(o.fecha);
+      if (!orderDate) return false;
+      const orderDateStr = orderDate.toISOString().split('T')[0];
+      if (dateFrom && orderDateStr < dateFrom) return false;
+      if (dateTo && orderDateStr > dateTo) return false;
+    }
     if (search) {
       const s = search.toLowerCase();
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
@@ -237,6 +247,33 @@ export default function ConfirmarTab({ profile }: Props) {
           <div className="bg-card rounded-xl border border-border p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
+              {/* Date filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar size={14} className="text-muted-foreground" />
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-xs text-foreground"
+                  placeholder="Desde"
+                />
+                <span className="text-xs text-muted-foreground">a</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-xs text-foreground"
+                  placeholder="Hasta"
+                />
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setDateFrom(''); setDateTo(''); }}
+                    className="text-[10px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               {([
