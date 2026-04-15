@@ -32,6 +32,23 @@ export interface OrderData {
   assignedTo?: string;
 }
 
+/** Convert a raw DB row into an OrderData object */
+export function dbToOrderData(o: any, idx: number): OrderData {
+  return {
+    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id,
+    nombre: o.nombre, phone: o.phone, ciudad: o.ciudad || '',
+    producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
+    fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,
+    valor: Number(o.valor) || 0, flete: Number(o.flete) || 0,
+    costoProd: Number(o.costo_prod) || 0, costoDev: Number(o.costo_dev) || 0,
+    cantidad: o.cantidad || 1, direccion: o.direccion || '',
+    novedad: o.novedad || '', guia: o.guia || '',
+    transportadora: o.transportadora || '', tags: o.tags || '',
+    departamento: o.departamento || '', tienda: o.tienda || '',
+    novedadSol: o.novedad_sol || false,
+  };
+}
+
 /** Parse a date string and return the Date object (UTC), or null */
 export function parseDate(dateStr: string): Date | null {
   if (!dateStr || dateStr === 'undefined') return null;
