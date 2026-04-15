@@ -220,7 +220,7 @@ export default function DashboardTab() {
     return 'Buenas noches';
   })();
 
-  const hasData = total > 0 || allOrders.length > 0;
+  const hasData = total > 0 || totalOrders > 0;
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -317,7 +317,7 @@ export default function DashboardTab() {
               { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/10', iconColor: 'text-green', spark: sparkData.conf, sparkColor: 'hsl(var(--green))' },
               { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/10', iconColor: 'text-red', spark: sparkData.canc, sparkColor: 'hsl(var(--red))' },
               { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-muted-foreground', iconBg: 'bg-secondary', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
-              { icon: Package, label: 'Total pedidos', value: allOrders.length, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/10', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${pendLeft} pendientes` },
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/10', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k, i) => {
               const Icon = k.icon;
               return (
