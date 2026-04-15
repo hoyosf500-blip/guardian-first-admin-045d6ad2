@@ -235,80 +235,74 @@ export default function ConfirmarTab({ profile }: Props) {
             );
           })()}
 
-          <div className="bg-card rounded-xl border border-border p-4 mb-4">
-            <div className="flex items-center justify-between mb-3">
-              <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
-              {/* Date filter */}
+          <div className="bg-card rounded-xl border border-border p-4 mb-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" size="sm" className={cn(
-                      "h-8 gap-1.5 text-xs font-normal",
+                      "h-7 gap-1.5 text-[11px] font-normal rounded-lg",
                       !dateFrom && "text-muted-foreground"
                     )}>
-                      <CalendarIcon size={13} />
-                      {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM yyyy', { locale: es }) : 'Desde'}
+                      <CalendarIcon size={12} />
+                      {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Desde'}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
+                  <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
                       selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
                       onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
                       initialFocus
-                      className={cn("p-3 pointer-events-auto")}
+                      className="p-3 pointer-events-auto"
                     />
                   </PopoverContent>
                 </Popover>
-
-                <span className="text-xs text-muted-foreground">—</span>
-
+                <span className="text-[10px] text-muted-foreground/50">—</span>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="outline" size="sm" className={cn(
-                      "h-8 gap-1.5 text-xs font-normal",
+                      "h-7 gap-1.5 text-[11px] font-normal rounded-lg",
                       !dateTo && "text-muted-foreground"
                     )}>
-                      <CalendarIcon size={13} />
-                      {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM yyyy', { locale: es }) : 'Hasta'}
+                      <CalendarIcon size={12} />
+                      {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Hasta'}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
+                  <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="single"
                       selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
                       onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
                       initialFocus
-                      className={cn("p-3 pointer-events-auto")}
+                      className="p-3 pointer-events-auto"
                     />
                   </PopoverContent>
                 </Popover>
-
                 {(dateFrom || dateTo) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => { setDateFrom(''); setDateTo(''); }}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <X size={14} />
+                  <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground rounded-lg">
+                    <X size={13} />
                   </Button>
                 )}
               </div>
+
+              <div className="flex gap-1.5">
+                {([
+                  { key: 'list' as const, icon: List, label: 'Lista' },
+                  { key: 'call' as const, icon: Phone, label: 'Llamar' },
+                ]).map(v => (
+                  <button key={v.key} onClick={() => setView(v.key)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                      view === v.key ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                    }`}>
+                    <v.icon size={13} /> {v.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex gap-2">
-              {([
-                { key: 'list' as const, icon: List, label: 'Lista' },
-                { key: 'call' as const, icon: Phone, label: 'Llamada' },
-              ]).map(v => (
-                <button key={v.key} onClick={() => setView(v.key)}
-                  className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
-                    view === v.key ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'
-                  }`}>
-                  <v.icon size={14} /> {v.label}
-                </button>
-              ))}
-            </div>
+
+            <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
           </div>
 
           {view === 'list' ? (

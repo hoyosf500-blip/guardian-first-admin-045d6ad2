@@ -1,6 +1,6 @@
 import { OrderData } from '@/lib/orderUtils';
 import { useMemo } from 'react';
-import { Search, Clock, CheckCircle2, XCircle, PhoneOff, List } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, PhoneOff, Clock, LayoutGrid } from 'lucide-react';
 
 interface Props {
   workQueue: OrderData[];
@@ -9,6 +9,14 @@ interface Props {
   search: string;
   setSearch: (s: string) => void;
 }
+
+const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
+  pending: { icon: Clock, color: 'text-blue' },
+  conf: { icon: CheckCircle2, color: 'text-green' },
+  canc: { icon: XCircle, color: 'text-red' },
+  noresp: { icon: PhoneOff, color: 'text-yellow' },
+  all: { icon: LayoutGrid, color: 'text-muted-foreground' },
+};
 
 export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch }: Props) {
   const counts = useMemo(() => {
@@ -27,38 +35,54 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
   }, [workQueue]);
 
   const filters = [
-    { id: 'pending', label: `Pendientes (${counts.pendCount})` },
-    ...(counts.confCount ? [{ id: 'conf', label: `Confirmados (${counts.confCount})` }] : []),
-    ...(counts.cancCount ? [{ id: 'canc', label: `Cancelados (${counts.cancCount})` }] : []),
-    ...(counts.nrCount ? [{ id: 'noresp', label: `No respondió (${counts.nrCount})` }] : []),
-    { id: 'all', label: `Todos (${workQueue.length})` },
+    { id: 'pending', label: 'Pendientes', count: counts.pendCount },
+    ...(counts.confCount ? [{ id: 'conf', label: 'Confirmados', count: counts.confCount }] : []),
+    ...(counts.cancCount ? [{ id: 'canc', label: 'Cancelados', count: counts.cancCount }] : []),
+    ...(counts.nrCount ? [{ id: 'noresp', label: 'No respondió', count: counts.nrCount }] : []),
+    { id: 'all', label: 'Todos', count: workQueue.length },
     ...counts.products.map(p => {
       const c = workQueue.filter(o => o.producto === p && !o.result).length;
-      return c ? { id: `prod_${p}`, label: `${p.slice(0, 16)} (${c})` } : null;
-    }).filter(Boolean) as { id: string; label: string }[],
+      return c ? { id: `prod_${p}`, label: p.slice(0, 14), count: c } : null;
+    }).filter(Boolean) as { id: string; label: string; count: number }[],
   ];
 
   return (
-    <>
-      <div className="flex gap-1.5 flex-wrap mb-3">
-        {filters.map(f => (
-          <button key={f.id} onClick={() => setFilter(f.id)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all ${filter === f.id ? 'bg-cyan/10 text-cyan border-cyan/30' : 'bg-muted/50 text-muted-foreground border-border'}`}>
-            {f.label}
-          </button>
-        ))}
+    <div className="space-y-2.5 w-full">
+      <div className="flex gap-1.5 flex-wrap">
+        {filters.map(f => {
+          const meta = filterMeta[f.id] || { icon: LayoutGrid, color: 'text-muted-foreground' };
+          const Icon = meta.icon;
+          const isActive = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border ${
+                isActive
+                  ? 'bg-primary/10 text-primary border-primary/25 shadow-sm'
+                  : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70 hover:text-foreground'
+              }`}
+            >
+              <Icon size={12} className={isActive ? meta.color : ''} />
+              <span>{f.label}</span>
+              <span className={`ml-0.5 text-[10px] font-mono tabular-nums ${isActive ? 'text-primary/70' : 'text-muted-foreground/60'}`}>
+                {f.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="relative mb-3">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      <div className="relative">
+        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono o ciudad..."
-          className="w-full pl-9 pr-3 py-2.5 bg-card border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground"
+          className="w-full pl-8 pr-3 py-2 bg-muted/30 border border-border/60 rounded-lg text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 transition-all"
         />
       </div>
-    </>
+    </div>
   );
 }
