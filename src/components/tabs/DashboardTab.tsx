@@ -41,6 +41,24 @@ export default function DashboardTab() {
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [dbOrders, setDbOrders] = useState<Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }>>([]);
+
+  // Load orders from DB for dashboard stats
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
+      .order('created_at', { ascending: false })
+      .limit(2000)
+      .then(({ data }) => {
+        if (data) setDbOrders(data.map(o => ({
+          producto: o.producto || 'Sin producto',
+          estado: o.estado || '',
+          valor: Number(o.valor) || 0,
+          ciudad: o.ciudad || '',
+          transportadora: o.transportadora || '',
+        })));
+      });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
