@@ -98,10 +98,10 @@ export default function RescateTab() {
   }
 
   const statCards = [
-    { label: 'Novedades', value: stats.novedades, icon: <AlertTriangle size={16} />, color: 'from-red-500 to-rose-500', textColor: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/15 dark:bg-red-500/10' },
-    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={16} />, color: 'from-purple-500 to-fuchsia-500', textColor: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/15 dark:bg-purple-500/10' },
-    { label: 'Devoluciones', value: stats.devoluciones, icon: <RotateCcw size={16} />, color: 'from-rose-600 to-red-600', textColor: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-500/15 dark:bg-rose-500/10' },
-    { label: 'Retrasados 5d+', value: stats.retrasados, icon: <ShieldAlert size={16} />, color: 'from-orange-500 to-amber-500', textColor: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-500/15 dark:bg-orange-500/10' },
+    { label: 'Novedades', value: stats.novedades, icon: <AlertTriangle size={16} />, iconBg: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/15 dark:bg-red-500/10' },
+    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={16} />, iconBg: 'bg-purple-500', textColor: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/15 dark:bg-purple-500/10' },
+    { label: 'Devoluciones', value: stats.devoluciones, icon: <RotateCcw size={16} />, iconBg: 'bg-rose-600', textColor: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-500/15 dark:bg-rose-500/10' },
+    { label: 'Retrasados 5d+', value: stats.retrasados, icon: <ShieldAlert size={16} />, iconBg: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-500/15 dark:bg-orange-500/10' },
   ];
 
   return (
@@ -146,7 +146,7 @@ export default function RescateTab() {
                 transition={{ delay: i * 0.05, duration: 0.2 }}
                 className={`${s.bg} rounded-xl border border-border/40 px-4 py-3 flex items-center gap-3`}
               >
-                <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${s.color} flex items-center justify-center text-white shadow-md`}>
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-md ${s.iconBg}`}>
                   {s.icon}
                 </div>
                 <div>
