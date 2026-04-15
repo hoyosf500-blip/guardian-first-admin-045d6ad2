@@ -280,12 +280,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     }
     if (onlyDelayed) {
       list = list.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2);
+      // Further filter by stalled category if set
+      if (stalledCategoryFilter && STALLED_LABEL_TO_MATCH[stalledCategoryFilter]) {
+        const matchFn = STALLED_LABEL_TO_MATCH[stalledCategoryFilter];
+        list = list.filter(o => matchFn(o.estado.toUpperCase()));
+      }
     }
     if (activeFilter) {
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
