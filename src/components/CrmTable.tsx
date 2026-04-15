@@ -35,6 +35,7 @@ interface CrmTableProps {
   emptyIcon: React.ReactNode;
   emptyTitle: string;
   emptyDesc: string;
+  initialDelayed?: boolean;
 }
 
 interface StatusColumn {
@@ -163,7 +164,7 @@ function isExcludedFromDelay(estado: string): boolean {
   return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'RECHAZADO';
 }
 
-export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc }: CrmTableProps) {
+export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed }: CrmTableProps) {
   const { user } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -173,6 +174,13 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [onlyDelayed, setOnlyDelayed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [showManaged, setShowManaged] = useState(false);
+
+  // Sync with parent initialDelayed prop
+  useEffect(() => {
+    if (initialDelayed !== undefined) {
+      setOnlyDelayed(initialDelayed);
+    }
+  }, [initialDelayed]);
 
   useEffect(() => {
     if (!data.length) return;
