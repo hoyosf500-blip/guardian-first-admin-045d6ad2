@@ -9,9 +9,11 @@ import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
   Package, Truck, MapPin, RotateCcw, Layers, DollarSign,
-  Send, Tag, CheckCircle, ChevronDown, Search
+  Send, Tag, CheckCircle, ChevronDown, Search, List,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSessionState } from '@/hooks/useSessionState';
+import CrmCallView from './CrmCallView';
 
 interface Touchpoint {
   id: string;
@@ -184,6 +186,10 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [onlyDelayed, setOnlyDelayed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [showManaged, setShowManaged] = useState(false);
+  // Lista / Llamar toggle — persisted per module so it survives tab
+  // discards (common on mobile when the operator goes out to the
+  // transportadora's tracking page).
+  const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
@@ -372,6 +378,34 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             </span>
           </button>
         )}
+
+        {/* Lista / Llamar toggle */}
+        <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-card p-1">
+          <button
+            type="button"
+            onClick={() => setView('list')}
+            aria-pressed={view === 'list'}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold transition-colors ${
+              view === 'list'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <List size={13} /> Lista
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('call')}
+            aria-pressed={view === 'call'}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold transition-colors ${
+              view === 'call'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <PhoneIcon size={13} /> Llamar
+          </button>
+        </div>
       </div>
 
       {/* Status filter pills */}
@@ -420,6 +454,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             {onlyDelayed ? 'No encontramos pedidos retrasados.' : 'Prueba ajustando la búsqueda.'}
           </p>
         </div>
+      ) : view === 'call' ? (
+        <CrmCallView
+          items={filtered}
+          actions={actions}
+          managed={results}
+          phoneTouchpoints={phoneTouchpoints}
+          getOperatorName={getOperatorName}
+          onAction={markAction}
+          storageKey={module.toLowerCase()}
+          module={module}
+        />
       ) : (
         <div className="relative">
           {/* Scroll fade indicators */}
