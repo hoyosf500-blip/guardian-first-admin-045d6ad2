@@ -118,8 +118,15 @@ export default function DashboardTab() {
   const tasa = total > 0 ? Math.round(counter.conf / total * 100) : 0;
   const pendLeft = workQueue.filter(o => !o.result).length;
 
+  // Use DB orders for product/status stats when no Excel loaded
+  const ordersForStats = allOrders.length > 0 ? allOrders.map(o => ({
+    producto: o.producto || 'Sin producto', estado: o.estado || '', valor: o.valor, ciudad: o.ciudad, transportadora: o.transportadora
+  })) : dbOrders;
+
+  const totalOrders = ordersForStats.length;
+
   const byProd: Record<string, { total: number; entreg: number; canc: number; nov: number }> = {};
-  allOrders.forEach(o => {
+  ordersForStats.forEach(o => {
     const p = o.producto || 'Sin producto';
     if (!byProd[p]) byProd[p] = { total: 0, entreg: 0, canc: 0, nov: 0 };
     byProd[p].total++;
@@ -129,6 +136,24 @@ export default function DashboardTab() {
     else if (e.includes('NOVEDAD')) byProd[p].nov++;
   });
   const prods = Object.entries(byProd).sort((a, b) => b[1].total - a[1].total);
+
+  // Status breakdown from DB
+  const statusBreakdown = useMemo(() => {
+    const s = { entregados: 0, cancelados: 0, novedades: 0, oficina: 0, devoluciones: 0, transito: 0, pendientes: 0, otros: 0, valorTotal: 0, valorEntregado: 0 };
+    ordersForStats.forEach(o => {
+      const e = (o.estado || '').toUpperCase();
+      s.valorTotal += o.valor;
+      if (e.includes('ENTREGAD')) { s.entregados++; s.valorEntregado += o.valor; }
+      else if (e.includes('CANCEL')) s.cancelados++;
+      else if (e.includes('NOVEDAD') || e === 'INTENTO DE ENTREGA') s.novedades++;
+      else if (e.includes('OFICINA') || e.includes('RECLAME')) s.oficina++;
+      else if (e.includes('DEVOL')) s.devoluciones++;
+      else if (e.includes('DESPACHAD') || e.includes('TRANSPORTE') || e.includes('REPARTO') || e.includes('DISTRIBUCION') || e === 'ADMITIDA' || e === 'EN DESPACHO') s.transito++;
+      else if (e === 'PENDIENTE CONFIRMACION') s.pendientes++;
+      else s.otros++;
+    });
+    return s;
+  }, [ordersForStats]);
 
   const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
     const csv = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
