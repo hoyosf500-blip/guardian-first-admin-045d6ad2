@@ -59,31 +59,15 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    // Test: try without Origin first, fallback with Origin
-    let res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
+    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "dropi-integration-key": apiKey,
+        "Origin": origin,
       },
     });
-    console.log("Without Origin:", res.status);
-    if (!res.ok || res.status === 401) {
-      const t = await res.text();
-      console.log("Without Origin body:", t);
-      // Retry with Origin
-      res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "dropi-integration-key": apiKey,
-          "Origin": origin,
-        },
-      });
-      console.log("With Origin:", res.status);
-    }
 
     if (!res.ok) {
       const txt = await res.text();
@@ -108,6 +92,18 @@ async function fetchAllPages(
   return allOrders;
 }
 
+/** Calculate calendar days from a date string to today */
+function calcDias(dateStr: string): number {
+  if (!dateStr) return 0;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 0;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  } catch {
+    return 0;
+  }
+}
+
 /** Map a Dropi order to our DB schema */
 function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
@@ -119,8 +115,49 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
     (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
     0,
   );
+  // Product cost = sum of supplier_price or sale_price from products
+  const costoProd = products.reduce((sum, p) => {
+    const supplierPrice = parseFloat(String(p.supplier_price || "0")) || 0;
+    const salePrice = parseFloat(String((p.product as Record<string, unknown>)?.sale_price || "0")) || 0;
+    return sum + (supplierPrice || salePrice);
+  }, 0);
+
   const createdAt = String(o.created_at || "");
+  const updatedAt = String(o.updated_at || "");
   const fecha = createdAt ? createdAt.split("T")[0] : today;
+
+  // Determine fecha_conf from updated_at if status changed from PENDIENTE CONFIRMACION
+  const status = String(o.status || "PENDIENTE").toUpperCase();
+  const isPendConf = status === "PENDIENTE CONFIRMACION";
+  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : "";
+
+  // Extract novedad from novedad_servientrega or servientrega_movements
+  const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";
+  const movements = (o.servientrega_movements as Array<Record<string, unknown>>) || [];
+  const lastMovement = movements.length > 0 ? String(movements[movements.length - 1]?.description || movements[movements.length - 1]?.status || "") : "";
+  const novedad = novedadServ || lastMovement;
+
+  // Notes
+  const notes = o.notes ? String(o.notes) : "";
+
+  // Tags
+  const tags = Array.isArray(o.tags) 
+    ? (o.tags as Array<Record<string, unknown>>).map((t) => String(t.name || t)).filter(Boolean).join(", ")
+    : String(o.tags || "");
+
+  // Shop/tienda name
+  const shop = o.shop as Record<string, unknown> | null;
+  const tienda = shop ? String(shop.name || "") : "";
+
+  // Guia: prefer shipping_guide, fallback to checking guia_urls3
+  const guia = String(o.shipping_guide || "");
+
+  // Distribution company (transportadora)
+  const distCompany = o.distribution_company as Record<string, unknown> | null;
+  const transportadora = distCompany ? String(distCompany.name || o.shipping_company || "") : String(o.shipping_company || "");
+
+  // Novedad solucionada
+  const novedadSol = Boolean(o.issue_solved_by_operator || o.managed_devolution_app);
 
   return {
     external_id: String(o.id || ""),
@@ -131,23 +168,23 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
     ciudad: String(o.city || ""),
     departamento: String(o.state || ""),
     producto: productName || "Sin producto",
-    estado: String(o.status || "PENDIENTE"),
+    estado: status,
     fecha,
-    fecha_conf: "",
-    dias: 0,
-    dias_conf: 0,
+    fecha_conf: fechaConf,
+    dias: calcDias(createdAt),
+    dias_conf: fechaConf ? calcDias(fechaConf) : 0,
     valor: parseFloat(String(o.total_order || "0")) || 0,
     flete: parseFloat(String(o.shipping_amount || "0")) || 0,
-    costo_prod: 0,
-    costo_dev: 0,
+    costo_prod: costoProd,
+    costo_dev: parseFloat(String(o.discounted_amount || "0")) || 0,
     cantidad: Math.round(cantidad),
     direccion: String(o.dir || ""),
-    novedad: "",
-    guia: String(o.shipping_guide || ""),
-    transportadora: String(o.shipping_company || ""),
-    tags: "",
-    tienda: "",
-    novedad_sol: false,
+    novedad: novedad || notes,
+    guia,
+    transportadora,
+    tags,
+    tienda,
+    novedad_sol: novedadSol,
   };
 }
 
