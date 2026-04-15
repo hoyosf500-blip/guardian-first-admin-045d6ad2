@@ -21,7 +21,7 @@ interface OrderState {
   buildWorkQueue: (orders: OrderData[]) => void;
   markResult: (order: OrderData, result: string, reason?: string) => Promise<void>;
   undoLast: () => Promise<void>;
-  lastMark: { order: OrderData; result: string; reason?: string } | null;
+  lastMark: { order: OrderData; result: string; reason?: string; resultId?: string } | null;
   resetOrders: () => void;
 }
 
@@ -120,6 +120,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       setTimeout(() => checkMilestone(newTotal), 300);
       return next;
     });
+    // resultId will be set after DB insert below
     setLastMark({ order, result, reason });
 
     if (!timerStart) setTimerStart(Date.now());
@@ -128,7 +129,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
     // Save to DB
-    const { error } = await supabase.from('order_results').insert({
+    const { error, data: insertedResult } = await supabase.from('order_results').insert({
       order_id: order.dbId!,
       phone: order.phone,
       result,
@@ -136,7 +137,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       operator_id: user.id,
       result_date: today,
       result_time: now,
-    });
+    }).select('id').single();
 
     // When confirmed, update order status from PENDIENTE CONFIRMACION to PENDIENTE
     if (!error && result === 'conf' && order.dbId) {
