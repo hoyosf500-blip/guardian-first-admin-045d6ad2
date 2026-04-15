@@ -1,5 +1,5 @@
 import { OrderData, truncate } from '@/lib/orderUtils';
-import { CheckCircle2, XCircle, PhoneOff, MapPin, Package } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, MapPin, Package, RotateCcw } from 'lucide-react';
 
 interface Props {
   items: OrderData[];
