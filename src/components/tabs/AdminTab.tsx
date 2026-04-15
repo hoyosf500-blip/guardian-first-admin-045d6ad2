@@ -217,34 +217,7 @@ export default function AdminTab() {
             </div>
           </motion.div>
 
-          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.15 }} className="bg-card rounded-xl border border-border overflow-hidden">
-            <div className="px-5 py-4 border-b border-border">
-              <h3 className="text-sm font-semibold text-foreground">Cierres recientes</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{reports.length} reportes</p>
-            </div>
-            {reports.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">No hay cierres aún</div>
-            ) : (
-              <div className="divide-y divide-border">
-                {reports.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between px-5 py-3">
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{r.operator_name}</div>
-                      <div className="text-xs text-muted-foreground">{r.report_date}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-bold font-mono text-foreground">{r.data.tasa_confirmacion ?? 0}%</div>
-                      <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 justify-end">
-                        <span className="inline-flex items-center gap-0.5"><CheckCircle2 size={10} className="text-green" />{r.data.confirmados ?? 0}</span>
-                        <span className="inline-flex items-center gap-0.5"><XCircle size={10} className="text-red" />{r.data.cancelados ?? 0}</span>
-                        <span className="inline-flex items-center gap-0.5"><PhoneOff size={10} />{r.data.no_respondio ?? 0}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.div>
+          <ReportsTable />
         </div>
       )}
     </div>
