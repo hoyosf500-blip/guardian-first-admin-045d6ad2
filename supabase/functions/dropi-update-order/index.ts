@@ -48,7 +48,8 @@ interface DropiSettings {
   env: "prod" | "test";
 }
 
-type SB = ReturnType<typeof createClient>;
+// deno-lint-ignore no-explicit-any
+type SB = any;
 
 async function loadSettings(sb: SB): Promise<DropiSettings> {
   const keys = [
