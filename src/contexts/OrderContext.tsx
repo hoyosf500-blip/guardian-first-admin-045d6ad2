@@ -194,6 +194,30 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (!error && result === 'conf' && order.dbId) {
       await supabase.from('orders').update({ estado: 'PENDIENTE' }).eq('id', order.dbId);
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
+
+      // Fire-and-forget: push the status change to Dropi via the Bearer-token flow.
+      // Only runs if the order has a Dropi external_id (skip for Excel-only rows).
+      // Non-blocking: the operator moves on to the next call immediately;
+      // sonner toast is updated in place when the function call resolves.
+      if (order.externalId) {
+        const toastId = `dropi-${order.externalId}`;
+        toast.loading('Dropi: actualizando…', { id: toastId });
+        supabase.functions
+          .invoke('dropi-update-order', { body: { externalId: order.externalId } })
+          .then((res) => {
+            const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
+            if (res?.error || data?.ok === false) {
+              const msg = res?.error?.message || data?.error || 'Error desconocido';
+              toast.error(`Dropi falló: ${msg}`, { id: toastId, duration: 8000 });
+            } else {
+              toast.success('Dropi OK', { id: toastId, duration: 2500 });
+            }
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            toast.error(`Dropi red: ${msg}`, { id: toastId, duration: 8000 });
+          });
+      }
     }
     if (error) {
       toast.error('Error guardando resultado');
