@@ -280,10 +280,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     setNovedadesLoading(true);
     try {
+      // Only `estado='NOVEDAD'` matches what Dropi shows in its own
+      // Novedades panel. `INTENTO DE ENTREGA` is a logistic-in-progress
+      // state that does NOT require customer action and Dropi does not
+      // list it as a pending novedad — including it here creates a huge
+      // false positive backlog (see diagnosis against Dropi dashboard).
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
+        .eq('estado', 'NOVEDAD')
         .eq('novedad_sol', false);
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
