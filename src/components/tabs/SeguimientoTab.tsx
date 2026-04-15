@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { OrderData, dbToOrderData } from '@/lib/orderUtils';
+import { OrderData, dbToOrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { SEG_ACTIONS } from '@/lib/constants';
-import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X } from 'lucide-react';
+import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import { Button } from '@/components/ui/button';
