@@ -138,6 +138,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       result_time: now,
     });
 
+    // When confirmed, update order status from PENDIENTE CONFIRMACION to PENDIENTE
+    if (!error && result === 'conf' && order.dbId) {
+      await supabase.from('orders').update({ estado: 'PENDIENTE' }).eq('id', order.dbId);
+      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
+    }
     if (error) {
       toast.error('Error guardando resultado');
       // Revert
