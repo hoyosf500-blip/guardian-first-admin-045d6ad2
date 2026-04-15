@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
 
 function sleep(ms: number) {
@@ -48,8 +48,8 @@ async function fetchAllPages(
     const params: Record<string, string> = {
       result_number: String(PAGE_SIZE),
       start: String(start),
-      from: chunkFrom,
-      untill: chunkTo,
+      date_from: chunkFrom,
+      date_to: chunkTo,
       filter_date_by: "FECHA DE CREADO",
       orderBy: "id",
       orderDirection: "desc",
@@ -63,6 +63,7 @@ async function fetchAllPages(
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        "Accept": "application/json",
         "dropi-integration-key": apiKey,
         "Origin": origin,
       },
@@ -75,7 +76,7 @@ async function fetchAllPages(
 
     const data = await res.json();
     if (!data.isSuccess) {
-      throw new Error(data.message || "Dropi error");
+      throw new Error(String(data.message || data.error || "Dropi error"));
     }
 
     const orders = data.objects || [];
@@ -187,7 +188,7 @@ Deno.serve(async (req: Request) => {
       .select("value")
       .eq("key", "dropi_store_url")
       .maybeSingle();
-    const storeUrl = urlSetting?.value || "https://app.dropi.co";
+    const storeUrl = urlSetting?.value || "https://rushmira.com/";
 
     // Parse body
     let body: Record<string, unknown> = {};
