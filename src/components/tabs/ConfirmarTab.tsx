@@ -49,7 +49,7 @@ export default function ConfirmarTab({ profile }: Props) {
   useEffect(() => {
     if (excelLoaded || !user || autoLoading) return;
     setAutoLoading(true);
-    supabase.from('orders').select('*').eq('upload_date', today)
+    supabase.from('orders').select('*').ilike('estado', '%PENDIENTE%')
       .then(({ data: dbOrders }) => {
         if (dbOrders && dbOrders.length > 0) {
           const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
@@ -146,16 +146,15 @@ export default function ConfirmarTab({ profile }: Props) {
               if (!user) return;
               setSyncing(true);
               try {
-                const today = new Date().toISOString().split('T')[0];
                 const { data, error } = await supabase.functions.invoke('dropi-sync', {
-                  body: { from: today, untill: today },
+                  body: {},
                 });
                 if (error) throw error;
                 if (data?.synced > 0 || data?.total > 0) {
                   // Reload orders from DB
                   const { data: dbOrders } = await supabase.from('orders')
                     .select('*')
-                    .eq('upload_date', today);
+                    .ilike('estado', '%PENDIENTE%');
                   if (dbOrders && dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
                     setAllOrders(orders);

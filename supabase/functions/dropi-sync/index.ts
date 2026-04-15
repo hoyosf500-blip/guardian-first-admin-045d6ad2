@@ -247,8 +247,10 @@ Deno.serve(async (req: Request) => {
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* no body */ }
 
-    const from = (body.from as string) || new Date().toISOString().split("T")[0];
-    const untill = (body.untill as string) || from;
+    const defaultFrom = new Date();
+    defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 90);
+    const from = (body.from as string) || defaultFrom.toISOString().split("T")[0];
+    const untill = (body.untill as string) || new Date().toISOString().split("T")[0];
 
     // Chunk the date range
     const chunks = chunkDateRange(from, untill, MAX_CHUNK_DAYS);
