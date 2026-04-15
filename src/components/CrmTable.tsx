@@ -35,6 +35,7 @@ interface CrmTableProps {
   emptyIcon: React.ReactNode;
   emptyTitle: string;
   emptyDesc: string;
+  initialDelayed?: boolean;
 }
 
 interface StatusColumn {
