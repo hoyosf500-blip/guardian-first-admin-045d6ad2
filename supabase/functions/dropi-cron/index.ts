@@ -10,7 +10,7 @@ const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
-const SYNC_DAYS_BACK = 7; // How many days back to sync for status updates
+const SYNC_DAYS_BACK = 7;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
