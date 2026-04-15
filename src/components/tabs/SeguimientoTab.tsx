@@ -43,35 +43,31 @@ export default function SeguimientoTab() {
   const { user } = useAuth();
   const [segData, setSegData] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const loadOrders = useCallback(async (isRefresh = false) => {
     if (!user) return;
-    setLoading(true);
+    if (isRefresh) setRefreshing(true); else setLoading(true);
 
-    const loadOrders = async () => {
-      // Load ALL orders except PENDIENTE CONFIRMACION (that's the Confirmar tab)
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .order('created_at', { ascending: false })
-        .limit(5000);
+    const { data: dbOrders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
+      .order('created_at', { ascending: false })
+      .limit(5000);
 
-      if (error) {
-        console.error('Error loading seg orders:', error);
-        setLoading(false);
-        return;
-      }
-
-      if (dbOrders && dbOrders.length > 0) {
-        const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
-        setSegData(orders);
-      }
-      setLoading(false);
-    };
-
-    loadOrders();
+    if (error) {
+      console.error('Error loading seg orders:', error);
+    } else if (dbOrders && dbOrders.length > 0) {
+      setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
+    }
+    setLastUpdate(new Date());
+    setLoading(false);
+    setRefreshing(false);
   }, [user]);
+
+  useEffect(() => { loadOrders(); }, [loadOrders]);
 
   const stats = useMemo(() => {
     const s = {
