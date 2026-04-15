@@ -172,6 +172,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [search, setSearch] = useState('');
   const [onlyDelayed, setOnlyDelayed] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [showManaged, setShowManaged] = useState(false);
 
   useEffect(() => {
     if (!data.length) return;
