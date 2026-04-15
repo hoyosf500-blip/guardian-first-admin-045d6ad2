@@ -21,7 +21,7 @@ interface OrderState {
   buildWorkQueue: (orders: OrderData[]) => void;
   markResult: (order: OrderData, result: string, reason?: string) => Promise<void>;
   undoLast: () => Promise<void>;
-  lastMark: { order: OrderData; result: string; reason?: string } | null;
+  lastMark: { order: OrderData; result: string; reason?: string; resultId?: string } | null;
   resetOrders: () => void;
 }
 
@@ -38,7 +38,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [timerStart, setTimerStart] = useState(0);
   const [loading, setLoading] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
-  const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string } | null>(null);
+  const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string } | null>(null);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -120,6 +120,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       setTimeout(() => checkMilestone(newTotal), 300);
       return next;
     });
+    // resultId will be set after DB insert below
     setLastMark({ order, result, reason });
 
     if (!timerStart) setTimerStart(Date.now());
@@ -128,7 +129,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
     // Save to DB
-    const { error } = await supabase.from('order_results').insert({
+    const { error, data: insertedResult } = await supabase.from('order_results').insert({
       order_id: order.dbId!,
       phone: order.phone,
       result,
@@ -136,7 +137,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       operator_id: user.id,
       result_date: today,
       result_time: now,
-    });
+    }).select('id').single();
 
     // When confirmed, update order status from PENDIENTE CONFIRMACION to PENDIENTE
     if (!error && result === 'conf' && order.dbId) {
@@ -145,13 +146,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
     if (error) {
       toast.error('Error guardando resultado');
-      // Revert
       setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
       setCounter(prev => ({
         conf: prev.conf - (result === 'conf' ? 1 : 0),
         canc: prev.canc - (result === 'canc' ? 1 : 0),
         noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
       }));
+    } else if (insertedResult?.id) {
+      setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
     }
 
     // Save touchpoint
@@ -166,7 +168,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
-    const { order, result } = lastMark;
+    const { order, result, resultId } = lastMark;
 
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
     setCounter(prev => ({
@@ -175,12 +177,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
     }));
 
-    const today = new Date().toISOString().split('T')[0];
-    await supabase.from('order_results')
-      .delete()
-      .eq('phone', order.phone)
-      .eq('operator_id', user.id)
-      .eq('result_date', today);
+    if (resultId) {
+      await supabase.from('order_results').delete().eq('id', resultId);
+    }
 
     setLastMark(null);
     toast.success('↩️ Deshecho');
