@@ -59,10 +59,7 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const url = `${DROPI_API}/integrations/orders/myorders?${qs}`;
-    console.log("Dropi GET:", url);
-
-    const res = await fetch(url, {
+    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -72,18 +69,14 @@ async function fetchAllPages(
       },
     });
 
-    const rawText = await res.text();
-    console.log("Dropi raw status:", res.status, "body:", rawText.substring(0, 500));
-
     if (!res.ok) {
-      throw new Error(`Dropi API [${res.status}]: ${rawText}`);
+      const txt = await res.text();
+      throw new Error(`Dropi API [${res.status}]: ${txt}`);
     }
 
-    let data: Record<string, unknown>;
-    try { data = JSON.parse(rawText); } catch { throw new Error(`Invalid JSON: ${rawText.substring(0, 200)}`); }
-
+    const data = await res.json();
     if (!data.isSuccess) {
-      throw new Error(String(data.message) || "Dropi error");
+      throw new Error(String(data.message || data.error || "Dropi error"));
     }
 
     const orders = data.objects || [];
