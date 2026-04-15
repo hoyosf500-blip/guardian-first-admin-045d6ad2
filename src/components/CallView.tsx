@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
+import { useSessionState } from '@/hooks/useSessionState';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw } from 'lucide-react';
 
@@ -11,10 +12,24 @@ interface Props {
 
 export default function CallView({ items }: Props) {
   const { markResult, undoLast } = useOrders();
-  const [callIdx, setCallIdx] = useState(() => {
-    const idx = items.findIndex(o => !o.result);
-    return idx >= 0 ? idx : 0;
-  });
+  // Persist callIdx across tab discards so the operator returns to the
+  // exact same order after going out to the transportadora's page.
+  const [callIdx, setCallIdx] = useSessionState<number>('confirmar:callIdx', 0);
+
+  // If the persisted index no longer points at a pending order (e.g. the
+  // list was rebuilt), jump to the first pending one. Runs only on mount.
+  useEffect(() => {
+    if (!items.length) return;
+    const current = items[callIdx];
+    if (!current || current.result) {
+      const firstPending = items.findIndex(o => !o.result);
+      if (firstPending >= 0 && firstPending !== callIdx) {
+        setCallIdx(firstPending);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   const o = items[Math.min(callIdx, items.length - 1)];

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
+import { useSessionState } from '@/hooks/useSessionState';
 import { toast } from 'sonner';
 import {
   CheckCircle2,
@@ -25,10 +26,20 @@ interface Props {
 
 export default function NovedadView({ items }: Props) {
   const { resolveNovedad } = useOrders();
-  const [callIdx, setCallIdx] = useState(0);
+  // Persist callIdx across tab discards (mobile browsers discard bg tabs
+  // aggressively when the operator goes to the transportadora page).
+  const [callIdx, setCallIdx] = useSessionState<number>('novedades:callIdx', 0);
   const [solution, setSolution] = useState('');
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Clamp the restored index in case the queue shrunk while away.
+  useEffect(() => {
+    if (items.length && callIdx >= items.length) {
+      setCallIdx(Math.max(0, items.length - 1));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
 
   const o = items[Math.min(callIdx, items.length - 1)];
 

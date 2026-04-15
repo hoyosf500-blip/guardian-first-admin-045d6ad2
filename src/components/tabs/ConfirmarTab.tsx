@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { toast } from 'sonner';
@@ -27,15 +28,18 @@ interface Props {
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded } = useOrders();
-  const [view, setView] = useState<'list' | 'call'>('list');
-  const [filter, setFilter] = useState('pending');
-  const [search, setSearch] = useState('');
+  // Persist nav state in sessionStorage so a tab discard (common on mobile
+  // when operator leaves to the transportadora's tracking page) does not
+  // make them lose their place and filters.
+  const [view, setView] = useSessionState<'list' | 'call'>('confirmar:view', 'list');
+  const [filter, setFilter] = useSessionState<string>('confirmar:filter', 'pending');
+  const [search, setSearch] = useSessionState<string>('confirmar:search', '');
+  const [dateFrom, setDateFrom] = useSessionState<string>('confirmar:dateFrom', '');
+  const [dateTo, setDateTo] = useSessionState<string>('confirmar:dateTo', '');
   const [aperturaCompleted, setAperturaCompleted] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
   const today = new Date().toISOString().split('T')[0];
 
   // Auto-load orders from DB on mount if not already loaded
@@ -118,7 +122,19 @@ export default function ConfirmarTab({ profile }: Props) {
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-muted-foreground">{formatDateES(today)}</p>
         {excelLoaded && (
-          <button onClick={() => { resetOrders(); setExcelLoaded(false); }}
+          <button onClick={() => {
+            resetOrders();
+            setExcelLoaded(false);
+            // Also wipe persisted nav state so a fresh upload starts clean.
+            try {
+              sessionStorage.removeItem('confirmar:view');
+              sessionStorage.removeItem('confirmar:filter');
+              sessionStorage.removeItem('confirmar:search');
+              sessionStorage.removeItem('confirmar:dateFrom');
+              sessionStorage.removeItem('confirmar:dateTo');
+              sessionStorage.removeItem('confirmar:callIdx');
+            } catch { /* storage disabled */ }
+          }}
             className="text-xs px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground font-medium hover:bg-secondary/80 transition-colors">
             Cambiar archivo
           </button>
