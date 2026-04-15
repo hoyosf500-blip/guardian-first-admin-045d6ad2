@@ -153,12 +153,8 @@ export default function SeguimientoTab() {
               transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
               className="bg-card border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5"
             >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
-                style={{ background: `linear-gradient(135deg, var(--tw-gradient-stops))` }}
-              >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white bg-gradient-to-br ${card.gradient}`}>
-                  {card.icon}
-                </div>
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white bg-gradient-to-br ${card.gradient}`}>
+                {card.icon}
               </div>
               <span className="text-lg font-black text-foreground leading-none">{card.value}</span>
               <span className="text-[9px] text-muted-foreground font-medium text-center leading-tight">{card.label}</span>
