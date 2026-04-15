@@ -36,7 +36,20 @@ export default function AdminTab() {
     if (!isAdmin) return;
     loadData();
     loadDropiKey();
+    loadFailedSyncs();
   }, [isAdmin]);
+
+  async function loadFailedSyncs() {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('sync_logs')
+      .select('id, created_at, error_message')
+      .eq('status', 'error')
+      .gte('created_at', twentyFourHoursAgo)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    setFailedSyncs((data as FailedSync[]) || []);
+  }
 
   async function loadDropiKey() {
     const { data } = await supabase
