@@ -189,7 +189,6 @@ Deno.serve(async (req: Request) => {
       .eq("key", "dropi_store_url")
       .maybeSingle();
     const storeUrl = urlSetting?.value || "https://rushmira.com/";
-    console.log("Using Origin:", storeUrl);
 
     // Parse body
     let body: Record<string, unknown> = {};
