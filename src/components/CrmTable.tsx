@@ -331,6 +331,24 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             {delayedCount}
           </span>
         </button>
+        {managedCount > 0 && (
+          <button
+            type="button"
+            aria-pressed={showManaged}
+            onClick={() => setShowManaged(prev => !prev)}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+              showManaged
+                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
+                : 'border-border bg-card text-foreground hover:border-emerald-400/40 hover:text-emerald-500'
+            }`}
+          >
+            <CheckCircle size={15} />
+            <span>Gestionados</span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
+              {managedCount}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Status filter pills */}
