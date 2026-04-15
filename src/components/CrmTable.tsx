@@ -460,6 +460,9 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             )}
             {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
           </div>
+          <span className="flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate">
+            {o.estado}
+          </span>
         </div>
 
         {/* Phone row */}
