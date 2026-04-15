@@ -143,6 +143,19 @@ export default function SeguimientoTab() {
               <span className="text-xs text-muted-foreground">Valor</span>
               <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">${stats.valorTotal.toLocaleString()}</span>
             </div>
+            <button
+              onClick={() => loadOrders(true)}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">{refreshing ? 'Actualizando...' : 'Actualizar'}</span>
+            </button>
+            {lastUpdate && (
+              <span className="text-[10px] text-muted-foreground hidden md:block">
+                {lastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
         </div>
 
