@@ -132,7 +132,7 @@ export default function SeguimientoTab() {
               <p className="text-xs text-muted-foreground">CRM de pedidos — todos los estados de Dropi</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2">
               <Package size={14} className="text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Total</span>
