@@ -154,7 +154,12 @@ export default function SeguimientoTab() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* Date range filter */}
-            <div className="flex items-center gap-1.5 bg-card border border-border rounded-xl px-2 py-1">
+            <div className={cn(
+              "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
+              (dateFrom || dateTo)
+                ? "bg-primary/10 border border-primary/30 ring-1 ring-primary/20"
+                : "bg-card border border-border"
+            )}>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className={cn(
