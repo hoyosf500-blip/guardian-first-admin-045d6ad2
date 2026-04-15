@@ -290,6 +290,26 @@ Deno.serve(async (req: Request) => {
       await sleep(RATE_LIMIT_MS);
     }
 
+    // Restore estado for orders confirmed locally today (so sync doesn't overwrite local confirmations)
+    const todayDate = new Date().toISOString().split("T")[0];
+    const { data: confirmedToday } = await sb
+      .from("order_results")
+      .select("order_id")
+      .eq("result", "conf")
+      .eq("result_date", todayDate);
+
+    if (confirmedToday && confirmedToday.length > 0) {
+      const confirmedIds = confirmedToday.map((r) => r.order_id);
+      for (let i = 0; i < confirmedIds.length; i += 50) {
+        const batch = confirmedIds.slice(i, i + 50);
+        await sb
+          .from("orders")
+          .update({ estado: "PENDIENTE" })
+          .in("id", batch)
+          .eq("estado", "PENDIENTE CONFIRMACION");
+      }
+    }
+
     // Log
     await sb.from("sync_logs").insert({
       source: "dropi",
