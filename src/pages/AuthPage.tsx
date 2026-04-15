@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon, Check, Package, Phone, BarChart3 } from 'lucide-react';
 
 export default function AuthPage() {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
