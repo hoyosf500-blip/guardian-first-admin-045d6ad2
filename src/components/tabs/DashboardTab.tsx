@@ -46,18 +46,28 @@ export default function DashboardTab() {
   // Load orders from DB for dashboard stats
   useEffect(() => {
     if (!user) return;
-    supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
-      .order('created_at', { ascending: false })
-      .limit(2000)
-      .then(({ data }) => {
-        if (data) setDbOrders(data.map(o => ({
+    const fetchAllOrders = async () => {
+      const allData: Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }> = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (!data || data.length === 0) break;
+        allData.push(...data.map(o => ({
           producto: o.producto || 'Sin producto',
           estado: o.estado || '',
           valor: Number(o.valor) || 0,
           ciudad: o.ciudad || '',
           transportadora: o.transportadora || '',
         })));
-      });
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+      setDbOrders(allData);
+    };
+    fetchAllOrders();
   }, [user]);
 
   useEffect(() => {
