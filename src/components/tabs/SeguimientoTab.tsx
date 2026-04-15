@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { OrderData, dbToOrderData, calcBusinessDays } from '@/lib/orderUtils';
+import { useEffect, useMemo } from 'react';
+import { useOrders } from '@/contexts/OrderContext';
+import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
+import { useSessionState } from '@/hooks/useSessionState';
 import { SEG_ACTIONS } from '@/lib/constants';
 import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -45,38 +45,20 @@ function isActiveOrder(estado: string): boolean {
 }
 
 export default function SeguimientoTab() {
-  const { user } = useAuth();
-  const [segData, setSegData] = useState<OrderData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [initialDelayed, setInitialDelayed] = useState(false);
-  const [stalledCategoryFilter, setStalledCategoryFilter] = useState<string | null>(null);
+  // Cached in OrderContext so the data survives route unmounts when the
+  // operator navigates between CRM tabs. Without the cache they'd see
+  // "Cargando seguimiento..." and lose all filter/selection state every
+  // time they switched tabs.
+  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData } = useOrders();
 
-  const loadOrders = useCallback(async (isRefresh = false) => {
-    if (!user) return;
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+  // Filter state persisted to sessionStorage so it also survives tab
+  // discards (Chrome Memory Saver) and internal route navigation.
+  const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom', '');
+  const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo', '');
+  const [initialDelayed, setInitialDelayed] = useSessionState<boolean>('seg:initialDelayed', false);
+  const [stalledCategoryFilter, setStalledCategoryFilter] = useSessionState<string | null>('seg:stalledCategoryFilter', null);
 
-    const { data: dbOrders, error } = await supabase
-      .from('orders')
-      .select('*')
-      .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-      .order('created_at', { ascending: false })
-      .limit(5000);
-
-    if (error) {
-      console.error('Error loading seg orders:', error);
-    } else if (dbOrders && dbOrders.length > 0) {
-      setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
-    }
-    setLastUpdate(new Date());
-    setLoading(false);
-    setRefreshing(false);
-  }, [user]);
-
-  useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => { loadSegData(); }, [loadSegData]);
 
   // Filter by date range
   const filteredByDate = useMemo(() => {
@@ -160,7 +142,10 @@ export default function SeguimientoTab() {
     { label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, gradient: 'from-slate-500 to-slate-600' },
   ];
 
-  if (loading) {
+  // Fullscreen loading only on the very first fetch. On subsequent refreshes
+  // the existing data stays on screen and the Actualizar button shows the
+  // spinner instead — no flash, no lost state.
+  if (!segLoaded && segLoading) {
     return (
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center py-16 gap-4">
@@ -259,16 +244,16 @@ export default function SeguimientoTab() {
               )}
             </div>
             <button
-              onClick={() => loadOrders(true)}
-              disabled={refreshing}
+              onClick={() => loadSegData(true)}
+              disabled={segLoading}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
             >
-              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">{refreshing ? 'Actualizando...' : 'Actualizar'}</span>
+              <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
-            {lastUpdate && (
+            {segLastUpdate && (
               <span className="text-[10px] text-muted-foreground hidden md:block">
-                {lastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </div>

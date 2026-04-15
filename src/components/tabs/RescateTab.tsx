@@ -1,58 +1,18 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { OrderData, isDespachado, dbToOrderData } from '@/lib/orderUtils';
+import { useEffect, useMemo } from 'react';
+import { useOrders } from '@/contexts/OrderContext';
 import { RES_ACTIONS } from '@/lib/constants';
 import { LifeBuoy, RefreshCw, AlertTriangle, MapPin, RotateCcw, ShieldAlert } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 
 
-function isRescueOrder(o: OrderData): boolean {
-  const e = o.estado.toUpperCase();
-  const diasT = o.diasConf || o.dias;
-  return (isDespachado(e) && diasT >= 5) ||
-    (e.includes('NOVEDAD') && !o.novedadSol) ||
-    e.includes('OFICINA') || e.includes('RECLAME') ||
-    e.includes('DEVOL');
-}
-
 export default function RescateTab() {
-  const { user } = useAuth();
-  const [resData, setResData] = useState<OrderData[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Cached in OrderContext so the data survives route unmounts. Without the
+  // cache the operator sees "Cargando rescate..." every time they switch
+  // tabs and any filter/selection state is lost.
+  const { resData, resLoaded, resLoading, loadResData } = useOrders();
 
-  useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-
-    const loadOrders = async () => {
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .not('estado', 'eq', 'ENTREGADO')
-        .not('estado', 'eq', 'CANCELADO')
-        .order('created_at', { ascending: false })
-        .limit(2000);
-
-      if (error) {
-        console.error('Error loading rescue orders:', error);
-        setLoading(false);
-        return;
-      }
-
-      if (dbOrders && dbOrders.length > 0) {
-        const orders = dbOrders
-          .map((o, idx) => dbToOrderData(o, idx))
-          .filter(isRescueOrder);
-        setResData(orders);
-      }
-      setLoading(false);
-    };
-
-    loadOrders();
-  }, [user]);
+  useEffect(() => { loadResData(); }, [loadResData]);
 
   const stats = useMemo(() => {
     let novedades = 0, oficina = 0, devoluciones = 0, retrasados = 0;
@@ -68,7 +28,9 @@ export default function RescateTab() {
     return { novedades, oficina, devoluciones, retrasados, valorEnRiesgo };
   }, [resData]);
 
-  if (loading) {
+  // Fullscreen loading only on the first fetch. After that, data stays on
+  // screen across route navigations since it lives in OrderContext.
+  if (!resLoaded && resLoading) {
     return (
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center py-16 gap-4">

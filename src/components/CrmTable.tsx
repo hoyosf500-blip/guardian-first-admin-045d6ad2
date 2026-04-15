@@ -182,10 +182,13 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [onlyDelayed, setOnlyDelayed] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [showManaged, setShowManaged] = useState(false);
+  // Filter state persisted per module so it survives both tab discards AND
+  // internal route navigations (previously every tab switch reset the
+  // operator's filter chip / search / toggle state).
+  const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
+  const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
+  const [activeFilter, setActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
+  const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
   // Lista / Llamar toggle — persisted per module so it survives tab
   // discards (common on mobile when the operator goes out to the
   // transportadora's tracking page).
@@ -196,7 +199,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     if (initialDelayed !== undefined) {
       setOnlyDelayed(initialDelayed);
     }
-  }, [initialDelayed]);
+  }, [initialDelayed, setOnlyDelayed]);
 
   useEffect(() => {
     if (!data.length) return;

@@ -11,7 +11,14 @@ interface OrderState {
   allOrders: OrderData[];
   workQueue: OrderData[];
   segData: OrderData[];
+  segLoaded: boolean;
+  segLoading: boolean;
+  segLastUpdate: Date | null;
+  loadSegData: (force?: boolean) => Promise<void>;
   resData: OrderData[];
+  resLoaded: boolean;
+  resLoading: boolean;
+  loadResData: (force?: boolean) => Promise<void>;
   novedadesQueue: OrderData[];
   novedadesLoading: boolean;
   counter: Counter;
@@ -37,7 +44,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
   const [segData, setSegData] = useState<OrderData[]>([]);
+  const [segLoaded, setSegLoaded] = useState(false);
+  const [segLoading, setSegLoading] = useState(false);
+  const [segLastUpdate, setSegLastUpdate] = useState<Date | null>(null);
   const [resData, setResData] = useState<OrderData[]>([]);
+  const [resLoaded, setResLoaded] = useState(false);
+  const [resLoading, setResLoading] = useState(false);
   const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
   const [novedadesLoading, setNovedadesLoading] = useState(false);
   const [counter, setCounter] = useState<Counter>({ conf: 0, canc: 0, noresp: 0 });
@@ -161,6 +173,74 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
+  // Fetch Seguimiento orders from the DB and cache them in the context so
+  // the data survives React Router route unmounts. Without this the operator
+  // loses all scroll/filter/selection state every time they navigate between
+  // tabs. Call with force=true from the "Actualizar" button to bypass cache.
+  const loadSegData = useCallback(async (force = false) => {
+    if (!user) return;
+    if (segLoaded && !force) return;
+    setSegLoading(true);
+    try {
+      const { data: dbOrders, error } = await supabase
+        .from('orders')
+        .select('*')
+        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+      if (error) {
+        console.error('Error loading seg orders:', error);
+        return;
+      }
+      if (dbOrders) {
+        setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
+      }
+      setSegLastUpdate(new Date());
+      setSegLoaded(true);
+    } finally {
+      setSegLoading(false);
+    }
+  }, [user, segLoaded]);
+
+  // Same pattern as loadSegData but with the stricter rescue filter (excludes
+  // ENTREGADO and CANCELADO server-side for a smaller payload).
+  const loadResData = useCallback(async (force = false) => {
+    if (!user) return;
+    if (resLoaded && !force) return;
+    setResLoading(true);
+    try {
+      const { data: dbOrders, error } = await supabase
+        .from('orders')
+        .select('*')
+        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
+        .not('estado', 'eq', 'ENTREGADO')
+        .not('estado', 'eq', 'CANCELADO')
+        .order('created_at', { ascending: false })
+        .limit(2000);
+      if (error) {
+        console.error('Error loading rescue orders:', error);
+        return;
+      }
+      if (dbOrders) {
+        // Apply rescue filter client-side (same logic as RescateTab's isRescueOrder)
+        const orders = dbOrders
+          .map((o, idx) => dbToOrderData(o, idx))
+          .filter(o => {
+            const e = o.estado.toUpperCase();
+            const diasT = o.diasConf || o.dias;
+            return (isDespachado(e) && diasT >= 5) ||
+              (e.includes('NOVEDAD') && !o.novedadSol) ||
+              e.includes('OFICINA') || e.includes('RECLAME') ||
+              e.includes('DEVOL');
+          });
+        setResData(orders);
+      }
+      setResLoaded(true);
+    } finally {
+      setResLoading(false);
+    }
+  }, [user, resLoaded]);
+
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
 
@@ -270,7 +350,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setAllOrdersState([]);
     setWorkQueue([]);
     setSegData([]);
+    setSegLoaded(false);
+    setSegLastUpdate(null);
     setResData([]);
+    setResLoaded(false);
     setNovedadesQueue([]);
     setExcelLoaded(false);
     resetCelebrations();
@@ -388,7 +471,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   return (
     <OrderContext.Provider value={{
-      allOrders, workQueue, segData, resData, novedadesQueue, novedadesLoading, counter, timerStart,
+      allOrders, workQueue,
+      segData, segLoaded, segLoading, segLastUpdate, loadSegData,
+      resData, resLoaded, resLoading, loadResData,
+      novedadesQueue, novedadesLoading, counter, timerStart,
       loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders,
       loadNovedades, resolveNovedad,
     }}>
