@@ -236,7 +236,7 @@ export default function AdminTab() {
             )}
           </motion.div>
 
-          <SyncPanel onSyncComplete={() => setSyncKey(k => k + 1)} />
+          <SyncPanel onSyncComplete={() => { setSyncKey(k => k + 1); loadFailedSyncs(); }} />
 
           <SyncHistory key={syncKey} />
 
