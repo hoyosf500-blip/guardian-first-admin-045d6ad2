@@ -50,22 +50,34 @@ interface StatusColumn {
 
 const STATUS_COLUMNS: StatusColumn[] = [
   {
-    key: 'bodega', label: 'En Bodega', icon: <Package size={14} />,
+    key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />,
     color: 'blue', bgGradient: 'from-blue-500 to-blue-600',
     pillBg: 'bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20', pillText: 'text-blue-600 dark:text-blue-400',
-    match: (e) => ['PENDIENTE', 'ALISTAMIENTO', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) || (e.includes('BODEGA') && !e.includes('DEVOL'))
+    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e)
   },
   {
     key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />,
     color: 'cyan', bgGradient: 'from-cyan-500 to-teal-500',
     pillBg: 'bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20', pillText: 'text-cyan-600 dark:text-cyan-400',
-    match: (e) => e === 'GUIA GENERADA' || e === 'GUIA_GENERADA' || e.includes('PREPARADO') || e === 'ENTREGADO A TRANSPORTADORA'
+    match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e)
+  },
+  {
+    key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />,
+    color: 'indigo', bgGradient: 'from-indigo-500 to-indigo-600',
+    pillBg: 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20', pillText: 'text-indigo-600 dark:text-indigo-400',
+    match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e)
   },
   {
     key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />,
     color: 'orange', bgGradient: 'from-orange-500 to-amber-500',
     pillBg: 'bg-orange-500/10 border-orange-500/20 hover:bg-orange-500/20', pillText: 'text-orange-600 dark:text-orange-400',
-    match: (e) => e.includes('REPARTO') || e.includes('DISTRIBUCION') || e.includes('TERMINAL') || e.includes('REEXPEDICION') || e.includes('DESPACHAD') || e.includes('REENVÍO') || e.includes('REENVIO') || e.includes('TRANSPORTE') || e === 'ADMITIDA' || e === 'EN DESPACHO' || e === 'TELEMERCADEO'
+    match: (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e)
+  },
+  {
+    key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />,
+    color: 'amber', bgGradient: 'from-amber-500 to-yellow-500',
+    pillBg: 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20', pillText: 'text-amber-600 dark:text-amber-400',
+    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e)
   },
   {
     key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />,
@@ -74,10 +86,16 @@ const STATUS_COLUMNS: StatusColumn[] = [
     match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA'
   },
   {
-    key: 'oficina', label: 'En Oficina', icon: <MapPin size={14} />,
+    key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />,
     color: 'purple', bgGradient: 'from-fuchsia-500 to-purple-600',
     pillBg: 'bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20', pillText: 'text-purple-600 dark:text-purple-400',
     match: (e) => e.includes('OFICINA') || e.includes('RECLAME')
+  },
+  {
+    key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />,
+    color: 'yellow', bgGradient: 'from-yellow-600 to-orange-600',
+    pillBg: 'bg-yellow-500/10 border-yellow-500/20 hover:bg-yellow-500/20', pillText: 'text-yellow-600 dark:text-yellow-400',
+    match: (e) => e === 'RECHAZADO'
   },
   {
     key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />,
@@ -92,9 +110,15 @@ const STATUS_COLUMNS: StatusColumn[] = [
     match: (e) => e === 'ENTREGADO'
   },
   {
-    key: 'otros', label: 'Otros', icon: <Layers size={14} />,
+    key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />,
     color: 'slate', bgGradient: 'from-slate-500 to-slate-600',
     pillBg: 'bg-slate-500/10 border-slate-500/20 hover:bg-slate-500/20', pillText: 'text-slate-600 dark:text-slate-400',
+    match: (e) => e === 'CANCELADO'
+  },
+  {
+    key: 'otros', label: 'Otros', icon: <Layers size={14} />,
+    color: 'slate', bgGradient: 'from-gray-500 to-gray-600',
+    pillBg: 'bg-gray-500/10 border-gray-500/20 hover:bg-gray-500/20', pillText: 'text-gray-600 dark:text-gray-400',
     match: () => true
   },
 ];
@@ -436,6 +460,9 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             )}
             {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
           </div>
+          <span className="flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate">
+            {o.estado}
+          </span>
         </div>
 
         {/* Phone row */}
