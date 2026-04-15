@@ -22,6 +22,8 @@ export default function AdminTab() {
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncKey, setSyncKey] = useState(0);
+  const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
   const [dropiKey, setDropiKey] = useState('');
   const [dropiKeySaved, setDropiKeySaved] = useState('');
