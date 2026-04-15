@@ -69,8 +69,9 @@ async function loadSettings(sb: SB): Promise<DropiSettings> {
   if (error) throw new Error(`No se pudo leer app_settings: ${error.message}`);
 
   const map = new Map<string, string>();
-  (data || []).forEach((row: { key: string; value: string }) =>
-    map.set(row.key, row.value || "")
+  // deno-lint-ignore no-explicit-any
+  (data || []).forEach((row: any) =>
+    map.set(String(row.key), String(row.value || ""))
   );
 
   // Fallback to env vars for secrets, keeping the same pattern as dropi-sync.
