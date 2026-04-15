@@ -247,6 +247,33 @@ export default function ConfirmarTab({ profile }: Props) {
           <div className="bg-card rounded-xl border border-border p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
               <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
+              {/* Date filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar size={14} className="text-muted-foreground" />
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-xs text-foreground"
+                  placeholder="Desde"
+                />
+                <span className="text-xs text-muted-foreground">a</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-xs text-foreground"
+                  placeholder="Hasta"
+                />
+                {(dateFrom || dateTo) && (
+                  <button
+                    onClick={() => { setDateFrom(''); setDateTo(''); }}
+                    className="text-[10px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Limpiar
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               {([
