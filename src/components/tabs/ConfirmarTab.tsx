@@ -43,6 +43,8 @@ export default function ConfirmarTab({ profile }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const today = new Date().toISOString().split('T')[0];
 
   // Auto-load orders from DB on mount if not already loaded
