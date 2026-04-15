@@ -3,9 +3,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { SEG_ACTIONS } from '@/lib/constants';
-import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers } from 'lucide-react';
+import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 
 function classifyEstado(estado: string) {
@@ -33,6 +39,8 @@ export default function SeguimientoTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const loadOrders = useCallback(async (isRefresh = false) => {
     if (!user) return;
@@ -57,21 +65,42 @@ export default function SeguimientoTab() {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
+  // Filter by date range
+  const filteredByDate = useMemo(() => {
+    if (!dateFrom && !dateTo) return segData;
+    return segData.filter(o => {
+      const d = o.fecha?.trim();
+      if (!d) return false;
+      // Try to parse the date string to YYYY-MM-DD for comparison
+      let dateStr = '';
+      // Handle DD/MM/YYYY format
+      const parts = d.split('/');
+      if (parts.length === 3) {
+        dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      } else {
+        // Try ISO or YYYY-MM-DD
+        dateStr = d.slice(0, 10);
+      }
+      if (dateFrom && dateStr < dateFrom) return false;
+      if (dateTo && dateStr > dateTo) return false;
+      return true;
+    });
+  }, [segData, dateFrom, dateTo]);
+
   const stats = useMemo(() => {
     const s = {
       procesamiento: 0, guia: 0, bodega_trans: 0, transito: 0, reparto: 0,
       novedad: 0, novedad_sol: 0, oficina: 0, rechazado: 0,
       devolucion_transito: 0, devolucion: 0, indemnizada: 0,
       entregado: 0, cancelado: 0, otros: 0,
-      total: segData.length, valorTotal: 0
+      total: filteredByDate.length,
     };
-    segData.forEach(o => {
+    filteredByDate.forEach(o => {
       const cat = classifyEstado(o.estado);
       if (cat in s) (s as any)[cat]++;
-      s.valorTotal += o.valor;
     });
     return s;
-  }, [segData]);
+  }, [filteredByDate]);
 
   const statCards = [
     { label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, gradient: 'from-blue-500 to-blue-600' },
@@ -106,7 +135,6 @@ export default function SeguimientoTab() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header with stats */}
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
@@ -125,15 +153,61 @@ export default function SeguimientoTab() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Date range filter */}
+            <div className="flex items-center gap-1.5 bg-card border border-border rounded-xl px-2 py-1">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className={cn(
+                    "h-7 gap-1.5 text-[11px] font-normal px-2",
+                    !dateFrom && "text-muted-foreground"
+                  )}>
+                    <CalendarIcon size={12} />
+                    {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Desde'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="single"
+                    selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
+                    onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="text-[10px] text-muted-foreground/50">—</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className={cn(
+                    "h-7 gap-1.5 text-[11px] font-normal px-2",
+                    !dateTo && "text-muted-foreground"
+                  )}>
+                    <CalendarIcon size={12} />
+                    {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Hasta'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="single"
+                    selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
+                    onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                  <X size={13} />
+                </Button>
+              )}
+            </div>
+
             <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2">
               <Package size={14} className="text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Total</span>
               <span className="text-sm font-bold text-foreground">{stats.total}</span>
-            </div>
-            <div className="hidden sm:flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2">
-              <DollarSign size={14} className="text-emerald-500" />
-              <span className="text-xs text-muted-foreground">Valor</span>
-              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">${stats.valorTotal.toLocaleString()}</span>
             </div>
             <button
               onClick={() => loadOrders(true)}
@@ -172,7 +246,7 @@ export default function SeguimientoTab() {
       </motion.div>
 
       <CrmTable
-        data={segData}
+        data={filteredByDate}
         actions={SEG_ACTIONS}
         module="SEG"
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
