@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTrackingUrl } from '@/lib/orderUtils';
+import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
   Package, Clock, Calendar, DollarSign, FileText, AlertTriangle, RefreshCw,
-  MessageSquare, Send
+  MessageSquare, Send, PhoneCall,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { buildTimeline } from '@/lib/timelineBuilder';
+import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
+import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
+import Timeline from '@/components/order-detail/Timeline';
+import CommunicationLog from '@/components/order-detail/CommunicationLog';
 
 interface OrderRow {
   id: string;
@@ -36,14 +41,34 @@ interface OrderRow {
   tags: string | null;
   tienda: string | null;
   novedad_sol: boolean | null;
+  upload_date: string | null;
   created_at: string;
 }
 
 interface Touchpoint {
   id: string;
+  phone: string;
   action: string;
-  action_date: string;
+  action_date: string | null;
   action_time: string | null;
+  operator_id: string;
+  created_at: string;
+}
+
+interface OrderResultRow {
+  id: string;
+  order_id: string;
+  result: string;
+  reason: string | null;
+  operator_id: string;
+  result_date: string | null;
+  result_time: string | null;
+  created_at: string;
+}
+
+interface NoteRow {
+  id: string;
+  note_text: string;
   operator_id: string;
   created_at: string;
 }
@@ -53,16 +78,21 @@ interface Profile {
   display_name: string;
 }
 
+/** Minimum seconds between successive touchpoints of the same kind (debounce). */
+const COMMUNICATION_DEBOUNCE_MS = 30_000;
+
 export default function OrderDetailPage() {
   const { externalId } = useParams<{ externalId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
+  const [orderResults, setOrderResults] = useState<OrderResultRow[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [noteText, setNoteText] = useState('');
-  const [notes, setNotes] = useState<{ id: string; note_text: string; operator_id: string; created_at: string }[]>([]);
+  const [notes, setNotes] = useState<NoteRow[]>([]);
 
   useEffect(() => {
     if (!externalId) return;
@@ -83,23 +113,48 @@ export default function OrderDetailPage() {
       const o = orders[0] as OrderRow;
       setOrder(o);
 
-      // Load touchpoints & notes & profiles in parallel
-      const [tpRes, notesRes, profilesRes] = await Promise.all([
-        supabase.from('touchpoints').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(50),
+      // Load touchpoints, notes, order_results & profiles in parallel
+      const [tpRes, notesRes, orRes, profilesRes] = await Promise.all([
+        supabase.from('touchpoints').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(100),
         supabase.from('notes').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(50),
+        supabase.from('order_results').select('*').eq('order_id', o.id).order('created_at', { ascending: false }).limit(50),
         supabase.from('profiles').select('user_id, display_name'),
       ]);
 
       if (tpRes.data) setTouchpoints(tpRes.data as Touchpoint[]);
-      if (notesRes.data) setNotes(notesRes.data);
-      if (profilesRes.data) setProfiles(profilesRes.data);
+      if (notesRes.data) setNotes(notesRes.data as NoteRow[]);
+      if (orRes.data) setOrderResults(orRes.data as OrderResultRow[]);
+      if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
       setLoading(false);
     };
 
     load();
   }, [externalId]);
 
-  const getOperatorName = (opId: string) => profiles.find(p => p.user_id === opId)?.display_name || 'Operador';
+  // Map operator_id → display_name for the timeline
+  const operatorNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    profiles.forEach((p) => { map[p.user_id] = p.display_name; });
+    return map;
+  }, [profiles]);
+
+  // Build unified timeline
+  const timelineEvents = useMemo(() => {
+    if (!order) return [];
+    return buildTimeline({
+      order,
+      touchpoints,
+      notes,
+      orderResults,
+      operatorNames,
+    });
+  }, [order, touchpoints, notes, orderResults, operatorNames]);
+
+  // Derived OrderData shape for cards that expect it
+  const orderData: OrderData | null = useMemo(
+    () => (order ? dbToOrderData(order, 0) : null),
+    [order],
+  );
 
   const addNote = async () => {
     if (!noteText.trim() || !user || !order) return;
@@ -110,9 +165,39 @@ export default function OrderDetailPage() {
       order_id: order.id,
     }).select();
     if (!error && data) {
-      setNotes(prev => [...data, ...prev]);
+      setNotes((prev) => [...(data as NoteRow[]), ...prev]);
       setNoteText('');
       toast.success('Nota guardada');
+    }
+  };
+
+  /**
+   * Registers a communication touchpoint (call/whatsapp) with debounce — avoids
+   * spamming the bitácora if the operator accidentally clicks twice.
+   */
+  const logCommunication = async (channel: 'CALL' | 'WHATSAPP', detail: string) => {
+    if (!user || !order) return;
+
+    // Debounce: check the most recent touchpoint of the same channel for this phone
+    const now = Date.now();
+    const recent = touchpoints.find(
+      (tp) => tp.action.startsWith(`${channel}:`) && (now - new Date(tp.created_at).getTime()) < COMMUNICATION_DEBOUNCE_MS,
+    );
+    if (recent) return; // skip, still within debounce window
+
+    const today = new Date().toISOString().split('T')[0];
+    const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+
+    const { data, error } = await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: `${channel}: ${detail}`,
+      operator_id: user.id,
+      action_date: today,
+      action_time: time,
+    }).select();
+
+    if (!error && data) {
+      setTouchpoints((prev) => [...(data as Touchpoint[]), ...prev]);
     }
   };
 
@@ -125,7 +210,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  if (!order) {
+  if (!order || !orderData) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-4">
         <Package size={32} className="text-muted-foreground" />
@@ -142,10 +227,14 @@ export default function OrderDetailPage() {
   const flete = Number(order.flete) || 0;
   const costoProd = Number(order.costo_prod) || 0;
 
+  const estadoUpper = (order.estado || '').toUpperCase();
+  const showConfirmShortcut = isPendiente(estadoUpper);
+  const showNovedadShortcut = isNovedad(estadoUpper) && !order.novedad_sol;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Back + header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 flex-wrap">
         <button onClick={() => navigate(-1)} className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors">
           <ArrowLeft size={18} />
         </button>
@@ -159,21 +248,42 @@ export default function OrderDetailPage() {
           </div>
         </div>
         <span className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-          (order.estado || '').toUpperCase().includes('ENTREGADO') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' :
-          (order.estado || '').toUpperCase().includes('DEVOL') ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20' :
-          (order.estado || '').toUpperCase().includes('NOVEDAD') ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' :
+          estadoUpper.includes('ENTREGADO') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' :
+          estadoUpper.includes('DEVOL') ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20' :
+          estadoUpper.includes('NOVEDAD') ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' :
           'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
         }`}>
           {order.estado}
         </span>
+
+        {/* Quick action shortcuts */}
+        {showConfirmShortcut && (
+          <button
+            onClick={() => navigate('/confirmar')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-semibold hover:bg-blue-500/20 transition-colors"
+          >
+            <PhoneCall size={12} /> Ir a Confirmar
+          </button>
+        )}
+        {showNovedadShortcut && (
+          <button
+            onClick={() => navigate('/novedades')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 text-xs font-semibold hover:bg-orange-500/20 transition-colors"
+          >
+            <AlertTriangle size={12} /> Ir a Novedades
+          </button>
+        )}
       </motion.div>
+
+      {/* SLA Alert Card */}
+      <SlaAlertCard order={orderData} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Info card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           className="bg-card border border-border rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><User size={14} /> Información del cliente</h3>
-          
+
           <div className="space-y-3">
             <InfoRow icon={<Phone size={13} />} label="Teléfono" value={order.phone} copyable />
             <InfoRow icon={<MapPin size={13} />} label="Ciudad" value={`${order.ciudad || ''}${order.departamento ? `, ${order.departamento}` : ''}`} />
@@ -183,12 +293,20 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="flex gap-2 pt-2">
-            <a href={`https://wa.me/57${order.phone}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white text-xs font-bold py-2.5 hover:bg-emerald-700 transition-colors no-underline">
+            <a
+              href={`https://wa.me/57${order.phone}?text=${waMsg}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => logCommunication('WHATSAPP', 'Mensaje enviado al cliente')}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white text-xs font-bold py-2.5 hover:bg-emerald-700 transition-colors no-underline"
+            >
               <MessageSquare size={13} /> WhatsApp
             </a>
-            <a href={`tel:${order.phone}`}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 text-white text-xs font-bold py-2.5 hover:bg-blue-700 transition-colors no-underline">
+            <a
+              href={`tel:${order.phone}`}
+              onClick={() => logCommunication('CALL', 'Llamada saliente')}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 text-white text-xs font-bold py-2.5 hover:bg-blue-700 transition-colors no-underline"
+            >
               <Phone size={13} /> Llamar
             </a>
           </div>
@@ -227,68 +345,67 @@ export default function OrderDetailPage() {
 
         {/* Financial card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="bg-card border border-border rounded-2xl p-5 space-y-4">
+          className="bg-card border border-border rounded-2xl p-5 space-y-4 md:col-span-2">
           <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><DollarSign size={14} /> Financiero</h3>
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={`$${valor.toLocaleString()}`} />
             <InfoRow icon={<Truck size={13} />} label="Flete" value={`$${flete.toLocaleString()}`} />
             <InfoRow icon={<Package size={13} />} label="Costo producto" value={`$${costoProd.toLocaleString()}`} />
             <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={`$${(valor - flete - costoProd).toLocaleString()}`} highlight />
           </div>
         </motion.div>
+      </div>
 
-        {/* Notes card */}
+      {/* Customer history */}
+      <CustomerHistoryCard currentPhone={order.phone} currentOrderId={order.id} />
+
+      {/* Timeline + Communication log */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-card border border-border rounded-2xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><MessageSquare size={14} /> Notas</h3>
-          
-          <div className="flex gap-2">
-            <input
-              value={noteText}
-              onChange={e => setNoteText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addNote()}
-              placeholder="Agregar nota..."
-              className="flex-1 bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
-            />
-            <button onClick={addNote} className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-              <Send size={13} />
-            </button>
-          </div>
+          className="bg-card border border-border rounded-2xl p-5">
+          <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-4">
+            <Clock size={14} /> Historial del pedido
+          </h3>
+          <Timeline events={timelineEvents} emptyText="Sin eventos registrados todavía" />
+        </motion.div>
 
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {notes.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Sin notas</p>}
-            {notes.map(n => (
+        <CommunicationLog events={timelineEvents} />
+      </div>
+
+      {/* Notes */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+        className="bg-card border border-border rounded-2xl p-5 space-y-4">
+        <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><MessageSquare size={14} /> Notas</h3>
+
+        <div className="flex gap-2">
+          <input
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && addNote()}
+            placeholder="Agregar nota..."
+            className="flex-1 bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+          />
+          <button onClick={addNote} className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+            <Send size={13} />
+          </button>
+        </div>
+
+        <div className="space-y-2 max-h-48 overflow-y-auto">
+          {notes.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Sin notas</p>}
+          {notes.map((n) => {
+            const operatorName = profiles.find((p) => p.user_id === n.operator_id)?.display_name || 'Operador';
+            return (
               <div key={n.id} className="text-xs bg-secondary/50 rounded-lg px-3 py-2">
                 <div className="flex justify-between mb-1">
-                  <span className="font-semibold text-foreground">{getOperatorName(n.operator_id)}</span>
+                  <span className="font-semibold text-foreground">{operatorName}</span>
                   <span className="text-muted-foreground">{new Date(n.created_at).toLocaleDateString('es-CO')}</span>
                 </div>
                 <p className="text-muted-foreground">{n.note_text}</p>
               </div>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Touchpoints timeline */}
-      {touchpoints.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="bg-card border border-border rounded-2xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><Clock size={14} /> Historial de gestiones</h3>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {touchpoints.map(tp => (
-              <div key={tp.id} className="flex items-start gap-3 text-xs">
-                <div className="w-2 h-2 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <span className="font-semibold text-foreground">{tp.action}</span>
-                  <span className="text-muted-foreground ml-2">{getOperatorName(tp.operator_id)}</span>
-                </div>
-                <span className="text-muted-foreground whitespace-nowrap">{tp.action_date} {tp.action_time}</span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
+            );
+          })}
+        </div>
+      </motion.div>
     </div>
   );
 }
