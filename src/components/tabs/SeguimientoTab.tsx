@@ -286,7 +286,10 @@ export default function SeguimientoTab() {
                 ? "border-orange-500 bg-orange-500/10 ring-1 ring-orange-500/30"
                 : "border-orange-500/30 bg-gradient-to-r from-orange-500/5 to-red-500/5 hover:border-orange-500/50"
             )}
-            onClick={() => setInitialDelayed(!initialDelayed)}
+            onClick={() => {
+              setInitialDelayed(!initialDelayed);
+              if (initialDelayed) setStalledCategoryFilter(null);
+            }}
           >
             <div className="px-4 py-3 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -319,9 +322,21 @@ export default function SeguimientoTab() {
             {/* Category breakdown */}
             <div className="px-4 pb-3 flex flex-wrap gap-2">
               {stalledStats.categories.map(cat => (
-                <div
+                <button
                   key={cat.label}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-card/80 border border-border/50 px-2.5 py-1.5"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const isActive = stalledCategoryFilter === cat.label;
+                    setStalledCategoryFilter(isActive ? null : cat.label);
+                    if (!initialDelayed) setInitialDelayed(true);
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all",
+                    stalledCategoryFilter === cat.label
+                      ? "bg-orange-500/20 border-orange-500/60 ring-1 ring-orange-500/30"
+                      : "bg-card/80 border-border/50 hover:border-orange-400/40"
+                  )}
                 >
                   <span className={cat.color}>{cat.icon}</span>
                   <span className="text-[11px] font-medium text-foreground">{cat.label}</span>
@@ -331,7 +346,7 @@ export default function SeguimientoTab() {
                       {cat.days5} crit
                     </span>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           </motion.div>
@@ -365,6 +380,7 @@ export default function SeguimientoTab() {
         emptyTitle="Sin pedidos en seguimiento"
         emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
         initialDelayed={initialDelayed}
+        stalledCategoryFilter={stalledCategoryFilter}
       />
     </div>
   );
