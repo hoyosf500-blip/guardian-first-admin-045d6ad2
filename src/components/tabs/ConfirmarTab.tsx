@@ -186,13 +186,16 @@ export default function ConfirmarTab({ profile }: Props) {
             </div>
           </button>
 
-          <div className="relative flex items-center gap-3 my-2">
+          <button
+            onClick={() => setShowExcel(!showExcel)}
+            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+          >
             <div className="flex-1 h-px bg-border" />
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">o sube manualmente</span>
+            <span>{showExcel ? 'Ocultar' : 'O sube manualmente'}</span>
             <div className="flex-1 h-px bg-border" />
-          </div>
+          </button>
 
-          <ExcelUploader onFile={handleFile} />
+          {showExcel && <ExcelUploader onFile={handleFile} />}
         </div>
       )}
 
