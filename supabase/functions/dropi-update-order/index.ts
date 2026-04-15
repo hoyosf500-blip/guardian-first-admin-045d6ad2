@@ -2,28 +2,37 @@
 //
 // Purpose
 // -------
-// Update an order's status in Dropi via the official Bearer-token flow documented
-// in the Dropi integration PDF (login email+password+white_brand_id → Bearer token,
-// then PUT /api/orders/myorders/{id} with { "status": NEW_STATUS }).
+// Update an order's status in Dropi using the **integration-key flow** (same
+// header that `dropi-sync` already uses for reads).
 //
-// This function is ADDITIVE. It coexists with the existing `dropi-sync` /
-// `dropi-cron` functions which use the integration-key flow for read-only sync.
+// History
+// -------
+// We originally wrote this function to use the Bearer-token flow documented in
+// the Dropi integration PDF (login email+password → token → PUT). That path is
+// blocked in practice because the user account has 2FA enabled and the
+// documented /api/login endpoint does not accept a TOTP code, so it returns
+// 403 Access denied.
 //
-// Invocation
-// ----------
-// From the frontend (authenticated user):
+// After testing with curl we confirmed that `PUT /integrations/orders/myorders/{id}`
+// with the `dropi-integration-key` header IS accepted by Dropi (even though
+// the PDF does not document PUT on that path). So this version of the function
+// uses the same read-only key that dropi-sync uses, avoiding the whole Bearer
+// / 2FA mess.
+//
+// Invocation from frontend
+// ------------------------
 //   supabase.functions.invoke('dropi-update-order', {
-//     body: { externalId: '<dropi order id>' }         // real PUT
+//     body: { externalId: '<dropi order id>' }     // real PUT
 //   })
 //   supabase.functions.invoke('dropi-update-order', {
-//     body: { dryRun: true }                            // login test only
+//     body: { dryRun: true }                       // connectivity test only
 //   })
 //   supabase.functions.invoke('dropi-update-order', {
 //     body: { externalId: '...', status: 'GUIA_GENERADA' }  // override status
 //   })
 //
-// The default new status is "PENDIENTE" (to move an order from PENDIENTE
-// CONFIRMACION → PENDIENTE when the operator confirms the call).
+// The default new status is "PENDIENTE" (move orders from PENDIENTE
+// CONFIRMACION → PENDIENTE the moment the operator confirms the call).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
@@ -32,168 +41,57 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const DROPI_PROD = "https://api.dropi.co";
-const DROPI_TEST = "https://test-api.dropi.co";
-const WHITE_BRAND_DEFAULT =
-  "df3e6b0bb66ceaadca4f84cbc371fd66e04d20fe51fc414da8d1b84d31d178de";
+const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_NEW_STATUS = "PENDIENTE";
-
-interface DropiSettings {
-  email: string;
-  password: string;
-  whiteBrandId: string;
-  token: string;
-  tokenAt: string;
-  ttlMin: number;
-  env: "prod" | "test";
-}
+const DEFAULT_STORE_URL = "https://rushmira.com/";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
-async function loadSettings(sb: SB): Promise<DropiSettings> {
-  const keys = [
-    "dropi_email",
-    "dropi_password",
-    "dropi_white_brand_id",
-    "dropi_token",
-    "dropi_token_at",
-    "dropi_token_ttl_min",
-    "dropi_env",
-  ];
+async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> {
   const { data, error } = await sb
     .from("app_settings")
     .select("key, value")
-    .in("key", keys);
+    .in("key", ["dropi_api_key", "dropi_store_url"]);
 
-  if (error) throw new Error(`No se pudo leer app_settings: ${error.message}`);
+  if (error) {
+    throw new Error(`No se pudo leer app_settings: ${error.message}`);
+  }
 
   const map = new Map<string, string>();
   // deno-lint-ignore no-explicit-any
   (data || []).forEach((row: any) =>
-    map.set(String(row.key), String(row.value || ""))
+    map.set(String(row.key), String(row.value || "")),
   );
 
-  // Fallback to env vars for secrets, keeping the same pattern as dropi-sync.
-  const email = map.get("dropi_email") || Deno.env.get("DROPI_EMAIL") || "";
-  const password =
-    map.get("dropi_password") || Deno.env.get("DROPI_PASSWORD") || "";
-  const whiteBrandId =
-    map.get("dropi_white_brand_id") ||
-    Deno.env.get("DROPI_WHITE_BRAND_ID") ||
-    WHITE_BRAND_DEFAULT;
-  const token = map.get("dropi_token") || "";
-  const tokenAt = map.get("dropi_token_at") || "";
-  const ttlMinStr = map.get("dropi_token_ttl_min") || "25";
-  const ttlMin = Math.max(1, parseInt(ttlMinStr, 10) || 25);
-  const envRaw = (map.get("dropi_env") || "prod").toLowerCase();
-  const env: "prod" | "test" = envRaw === "test" ? "test" : "prod";
+  const apiKey = map.get("dropi_api_key") || Deno.env.get("DROPI_API_KEY") || "";
+  const storeUrl = map.get("dropi_store_url") || DEFAULT_STORE_URL;
 
-  return { email, password, whiteBrandId, token, tokenAt, ttlMin, env };
+  return { apiKey, storeUrl };
 }
 
-function baseUrl(env: "prod" | "test"): string {
-  return env === "test" ? DROPI_TEST : DROPI_PROD;
-}
-
-function tokenIsFresh(tokenAt: string, ttlMin: number): boolean {
-  if (!tokenAt) return false;
-  const t = new Date(tokenAt).getTime();
-  if (isNaN(t)) return false;
-  const elapsedMin = (Date.now() - t) / 60000;
-  return elapsedMin < ttlMin;
-}
-
-async function login(settings: DropiSettings): Promise<string> {
-  if (!settings.email || !settings.password) {
-    throw new Error(
-      "Credenciales Dropi Bearer no configuradas (email/password).",
-    );
-  }
-
-  const res = await fetch(`${baseUrl(settings.env)}/api/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      email: settings.email,
-      password: settings.password,
-      white_brand_id: settings.whiteBrandId || WHITE_BRAND_DEFAULT,
-    }),
-  });
-
-  const raw = await res.text();
-  let body: Record<string, unknown> = {};
-  try {
-    body = raw ? JSON.parse(raw) : {};
-  } catch {
-    body = { raw };
-  }
-
-  if (!res.ok) {
-    throw new Error(
-      `Dropi login [${res.status}]: ${String(body.message || body.error || raw || "error desconocido")}`,
-    );
-  }
-
-  // The Dropi PDF documents that login returns a top-level `token` field,
-  // but some deployments wrap it under `data` or `objects`. Try all.
-  const token =
-    (body.token as string) ||
-    ((body.data as Record<string, unknown> | undefined)?.token as string) ||
-    ((body.objects as Record<string, unknown> | undefined)?.token as string) ||
-    "";
-
-  if (!token) {
-    throw new Error(
-      `Dropi login OK pero sin token en la respuesta: ${raw.slice(0, 300)}`,
-    );
-  }
-  return token;
-}
-
-async function persistToken(sb: SB, token: string): Promise<string> {
-  const tokenAt = new Date().toISOString();
-  const { error } = await sb
-    .from("app_settings")
-    .upsert(
-      [
-        { key: "dropi_token", value: token },
-        { key: "dropi_token_at", value: tokenAt },
-      ],
-      { onConflict: "key" },
-    );
-  if (error) {
-    // Non-fatal: we still return the token in memory for this invocation.
-    console.error("persistToken error:", error.message);
-  }
-  return tokenAt;
-}
-
-interface PutResult {
+interface DropiResult {
   ok: boolean;
   httpStatus: number;
   body: Record<string, unknown>;
-  expired: boolean;
   rawText: string;
 }
 
-async function putOrderStatus(
-  base: string,
+async function dropiPutOrder(
+  apiKey: string,
+  storeUrl: string,
   externalId: string,
-  token: string,
   newStatus: string,
-): Promise<PutResult> {
+): Promise<DropiResult> {
   const res = await fetch(
-    `${base}/api/orders/myorders/${encodeURIComponent(externalId)}`,
+    `${DROPI_BASE}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
     {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
+        "Accept": "application/json",
+        "dropi-integration-key": apiKey,
+        "Origin": storeUrl,
       },
       body: JSON.stringify({ status: newStatus }),
     },
@@ -207,15 +105,45 @@ async function putOrderStatus(
     body = { raw: rawText };
   }
 
-  const expired =
-    res.status === 401 ||
-    String(body.message || "")
-      .toLowerCase()
-      .includes("token is expired");
+  const ok = res.ok && body.isSuccess !== false;
+  return { ok, httpStatus: res.status, body, rawText };
+}
+
+async function dropiSanityCheck(
+  apiKey: string,
+  storeUrl: string,
+): Promise<{ ok: boolean; httpStatus: number; message?: string }> {
+  // Lightweight GET against the integrations listing endpoint to verify the
+  // key is still valid and Dropi is reachable. This is what dropi-sync uses
+  // so we know it works.
+  const url =
+    `${DROPI_BASE}/integrations/orders/myorders?result_number=1&start=0` +
+    `&date_from=2020-01-01&date_to=2020-01-01` +
+    `&filter_date_by=FECHA%20DE%20CREADO&orderBy=id&orderDirection=desc`;
+
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "dropi-integration-key": apiKey,
+      "Origin": storeUrl,
+    },
+  });
+
+  const rawText = await res.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    body = {};
+  }
 
   const ok = res.ok && body.isSuccess !== false;
+  const message = ok
+    ? "Conexión OK"
+    : String(body.message || `HTTP ${res.status}`);
 
-  return { ok, httpStatus: res.status, body, expired, rawText };
+  return { ok, httpStatus: res.status, message };
 }
 
 Deno.serve(async (req: Request) => {
@@ -277,13 +205,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- Load settings ----
-    const settings = await loadSettings(sb);
-    if (!settings.email || !settings.password) {
+    // ---- Load config (integration-key + store URL) ----
+    const { apiKey, storeUrl } = await getConfig(sb);
+    if (!apiKey) {
       return new Response(
         JSON.stringify({
           error:
-            "Credenciales Dropi Bearer no configuradas. Configúralas en Admin → Credenciales Dropi (flujo Bearer).",
+            "Clave API de Dropi no configurada. Configúrala en Admin → Clave API de Dropi.",
         }),
         {
           status: 400,
@@ -292,43 +220,25 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const base = baseUrl(settings.env);
-
-    // ---- DryRun: just login and persist token ----
+    // ---- DryRun: just a sanity GET so the admin can verify connectivity ----
     if (dryRun) {
-      const token = await login(settings);
-      const tokenAt = await persistToken(sb, token);
+      const check = await dropiSanityCheck(apiKey, storeUrl);
       return new Response(
         JSON.stringify({
-          ok: true,
+          ok: check.ok,
           dryRun: true,
-          env: settings.env,
-          tokenAt,
-          ttlMin: settings.ttlMin,
+          dropiHttpStatus: check.httpStatus,
+          message: check.message,
         }),
         {
-          status: 200,
+          status: check.ok ? 200 : 502,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
     }
 
-    // ---- Resolve a valid token: use cache if fresh, otherwise login ----
-    let token = settings.token;
-    if (!token || !tokenIsFresh(settings.tokenAt, settings.ttlMin)) {
-      token = await login(settings);
-      await persistToken(sb, token);
-    }
-
-    // ---- PUT order status ----
-    let res = await putOrderStatus(base, externalId, token, newStatus);
-
-    // ---- Reactive refresh if token expired (one retry only) ----
-    if (res.expired) {
-      token = await login(settings);
-      await persistToken(sb, token);
-      res = await putOrderStatus(base, externalId, token, newStatus);
-    }
+    // ---- PUT order status via integration-key ----
+    const res = await dropiPutOrder(apiKey, storeUrl, externalId, newStatus);
 
     if (!res.ok) {
       const errorMsg = `Dropi PUT [${res.httpStatus}]: ${String(
