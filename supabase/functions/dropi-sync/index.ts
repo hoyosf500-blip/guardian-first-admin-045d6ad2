@@ -7,7 +7,7 @@ const corsHeaders = {
 
 const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
 
 function sleep(ms: number) {
