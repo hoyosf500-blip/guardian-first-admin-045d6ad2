@@ -70,10 +70,12 @@ async function fetchAllPages(
 
     if (!res.ok) {
       const txt = await res.text();
+      console.error(`Dropi HTTP ${res.status}:`, txt);
       throw new Error(`Dropi API [${res.status}]: ${txt}`);
     }
 
     const data = await res.json();
+    console.log("Dropi response:", JSON.stringify({ isSuccess: data.isSuccess, message: data.message, count: data.objects?.length }));
     if (!data.isSuccess) {
       throw new Error(data.message || "Dropi error");
     }
