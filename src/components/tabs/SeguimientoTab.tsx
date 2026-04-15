@@ -208,6 +208,9 @@ export default function SeguimientoTab() {
               <Package size={14} className="text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Total</span>
               <span className="text-sm font-bold text-foreground">{stats.total}</span>
+              {(dateFrom || dateTo) && stats.total !== segData.length && (
+                <span className="text-[10px] text-muted-foreground font-mono">/ {segData.length}</span>
+              )}
             </div>
             <button
               onClick={() => loadOrders(true)}
