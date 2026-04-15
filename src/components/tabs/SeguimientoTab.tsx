@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData } from '@/lib/orderUtils';
@@ -43,35 +43,31 @@ export default function SeguimientoTab() {
   const { user } = useAuth();
   const [segData, setSegData] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const loadOrders = useCallback(async (isRefresh = false) => {
     if (!user) return;
-    setLoading(true);
+    if (isRefresh) setRefreshing(true); else setLoading(true);
 
-    const loadOrders = async () => {
-      // Load ALL orders except PENDIENTE CONFIRMACION (that's the Confirmar tab)
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .order('created_at', { ascending: false })
-        .limit(5000);
+    const { data: dbOrders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
+      .order('created_at', { ascending: false })
+      .limit(5000);
 
-      if (error) {
-        console.error('Error loading seg orders:', error);
-        setLoading(false);
-        return;
-      }
-
-      if (dbOrders && dbOrders.length > 0) {
-        const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
-        setSegData(orders);
-      }
-      setLoading(false);
-    };
-
-    loadOrders();
+    if (error) {
+      console.error('Error loading seg orders:', error);
+    } else if (dbOrders && dbOrders.length > 0) {
+      setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
+    }
+    setLastUpdate(new Date());
+    setLoading(false);
+    setRefreshing(false);
   }, [user]);
+
+  useEffect(() => { loadOrders(); }, [loadOrders]);
 
   const stats = useMemo(() => {
     const s = {
@@ -136,7 +132,7 @@ export default function SeguimientoTab() {
               <p className="text-xs text-muted-foreground">CRM de pedidos — todos los estados de Dropi</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2">
               <Package size={14} className="text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Total</span>
@@ -147,6 +143,19 @@ export default function SeguimientoTab() {
               <span className="text-xs text-muted-foreground">Valor</span>
               <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">${stats.valorTotal.toLocaleString()}</span>
             </div>
+            <button
+              onClick={() => loadOrders(true)}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">{refreshing ? 'Actualizando...' : 'Actualizar'}</span>
+            </button>
+            {lastUpdate && (
+              <span className="text-[10px] text-muted-foreground hidden md:block">
+                {lastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
           </div>
         </div>
 
