@@ -301,7 +301,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
               {col.icon}
               <span>{col.label}</span>
               <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                isActive ? 'bg-white/25' : 'bg-current/10'
+                isActive ? 'bg-white/25' : 'bg-secondary'
               }`}>
                 {allCounts[col.key]}
               </span>
@@ -479,9 +479,9 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Delay warning */}
         {isDelayed && !isExcludedFromDelay(o.estado) && (
           <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 ${
-            diasEnEstatus >= 5 ? 'bg-red-500/8 border border-red-500/15' :
-            diasEnEstatus >= 3 ? 'bg-amber-500/8 border border-amber-500/15' :
-            'bg-orange-400/8 border border-orange-400/15'
+            diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
+            diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
+            'bg-orange-400/10 border border-orange-400/20'
           }`}>
             <Clock size={11} className={diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'} />
             <span className={`text-[10px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'}`}>
@@ -584,7 +584,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 <div className="flex flex-wrap gap-1.5">
                   {actions.map(a => (
                     <button key={a} onClick={() => onAction(a)}
-                      className="text-[10px] px-3 py-1.5 rounded-lg bg-primary/8 text-primary font-semibold hover:bg-primary/15 border border-primary/10 whitespace-nowrap transition-colors">
+                      className="text-[10px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary font-semibold hover:bg-primary/20 border border-primary/15 whitespace-nowrap transition-colors">
                       {a}
                     </button>
                   ))}
