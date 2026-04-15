@@ -141,30 +141,17 @@ export default function ConfirmarTab({ profile }: Props) {
                   body: { from: today, untill: today },
                 });
                 if (error) throw error;
-                if (data?.synced > 0) {
+                if (data?.synced > 0 || data?.total > 0) {
                   // Reload orders from DB
                   const { data: dbOrders } = await supabase.from('orders')
                     .select('*')
-                    .eq('uploaded_by', user.id)
                     .eq('upload_date', today);
                   if (dbOrders && dbOrders.length > 0) {
-                    const orders = dbOrders.map((o, idx) => ({
-                      idx, id: String(idx), externalId: o.external_id || '', dbId: o.id,
-                      nombre: o.nombre, phone: o.phone, ciudad: o.ciudad || '',
-                      producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
-                      fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,
-                      valor: Number(o.valor) || 0, flete: Number(o.flete) || 0,
-                      costoProd: Number(o.costo_prod) || 0, costoDev: Number(o.costo_dev) || 0,
-                      cantidad: o.cantidad || 1, direccion: o.direccion || '',
-                      novedad: o.novedad || '', guia: o.guia || '',
-                      transportadora: o.transportadora || '', tags: o.tags || '',
-                      departamento: o.departamento || '', tienda: o.tienda || '',
-                      novedadSol: o.novedad_sol || false,
-                    }));
+                    const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
                     setAllOrders(orders);
                     buildWorkQueue(orders);
                     setExcelLoaded(true);
-                    toast.success(`${data.synced} pedidos sincronizados desde Dropi`);
+                    toast.success(`${dbOrders.length} pedidos cargados desde Dropi`);
                   }
                 } else {
                   toast.info(data?.message || 'No hay pedidos nuevos en Dropi');
