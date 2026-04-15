@@ -48,8 +48,8 @@ async function fetchAllPages(
     const params: Record<string, string> = {
       result_number: String(PAGE_SIZE),
       start: String(start),
-      from: chunkFrom,
-      untill: chunkTo,
+      date_from: chunkFrom,
+      date_to: chunkTo,
       filter_date_by: "FECHA DE CREADO",
       orderBy: "id",
       orderDirection: "desc",
