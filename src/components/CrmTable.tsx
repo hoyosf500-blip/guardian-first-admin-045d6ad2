@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
-  Package, Truck, MapPin, RotateCcw, Layers,
+  Package, Truck, MapPin, RotateCcw, Layers, DollarSign,
   Send, Tag, CheckCircle, ChevronDown, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
