@@ -165,7 +165,16 @@ function isExcludedFromDelay(estado: string): boolean {
   return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'RECHAZADO';
 }
 
-export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed }: CrmTableProps) {
+const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
+  'Guía Generada': (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e),
+  'En Procesamiento': (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e),
+  'Oficina': (e) => e.includes('OFICINA') || e.includes('RECLAME'),
+  'Novedad': (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA',
+  'En Tránsito': (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e),
+  'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
+};
+
+export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter }: CrmTableProps) {
   const { user } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
