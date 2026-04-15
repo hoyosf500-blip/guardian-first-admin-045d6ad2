@@ -10,7 +10,13 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, Calendar } from 'lucide-react';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X } from 'lucide-react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 
 interface Props {
