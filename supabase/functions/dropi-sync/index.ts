@@ -59,31 +59,15 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    // Test: try without Origin first, fallback with Origin
-    let res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
+    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "dropi-integration-key": apiKey,
+        "Origin": origin,
       },
     });
-    console.log("Without Origin:", res.status);
-    if (!res.ok || res.status === 401) {
-      const t = await res.text();
-      console.log("Without Origin body:", t);
-      // Retry with Origin
-      res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "dropi-integration-key": apiKey,
-          "Origin": origin,
-        },
-      });
-      console.log("With Origin:", res.status);
-    }
 
     if (!res.ok) {
       const txt = await res.text();
