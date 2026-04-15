@@ -331,8 +331,12 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto pb-4 -mx-2 px-2">
-          <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 300}px` }}>
+        <div className="relative">
+          {/* Scroll fade indicators */}
+          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-r from-background to-transparent opacity-0 transition-opacity" id="scroll-fade-left" />
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-l from-background to-transparent" />
+          <div className="overflow-x-auto pb-4 -mx-2 px-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+            <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 300}px` }}>
             {activeColumns.map((col, colIdx) => {
               const items = columns[col.key];
               return (
@@ -380,6 +384,8 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
               );
             })}
           </div>
+          </div>
+        </div>
         </div>
       )}
     </div>
