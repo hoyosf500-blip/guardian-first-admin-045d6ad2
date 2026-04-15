@@ -114,6 +114,34 @@ export default function SeguimientoTab() {
     return s;
   }, [filteredByDate]);
 
+  // Stalled orders analysis
+  const stalledStats = useMemo(() => {
+    const stalled = filteredByDate.filter(o => {
+      if (!isActiveOrder(o.estado)) return false;
+      return getOrderAgeDays(o) >= 2;
+    });
+
+    const byCategory: { label: string; icon: React.ReactNode; count: number; color: string; days5: number }[] = [];
+    const categories = [
+      { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-cyan-500' },
+      { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-blue-500' },
+      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-purple-500' },
+      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-red-500' },
+      { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-orange-500' },
+      { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-amber-500' },
+    ];
+
+    categories.forEach(cat => {
+      const matching = stalled.filter(o => cat.match(o.estado.toUpperCase()));
+      const days5 = matching.filter(o => getOrderAgeDays(o) >= 5).length;
+      if (matching.length > 0) {
+        byCategory.push({ label: cat.label, icon: cat.icon, count: matching.length, color: cat.color, days5 });
+      }
+    });
+
+    return { total: stalled.length, categories: byCategory };
+  }, [filteredByDate]);
+
   const statCards = [
     { label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, gradient: 'from-blue-500 to-blue-600' },
     { label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, gradient: 'from-cyan-500 to-teal-500' },
@@ -245,6 +273,69 @@ export default function SeguimientoTab() {
           </div>
         </div>
 
+        {/* Stalled Orders Alert Banner */}
+        {stalledStats.total > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.3 }}
+            className={cn(
+              "rounded-xl border overflow-hidden transition-all cursor-pointer",
+              initialDelayed
+                ? "border-orange-500 bg-orange-500/10 ring-1 ring-orange-500/30"
+                : "border-orange-500/30 bg-gradient-to-r from-orange-500/5 to-red-500/5 hover:border-orange-500/50"
+            )}
+            onClick={() => setInitialDelayed(!initialDelayed)}
+          >
+            <div className="px-4 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/25">
+                  <Clock size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-foreground">Sin Movimiento</span>
+                    <span className="rounded-full bg-orange-500 text-white text-xs font-bold px-2.5 py-0.5">
+                      {stalledStats.total}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Pedidos con 2+ días hábiles sin escaneo — incluye guías generadas y pendientes
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-orange-500">
+                  {initialDelayed ? 'Mostrando' : 'Ver todos'}
+                </span>
+                <ChevronRight size={16} className={cn(
+                  "text-orange-500 transition-transform",
+                  initialDelayed && "rotate-90"
+                )} />
+              </div>
+            </div>
+
+            {/* Category breakdown */}
+            <div className="px-4 pb-3 flex flex-wrap gap-2">
+              {stalledStats.categories.map(cat => (
+                <div
+                  key={cat.label}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-card/80 border border-border/50 px-2.5 py-1.5"
+                >
+                  <span className={cat.color}>{cat.icon}</span>
+                  <span className="text-[11px] font-medium text-foreground">{cat.label}</span>
+                  <span className="text-[11px] font-bold text-foreground">{cat.count}</span>
+                  {cat.days5 > 0 && (
+                    <span className="text-[9px] font-bold text-red-500 bg-red-500/10 rounded px-1 py-0.5">
+                      {cat.days5} crit
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
         {/* Stat cards row */}
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
           {statCards.filter(c => c.value > 0).map((card, i) => (
@@ -272,6 +363,7 @@ export default function SeguimientoTab() {
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
         emptyTitle="Sin pedidos en seguimiento"
         emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
+        initialDelayed={initialDelayed}
       />
     </div>
   );
