@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import ReportsTable from '@/components/admin/ReportsTable';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 interface Profile { user_id: string; display_name: string; roles: string[]; }
 interface DayReport { operator_name: string; report_date: string; data: Record<string, number>; }
+interface FailedSync { id: string; created_at: string; error_message: string | null; }
 
 export default function AdminTab() {
   const { isAdmin } = useAuth();
