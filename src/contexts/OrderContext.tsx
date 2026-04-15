@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
-import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
+import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion, dbToOrderData } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 
@@ -12,6 +12,8 @@ interface OrderState {
   workQueue: OrderData[];
   segData: OrderData[];
   resData: OrderData[];
+  novedadesQueue: OrderData[];
+  novedadesLoading: boolean;
   counter: Counter;
   timerStart: number;
   loading: boolean;
@@ -23,6 +25,8 @@ interface OrderState {
   undoLast: () => Promise<void>;
   lastMark: { order: OrderData; result: string; reason?: string; resultId?: string } | null;
   resetOrders: () => void;
+  loadNovedades: () => Promise<void>;
+  resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
 }
 
 const OrderContext = createContext<OrderState | undefined>(undefined);
@@ -34,6 +38,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
   const [segData, setSegData] = useState<OrderData[]>([]);
   const [resData, setResData] = useState<OrderData[]>([]);
+  const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
+  const [novedadesLoading, setNovedadesLoading] = useState(false);
   const [counter, setCounter] = useState<Counter>({ conf: 0, canc: 0, noresp: 0 });
   const [timerStart, setTimerStart] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -265,14 +271,121 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue([]);
     setSegData([]);
     setResData([]);
+    setNovedadesQueue([]);
     setExcelLoaded(false);
     resetCelebrations();
   }, [resetCelebrations]);
 
+  const loadNovedades = useCallback(async () => {
+    if (!user) return;
+    setNovedadesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
+        .eq('novedad_sol', false);
+      if (error) {
+        toast.error('Error cargando novedades: ' + error.message);
+        return;
+      }
+      const orders = (data || []).map((o, idx) => dbToOrderData(o, idx));
+      // Sort by days descending (oldest first, most urgent)
+      orders.sort((a, b) => b.dias - a.dias);
+      setNovedadesQueue(orders);
+    } finally {
+      setNovedadesLoading(false);
+    }
+  }, [user]);
+
+  const resolveNovedad = useCallback(async (
+    order: OrderData,
+    action: 'reoffer' | 'return',
+    solution?: string,
+  ) => {
+    if (!user || !order) return;
+
+    const cleanSolution = (solution || '').trim();
+    if (action === 'reoffer' && cleanSolution.length < 3) {
+      toast.error('Escribe la solución antes de continuar');
+      return;
+    }
+
+    // 1) Optimistic update: mark as resolving so the view can show feedback
+    setNovedadesQueue(prev => prev.map(o =>
+      o.dbId === order.dbId ? { ...o, result: 'resolving', novedadSol: true } : o,
+    ));
+
+    const today = new Date().toISOString().split('T')[0];
+    const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+
+    // 2) Audit touchpoint (also the source of truth for the protect trigger)
+    const touchAction = action === 'reoffer'
+      ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
+      : 'NOVEDAD: Devolver al remitente';
+
+    await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: touchAction,
+      operator_id: user.id,
+      action_date: today,
+      action_time: now,
+    });
+
+    // 3) Local DB update
+    if (order.dbId) {
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' })
+        .eq('id', order.dbId);
+      if (updateError) {
+        toast.error('Error guardando localmente: ' + updateError.message);
+        // Roll back optimistic
+        setNovedadesQueue(prev => prev.map(o =>
+          o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
+        ));
+        return;
+      }
+    }
+
+    // 4) Fire-and-forget Edge Function (only if we have the Dropi external_id)
+    if (order.externalId) {
+      const toastId = `novedad-${order.externalId}`;
+      toast.loading('Dropi: reportando solución…', { id: toastId });
+      supabase.functions
+        .invoke('dropi-resolve-incidence', {
+          body: action === 'reoffer'
+            ? { externalId: order.externalId, action, solution: cleanSolution }
+            : { externalId: order.externalId, action },
+        })
+        .then((res) => {
+          const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
+          if (res?.error || data?.ok === false) {
+            const msg = res?.error?.message || data?.error || 'Error desconocido';
+            toast.error(`Dropi falló: ${msg}`, { id: toastId, duration: 8000 });
+          } else {
+            toast.success('Dropi: novedad reportada', { id: toastId, duration: 2500 });
+          }
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          toast.error(`Dropi red: ${msg}`, { id: toastId, duration: 8000 });
+        });
+    } else {
+      toast.success('Novedad marcada como resuelta localmente', { duration: 2500 });
+    }
+
+    // 5) Remove from queue after a short delay so the UI can show the resolved state
+    setTimeout(() => {
+      setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
+    }, 800);
+  }, [user]);
+
   return (
     <OrderContext.Provider value={{
-      allOrders, workQueue, segData, resData, counter, timerStart,
-      loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders
+      allOrders, workQueue, segData, resData, novedadesQueue, novedadesLoading, counter, timerStart,
+      loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders,
+      loadNovedades, resolveNovedad,
     }}>
       {children}
     </OrderContext.Provider>

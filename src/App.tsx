@@ -9,6 +9,7 @@ import AuthPage from "@/pages/AuthPage";
 import DashboardPage from "@/pages/DashboardPage";
 import ConfirmarPage from "@/pages/ConfirmarPage";
 import SeguimientoPage from "@/pages/SeguimientoPage";
+import NovedadesPage from "@/pages/NovedadesPage";
 import RescatePage from "@/pages/RescatePage";
 import AdminPage from "@/pages/AdminPage";
 import OrderDetailPage from "@/pages/OrderDetailPage";
@@ -29,6 +30,7 @@ const App = () => (
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/confirmar" element={<ConfirmarPage />} />
               <Route path="/seguimiento" element={<SeguimientoPage />} />
+              <Route path="/novedades" element={<NovedadesPage />} />
               <Route path="/rescate" element={<RescatePage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/pedido/:externalId" element={<OrderDetailPage />} />

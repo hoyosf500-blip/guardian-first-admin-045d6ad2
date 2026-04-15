@@ -5,7 +5,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu } from 'lucide-react';
+import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import type { LucideIcon } from 'lucide-react';
 
@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
   { path: '/confirmar', icon: Phone, label: 'Confirmar' },
   { path: '/seguimiento', icon: Package, label: 'Seguimiento' },
+  { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
   { path: '/rescate', icon: LifeBuoy, label: 'Rescate' },
   { path: '/admin', icon: Settings, label: 'Admin', adminOnly: true },
 ];
