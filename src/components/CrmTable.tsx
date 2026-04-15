@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { OrderData, truncate, getTrackingUrl, calcDias, calcBusinessDays } from '@/lib/orderUtils';
@@ -428,7 +429,12 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="text-[13px] font-bold text-foreground truncate">{o.nombre}</div>
-            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{o.externalId}</div>
+            {o.externalId && (
+              <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[10px] text-primary hover:underline font-mono mt-0.5 block truncate">
+                {o.externalId}
+              </a>
+            )}
+            {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
           </div>
         </div>
 

@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
-import Index from "./pages/Index.tsx";
+import { OrderProvider } from "@/contexts/OrderContext";
+import ProtectedLayout from "@/components/ProtectedLayout";
+import AuthPage from "@/pages/AuthPage";
+import DashboardPage from "@/pages/DashboardPage";
+import ConfirmarPage from "@/pages/ConfirmarPage";
+import SeguimientoPage from "@/pages/SeguimientoPage";
+import RescatePage from "@/pages/RescatePage";
+import AdminPage from "@/pages/AdminPage";
+import OrderDetailPage from "@/pages/OrderDetailPage";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -15,7 +23,16 @@ const App = () => (
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route element={<ProtectedLayout />}>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/confirmar" element={<ConfirmarPage />} />
+              <Route path="/seguimiento" element={<SeguimientoPage />} />
+              <Route path="/rescate" element={<RescatePage />} />
+              <Route path="/admin" element={<AdminPage />} />
+              <Route path="/pedido/:externalId" element={<OrderDetailPage />} />
+            </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
