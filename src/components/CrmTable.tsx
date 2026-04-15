@@ -36,6 +36,7 @@ interface CrmTableProps {
   emptyTitle: string;
   emptyDesc: string;
   initialDelayed?: boolean;
+  stalledCategoryFilter?: string | null;
 }
 
 interface StatusColumn {
