@@ -240,29 +240,59 @@ export default function ConfirmarTab({ profile }: Props) {
               <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
               {/* Date filter */}
               <div className="flex items-center gap-2 flex-wrap">
-                <Calendar size={14} className="text-muted-foreground" />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => setDateFrom(e.target.value)}
-                  className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-xs text-foreground"
-                  placeholder="Desde"
-                />
-                <span className="text-xs text-muted-foreground">a</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={e => setDateTo(e.target.value)}
-                  className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-xs text-foreground"
-                  placeholder="Hasta"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn(
+                      "h-8 gap-1.5 text-xs font-normal",
+                      !dateFrom && "text-muted-foreground"
+                    )}>
+                      <CalendarIcon size={13} />
+                      {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM yyyy', { locale: es }) : 'Desde'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
+                      onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
+                      initialFocus
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <span className="text-xs text-muted-foreground">—</span>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className={cn(
+                      "h-8 gap-1.5 text-xs font-normal",
+                      !dateTo && "text-muted-foreground"
+                    )}>
+                      <CalendarIcon size={13} />
+                      {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM yyyy', { locale: es }) : 'Hasta'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
+                      onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
+                      initialFocus
+                      className={cn("p-3 pointer-events-auto")}
+                    />
+                  </PopoverContent>
+                </Popover>
+
                 {(dateFrom || dateTo) && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => { setDateFrom(''); setDateTo(''); }}
-                    className="text-[10px] px-2 py-1 rounded-md bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                   >
-                    Limpiar
-                  </button>
+                    <X size={14} />
+                  </Button>
                 )}
               </div>
             </div>
