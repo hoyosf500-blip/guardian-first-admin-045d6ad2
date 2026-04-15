@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { parseExcelToOrders, formatDateES, OrderData } from '@/lib/orderUtils';
+import { parseExcelToOrders, formatDateES, OrderData, parseDate } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import ExcelUploader from '@/components/ExcelUploader';
@@ -10,7 +10,7 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload } from 'lucide-react';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, Calendar } from 'lucide-react';
 
 function dbToOrderData(o: any, idx: number): OrderData {
   return {
