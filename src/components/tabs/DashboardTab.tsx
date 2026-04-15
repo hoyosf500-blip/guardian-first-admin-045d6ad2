@@ -41,6 +41,34 @@ export default function DashboardTab() {
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [dbOrders, setDbOrders] = useState<Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }>>([]);
+
+  // Load orders from DB for dashboard stats
+  useEffect(() => {
+    if (!user) return;
+    const fetchAllOrders = async () => {
+      const allData: Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }> = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (!data || data.length === 0) break;
+        allData.push(...data.map(o => ({
+          producto: o.producto || 'Sin producto',
+          estado: o.estado || '',
+          valor: Number(o.valor) || 0,
+          ciudad: o.ciudad || '',
+          transportadora: o.transportadora || '',
+        })));
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+      setDbOrders(allData);
+    };
+    fetchAllOrders();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -100,8 +128,15 @@ export default function DashboardTab() {
   const tasa = total > 0 ? Math.round(counter.conf / total * 100) : 0;
   const pendLeft = workQueue.filter(o => !o.result).length;
 
+  // Use DB orders for product/status stats when no Excel loaded
+  const ordersForStats = allOrders.length > 0 ? allOrders.map(o => ({
+    producto: o.producto || 'Sin producto', estado: o.estado || '', valor: o.valor, ciudad: o.ciudad, transportadora: o.transportadora
+  })) : dbOrders;
+
+  const totalOrders = ordersForStats.length;
+
   const byProd: Record<string, { total: number; entreg: number; canc: number; nov: number }> = {};
-  allOrders.forEach(o => {
+  ordersForStats.forEach(o => {
     const p = o.producto || 'Sin producto';
     if (!byProd[p]) byProd[p] = { total: 0, entreg: 0, canc: 0, nov: 0 };
     byProd[p].total++;
@@ -111,6 +146,24 @@ export default function DashboardTab() {
     else if (e.includes('NOVEDAD')) byProd[p].nov++;
   });
   const prods = Object.entries(byProd).sort((a, b) => b[1].total - a[1].total);
+
+  // Status breakdown from DB
+  const statusBreakdown = useMemo(() => {
+    const s = { entregados: 0, cancelados: 0, novedades: 0, oficina: 0, devoluciones: 0, transito: 0, pendientes: 0, otros: 0, valorTotal: 0, valorEntregado: 0 };
+    ordersForStats.forEach(o => {
+      const e = (o.estado || '').toUpperCase();
+      s.valorTotal += o.valor;
+      if (e.includes('ENTREGAD')) { s.entregados++; s.valorEntregado += o.valor; }
+      else if (e.includes('CANCEL')) s.cancelados++;
+      else if (e.includes('NOVEDAD') || e === 'INTENTO DE ENTREGA') s.novedades++;
+      else if (e.includes('OFICINA') || e.includes('RECLAME')) s.oficina++;
+      else if (e.includes('DEVOL')) s.devoluciones++;
+      else if (e.includes('DESPACHAD') || e.includes('TRANSPORTE') || e.includes('REPARTO') || e.includes('DISTRIBUCION') || e === 'ADMITIDA' || e === 'EN DESPACHO') s.transito++;
+      else if (e === 'PENDIENTE CONFIRMACION') s.pendientes++;
+      else s.otros++;
+    });
+    return s;
+  }, [ordersForStats]);
 
   const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
     const csv = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
@@ -177,7 +230,7 @@ export default function DashboardTab() {
     return 'Buenas noches';
   })();
 
-  const hasData = total > 0 || allOrders.length > 0;
+  const hasData = total > 0 || totalOrders > 0;
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -274,7 +327,7 @@ export default function DashboardTab() {
               { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/10', iconColor: 'text-green', spark: sparkData.conf, sparkColor: 'hsl(var(--green))' },
               { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/10', iconColor: 'text-red', spark: sparkData.canc, sparkColor: 'hsl(var(--red))' },
               { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-muted-foreground', iconBg: 'bg-secondary', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
-              { icon: Package, label: 'Total pedidos', value: allOrders.length, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/10', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${pendLeft} pendientes` },
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/10', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k, i) => {
               const Icon = k.icon;
               return (
