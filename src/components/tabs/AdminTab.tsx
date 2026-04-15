@@ -144,6 +144,40 @@ export default function AdminTab() {
     <div className="max-w-5xl mx-auto">
       <p className="text-sm text-muted-foreground mb-5">Panel de administración</p>
 
+      {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
+        <motion.div {...fadeUp} className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-destructive mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold text-destructive">Sincronización fallida</h4>
+              <p className="text-xs text-destructive/80 mt-0.5 mb-2">
+                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length} error(es) en las últimas 24 horas
+              </p>
+              <div className="space-y-1.5">
+                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).map(sync => (
+                  <div key={sync.id} className="flex items-center justify-between gap-2 text-xs bg-destructive/5 rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <span className="text-muted-foreground">
+                        {format(new Date(sync.created_at), "d MMM, HH:mm", { locale: es })}
+                      </span>
+                      {sync.error_message && (
+                        <span className="ml-2 text-destructive truncate">{sync.error_message}</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setDismissedAlerts(prev => new Set([...prev, sync.id]))}
+                      className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl skeleton-shimmer" />)}
