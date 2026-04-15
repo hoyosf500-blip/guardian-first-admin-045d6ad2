@@ -31,9 +31,12 @@ function classifyEstado(estado: string) {
   if (['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e)) return 'transito';
   if (['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e)) return 'reparto';
   if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA') return 'novedad';
+  if (e === 'NOVEDAD SOLUCIONADA') return 'novedad_sol';
   if (e.includes('OFICINA') || e.includes('RECLAME')) return 'oficina';
   if (e === 'RECHAZADO') return 'rechazado';
+  if (e === 'DEVOLUCION EN TRANSITO') return 'devolucion_transito';
   if (e.includes('DEVOL')) return 'devolucion';
+  if (e.includes('INDEMNIZADA')) return 'indemnizada';
   if (e === 'ENTREGADO') return 'entregado';
   if (e === 'CANCELADO') return 'cancelado';
   return 'otros';
@@ -72,7 +75,8 @@ export default function SeguimientoTab() {
   const stats = useMemo(() => {
     const s = {
       procesamiento: 0, guia: 0, bodega_trans: 0, transito: 0, reparto: 0,
-      novedad: 0, oficina: 0, rechazado: 0, devolucion: 0,
+      novedad: 0, novedad_sol: 0, oficina: 0, rechazado: 0,
+      devolucion_transito: 0, devolucion: 0, indemnizada: 0,
       entregado: 0, cancelado: 0, otros: 0,
       total: segData.length, valorTotal: 0
     };
