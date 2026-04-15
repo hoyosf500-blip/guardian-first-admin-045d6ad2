@@ -8,7 +8,7 @@ import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
   Package, Truck, MapPin, RotateCcw, Layers,
-  Send, Tag, CheckCircle
+  Send, Tag, CheckCircle, ChevronDown, Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -40,21 +40,62 @@ interface StatusColumn {
   key: string;
   label: string;
   icon: React.ReactNode;
-  gradient: string;
-  glow: string;
-  dotColor: string;
+  color: string;       // Tailwind color for accents
+  bgGradient: string;  // Header gradient
+  pillBg: string;      // Filter pill background
+  pillText: string;    // Filter pill text
   match: (estado: string) => boolean;
 }
 
 const STATUS_COLUMNS: StatusColumn[] = [
-  { key: 'bodega', label: 'En Bodega', icon: <Package size={15} />, gradient: 'from-blue-600 to-blue-400', glow: 'shadow-blue-500/20', dotColor: 'bg-blue-400', match: (e) => ['PENDIENTE', 'ALISTAMIENTO', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) || (e.includes('BODEGA') && !e.includes('DEVOL')) },
-  { key: 'guia', label: 'Guía Generada', icon: <Tag size={15} />, gradient: 'from-cyan-600 to-cyan-400', glow: 'shadow-cyan-500/20', dotColor: 'bg-cyan-400', match: (e) => e === 'GUIA GENERADA' || e === 'GUIA_GENERADA' || e.includes('PREPARADO') || e === 'ENTREGADO A TRANSPORTADORA' },
-  { key: 'transito', label: 'En Tránsito', icon: <Truck size={15} />, gradient: 'from-violet-600 to-indigo-400', glow: 'shadow-violet-500/20', dotColor: 'bg-violet-400', match: (e) => e.includes('REPARTO') || e.includes('DISTRIBUCION') || e.includes('TERMINAL') || e.includes('REEXPEDICION') || e.includes('DESPACHAD') || e.includes('REENVÍO') || e.includes('REENVIO') || e.includes('TRANSPORTE') || e === 'ADMITIDA' || e === 'EN DESPACHO' || e === 'TELEMERCADEO' },
-  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={15} />, gradient: 'from-amber-600 to-orange-400', glow: 'shadow-orange-500/20', dotColor: 'bg-orange-400', match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
-  { key: 'oficina', label: 'En Oficina', icon: <MapPin size={15} />, gradient: 'from-fuchsia-600 to-purple-400', glow: 'shadow-purple-500/20', dotColor: 'bg-purple-400', match: (e) => e.includes('OFICINA') || e.includes('RECLAME') },
-  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={15} />, gradient: 'from-red-600 to-rose-400', glow: 'shadow-red-500/20', dotColor: 'bg-red-400', match: (e) => e.includes('DEVOL') },
-  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={15} />, gradient: 'from-emerald-600 to-green-400', glow: 'shadow-green-500/20', dotColor: 'bg-green-400', match: (e) => e === 'ENTREGADO' },
-  { key: 'otros', label: 'Otros', icon: <Layers size={15} />, gradient: 'from-slate-600 to-slate-400', glow: 'shadow-slate-500/10', dotColor: 'bg-slate-400', match: () => true },
+  {
+    key: 'bodega', label: 'En Bodega', icon: <Package size={14} />,
+    color: 'blue', bgGradient: 'from-blue-500 to-blue-600',
+    pillBg: 'bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20', pillText: 'text-blue-600 dark:text-blue-400',
+    match: (e) => ['PENDIENTE', 'ALISTAMIENTO', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) || (e.includes('BODEGA') && !e.includes('DEVOL'))
+  },
+  {
+    key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />,
+    color: 'cyan', bgGradient: 'from-cyan-500 to-teal-500',
+    pillBg: 'bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20', pillText: 'text-cyan-600 dark:text-cyan-400',
+    match: (e) => e === 'GUIA GENERADA' || e === 'GUIA_GENERADA' || e.includes('PREPARADO') || e === 'ENTREGADO A TRANSPORTADORA'
+  },
+  {
+    key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />,
+    color: 'orange', bgGradient: 'from-orange-500 to-amber-500',
+    pillBg: 'bg-orange-500/10 border-orange-500/20 hover:bg-orange-500/20', pillText: 'text-orange-600 dark:text-orange-400',
+    match: (e) => e.includes('REPARTO') || e.includes('DISTRIBUCION') || e.includes('TERMINAL') || e.includes('REEXPEDICION') || e.includes('DESPACHAD') || e.includes('REENVÍO') || e.includes('REENVIO') || e.includes('TRANSPORTE') || e === 'ADMITIDA' || e === 'EN DESPACHO' || e === 'TELEMERCADEO'
+  },
+  {
+    key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />,
+    color: 'red', bgGradient: 'from-red-500 to-rose-500',
+    pillBg: 'bg-red-500/10 border-red-500/20 hover:bg-red-500/20', pillText: 'text-red-600 dark:text-red-400',
+    match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA'
+  },
+  {
+    key: 'oficina', label: 'En Oficina', icon: <MapPin size={14} />,
+    color: 'purple', bgGradient: 'from-fuchsia-500 to-purple-600',
+    pillBg: 'bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20', pillText: 'text-purple-600 dark:text-purple-400',
+    match: (e) => e.includes('OFICINA') || e.includes('RECLAME')
+  },
+  {
+    key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />,
+    color: 'rose', bgGradient: 'from-rose-600 to-red-600',
+    pillBg: 'bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20', pillText: 'text-rose-600 dark:text-rose-400',
+    match: (e) => e.includes('DEVOL')
+  },
+  {
+    key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />,
+    color: 'emerald', bgGradient: 'from-emerald-500 to-green-500',
+    pillBg: 'bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20', pillText: 'text-emerald-600 dark:text-emerald-400',
+    match: (e) => e === 'ENTREGADO'
+  },
+  {
+    key: 'otros', label: 'Otros', icon: <Layers size={14} />,
+    color: 'slate', bgGradient: 'from-slate-500 to-slate-600',
+    pillBg: 'bg-slate-500/10 border-slate-500/20 hover:bg-slate-500/20', pillText: 'text-slate-600 dark:text-slate-400',
+    match: () => true
+  },
 ];
 
 function classifyOrder(estado: string): string {
@@ -66,17 +107,14 @@ function classifyOrder(estado: string): string {
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
-  // Use business days (Mon-Fri) — carriers don't work weekends
   const baseDate = (order.fechaConf || order.fecha || '').trim();
   if (baseDate && baseDate !== 'undefined') {
     return calcBusinessDays(baseDate);
   }
-  // Fallback: rough estimate from pre-calculated fields (calendar days * 5/7)
   const calendarDays = order.diasConf || order.dias || 0;
   return Math.round(calendarDays * 5 / 7);
 }
 
-/** Returns true if this order's status should be excluded from "delayed" tracking */
 function isExcludedFromDelay(estado: string): boolean {
   const e = estado.toUpperCase();
   return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'RECHAZADO';
@@ -90,13 +128,13 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [onlyDelayed, setOnlyDelayed] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data.length) return;
     const phones = [...new Set(data.map(o => o.phone))];
     const prefix = module === 'SEG' ? 'SEG' : 'RESCUE';
 
-    // Fetch touchpoints in batches of 100 phones to avoid Supabase .in() limit
     const fetchAllTouchpoints = async () => {
       const allTp: Touchpoint[] = [];
       for (let i = 0; i < phones.length; i += 100) {
@@ -121,7 +159,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
         }
       });
       setResults(managed);
-      });
+    });
 
     supabase.from('profiles').select('user_id, display_name').then(({ data: p }) => {
       if (p) setProfiles(p);
@@ -176,8 +214,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     if (onlyDelayed) {
       list = list.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2);
     }
+    if (activeFilter) {
+      list = list.filter(o => classifyOrder(o.estado) === activeFilter);
+    }
     return list;
-  }, [data, search, onlyDelayed]);
+  }, [data, search, onlyDelayed, activeFilter]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -192,6 +233,14 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     return groups;
   }, [filtered]);
 
+  // Count all data (not filtered) for pills
+  const allCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    STATUS_COLUMNS.forEach(c => { counts[c.key] = 0; });
+    data.forEach(o => { counts[classifyOrder(o.estado)]++; });
+    return counts;
+  }, [data]);
+
   if (!data.length) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -202,108 +251,136 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     );
   }
 
-  const activeColumns = STATUS_COLUMNS.filter(c => columns[c.key].length > 0);
+  const activeColumns = activeFilter
+    ? STATUS_COLUMNS.filter(c => c.key === activeFilter && columns[c.key].length > 0)
+    : STATUS_COLUMNS.filter(c => columns[c.key].length > 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Search + delayed filter */}
       <div className="flex flex-col gap-3 lg:flex-row">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar nombre, teléfono, guía, ciudad..."
-          className="flex-1 pl-4 pr-4 py-3 bg-card border border-border rounded-2xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all shadow-sm"
-        />
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar nombre, teléfono, guía, ciudad..."
+            className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+          />
+        </div>
         <button
           type="button"
           aria-pressed={onlyDelayed}
           onClick={() => setOnlyDelayed(prev => !prev)}
-          className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+          className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
             onlyDelayed
-              ? 'border-orange bg-orange text-primary-foreground shadow-lg shadow-orange/25'
-              : 'border-border bg-card text-foreground hover:border-orange/40 hover:text-orange'
+              ? 'border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/25'
+              : 'border-border bg-card text-foreground hover:border-orange-400/40 hover:text-orange-500'
           }`}
         >
           <Clock size={15} />
-          <span>{onlyDelayed ? 'Viendo retrasados' : 'Retrasados (2d+)'}</span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-background/20 text-primary-foreground' : 'bg-secondary text-foreground'}`}>
+          <span>Retrasados (2d+)</span>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
             {delayedCount}
           </span>
         </button>
       </div>
 
+      {/* Status filter pills */}
+      <div className="flex gap-2 flex-wrap">
+        {STATUS_COLUMNS.filter(c => allCounts[c.key] > 0).map(col => {
+          const isActive = activeFilter === col.key;
+          return (
+            <button
+              key={col.key}
+              onClick={() => setActiveFilter(isActive ? null : col.key)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                isActive
+                  ? `bg-gradient-to-r ${col.bgGradient} text-white border-transparent shadow-lg`
+                  : `${col.pillBg} ${col.pillText} border`
+              }`}
+            >
+              {col.icon}
+              <span>{col.label}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                isActive ? 'bg-white/25' : 'bg-current/10'
+              }`}>
+                {allCounts[col.key]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {onlyDelayed && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-orange/20 bg-orange/10 px-4 py-3">
-          <div className="text-sm font-semibold text-foreground">Mostrando solo pedidos con 2+ días sin movimiento</div>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3">
+          <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <AlertTriangle size={14} className="text-orange-500" />
+            Mostrando solo pedidos con 2+ días hábiles sin movimiento
+          </div>
           <div className="text-xs text-muted-foreground">{filtered.length} de {data.length} pedidos</div>
         </div>
       )}
 
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
-            <Clock size={20} />
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+            <Search size={20} />
           </div>
           <h3 className="text-base font-semibold text-foreground">No hay pedidos para este filtro</h3>
           <p className="mt-1 max-w-md text-sm text-muted-foreground">
-            {onlyDelayed ? 'No encontramos pedidos con 2 o más días sin movimiento.' : 'Prueba ajustando la búsqueda para ver resultados.'}
+            {onlyDelayed ? 'No encontramos pedidos retrasados.' : 'Prueba ajustando la búsqueda.'}
           </p>
         </div>
       ) : (
-        <>
-          <div className="flex gap-2 flex-wrap">
-            {activeColumns.map(col => (
-              <div key={col.key} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r ${col.gradient} shadow-lg ${col.glow} text-white text-[11px] font-semibold`}>
-                {col.icon}
-                <span>{col.label}</span>
-                <span className="bg-white/25 backdrop-blur-sm rounded-full px-1.5 py-0.5 text-[10px] font-bold ml-0.5">{columns[col.key].length}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="overflow-x-auto pb-4 -mx-2 px-2">
-            <div className="flex gap-4" style={{ minWidth: `${activeColumns.length * 290}px` }}>
-              {activeColumns.map((col, colIdx) => {
-                const items = columns[col.key];
-                return (
-                  <motion.div
-                    key={col.key}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: colIdx * 0.05, duration: 0.3 }}
-                    className="flex-1 min-w-[270px] max-w-[330px] flex flex-col"
-                  >
-                    <div className={`bg-gradient-to-r ${col.gradient} rounded-t-2xl px-4 py-3 flex items-center justify-between shadow-lg ${col.glow}`}>
-                      <div className="flex items-center gap-2 text-white">
-                        <div className="w-7 h-7 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                          {col.icon}
-                        </div>
-                        <span className="text-sm font-bold tracking-tight">{col.label}</span>
+        <div className="overflow-x-auto pb-4 -mx-2 px-2">
+          <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 300}px` }}>
+            {activeColumns.map((col, colIdx) => {
+              const items = columns[col.key];
+              return (
+                <motion.div
+                  key={col.key}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: colIdx * 0.04, duration: 0.25 }}
+                  className="flex-1 min-w-[280px] max-w-[340px] flex flex-col"
+                >
+                  {/* Column header */}
+                  <div className={`bg-gradient-to-r ${col.bgGradient} rounded-t-xl px-4 py-3 flex items-center justify-between`}>
+                    <div className="flex items-center gap-2.5 text-white">
+                      <div className="w-7 h-7 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                        {col.icon}
                       </div>
-                      <span className="text-white text-sm font-black bg-white/25 backdrop-blur-sm rounded-xl px-3 py-1">{items.length}</span>
+                      <span className="text-sm font-bold">{col.label}</span>
                     </div>
+                    <span className="text-white/90 text-lg font-black bg-white/20 backdrop-blur-sm rounded-lg px-3 py-0.5 min-w-[36px] text-center">
+                      {items.length}
+                    </span>
+                  </div>
 
-                    <div className="bg-card/30 backdrop-blur-sm rounded-b-2xl border border-border/50 border-t-0 flex-1 p-2.5 space-y-2.5 max-h-[68vh] overflow-y-auto scrollbar-thin">
-                      {items.map((o, i) => (
-                        <OrderCard
-                          key={o.phone + o.idx}
-                          order={o}
-                          managed={results[o.phone]}
-                          expanded={expandedPhone === o.phone}
-                          onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
-                          onAction={(action) => markAction(o.phone, action)}
-                          actions={actions}
-                          touchpoints={phoneTouchpoints[o.phone] || []}
-                          getOperatorName={getOperatorName}
-                          getLastTouchTime={getLastTouchTime}
-                          module={module}
-                          index={i}
-                        />
-                      ))}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
+                  {/* Column body */}
+                  <div className="bg-card/50 rounded-b-xl border border-border/40 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
+                    {items.map((o, i) => (
+                      <OrderCard
+                        key={o.phone + o.idx}
+                        order={o}
+                        managed={results[o.phone]}
+                        expanded={expandedPhone === o.phone}
+                        onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
+                        onAction={(action) => markAction(o.phone, action)}
+                        actions={actions}
+                        touchpoints={phoneTouchpoints[o.phone] || []}
+                        getOperatorName={getOperatorName}
+                        getLastTouchTime={getLastTouchTime}
+                        module={module}
+                        index={i}
+                        statusColor={col.color}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -322,46 +399,42 @@ interface OrderCardProps {
   getLastTouchTime: (phone: string) => number | null;
   module: string;
   index: number;
+  statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, index }: OrderCardProps) {
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, index, statusColor }: OrderCardProps) {
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
   const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
   const isDelayed = diasEnEstatus >= 2;
-  const diasBg = diasEnEstatus >= 7 ? 'bg-red-500' : diasEnEstatus >= 5 ? 'bg-red-400' : diasEnEstatus >= 3 ? 'bg-amber-500' : diasEnEstatus >= 2 ? 'bg-orange-400' : 'bg-emerald-500';
-  const borderAlert = diasEnEstatus >= 5 ? 'border-l-red-500' : diasEnEstatus >= 3 ? 'border-l-amber-500' : diasEnEstatus >= 2 ? 'border-l-orange-400' : 'border-l-transparent';
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: index * 0.02, duration: 0.2 }}
-      className={`group bg-card rounded-xl border border-border/60 border-l-[3px] ${borderAlert} overflow-hidden transition-all duration-200 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 ${managed ? 'opacity-50' : ''}`}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.015, 0.3), duration: 0.2 }}
+      className={`group bg-card rounded-xl border border-border/50 overflow-hidden transition-all duration-200 hover:border-border hover:shadow-md ${managed ? 'opacity-40' : ''}`}
     >
-      {/* Card header */}
-      <div className="px-3.5 py-3 cursor-pointer" onClick={onToggle}>
-        {/* Top row: name + days badge */}
+      {/* Card body */}
+      <div className="px-3.5 pt-3.5 pb-3 cursor-pointer" onClick={onToggle}>
+        {/* Name + ID + days */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-bold text-foreground truncate leading-tight">{o.nombre}</div>
-            <div className="text-[10px] text-muted-foreground/70 font-mono mt-0.5">{o.externalId}</div>
+            <div className="text-[13px] font-bold text-foreground truncate">{o.nombre}</div>
+            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{o.externalId}</div>
           </div>
-          <span className={`${diasBg} text-white text-[11px] font-black px-2.5 py-1 rounded-lg shadow-sm flex-shrink-0`}>
-            D{diasEnEstatus}
-          </span>
         </div>
 
-        {/* Phone + copy */}
-        <div className="flex items-center gap-1.5 mt-2">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-secondary/60 rounded-lg px-2.5 py-1.5 flex-1 min-w-0">
-            <PhoneIcon size={11} className="flex-shrink-0" />
+        {/* Phone row */}
+        <div className="flex items-center gap-1.5 mt-2.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-secondary/70 rounded-lg px-2.5 py-1.5 flex-1 min-w-0">
+            <PhoneIcon size={11} className="flex-shrink-0 text-muted-foreground/70" />
             <span className="truncate font-mono">{o.phone}</span>
           </div>
           <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.phone); toast.success('Tel copiado'); }}
-            className="p-2 rounded-lg bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            className="p-2 rounded-lg bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <Copy size={11} />
           </button>
         </div>
@@ -369,22 +442,22 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Location & carrier */}
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           {o.ciudad && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/40 rounded-md px-2 py-1">
-              <MapPin size={9} className="text-primary/60" />{o.ciudad}
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/50 rounded-md px-2 py-1">
+              <MapPin size={9} className="text-muted-foreground/60" />{o.ciudad}
             </span>
           )}
           {o.transportadora && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/40 rounded-md px-2 py-1">
-              <Truck size={9} className="text-primary/60" />{o.transportadora}
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/50 rounded-md px-2 py-1">
+              <Truck size={9} className="text-muted-foreground/60" />{o.transportadora}
             </span>
           )}
         </div>
 
-        {/* Guía + PROMINENT tracking button */}
+        {/* Guía + tracking */}
         {o.guia && (
           <div className="mt-2.5 flex items-center gap-2">
-            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-secondary/40 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
-              <Tag size={9} className="text-primary/60" />
+            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-secondary/50 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
+              <Tag size={9} className="text-muted-foreground/60 flex-shrink-0" />
               <span className="truncate">{o.guia}</span>
               <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
                 className="flex-shrink-0 transition-colors hover:text-foreground"><Copy size={9} /></button>
@@ -394,44 +467,36 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 href={trackUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada al portapapeles'); }}
-                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-orange/30 bg-orange px-3.5 py-2 text-[11px] font-black text-primary-foreground shadow-lg shadow-orange/30 transition-all hover:scale-[1.03] hover:shadow-xl hover:shadow-orange/40 no-underline"
+                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg bg-orange-500 px-3 py-1.5 text-[10px] font-bold text-white shadow-sm transition-all hover:bg-orange-600 no-underline"
               >
-                <ExternalLink size={12} /> Rastrear
+                <ExternalLink size={10} /> Rastrear
               </a>
             )}
           </div>
         )}
 
         {/* Delay warning */}
-        {isDelayed && (
+        {isDelayed && !isExcludedFromDelay(o.estado) && (
           <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 ${
-            diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
-            diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
-            'bg-orange-400/10 border border-orange-400/20'
+            diasEnEstatus >= 5 ? 'bg-red-500/8 border border-red-500/15' :
+            diasEnEstatus >= 3 ? 'bg-amber-500/8 border border-amber-500/15' :
+            'bg-orange-400/8 border border-orange-400/15'
           }`}>
-            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-400' : diasEnEstatus >= 3 ? 'text-amber-400' : 'text-orange-400'} />
-            <span className={`text-[11px] font-bold ${diasEnEstatus >= 5 ? 'text-red-400' : diasEnEstatus >= 3 ? 'text-amber-400' : 'text-orange-400'}`}>
+            <Clock size={11} className={diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'} />
+            <span className={`text-[10px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'}`}>
               {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
-          </div>
-        )}
-
-        {/* Novedad */}
-        {o.novedad && (
-          <div className="mt-2 flex items-start gap-1.5 bg-orange-500/5 border border-orange-500/10 rounded-lg px-2.5 py-2">
-            <AlertTriangle size={11} className="text-orange-400 mt-0.5 flex-shrink-0" />
-            <span className="text-[10px] text-orange-300 leading-tight">{truncate(o.novedad, 80)}</span>
           </div>
         )}
 
         {/* Alert badge */}
         {alert && alert.level !== 'ok' && alert.level !== 'watch' && (
           <div className="mt-2">
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold ${
-              alert.level === 'lost' ? 'bg-muted/40 text-muted-foreground border border-muted-foreground/20' :
-              alert.level === 'critical' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-              'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+            <span className={`inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md ${
+              alert.level === 'lost' ? 'bg-muted text-muted-foreground' :
+              alert.level === 'critical' ? 'bg-red-500/10 text-red-500' :
+              'bg-orange-500/10 text-orange-500'
             }`}>
               {alert.label}
             </span>
@@ -441,7 +506,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Managed badge */}
         {managed && (
           <div className="mt-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <CheckCircle size={10} /> {managed}
             </span>
           </div>
@@ -453,39 +518,47 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {expanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="border-t border-border/50 overflow-hidden">
-            <div className="px-3.5 py-3.5 space-y-3 bg-secondary/20">
+            className="border-t border-border/40 overflow-hidden">
+            <div className="px-3.5 py-3.5 space-y-3 bg-secondary/30">
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: 'PRODUCTO', value: truncate(o.producto || '—', 30) },
-                  { label: 'VALOR', value: `$${o.valor.toLocaleString()}` },
-                  { label: 'DIRECCIÓN', value: truncate(o.direccion || '—', 35) },
-                  { label: 'DEPTO', value: o.departamento || '—' },
+                  { label: 'Producto', value: truncate(o.producto || '—', 30) },
+                  { label: 'Valor', value: `$${o.valor.toLocaleString()}` },
+                  { label: 'Dirección', value: truncate(o.direccion || '—', 35) },
+                  { label: 'Departamento', value: o.departamento || '—' },
                 ].map(d => (
-                  <div key={d.label} className="bg-card/80 rounded-xl p-2.5 border border-border/30">
-                    <div className="text-[9px] text-muted-foreground/60 uppercase tracking-widest font-semibold">{d.label}</div>
-                    <div className="text-[12px] font-bold text-foreground mt-1">{d.value}</div>
+                  <div key={d.label} className="bg-card rounded-lg p-2.5 border border-border/30">
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">{d.label}</div>
+                    <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate">{d.value}</div>
                   </div>
                 ))}
               </div>
 
+              {/* Novedad */}
+              {o.novedad && (
+                <div className="flex items-start gap-2 bg-orange-500/5 border border-orange-500/10 rounded-lg px-3 py-2">
+                  <AlertTriangle size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-[11px] text-foreground/80 leading-snug">{truncate(o.novedad, 100)}</span>
+                </div>
+              )}
+
               {/* History */}
               {tps.length > 0 && (
                 <div>
-                  <h4 className="text-[10px] font-bold text-foreground/80 mb-2 inline-flex items-center gap-1 uppercase tracking-wider">
+                  <h4 className="text-[10px] font-semibold text-muted-foreground mb-2 inline-flex items-center gap-1 uppercase tracking-wider">
                     <MessageSquare size={10} /> Historial ({tps.length})
                   </h4>
-                  <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
                     {tps.slice(0, 5).map(tp => (
-                      <div key={tp.id} className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-card/60 border border-border/20 text-[10px]">
-                        <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-                          <User size={9} className="text-primary" />
+                      <div key={tp.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card border border-border/20 text-[10px]">
+                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <User size={9} className="text-primary/70" />
                         </div>
-                        <span className="font-bold text-foreground">{getOperatorName(tp.operator_id)}</span>
-                        <span className="text-foreground/60 truncate">{tp.action.replace(/^(SEG|RESCUE): ?/, '')}</span>
-                        <span className="ml-auto text-muted-foreground flex-shrink-0 flex items-center gap-0.5">
-                          <Clock size={8} /> {tp.action_time || ''}
+                        <span className="font-semibold text-foreground">{getOperatorName(tp.operator_id)}</span>
+                        <span className="text-muted-foreground truncate">{tp.action.replace(/^(SEG|RESCUE): ?/, '')}</span>
+                        <span className="ml-auto text-muted-foreground/70 flex-shrink-0 text-[9px]">
+                          {tp.action_time || ''}
                         </span>
                       </div>
                     ))}
@@ -493,25 +566,25 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 </div>
               )}
 
-              {/* Quick actions — bigger */}
+              {/* Quick actions */}
               <div className="flex gap-2">
                 <a href={`https://wa.me/57${o.phone}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
                   onClick={() => onAction('WhatsApp enviado')}
-                  className="flex-1 text-[12px] py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-bold hover:from-emerald-500 hover:to-emerald-400 no-underline inline-flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all">
-                  <Send size={13} /> WhatsApp
+                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
+                  <Send size={12} /> WhatsApp
                 </a>
                 <a href={`tel:+57${o.phone}`}
-                  className="flex-1 text-[12px] py-2.5 rounded-xl bg-secondary text-foreground font-bold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-2 border border-border/50 transition-all">
-                  <PhoneIcon size={13} /> Llamar
+                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
+                  <PhoneIcon size={12} /> Llamar
                 </a>
               </div>
 
               {/* CRM actions */}
               {!managed && (
-                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                <div className="flex flex-wrap gap-1.5">
                   {actions.map(a => (
                     <button key={a} onClick={() => onAction(a)}
-                      className="text-[10px] px-3 py-2 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 border border-primary/15 whitespace-nowrap transition-all hover:scale-[1.02]">
+                      className="text-[10px] px-3 py-1.5 rounded-lg bg-primary/8 text-primary font-semibold hover:bg-primary/15 border border-primary/10 whitespace-nowrap transition-colors">
                       {a}
                     </button>
                   ))}
