@@ -104,6 +104,14 @@ export default function ConfirmarTab({ profile }: Props) {
     if (filter === 'canc' && o.result !== 'canc') return false;
     if (filter === 'noresp' && o.result !== 'noresp') return false;
     if (filter.startsWith('prod_') && (o.producto !== filter.slice(5) || o.result)) return false;
+    // Date filter
+    if (dateFrom || dateTo) {
+      const orderDate = parseDate(o.fecha);
+      if (!orderDate) return false;
+      const orderDateStr = orderDate.toISOString().split('T')[0];
+      if (dateFrom && orderDateStr < dateFrom) return false;
+      if (dateTo && orderDateStr > dateTo) return false;
+    }
     if (search) {
       const s = search.toLowerCase();
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
