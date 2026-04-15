@@ -33,6 +33,17 @@ function classifyEstado(estado: string) {
   return 'otros';
 }
 
+function getOrderAgeDays(order: OrderData): number {
+  const baseDate = (order.fechaConf || order.fecha || '').trim();
+  if (baseDate && baseDate !== 'undefined') return calcBusinessDays(baseDate);
+  return Math.round((order.diasConf || order.dias || 0) * 5 / 7);
+}
+
+function isActiveOrder(estado: string): boolean {
+  const e = estado.toUpperCase();
+  return e !== 'ENTREGADO' && !e.includes('DEVOL') && e !== 'CANCELADO' && e !== 'RECHAZADO';
+}
+
 export default function SeguimientoTab() {
   const { user } = useAuth();
   const [segData, setSegData] = useState<OrderData[]>([]);
@@ -41,6 +52,7 @@ export default function SeguimientoTab() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [initialDelayed, setInitialDelayed] = useState(false);
 
   const loadOrders = useCallback(async (isRefresh = false) => {
     if (!user) return;
