@@ -72,16 +72,18 @@ async function fetchAllPages(
       },
     });
 
+    const rawText = await res.text();
+    console.log("Dropi raw status:", res.status, "body:", rawText.substring(0, 500));
+
     if (!res.ok) {
-      const txt = await res.text();
-      console.error(`Dropi HTTP ${res.status}:`, txt);
-      throw new Error(`Dropi API [${res.status}]: ${txt}`);
+      throw new Error(`Dropi API [${res.status}]: ${rawText}`);
     }
 
-    const data = await res.json();
-    console.log("Dropi response:", JSON.stringify({ isSuccess: data.isSuccess, message: data.message, count: data.objects?.length }));
+    let data: Record<string, unknown>;
+    try { data = JSON.parse(rawText); } catch { throw new Error(`Invalid JSON: ${rawText.substring(0, 200)}`); }
+
     if (!data.isSuccess) {
-      throw new Error(data.message || "Dropi error");
+      throw new Error(String(data.message) || "Dropi error");
     }
 
     const orders = data.objects || [];
