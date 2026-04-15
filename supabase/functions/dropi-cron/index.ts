@@ -47,17 +47,24 @@ async function fetchAllPages(
     const params: Record<string, string> = {
       result_number: String(PAGE_SIZE),
       start: String(start),
-      date_ini: chunkFrom,
-      date_end: chunkTo,
+      date_from: chunkFrom,
+      date_to: chunkTo,
+      filter_date_by: "FECHA DE CREADO",
+      orderBy: "id",
+      orderDirection: "desc",
     };
-    const qs = new URLSearchParams(params).toString();
-    const url = `${DROPI_API}/api/v1/orders/list?${qs}`;
 
-    const res = await fetch(url, {
+    const qs = Object.entries(params)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+
+    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
+      method: "GET",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        Origin: origin,
+        "Accept": "application/json",
+        "dropi-integration-key": apiKey,
+        "Origin": origin,
       },
     });
 
@@ -68,6 +75,11 @@ async function fetchAllPages(
     }
 
     const data = await res.json();
+    if (!data.isSuccess) {
+      console.error(`Dropi API not successful: ${data.message || data.error}`);
+      break;
+    }
+
     const orders = data.objects || [];
     if (!Array.isArray(orders) || orders.length === 0) break;
 
