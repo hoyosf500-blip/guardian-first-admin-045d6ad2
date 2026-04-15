@@ -244,10 +244,15 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
+  const managedCount = useMemo(() => data.filter(o => results[o.phone]).length, [data, results]);
   const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
 
   const filtered = useMemo(() => {
     let list = data;
+    // Hide managed orders unless showManaged is on
+    if (!showManaged) {
+      list = list.filter(o => !results[o.phone]);
+    }
     if (search) {
       const s = search.toLowerCase();
       list = list.filter(o =>
@@ -262,7 +267,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
