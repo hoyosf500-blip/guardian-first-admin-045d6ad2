@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import ReportsTable from '@/components/admin/ReportsTable';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 interface Profile { user_id: string; display_name: string; roles: string[]; }
 interface DayReport { operator_name: string; report_date: string; data: Record<string, number>; }
+interface FailedSync { id: string; created_at: string; error_message: string | null; }
 
 export default function AdminTab() {
   const { isAdmin } = useAuth();
@@ -19,6 +22,8 @@ export default function AdminTab() {
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncKey, setSyncKey] = useState(0);
+  const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
   const [dropiKey, setDropiKey] = useState('');
   const [dropiKeySaved, setDropiKeySaved] = useState('');
@@ -31,7 +36,20 @@ export default function AdminTab() {
     if (!isAdmin) return;
     loadData();
     loadDropiKey();
+    loadFailedSyncs();
   }, [isAdmin]);
+
+  async function loadFailedSyncs() {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('sync_logs')
+      .select('id, created_at, error_message')
+      .eq('status', 'error')
+      .gte('created_at', twentyFourHoursAgo)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    setFailedSyncs((data as FailedSync[]) || []);
+  }
 
   async function loadDropiKey() {
     const { data } = await supabase
@@ -126,6 +144,40 @@ export default function AdminTab() {
     <div className="max-w-5xl mx-auto">
       <p className="text-sm text-muted-foreground mb-5">Panel de administración</p>
 
+      {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
+        <motion.div {...fadeUp} className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-destructive mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-semibold text-destructive">Sincronización fallida</h4>
+              <p className="text-xs text-destructive/80 mt-0.5 mb-2">
+                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length} error(es) en las últimas 24 horas
+              </p>
+              <div className="space-y-1.5">
+                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).map(sync => (
+                  <div key={sync.id} className="flex items-center justify-between gap-2 text-xs bg-destructive/5 rounded-lg px-3 py-2">
+                    <div className="min-w-0">
+                      <span className="text-muted-foreground">
+                        {format(new Date(sync.created_at), "d MMM, HH:mm", { locale: es })}
+                      </span>
+                      {sync.error_message && (
+                        <span className="ml-2 text-destructive truncate">{sync.error_message}</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setDismissedAlerts(prev => new Set([...prev, sync.id]))}
+                      className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl skeleton-shimmer" />)}
@@ -184,7 +236,7 @@ export default function AdminTab() {
             )}
           </motion.div>
 
-          <SyncPanel onSyncComplete={() => setSyncKey(k => k + 1)} />
+          <SyncPanel onSyncComplete={() => { setSyncKey(k => k + 1); loadFailedSyncs(); }} />
 
           <SyncHistory key={syncKey} />
 
