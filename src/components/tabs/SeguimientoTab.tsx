@@ -53,6 +53,7 @@ export default function SeguimientoTab() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [initialDelayed, setInitialDelayed] = useState(false);
+  const [stalledCategoryFilter, setStalledCategoryFilter] = useState<string | null>(null);
 
   const loadOrders = useCallback(async (isRefresh = false) => {
     if (!user) return;
