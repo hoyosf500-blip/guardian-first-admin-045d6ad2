@@ -10,7 +10,7 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X } from 'lucide-react';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -231,6 +231,24 @@ export default function ConfirmarTab({ profile }: Props) {
                     <span className="w-2 h-2 rounded-full bg-yellow" /> {d46} urgente (D4-6)
                   </span>
                 )}
+              </div>
+            );
+          })()}
+
+          {(() => {
+            const retryOrders = workQueue.filter(o => o.retryCount && !o.result);
+            if (!retryOrders.length) return null;
+            return (
+              <div className="flex items-center gap-2 mb-4 rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3">
+                <RotateCcw size={16} className="text-orange-500 flex-shrink-0" />
+                <div>
+                  <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                    {retryOrders.length} pedido{retryOrders.length > 1 ? 's' : ''} para reintentar
+                  </span>
+                  <span className="text-[10px] text-muted-foreground ml-2">
+                    No contestaron antes — volver a llamar
+                  </span>
+                </div>
               </div>
             );
           })()}

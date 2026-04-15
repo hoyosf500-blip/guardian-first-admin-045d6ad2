@@ -1,5 +1,5 @@
 import { OrderData, truncate } from '@/lib/orderUtils';
-import { CheckCircle2, XCircle, PhoneOff, MapPin, Package } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, MapPin, Package, RotateCcw } from 'lucide-react';
 
 interface Props {
   items: OrderData[];
@@ -37,6 +37,11 @@ export default function WorkList({ items, onOpenCall }: Props) {
               </div>
             </div>
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${o.dias >= 7 ? 'bg-red/15 text-red' : o.dias >= 4 ? 'bg-yellow/15 text-yellow' : 'bg-green/15 text-green'}`}>D{o.dias}</span>
+            {o.retryCount && !o.result && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/15 text-orange-500 inline-flex items-center gap-0.5">
+                <RotateCcw size={10} /> {o.retryCount}/3
+              </span>
+            )}
             {o.result && (
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold inline-flex items-center ${
                 o.result === 'conf' ? 'bg-green/15 text-green' :

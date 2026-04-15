@@ -117,11 +117,32 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               }
             });
 
+            // Count retry phones (noresp that reappeared)
+            const retryPhones = new Map<string, number>();
+            phoneResults.forEach((results, phone) => {
+              const nrAttempts = results.filter(x => x.result === 'noresp').length;
+              if (nrAttempts > 0 && nrAttempts < 3 && !resultMap.has(phone)) {
+                retryPhones.set(phone, nrAttempts);
+              }
+            });
+
             const updated = dedupPendientes.map(o => {
               const r = resultMap.get(o.phone);
-              return r ? { ...o, result: r.result, reason: r.reason } : o;
+              const retry = retryPhones.get(o.phone);
+              if (r) return { ...o, result: r.result, reason: r.reason };
+              if (retry) return { ...o, retryCount: retry };
+              return o;
             });
             setWorkQueue(updated);
+
+            // Notify operator about re-surfaced orders
+            if (retryPhones.size > 0) {
+              toast.info(`${retryPhones.size} pedido${retryPhones.size > 1 ? 's' : ''} sin respuesta disponible${retryPhones.size > 1 ? 's' : ''} para reintentar`, {
+                description: 'No contestaron antes — intenta llamar de nuevo',
+                duration: 8000,
+              });
+            }
+
             const c = { conf: 0, canc: 0, noresp: 0 };
             data.forEach(r => {
               if (r.result === 'conf') c.conf++;
