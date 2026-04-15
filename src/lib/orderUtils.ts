@@ -30,6 +30,7 @@ export interface OrderData {
   reason?: string;
   dbId?: string;
   assignedTo?: string;
+  retryCount?: number; // How many previous noresp attempts today
 }
 
 /** Convert a raw DB row into an OrderData object */
