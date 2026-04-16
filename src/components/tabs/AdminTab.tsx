@@ -84,8 +84,8 @@ export default function AdminTab() {
       }
       setDropiKeySaved(dropiKey.trim());
       toast.success('Clave API de Dropi guardada');
-    } catch (err: any) {
-      toast.error(err.message || 'Error al guardar');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar');
     } finally {
       setSavingKey(false);
     }
@@ -111,9 +111,9 @@ export default function AdminTab() {
         setTestResult('ok');
         toast.success(`Conexión exitosa — ${res.data.message || 'API respondió correctamente'}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTestResult('fail');
-      toast.error(err.message || 'Error de conexión');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
     } finally {
       setTestingKey(false);
     }

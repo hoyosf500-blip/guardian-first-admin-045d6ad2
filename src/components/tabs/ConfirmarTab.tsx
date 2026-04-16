@@ -107,7 +107,7 @@ export default function ConfirmarTab({ profile }: Props) {
         buildWorkQueue(orders);
         setExcelLoaded(true);
         toast.success(`${orders.length} pedidos cargados`);
-      } catch (err: any) { toast.error('Error leyendo Excel: ' + err.message); }
+      } catch (err: unknown) { toast.error('Error leyendo Excel: ' + (err instanceof Error ? err.message : 'Error desconocido')); }
     };
     reader.readAsArrayBuffer(file);
   }, [user, today, setAllOrders, buildWorkQueue]);
@@ -202,8 +202,8 @@ export default function ConfirmarTab({ profile }: Props) {
                 } else {
                   toast.info(data?.message || 'No hay pedidos nuevos en Dropi');
                 }
-              } catch (err: any) {
-                toast.error('Error sincronizando: ' + (err.message || 'Error desconocido'));
+              } catch (err: unknown) {
+                toast.error('Error sincronizando: ' + (err instanceof Error ? err.message : 'Error desconocido'));
               } finally {
                 setSyncing(false);
               }

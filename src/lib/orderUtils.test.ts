@@ -14,6 +14,7 @@ import {
   isDevolucion,
   getTrackingUrl,
   truncate,
+  getErrorMessage,
 } from './orderUtils';
 
 describe('parseDate', () => {
@@ -238,5 +239,63 @@ describe('truncate', () => {
 
   it('returns short strings unchanged', () => {
     expect(truncate('Hi', 10)).toBe('Hi');
+  });
+});
+
+describe('getErrorMessage', () => {
+  it('extracts message from Error instance', () => {
+    expect(getErrorMessage(new Error('test fail'))).toBe('test fail');
+  });
+
+  it('returns string errors as-is', () => {
+    expect(getErrorMessage('network down')).toBe('network down');
+  });
+
+  it('returns fallback for null', () => {
+    expect(getErrorMessage(null)).toBe('Error desconocido');
+  });
+
+  it('returns fallback for undefined', () => {
+    expect(getErrorMessage(undefined)).toBe('Error desconocido');
+  });
+
+  it('returns fallback for numeric errors', () => {
+    expect(getErrorMessage(42)).toBe('Error desconocido');
+  });
+
+  it('returns fallback for object errors', () => {
+    expect(getErrorMessage({ code: 500 })).toBe('Error desconocido');
+  });
+});
+
+describe('dbToOrderData typed', () => {
+  it('handles fully null DB row gracefully', () => {
+    const order = dbToOrderData({}, 0);
+    expect(order.nombre).toBe('');
+    expect(order.phone).toBe('');
+    expect(order.valor).toBe(0);
+    expect(order.novedadSol).toBe(false);
+    expect(order.externalId).toBe('');
+    expect(order.dbId).toBeUndefined();
+  });
+
+  it('preserves valid DB values', () => {
+    const order = dbToOrderData({
+      id: 'db-123',
+      external_id: 'EXT-456',
+      nombre: 'Maria',
+      phone: '3101234567',
+      valor: 85000,
+      estado: 'EN REPARTO',
+      transportadora: 'TCC',
+      novedad_sol: true,
+    }, 5);
+    expect(order.dbId).toBe('db-123');
+    expect(order.externalId).toBe('EXT-456');
+    expect(order.nombre).toBe('Maria');
+    expect(order.valor).toBe(85000);
+    expect(order.estado).toBe('EN REPARTO');
+    expect(order.novedadSol).toBe(true);
+    expect(order.idx).toBe(5);
   });
 });

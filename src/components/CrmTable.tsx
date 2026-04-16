@@ -232,7 +232,8 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       setResults(managed);
     });
 
-    supabase.from('profiles').select('user_id, display_name').then(({ data: p }) => {
+    supabase.from('profiles').select('user_id, display_name').then(({ data: p, error }) => {
+      if (error) console.error('Error loading profiles:', error.message);
       if (p) setProfiles(p);
     });
   }, [data, module]);

@@ -31,10 +31,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (profileFetchedFor.current === userId) return;
     profileFetchedFor.current = userId;
 
-    const { data: p } = await supabase.from('profiles').select('display_name').eq('user_id', userId).single();
+    const { data: p, error: profileErr } = await supabase.from('profiles').select('display_name').eq('user_id', userId).single();
+    if (profileErr) console.error('Error loading profile:', profileErr.message);
     if (p) setProfile(p);
 
-    const { data: roles } = await supabase.from('user_roles').select('role').eq('user_id', userId);
+    const { data: roles, error: rolesErr } = await supabase.from('user_roles').select('role').eq('user_id', userId);
+    if (rolesErr) console.error('Error loading roles:', rolesErr.message);
     setIsAdmin(roles?.some(r => r.role === 'admin') ?? false);
   }
 

@@ -1,5 +1,12 @@
 import { COL_MAP, CARRIER_TRACK } from './constants';
 
+/** Safely extract an error message from an unknown catch value */
+export function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return 'Error desconocido';
+}
+
 export interface OrderData {
   idx: number;
   id: string;
@@ -33,11 +40,39 @@ export interface OrderData {
   retryCount?: number; // How many previous noresp attempts today
 }
 
+/** Shape of a raw DB row from the orders table (all fields nullable) */
+export interface DbOrderRow {
+  id?: string | null;
+  external_id?: string | null;
+  nombre?: string | null;
+  phone?: string | null;
+  ciudad?: string | null;
+  departamento?: string | null;
+  direccion?: string | null;
+  producto?: string | null;
+  estado?: string | null;
+  fecha?: string | null;
+  fecha_conf?: string | null;
+  dias?: number | null;
+  dias_conf?: number | null;
+  valor?: number | null;
+  flete?: number | null;
+  costo_prod?: number | null;
+  costo_dev?: number | null;
+  cantidad?: number | null;
+  novedad?: string | null;
+  guia?: string | null;
+  transportadora?: string | null;
+  tags?: string | null;
+  tienda?: string | null;
+  novedad_sol?: boolean | null;
+}
+
 /** Convert a raw DB row into an OrderData object */
-export function dbToOrderData(o: any, idx: number): OrderData {
+export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
   return {
-    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id,
-    nombre: o.nombre, phone: o.phone, ciudad: o.ciudad || '',
+    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id || undefined,
+    nombre: o.nombre || '', phone: o.phone || '', ciudad: o.ciudad || '',
     producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
     fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,
     valor: Number(o.valor) || 0, flete: Number(o.flete) || 0,

@@ -55,9 +55,10 @@ export default function DashboardTab() {
       let from = 0;
       const pageSize = 1000;
       while (true) {
-        const { data } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
+        const { data, error } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
           .order('created_at', { ascending: false })
           .range(from, from + pageSize - 1);
+        if (error) { console.error('Error loading orders:', error.message); break; }
         if (!data || data.length === 0) break;
         allData.push(...data.map(o => ({
           producto: o.producto || 'Sin producto',
@@ -80,7 +81,10 @@ export default function DashboardTab() {
     supabase.from('order_results').select('result_date, result')
       .eq('operator_id', user.id).gte('result_date', since.toISOString().split('T')[0])
       .order('result_date', { ascending: true })
-      .then(({ data }) => { if (data) setHistoryData(data); });
+      .then(({ data, error }) => {
+        if (error) console.error('Error loading history:', error.message);
+        if (data) setHistoryData(data);
+      });
   }, [user]);
 
   // Sync health — poll the latest entry in sync_logs every 30s. Only
@@ -89,13 +93,14 @@ export default function DashboardTab() {
   // line of defense against "Dropi se cayó y nadie se enteró" — if the
   // cron stops producing rows, the banner immediately turns red.
   const loadSyncLog = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('sync_logs')
       .select('status, created_at, synced_count, error_message, source')
       .in('source', ['dropi-cron', 'dropi-sync'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (error) console.error('Error loading sync log:', error.message);
     if (data) setLastSync(data);
   }, []);
 
