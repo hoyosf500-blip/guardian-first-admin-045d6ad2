@@ -3,9 +3,10 @@ import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
+import { useAiInsight } from '@/hooks/useAiInsight';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw } from 'lucide-react';
 
 interface VipInfo {
   isVip: boolean;
@@ -44,6 +45,7 @@ export default function CallView({ items }: Props) {
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [vip, setVip] = useState<VipInfo | null>(null);
+  const { ask: askAi, get: getAi } = useAiInsight();
 
   const o = items[Math.min(callIdx, items.length - 1)];
 
@@ -182,6 +184,57 @@ export default function CallView({ items }: Props) {
             <Mail size={12} /> {o.direccion}
           </div>
         )}
+
+        {/* AI call script */}
+        {!o.result && (() => {
+          const scriptKey = `script-${o.phone}-${o.idx}`;
+          const ai = getAi(scriptKey);
+          const buildContext = () => {
+            const parts = [
+              `Cliente: ${o.nombre}`,
+              `Teléfono: ${o.phone}`,
+              `Producto: ${o.producto || 'N/A'}`,
+              `Ciudad: ${o.ciudad || 'N/A'}`,
+              `Dirección: ${o.direccion || 'N/A'}`,
+              `Valor: $${o.valor.toLocaleString()} (incluye flete)`,
+              `Días desde pedido: ${o.dias}`,
+              `Estado: ${o.estado}`,
+            ];
+            if (o.novedad) parts.push(`Novedad: ${o.novedad}${o.novedadSol ? ' (RESUELTA)' : ''}`);
+            if (vip?.isVip) parts.push(`Cliente VIP: ${vip.entregados}/${vip.total} pedidos entregados (${vip.efectividad}%)`);
+            if (o.retryCount) parts.push(`Reintentos previos: ${o.retryCount}/3 (no contestó antes)`);
+            if (o.transportadora) parts.push(`Transportadora: ${o.transportadora}`);
+            return parts.join('\n');
+          };
+          return (
+            <div className="mb-3">
+              {!ai.reply && !ai.loading && (
+                <button
+                  onClick={() => askAi(scriptKey, 'call_script', buildContext())}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-xs font-semibold hover:bg-violet-500/20 transition-colors"
+                >
+                  <Sparkles size={13} /> Generar guión IA
+                </button>
+              )}
+              {ai.loading && (
+                <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-violet-500/5 border border-violet-500/10 text-xs text-violet-500">
+                  <RefreshCw size={12} className="animate-spin" /> Generando guión...
+                </div>
+              )}
+              {ai.reply && (
+                <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20 text-xs text-foreground whitespace-pre-line leading-relaxed">
+                  <div className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400 font-semibold mb-1.5">
+                    <Sparkles size={11} /> Guión sugerido
+                  </div>
+                  {ai.reply}
+                </div>
+              )}
+              {ai.error && (
+                <div className="text-[10px] text-red-500 mt-1">IA no disponible: {ai.error}</div>
+              )}
+            </div>
+          );
+        })()}
 
         {!o.result ? (
           <div className="grid grid-cols-3 gap-2 mt-4">

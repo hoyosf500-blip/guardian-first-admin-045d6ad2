@@ -7,11 +7,12 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
   Package, Clock, Calendar, DollarSign, FileText, AlertTriangle, RefreshCw,
-  MessageSquare, Send, PhoneCall, RotateCcw, Undo2,
+  MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { buildTimeline } from '@/lib/timelineBuilder';
 import { sanitizeNote, sanitizeAction } from '@/lib/sanitize';
+import { useAiInsight } from '@/hooks/useAiInsight';
 import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
@@ -99,6 +100,9 @@ export default function OrderDetailPage() {
   const [showReofferInput, setShowReofferInput] = useState(false);
   const [solutionText, setSolutionText] = useState('');
   const [resolving, setResolving] = useState(false);
+
+  // AI insights
+  const { ask: askAi, get: getAi } = useAiInsight();
 
   useEffect(() => {
     if (!externalId) return;
@@ -465,12 +469,49 @@ export default function OrderDetailPage() {
           </div>
 
           {order.novedad && (
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/20">
-              <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
-              <div>
-                <div className="text-[10px] font-semibold text-red-500 mb-0.5">Novedad</div>
-                <div className="text-xs text-foreground">{order.novedad}</div>
+            <div className="space-y-2">
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/20">
+                <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-[10px] font-semibold text-red-500 mb-0.5">Novedad</div>
+                  <div className="text-xs text-foreground">{order.novedad}</div>
+                </div>
               </div>
+              {/* AI novedad action suggestion */}
+              {!order.novedad_sol && (() => {
+                const aiKey = `novedad-${order.id}`;
+                const ai = getAi(aiKey);
+                const buildCtx = () => [
+                  `Novedad: ${order.novedad}`,
+                  `Estado: ${order.estado}`,
+                  `Días sin movimiento: ${order.dias_conf || order.dias || 0}`,
+                  `Transportadora: ${order.transportadora || 'N/A'}`,
+                  `Valor: $${(Number(order.valor) || 0).toLocaleString()}`,
+                  `Ciudad: ${order.ciudad || 'N/A'}`,
+                  `Dirección: ${order.direccion || 'N/A'}`,
+                ].join('\n');
+                return (
+                  <>
+                    {!ai.reply && !ai.loading && (
+                      <button onClick={() => askAi(aiKey, 'novedad_action', buildCtx())}
+                        className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-[11px] font-semibold hover:bg-violet-500/20 transition-colors">
+                        <Sparkles size={11} /> Sugerencia IA
+                      </button>
+                    )}
+                    {ai.loading && (
+                      <div className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-violet-500/5 text-[11px] text-violet-500">
+                        <RefreshCw size={11} className="animate-spin" /> Analizando...
+                      </div>
+                    )}
+                    {ai.reply && (
+                      <div className="p-2.5 rounded-lg bg-violet-500/5 border border-violet-500/20 text-[11px] text-foreground whitespace-pre-line leading-relaxed">
+                        <span className="text-violet-600 dark:text-violet-400 font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} /> Sugerencia IA</span>
+                        <br />{ai.reply}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 

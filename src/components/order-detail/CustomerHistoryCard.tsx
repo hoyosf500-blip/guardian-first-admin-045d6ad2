@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { History, CheckCircle2, RotateCcw, Package, Star, AlertTriangle, User, RefreshCw } from 'lucide-react';
+import { History, CheckCircle2, RotateCcw, Package, Star, AlertTriangle, User, RefreshCw, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate } from '@/lib/orderUtils';
+import { useAiInsight } from '@/hooks/useAiInsight';
 
 interface Props {
   currentPhone: string;
@@ -31,6 +32,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   const navigate = useNavigate();
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const { ask: askAi, get: getAi } = useAiInsight();
 
   useEffect(() => {
     if (!currentPhone) {
@@ -149,6 +151,47 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           </div>
         </div>
       </div>
+
+      {/* AI customer profile */}
+      {orders.length >= 2 && (() => {
+        const aiKey = `profile-${currentPhone}`;
+        const ai = getAi(aiKey);
+        const buildCtx = () => {
+          const lines = [
+            `Total pedidos: ${total}`,
+            `Entregados: ${entregados}`,
+            `Devoluciones: ${devoluciones}`,
+            `Efectividad: ${efectividad}%`,
+            `Productos pedidos: ${[...new Set(orders.map(o => o.producto).filter(Boolean))].join(', ')}`,
+            `Ciudades: ${[...new Set(orders.map(o => (o.estado || '').toUpperCase().includes('DEVOL') ? `${o.transportadora || ''}` : '').filter(Boolean))].join(', ') || 'N/A'}`,
+            `Transportadoras usadas: ${[...new Set(orders.map(o => o.transportadora).filter(Boolean))].join(', ')}`,
+            `Pedidos con novedad: ${orders.filter(o => o.novedad).length}`,
+            `Valor promedio: $${Math.round(orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length).toLocaleString()}`,
+          ];
+          return lines.join('\n');
+        };
+        return (
+          <div className="px-5 py-3 border-b border-border">
+            {!ai.reply && !ai.loading && (
+              <button onClick={() => askAi(aiKey, 'customer_profile', buildCtx())}
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-xs font-semibold hover:bg-violet-500/20 transition-colors">
+                <Sparkles size={12} /> Perfil IA del cliente
+              </button>
+            )}
+            {ai.loading && (
+              <div className="flex items-center gap-1.5 py-2 text-xs text-violet-500">
+                <RefreshCw size={12} className="animate-spin" /> Analizando cliente...
+              </div>
+            )}
+            {ai.reply && (
+              <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20 text-xs text-foreground whitespace-pre-line leading-relaxed">
+                <span className="text-violet-600 dark:text-violet-400 font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} /> Perfil IA</span>
+                <br />{ai.reply}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Orders list */}
       <div className="max-h-80 overflow-y-auto divide-y divide-border">
