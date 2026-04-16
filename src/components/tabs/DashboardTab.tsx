@@ -320,11 +320,11 @@ export default function DashboardTab() {
   };
 
   const tickStyle = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
-  const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '10px', fontSize: '12px' };
-  const COLORS = ['hsl(var(--blue))', 'hsl(var(--green))', 'hsl(var(--orange))', 'hsl(var(--red))', 'hsl(var(--purple))', 'hsl(var(--cyan))', 'hsl(var(--muted-foreground))'];
+  const tooltipStyle = { backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px', fontSize: '12px', color: '#fafafa' };
+  const COLORS = ['#fbbf24', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#06b6d4', '#71717a'];
 
   const tasaColor = tasa >= 80 ? 'text-green' : tasa >= 60 ? 'text-orange' : 'text-red';
-  const tasaStroke = tasa >= 80 ? 'hsl(var(--green))' : tasa >= 60 ? 'hsl(var(--orange))' : 'hsl(var(--red))';
+  const tasaStroke = tasa >= 80 ? '#22c55e' : tasa >= 60 ? '#f97316' : '#ef4444';
   const tasaBg = tasa >= 80 ? 'bg-green/10' : tasa >= 60 ? 'bg-orange/10' : 'bg-red/10';
 
   function TrendBadge({ current, previous, suffix = '' }: { current: number; previous: number; suffix?: string }) {
@@ -358,40 +358,42 @@ export default function DashboardTab() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Period tabs */}
-          <div className="inline-flex bg-secondary rounded-lg p-0.5">
+          <div className="inline-flex bg-card border border-border rounded-lg p-0.5">
             {[{ n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
               <button key={p.n} onClick={() => setPeriod(p.n)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  period === p.n ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                  period === p.n ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}>{p.l}</button>
             ))}
           </div>
           <div className="h-5 w-px bg-border hidden sm:block" />
           {/* Action buttons */}
-          <button onClick={exportarResultadosHoy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground transition-colors">
-            <Download size={12} /> CSV
+          <button onClick={exportarResultadosHoy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground text-xs font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+            <Download size={12} aria-hidden="true" /> CSV
           </button>
-          <button onClick={handleCierre} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity">
-            <Send size={12} /> Enviar cierre
+          <button onClick={handleCierre} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+            <Send size={12} aria-hidden="true" /> Enviar cierre
           </button>
           {/* More actions dropdown */}
           <div className="relative">
             <button onClick={() => setActionsOpen(!actionsOpen)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground transition-colors">
-              <ChevronDown size={12} className={`transition-transform ${actionsOpen ? 'rotate-180' : ''}`} />
+              aria-expanded={actionsOpen}
+              aria-label="Más acciones"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-card border border-border text-muted-foreground text-xs font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+              <ChevronDown size={12} className={`transition-transform duration-200 ${actionsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
             {actionsOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setActionsOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-lg py-1 min-w-[160px]">
-                  <button onClick={() => { exportarHistorico(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-foreground hover:bg-secondary transition-colors">
-                    <Download size={13} /> Exportar histórico
+                <div className="fixed inset-0 z-40" onClick={() => setActionsOpen(false)} aria-hidden="true" />
+                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[168px]">
+                  <button onClick={() => { exportarHistorico(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-foreground hover:bg-surface transition-colors duration-200 cursor-pointer">
+                    <Download size={13} aria-hidden="true" /> Exportar histórico
                   </button>
-                  <button onClick={() => { copiarResumen(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-foreground hover:bg-secondary transition-colors">
-                    <Copy size={13} /> Copiar resumen
+                  <button onClick={() => { copiarResumen(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-foreground hover:bg-surface transition-colors duration-200 cursor-pointer">
+                    <Copy size={13} aria-hidden="true" /> Copiar resumen
                   </button>
-                  <button onClick={() => { enviarWA(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-green hover:bg-secondary transition-colors">
-                    <MessageSquare size={13} /> Enviar por WhatsApp
+                  <button onClick={() => { enviarWA(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-green hover:bg-surface transition-colors duration-200 cursor-pointer">
+                    <MessageSquare size={13} aria-hidden="true" /> Enviar por WhatsApp
                   </button>
                 </div>
               </>
@@ -446,8 +448,8 @@ export default function DashboardTab() {
       {!hasData ? (
         /* Empty state */
         <motion.div {...fadeUp(0.05)} className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
-            <BarChart3 size={28} className="text-muted-foreground" />
+          <div className="w-16 h-16 rounded-xl bg-card border border-border flex items-center justify-center mb-4">
+            <BarChart3 size={28} className="text-muted-foreground" aria-hidden="true" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">Sin datos todavía</h3>
           <p className="text-sm text-muted-foreground max-w-xs">
@@ -459,10 +461,10 @@ export default function DashboardTab() {
           {/* Hero KPI + Compact KPIs */}
           <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-5">
             {/* Hero: Tasa de confirmación */}
-            <div className="md:col-span-4 bg-card rounded-xl border border-border p-5 flex items-center gap-5">
+            <div className="md:col-span-4 bg-surface border border-border rounded-xl p-5 flex items-center gap-5 hover:border-border-strong transition-colors duration-200">
               <div className="relative w-20 h-20 flex-shrink-0">
                 <svg viewBox="0 0 120 120" className="-rotate-90 w-full h-full">
-                  <circle cx="60" cy="60" r="50" fill="none" strokeWidth="10" stroke="hsl(var(--border))" />
+                  <circle cx="60" cy="60" r="50" fill="none" strokeWidth="10" stroke="#27272a" />
                   <circle cx="60" cy="60" r="50" fill="none" strokeWidth="10" stroke={tasaStroke} strokeLinecap="round"
                     strokeDasharray={314} strokeDashoffset={314 * (1 - tasa / 100)} className="transition-all duration-700" />
                 </svg>
@@ -471,7 +473,7 @@ export default function DashboardTab() {
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs text-muted-foreground font-medium mb-0.5">Tasa de confirmación</div>
+                <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1">Tasa de confirmación</div>
                 <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold ${tasaBg} ${tasaColor}`}>
                   {tasa >= 80 ? 'Excelente' : tasa >= 60 ? 'Aceptable' : 'Necesita mejorar'}
                 </div>
@@ -483,31 +485,31 @@ export default function DashboardTab() {
 
             {/* Compact KPIs */}
             {[
-              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/20', iconColor: 'text-green', spark: sparkData.conf, sparkColor: 'hsl(var(--green))' },
-              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/20', iconColor: 'text-red', spark: sparkData.canc, sparkColor: 'hsl(var(--red))' },
-              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-foreground', iconBg: 'bg-secondary', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
-              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/20', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${statusBreakdown.pendientes} pendientes` },
-            ].map((k, i) => {
+              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/15 border-green/20', iconColor: 'text-green', spark: sparkData.conf, sparkColor: '#22c55e' },
+              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/15 border-red/20', iconColor: 'text-red', spark: sparkData.canc, sparkColor: '#ef4444' },
+              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-foreground', iconBg: 'bg-card border-border', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-accent/15 border-accent/20', iconColor: 'text-accent', spark: sparkData.total, sparkColor: '#fbbf24', extra: `${statusBreakdown.pendientes} pendientes` },
+            ].map((k) => {
               const Icon = k.icon;
               const isZero = k.value === 0;
               return (
                 <div
                   key={k.label}
-                  className={`md:col-span-2 bg-card rounded-xl border p-4 flex flex-col justify-between transition-opacity ${isZero ? 'border-border/60 opacity-80' : 'border-border'}`}
+                  className={`md:col-span-2 bg-surface border rounded-xl p-4 flex flex-col justify-between hover:border-border-strong transition-colors duration-200 ${isZero ? 'border-border/50 opacity-75' : 'border-border'}`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className={`w-7 h-7 rounded-lg ${k.iconBg} flex items-center justify-center ring-1 ring-inset ring-border/30`}>
-                      <Icon size={14} className={k.iconColor} />
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${k.iconBg}`}>
+                      <Icon size={15} className={k.iconColor} aria-hidden="true" />
                     </div>
                     {k.spark.length > 1 && <MiniSparkline data={k.spark} color={k.sparkColor} />}
                   </div>
                   <div>
-                    <div className={`font-mono text-2xl font-bold ${isZero ? 'text-muted-foreground' : k.color} leading-none tabular-nums`}>{k.value}</div>
-                    <div className="text-xs font-medium text-foreground/80 mt-1.5">{k.label}</div>
+                    <div className={`font-mono text-3xl font-semibold ${isZero ? 'text-muted-foreground' : k.color} leading-none tabular-nums`}>{k.value}</div>
+                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-2">{k.label}</div>
                   </div>
-                  <div className="mt-1.5">
+                  <div className="mt-2">
                     {k.extra ? (
-                      <span className="text-[11px] font-medium text-muted-foreground">{k.extra}</span>
+                      <span className="text-[11px] font-medium text-accent">{k.extra}</span>
                     ) : (
                       <TrendBadge current={k.value} previous={k.prev} />
                     )}
@@ -519,10 +521,10 @@ export default function DashboardTab() {
 
           {/* Charts */}
           <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-            <div className="bg-card rounded-xl border border-border p-5">
+            <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Activity size={14} className="text-blue" /> Tasa de confirmación
+                  <Activity size={14} className="text-accent" aria-hidden="true" /> Tasa de confirmación
                 </h3>
               </div>
               <div className="h-52">
@@ -530,37 +532,37 @@ export default function DashboardTab() {
                   <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                     <defs>
                       <linearGradient id="tGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(var(--blue))" stopOpacity={0.15} />
-                        <stop offset="100%" stopColor="hsl(var(--blue))" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.20} />
+                        <stop offset="100%" stopColor="#fbbf24" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={tickStyle} axisLine={false} tickLine={false} unit="%" />
                     <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v}%`, 'Tasa']} />
-                    <Area type="monotone" dataKey="tasa" stroke="hsl(var(--blue))" strokeWidth={2} fill="url(#tGrad)" dot={{ r: 2, fill: 'hsl(var(--blue))', strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: 'hsl(var(--card))' }} />
+                    <Area type="monotone" dataKey="tasa" stroke="#fbbf24" strokeWidth={2} fill="url(#tGrad)" dot={{ r: 2, fill: '#fbbf24', strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: '#18181b' }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-card rounded-xl border border-border p-5">
+            <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Layers size={14} className="text-green" /> Gestiones por día
+                  <Layers size={14} className="text-green" aria-hidden="true" /> Gestiones por día
                 </h3>
               </div>
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '6px' }} formatter={(v: string) => v === 'conf' ? 'Confirmados' : v === 'canc' ? 'Cancelados' : 'No respondió'} />
-                    <Bar dataKey="conf" stackId="a" fill="hsl(var(--green))" name="conf" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="canc" stackId="a" fill="hsl(var(--red))" name="canc" />
-                    <Bar dataKey="noresp" stackId="a" fill="hsl(var(--muted-foreground))" radius={[3, 3, 0, 0]} name="noresp" />
+                    <Bar dataKey="conf" stackId="a" fill="#22c55e" name="conf" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="canc" stackId="a" fill="#ef4444" name="canc" />
+                    <Bar dataKey="noresp" stackId="a" fill="#71717a" radius={[3, 3, 0, 0]} name="noresp" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -569,15 +571,15 @@ export default function DashboardTab() {
 
           {/* F5: Operator ranking */}
           {operatorRanking.length > 1 && (
-            <motion.div {...fadeUp(0.15)} className="bg-card rounded-xl border border-border overflow-hidden mb-5">
-              <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-                <Users size={14} className="text-blue" />
+            <motion.div {...fadeUp(0.15)} className="bg-surface border border-border rounded-xl overflow-hidden mb-5 hover:border-border-strong transition-colors duration-200">
+              <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+                <Users size={14} className="text-accent" aria-hidden="true" />
                 <h3 className="text-sm font-semibold text-foreground">Ranking del equipo hoy</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border">
+                    <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border bg-card/50">
                       <th className="px-5 py-2.5 text-left font-medium">#</th>
                       <th className="px-3 py-2.5 text-left font-medium">Operador(a)</th>
                       <th className="px-3 py-2.5 text-center font-medium">Conf.</th>
@@ -592,12 +594,12 @@ export default function DashboardTab() {
                       const isMe = op.operatorId === user?.id;
                       const tasaC = op.tasa >= 80 ? 'text-green' : op.tasa >= 60 ? 'text-orange' : 'text-red';
                       return (
-                        <tr key={op.operatorId} className={`border-b border-border last:border-0 transition-colors ${isMe ? 'bg-primary/5' : 'hover:bg-secondary/30'}`}>
+                        <tr key={op.operatorId} className={`border-b border-border last:border-0 transition-colors duration-200 ${isMe ? 'bg-accent/8' : 'hover:bg-card'}`}>
                           <td className="px-5 py-2.5 font-mono font-bold">
-                            {idx === 0 ? <Trophy size={14} className="text-yellow-500 inline" /> : idx + 1}
+                            {idx === 0 ? <Trophy size={14} className="text-accent inline" aria-label="1er lugar" /> : idx + 1}
                           </td>
                           <td className="px-3 py-2.5 font-medium">
-                            {op.name}{isMe && <span className="ml-1.5 text-[10px] text-primary">(tú)</span>}
+                            {op.name}{isMe && <span className="ml-1.5 text-[10px] text-accent font-semibold">(tú)</span>}
                           </td>
                           <td className="px-3 py-2.5 text-center font-mono text-green">{op.conf}</td>
                           <td className="px-3 py-2.5 text-center font-mono text-red">{op.canc}</td>
@@ -616,8 +618,8 @@ export default function DashboardTab() {
           {/* Products */}
           {prods.length > 0 && (
             <motion.div {...fadeUp(0.18)} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
-              <div className="md:col-span-2 bg-card rounded-xl border border-border p-5">
-                <h3 className="text-sm font-semibold text-foreground mb-4">Distribución por producto</h3>
+              <div className="md:col-span-2 bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
+                <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-4">Distribución por producto</h3>
                 <div className="h-52">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -630,20 +632,20 @@ export default function DashboardTab() {
                         {prods.slice(0, 7).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>
                       <Tooltip contentStyle={tooltipStyle} formatter={(v: number, n: string) => [`${v}`, n]} />
-                      <Legend wrapperStyle={{ fontSize: '10px' }} layout="vertical" align="right" verticalAlign="middle" />
+                      <Legend wrapperStyle={{ fontSize: '10px', color: '#a1a1aa' }} layout="vertical" align="right" verticalAlign="middle" />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="md:col-span-3 bg-card rounded-xl border border-border overflow-hidden">
-                <div className="px-5 py-4 border-b border-border">
-                  <h3 className="text-sm font-semibold text-foreground">Detalle por producto</h3>
+              <div className="md:col-span-3 bg-surface border border-border rounded-xl overflow-hidden hover:border-border-strong transition-colors duration-200">
+                <div className="px-5 py-3.5 border-b border-border bg-card/30">
+                  <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Detalle por producto</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border">
+                      <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border bg-card/50">
                         <th className="text-left px-5 py-2.5 font-medium">Producto</th>
                         <th className="px-3 py-2.5 font-medium">Total</th>
                         <th className="px-3 py-2.5 font-medium">Entreg.</th>
@@ -657,7 +659,7 @@ export default function DashboardTab() {
                         const efect = d.total > 0 ? Math.round(d.entreg / d.total * 100) : 0;
                         const ec = efect >= 55 ? 'text-green' : efect >= 40 ? 'text-orange' : 'text-red';
                         return (
-                          <tr key={name} className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
+                          <tr key={name} className="border-b border-border last:border-0 hover:bg-card transition-colors duration-200">
                             <td className="px-5 py-2.5 font-medium max-w-[160px]">
                               <TruncatedText text={name} maxChars={22} className="block" />
                             </td>
@@ -677,27 +679,29 @@ export default function DashboardTab() {
           )}
 
           {/* Cierre summary */}
-          <motion.div {...fadeUp(0.24)} className="bg-card rounded-xl border border-border p-5">
+          <motion.div {...fadeUp(0.24)} className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-sm font-semibold text-foreground">Resumen del día</h3>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{formatDateES(new Date().toISOString().split('T')[0])}</p>
+                <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Resumen del día</h3>
+                <p className="text-[10px] text-subtle mt-0.5">{formatDateES(new Date().toISOString().split('T')[0])}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-green', iconColor: 'text-green' },
-                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-red', iconColor: 'text-red' },
-                { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconColor: 'text-muted-foreground' },
-                { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-orange', iconColor: 'text-orange' },
+                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-green', iconBg: 'bg-green/15 border-green/20', iconColor: 'text-green' },
+                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-red', iconBg: 'bg-red/15 border-red/20', iconColor: 'text-red' },
+                { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconBg: 'bg-card border-border', iconColor: 'text-muted-foreground' },
+                { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-orange', iconBg: 'bg-orange/15 border-orange/20', iconColor: 'text-orange' },
               ].map(item => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.label} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
-                    <Icon size={18} className={item.iconColor} />
+                  <div key={item.label} className="flex items-center gap-3 p-3.5 rounded-lg bg-card border border-border">
+                    <div className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${item.iconBg}`}>
+                      <Icon size={16} className={item.iconColor} aria-hidden="true" />
+                    </div>
                     <div>
-                      <div className={`font-mono text-lg font-bold ${item.color}`}>{item.value}</div>
-                      <div className="text-[10px] text-muted-foreground">{item.label}</div>
+                      <div className={`font-mono text-2xl font-semibold tabular-nums ${item.color}`}>{item.value}</div>
+                      <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">{item.label}</div>
                     </div>
                   </div>
                 );
