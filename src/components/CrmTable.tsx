@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, truncate, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
 import CrmCallView from './CrmCallView';
+import { TruncatedText } from '@/components/TruncatedText';
 
 interface Touchpoint {
   id: string;
@@ -570,7 +571,11 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Name + ID + days */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-bold text-foreground truncate">{o.nombre}</div>
+            <TruncatedText
+              text={o.nombre}
+              cssTruncate
+              className="block text-[13px] font-bold text-foreground truncate"
+            />
             {o.externalId && (
               <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[10px] text-primary hover:underline font-mono mt-0.5 block truncate">
                 {o.externalId}
@@ -579,9 +584,11 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
           </div>
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate">
-              {o.estado}
-            </span>
+            <TruncatedText
+              text={o.estado}
+              cssTruncate
+              className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate"
+            />
             {pLevel !== 'low' && (
               <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pConfig.bgClass} ${pConfig.color}`}>
                 {pConfig.label}
@@ -685,15 +692,23 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             <div className="px-3.5 py-3.5 space-y-3 bg-secondary/30">
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Producto', value: truncate(o.producto || '—', 30) },
-                  { label: 'Valor', value: `$${o.valor.toLocaleString()}` },
-                  { label: 'Dirección', value: truncate(o.direccion || '—', 35) },
-                  { label: 'Departamento', value: o.departamento || '—' },
-                ].map(d => (
+                {([
+                  { label: 'Producto', value: o.producto || '—', maxChars: 30 },
+                  { label: 'Valor', value: `$${o.valor.toLocaleString()}`, maxChars: null },
+                  { label: 'Dirección', value: o.direccion || '—', maxChars: 35 },
+                  { label: 'Departamento', value: o.departamento || '—', maxChars: null },
+                ] as const).map(d => (
                   <div key={d.label} className="bg-card rounded-lg p-2.5 border border-border/30">
                     <div className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">{d.label}</div>
-                    <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate">{d.value}</div>
+                    {d.maxChars ? (
+                      <TruncatedText
+                        text={d.value}
+                        maxChars={d.maxChars}
+                        className="block text-[11px] font-semibold text-foreground mt-0.5"
+                      />
+                    ) : (
+                      <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate">{d.value}</div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -702,7 +717,11 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
               {o.novedad && (
                 <div className="flex items-start gap-2 bg-orange-500/5 border border-orange-500/10 rounded-lg px-3 py-2">
                   <AlertTriangle size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-[11px] text-foreground/80 leading-snug">{truncate(o.novedad, 100)}</span>
+                  <TruncatedText
+                    text={o.novedad}
+                    maxChars={100}
+                    className="text-[11px] text-foreground/80 leading-snug"
+                  />
                 </div>
               )}
 

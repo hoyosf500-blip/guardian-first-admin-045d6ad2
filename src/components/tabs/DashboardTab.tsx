@@ -2,6 +2,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
+import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -657,7 +658,9 @@ export default function DashboardTab() {
                         const ec = efect >= 55 ? 'text-green' : efect >= 40 ? 'text-orange' : 'text-red';
                         return (
                           <tr key={name} className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
-                            <td className="px-5 py-2.5 font-medium truncate max-w-[160px]">{truncate(name, 22)}</td>
+                            <td className="px-5 py-2.5 font-medium max-w-[160px]">
+                              <TruncatedText text={name} maxChars={22} className="block" />
+                            </td>
                             <td className="px-3 py-2.5 text-center font-mono">{d.total}</td>
                             <td className="px-3 py-2.5 text-center font-mono text-green">{d.entreg}</td>
                             <td className="px-3 py-2.5 text-center font-mono text-red">{d.canc}</td>

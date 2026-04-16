@@ -6,9 +6,10 @@ import {
   CheckCircle, ExternalLink, User, Clock, Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, truncate } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
+import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 
 interface Touchpoint {
@@ -355,7 +356,7 @@ export default function CrmCallView({
                   onClick={() => handleAction(a)}
                   className="inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-primary/10 text-primary border border-primary/20 font-semibold text-xs hover:bg-primary/20 active:scale-[0.97] transition-all"
                 >
-                  <Send size={13} /> {truncate(a, 28)}
+                  <Send size={13} /> <TruncatedText text={a} maxChars={28} />
                 </button>
               ))}
             </div>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { OrderData, truncate } from '@/lib/orderUtils';
+import { OrderData } from '@/lib/orderUtils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, MapPin, Package, RotateCcw } from 'lucide-react';
+import { TruncatedText } from '@/components/TruncatedText';
 
 interface Props {
   items: OrderData[];
@@ -36,10 +37,17 @@ export default function WorkList({ items, onOpenCall }: Props) {
           >
             <div className={`w-1.5 h-9 rounded-sm flex-shrink-0 ${pClass}`} />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold truncate">{o.nombre}</div>
+              <TruncatedText
+                text={o.nombre}
+                cssTruncate
+                className="block text-sm font-semibold truncate"
+              />
               <div className="text-[11px] text-muted-foreground flex gap-2 mt-0.5 items-center">
                 <span className="inline-flex items-center gap-0.5"><MapPin size={10} /> {o.ciudad || '—'}</span>
-                <span className="inline-flex items-center gap-0.5"><Package size={10} /> {truncate(o.producto || '—', 15)}</span>
+                <span className="inline-flex items-center gap-0.5">
+                  <Package size={10} />
+                  <TruncatedText text={o.producto || '—'} maxChars={15} />
+                </span>
               </div>
             </div>
             {pLevel !== 'low' && (

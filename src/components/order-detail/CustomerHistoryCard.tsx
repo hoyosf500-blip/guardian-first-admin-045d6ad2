@@ -10,7 +10,7 @@ import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
-import { truncate } from '@/lib/orderUtils';
+import { TruncatedText } from '@/components/TruncatedText';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { calcBadge, estadoColor } from '@/lib/customerUtils';
 
@@ -673,7 +673,11 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                     </>
                   )}
                 </div>
-                <div className="text-xs text-foreground truncate">{truncate(o.producto || '—', 50)}</div>
+                <TruncatedText
+                  text={o.producto || '—'}
+                  maxChars={50}
+                  className="block text-xs text-foreground"
+                />
                 {o.transportadora && (
                   <div className="text-[10px] text-muted-foreground mt-0.5">{o.transportadora}{o.guia ? ` · ${o.guia}` : ''}</div>
                 )}

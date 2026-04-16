@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
-import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, truncate } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
+import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { toast } from 'sonner';
 import {
@@ -279,7 +280,7 @@ export default function NovedadView({ items }: Props) {
                 </p>
                 {solution.trim() && (
                   <div className="mt-3 p-2.5 rounded-lg bg-yellow/10 border border-yellow/20 text-[11px] text-yellow-700 dark:text-yellow-400">
-                    <strong>Aviso:</strong> escribiste una solución (<em>"{truncate(solution, 60)}"</em>) que se va a descartar si devuelves.
+                    <strong>Aviso:</strong> escribiste una solución (<em>"<TruncatedText text={solution} maxChars={60} />"</em>) que se va a descartar si devuelves.
                   </div>
                 )}
               </div>
