@@ -241,6 +241,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
   }, [user, resLoaded]);
 
+  // Background auto-refresh for seg/res caches so the Dropi cron (and
+  // other operators' actions) propagate without the operator having to
+  // hit "Actualizar". Runs every 5 min — same cadence as dropi-cron so
+  // at worst we are one tick behind. Only runs after the first manual
+  // load per tab so we don't refetch data that was never requested.
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      if (segLoaded) loadSegData(true);
+      if (resLoaded) loadResData(true);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user, segLoaded, resLoaded, loadSegData, loadResData]);
+
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
 
@@ -287,21 +301,44 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // sonner toast is updated in place when the function call resolves.
       if (order.externalId) {
         const toastId = `dropi-${order.externalId}`;
+        const insertedResultId = insertedResult?.id;
         toast.loading('Dropi: actualizando…', { id: toastId });
+
+        // Full rollback when Dropi fails: revert the DB estado back to
+        // PENDIENTE CONFIRMACION, delete the order_results row, and clear
+        // the local result. Previously we only showed a toast — the pedido
+        // stayed local-only-confirmed forever while Dropi still saw it as
+        // pending, creating a silent mismatch the operator could not fix
+        // without manually re-syncing the DB.
+        const rollbackDropiFailure = async (errMsg: string) => {
+          toast.error(`Dropi falló: ${errMsg}. Pedido revertido — volvé a confirmarlo.`, { id: toastId, duration: 10000 });
+          if (order.dbId) {
+            await supabase.from('orders').update({ estado: 'PENDIENTE CONFIRMACION' }).eq('id', order.dbId);
+          }
+          if (insertedResultId) {
+            await supabase.from('order_results').delete().eq('id', insertedResultId);
+          }
+          setWorkQueue(prev => prev.map(o => o.dbId === order.dbId
+            ? { ...o, estado: 'PENDIENTE CONFIRMACION', result: undefined, reason: undefined }
+            : o));
+          setCounter(prev => ({ ...prev, conf: Math.max(0, prev.conf - 1) }));
+          setLastMark(null);
+        };
+
         supabase.functions
           .invoke('dropi-update-order', { body: { externalId: order.externalId } })
           .then((res) => {
             const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
             if (res?.error || data?.ok === false) {
               const msg = res?.error?.message || data?.error || 'Error desconocido';
-              toast.error(`Dropi falló: ${msg}`, { id: toastId, duration: 8000 });
+              rollbackDropiFailure(msg);
             } else {
               toast.success('Dropi OK', { id: toastId, duration: 2500 });
             }
           })
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
-            toast.error(`Dropi red: ${msg}`, { id: toastId, duration: 8000 });
+            rollbackDropiFailure(`red — ${msg}`);
           });
       }
     }

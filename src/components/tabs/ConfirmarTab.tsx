@@ -42,18 +42,35 @@ export default function ConfirmarTab({ profile }: Props) {
   const [showExcel, setShowExcel] = useState(false);
   const today = new Date().toISOString().split('T')[0];
 
-  // Auto-load orders from DB on mount if not already loaded
+  // Auto-load orders from DB on mount if not already loaded. Uses a strict
+  // eq() match on PENDIENTE CONFIRMACION instead of ilike('%PENDIENTE%') —
+  // the old filter also matched "PENDIENTE" (locally confirmed) and
+  // re-surfaced them in the queue. It also handles both the `error` channel
+  // and a Promise rejection so a failing query can't leave the spinner
+  // hanging forever — that is the eternal "Cargando..." Fabian hit when
+  // the Dropi sync fell over.
   useEffect(() => {
     if (excelLoaded || !user || autoLoading) return;
     setAutoLoading(true);
-    supabase.from('orders').select('*').ilike('estado', '%PENDIENTE%')
-      .then(({ data: dbOrders }) => {
+    supabase.from('orders').select('*').eq('estado', 'PENDIENTE CONFIRMACION')
+      .then(({ data: dbOrders, error }) => {
+        if (error) {
+          console.error('Error loading orders:', error);
+          toast.error('Error cargando pedidos: ' + error.message);
+          setAutoLoading(false);
+          return;
+        }
         if (dbOrders && dbOrders.length > 0) {
           const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
           setAllOrders(orders);
           buildWorkQueue(orders);
           setExcelLoaded(true);
         }
+        setAutoLoading(false);
+      }, (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('Network error loading orders:', err);
+        toast.error('Error de red: ' + msg);
         setAutoLoading(false);
       });
   }, [user, excelLoaded, today]);
@@ -168,10 +185,11 @@ export default function ConfirmarTab({ profile }: Props) {
                 });
                 if (error) throw error;
                 if (data?.synced > 0 || data?.total > 0) {
-                  // Reload orders from DB
+                  // Reload orders from DB — strict match so we don't pull
+                  // already-confirmed orders back into the queue.
                   const { data: dbOrders } = await supabase.from('orders')
                     .select('*')
-                    .ilike('estado', '%PENDIENTE%');
+                    .eq('estado', 'PENDIENTE CONFIRMACION');
                   if (dbOrders && dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
                     setAllOrders(orders);

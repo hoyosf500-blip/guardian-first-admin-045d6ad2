@@ -2,12 +2,12 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare,
   Download, TrendingUp, TrendingDown, Minus, Package, ChevronDown,
-  BarChart3, Activity, Layers
+  BarChart3, Activity, Layers, CloudOff, CloudDownload, RefreshCw
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -16,6 +16,7 @@ import {
 import { motion } from 'framer-motion';
 
 interface DailyResult { result_date: string; result: string; }
+interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 14 },
@@ -42,6 +43,9 @@ export default function DashboardTab() {
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [dbOrders, setDbOrders] = useState<Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }>>([]);
+  const [lastSync, setLastSync] = useState<SyncLog | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [resyncing, setResyncing] = useState(false);
 
   // Load orders from DB for dashboard stats
   useEffect(() => {
@@ -78,6 +82,59 @@ export default function DashboardTab() {
       .order('result_date', { ascending: true })
       .then(({ data }) => { if (data) setHistoryData(data); });
   }, [user]);
+
+  // Sync health — poll the latest entry in sync_logs every 30s. Only
+  // admins have SELECT permission on sync_logs, so non-admin users just
+  // see an empty response and the widget stays hidden. This is the first
+  // line of defense against "Dropi se cayó y nadie se enteró" — if the
+  // cron stops producing rows, the banner immediately turns red.
+  const loadSyncLog = useCallback(async () => {
+    const { data } = await supabase
+      .from('sync_logs')
+      .select('status, created_at, synced_count, error_message, source')
+      .in('source', ['dropi-cron', 'dropi-sync'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) setLastSync(data);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    loadSyncLog();
+    const poll = setInterval(loadSyncLog, 30 * 1000);
+    const tick = setInterval(() => setNowTick(Date.now()), 15 * 1000);
+    return () => { clearInterval(poll); clearInterval(tick); };
+  }, [user, loadSyncLog]);
+
+  const resyncNow = async () => {
+    if (resyncing) return;
+    setResyncing(true);
+    try {
+      const { error } = await supabase.functions.invoke('dropi-sync', { body: {} });
+      if (error) throw error;
+      toast.success('Sincronización disparada');
+      // Refresh the health card after a short delay so the new row appears
+      setTimeout(loadSyncLog, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error('Error disparando sync: ' + msg);
+    } finally {
+      setResyncing(false);
+    }
+  };
+
+  const syncStatus = useMemo(() => {
+    if (!lastSync) return null;
+    const ageMs = nowTick - new Date(lastSync.created_at).getTime();
+    const ageMin = Math.floor(ageMs / 60000);
+    const isError = lastSync.status !== 'success';
+    const healthy = !isError && ageMin < 15;
+    const warning = !isError && ageMin >= 15 && ageMin < 60;
+    const broken = isError || ageMin >= 60;
+    const ageLabel = ageMin < 1 ? 'ahora' : ageMin < 60 ? `${ageMin}m` : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m`;
+    return { ageMin, ageLabel, isError, healthy, warning, broken };
+  }, [lastSync, nowTick]);
 
   const chartData = useMemo(() => {
     const since = new Date(); since.setDate(since.getDate() - period);
@@ -283,6 +340,49 @@ export default function DashboardTab() {
           </div>
         </div>
       </motion.div>
+
+      {/* Sync health — only renders when we have at least one sync_logs row
+          (i.e. the user is admin and the table is readable). Turns red if
+          the cron hasn't produced a fresh entry in over an hour. */}
+      {syncStatus && (
+        <motion.div {...fadeUp(0.03)} className={`mb-5 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border px-4 py-3 ${
+          syncStatus.broken
+            ? 'border-red/30 bg-red/10'
+            : syncStatus.warning
+              ? 'border-orange/30 bg-orange/10'
+              : 'border-green/30 bg-green/10'
+        }`}>
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            syncStatus.broken ? 'bg-red/20' : syncStatus.warning ? 'bg-orange/20' : 'bg-green/20'
+          }`}>
+            {syncStatus.broken ? <CloudOff size={18} className="text-red" />
+              : syncStatus.warning ? <Clock size={18} className="text-orange" />
+              : <CloudDownload size={18} className="text-green" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className={`text-xs font-semibold ${
+              syncStatus.broken ? 'text-red' : syncStatus.warning ? 'text-orange' : 'text-green'
+            }`}>
+              {syncStatus.broken
+                ? (syncStatus.isError ? `Sync caído: ${lastSync?.error_message || 'error'}` : `Sin sincronización hace ${syncStatus.ageLabel}`)
+                : syncStatus.warning
+                  ? `Sincronizado hace ${syncStatus.ageLabel} (lento)`
+                  : `Dropi sincronizado hace ${syncStatus.ageLabel}`}
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-0.5">
+              Fuente: {lastSync?.source} · {lastSync?.synced_count ?? 0} pedidos · {lastSync ? new Date(lastSync.created_at).toLocaleString('es-CO') : ''}
+            </div>
+          </div>
+          <button
+            onClick={resyncNow}
+            disabled={resyncing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={resyncing ? 'animate-spin' : ''} />
+            {resyncing ? 'Sincronizando...' : 'Forzar sync'}
+          </button>
+        </motion.div>
+      )}
 
       {!hasData ? (
         /* Empty state */
