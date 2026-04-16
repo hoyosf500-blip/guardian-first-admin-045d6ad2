@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -22,7 +22,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Prevents fetchProfile from running twice when onAuthStateChange and
+  // getSession fire near-simultaneously (race that caused double DB queries
+  // and occasional stale isAdmin on fast connections).
+  const profileFetchedFor = useRef<string | null>(null);
+
   async function fetchProfile(userId: string) {
+    if (profileFetchedFor.current === userId) return;
+    profileFetchedFor.current = userId;
+
     const { data: p } = await supabase.from('profiles').select('display_name').eq('user_id', userId).single();
     if (p) setProfile(p);
 
@@ -31,6 +39,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Set up the auth listener first (Supabase recommended pattern).
+    // getSession() is only needed as a fallback for the initial load —
+    // onAuthStateChange fires INITIAL_SESSION on mount in supabase-js v2,
+    // but we keep getSession as a safety net in case it doesn't.
+    let initialDone = false;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -39,11 +53,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setIsAdmin(false);
+        profileFetchedFor.current = null;
       }
+      initialDone = true;
       setLoading(false);
     });
 
+    // Fallback: if onAuthStateChange hasn't fired after a short delay,
+    // use getSession to unblock the loading state.
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (initialDone) return; // onAuthStateChange already handled it
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) fetchProfile(session.user.id);

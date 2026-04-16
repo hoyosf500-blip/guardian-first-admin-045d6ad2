@@ -502,7 +502,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   <div className="bg-card/50 rounded-b-xl border border-border/40 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
                     {items.map((o, i) => (
                       <OrderCard
-                        key={o.phone + o.idx}
+                        key={`${o.phone}-${o.idx}`}
                         order={o}
                         managed={results[o.phone]}
                         expanded={expandedPhone === o.phone}

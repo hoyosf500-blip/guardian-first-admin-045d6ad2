@@ -66,9 +66,25 @@ function launchConfetti(intensity: 'normal' | 'epic') {
   setTimeout(() => container.remove(), 4500);
 }
 
+// Shared AudioContext — reused across all playSound calls to avoid leaking
+// system resources. Browsers limit the number of simultaneous AudioContexts;
+// creating one per sound exhausted the limit on long sessions.
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioCtx(): AudioContext {
+  if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+    sharedAudioCtx = new AudioContext();
+  }
+  // Resume if suspended (Chrome auto-suspends until user gesture)
+  if (sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume();
+  }
+  return sharedAudioCtx;
+}
+
 function playSound(type: 'milestone' | 'century') {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioCtx();
     const now = ctx.currentTime;
     if (type === 'century') {
       [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
@@ -98,13 +114,28 @@ function playSound(type: 'milestone' | 'century') {
   } catch { /* Audio not supported */ }
 }
 
+// Restore previously celebrated milestones from sessionStorage so a page
+// reload doesn't replay the confetti/sound for every milestone the operator
+// already passed during this browser session.
+function loadCelebrated(): Set<number> {
+  try {
+    const raw = sessionStorage.getItem('celebrated_milestones');
+    if (raw) return new Set(JSON.parse(raw) as number[]);
+  } catch { /* ignore */ }
+  return new Set();
+}
+function saveCelebrated(set: Set<number>) {
+  try { sessionStorage.setItem('celebrated_milestones', JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
 export function useCelebration() {
-  const celebratedRef = useRef<Set<number>>(new Set());
+  const celebratedRef = useRef<Set<number>>(loadCelebrated());
 
   const checkMilestone = useCallback((totalGestiones: number) => {
     for (const m of MILESTONES) {
       if (totalGestiones >= m && !celebratedRef.current.has(m)) {
         celebratedRef.current.add(m);
+        saveCelebrated(celebratedRef.current);
         const info = MILESTONE_MESSAGES[m];
         if (!info) continue;
 
@@ -136,6 +167,7 @@ export function useCelebration() {
 
   const resetCelebrations = useCallback(() => {
     celebratedRef.current.clear();
+    saveCelebrated(celebratedRef.current);
   }, []);
 
   return { checkMilestone, requestNotificationPermission, resetCelebrations };
