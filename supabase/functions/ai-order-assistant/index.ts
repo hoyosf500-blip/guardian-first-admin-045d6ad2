@@ -66,10 +66,24 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get("DASHSCOPE_API_KEY");
+    // Read API key: try env var first, then app_settings table
+    let apiKey = Deno.env.get("DASHSCOPE_API_KEY") || "";
+
+    if (!apiKey) {
+      const sbUrl = Deno.env.get("SUPABASE_URL")!;
+      const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const sb = createClient(sbUrl, sbKey);
+      const { data: setting } = await sb
+        .from("app_settings")
+        .select("value")
+        .eq("key", "dashscope_api_key")
+        .maybeSingle();
+      apiKey = setting?.value || "";
+    }
+
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ ok: false, error: "DASHSCOPE_API_KEY not configured" }),
+        JSON.stringify({ ok: false, error: "DASHSCOPE_API_KEY not configured. Set it in app_settings or as an Edge Function secret." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }

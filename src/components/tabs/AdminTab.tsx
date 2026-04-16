@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
@@ -32,10 +32,19 @@ export default function AdminTab() {
   const [testingKey, setTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
+  // AI key state
+  const [aiKey, setAiKey] = useState('');
+  const [aiKeySaved, setAiKeySaved] = useState('');
+  const [showAiKey, setShowAiKey] = useState(false);
+  const [savingAiKey, setSavingAiKey] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
+
   useEffect(() => {
     if (!isAdmin) return;
     loadData();
     loadDropiKey();
+    loadAiKey();
     loadFailedSyncs();
   }, [isAdmin]);
 
@@ -116,6 +125,61 @@ export default function AdminTab() {
       toast.error(err instanceof Error ? err.message : 'Error de conexión');
     } finally {
       setTestingKey(false);
+    }
+  }
+
+  async function loadAiKey() {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'dashscope_api_key')
+      .maybeSingle();
+    if (data) {
+      setAiKey(data.value);
+      setAiKeySaved(data.value);
+    }
+  }
+
+  async function saveAiKey() {
+    if (!aiKey.trim()) { toast.error('La clave no puede estar vacía'); return; }
+    setSavingAiKey(true);
+    try {
+      if (aiKeySaved) {
+        const { error } = await supabase.from('app_settings').update({ value: aiKey.trim() }).eq('key', 'dashscope_api_key');
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('app_settings').insert({ key: 'dashscope_api_key', value: aiKey.trim() });
+        if (error) throw error;
+      }
+      setAiKeySaved(aiKey.trim());
+      toast.success('Clave AI guardada');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar');
+    } finally {
+      setSavingAiKey(false);
+    }
+  }
+
+  async function testAiConnection() {
+    setTestingAi(true);
+    setAiTestResult(null);
+    try {
+      const res = await supabase.functions.invoke('ai-order-assistant', {
+        body: { action: 'priority_reason', context: 'Pedido de prueba, 3 días sin movimiento, valor $50000' },
+      });
+      const data = res?.data as { ok?: boolean; error?: string } | null;
+      if (res.error || !data?.ok) {
+        setAiTestResult('fail');
+        toast.error(res.error?.message || data?.error || 'Error');
+      } else {
+        setAiTestResult('ok');
+        toast.success('IA conectada correctamente');
+      }
+    } catch (err: unknown) {
+      setAiTestResult('fail');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+    } finally {
+      setTestingAi(false);
     }
   }
 
@@ -231,6 +295,49 @@ export default function AdminTab() {
                 >
                   {testingKey ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-green" /> : testResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Wifi size={12} />}
                   {testingKey ? 'Probando…' : testResult === 'ok' ? 'Conexión OK' : testResult === 'fail' ? 'Falló' : 'Probar conexión'}
+                </button>
+              </div>
+            )}
+          </motion.div>
+
+          {/* AI API Key */}
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Sparkles size={16} className="text-violet-500" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Clave API de IA (DashScope)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Habilita guiones de llamada, sugerencias y perfiles de cliente con IA</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex gap-3 items-center">
+              <div className="relative flex-1">
+                <input
+                  type={showAiKey ? 'text' : 'password'}
+                  value={aiKey}
+                  onChange={e => setAiKey(e.target.value)}
+                  placeholder="Pega aquí tu clave de DashScope (sk-...)"
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                />
+                <button type="button" onClick={() => setShowAiKey(!showAiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showAiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button onClick={saveAiKey} disabled={savingAiKey || aiKey === aiKeySaved}
+                className="h-10 px-4 rounded-lg bg-violet-600 text-white text-sm font-medium flex items-center gap-2 hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingAiKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Guardar
+              </button>
+            </div>
+            {aiKeySaved && (
+              <div className="px-5 pb-4 flex items-center justify-between">
+                <span className="text-xs text-green flex items-center gap-1">
+                  <CheckCircle2 size={12} /> Clave IA configurada
+                </span>
+                <button onClick={testAiConnection} disabled={testingAi}
+                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-violet-500" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Sparkles size={12} />}
+                  {testingAi ? 'Probando…' : aiTestResult === 'ok' ? 'IA OK' : aiTestResult === 'fail' ? 'Falló' : 'Probar IA'}
                 </button>
               </div>
             )}
