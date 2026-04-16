@@ -164,13 +164,24 @@ export default function AdminTab() {
     setTestingAi(true);
     setAiTestResult(null);
     try {
-      const res = await supabase.functions.invoke('ai-order-assistant', {
-        body: { action: 'priority_reason', context: 'Pedido de prueba, 3 días sin movimiento, valor $50000' },
+      const key = aiKeySaved || aiKey.trim();
+      if (!key) { toast.error('Guarda la clave primero'); setAiTestResult('fail'); return; }
+      const res = await fetch('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'qwen-turbo',
+          messages: [
+            { role: 'system', content: 'Responde con "OK" si recibes este mensaje.' },
+            { role: 'user', content: 'Prueba de conexión' },
+          ],
+          temperature: 0, max_tokens: 10,
+        }),
       });
-      const data = res?.data as { ok?: boolean; error?: string } | null;
-      if (res.error || !data?.ok) {
+      if (!res.ok) {
+        const errText = await res.text();
         setAiTestResult('fail');
-        toast.error(res.error?.message || data?.error || 'Error');
+        toast.error(`Error ${res.status}: ${errText.slice(0, 100)}`);
       } else {
         setAiTestResult('ok');
         toast.success('IA conectada correctamente');
