@@ -106,12 +106,12 @@ export default function SeguimientoTab() {
 
     const byCategory: { label: string; icon: React.ReactNode; count: number; color: string; days5: number }[] = [];
     const categories = [
-      { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-cyan-500' },
-      { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-blue-500' },
-      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-purple-500' },
-      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-red-500' },
-      { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-orange-500' },
-      { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-amber-500' },
+      { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-muted-foreground' },
+      { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-muted-foreground' },
+      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-orange-500' },
+      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-orange-500' },
+      { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-muted-foreground' },
+      { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-accent' },
     ];
 
     categories.forEach(cat => {
@@ -125,21 +125,36 @@ export default function SeguimientoTab() {
     return { total: stalled.length, categories: byCategory };
   }, [filteredByDate]);
 
-  const statCards = [
-    { label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, gradient: 'from-blue-500 to-blue-600' },
-    { label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, gradient: 'from-cyan-500 to-teal-500' },
-    { label: 'Bodega Transp.', value: stats.bodega_trans, icon: <Package size={15} />, gradient: 'from-indigo-500 to-indigo-600' },
-    { label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, gradient: 'from-orange-500 to-amber-500' },
-    { label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, gradient: 'from-amber-500 to-yellow-500' },
-    { label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, gradient: 'from-red-500 to-rose-500' },
-    { label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, gradient: 'from-teal-500 to-emerald-500' },
-    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, gradient: 'from-fuchsia-500 to-purple-600' },
-    { label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, gradient: 'from-yellow-600 to-orange-600' },
-    { label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, gradient: 'from-pink-500 to-rose-500' },
-    { label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, gradient: 'from-rose-600 to-red-600' },
-    { label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, gradient: 'from-violet-500 to-purple-600' },
-    { label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, gradient: 'from-emerald-500 to-green-500' },
-    { label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, gradient: 'from-slate-500 to-slate-600' },
+  /**
+   * Unified stat tone system — same 5 tones as CrmTable so the app reads as one
+   * palette. Amber is reserved for the hot path ("En Reparto"); semantic tones
+   * only apply where they carry real meaning (success/warning/danger).
+   */
+  type StatTone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
+  const STAT_TONE: Record<StatTone, { iconBg: string; iconText: string; ring: string }> = {
+    neutral: { iconBg: 'bg-muted', iconText: 'text-foreground', ring: '' },
+    accent:  { iconBg: 'bg-accent/15', iconText: 'text-accent', ring: 'ring-1 ring-accent/30' },
+    warning: { iconBg: 'bg-orange-500/15', iconText: 'text-orange-500', ring: '' },
+    danger:  { iconBg: 'bg-red-500/15', iconText: 'text-red-500', ring: '' },
+    success: { iconBg: 'bg-emerald-500/15', iconText: 'text-emerald-500', ring: '' },
+    muted:   { iconBg: 'bg-muted/60', iconText: 'text-muted-foreground', ring: '' },
+  };
+
+  const statCards: { label: string; value: number; icon: React.ReactNode; tone: StatTone }[] = [
+    { label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, tone: 'neutral' },
+    { label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, tone: 'neutral' },
+    { label: 'Bodega Transp.', value: stats.bodega_trans, icon: <Package size={15} />, tone: 'neutral' },
+    { label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, tone: 'neutral' },
+    { label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, tone: 'accent' },
+    { label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, tone: 'warning' },
+    { label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, tone: 'success' },
+    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, tone: 'warning' },
+    { label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, tone: 'danger' },
+    { label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, tone: 'danger' },
+    { label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, tone: 'danger' },
+    { label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, tone: 'muted' },
+    { label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, tone: 'success' },
+    { label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, tone: 'muted' },
   ];
 
   // Fullscreen loading only on the very first fetch. On subsequent refreshes
@@ -338,21 +353,24 @@ export default function SeguimientoTab() {
 
         {/* Stat cards row */}
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
-          {statCards.filter(c => c.value > 0).map((card, i) => (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
-              className="bg-surface border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 hover:border-border-strong transition-colors duration-200"
-            >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white bg-gradient-to-br ${card.gradient}`}>
-                {card.icon}
-              </div>
-              <span className="text-lg font-black text-foreground leading-none">{card.value}</span>
-              <span className="text-[8px] text-muted-foreground font-medium text-center leading-tight">{card.label}</span>
-            </motion.div>
-          ))}
+          {statCards.filter(c => c.value > 0).map((card, i) => {
+            const t = STAT_TONE[card.tone];
+            return (
+              <motion.div
+                key={card.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
+                className={`bg-surface border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 hover:border-border-strong transition-colors duration-200 ${t.ring}`}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.iconBg} ${t.iconText}`}>
+                  {card.icon}
+                </div>
+                <span className="text-lg font-bold text-foreground leading-none tabular-nums">{card.value}</span>
+                <span className="text-[9px] text-muted-foreground font-medium text-center leading-tight uppercase tracking-wide">{card.label}</span>
+              </motion.div>
+            );
+          })}
         </div>
       </motion.div>
 

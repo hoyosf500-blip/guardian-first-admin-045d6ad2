@@ -212,21 +212,22 @@ export default function CallView({ items }: Props) {
             <div className="mb-3">
               {!ai.reply && !ai.loading && (
                 <button
+                  type="button"
                   onClick={() => askAi(scriptKey, 'call_script', buildContext())}
-                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-xs font-semibold hover:bg-violet-500/20 transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                 >
-                  <Sparkles size={13} /> Generar guión IA
+                  <Sparkles size={13} aria-hidden="true" /> Generar guión IA
                 </button>
               )}
               {ai.loading && (
-                <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-violet-500/5 border border-violet-500/10 text-xs text-violet-500">
-                  <RefreshCw size={12} className="animate-spin" /> Generando guión...
+                <div className="flex items-center gap-2 py-2.5 px-3 rounded-lg bg-accent/5 border border-accent/20 text-xs text-accent">
+                  <RefreshCw size={12} className="animate-spin" aria-hidden="true" /> Generando guión...
                 </div>
               )}
               {ai.reply && (
-                <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20 text-xs text-foreground whitespace-pre-line leading-relaxed">
-                  <div className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400 font-semibold mb-1.5">
-                    <Sparkles size={11} /> Guión sugerido
+                <div className="p-3 rounded-lg bg-accent/5 border border-accent/25 text-xs text-foreground whitespace-pre-line leading-relaxed">
+                  <div className="flex items-center gap-1.5 text-accent font-semibold mb-1.5">
+                    <Sparkles size={11} aria-hidden="true" /> Guión sugerido
                   </div>
                   {ai.reply}
                 </div>

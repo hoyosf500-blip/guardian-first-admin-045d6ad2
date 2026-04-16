@@ -497,19 +497,22 @@ export default function OrderDetailPage() {
                 return (
                   <>
                     {!ai.reply && !ai.loading && (
-                      <button onClick={() => askAi(aiKey, 'novedad_action', buildCtx())}
-                        className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-[11px] font-semibold hover:bg-violet-500/20 transition-colors">
-                        <Sparkles size={11} /> Sugerencia IA
+                      <button
+                        type="button"
+                        onClick={() => askAi(aiKey, 'novedad_action', buildCtx())}
+                        className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-accent/10 border border-accent/30 text-accent text-[11px] font-semibold hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                      >
+                        <Sparkles size={11} aria-hidden="true" /> Sugerencia IA
                       </button>
                     )}
                     {ai.loading && (
-                      <div className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-violet-500/5 text-[11px] text-violet-500">
-                        <RefreshCw size={11} className="animate-spin" /> Analizando...
+                      <div className="flex items-center gap-1.5 py-2 px-3 rounded-lg bg-accent/5 border border-accent/20 text-[11px] text-accent">
+                        <RefreshCw size={11} className="animate-spin" aria-hidden="true" /> Analizando...
                       </div>
                     )}
                     {ai.reply && (
-                      <div className="p-2.5 rounded-lg bg-violet-500/5 border border-violet-500/20 text-[11px] text-foreground whitespace-pre-line leading-relaxed">
-                        <span className="text-violet-600 dark:text-violet-400 font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} /> Sugerencia IA</span>
+                      <div className="p-2.5 rounded-lg bg-accent/5 border border-accent/25 text-[11px] text-foreground whitespace-pre-line leading-relaxed">
+                        <span className="text-accent font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} aria-hidden="true" /> Sugerencia IA</span>
                         <br />{ai.reply}
                       </div>
                     )}
@@ -520,10 +523,14 @@ export default function OrderDetailPage() {
           )}
 
           {trackUrl && (
-            <a href={trackUrl} target="_blank" rel="noopener noreferrer"
+            <a
+              href={trackUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               aria-label="Rastrear envío en sitio de la transportadora"
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 text-white text-xs font-bold py-2.5 hover:bg-orange-600 transition-colors no-underline">
-              <ExternalLink size={13} /> Rastrear envío
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent/10 text-accent text-xs font-bold py-3 hover:bg-accent hover:text-accent-foreground transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
+            >
+              <ExternalLink size={14} aria-hidden="true" /> Rastrear envío
             </a>
           )}
         </motion.div>

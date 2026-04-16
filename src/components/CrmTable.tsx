@@ -43,108 +43,131 @@ interface CrmTableProps {
   stalledCategoryFilter?: string | null;
 }
 
+/**
+ * Unified tone system — only 5 tones across 14 statuses so the CRM stops looking
+ * like a rainbow. Amber is only for the primary "in route" state so it carries
+ * real signal instead of being random decoration.
+ */
+type Tone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
+
 interface StatusColumn {
   key: string;
   label: string;
   icon: React.ReactNode;
-  color: string;       // Tailwind color for accents
-  bgGradient: string;  // Header gradient
-  pillBg: string;      // Filter pill background
-  pillText: string;    // Filter pill text
+  tone: Tone;
   match: (estado: string) => boolean;
 }
 
+const TONE_STYLES: Record<Tone, {
+  dot: string;
+  headerBg: string;
+  headerBorder: string;
+  headerText: string;
+  headerCount: string;
+  pillIdle: string;
+  pillActive: string;
+  activeCountBg: string;
+  idleCountBg: string;
+}> = {
+  neutral: {
+    dot: 'bg-foreground/60',
+    headerBg: 'bg-surface',
+    headerBorder: 'border-border',
+    headerText: 'text-foreground',
+    headerCount: 'bg-card text-foreground border border-border',
+    pillIdle: 'bg-surface border-border text-foreground hover:border-border-strong',
+    pillActive: 'bg-card border-border-strong text-foreground',
+    activeCountBg: 'bg-accent text-accent-foreground',
+    idleCountBg: 'bg-card text-muted-foreground border border-border',
+  },
+  accent: {
+    dot: 'bg-accent',
+    headerBg: 'bg-accent/10',
+    headerBorder: 'border-accent/30',
+    headerText: 'text-accent',
+    headerCount: 'bg-accent text-accent-foreground',
+    pillIdle: 'bg-accent/5 border-accent/20 text-accent hover:bg-accent/10 hover:border-accent/40',
+    pillActive: 'bg-accent text-accent-foreground border-accent',
+    activeCountBg: 'bg-black/20 text-accent-foreground',
+    idleCountBg: 'bg-accent/15 text-accent',
+  },
+  warning: {
+    dot: 'bg-orange-500',
+    headerBg: 'bg-orange-500/8',
+    headerBorder: 'border-orange-500/30',
+    headerText: 'text-orange-500',
+    headerCount: 'bg-orange-500/15 text-orange-500 border border-orange-500/30',
+    pillIdle: 'bg-orange-500/5 border-orange-500/20 text-orange-500 hover:bg-orange-500/10 hover:border-orange-500/40',
+    pillActive: 'bg-orange-500 text-white border-orange-500',
+    activeCountBg: 'bg-black/25 text-white',
+    idleCountBg: 'bg-orange-500/15 text-orange-500',
+  },
+  danger: {
+    dot: 'bg-red-500',
+    headerBg: 'bg-red-500/8',
+    headerBorder: 'border-red-500/30',
+    headerText: 'text-red-500',
+    headerCount: 'bg-red-500/15 text-red-500 border border-red-500/30',
+    pillIdle: 'bg-red-500/5 border-red-500/20 text-red-500 hover:bg-red-500/10 hover:border-red-500/40',
+    pillActive: 'bg-red-500 text-white border-red-500',
+    activeCountBg: 'bg-black/25 text-white',
+    idleCountBg: 'bg-red-500/15 text-red-500',
+  },
+  success: {
+    dot: 'bg-emerald-500',
+    headerBg: 'bg-emerald-500/8',
+    headerBorder: 'border-emerald-500/30',
+    headerText: 'text-emerald-500',
+    headerCount: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
+    pillIdle: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10 hover:border-emerald-500/40',
+    pillActive: 'bg-emerald-500 text-white border-emerald-500',
+    activeCountBg: 'bg-black/25 text-white',
+    idleCountBg: 'bg-emerald-500/15 text-emerald-500',
+  },
+  muted: {
+    dot: 'bg-muted-foreground/60',
+    headerBg: 'bg-muted/40',
+    headerBorder: 'border-border',
+    headerText: 'text-muted-foreground',
+    headerCount: 'bg-card text-muted-foreground border border-border',
+    pillIdle: 'bg-muted/40 border-border text-muted-foreground hover:border-border-strong hover:text-foreground',
+    pillActive: 'bg-muted-foreground/20 border-border-strong text-foreground',
+    activeCountBg: 'bg-foreground/15 text-foreground',
+    idleCountBg: 'bg-card text-muted-foreground border border-border',
+  },
+};
+
 const STATUS_COLUMNS: StatusColumn[] = [
-  {
-    key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />,
-    color: 'blue', bgGradient: 'from-blue-500 to-blue-600',
-    pillBg: 'bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20', pillText: 'text-blue-600 dark:text-blue-400',
-    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e)
-  },
-  {
-    key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />,
-    color: 'cyan', bgGradient: 'from-cyan-500 to-teal-500',
-    pillBg: 'bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20', pillText: 'text-cyan-600 dark:text-cyan-400',
-    match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e)
-  },
-  {
-    key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />,
-    color: 'indigo', bgGradient: 'from-indigo-500 to-indigo-600',
-    pillBg: 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20', pillText: 'text-indigo-600 dark:text-indigo-400',
-    match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e)
-  },
-  {
-    key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />,
-    color: 'orange', bgGradient: 'from-orange-500 to-amber-500',
-    pillBg: 'bg-orange-500/10 border-orange-500/20 hover:bg-orange-500/20', pillText: 'text-orange-600 dark:text-orange-400',
-    match: (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e)
-  },
-  {
-    key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />,
-    color: 'amber', bgGradient: 'from-amber-500 to-yellow-500',
-    pillBg: 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20', pillText: 'text-amber-600 dark:text-amber-400',
-    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e)
-  },
-  {
-    key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />,
-    color: 'red', bgGradient: 'from-red-500 to-rose-500',
-    pillBg: 'bg-red-500/10 border-red-500/20 hover:bg-red-500/20', pillText: 'text-red-600 dark:text-red-400',
-    match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA'
-  },
-  {
-    key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />,
-    color: 'purple', bgGradient: 'from-fuchsia-500 to-purple-600',
-    pillBg: 'bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20', pillText: 'text-purple-600 dark:text-purple-400',
-    match: (e) => e.includes('OFICINA') || e.includes('RECLAME')
-  },
-  {
-    key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />,
-    color: 'yellow', bgGradient: 'from-yellow-600 to-orange-600',
-    pillBg: 'bg-yellow-500/10 border-yellow-500/20 hover:bg-yellow-500/20', pillText: 'text-yellow-600 dark:text-yellow-400',
-    match: (e) => e === 'RECHAZADO'
-  },
-  {
-    key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />,
-    color: 'teal', bgGradient: 'from-teal-500 to-emerald-500',
-    pillBg: 'bg-teal-500/10 border-teal-500/20 hover:bg-teal-500/20', pillText: 'text-teal-600 dark:text-teal-400',
-    match: (e) => e === 'NOVEDAD SOLUCIONADA'
-  },
-  {
-    key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />,
-    color: 'pink', bgGradient: 'from-pink-500 to-rose-500',
-    pillBg: 'bg-pink-500/10 border-pink-500/20 hover:bg-pink-500/20', pillText: 'text-pink-600 dark:text-pink-400',
-    match: (e) => e === 'DEVOLUCION EN TRANSITO'
-  },
-  {
-    key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />,
-    color: 'rose', bgGradient: 'from-rose-600 to-red-600',
-    pillBg: 'bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20', pillText: 'text-rose-600 dark:text-rose-400',
-    match: (e) => e === 'DEVOLUCION'
-  },
-  {
-    key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />,
-    color: 'violet', bgGradient: 'from-violet-500 to-purple-600',
-    pillBg: 'bg-violet-500/10 border-violet-500/20 hover:bg-violet-500/20', pillText: 'text-violet-600 dark:text-violet-400',
-    match: (e) => e.includes('INDEMNIZADA')
-  },
-  {
-    key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />,
-    color: 'emerald', bgGradient: 'from-emerald-500 to-green-500',
-    pillBg: 'bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20', pillText: 'text-emerald-600 dark:text-emerald-400',
-    match: (e) => e === 'ENTREGADO'
-  },
-  {
-    key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />,
-    color: 'slate', bgGradient: 'from-slate-500 to-slate-600',
-    pillBg: 'bg-slate-500/10 border-slate-500/20 hover:bg-slate-500/20', pillText: 'text-slate-600 dark:text-slate-400',
-    match: (e) => e === 'CANCELADO'
-  },
-  {
-    key: 'otros', label: 'Otros', icon: <Layers size={14} />,
-    color: 'slate', bgGradient: 'from-gray-500 to-gray-600',
-    pillBg: 'bg-gray-500/10 border-gray-500/20 hover:bg-gray-500/20', pillText: 'text-gray-600 dark:text-gray-400',
-    match: () => true
-  },
+  { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />, tone: 'neutral',
+    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) },
+  { key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />, tone: 'neutral',
+    match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e) },
+  { key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />, tone: 'neutral',
+    match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e) },
+  { key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />, tone: 'neutral',
+    match: (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e) },
+  { key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />, tone: 'accent',
+    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e) },
+  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />, tone: 'warning',
+    match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
+  { key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />, tone: 'warning',
+    match: (e) => e.includes('OFICINA') || e.includes('RECLAME') },
+  { key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />, tone: 'danger',
+    match: (e) => e === 'RECHAZADO' },
+  { key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />, tone: 'success',
+    match: (e) => e === 'NOVEDAD SOLUCIONADA' },
+  { key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />, tone: 'danger',
+    match: (e) => e === 'DEVOLUCION EN TRANSITO' },
+  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />, tone: 'danger',
+    match: (e) => e === 'DEVOLUCION' },
+  { key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />, tone: 'muted',
+    match: (e) => e.includes('INDEMNIZADA') },
+  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />, tone: 'success',
+    match: (e) => e === 'ENTREGADO' },
+  { key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />, tone: 'muted',
+    match: (e) => e === 'CANCELADO' },
+  { key: 'otros', label: 'Otros', icon: <Layers size={14} />, tone: 'muted',
+    match: () => true },
 ];
 
 function classifyOrder(estado: string): string {
@@ -418,24 +441,25 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
         </div>
       </div>
 
-      {/* Status filter pills */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Status filter pills — unified tone system, no rainbow */}
+      <div className="flex gap-1.5 flex-wrap">
         {STATUS_COLUMNS.filter(c => allCounts[c.key] > 0).map(col => {
           const isActive = activeFilter === col.key;
+          const t = TONE_STYLES[col.tone];
           return (
             <button
               key={col.key}
+              type="button"
+              aria-pressed={isActive}
               onClick={() => setActiveFilter(isActive ? null : col.key)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                isActive
-                  ? `bg-gradient-to-r ${col.bgGradient} text-white border-transparent shadow-lg`
-                  : `${col.pillBg} ${col.pillText} border`
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                isActive ? t.pillActive : t.pillIdle
               }`}
             >
               {col.icon}
               <span>{col.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                isActive ? 'bg-white/25' : 'bg-secondary'
+              <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                isActive ? t.activeCountBg : t.idleCountBg
               }`}>
                 {allCounts[col.key]}
               </span>
@@ -484,6 +508,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 300}px` }}>
             {activeColumns.map((col, colIdx) => {
               const items = columns[col.key];
+              const t = TONE_STYLES[col.tone];
               return (
                 <motion.div
                   key={col.key}
@@ -492,21 +517,22 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   transition={{ delay: colIdx * 0.04, duration: 0.25 }}
                   className="flex-1 min-w-[280px] max-w-[340px] flex flex-col"
                 >
-                  {/* Column header */}
-                  <div className={`bg-gradient-to-r ${col.bgGradient} rounded-t-xl px-4 py-3 flex items-center justify-between`}>
-                    <div className="flex items-center gap-2.5 text-white">
-                      <div className="w-7 h-7 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                  {/* Column header — solid surface + thin tone accent bar */}
+                  <div className={`relative rounded-t-xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-2.5 flex items-center justify-between`}>
+                    <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-tl-xl ${t.dot}`} aria-hidden="true" />
+                    <div className={`flex items-center gap-2 pl-1.5 ${t.headerText}`}>
+                      <span className="flex items-center justify-center w-6 h-6 rounded-md bg-card/60 border border-border/60">
                         {col.icon}
-                      </div>
-                      <span className="text-sm font-bold">{col.label}</span>
+                      </span>
+                      <span className="text-[13px] font-semibold tracking-tight text-foreground">{col.label}</span>
                     </div>
-                    <span className="text-white/90 text-lg font-black bg-white/20 backdrop-blur-sm rounded-lg px-3 py-0.5 min-w-[36px] text-center">
+                    <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md text-[11px] font-bold tabular-nums ${t.headerCount}`}>
                       {items.length}
                     </span>
                   </div>
 
                   {/* Column body */}
-                  <div className="bg-card/50 rounded-b-xl border border-border/40 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
+                  <div className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
                     {items.map((o, i) => (
                       <OrderCard
                         key={`${o.phone}-${o.idx}`}
@@ -521,7 +547,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         getLastTouchTime={getLastTouchTime}
                         module={module}
                         index={i}
-                        statusColor={col.color}
+                        statusColor={col.tone}
                       />
                     ))}
                   </div>
@@ -627,14 +653,19 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
           )}
         </div>
 
-        {/* Guía + tracking */}
+        {/* Guía + tracking — Rastrear is now a proper button, amber outline that goes solid on hover */}
         {o.guia && (
           <div className="mt-2.5 flex items-center gap-2">
-            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-secondary/50 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
-              <Tag size={9} className="text-muted-foreground/60 flex-shrink-0" />
+            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
+              <Tag size={10} className="text-muted-foreground/70 flex-shrink-0" />
               <span className="truncate">{o.guia}</span>
-              <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-                className="flex-shrink-0 transition-colors hover:text-foreground"><Copy size={9} /></button>
+              <button
+                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                aria-label="Copiar guía"
+                className="flex-shrink-0 rounded p-0.5 transition-colors hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                <Copy size={10} />
+              </button>
             </div>
             {trackUrl && (
               <a
@@ -642,23 +673,25 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-                className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg bg-orange-500 px-3 py-1.5 text-[10px] font-bold text-white shadow-sm transition-all hover:bg-orange-600 no-underline"
+                aria-label="Abrir rastreo de la transportadora"
+                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-[11px] font-semibold text-accent shadow-sm transition-colors duration-200 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
               >
-                <ExternalLink size={10} /> Rastrear
+                <ExternalLink size={12} aria-hidden="true" />
+                <span>Rastrear</span>
               </a>
             )}
           </div>
         )}
 
-        {/* Delay warning */}
+        {/* Delay warning — collapsed to 2 tones so it doesn't fight the column tone */}
         {isDelayed && !isExcludedFromDelay(o.estado) && (
-          <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 ${
-            diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
-            diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
-            'bg-orange-400/10 border border-orange-400/20'
+          <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 border ${
+            diasEnEstatus >= 5
+              ? 'bg-red-500/10 border-red-500/25'
+              : 'bg-orange-500/10 border-orange-500/25'
           }`}>
-            <Clock size={11} className={diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'} />
-            <span className={`text-[10px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'}`}>
+            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-500' : 'text-orange-500'} />
+            <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : 'text-orange-500'}`}>
               {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
           </div>
@@ -667,10 +700,10 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Alert badge */}
         {alert && alert.level !== 'ok' && alert.level !== 'watch' && (
           <div className="mt-2">
-            <span className={`inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md ${
-              alert.level === 'lost' ? 'bg-muted text-muted-foreground' :
-              alert.level === 'critical' ? 'bg-red-500/10 text-red-500' :
-              'bg-orange-500/10 text-orange-500'
+            <span className={`inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md border ${
+              alert.level === 'lost' ? 'bg-muted/60 text-muted-foreground border-border' :
+              alert.level === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/25' :
+              'bg-orange-500/10 text-orange-500 border-orange-500/25'
             }`}>
               {alert.label}
             </span>
@@ -680,7 +713,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Managed badge */}
         {managed && (
           <div className="mt-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/25">
               <CheckCircle size={10} /> {managed}
             </span>
           </div>
@@ -719,12 +752,12 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
 
               {/* Novedad */}
               {o.novedad && (
-                <div className="flex items-start gap-2 bg-orange-500/5 border border-orange-500/10 rounded-lg px-3 py-2">
+                <div className="flex items-start gap-2 bg-orange-500/10 border border-orange-500/25 rounded-lg px-3 py-2">
                   <AlertTriangle size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
                   <TruncatedText
                     text={o.novedad}
                     maxChars={100}
-                    className="text-[11px] text-foreground/80 leading-snug"
+                    className="text-[11px] text-foreground/90 leading-snug"
                   />
                 </div>
               )}

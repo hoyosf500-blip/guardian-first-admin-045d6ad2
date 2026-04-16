@@ -14,23 +14,63 @@ interface FpData {
 /** In-memory cache — avoids re-fetching the same phone across navigations. */
 const fpCache = new Map<string, FpData | null>();
 
+/**
+ * Unified risk config — uses only 3 tones (success / warning / danger) aligned
+ * with the rest of the CRM palette. No custom color floating around.
+ */
 const RISK_CONFIG: Record<string, {
-  bg: string; border: string; text: string; bar: string;
-  icon: typeof ShieldCheck; label: string;
+  border: string;
+  stripe: string;
+  chipBg: string;
+  chipBorder: string;
+  chipText: string;
+  icon: typeof ShieldCheck;
+  label: string;
 }> = {
   green: {
-    bg: 'bg-green-500/8', border: 'border-green-500/25', text: 'text-green-500',
-    bar: 'bg-green-500', icon: ShieldCheck, label: 'Seguro',
+    border: 'border-emerald-500/30',
+    stripe: 'bg-emerald-500',
+    chipBg: 'bg-emerald-500/15',
+    chipBorder: 'border-emerald-500/40',
+    chipText: 'text-emerald-500',
+    icon: ShieldCheck,
+    label: 'Seguro',
   },
   yellow: {
-    bg: 'bg-yellow-500/8', border: 'border-yellow-500/25', text: 'text-yellow-500',
-    bar: 'bg-yellow-500', icon: Shield, label: 'Probable',
+    border: 'border-orange-500/30',
+    stripe: 'bg-orange-500',
+    chipBg: 'bg-orange-500/15',
+    chipBorder: 'border-orange-500/40',
+    chipText: 'text-orange-500',
+    icon: Shield,
+    label: 'Probable',
   },
   red: {
-    bg: 'bg-red-500/8', border: 'border-red-500/25', text: 'text-red-500',
-    bar: 'bg-red-500', icon: ShieldAlert, label: 'Riesgoso',
+    border: 'border-red-500/30',
+    stripe: 'bg-red-500',
+    chipBg: 'bg-red-500/15',
+    chipBorder: 'border-red-500/40',
+    chipText: 'text-red-500',
+    icon: ShieldAlert,
+    label: 'Riesgoso',
   },
 };
+
+function rateColor(value: number, goodAtOrAbove: number, warnAtOrAbove: number): {
+  text: string; fill: string;
+} {
+  if (value >= goodAtOrAbove) return { text: 'text-emerald-500', fill: 'bg-emerald-500' };
+  if (value >= warnAtOrAbove) return { text: 'text-orange-500', fill: 'bg-orange-500' };
+  return { text: 'text-red-500', fill: 'bg-red-500' };
+}
+
+function rateColorInverse(value: number, goodAtOrBelow: number, warnAtOrBelow: number): {
+  text: string; fill: string;
+} {
+  if (value <= goodAtOrBelow) return { text: 'text-emerald-500', fill: 'bg-emerald-500' };
+  if (value <= warnAtOrBelow) return { text: 'text-orange-500', fill: 'bg-orange-500' };
+  return { text: 'text-red-500', fill: 'bg-red-500' };
+}
 
 export default function FingerprintBadge({ phone }: { phone: string }) {
   const [data, setData] = useState<FpData | null | undefined>(
@@ -81,10 +121,22 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 animate-pulse">
-        <div className="flex items-center gap-2 text-xs text-cyan-500">
-          <Fingerprint size={14} className="animate-spin" />
-          <span className="font-medium">Consultando huella Dropi...</span>
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
+          <Fingerprint size={14} className="text-accent animate-pulse" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Huella Dropi
+          </span>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="h-4 rounded bg-muted/60 skeleton-shimmer" />
+          <div className="grid grid-cols-3 gap-2">
+            <div className="h-14 rounded-lg bg-muted/60 skeleton-shimmer" />
+            <div className="h-14 rounded-lg bg-muted/60 skeleton-shimmer" />
+            <div className="h-14 rounded-lg bg-muted/60 skeleton-shimmer" />
+          </div>
+          <div className="h-2.5 rounded-full bg-muted/60 skeleton-shimmer" />
+          <div className="h-2.5 rounded-full bg-muted/60 skeleton-shimmer" />
         </div>
       </div>
     );
@@ -95,59 +147,67 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
   const RiskIcon = cfg.icon;
   const pctEntrega = data.orders > 0 ? Math.round((data.delivered / data.orders) * 100) : 0;
   const pctDevol = data.orders > 0 ? Math.round((data.returned / data.orders) * 100) : 0;
+  const entregaStyle = rateColor(pctEntrega, 60, 40);
+  const devolStyle = rateColorInverse(pctDevol, 20, 40);
 
   return (
-    <div className={`rounded-xl border ${cfg.border} ${cfg.bg} overflow-hidden`}>
+    <div className={`relative rounded-xl border ${cfg.border} bg-card overflow-hidden shadow-sm`}>
+      {/* Left status stripe — the only splash of color outside the chip */}
+      <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${cfg.stripe}`} aria-hidden="true" />
+
       {/* Header */}
-      <div className={`flex items-center justify-between px-3.5 py-2 border-b ${cfg.border}`}>
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60 bg-surface/40">
         <div className="flex items-center gap-2">
-          <Fingerprint size={14} className={cfg.text} />
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          <Fingerprint size={14} className="text-accent" aria-hidden="true" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
             Huella Dropi
           </span>
         </div>
-        <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border ${cfg.border} ${cfg.bg}`}>
-          <RiskIcon size={12} className={cfg.text} />
-          <span className={`text-[11px] font-bold ${cfg.text}`}>{data.risk}</span>
-        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${cfg.chipBg} ${cfg.chipBorder}`}
+          aria-label={`Riesgo: ${data.risk}`}
+        >
+          <RiskIcon size={12} className={cfg.chipText} aria-hidden="true" />
+          <span className={`text-[11px] font-bold ${cfg.chipText}`}>{data.risk}</span>
+        </span>
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 divide-x divide-border/50">
-        <div className="px-3 py-2.5 text-center">
-          <div className="flex items-center justify-center gap-1 mb-0.5">
-            <Package size={11} className="text-muted-foreground" />
-            <span className="text-[10px] text-muted-foreground font-medium">Pedidos</span>
+      <div className="grid grid-cols-3 border-b border-border/60">
+        <div className="px-3 py-3 text-center border-r border-border/60">
+          <div className="flex items-center justify-center gap-1 mb-1 text-muted-foreground">
+            <Package size={11} aria-hidden="true" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Pedidos</span>
           </div>
-          <span className="text-lg font-bold text-foreground">{data.orders}</span>
+          <div className="text-xl font-bold text-foreground tabular-nums leading-none">{data.orders}</div>
         </div>
-        <div className="px-3 py-2.5 text-center">
-          <div className="flex items-center justify-center gap-1 mb-0.5">
-            <CheckCircle2 size={11} className="text-green-500" />
-            <span className="text-[10px] text-muted-foreground font-medium">Entregados</span>
+        <div className="px-3 py-3 text-center border-r border-border/60">
+          <div className="flex items-center justify-center gap-1 mb-1 text-emerald-500">
+            <CheckCircle2 size={11} aria-hidden="true" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Entregados</span>
           </div>
-          <span className="text-lg font-bold text-green-500">{data.delivered}</span>
+          <div className="text-xl font-bold text-emerald-500 tabular-nums leading-none">{data.delivered}</div>
         </div>
-        <div className="px-3 py-2.5 text-center">
-          <div className="flex items-center justify-center gap-1 mb-0.5">
-            <RotateCcw size={11} className="text-red-500" />
-            <span className="text-[10px] text-muted-foreground font-medium">Devueltos</span>
+        <div className="px-3 py-3 text-center">
+          <div className="flex items-center justify-center gap-1 mb-1 text-red-500">
+            <RotateCcw size={11} aria-hidden="true" />
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Devueltos</span>
           </div>
-          <span className="text-lg font-bold text-red-500">{data.returned}</span>
+          <div className="text-xl font-bold text-red-500 tabular-nums leading-none">{data.returned}</div>
         </div>
       </div>
 
-      {/* Progress bars */}
-      <div className="px-3.5 py-3 space-y-2.5 border-t border-border/30">
+      {/* Progress bars — taller, solid track, clearly visible fills */}
+      <div className="px-4 py-3.5 space-y-3">
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-medium text-foreground/80">Tasa de entrega</span>
-            <span className={`text-[11px] font-bold tabular-nums ${pctEntrega >= 60 ? 'text-green-500' : pctEntrega >= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
+            <span className="text-[11px] font-semibold text-foreground">Tasa de entrega</span>
+            <span className={`text-[12px] font-bold tabular-nums ${entregaStyle.text}`}>
               {pctEntrega}%
             </span>
           </div>
           <div
-            className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden ring-1 ring-inset ring-border/50"
+            className="h-2.5 rounded-full bg-muted border border-border overflow-hidden"
             role="progressbar"
             aria-valuenow={pctEntrega}
             aria-valuemin={0}
@@ -155,20 +215,20 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de entrega ${pctEntrega}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ${pctEntrega >= 60 ? 'bg-green-500' : pctEntrega >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${entregaStyle.fill}`}
               style={{ width: `${Math.max(pctEntrega, pctEntrega > 0 ? 4 : 0)}%` }}
             />
           </div>
         </div>
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-medium text-foreground/80">Tasa de devolución</span>
-            <span className={`text-[11px] font-bold tabular-nums ${pctDevol <= 20 ? 'text-green-500' : pctDevol <= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
+            <span className="text-[11px] font-semibold text-foreground">Tasa de devolución</span>
+            <span className={`text-[12px] font-bold tabular-nums ${devolStyle.text}`}>
               {pctDevol}%
             </span>
           </div>
           <div
-            className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden ring-1 ring-inset ring-border/50"
+            className="h-2.5 rounded-full bg-muted border border-border overflow-hidden"
             role="progressbar"
             aria-valuenow={pctDevol}
             aria-valuemin={0}
@@ -176,7 +236,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de devolución ${pctDevol}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ${pctDevol <= 20 ? 'bg-green-500' : pctDevol <= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${devolStyle.fill}`}
               style={{ width: `${Math.max(pctDevol, pctDevol > 0 ? 4 : 0)}%` }}
             />
           </div>
@@ -184,13 +244,15 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
       </div>
 
       {/* Footer */}
-      <div className={`flex items-center justify-between px-3.5 py-2 border-t ${cfg.border} bg-muted/20`}>
-        <div className="flex items-center gap-1.5">
-          <TrendingUp size={11} className="text-muted-foreground" />
+      <div className="flex items-center justify-between gap-2 px-4 py-2 border-t border-border/60 bg-surface/40">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <TrendingUp size={11} className="text-muted-foreground flex-shrink-0" aria-hidden="true" />
           <span className="text-[10px] text-muted-foreground">Tipo:</span>
-          <span className="text-[10px] font-semibold text-foreground">{data.buyerType}</span>
+          <span className="text-[10px] font-semibold text-foreground truncate">{data.buyerType}</span>
         </div>
-        <span className="text-[9px] text-muted-foreground/60">Datos de todas las tiendas Dropi</span>
+        <span className="text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">
+          Datos globales Dropi
+        </span>
       </div>
     </div>
   );
