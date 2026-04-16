@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { buildTimeline } from '@/lib/timelineBuilder';
+import { sanitizeNote, sanitizeAction } from '@/lib/sanitize';
 import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
@@ -158,9 +159,11 @@ export default function OrderDetailPage() {
 
   const addNote = async () => {
     if (!noteText.trim() || !user || !order) return;
+    const cleanNote = sanitizeNote(noteText);
+    if (!cleanNote) return;
     const { data, error } = await supabase.from('notes').insert({
       phone: order.phone,
-      note_text: noteText.trim(),
+      note_text: cleanNote,
       operator_id: user.id,
       order_id: order.id,
     }).select();
@@ -190,9 +193,10 @@ export default function OrderDetailPage() {
     const today = new Date().toISOString().split('T')[0];
     const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
+    const cleanAction = sanitizeAction(`${channel}: ${detail}`);
     const { data, error } = await supabase.from('touchpoints').insert({
       phone: order.phone,
-      action: `${channel}: ${detail}`,
+      action: cleanAction,
       operator_id: user.id,
       action_date: today,
       action_time: time,
@@ -237,14 +241,14 @@ export default function OrderDetailPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Back + header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 flex-wrap">
-        <button onClick={() => navigate(-1)} className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors">
+        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors">
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-bold text-foreground truncate">{order.nombre}</h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-mono">ID: {order.external_id}</span>
-            <button onClick={() => { navigator.clipboard.writeText(order.external_id || ''); toast.success('ID copiado'); }}>
+            <button onClick={() => { navigator.clipboard.writeText(order.external_id || ''); toast.success('ID copiado'); }} aria-label="Copiar ID del pedido">
               <Copy size={10} />
             </button>
           </div>
@@ -387,7 +391,7 @@ export default function OrderDetailPage() {
             placeholder="Agregar nota..."
             className="flex-1 bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
           />
-          <button onClick={addNote} className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+          <button onClick={addNote} aria-label="Guardar nota" className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
             <Send size={13} />
           </button>
         </div>
