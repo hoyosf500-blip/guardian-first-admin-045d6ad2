@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw, Sparkles } from 'lucide-react';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw, Sparkles, Fingerprint } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
@@ -40,11 +40,20 @@ export default function AdminTab() {
   const [testingAi, setTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
 
+  // Dropi session token state (for buyer fingerprint)
+  const [dropiSession, setDropiSession] = useState('');
+  const [dropiSessionSaved, setDropiSessionSaved] = useState('');
+  const [showSession, setShowSession] = useState(false);
+  const [savingSession, setSavingSession] = useState(false);
+  const [testingSession, setTestingSession] = useState(false);
+  const [sessionTestResult, setSessionTestResult] = useState<'ok' | 'fail' | null>(null);
+
   useEffect(() => {
     if (!isAdmin) return;
     loadData();
     loadDropiKey();
     loadAiKey();
+    loadDropiSession();
     loadFailedSyncs();
   }, [isAdmin]);
 
@@ -191,6 +200,66 @@ export default function AdminTab() {
       toast.error(err instanceof Error ? err.message : 'Error de conexión');
     } finally {
       setTestingAi(false);
+    }
+  }
+
+  async function loadDropiSession() {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'dropi_session_token')
+      .maybeSingle();
+    if (data) {
+      setDropiSession(data.value);
+      setDropiSessionSaved(data.value);
+    }
+  }
+
+  async function saveDropiSession() {
+    if (!dropiSession.trim()) { toast.error('El token no puede estar vacío'); return; }
+    setSavingSession(true);
+    try {
+      if (dropiSessionSaved) {
+        const { error } = await supabase.from('app_settings').update({ value: dropiSession.trim() }).eq('key', 'dropi_session_token');
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('app_settings').insert({ key: 'dropi_session_token', value: dropiSession.trim() });
+        if (error) throw error;
+      }
+      setDropiSessionSaved(dropiSession.trim());
+      toast.success('Token de sesión Dropi guardado');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar');
+    } finally {
+      setSavingSession(false);
+    }
+  }
+
+  async function testDropiFingerprint() {
+    setTestingSession(true);
+    setSessionTestResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { toast.error('No hay sesión activa'); return; }
+      const res = await supabase.functions.invoke('dropi-fingerprint', {
+        body: { phone: '3001234567' },
+      });
+      if (res.error) {
+        setSessionTestResult('fail');
+        toast.error(`Error: ${res.error.message}`);
+      } else if (res.data?.ok === false) {
+        setSessionTestResult(res.data.expired ? 'fail' : 'fail');
+        toast.error(res.data.error || 'Error desconocido');
+      } else {
+        setSessionTestResult('ok');
+        const fp = res.data?.fingerprint;
+        toast.success(fp?.found ? `Huella OK — ${fp.global_profile?.lifetime_totals?.orders || 0} pedidos encontrados` : 'Conexión OK — cliente no encontrado');
+      }
+    } catch (err: unknown) {
+      setSessionTestResult('fail');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+    } finally {
+      setTestingSession(false);
     }
   }
 
@@ -349,6 +418,63 @@ export default function AdminTab() {
                   className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-violet-500" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Sparkles size={12} />}
                   {testingAi ? 'Probando…' : aiTestResult === 'ok' ? 'IA OK' : aiTestResult === 'fail' ? 'Falló' : 'Probar IA'}
+                </button>
+              </div>
+            )}
+          </motion.div>
+
+          {/* Dropi Session Token (buyer fingerprint) */}
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.03 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Fingerprint size={16} className="text-cyan-500" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Huella del comprador (Dropi)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Token de sesión para consultar historial del cliente en todas las tiendas Dropi</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex gap-3 items-center">
+              <div className="relative flex-1">
+                <input
+                  type={showSession ? 'text' : 'password'}
+                  value={dropiSession}
+                  onChange={e => setDropiSession(e.target.value)}
+                  placeholder="Pega aquí el token de sesión de Dropi"
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                />
+                <button type="button" onClick={() => setShowSession(!showSession)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showSession ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button onClick={saveDropiSession} disabled={savingSession || dropiSession === dropiSessionSaved}
+                className="h-10 px-4 rounded-lg bg-cyan-600 text-white text-sm font-medium flex items-center gap-2 hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingSession ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Guardar
+              </button>
+            </div>
+            <div className="px-5 pb-4">
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground transition-colors">Como obtener el token</summary>
+                <ol className="mt-2 ml-4 list-decimal space-y-1 leading-relaxed">
+                  <li>Abre <strong>app.dropi.co</strong> y asegurate de estar logueado</li>
+                  <li>Presiona <strong>F12</strong> para abrir las herramientas del navegador</li>
+                  <li>Ve a la pestana <strong>Console</strong> (Consola)</li>
+                  <li>Escribe: <code className="bg-muted px-1 rounded">JSON.parse(localStorage.getItem('DROPI_token'))</code></li>
+                  <li>Copia el texto que aparece (empieza con <code className="bg-muted px-1 rounded">eyJ...</code>)</li>
+                  <li>Pegalo aqui y dale <strong>Guardar</strong></li>
+                </ol>
+                <p className="mt-2 text-yellow-600 dark:text-yellow-400">Este token expira cada dia. Si la huella deja de funcionar, repite estos pasos.</p>
+              </details>
+            </div>
+            {dropiSessionSaved && (
+              <div className="px-5 pb-4 flex items-center justify-between border-t border-border pt-3">
+                <span className="text-xs text-green flex items-center gap-1">
+                  <CheckCircle2 size={12} /> Token configurado
+                </span>
+                <button onClick={testDropiFingerprint} disabled={testingSession}
+                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {testingSession ? <Loader2 size={12} className="animate-spin" /> : sessionTestResult === 'ok' ? <Fingerprint size={12} className="text-cyan-500" /> : sessionTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Fingerprint size={12} />}
+                  {testingSession ? 'Probando…' : sessionTestResult === 'ok' ? 'Huella OK' : sessionTestResult === 'fail' ? 'Fallo' : 'Probar huella'}
                 </button>
               </div>
             )}
