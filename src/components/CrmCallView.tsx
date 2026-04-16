@@ -138,14 +138,14 @@ export default function CrmCallView({
           <button
             onClick={() => navCall(-1)}
             disabled={idx <= 0}
-            className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:bg-muted/80 transition-colors"
+            className="px-3 py-1.5 rounded-md bg-card border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
-            <ChevronLeft size={14} />
+            <ChevronLeft size={14} aria-hidden="true" />
           </button>
           <button
             onClick={() => navCall(1)}
             disabled={idx >= items.length - 1}
-            className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:bg-muted/80 transition-colors"
+            className="px-3 py-1.5 rounded-md bg-card border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <ChevronRight size={14} />
           </button>
@@ -159,7 +159,7 @@ export default function CrmCallView({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -12 }}
           transition={{ duration: 0.2 }}
-          className="bg-gradient-to-b from-card to-surface border border-input rounded-2xl p-5 mb-4"
+          className="bg-surface border border-border rounded-xl p-5 mb-4 hover:border-border-strong transition-colors duration-200"
         >
           {/* Header: badges */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -217,9 +217,9 @@ export default function CrmCallView({
               </button>
               <a
                 href={`tel:+57${o.phone}`}
-                className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20 no-underline"
+                className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
               >
-                <PhoneIcon size={10} /> Llamar
+                <PhoneIcon size={10} aria-hidden="true" /> Llamar
               </a>
               <a
                 href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`}
@@ -354,9 +354,9 @@ export default function CrmCallView({
                 <button
                   key={a}
                   onClick={() => handleAction(a)}
-                  className="inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-primary/10 text-primary border border-primary/20 font-semibold text-xs hover:bg-primary/20 active:scale-[0.97] transition-all"
+                  className="inline-flex items-center justify-center gap-1.5 py-3 rounded-lg bg-accent/15 text-accent border border-accent/25 font-semibold text-xs hover:bg-accent/25 active:scale-[0.98] transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                 >
-                  <Send size={13} /> <TruncatedText text={a} maxChars={28} />
+                  <Send size={13} aria-hidden="true" /> <TruncatedText text={a} maxChars={28} />
                 </button>
               ))}
             </div>

@@ -154,15 +154,15 @@ export default function ConfirmarTab({ profile }: Props) {
               sessionStorage.removeItem('confirmar:callIdx');
             } catch { /* storage disabled */ }
           }}
-            className="text-xs px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground font-medium hover:bg-secondary/80 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
             Cambiar archivo
           </button>
         )}
       </div>
 
       {autoLoading && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <RefreshCw size={32} className="text-primary animate-spin" />
+        <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
+          <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">Cargando pedidos...</p>
             <p className="text-xs text-muted-foreground mt-1">Recuperando datos de la base de datos</p>
@@ -209,10 +209,10 @@ export default function ConfirmarTab({ profile }: Props) {
               }
             }}
             disabled={syncing}
-            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl bg-card border border-border hover:border-blue/30 hover:bg-blue/5 transition-all group"
+            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl bg-surface border border-border hover:border-accent/30 hover:bg-accent/5 transition-colors duration-200 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-blue/10 flex items-center justify-center group-hover:bg-blue/20 transition-colors">
-              {syncing ? <RefreshCw size={20} className="text-blue animate-spin" /> : <CloudDownload size={20} className="text-blue" />}
+            <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/20 flex items-center justify-center group-hover:bg-accent/25 transition-colors duration-200">
+              {syncing ? <RefreshCw size={20} className="text-accent animate-spin" aria-hidden="true" /> : <CloudDownload size={20} className="text-accent" aria-hidden="true" />}
             </div>
             <div className="text-left">
               <div className="text-sm font-semibold text-foreground">
@@ -239,14 +239,14 @@ export default function ConfirmarTab({ profile }: Props) {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             {[
-              { label: 'Por confirmar', value: pending, color: 'text-blue' },
+              { label: 'Por confirmar', value: pending, color: 'text-accent' },
               { label: 'Confirmados', value: counter.conf, color: 'text-green' },
               { label: 'Cancelados', value: counter.canc, color: 'text-red' },
               { label: 'Gestionados', value: total, color: 'text-foreground' },
             ].map(kpi => (
-              <div key={kpi.label} className="bg-card rounded-xl border border-border p-4">
-                <div className="text-xs text-muted-foreground font-medium mb-1">{kpi.label}</div>
-                <div className={`font-mono text-2xl font-bold ${kpi.color}`}>{kpi.value}</div>
+              <div key={kpi.label} className="bg-surface border border-border rounded-xl p-4 hover:border-border-strong transition-colors duration-200">
+                <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-2">{kpi.label}</div>
+                <div className={`font-mono text-3xl font-semibold tabular-nums ${kpi.color}`}>{kpi.value}</div>
               </div>
             ))}
           </div>
@@ -289,7 +289,7 @@ export default function ConfirmarTab({ profile }: Props) {
             );
           })()}
 
-          <div className="bg-card rounded-xl border border-border p-4 mb-4 space-y-3">
+          <div className="bg-surface border border-border rounded-xl p-4 mb-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <Popover>
@@ -341,16 +341,17 @@ export default function ConfirmarTab({ profile }: Props) {
                 )}
               </div>
 
-              <div className="flex gap-1.5">
+              <div className="flex gap-1 bg-card border border-border rounded-lg p-0.5">
                 {([
                   { key: 'list' as const, icon: List, label: 'Lista' },
                   { key: 'call' as const, icon: Phone, label: 'Llamar' },
                 ]).map(v => (
                   <button key={v.key} onClick={() => setView(v.key)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-                      view === v.key ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                    aria-pressed={view === v.key}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                      view === v.key ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                     }`}>
-                    <v.icon size={13} /> {v.label}
+                    <v.icon size={13} aria-hidden="true" /> {v.label}
                   </button>
                 ))}
               </div>
