@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { OrderData, truncate, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
@@ -550,6 +551,9 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
+  const priority = calcPriority(o);
+  const pLevel = getPriorityLevel(priority);
+  const pConfig = PRIORITY_CONFIG[pLevel];
   const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
   const isDelayed = diasEnEstatus >= 2;
@@ -574,9 +578,16 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             )}
             {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
           </div>
-          <span className="flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate">
-            {o.estado}
-          </span>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate">
+              {o.estado}
+            </span>
+            {pLevel !== 'low' && (
+              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pConfig.bgClass} ${pConfig.color}`}>
+                {pConfig.label}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Phone row */}

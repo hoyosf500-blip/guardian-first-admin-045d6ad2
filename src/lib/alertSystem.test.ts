@@ -8,6 +8,8 @@ import {
   getSuggestedAction,
   calcCarrierStats,
   calcToxicCities,
+  calcPriority,
+  getPriorityLevel,
 } from './alertSystem';
 
 describe('getCarrierDeadline', () => {
@@ -240,5 +242,75 @@ describe('calcToxicCities', () => {
     const result = calcToxicCities(orders);
     expect(result).toHaveLength(1);
     expect(result[0].risk).toBe(67); // 2/3 = 67%
+  });
+});
+
+describe('calcPriority', () => {
+  it('returns low score for fresh order in transit', () => {
+    const score = calcPriority({ diasConf: 0, dias: 0, estado: 'EN REPARTO', transportadora: 'TCC' });
+    expect(score).toBe(5); // transito stage = 5 pts
+  });
+
+  it('scores higher for older orders', () => {
+    const fresh = calcPriority({ diasConf: 0, dias: 0, estado: 'EN REPARTO', transportadora: 'TCC' });
+    const old = calcPriority({ diasConf: 3, dias: 5, estado: 'EN REPARTO', transportadora: 'TCC' });
+    expect(old).toBeGreaterThan(fresh);
+  });
+
+  it('gives max SLA score to 5+ day orders', () => {
+    const score = calcPriority({ diasConf: 6, dias: 6, estado: 'EN REPARTO', transportadora: 'TCC' });
+    expect(score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('boosts unresolved novedades', () => {
+    const novedad = calcPriority({ diasConf: 2, dias: 2, estado: 'NOVEDAD', transportadora: 'TCC', novedadSol: false });
+    const normal = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'TCC' });
+    expect(novedad).toBeGreaterThan(normal);
+  });
+
+  it('does not boost resolved novedades', () => {
+    const resolved = calcPriority({ diasConf: 2, dias: 2, estado: 'NOVEDAD', transportadora: 'TCC', novedadSol: true });
+    const unresolved = calcPriority({ diasConf: 2, dias: 2, estado: 'NOVEDAD', transportadora: 'TCC', novedadSol: false });
+    expect(unresolved).toBeGreaterThan(resolved);
+  });
+
+  it('boosts high-value orders', () => {
+    const cheap = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'TCC', valor: 30000 });
+    const expensive = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'TCC', valor: 250000 });
+    expect(expensive).toBeGreaterThan(cheap);
+  });
+
+  it('adds rescue window bonus for expiring novedades', () => {
+    const expiring = calcPriority({ diasConf: 2, dias: 2, estado: 'NOVEDAD', transportadora: 'TCC', novedadSol: false });
+    const fresh = calcPriority({ diasConf: 0, dias: 0, estado: 'NOVEDAD', transportadora: 'TCC', novedadSol: false });
+    expect(expiring).toBeGreaterThan(fresh);
+  });
+
+  it('boosts oficina orders about to expire', () => {
+    const expiring = calcPriority({ diasConf: 4, dias: 4, estado: 'RECLAME EN OFICINA', transportadora: 'INTERRAPIDISIMO' });
+    const fresh = calcPriority({ diasConf: 1, dias: 1, estado: 'RECLAME EN OFICINA', transportadora: 'INTERRAPIDISIMO' });
+    expect(expiring).toBeGreaterThan(fresh);
+  });
+});
+
+describe('getPriorityLevel', () => {
+  it('returns critical for score >= 50', () => {
+    expect(getPriorityLevel(50)).toBe('critical');
+    expect(getPriorityLevel(80)).toBe('critical');
+  });
+
+  it('returns high for 30-49', () => {
+    expect(getPriorityLevel(30)).toBe('high');
+    expect(getPriorityLevel(49)).toBe('high');
+  });
+
+  it('returns medium for 15-29', () => {
+    expect(getPriorityLevel(15)).toBe('medium');
+    expect(getPriorityLevel(29)).toBe('medium');
+  });
+
+  it('returns low for < 15', () => {
+    expect(getPriorityLevel(0)).toBe('low');
+    expect(getPriorityLevel(14)).toBe('low');
   });
 });

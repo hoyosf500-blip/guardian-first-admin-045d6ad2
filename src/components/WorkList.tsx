@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { OrderData, truncate } from '@/lib/orderUtils';
+import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, MapPin, Package, RotateCcw } from 'lucide-react';
 
 interface Props {
@@ -23,6 +24,8 @@ export default function WorkList({ items, onOpenCall }: Props) {
     <div className="grid md:grid-cols-2 gap-2">
       {items.slice(0, visibleCount).map((o, i) => {
         const pClass = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
+        const pLevel = getPriorityLevel(calcPriority(o));
+        const pCfg = PRIORITY_CONFIG[pLevel];
         return (
           <div
             key={`${o.phone}-${o.idx}`}
@@ -39,6 +42,9 @@ export default function WorkList({ items, onOpenCall }: Props) {
                 <span className="inline-flex items-center gap-0.5"><Package size={10} /> {truncate(o.producto || '—', 15)}</span>
               </div>
             </div>
+            {pLevel !== 'low' && (
+              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pCfg.bgClass} ${pCfg.color}`}>{pCfg.label}</span>
+            )}
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${o.dias >= 7 ? 'bg-red/15 text-red' : o.dias >= 4 ? 'bg-yellow/15 text-yellow' : 'bg-green/15 text-green'}`}>D{o.dias}</span>
             {o.retryCount && !o.result && (
               <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-500/15 text-orange-500 inline-flex items-center gap-0.5">

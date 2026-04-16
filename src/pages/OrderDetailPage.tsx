@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad } from '@/lib/orderUtils';
+import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
   Package, Clock, Calendar, DollarSign, FileText, AlertTriangle, RefreshCw,
-  MessageSquare, Send, PhoneCall,
+  MessageSquare, Send, PhoneCall, RotateCcw, Undo2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { buildTimeline } from '@/lib/timelineBuilder';
@@ -94,6 +94,11 @@ export default function OrderDetailPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [noteText, setNoteText] = useState('');
   const [notes, setNotes] = useState<NoteRow[]>([]);
+
+  // Novedad resolution state (F3)
+  const [showReofferInput, setShowReofferInput] = useState(false);
+  const [solutionText, setSolutionText] = useState('');
+  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     if (!externalId) return;
@@ -207,6 +212,84 @@ export default function OrderDetailPage() {
     }
   };
 
+  /** Resolve a novedad directly from the order detail page (F3). */
+  const handleResolveNovedad = async (action: 'reoffer' | 'return') => {
+    if (!user || !order || resolving) return;
+
+    const cleanSolution = solutionText.trim();
+    if (action === 'reoffer' && cleanSolution.length < 3) {
+      toast.error('Escribe la solución (mín. 3 caracteres)');
+      return;
+    }
+
+    setResolving(true);
+    const today = new Date().toISOString().split('T')[0];
+    const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+
+    const touchAction = action === 'reoffer'
+      ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
+      : 'NOVEDAD: Devolver al remitente';
+
+    // 1. Insert touchpoint
+    const { data: tpData } = await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: sanitizeAction(touchAction),
+      operator_id: user.id,
+      action_date: today,
+      action_time: time,
+    }).select();
+    if (tpData) setTouchpoints(prev => [...(tpData as Touchpoint[]), ...prev]);
+
+    // 2. Update local DB
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' })
+      .eq('id', order.id);
+
+    if (updateError) {
+      toast.error('Error guardando: ' + updateError.message);
+      setResolving(false);
+      return;
+    }
+
+    setOrder(prev => prev ? { ...prev, novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' } : prev);
+
+    // 3. Call Dropi Edge Function if there's an external ID
+    if (order.external_id) {
+      const toastId = `novedad-detail-${order.external_id}`;
+      toast.loading('Dropi: reportando solución…', { id: toastId });
+
+      try {
+        const res = await supabase.functions.invoke('dropi-resolve-incidence', {
+          body: action === 'reoffer'
+            ? { externalId: order.external_id, action, solution: cleanSolution }
+            : { externalId: order.external_id, action },
+        });
+        const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
+        if (res?.error || data?.ok === false) {
+          const msg = res?.error?.message || data?.error || 'Error desconocido';
+          toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
+          // Rollback
+          await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.id);
+          setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: 'NOVEDAD' } : prev);
+        } else {
+          toast.success('Novedad resuelta en Dropi', { id: toastId, duration: 2500 });
+        }
+      } catch (err: unknown) {
+        const msg = getErrorMessage(err);
+        toast.error(`Dropi red: ${msg}. Novedad revertida.`, { duration: 8000 });
+        await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.id);
+        setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: 'NOVEDAD' } : prev);
+      }
+    } else {
+      toast.success('Novedad marcada como resuelta');
+    }
+
+    setShowReofferInput(false);
+    setSolutionText('');
+    setResolving(false);
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
@@ -271,15 +354,63 @@ export default function OrderDetailPage() {
             <PhoneCall size={12} /> Ir a Confirmar
           </button>
         )}
-        {showNovedadShortcut && (
-          <button
-            onClick={() => navigate('/novedades')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 text-xs font-semibold hover:bg-orange-500/20 transition-colors"
-          >
-            <AlertTriangle size={12} /> Ir a Novedades
-          </button>
+        {showNovedadShortcut && !showReofferInput && (
+          <div className="inline-flex items-center gap-1.5">
+            <button
+              onClick={() => setShowReofferInput(true)}
+              disabled={resolving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-semibold hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+            >
+              <RotateCcw size={12} /> Reprogramar
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('¿Devolver este pedido al remitente? Esta acción se reportará a Dropi.')) {
+                  handleResolveNovedad('return');
+                }
+              }}
+              disabled={resolving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 text-xs font-semibold hover:bg-red-500/20 transition-colors disabled:opacity-50"
+            >
+              <Undo2 size={12} /> Devolver
+            </button>
+          </div>
         )}
       </motion.div>
+
+      {/* Reoffer solution input (F3) */}
+      {showReofferInput && (
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+          className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 flex flex-col gap-2">
+          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">Solución para reprogramar entrega:</p>
+          <input
+            value={solutionText}
+            onChange={(e) => setSolutionText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleResolveNovedad('reoffer')}
+            placeholder="Ej: Cliente pide enviar el martes, nueva dirección Cra 45 #12-30"
+            disabled={resolving}
+            autoFocus
+            className="bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleResolveNovedad('reoffer')}
+              disabled={resolving || solutionText.trim().length < 3}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {resolving ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
+              {resolving ? 'Enviando…' : 'Enviar a Dropi'}
+            </button>
+            <button
+              onClick={() => { setShowReofferInput(false); setSolutionText(''); }}
+              disabled={resolving}
+              className="px-3 py-2 rounded-lg bg-secondary text-muted-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* SLA Alert Card */}
       <SlaAlertCard order={orderData} />

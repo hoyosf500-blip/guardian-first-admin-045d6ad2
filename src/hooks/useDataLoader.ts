@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData, isDespachado } from '@/lib/orderUtils';
+import { calcPriority } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 
 interface DataLoaderState {
@@ -46,7 +47,9 @@ export function useDataLoader(user: User | null): DataLoaderState {
         return;
       }
       if (dbOrders) {
-        setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
+        const mapped = dbOrders.map((o, idx) => dbToOrderData(o, idx));
+        mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
+        setSegData(mapped);
       }
       setSegLastUpdate(new Date());
       setSegLoaded(true);
@@ -84,6 +87,7 @@ export function useDataLoader(user: User | null): DataLoaderState {
               e.includes('OFICINA') || e.includes('RECLAME') ||
               e.includes('DEVOL');
           });
+        orders.sort((a, b) => calcPriority(b) - calcPriority(a));
         setResData(orders);
       }
       setResLoaded(true);

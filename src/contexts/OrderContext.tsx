@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, Re
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
+import { calcPriority } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 import { useDataLoader } from '@/hooks/useDataLoader';
@@ -70,7 +71,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const buildWorkQueue = useCallback((orders: OrderData[]) => {
     const pendientes = orders.filter(o => isPendiente(o.estado));
-    pendientes.sort((a, b) => b.dias - a.dias);
+    pendientes.sort((a, b) => calcPriority(b) - calcPriority(a) || b.dias - a.dias);
 
     const seen = new Set<string>();
     const dedupPendientes = pendientes.filter(o => {

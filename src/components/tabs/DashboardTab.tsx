@@ -7,7 +7,8 @@ import { toast } from 'sonner';
 import {
   CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare,
   Download, TrendingUp, TrendingDown, Minus, Package, ChevronDown,
-  BarChart3, Activity, Layers, CloudOff, CloudDownload, RefreshCw
+  BarChart3, Activity, Layers, CloudOff, CloudDownload, RefreshCw,
+  Trophy, Users,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -46,6 +47,44 @@ export default function DashboardTab() {
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [resyncing, setResyncing] = useState(false);
+
+  // F5: operator ranking — today's results for ALL operators
+  interface OperatorStat { name: string; operatorId: string; conf: number; canc: number; noresp: number; total: number; tasa: number; }
+  const [operatorRanking, setOperatorRanking] = useState<OperatorStat[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const today = new Date().toLocaleDateString('en-CA');
+    Promise.all([
+      supabase.from('order_results').select('operator_id, result').eq('result_date', today),
+      supabase.from('profiles').select('user_id, display_name'),
+    ]).then(([resultsRes, profilesRes]) => {
+      if (resultsRes.error || !resultsRes.data) return;
+      const names: Record<string, string> = {};
+      (profilesRes.data || []).forEach((p: { user_id: string; display_name: string }) => {
+        names[p.user_id] = p.display_name;
+      });
+      const byOp: Record<string, { conf: number; canc: number; noresp: number }> = {};
+      resultsRes.data.forEach((r: { operator_id: string; result: string }) => {
+        if (!byOp[r.operator_id]) byOp[r.operator_id] = { conf: 0, canc: 0, noresp: 0 };
+        if (r.result === 'conf') byOp[r.operator_id].conf++;
+        else if (r.result === 'canc') byOp[r.operator_id].canc++;
+        else byOp[r.operator_id].noresp++;
+      });
+      const ranking = Object.entries(byOp).map(([opId, s]) => {
+        const total = s.conf + s.canc + s.noresp;
+        return {
+          operatorId: opId,
+          name: names[opId] || 'Operador',
+          ...s,
+          total,
+          tasa: total > 0 ? Math.round(s.conf / total * 100) : 0,
+        };
+      });
+      ranking.sort((a, b) => b.total - a.total);
+      setOperatorRanking(ranking);
+    });
+  }, [user, counter]); // re-fetch when counter changes (user marked something)
 
   // Load orders from DB for dashboard stats
   useEffect(() => {
@@ -522,6 +561,52 @@ export default function DashboardTab() {
               </div>
             </div>
           </motion.div>
+
+          {/* F5: Operator ranking */}
+          {operatorRanking.length > 1 && (
+            <motion.div {...fadeUp(0.15)} className="bg-card rounded-xl border border-border overflow-hidden mb-5">
+              <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+                <Users size={14} className="text-blue" />
+                <h3 className="text-sm font-semibold text-foreground">Ranking del equipo hoy</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border">
+                      <th className="px-5 py-2.5 text-left font-medium">#</th>
+                      <th className="px-3 py-2.5 text-left font-medium">Operador(a)</th>
+                      <th className="px-3 py-2.5 text-center font-medium">Conf.</th>
+                      <th className="px-3 py-2.5 text-center font-medium">Canc.</th>
+                      <th className="px-3 py-2.5 text-center font-medium">N/R</th>
+                      <th className="px-3 py-2.5 text-center font-medium">Total</th>
+                      <th className="px-3 py-2.5 text-center font-medium">Tasa</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {operatorRanking.map((op, idx) => {
+                      const isMe = op.operatorId === user?.id;
+                      const tasaC = op.tasa >= 80 ? 'text-green' : op.tasa >= 60 ? 'text-orange' : 'text-red';
+                      return (
+                        <tr key={op.operatorId} className={`border-b border-border last:border-0 transition-colors ${isMe ? 'bg-primary/5' : 'hover:bg-secondary/30'}`}>
+                          <td className="px-5 py-2.5 font-mono font-bold">
+                            {idx === 0 ? <Trophy size={14} className="text-yellow-500 inline" /> : idx + 1}
+                          </td>
+                          <td className="px-3 py-2.5 font-medium">
+                            {op.name}{isMe && <span className="ml-1.5 text-[10px] text-primary">(tú)</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-center font-mono text-green">{op.conf}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-red">{op.canc}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-muted-foreground">{op.noresp}</td>
+                          <td className="px-3 py-2.5 text-center font-mono font-bold">{op.total}</td>
+                          <td className={`px-3 py-2.5 text-center font-mono font-bold ${tasaC}`}>{op.tasa}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
 
           {/* Products */}
           {prods.length > 0 && (

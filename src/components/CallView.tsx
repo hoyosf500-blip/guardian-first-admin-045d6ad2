@@ -3,8 +3,16 @@ import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star } from 'lucide-react';
+
+interface VipInfo {
+  isVip: boolean;
+  total: number;
+  entregados: number;
+  efectividad: number;
+}
 
 interface Props {
   items: OrderData[];
@@ -35,8 +43,32 @@ export default function CallView({ items }: Props) {
   }, [items.length]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [vip, setVip] = useState<VipInfo | null>(null);
 
   const o = items[Math.min(callIdx, items.length - 1)];
+
+  // VIP check: query order history for this phone (F4)
+  useEffect(() => {
+    if (!o?.phone) { setVip(null); return; }
+    let cancelled = false;
+    supabase
+      .from('orders')
+      .select('estado')
+      .eq('phone', o.phone)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const total = data.length;
+        const entregados = data.filter(r => (r.estado || '').toUpperCase().includes('ENTREGADO')).length;
+        const efectividad = total > 0 ? Math.round((entregados / total) * 100) : 0;
+        setVip({
+          isVip: total >= 3 && efectividad >= 80,
+          total,
+          entregados,
+          efectividad,
+        });
+      });
+    return () => { cancelled = true; };
+  }, [o?.phone]);
 
   if (!items.length || !o) {
     return (
@@ -93,6 +125,22 @@ export default function CallView({ items }: Props) {
             <span className="text-[11px] font-semibold text-orange-500">
               Reintento {o.retryCount}/3 — No contestó antes, volver a llamar
             </span>
+          </div>
+        )}
+        {vip?.isVip && !o.result && (
+          <div className="flex items-center justify-between gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <Star size={14} className="text-emerald-500 fill-emerald-500" />
+              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                CLIENTE VIP — {vip.entregados}/{vip.total} entregados ({vip.efectividad}%)
+              </span>
+            </div>
+            <button
+              onClick={() => handleMark('conf')}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors whitespace-nowrap"
+            >
+              Confirmar sin llamar
+            </button>
           </div>
         )}
         <div className="flex items-center gap-2 mb-1 flex-wrap">
