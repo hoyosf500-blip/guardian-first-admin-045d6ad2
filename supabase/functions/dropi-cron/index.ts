@@ -172,20 +172,55 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   };
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-      },
-    });
+    return new Response("ok", { headers: CORS_HEADERS });
   }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ---- Auth: require admin role for authenticated callers ----
+    // pg_cron calls via pg_net may arrive with no valid JWT (internal routing
+    // bypasses the Supabase API gateway). When no auth header is present we
+    // allow the call — the gateway already blocks unauthenticated external
+    // requests. When a JWT IS present (e.g. "Forzar sync" from Dashboard)
+    // we validate it and require admin role so a regular operator cannot
+    // spam syncs or exhaust Dropi rate limits.
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader && authHeader !== `Bearer ${supabaseServiceKey}`) {
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+      const anonClient = createClient(supabaseUrl, anonKey);
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(
+        authHeader.replace("Bearer ", ""),
+      );
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Token inválido" }), {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        });
+      }
+      const { data: roleData } = await sb
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!roleData) {
+        return new Response(
+          JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
+          { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      console.log(`dropi-cron: triggered by admin ${user.id}`);
+    }
 
     // Get Dropi API key from app_settings or env
     const { data: keySetting } = await sb

@@ -45,6 +45,11 @@ const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_NEW_STATUS = "PENDIENTE";
 const DEFAULT_STORE_URL = "https://rushmira.com/";
 
+// Only these statuses can be pushed to Dropi via this endpoint. This prevents
+// an operator from sending arbitrary strings (e.g. "CANCELADO") through the
+// integration key. Add new values here as new flows are implemented.
+const ALLOWED_STATUSES = ["PENDIENTE", "GUIA_GENERADA", "CONFIRMADO"];
+
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
@@ -203,6 +208,35 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
       );
+    }
+
+    // ---- Validate status against allowlist ----
+    if (!dryRun && !ALLOWED_STATUSES.includes(newStatus.toUpperCase())) {
+      return new Response(
+        JSON.stringify({ error: `Estado '${newStatus}' no permitido. Permitidos: ${ALLOWED_STATUSES.join(", ")}` }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // ---- Verify the order exists in our DB (ownership check) ----
+    if (!dryRun) {
+      const { data: orderRow } = await sb
+        .from("orders")
+        .select("id")
+        .eq("external_id", externalId)
+        .maybeSingle();
+      if (!orderRow) {
+        return new Response(
+          JSON.stringify({ error: `Pedido ${externalId} no encontrado en la base de datos` }),
+          {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
     }
 
     // ---- Load config (integration-key + store URL) ----

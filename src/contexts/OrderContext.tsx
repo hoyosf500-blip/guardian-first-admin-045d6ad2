@@ -258,6 +258,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
 
+    // Guard: Excel-only orders without a DB row can't be persisted.  Without
+    // this check the insert sends order_id=undefined which creates an orphan
+    // row in order_results with a null FK — silent data corruption.
+    if (!order.dbId) {
+      toast.error('Este pedido no tiene ID en la base de datos — no se puede registrar');
+      return;
+    }
+
     // Update local state immediately
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
     setCounter(prev => {
@@ -281,7 +289,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     // Save to DB
     const { error, data: insertedResult } = await supabase.from('order_results').insert({
-      order_id: order.dbId!,
+      order_id: order.dbId,
       phone: order.phone,
       result,
       reason: reason || '',
@@ -350,18 +358,23 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         canc: prev.canc - (result === 'canc' ? 1 : 0),
         noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
       }));
-    } else if (insertedResult?.id) {
-      setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
-    }
+    } else {
+      if (insertedResult?.id) {
+        setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
+      }
 
-    // Save touchpoint
-    await supabase.from('touchpoints').insert({
-      phone: order.phone,
-      action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
-      operator_id: user.id,
-      action_date: today,
-      action_time: now,
-    });
+      // Save touchpoint only when the order_results insert succeeded.
+      // Previously this ran unconditionally, so a failed insert still wrote
+      // a permanent "Confirmado"/"Cancelado" touchpoint — ghost history that
+      // the UI showed even though the result was rolled back.
+      await supabase.from('touchpoints').insert({
+        phone: order.phone,
+        action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
+        operator_id: user.id,
+        action_date: today,
+        action_time: now,
+      });
+    }
   }, [user, timerStart, checkMilestone]);
 
   const undoLast = useCallback(async () => {
