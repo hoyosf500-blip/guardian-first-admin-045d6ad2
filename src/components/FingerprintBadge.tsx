@@ -138,32 +138,46 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
       </div>
 
       {/* Progress bars */}
-      <div className="px-3.5 py-2.5 space-y-2 border-t border-border/30">
+      <div className="px-3.5 py-3 space-y-2.5 border-t border-border/30">
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-medium text-muted-foreground">Tasa de entrega</span>
-            <span className={`text-[11px] font-bold ${pctEntrega >= 60 ? 'text-green-500' : pctEntrega >= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-medium text-foreground/80">Tasa de entrega</span>
+            <span className={`text-[11px] font-bold tabular-nums ${pctEntrega >= 60 ? 'text-green-500' : pctEntrega >= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
               {pctEntrega}%
             </span>
           </div>
-          <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+          <div
+            className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden ring-1 ring-inset ring-border/50"
+            role="progressbar"
+            aria-valuenow={pctEntrega}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Tasa de entrega ${pctEntrega}%`}
+          >
             <div
-              className={`h-full rounded-full transition-all ${pctEntrega >= 60 ? 'bg-green-500' : pctEntrega >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
-              style={{ width: `${pctEntrega}%` }}
+              className={`h-full rounded-full transition-[width] duration-500 ${pctEntrega >= 60 ? 'bg-green-500' : pctEntrega >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+              style={{ width: `${Math.max(pctEntrega, pctEntrega > 0 ? 4 : 0)}%` }}
             />
           </div>
         </div>
         <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-medium text-muted-foreground">Tasa de devolucion</span>
-            <span className={`text-[11px] font-bold ${pctDevol <= 20 ? 'text-green-500' : pctDevol <= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] font-medium text-foreground/80">Tasa de devolución</span>
+            <span className={`text-[11px] font-bold tabular-nums ${pctDevol <= 20 ? 'text-green-500' : pctDevol <= 40 ? 'text-yellow-500' : 'text-red-500'}`}>
               {pctDevol}%
             </span>
           </div>
-          <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+          <div
+            className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden ring-1 ring-inset ring-border/50"
+            role="progressbar"
+            aria-valuenow={pctDevol}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Tasa de devolución ${pctDevol}%`}
+          >
             <div
-              className={`h-full rounded-full transition-all ${pctDevol <= 20 ? 'bg-green-500' : pctDevol <= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
-              style={{ width: `${pctDevol}%` }}
+              className={`h-full rounded-full transition-[width] duration-500 ${pctDevol <= 20 ? 'bg-green-500' : pctDevol <= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+              style={{ width: `${Math.max(pctDevol, pctDevol > 0 ? 4 : 0)}%` }}
             />
           </div>
         </div>
