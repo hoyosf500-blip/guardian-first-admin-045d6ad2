@@ -239,20 +239,20 @@ export default function AdminTab() {
     setTestingSession(true);
     setSessionTestResult(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error('No hay sesión activa'); return; }
-      const res = await supabase.functions.invoke('dropi-fingerprint', {
-        body: { phone: '3001234567' },
+      const { data: raw, error } = await supabase.rpc('dropi_fingerprint', {
+        p_phone: '3001234567',
       });
-      if (res.error) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = raw as Record<string, any> | null;
+      if (error) {
         setSessionTestResult('fail');
-        toast.error(`Error: ${res.error.message}`);
-      } else if (res.data?.ok === false) {
-        setSessionTestResult(res.data.expired ? 'fail' : 'fail');
-        toast.error(res.data.error || 'Error desconocido');
+        toast.error(`Error: ${error.message}`);
+      } else if (d?.ok === false) {
+        setSessionTestResult('fail');
+        toast.error(d.error || 'Error desconocido');
       } else {
         setSessionTestResult('ok');
-        const fp = res.data?.fingerprint;
+        const fp = d?.fingerprint;
         toast.success(fp?.found ? `Huella OK — ${fp.global_profile?.lifetime_totals?.orders || 0} pedidos encontrados` : 'Conexión OK — cliente no encontrado');
       }
     } catch (err: unknown) {

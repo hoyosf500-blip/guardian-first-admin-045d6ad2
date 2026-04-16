@@ -353,6 +353,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      dropi_fingerprint: {
+        Args: {
+          p_phone: string
+        }
+        Returns: Json
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

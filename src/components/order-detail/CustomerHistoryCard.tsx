@@ -257,11 +257,12 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
     (async () => {
       setFpLoading(true);
       try {
-        const res = await supabase.functions.invoke('dropi-fingerprint', {
-          body: { phone: currentPhone },
+        const { data: raw, error } = await supabase.rpc('dropi_fingerprint', {
+          p_phone: currentPhone,
         });
-        if (!cancelled && res.data?.ok && res.data.fingerprint?.found) {
-          setFingerprint(res.data.fingerprint as DropiFingerprint);
+        const d = raw as Record<string, unknown> | null;
+        if (!cancelled && !error && d?.ok && (d.fingerprint as DropiFingerprint)?.found) {
+          setFingerprint(d.fingerprint as DropiFingerprint);
         }
       } catch {
         // Silently fail — fingerprint is optional
