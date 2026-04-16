@@ -482,27 +482,31 @@ export default function DashboardTab() {
 
             {/* Compact KPIs */}
             {[
-              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/10', iconColor: 'text-green', spark: sparkData.conf, sparkColor: 'hsl(var(--green))' },
-              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/10', iconColor: 'text-red', spark: sparkData.canc, sparkColor: 'hsl(var(--red))' },
-              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-muted-foreground', iconBg: 'bg-secondary', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
-              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/10', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${statusBreakdown.pendientes} pendientes` },
+              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/20', iconColor: 'text-green', spark: sparkData.conf, sparkColor: 'hsl(var(--green))' },
+              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/20', iconColor: 'text-red', spark: sparkData.canc, sparkColor: 'hsl(var(--red))' },
+              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-foreground', iconBg: 'bg-secondary', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-blue/20', iconColor: 'text-blue', spark: sparkData.total, sparkColor: 'hsl(var(--blue))', extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k, i) => {
               const Icon = k.icon;
+              const isZero = k.value === 0;
               return (
-                <div key={k.label} className="md:col-span-2 bg-card rounded-xl border border-border p-4 flex flex-col justify-between">
+                <div
+                  key={k.label}
+                  className={`md:col-span-2 bg-card rounded-xl border p-4 flex flex-col justify-between transition-opacity ${isZero ? 'border-border/60 opacity-80' : 'border-border'}`}
+                >
                   <div className="flex items-center justify-between mb-2">
-                    <div className={`w-7 h-7 rounded-lg ${k.iconBg} flex items-center justify-center`}>
+                    <div className={`w-7 h-7 rounded-lg ${k.iconBg} flex items-center justify-center ring-1 ring-inset ring-border/30`}>
                       <Icon size={14} className={k.iconColor} />
                     </div>
                     {k.spark.length > 1 && <MiniSparkline data={k.spark} color={k.sparkColor} />}
                   </div>
                   <div>
-                    <div className={`font-mono text-2xl font-bold ${k.color} leading-none`}>{k.value}</div>
-                    <div className="text-[10px] text-muted-foreground mt-1">{k.label}</div>
+                    <div className={`font-mono text-2xl font-bold ${isZero ? 'text-muted-foreground' : k.color} leading-none tabular-nums`}>{k.value}</div>
+                    <div className="text-xs font-medium text-foreground/80 mt-1.5">{k.label}</div>
                   </div>
                   <div className="mt-1.5">
                     {k.extra ? (
-                      <span className="text-[10px] text-muted-foreground">{k.extra}</span>
+                      <span className="text-[11px] font-medium text-muted-foreground">{k.extra}</span>
                     ) : (
                       <TrendBadge current={k.value} previous={k.prev} />
                     )}
