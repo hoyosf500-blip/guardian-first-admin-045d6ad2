@@ -56,7 +56,10 @@ export function getAlertLevel(diasConf: number, dias: number, estado: string, tr
   const stage = getSegStage(estado);
 
   const sinEscaneo = diasConf > 0 ? diasConf : dias;
-  if (!sinEscaneo) return null;
+  // diasConf === 0 means "confirmed today" — valid, not missing. The old
+  // `!sinEscaneo` check treated 0 as falsy and returned null, silently
+  // excluding freshly confirmed orders from the alert system.
+  if (sinEscaneo < 0) return null;
 
   // Office countdown
   let officeCD: AlertInfo['officeCD'] = null;

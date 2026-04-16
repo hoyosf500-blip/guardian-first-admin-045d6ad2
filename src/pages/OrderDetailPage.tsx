@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad } from '@/lib/orderUtils';
+import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
@@ -294,7 +294,7 @@ export default function OrderDetailPage() {
 
           <div className="flex gap-2 pt-2">
             <a
-              href={`https://wa.me/57${order.phone}?text=${waMsg}`}
+              href={`https://wa.me/${getWhatsAppPhone(order.phone)}?text=${waMsg}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => logCommunication('WHATSAPP', 'Mensaje enviado al cliente')}

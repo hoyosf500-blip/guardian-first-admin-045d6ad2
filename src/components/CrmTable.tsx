@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, truncate, getTrackingUrl, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, truncate, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
@@ -719,7 +719,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
 
               {/* Quick actions */}
               <div className="flex gap-2">
-                <a href={`https://wa.me/57${o.phone}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
+                <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
                   onClick={() => onAction('WhatsApp enviado')}
                   className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
                   <Send size={12} /> WhatsApp

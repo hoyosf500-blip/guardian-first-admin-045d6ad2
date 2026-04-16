@@ -30,7 +30,7 @@ interface OrderState {
   buildWorkQueue: (orders: OrderData[]) => void;
   markResult: (order: OrderData, result: string, reason?: string) => Promise<void>;
   undoLast: () => Promise<void>;
-  lastMark: { order: OrderData; result: string; reason?: string; resultId?: string } | null;
+  lastMark: { order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null;
   resetOrders: () => void;
   loadNovedades: () => Promise<void>;
   resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
@@ -56,7 +56,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [timerStart, setTimerStart] = useState(0);
   const [loading, setLoading] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
-  const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string } | null>(null);
+  const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null>(null);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -190,6 +190,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .limit(5000);
       if (error) {
         console.error('Error loading seg orders:', error);
+        toast.error('Error cargando seguimiento: ' + error.message);
         return;
       }
       if (dbOrders) {
@@ -219,6 +220,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .limit(2000);
       if (error) {
         console.error('Error loading rescue orders:', error);
+        toast.error('Error cargando rescate: ' + error.message);
         return;
       }
       if (dbOrders) {
@@ -367,19 +369,24 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // Previously this ran unconditionally, so a failed insert still wrote
       // a permanent "Confirmado"/"Cancelado" touchpoint — ghost history that
       // the UI showed even though the result was rolled back.
-      await supabase.from('touchpoints').insert({
+      const { data: tpData } = await supabase.from('touchpoints').insert({
         phone: order.phone,
         action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
         operator_id: user.id,
         action_date: today,
         action_time: now,
-      });
+      }).select('id').single();
+
+      // Store touchpoint ID so undoLast can clean it up too.
+      if (tpData?.id) {
+        setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
+      }
     }
   }, [user, timerStart, checkMilestone]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
-    const { order, result, resultId } = lastMark;
+    const { order, result, resultId, touchpointId } = lastMark;
 
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
     setCounter(prev => ({
@@ -391,9 +398,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (resultId) {
       await supabase.from('order_results').delete().eq('id', resultId);
     }
+    // Also clean up the touchpoint that was created alongside the result.
+    // Previously undo only deleted order_results, leaving a ghost touchpoint
+    // that polluted the communication history.
+    if (touchpointId) {
+      await supabase.from('touchpoints').delete().eq('id', touchpointId);
+    }
 
     setLastMark(null);
-    toast.success('↩️ Deshecho');
+    toast.success('Deshecho');
   }, [lastMark, user]);
 
   const resetOrders = useCallback(() => {

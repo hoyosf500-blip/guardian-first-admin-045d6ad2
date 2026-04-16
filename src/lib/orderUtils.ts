@@ -210,6 +210,12 @@ export function formatPhone(p: string): string {
   return p;
 }
 
+/** Normalize a Colombian phone for wa.me/ links (must include 57 prefix exactly once). */
+export function getWhatsAppPhone(phone: string): string {
+  const digits = phone.replace(/[^0-9]/g, '');
+  return digits.startsWith('57') && digits.length > 10 ? digits : `57${digits}`;
+}
+
 export function isPendiente(estado: string): boolean {
   const s = estado.toUpperCase();
   return s === 'PENDIENTE CONFIRMACION';

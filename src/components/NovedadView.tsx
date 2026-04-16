@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
-import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, truncate } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
 import { toast } from 'sonner';
 import {
@@ -145,7 +145,7 @@ export default function NovedadView({ items }: Props) {
               <Phone size={10} /> Llamar
             </a>
             <a
-              href={`https://wa.me/57${o.phone}?text=${waMsg}`}
+              href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green/10 text-green border border-green/20 hover:bg-green/20 no-underline"

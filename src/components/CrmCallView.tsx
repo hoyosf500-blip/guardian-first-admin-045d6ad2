@@ -6,7 +6,7 @@ import {
   CheckCircle, ExternalLink, User, Clock, Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, truncate } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { useSessionState } from '@/hooks/useSessionState';
 
@@ -217,7 +217,7 @@ export default function CrmCallView({
                 <PhoneIcon size={10} /> Llamar
               </a>
               <a
-                href={`https://wa.me/57${o.phone}?text=${waMsg}`}
+                href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/20 no-underline"
