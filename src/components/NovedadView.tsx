@@ -19,6 +19,7 @@ import {
   Send,
   X,
 } from 'lucide-react';
+import FingerprintBadge from '@/components/FingerprintBadge';
 
 interface Props {
   items: OrderData[];
@@ -135,6 +136,9 @@ export default function NovedadView({ items }: Props) {
             </span>
           )}
         </div>
+
+        {/* Dropi fingerprint */}
+        <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>
 
         {/* Customer name */}
         <div className="text-xl font-bold mb-1">{o.nombre}</div>

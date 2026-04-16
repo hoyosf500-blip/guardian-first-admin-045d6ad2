@@ -8,6 +8,7 @@ import {
 import { toast } from 'sonner';
 import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, truncate } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
+import FingerprintBadge from '@/components/FingerprintBadge';
 import { useSessionState } from '@/hooks/useSessionState';
 
 interface Touchpoint {
@@ -184,6 +185,9 @@ export default function CrmCallView({
               </span>
             )}
           </div>
+
+          {/* Dropi fingerprint */}
+          <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>
 
           {/* Customer name + external ID */}
           <div className="text-xl font-bold mb-1 text-foreground">{o.nombre}</div>

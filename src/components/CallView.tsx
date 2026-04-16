@@ -7,6 +7,7 @@ import { useAiInsight } from '@/hooks/useAiInsight';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw } from 'lucide-react';
+import FingerprintBadge from '@/components/FingerprintBadge';
 
 interface VipInfo {
   isVip: boolean;
@@ -145,6 +146,7 @@ export default function CallView({ items }: Props) {
             </button>
           </div>
         )}
+        {!o.result && <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>}
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <div className={`w-2 h-2 rounded-full ${pDot}`} />
           <span className={`text-xs font-bold ${pColor}`}>D{o.dias}</span>
