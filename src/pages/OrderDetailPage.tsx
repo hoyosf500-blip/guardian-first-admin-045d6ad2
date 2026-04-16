@@ -209,7 +209,7 @@ export default function OrderDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 gap-4">
+      <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
         <RefreshCw size={32} className="text-primary animate-spin" />
         <p className="text-sm font-semibold text-foreground">Cargando pedido...</p>
       </div>
@@ -218,7 +218,7 @@ export default function OrderDetailPage() {
 
   if (!order || !orderData) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 gap-4">
+      <div className="flex flex-col items-center justify-center py-16 gap-4" role="alert">
         <Package size={32} className="text-muted-foreground" />
         <p className="text-sm font-semibold text-foreground">Pedido no encontrado</p>
         <p className="text-xs text-muted-foreground">ID: {externalId}</p>
@@ -238,7 +238,7 @@ export default function OrderDetailPage() {
   const showNovedadShortcut = isNovedad(estadoUpper) && !order.novedad_sol;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <main className="max-w-4xl mx-auto space-y-6" aria-label="Detalle del pedido">
       {/* Back + header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 flex-wrap">
         <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors">
@@ -304,6 +304,7 @@ export default function OrderDetailPage() {
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => logCommunication('WHATSAPP', 'Mensaje enviado al cliente')}
+              aria-label="Enviar WhatsApp al cliente"
               className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white text-xs font-bold py-2.5 hover:bg-emerald-700 transition-colors no-underline"
             >
               <MessageSquare size={13} /> WhatsApp
@@ -311,6 +312,7 @@ export default function OrderDetailPage() {
             <a
               href={`tel:${order.phone}`}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
+              aria-label="Llamar al cliente"
               className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 text-white text-xs font-bold py-2.5 hover:bg-blue-700 transition-colors no-underline"
             >
               <Phone size={13} /> Llamar
@@ -343,6 +345,7 @@ export default function OrderDetailPage() {
 
           {trackUrl && (
             <a href={trackUrl} target="_blank" rel="noopener noreferrer"
+              aria-label="Rastrear envío en sitio de la transportadora"
               className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 text-white text-xs font-bold py-2.5 hover:bg-orange-600 transition-colors no-underline">
               <ExternalLink size={13} /> Rastrear envío
             </a>
@@ -389,6 +392,7 @@ export default function OrderDetailPage() {
             onChange={(e) => setNoteText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addNote()}
             placeholder="Agregar nota..."
+            aria-label="Escribir una nota sobre el pedido"
             className="flex-1 bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
           />
           <button onClick={addNote} aria-label="Guardar nota" className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
@@ -412,7 +416,7 @@ export default function OrderDetailPage() {
           })}
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 }
 

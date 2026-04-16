@@ -77,4 +77,12 @@ describe('CommunicationLog', () => {
     expect(screen.getByText(/Llamar/)).toBeTruthy();
     expect(screen.getByText(/WhatsApp/)).toBeTruthy();
   });
+
+  it('has role="log" and aria-live for accessibility', () => {
+    const { container } = render(<CommunicationLog events={[]} />);
+    const logEl = container.querySelector('[role="log"]');
+    expect(logEl).toBeTruthy();
+    expect(logEl?.getAttribute('aria-live')).toBe('polite');
+    expect(logEl?.getAttribute('aria-label')).toBe('Bitácora de comunicaciones');
+  });
 });

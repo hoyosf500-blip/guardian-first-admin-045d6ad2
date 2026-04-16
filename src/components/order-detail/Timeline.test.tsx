@@ -86,4 +86,12 @@ describe('Timeline', () => {
     const dayLabels = container.querySelectorAll('.uppercase.tracking-wider');
     expect(dayLabels.length).toBe(0);
   });
+
+  it('has aria-label on the events list', () => {
+    const events = [makeEvent({ id: '1', title: 'Test' })];
+    const { container } = render(<Timeline events={events} />);
+    const list = container.querySelector('ol[aria-label]');
+    expect(list).toBeTruthy();
+    expect(list?.getAttribute('aria-label')).toBe('Eventos del pedido');
+  });
 });

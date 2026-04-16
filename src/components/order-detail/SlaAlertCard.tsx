@@ -58,6 +58,9 @@ export default function SlaAlertCard({ order }: Props) {
 
   return (
     <motion.div
+      role="alert"
+      aria-live="assertive"
+      aria-label={`Alerta SLA: ${alert.label}`}
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
@@ -86,7 +89,14 @@ export default function SlaAlertCard({ order }: Props) {
                 <span>0d</span>
                 <span>{carrierDeadline}d (deadline {order.transportadora || '?'})</span>
               </div>
-              <div className="w-full h-1.5 rounded-full bg-muted/60 overflow-hidden">
+              <div
+                className="w-full h-1.5 rounded-full bg-muted/60 overflow-hidden"
+                role="progressbar"
+                aria-valuenow={daysElapsed}
+                aria-valuemin={0}
+                aria-valuemax={carrierDeadline}
+                aria-label={`${daysElapsed} de ${carrierDeadline} días transcurridos`}
+              >
                 <div
                   className={`h-full rounded-full transition-all ${progressColor}`}
                   style={{ width: `${pct}%` }}

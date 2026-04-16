@@ -69,4 +69,21 @@ describe('SlaAlertCard', () => {
     // diasConf=1 > 0, so sinEscaneo = 1 → watch level
     expect(screen.getByText(/Monitorear/)).toBeTruthy();
   });
+
+  it('has role="alert" and aria-live for screen readers', () => {
+    const order = makeOrder({ diasConf: 3, dias: 5, estado: 'EN REPARTO' });
+    const { container } = render(<SlaAlertCard order={order} />);
+    const alertEl = container.querySelector('[role="alert"]');
+    expect(alertEl).toBeTruthy();
+    expect(alertEl?.getAttribute('aria-live')).toBe('assertive');
+  });
+
+  it('has accessible progressbar with correct values', () => {
+    const order = makeOrder({ diasConf: 2, dias: 2, transportadora: 'TCC' });
+    const { container } = render(<SlaAlertCard order={order} />);
+    const bar = container.querySelector('[role="progressbar"]');
+    expect(bar).toBeTruthy();
+    expect(bar?.getAttribute('aria-valuenow')).toBeTruthy();
+    expect(bar?.getAttribute('aria-valuemin')).toBe('0');
+  });
 });

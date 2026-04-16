@@ -82,7 +82,7 @@ export default function Timeline({ events, allowedCategories, compact = false, e
               {group.day}
             </div>
           )}
-          <ol className="relative border-l-2 border-border ml-3 space-y-3">
+          <ol className="relative border-l-2 border-border ml-3 space-y-3" aria-label="Eventos del pedido">
             {group.events.map((ev, idx) => {
               const meta = CATEGORY_META[ev.category];
               const Icon = meta.icon;

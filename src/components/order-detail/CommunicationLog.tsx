@@ -20,6 +20,9 @@ export default function CommunicationLog({ events }: Props) {
 
   return (
     <motion.div
+      role="log"
+      aria-live="polite"
+      aria-label="Bitácora de comunicaciones"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className="bg-card border border-border rounded-2xl p-5"

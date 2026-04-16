@@ -157,6 +157,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             key={o.id}
             onClick={() => o.external_id && navigate(`/pedido/${o.external_id}`)}
             disabled={!o.external_id}
+            aria-label={`Pedido #${o.external_id || 'sin ID'} — ${o.estado || 'sin estado'} — $${(Number(o.valor) || 0).toLocaleString()}`}
             className="w-full text-left px-5 py-3 hover:bg-secondary/40 transition-colors disabled:cursor-not-allowed"
           >
             <div className="flex items-start justify-between gap-3">
