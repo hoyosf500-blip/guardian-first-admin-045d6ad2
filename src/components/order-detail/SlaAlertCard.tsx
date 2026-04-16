@@ -13,12 +13,12 @@ interface Props {
   order: OrderData;
 }
 
-const LEVEL_STYLES: Record<AlertLevel, { bg: string; border: string; text: string; iconClass: string }> = {
-  ok:       { bg: 'bg-green-500/10',   border: 'border-green-500/30',   text: 'text-green-600 dark:text-green-400',     iconClass: 'text-green-500' },
-  watch:    { bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30',  text: 'text-yellow-600 dark:text-yellow-400',   iconClass: 'text-yellow-500' },
-  alert:    { bg: 'bg-orange-500/10',  border: 'border-orange-500/30',  text: 'text-orange-600 dark:text-orange-400',   iconClass: 'text-orange-500' },
-  critical: { bg: 'bg-red-500/10',     border: 'border-red-500/30',     text: 'text-red-600 dark:text-red-400',         iconClass: 'text-red-500' },
-  lost:     { bg: 'bg-gray-500/10',    border: 'border-gray-500/30',    text: 'text-gray-600 dark:text-gray-400',       iconClass: 'text-gray-500' },
+const LEVEL_STYLES: Record<AlertLevel, { bg: string; border: string; borderL: string; text: string; iconClass: string }> = {
+  ok:       { bg: 'bg-green-500/10',   border: 'border-green-500/30',   borderL: 'border-l-green-500',   text: 'text-green-600 dark:text-green-400',     iconClass: 'text-green-500' },
+  watch:    { bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30',  borderL: 'border-l-yellow-500',  text: 'text-yellow-600 dark:text-yellow-400',   iconClass: 'text-yellow-500' },
+  alert:    { bg: 'bg-orange-500/10',  border: 'border-orange-500/30',  borderL: 'border-l-orange-500',  text: 'text-orange-600 dark:text-orange-400',   iconClass: 'text-orange-500' },
+  critical: { bg: 'bg-red-500/10',     border: 'border-red-500/30',     borderL: 'border-l-red-500',     text: 'text-red-600 dark:text-red-400',         iconClass: 'text-red-500' },
+  lost:     { bg: 'bg-gray-500/10',    border: 'border-gray-500/30',    borderL: 'border-l-gray-500',    text: 'text-gray-600 dark:text-gray-400',       iconClass: 'text-gray-500' },
 };
 
 function LevelIcon({ level, className }: { level: AlertLevel; className?: string }) {
@@ -64,7 +64,7 @@ export default function SlaAlertCard({ order }: Props) {
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={`rounded-2xl border ${style.border} ${style.bg} p-4 md:p-5`}
+      className={`rounded-xl border-l-4 border ${style.borderL} ${style.border} ${style.bg} p-4 md:p-5`}
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0">
@@ -72,7 +72,6 @@ export default function SlaAlertCard({ order }: Props) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-lg">{alert.icon}</span>
             <h3 className={`text-sm font-bold ${style.text}`}>{alert.label}</h3>
           </div>
           <p className="text-xs text-muted-foreground mt-1">

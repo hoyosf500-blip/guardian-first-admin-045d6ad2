@@ -148,8 +148,8 @@ export default function SeguimientoTab() {
   if (!segLoaded && segLoading) {
     return (
       <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <RefreshCw size={32} className="text-primary animate-spin" />
+        <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
+          <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">Cargando seguimiento...</p>
             <p className="text-xs text-muted-foreground mt-1">Recuperando pedidos desde la base de datos</p>
@@ -169,9 +169,8 @@ export default function SeguimientoTab() {
       >
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg"
-              style={{ background: 'linear-gradient(135deg, #f97316, #f59e0b)' }}>
-              <Truck size={20} />
+            <div className="w-10 h-10 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center">
+              <Truck size={20} className="text-accent" aria-hidden="true" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-foreground">Seguimiento</h2>
@@ -235,20 +234,20 @@ export default function SeguimientoTab() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2">
-              <Package size={14} className="text-muted-foreground" />
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+              <Package size={13} className="text-muted-foreground" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">Total</span>
-              <span className="text-sm font-bold text-foreground">{stats.total}</span>
+              <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
               {(dateFrom || dateTo) && stats.total !== segData.length && (
-                <span className="text-[10px] text-muted-foreground font-mono">/ {segData.length}</span>
+                <span className="text-[10px] text-subtle font-mono">/ {segData.length}</span>
               )}
             </div>
             <button
               onClick={() => loadSegData(true)}
               disabled={segLoading}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-foreground hover:bg-card hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} />
+              <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} aria-hidden="true" />
               <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
             {segLastUpdate && (
@@ -345,7 +344,7 @@ export default function SeguimientoTab() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
-              className="bg-card border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5"
+              className="bg-surface border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 hover:border-border-strong transition-colors duration-200"
             >
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white bg-gradient-to-br ${card.gradient}`}>
                 {card.icon}

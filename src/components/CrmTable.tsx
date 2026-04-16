@@ -344,25 +344,29 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       {/* Search + delayed filter */}
       <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
             placeholder="Buscar nombre, teléfono, guía, ciudad..."
-            className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+            aria-label="Buscar pedidos"
+            className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
           />
         </div>
         <button
           type="button"
           aria-pressed={onlyDelayed}
           onClick={() => setOnlyDelayed(prev => !prev)}
-          className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+          className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
             onlyDelayed
-              ? 'border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/25'
-              : 'border-border bg-card text-foreground hover:border-orange-400/40 hover:text-orange-500'
+              ? 'border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/20'
+              : 'border-border bg-surface text-foreground hover:border-orange-400/50 hover:text-orange-500'
           }`}
         >
-          <Clock size={15} />
+          <Clock size={14} aria-hidden="true" />
           <span>Retrasados (2d+)</span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
             {delayedCount}
           </span>
         </button>
@@ -371,45 +375,45 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             type="button"
             aria-pressed={showManaged}
             onClick={() => setShowManaged(prev => !prev)}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+            className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               showManaged
-                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
-                : 'border-border bg-card text-foreground hover:border-emerald-400/40 hover:text-emerald-500'
+                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                : 'border-border bg-surface text-foreground hover:border-emerald-400/50 hover:text-emerald-500'
             }`}
           >
-            <CheckCircle size={15} />
+            <CheckCircle size={14} aria-hidden="true" />
             <span>Gestionados</span>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
               {managedCount}
             </span>
           </button>
         )}
 
         {/* Lista / Llamar toggle */}
-        <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-card p-1">
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
           <button
             type="button"
             onClick={() => setView('list')}
             aria-pressed={view === 'list'}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               view === 'list'
-                ? 'bg-primary text-primary-foreground'
+                ? 'bg-accent text-accent-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <List size={13} /> Lista
+            <List size={13} aria-hidden="true" /> Lista
           </button>
           <button
             type="button"
             onClick={() => setView('call')}
             aria-pressed={view === 'call'}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               view === 'call'
-                ? 'bg-primary text-primary-foreground'
+                ? 'bg-accent text-accent-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <PhoneIcon size={13} /> Llamar
+            <PhoneIcon size={13} aria-hidden="true" /> Llamar
           </button>
         </div>
       </div>

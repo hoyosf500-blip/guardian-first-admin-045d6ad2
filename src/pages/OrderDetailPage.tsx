@@ -297,7 +297,7 @@ export default function OrderDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
-        <RefreshCw size={32} className="text-primary animate-spin" />
+        <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
         <p className="text-sm font-semibold text-foreground">Cargando pedido...</p>
       </div>
     );
@@ -328,7 +328,7 @@ export default function OrderDetailPage() {
     <main className="max-w-4xl mx-auto space-y-6" aria-label="Detalle del pedido">
       {/* Back + header */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 flex-wrap">
-        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="p-2 rounded-xl bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors">
+        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="p-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">
@@ -422,8 +422,10 @@ export default function OrderDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Info card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          className="bg-card border border-border rounded-2xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><User size={14} /> Información del cliente</h3>
+          className="bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
+          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <User size={13} aria-hidden="true" /> Información del cliente
+          </h3>
 
           <div className="space-y-3">
             <InfoRow icon={<Phone size={13} />} label="Teléfono" value={order.phone} copyable />
@@ -433,32 +435,34 @@ export default function OrderDetailPage() {
             <InfoRow icon={<Tag size={13} />} label="Tienda" value={order.tienda || '—'} />
           </div>
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-1">
             <a
               href={`https://wa.me/${getWhatsAppPhone(order.phone)}?text=${waMsg}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => logCommunication('WHATSAPP', 'Mensaje enviado al cliente')}
               aria-label="Enviar WhatsApp al cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white text-xs font-bold py-2.5 hover:bg-emerald-700 transition-colors no-underline"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold py-2.5 hover:opacity-90 transition-opacity duration-200 no-underline cursor-pointer"
             >
-              <MessageSquare size={13} /> WhatsApp
+              <MessageSquare size={13} aria-hidden="true" /> WhatsApp
             </a>
             <a
               href={`tel:${order.phone}`}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
               aria-label="Llamar al cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 text-white text-xs font-bold py-2.5 hover:bg-blue-700 transition-colors no-underline"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-card border border-border text-foreground text-xs font-bold py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer"
             >
-              <Phone size={13} /> Llamar
+              <Phone size={13} aria-hidden="true" /> Llamar
             </a>
           </div>
         </motion.div>
 
         {/* Shipping card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="bg-card border border-border rounded-2xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><Truck size={14} /> Envío y seguimiento</h3>
+          className="bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
+          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <Truck size={13} aria-hidden="true" /> Envío y seguimiento
+          </h3>
 
           <div className="space-y-3">
             <InfoRow icon={<Truck size={13} />} label="Transportadora" value={order.transportadora || '—'} />
@@ -526,8 +530,10 @@ export default function OrderDetailPage() {
 
         {/* Financial card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="bg-card border border-border rounded-2xl p-5 space-y-4 md:col-span-2">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><DollarSign size={14} /> Financiero</h3>
+          className="bg-surface border border-border rounded-xl p-5 space-y-4 md:col-span-2 hover:border-border-strong transition-colors duration-200">
+          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+            <DollarSign size={13} aria-hidden="true" /> Financiero
+          </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={`$${valor.toLocaleString()}`} />
             <InfoRow icon={<Truck size={13} />} label="Flete" value={`$${flete.toLocaleString()}`} />
@@ -543,9 +549,9 @@ export default function OrderDetailPage() {
       {/* Timeline + Communication log */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-card border border-border rounded-2xl p-5">
-          <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-4">
-            <Clock size={14} /> Historial del pedido
+          className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
+          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-4">
+            <Clock size={13} aria-hidden="true" /> Historial del pedido
           </h3>
           <Timeline events={timelineEvents} emptyText="Sin eventos registrados todavía" />
         </motion.div>
@@ -555,8 +561,10 @@ export default function OrderDetailPage() {
 
       {/* Notes */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-        className="bg-card border border-border rounded-2xl p-5 space-y-4">
-        <h3 className="text-sm font-bold text-foreground flex items-center gap-2"><MessageSquare size={14} /> Notas</h3>
+        className="bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
+        <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+          <MessageSquare size={13} aria-hidden="true" /> Notas
+        </h3>
 
         <div className="flex gap-2">
           <input
@@ -565,10 +573,14 @@ export default function OrderDetailPage() {
             onKeyDown={(e) => e.key === 'Enter' && addNote()}
             placeholder="Agregar nota..."
             aria-label="Escribir una nota sobre el pedido"
-            className="flex-1 bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30"
+            className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
           />
-          <button onClick={addNote} aria-label="Guardar nota" className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-            <Send size={13} />
+          <button
+            onClick={addNote}
+            aria-label="Guardar nota"
+            className="p-2 rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-opacity duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            <Send size={13} aria-hidden="true" />
           </button>
         </div>
 
@@ -577,10 +589,10 @@ export default function OrderDetailPage() {
           {notes.map((n) => {
             const operatorName = profiles.find((p) => p.user_id === n.operator_id)?.display_name || 'Operador';
             return (
-              <div key={n.id} className="text-xs bg-secondary/50 rounded-lg px-3 py-2">
+              <div key={n.id} className="text-xs bg-card border border-border/50 rounded-lg px-3 py-2">
                 <div className="flex justify-between mb-1">
                   <span className="font-semibold text-foreground">{operatorName}</span>
-                  <span className="text-muted-foreground">{new Date(n.created_at).toLocaleDateString('es-CO')}</span>
+                  <span className="text-subtle">{new Date(n.created_at).toLocaleDateString('es-CO')}</span>
                 </div>
                 <p className="text-muted-foreground">{n.note_text}</p>
               </div>
