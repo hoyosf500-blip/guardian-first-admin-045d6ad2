@@ -50,6 +50,10 @@ export default {
           foreground: "hsl(var(--card-foreground))",
         },
         surface: "hsl(var(--surface))",
+        "border-strong": "hsl(var(--border-strong))",
+        subtle: "hsl(var(--subtle))",
+        "accent-muted": "hsl(var(--accent-muted))",
+        "accent-border": "hsl(var(--accent-border))",
         card2: "hsl(var(--card2))",
         green: "hsl(var(--green))",
         red: "hsl(var(--red))",
@@ -95,9 +99,10 @@ export default {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "var(--radius)",           /* 8px */
+        md: "calc(var(--radius) - 2px)", /* 6px inputs/badges */
+        sm: "calc(var(--radius) - 4px)", /* 4px tight */
+        xl: "calc(var(--radius) + 4px)", /* 12px large cards */
       },
       keyframes: {
         "accordion-down": {
