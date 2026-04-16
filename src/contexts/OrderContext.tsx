@@ -1,9 +1,11 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
-import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion, dbToOrderData } from '@/lib/orderUtils';
+import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
+import { useDataLoader } from '@/hooks/useDataLoader';
+import { useNovedades } from '@/hooks/useNovedades';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -43,28 +45,21 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
-  const [segData, setSegData] = useState<OrderData[]>([]);
-  const [segLoaded, setSegLoaded] = useState(false);
-  const [segLoading, setSegLoading] = useState(false);
-  const [segLastUpdate, setSegLastUpdate] = useState<Date | null>(null);
-  const [resData, setResData] = useState<OrderData[]>([]);
-  const [resLoaded, setResLoaded] = useState(false);
-  const [resLoading, setResLoading] = useState(false);
-  const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
-  const [novedadesLoading, setNovedadesLoading] = useState(false);
   const [counter, setCounter] = useState<Counter>({ conf: 0, canc: 0, noresp: 0 });
   const [timerStart, setTimerStart] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null>(null);
-  const [novedadesLoaded, setNovedadesLoaded] = useState(false);
+
+  // Extracted hooks for data loading and novedades
+  const dataLoader = useDataLoader(user);
+  const novedades = useNovedades(user);
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
   const markingInFlight = useRef(new Set<string>());
   // Coordination flag so undoLast and rollbackDropiFailure don't both decrement the counter.
   const revertedRef = useRef(false);
 
-  // Request notification permission on mount
   useEffect(() => {
     requestNotificationPermission();
   }, [requestNotificationPermission]);
@@ -74,7 +69,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const buildWorkQueue = useCallback((orders: OrderData[]) => {
-    // Filter pendientes and deduplicate by phone+producto
     const pendientes = orders.filter(o => isPendiente(o.estado));
     pendientes.sort((a, b) => b.dias - a.dias);
 
@@ -87,12 +81,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     });
 
     setWorkQueue(dedupPendientes);
-    // Seguimiento: all non-pending orders (matching old app)
-    setSegData(orders.filter(o => {
+    dataLoader.setSegData(orders.filter(o => {
       const e = o.estado.toUpperCase();
       return isConfirmado(e) || isDespachado(e) || isNovedad(e) || isOficina(e) || isDevolucion(e);
     }));
-    setResData(orders.filter(o => {
+    dataLoader.setResData(orders.filter(o => {
       const e = o.estado.toUpperCase();
       const diasT = o.diasConf || o.dias;
       return (isDespachado(e) && diasT >= 5) ||
@@ -101,7 +94,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         e.includes('DEVOL');
     }));
 
-    // Load existing results for today
     if (user) {
       const today = new Date().toLocaleDateString('en-CA');
       supabase.from('order_results')
@@ -111,7 +103,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .then(({ data }) => {
           if (data) {
             const now = Date.now();
-            // Group results by phone
             const phoneResults = new Map<string, typeof data>();
             data.forEach(r => {
               if (!phoneResults.has(r.phone)) phoneResults.set(r.phone, []);
@@ -120,28 +111,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
             const resultMap = new Map<string, { result: string; reason: string }>();
             data.forEach(r => {
-              // For noresp: check if 3+ hours passed AND fewer than 3 attempts
               if (r.result === 'noresp') {
                 const attempts = (phoneResults.get(r.phone) || []).filter(x => x.result === 'noresp').length;
                 if (attempts >= 3) {
-                  // Max 3 attempts reached, keep as managed
                   resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
                 } else {
-                  // Check time elapsed
                   const createdAt = new Date(r.created_at).getTime();
                   const hoursElapsed = (now - createdAt) / (1000 * 60 * 60);
                   if (hoursElapsed < 3) {
-                    // Less than 3h, keep as managed
                     resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
                   }
-                  // Otherwise: don't set in resultMap — order reappears as pending
                 }
               } else {
                 resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
               }
             });
 
-            // Count retry phones (noresp that reappeared)
             const retryPhones = new Map<string, number>();
             phoneResults.forEach((results, phone) => {
               const nrAttempts = results.filter(x => x.result === 'noresp').length;
@@ -159,7 +144,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             });
             setWorkQueue(updated);
 
-            // Notify operator about re-surfaced orders
             if (retryPhones.size > 0) {
               toast.info(`${retryPhones.size} pedido${retryPhones.size > 1 ? 's' : ''} sin respuesta disponible${retryPhones.size > 1 ? 's' : ''} para reintentar`, {
                 description: 'No contestaron antes — intenta llamar de nuevo',
@@ -167,8 +151,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               });
             }
 
-            // Count by unique phone (latest result wins) to avoid inflation
-            // from noresp retries counting multiple times.
             const c = { conf: 0, canc: 0, noresp: 0 };
             resultMap.forEach(({ result: r }) => {
               if (r === 'conf') c.conf++;
@@ -179,108 +161,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           }
         });
     }
-  }, [user]);
-
-  // Fetch Seguimiento orders from the DB and cache them in the context so
-  // the data survives React Router route unmounts. Without this the operator
-  // loses all scroll/filter/selection state every time they navigate between
-  // tabs. Call with force=true from the "Actualizar" button to bypass cache.
-  const loadSegData = useCallback(async (force = false) => {
-    if (!user) return;
-    if (segLoaded && !force) return;
-    setSegLoading(true);
-    try {
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      if (error) {
-        console.error('Error loading seg orders:', error);
-        toast.error('Error cargando seguimiento: ' + error.message);
-        return;
-      }
-      if (dbOrders) {
-        setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
-      }
-      setSegLastUpdate(new Date());
-      setSegLoaded(true);
-    } finally {
-      setSegLoading(false);
-    }
-  }, [user, segLoaded]);
-
-  // Same pattern as loadSegData but with the stricter rescue filter (excludes
-  // ENTREGADO and CANCELADO server-side for a smaller payload).
-  const loadResData = useCallback(async (force = false) => {
-    if (!user) return;
-    if (resLoaded && !force) return;
-    setResLoading(true);
-    try {
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .not('estado', 'eq', 'ENTREGADO')
-        .not('estado', 'eq', 'CANCELADO')
-        .order('created_at', { ascending: false })
-        .limit(2000);
-      if (error) {
-        console.error('Error loading rescue orders:', error);
-        toast.error('Error cargando rescate: ' + error.message);
-        return;
-      }
-      if (dbOrders) {
-        // Apply rescue filter client-side (same logic as RescateTab's isRescueOrder)
-        const orders = dbOrders
-          .map((o, idx) => dbToOrderData(o, idx))
-          .filter(o => {
-            const e = o.estado.toUpperCase();
-            const diasT = o.diasConf || o.dias;
-            return (isDespachado(e) && diasT >= 5) ||
-              (e.includes('NOVEDAD') && !o.novedadSol) ||
-              e.includes('OFICINA') || e.includes('RECLAME') ||
-              e.includes('DEVOL');
-          });
-        setResData(orders);
-      }
-      setResLoaded(true);
-    } finally {
-      setResLoading(false);
-    }
-  }, [user, resLoaded]);
-
-  // Background auto-refresh for seg/res caches so the Dropi cron (and
-  // other operators' actions) propagate without the operator having to
-  // hit "Actualizar". Runs every 5 min — same cadence as dropi-cron so
-  // at worst we are one tick behind. Only runs after the first manual
-  // load per tab so we don't refetch data that was never requested.
-  useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => {
-      if (segLoaded) loadSegData(true);
-      if (resLoaded) loadResData(true);
-    }, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [user, segLoaded, resLoaded, loadSegData, loadResData]);
+  }, [user, dataLoader.setSegData, dataLoader.setResData]);
 
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
 
-    // Guard: Excel-only orders without a DB row can't be persisted.
     if (!order.dbId) {
       toast.error('Este pedido no tiene ID en la base de datos — no se puede registrar');
       return;
     }
 
-    // In-flight guard: prevent double-click race that would insert duplicate
-    // order_results and inflate the counter.
     if (markingInFlight.current.has(order.phone)) return;
     markingInFlight.current.add(order.phone);
     revertedRef.current = false;
 
-    // Update local state immediately
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
     setCounter(prev => {
       const next = {
@@ -296,11 +190,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     if (!timerStart) setTimerStart(Date.now());
 
-    // Use local date (not UTC) so late-night results are filed under the correct day.
     const today = new Date().toLocaleDateString('en-CA');
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
-    // Save to DB
     const { error, data: insertedResult } = await supabase.from('order_results').insert({
       order_id: order.dbId,
       phone: order.phone,
@@ -311,28 +203,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       result_time: now,
     }).select('id').single();
 
-    // When confirmed, update order status from PENDIENTE CONFIRMACION to PENDIENTE
     if (!error && result === 'conf' && order.dbId) {
       await supabase.from('orders').update({ estado: 'PENDIENTE' }).eq('id', order.dbId);
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
 
-      // Fire-and-forget: push the status change to Dropi via the Bearer-token flow.
-      // Only runs if the order has a Dropi external_id (skip for Excel-only rows).
-      // Non-blocking: the operator moves on to the next call immediately;
-      // sonner toast is updated in place when the function call resolves.
       if (order.externalId) {
         const toastId = `dropi-${order.externalId}`;
         const insertedResultId = insertedResult?.id;
         toast.loading('Dropi: actualizando…', { id: toastId });
 
-        // Full rollback when Dropi fails: revert the DB estado back to
-        // PENDIENTE CONFIRMACION, delete the order_results row, and clear
-        // the local result. Previously we only showed a toast — the pedido
-        // stayed local-only-confirmed forever while Dropi still saw it as
-        // pending, creating a silent mismatch the operator could not fix
-        // without manually re-syncing the DB.
         const rollbackDropiFailure = async (errMsg: string) => {
-          // Coordination: if undoLast already reverted this, don't decrement again.
           if (revertedRef.current) return;
           revertedRef.current = true;
           toast.error(`Dropi falló: ${errMsg}. Pedido revertido — volvé a confirmarlo.`, { id: toastId, duration: 10000 });
@@ -379,10 +259,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
       }
 
-      // Save touchpoint only when the order_results insert succeeded.
-      // Previously this ran unconditionally, so a failed insert still wrote
-      // a permanent "Confirmado"/"Cancelado" touchpoint — ghost history that
-      // the UI showed even though the result was rolled back.
       const { data: tpData } = await supabase.from('touchpoints').insert({
         phone: order.phone,
         action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
@@ -391,7 +267,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         action_time: now,
       }).select('id').single();
 
-      // Store touchpoint ID so undoLast can clean it up too.
       if (tpData?.id) {
         setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
       }
@@ -401,7 +276,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
-    // Coordination: if rollbackDropiFailure already reverted, don't double-decrement.
     if (revertedRef.current) {
       setLastMark(null);
       toast.info('Ya fue revertido por el rollback de Dropi');
@@ -420,9 +294,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     if (resultId) {
       await supabase.from('order_results').delete().eq('id', resultId);
     }
-    // Also clean up the touchpoint that was created alongside the result.
-    // Previously undo only deleted order_results, leaving a ghost touchpoint
-    // that polluted the communication history.
     if (touchpointId) {
       await supabase.from('touchpoints').delete().eq('id', touchpointId);
     }
@@ -434,151 +305,26 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const resetOrders = useCallback(() => {
     setAllOrdersState([]);
     setWorkQueue([]);
-    setSegData([]);
-    setSegLoaded(false);
-    setSegLastUpdate(null);
-    setResData([]);
-    setResLoaded(false);
-    setNovedadesQueue([]);
-    setNovedadesLoaded(false);
+    dataLoader.setSegData([]);
+    dataLoader.setSegLoaded(false);
+    dataLoader.setResData([]);
+    dataLoader.setResLoaded(false);
+    novedades.setNovedadesQueue([]);
     setExcelLoaded(false);
     resetCelebrations();
-  }, [resetCelebrations]);
-
-  const loadNovedades = useCallback(async (force = false) => {
-    if (!user) return;
-    if (novedadesLoaded && !force) return;
-    setNovedadesLoading(true);
-    try {
-      // Only `estado='NOVEDAD'` matches what Dropi shows in its own
-      // Novedades panel. `INTENTO DE ENTREGA` is a logistic-in-progress
-      // state that does NOT require customer action and Dropi does not
-      // list it as a pending novedad — including it here creates a huge
-      // false positive backlog (see diagnosis against Dropi dashboard).
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('estado', 'NOVEDAD')
-        .eq('novedad_sol', false);
-      if (error) {
-        toast.error('Error cargando novedades: ' + error.message);
-        return;
-      }
-      const orders = (data || []).map((o, idx) => dbToOrderData(o, idx));
-      // Sort by days descending (oldest first, most urgent)
-      orders.sort((a, b) => b.dias - a.dias);
-      setNovedadesQueue(orders);
-      setNovedadesLoaded(true);
-    } finally {
-      setNovedadesLoading(false);
-    }
-  }, [user, novedadesLoaded]);
-
-  const resolveNovedad = useCallback(async (
-    order: OrderData,
-    action: 'reoffer' | 'return',
-    solution?: string,
-  ) => {
-    if (!user || !order) return;
-
-    const cleanSolution = (solution || '').trim();
-    if (action === 'reoffer' && cleanSolution.length < 3) {
-      toast.error('Escribe la solución antes de continuar');
-      return;
-    }
-
-    // 1) Optimistic update: mark as resolving so the view can show feedback
-    setNovedadesQueue(prev => prev.map(o =>
-      o.dbId === order.dbId ? { ...o, result: 'resolving', novedadSol: true } : o,
-    ));
-
-    const today = new Date().toLocaleDateString('en-CA');
-    const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-
-    // 2) Audit touchpoint (also the source of truth for the protect trigger)
-    const touchAction = action === 'reoffer'
-      ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
-      : 'NOVEDAD: Devolver al remitente';
-
-    await supabase.from('touchpoints').insert({
-      phone: order.phone,
-      action: touchAction,
-      operator_id: user.id,
-      action_date: today,
-      action_time: now,
-    });
-
-    // 3) Local DB update
-    if (order.dbId) {
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' })
-        .eq('id', order.dbId);
-      if (updateError) {
-        toast.error('Error guardando localmente: ' + updateError.message);
-        setNovedadesQueue(prev => prev.map(o =>
-          o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
-        ));
-        return;
-      }
-    }
-
-    // 4) Rollback helper for when Dropi fails — reverts local DB so the order
-    // reappears in the Novedades queue (previously it vanished permanently).
-    const rollbackNovedad = async () => {
-      if (order.dbId) {
-        await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.dbId);
-      }
-      setNovedadesQueue(prev => prev.map(o =>
-        o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
-      ));
-    };
-
-    // 5) Edge Function call (only if we have the Dropi external_id)
-    if (order.externalId) {
-      const toastId = `novedad-${order.externalId}`;
-      toast.loading('Dropi: reportando solución…', { id: toastId });
-      supabase.functions
-        .invoke('dropi-resolve-incidence', {
-          body: action === 'reoffer'
-            ? { externalId: order.externalId, action, solution: cleanSolution }
-            : { externalId: order.externalId, action },
-        })
-        .then((res) => {
-          const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
-          if (res?.error || data?.ok === false) {
-            const msg = res?.error?.message || data?.error || 'Error desconocido';
-            toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
-            rollbackNovedad();
-          } else {
-            toast.success('Dropi: novedad reportada', { id: toastId, duration: 2500 });
-            // Remove from queue only on success
-            setTimeout(() => {
-              setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
-            }, 800);
-          }
-        })
-        .catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          toast.error(`Dropi red: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
-          rollbackNovedad();
-        });
-    } else {
-      toast.success('Novedad marcada como resuelta localmente', { duration: 2500 });
-      setTimeout(() => {
-        setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
-      }, 800);
-    }
-  }, [user]);
+  }, [resetCelebrations, dataLoader.setSegData, dataLoader.setSegLoaded, dataLoader.setResData, dataLoader.setResLoaded, novedades.setNovedadesQueue]);
 
   return (
     <OrderContext.Provider value={{
       allOrders, workQueue,
-      segData, segLoaded, segLoading, segLastUpdate, loadSegData,
-      resData, resLoaded, resLoading, loadResData,
-      novedadesQueue, novedadesLoading, counter, timerStart,
+      segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
+      segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
+      resData: dataLoader.resData, resLoaded: dataLoader.resLoaded, resLoading: dataLoader.resLoading,
+      loadResData: dataLoader.loadResData,
+      novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
+      counter, timerStart,
       loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders,
-      loadNovedades, resolveNovedad,
+      loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
     }}>
       {children}
     </OrderContext.Provider>
