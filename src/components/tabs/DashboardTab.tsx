@@ -104,7 +104,16 @@ export default function DashboardTab() {
     loadSyncLog();
     const poll = setInterval(loadSyncLog, 30 * 1000);
     const tick = setInterval(() => setNowTick(Date.now()), 15 * 1000);
-    return () => { clearInterval(poll); clearInterval(tick); };
+    // Refresh immediately when tab becomes visible (Chrome Memory Saver / mobile
+    // throttle intervals, so the age label can be stale when the operator returns).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setNowTick(Date.now());
+        loadSyncLog();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(poll); clearInterval(tick); document.removeEventListener('visibilitychange', onVisible); };
   }, [user, loadSyncLog]);
 
   const resyncNow = async () => {
@@ -185,24 +194,29 @@ export default function DashboardTab() {
   const tasa = total > 0 ? Math.round(counter.conf / total * 100) : 0;
   const pendLeft = workQueue.filter(o => !o.result).length;
 
-  // Use DB orders for product/status stats when no Excel loaded
-  const ordersForStats = allOrders.length > 0 ? allOrders.map(o => ({
-    producto: o.producto || 'Sin producto', estado: o.estado || '', valor: o.valor, ciudad: o.ciudad, transportadora: o.transportadora
-  })) : dbOrders;
+  // Memoized so downstream useMemo (statusBreakdown, prods) gets a stable reference.
+  // Without this, every render creates a new array → defeats all memoization.
+  const ordersForStats = useMemo(() =>
+    allOrders.length > 0 ? allOrders.map(o => ({
+      producto: o.producto || 'Sin producto', estado: o.estado || '', valor: o.valor, ciudad: o.ciudad, transportadora: o.transportadora
+    })) : dbOrders,
+  [allOrders, dbOrders]);
 
   const totalOrders = ordersForStats.length;
 
-  const byProd: Record<string, { total: number; entreg: number; canc: number; nov: number }> = {};
-  ordersForStats.forEach(o => {
-    const p = o.producto || 'Sin producto';
-    if (!byProd[p]) byProd[p] = { total: 0, entreg: 0, canc: 0, nov: 0 };
-    byProd[p].total++;
-    const e = (o.estado || '').toUpperCase();
-    if (e.includes('ENTREGAD')) byProd[p].entreg++;
-    else if (e.includes('CANCEL')) byProd[p].canc++;
-    else if (e.includes('NOVEDAD')) byProd[p].nov++;
-  });
-  const prods = Object.entries(byProd).sort((a, b) => b[1].total - a[1].total);
+  const prods = useMemo(() => {
+    const byProd: Record<string, { total: number; entreg: number; canc: number; nov: number }> = {};
+    ordersForStats.forEach(o => {
+      const p = o.producto || 'Sin producto';
+      if (!byProd[p]) byProd[p] = { total: 0, entreg: 0, canc: 0, nov: 0 };
+      byProd[p].total++;
+      const e = (o.estado || '').toUpperCase();
+      if (e.includes('ENTREGAD')) byProd[p].entreg++;
+      else if (e.includes('CANCEL')) byProd[p].canc++;
+      else if (e.includes('NOVEDAD')) byProd[p].nov++;
+    });
+    return Object.entries(byProd).sort((a, b) => b[1].total - a[1].total);
+  }, [ordersForStats]);
 
   // Status breakdown from DB
   const statusBreakdown = useMemo(() => {

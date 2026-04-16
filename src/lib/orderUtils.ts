@@ -213,7 +213,13 @@ export function formatPhone(p: string): string {
 /** Normalize a Colombian phone for wa.me/ links (must include 57 prefix exactly once). */
 export function getWhatsAppPhone(phone: string): string {
   const digits = phone.replace(/[^0-9]/g, '');
-  return digits.startsWith('57') && digits.length > 10 ? digits : `57${digits}`;
+  // 10-digit Colombian mobile (3xx xxx xxxx) → always prepend 57.
+  if (digits.length === 10) return `57${digits}`;
+  // 12-digit already has country code (57 + 10 digits) → use as-is.
+  if (digits.length === 12 && digits.startsWith('57')) return digits;
+  // Anything else: strip a leading 57 if present and re-prepend to normalize.
+  if (digits.startsWith('57') && digits.length > 10) return digits;
+  return `57${digits}`;
 }
 
 export function isPendiente(estado: string): boolean {

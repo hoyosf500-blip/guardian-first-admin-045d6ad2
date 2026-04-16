@@ -168,6 +168,8 @@ export default function OrderDetailPage() {
       setNotes((prev) => [...(data as NoteRow[]), ...prev]);
       setNoteText('');
       toast.success('Nota guardada');
+    } else if (error) {
+      toast.error('Error guardando nota: ' + error.message);
     }
   };
 

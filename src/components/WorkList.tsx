@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { OrderData, truncate } from '@/lib/orderUtils';
 import { CheckCircle2, XCircle, PhoneOff, MapPin, Package, RotateCcw } from 'lucide-react';
 
@@ -7,6 +8,8 @@ interface Props {
 }
 
 export default function WorkList({ items, onOpenCall }: Props) {
+  const [visibleCount, setVisibleCount] = useState(50);
+
   if (!items.length) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -18,11 +21,11 @@ export default function WorkList({ items, onOpenCall }: Props) {
 
   return (
     <div className="grid md:grid-cols-2 gap-2">
-      {items.slice(0, 50).map((o, i) => {
+      {items.slice(0, visibleCount).map((o, i) => {
         const pClass = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
         return (
           <div
-            key={o.phone + o.idx}
+            key={`${o.phone}-${o.idx}`}
             onClick={() => onOpenCall(i)}
             className={`flex items-center gap-3 p-3.5 bg-card border border-border rounded-lg cursor-pointer transition-all hover:bg-card2 active:scale-[0.99] ${
               o.result ? 'opacity-50' : o.dias >= 7 ? 'urgent-pulse' : ''
@@ -54,9 +57,15 @@ export default function WorkList({ items, onOpenCall }: Props) {
           </div>
         );
       })}
-      {items.length > 50 && (
-        <div className="text-center py-3 text-sm text-muted-foreground col-span-full">
-          Mostrando 50 de {items.length}
+      {items.length > visibleCount && (
+        <div className="text-center py-3 col-span-full space-y-2">
+          <p className="text-sm text-muted-foreground">Mostrando {visibleCount} de {items.length}</p>
+          <button
+            onClick={() => setVisibleCount(prev => prev + 50)}
+            className="text-xs px-4 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+          >
+            Ver más
+          </button>
         </div>
       )}
     </div>

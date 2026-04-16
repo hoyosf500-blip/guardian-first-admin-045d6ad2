@@ -195,9 +195,13 @@ Deno.serve(async (req: Request) => {
     const dryRun = body.dryRun === true;
     const externalId =
       typeof body.externalId === "string" ? body.externalId.trim() : "";
+    // Normalize to uppercase so the value sent to Dropi always matches
+    // the allowlist exactly. Previously, a caller sending "pendiente"
+    // passed validation (via .toUpperCase() check) but the mixed-case
+    // original was sent to Dropi, which could reject it or store garbage.
     const newStatus =
       typeof body.status === "string" && body.status.trim()
-        ? body.status.trim()
+        ? body.status.trim().toUpperCase()
         : DEFAULT_NEW_STATUS;
 
     if (!dryRun && !externalId) {

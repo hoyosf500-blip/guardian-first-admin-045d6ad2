@@ -72,14 +72,23 @@ export default function RescateTab() {
               </div>
             </div>
           </div>
-          {resData.length > 0 && (
-            <div className="hidden sm:flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2">
-              <span className="text-xs text-muted-foreground">Valor en riesgo</span>
-              <span className="text-sm font-bold text-red-600 dark:text-red-400">
-                ${stats.valorEnRiesgo.toLocaleString('es-CO')}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {resData.length > 0 && (
+              <div className="hidden sm:flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2">
+                <span className="text-xs text-muted-foreground">Valor en riesgo</span>
+                <span className="text-sm font-bold text-red-600 dark:text-red-400">
+                  ${stats.valorEnRiesgo.toLocaleString('es-CO')}
+                </span>
+              </div>
+            )}
+            <button
+              onClick={() => loadResData(true)}
+              disabled={resLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground hover:bg-secondary/80 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={resLoading ? 'animate-spin' : ''} /> Actualizar
+            </button>
+          </div>
         </div>
 
         {/* Stats row */}

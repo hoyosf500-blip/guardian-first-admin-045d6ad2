@@ -16,10 +16,14 @@ export default function CallView({ items }: Props) {
   // exact same order after going out to the transportadora's page.
   const [callIdx, setCallIdx] = useSessionState<number>('confirmar:callIdx', 0);
 
-  // If the persisted index no longer points at a pending order (e.g. the
-  // list was rebuilt), jump to the first pending one. Runs only on mount.
+  // Re-clamp index when items change (queue shrink, data refresh) and jump
+  // to the first pending order if current one is already resolved.
   useEffect(() => {
     if (!items.length) return;
+    if (callIdx >= items.length) {
+      setCallIdx(Math.max(0, items.length - 1));
+      return;
+    }
     const current = items[callIdx];
     if (!current || current.result) {
       const firstPending = items.findIndex(o => !o.result);
@@ -28,7 +32,7 @@ export default function CallView({ items }: Props) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [items.length]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
 
@@ -76,7 +80,7 @@ export default function CallView({ items }: Props) {
           <button onClick={() => navCall(-1)} disabled={callIdx <= 0} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center">
             <ChevronLeft size={14} />
           </button>
-          <button onClick={() => navCall(1)} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold inline-flex items-center">
+          <button onClick={() => navCall(1)} disabled={callIdx >= items.length - 1} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center">
             <ChevronRight size={14} />
           </button>
         </div>

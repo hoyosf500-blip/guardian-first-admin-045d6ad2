@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion, dbToOrderData } from '@/lib/orderUtils';
@@ -32,7 +32,7 @@ interface OrderState {
   undoLast: () => Promise<void>;
   lastMark: { order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null;
   resetOrders: () => void;
-  loadNovedades: () => Promise<void>;
+  loadNovedades: (force?: boolean) => Promise<void>;
   resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
 }
 
@@ -57,6 +57,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null>(null);
+  const [novedadesLoaded, setNovedadesLoaded] = useState(false);
+
+  // Prevents double-click race: tracks phones currently being processed by markResult.
+  const markingInFlight = useRef(new Set<string>());
+  // Coordination flag so undoLast and rollbackDropiFailure don't both decrement the counter.
+  const revertedRef = useRef(false);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -97,7 +103,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     // Load existing results for today
     if (user) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toLocaleDateString('en-CA');
       supabase.from('order_results')
         .select('phone, result, reason, result_time, created_at')
         .eq('operator_id', user.id)
@@ -161,10 +167,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               });
             }
 
+            // Count by unique phone (latest result wins) to avoid inflation
+            // from noresp retries counting multiple times.
             const c = { conf: 0, canc: 0, noresp: 0 };
-            data.forEach(r => {
-              if (r.result === 'conf') c.conf++;
-              else if (r.result === 'canc') c.canc++;
+            resultMap.forEach(({ result: r }) => {
+              if (r === 'conf') c.conf++;
+              else if (r === 'canc') c.canc++;
               else c.noresp++;
             });
             setCounter(c);
@@ -260,13 +268,17 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
 
-    // Guard: Excel-only orders without a DB row can't be persisted.  Without
-    // this check the insert sends order_id=undefined which creates an orphan
-    // row in order_results with a null FK — silent data corruption.
+    // Guard: Excel-only orders without a DB row can't be persisted.
     if (!order.dbId) {
       toast.error('Este pedido no tiene ID en la base de datos — no se puede registrar');
       return;
     }
+
+    // In-flight guard: prevent double-click race that would insert duplicate
+    // order_results and inflate the counter.
+    if (markingInFlight.current.has(order.phone)) return;
+    markingInFlight.current.add(order.phone);
+    revertedRef.current = false;
 
     // Update local state immediately
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
@@ -276,17 +288,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         canc: prev.canc + (result === 'canc' ? 1 : 0),
         noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
       };
-      // Check milestones after update
       const newTotal = next.conf + next.canc + next.noresp;
       setTimeout(() => checkMilestone(newTotal), 300);
       return next;
     });
-    // resultId will be set after DB insert below
     setLastMark({ order, result, reason });
 
     if (!timerStart) setTimerStart(Date.now());
 
-    const today = new Date().toISOString().split('T')[0];
+    // Use local date (not UTC) so late-night results are filed under the correct day.
+    const today = new Date().toLocaleDateString('en-CA');
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
     // Save to DB
@@ -321,6 +332,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // pending, creating a silent mismatch the operator could not fix
         // without manually re-syncing the DB.
         const rollbackDropiFailure = async (errMsg: string) => {
+          // Coordination: if undoLast already reverted this, don't decrement again.
+          if (revertedRef.current) return;
+          revertedRef.current = true;
           toast.error(`Dropi falló: ${errMsg}. Pedido revertido — volvé a confirmarlo.`, { id: toastId, duration: 10000 });
           if (order.dbId) {
             await supabase.from('orders').update({ estado: 'PENDIENTE CONFIRMACION' }).eq('id', order.dbId);
@@ -382,10 +396,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
       }
     }
+    markingInFlight.current.delete(order.phone);
   }, [user, timerStart, checkMilestone]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
+    // Coordination: if rollbackDropiFailure already reverted, don't double-decrement.
+    if (revertedRef.current) {
+      setLastMark(null);
+      toast.info('Ya fue revertido por el rollback de Dropi');
+      return;
+    }
+    revertedRef.current = true;
     const { order, result, resultId, touchpointId } = lastMark;
 
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
@@ -418,12 +440,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setResData([]);
     setResLoaded(false);
     setNovedadesQueue([]);
+    setNovedadesLoaded(false);
     setExcelLoaded(false);
     resetCelebrations();
   }, [resetCelebrations]);
 
-  const loadNovedades = useCallback(async () => {
+  const loadNovedades = useCallback(async (force = false) => {
     if (!user) return;
+    if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
     try {
       // Only `estado='NOVEDAD'` matches what Dropi shows in its own
@@ -444,10 +468,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // Sort by days descending (oldest first, most urgent)
       orders.sort((a, b) => b.dias - a.dias);
       setNovedadesQueue(orders);
+      setNovedadesLoaded(true);
     } finally {
       setNovedadesLoading(false);
     }
-  }, [user]);
+  }, [user, novedadesLoaded]);
 
   const resolveNovedad = useCallback(async (
     order: OrderData,
@@ -467,7 +492,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       o.dbId === order.dbId ? { ...o, result: 'resolving', novedadSol: true } : o,
     ));
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA');
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
     // 2) Audit touchpoint (also the source of truth for the protect trigger)
@@ -491,7 +516,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .eq('id', order.dbId);
       if (updateError) {
         toast.error('Error guardando localmente: ' + updateError.message);
-        // Roll back optimistic
         setNovedadesQueue(prev => prev.map(o =>
           o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
         ));
@@ -499,7 +523,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // 4) Fire-and-forget Edge Function (only if we have the Dropi external_id)
+    // 4) Rollback helper for when Dropi fails — reverts local DB so the order
+    // reappears in the Novedades queue (previously it vanished permanently).
+    const rollbackNovedad = async () => {
+      if (order.dbId) {
+        await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.dbId);
+      }
+      setNovedadesQueue(prev => prev.map(o =>
+        o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
+      ));
+    };
+
+    // 5) Edge Function call (only if we have the Dropi external_id)
     if (order.externalId) {
       const toastId = `novedad-${order.externalId}`;
       toast.loading('Dropi: reportando solución…', { id: toastId });
@@ -513,23 +548,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
           if (res?.error || data?.ok === false) {
             const msg = res?.error?.message || data?.error || 'Error desconocido';
-            toast.error(`Dropi falló: ${msg}`, { id: toastId, duration: 8000 });
+            toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
+            rollbackNovedad();
           } else {
             toast.success('Dropi: novedad reportada', { id: toastId, duration: 2500 });
+            // Remove from queue only on success
+            setTimeout(() => {
+              setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
+            }, 800);
           }
         })
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          toast.error(`Dropi red: ${msg}`, { id: toastId, duration: 8000 });
+          toast.error(`Dropi red: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
+          rollbackNovedad();
         });
     } else {
       toast.success('Novedad marcada como resuelta localmente', { duration: 2500 });
+      setTimeout(() => {
+        setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
+      }, 800);
     }
-
-    // 5) Remove from queue after a short delay so the UI can show the resolved state
-    setTimeout(() => {
-      setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
-    }, 800);
   }, [user]);
 
   return (

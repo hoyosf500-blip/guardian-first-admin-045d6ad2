@@ -78,15 +78,21 @@ export default function NovedadView({ items }: Props) {
       return;
     }
     setSubmitting(true);
-    await resolveNovedad(o, 'reoffer', solution);
-    // The context removes the order from the queue after ~800ms.
-    // callIdx stays the same: the next order will occupy the same index.
+    try {
+      await resolveNovedad(o, 'reoffer', solution);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleReturnConfirm = async () => {
     setShowReturnConfirm(false);
     setSubmitting(true);
-    await resolveNovedad(o, 'return');
+    try {
+      await resolveNovedad(o, 'return');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const trackUrl = o.guia ? getTrackingUrl(o.transportadora, o.guia) : null;
