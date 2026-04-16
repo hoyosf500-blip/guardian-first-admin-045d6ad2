@@ -22,6 +22,10 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit -p tsconfig.app.json
 
+      - name: Lint
+        run: npx eslint src/lib/ src/hooks/ src/contexts/ --max-warnings 0
+        continue-on-error: true
+
       - name: Unit tests
         run: npm test
 
