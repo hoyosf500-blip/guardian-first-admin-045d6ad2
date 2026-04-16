@@ -3,11 +3,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle } from 'lucide-react';
+import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import type { LucideIcon } from 'lucide-react';
+
+function InlineRouteLoader() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 gap-3" role="status" aria-live="polite">
+      <RefreshCw size={24} className="text-primary animate-spin" aria-hidden="true" />
+      <p className="text-xs text-muted-foreground">Cargando...</p>
+    </div>
+  );
+}
 
 interface NavItem { path: string; icon: LucideIcon; label: string; adminOnly?: boolean }
 
@@ -133,7 +142,9 @@ export default function ProtectedLayout() {
 
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
             {isConfirmar && <CounterBar />}
-            <Outlet />
+            <Suspense fallback={<InlineRouteLoader />}>
+              <Outlet />
+            </Suspense>
           </main>
         </div>
       </div>
