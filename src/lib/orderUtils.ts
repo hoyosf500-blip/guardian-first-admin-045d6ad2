@@ -69,6 +69,7 @@ export interface DbOrderRow {
   transportadora?: string | null;
   tags?: string | null;
   tienda?: string | null;
+  email?: string | null;
   novedad_sol?: boolean | null;
   locked_by?: string | null;
   locked_at?: string | null;
@@ -370,6 +371,7 @@ export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[]
       tags: String(r[map.TAGS] || ''),
       departamento: String(r[map.DEPARTAMENTO] || ''),
       tienda: String(r[map.TIENDA] || ''),
+      email: '',
       novedadSol: novedadSolVal === 'si' || novedadSolVal === 'sí',
     };
   });
