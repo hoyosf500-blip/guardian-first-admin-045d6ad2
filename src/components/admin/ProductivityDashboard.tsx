@@ -49,21 +49,6 @@ export default function ProductivityDashboard() {
     setRefreshing(false);
   }, [range]);
 
-  const [reassigning, setReassigning] = useState(false);
-
-  const reassignUnattended = async () => {
-    setReassigning(true);
-    const { data, error } = await supabase.rpc('reassign_unattended' as never, { p_after_minutes: 120 } as never);
-    setReassigning(false);
-    if (error) {
-      toast.error('Error al reasignar', { description: error.message });
-      return;
-    }
-    const count = (data as number) ?? 0;
-    toast.success(count === 0 ? 'Sin pedidos para reasignar' : `${count} pedido(s) reasignados`);
-    if (count > 0) load(true);
-  };
-
   useEffect(() => { load(); }, [load]);
 
   // Auto-refresh on orders changes (debounced 1s) + interval fallback every 60s
