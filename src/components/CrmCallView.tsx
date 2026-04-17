@@ -65,15 +65,35 @@ function isExcludedFromDelay(estado: string): boolean {
 export default function CrmCallView({
   items, actions, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
 }: Props) {
-  const [callIdx, setCallIdx] = useSessionState<number>(`crmcall:${storageKey}:idx`, 0);
+  // BUG B fix: persist the *order id* of the customer being attended, not
+  // the array index. When `items` reorders (refresh, sync, filter change)
+  // the index points to a different customer; the id stays stable.
+  const [callOrderId, setCallOrderId] = useSessionState<string | null>(
+    `crmcall:${storageKey}:callOrderId`,
+    null,
+  );
 
-  // Clamp restored index when the list shrinks
+  const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
+
+  // Derive the index from the stored id every render.
+  let derivedIdx = callOrderId ? items.findIndex((it) => keyOf(it) === callOrderId) : -1;
+  if (derivedIdx < 0) {
+    const firstUnmanaged = items.findIndex((it) => !managed[it.phone]);
+    derivedIdx = firstUnmanaged >= 0 ? firstUnmanaged : 0;
+  }
+
+  // Only re-seed when the stored customer is gone (or never set).
   useEffect(() => {
-    if (items.length && callIdx >= items.length) {
-      setCallIdx(Math.max(0, items.length - 1));
+    if (!items.length) return;
+    const exists = callOrderId && items.some((it) => keyOf(it) === callOrderId);
+    if (!exists) {
+      const firstUnmanaged = items.findIndex((it) => !managed[it.phone]);
+      const target = items[firstUnmanaged >= 0 ? firstUnmanaged : 0];
+      const k = target ? keyOf(target) : null;
+      if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [callOrderId, items]);
 
   if (!items.length) {
     return (
@@ -89,7 +109,7 @@ export default function CrmCallView({
     );
   }
 
-  const idx = Math.min(callIdx, items.length - 1);
+  const idx = Math.max(0, Math.min(derivedIdx, items.length - 1));
   const o = items[idx];
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora, o.novedad);
@@ -102,13 +122,16 @@ export default function CrmCallView({
     `Hola ${o.nombre.split(' ')[0]}, te escribo sobre tu pedido${o.guia ? ` (guía ${o.guia})` : ''}. Necesitamos coordinar la entrega.`,
   );
 
-  const navCall = (dir: number) => {
-    setCallIdx(Math.max(0, Math.min(items.length - 1, idx + dir)));
+  const goTo = (i: number) => {
+    const target = items[Math.max(0, Math.min(items.length - 1, i))];
+    if (target) setCallOrderId(keyOf(target));
   };
+
+  const navCall = (dir: number) => goTo(idx + dir);
 
   const jumpToFirstUnmanaged = () => {
     const next = items.findIndex((it, i) => i > idx && !managed[it.phone]);
-    if (next >= 0) setCallIdx(next);
+    if (next >= 0) goTo(next);
     else toast.success('Todos los pedidos de la lista están gestionados');
   };
 
@@ -131,6 +154,14 @@ export default function CrmCallView({
 
   return (
     <div>
+      {/* Persistent "currently attending" banner — survives tab switches */}
+      <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
+        <User size={12} className="text-primary" />
+        <span className="text-muted-foreground">Atendiendo:</span>
+        <span className="font-semibold text-foreground truncate">{o.nombre}</span>
+        <span className="text-muted-foreground">·</span>
+        <span className="font-mono text-foreground">{formatPhone(o.phone)}</span>
+      </div>
       {/* Nav header */}
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs text-muted-foreground font-mono">{idx + 1} / {items.length}</span>
