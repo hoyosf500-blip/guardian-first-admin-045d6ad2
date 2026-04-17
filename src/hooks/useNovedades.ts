@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
@@ -25,7 +25,7 @@ export function useNovedades(user: User | null): NovedadesState {
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .eq('estado', 'NOVEDAD')
+        .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
         .eq('novedad_sol', false);
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
@@ -64,14 +64,6 @@ export function useNovedades(user: User | null): NovedadesState {
       ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
       : 'NOVEDAD: Devolver al remitente';
 
-    await supabase.from('touchpoints').insert({
-      phone: order.phone,
-      action: touchAction,
-      operator_id: user.id,
-      action_date: today,
-      action_time: now,
-    });
-
     if (order.dbId) {
       const { error: updateError } = await supabase
         .from('orders')
@@ -85,6 +77,14 @@ export function useNovedades(user: User | null): NovedadesState {
         return;
       }
     }
+
+    await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: touchAction,
+      operator_id: user.id,
+      action_date: today,
+      action_time: now,
+    });
 
     const rollbackNovedad = async () => {
       if (order.dbId) {
@@ -129,6 +129,14 @@ export function useNovedades(user: User | null): NovedadesState {
       }, 800);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      if (novedadesLoaded) loadNovedades(true);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user, novedadesLoaded, loadNovedades]);
 
   return {
     novedadesQueue, setNovedadesQueue, novedadesLoading, loadNovedades, resolveNovedad,

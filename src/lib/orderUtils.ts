@@ -44,6 +44,7 @@ export interface OrderData {
 export interface DbOrderRow {
   id?: string | null;
   external_id?: string | null;
+  assigned_to?: string | null;
   nombre?: string | null;
   phone?: string | null;
   ciudad?: string | null;
@@ -71,7 +72,7 @@ export interface DbOrderRow {
 /** Convert a raw DB row into an OrderData object */
 export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
   return {
-    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id || undefined,
+    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id || undefined, assignedTo: o.assigned_to || undefined,
     nombre: o.nombre || '', phone: o.phone || '', ciudad: o.ciudad || '',
     producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
     fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,

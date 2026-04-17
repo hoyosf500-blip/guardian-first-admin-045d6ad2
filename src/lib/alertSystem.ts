@@ -3,17 +3,7 @@
  * Tracks order risk based on carrier scanning activity
  */
 
-export const CARRIER_DEADLINES: Record<string, number> = {
-  'INTERRAPIDISIMO': 5,
-  'INTER RAPIDISIMO': 5,
-  'COORDINADORA': 15,
-  'TCC': 7,
-  'SERVIENTREGA': 7,
-  'ENVIA': 5,
-  'ENVÍA': 5,
-  'VELOCES': 5,
-  'DEPRISA': 7,
-};
+export { CARRIER_DEADLINES } from './constants';
 
 export type AlertLevel = 'ok' | 'watch' | 'alert' | 'critical' | 'lost';
 

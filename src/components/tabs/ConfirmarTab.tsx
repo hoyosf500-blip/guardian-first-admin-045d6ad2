@@ -96,7 +96,7 @@ export default function ConfirmarTab({ profile }: Props) {
             novedad: o.novedad, guia: o.guia, transportadora: o.transportadora,
             tags: o.tags, departamento: o.departamento, tienda: o.tienda, novedad_sol: o.novedadSol,
           }));
-          const { data, error } = await supabase.from('orders').insert(dbOrders).select('id');
+          const { data, error } = await supabase.from('orders').upsert(dbOrders, { onConflict: 'external_id', ignoreDuplicates: false }).select('id');
           if (error) { toast.error('Error guardando pedidos'); return; }
           // Match returned IDs back to orders by insertion order (1:1).
           // The old Map-by-phone approach silently clobbered dbId when two
