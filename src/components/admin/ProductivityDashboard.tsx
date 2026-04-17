@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, TrendingUp, Shuffle } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
@@ -15,12 +15,20 @@ interface Row {
   display_name: string;
   confirmados: number;
   cancelados: number;
+  noresp: number;
   novedades_resueltas: number;
-  total_asignados: number;
+  total_atendidos: number;
   tasa_contacto: number;
+  tasa_confirmacion: number;
 }
 
 const RANGE_LABELS: Record<Range, string> = { '24h': 'Últimas 24h', '7d': 'Últimos 7 días', '30d': 'Últimos 30 días' };
+
+function confColor(v: number): string {
+  if (v >= 70) return 'bg-green-500/10 text-green-600 dark:text-green-400';
+  if (v >= 65) return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400';
+  return 'bg-destructive/10 text-destructive';
+}
 
 export default function ProductivityDashboard() {
   const [range, setRange] = useState<Range>('24h');
