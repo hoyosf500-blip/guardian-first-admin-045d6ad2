@@ -8,7 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { toast } from 'sonner';
-import { Loader2, User } from 'lucide-react';
+import { Loader2, User, AlertTriangle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Props {
   open: boolean;
