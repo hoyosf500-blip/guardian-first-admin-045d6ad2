@@ -1,0 +1,124 @@
+<h2>¿Qué tipografía para el CRM?</h2>
+<p class="subtitle">Cada opción muestra un KPI grande + una fila de pedido con la fuente aplicada. El skill UI UX Pro Max recomendó <strong>Fira Sans/Code</strong> (opción B) como #1 para dashboards. La app actualmente usa <strong>Inter</strong> (opción A). También incluyo <strong>Geist</strong> (opción C), la fuente house de Vercel que encaja con el estilo B dark que elegiste.</p>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Fira+Sans:wght@400;500;600;700&family=Fira+Code:wght@400;500;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  .t-card { background: #0a0a0a; border: 1px solid #27272a; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.18s ease; overflow: hidden; position: relative; }
+  .t-card:hover { border-color: #3f3f46; transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.5); }
+  .t-card.selected-card { border-color: #fbbf24; box-shadow: 0 0 0 2px rgba(251,191,36,0.25); }
+  .t-letter { position: absolute; top: 14px; right: 16px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: #27272a; color: #fafafa; font-weight: 700; font-size: 13px; z-index: 2; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .t-title { font-size: 14px; font-weight: 700; color: #fafafa; margin: 0 0 2px; letter-spacing: -0.01em; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .t-meta { font-size: 11px; color: #a1a1aa; margin: 0 0 14px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .t-badge-reco { background:rgba(251,191,36,0.15); color:#fbbf24; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 6px; border: 1px solid rgba(251,191,36,0.3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .t-badge-current { background:rgba(52,211,153,0.15); color:#34d399; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-left: 6px; border: 1px solid rgba(52,211,153,0.3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .hero-sample { margin-bottom: 14px; }
+  .hero-title { font-size: 32px; font-weight: 700; color: #fafafa; letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; }
+  .hero-sub { font-size: 13px; color: #a1a1aa; }
+
+  .kpi-prev { background: linear-gradient(180deg, #18181b 0%, #0f0f11 100%); border: 1px solid #27272a; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+  .kpi-label { font-size: 10px; color: #71717a; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .kpi-val { font-size: 28px; font-weight: 700; color: #fafafa; letter-spacing: -0.02em; line-height: 1; margin-top: 4px; }
+  .kpi-delta { font-size: 11px; color: #fbbf24; font-weight: 600; margin-top: 4px; }
+
+  .order-prev { background: #0f0f11; border: 1px solid #27272a; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .order-line1 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .order-name { color: #fafafa; font-weight: 600; font-size: 13px; }
+  .order-phone { color: #71717a; font-size: 11px; }
+  .order-line2 { font-size: 11px; color: #a1a1aa; }
+  .order-line3 { font-size: 11px; color: #fafafa; font-weight: 600; margin-top: 4px; }
+
+  .sample-text { font-size: 11px; color: #71717a; font-style: italic; margin-top: 8px; }
+
+  /* Font assignments */
+  .use-inter { font-family: 'Inter', sans-serif; }
+  .use-inter-mono { font-family: 'JetBrains Mono', monospace; }
+  .use-fira { font-family: 'Fira Sans', sans-serif; }
+  .use-fira-mono { font-family: 'Fira Code', monospace; }
+  .use-geist { font-family: 'Geist', sans-serif; }
+  .use-geist-mono { font-family: 'Geist Mono', monospace; }
+</style>
+
+<div class="options" style="grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+
+  <!-- ===== INTER ===== -->
+  <div class="option t-card use-inter" data-choice="inter" onclick="toggleSelect(this)">
+    <div class="t-letter">A</div>
+    <p class="t-title">Inter + JetBrains Mono <span class="t-badge-current">actual</span></p>
+    <p class="t-meta">"Minimal Swiss" · limpia, neutra, universal. La que ya usás.</p>
+    <div class="hero-sample">
+      <div class="hero-title">Dashboard</div>
+      <div class="hero-sub">Pedidos en operación</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-label">Pendientes</div>
+      <div class="kpi-val use-inter-mono">247</div>
+      <div class="kpi-delta use-inter-mono">+12 hoy</div>
+    </div>
+    <div class="order-prev">
+      <div class="order-line1">
+        <span class="order-name">Cliente Ejemplo</span>
+        <span class="order-phone use-inter-mono">300-000-0001</span>
+      </div>
+      <div class="order-line2">Producto demo · Bogotá · hace 2h</div>
+      <div class="order-line3 use-inter-mono">$89.000</div>
+    </div>
+    <p class="sample-text">abcdefghijklmnopqrstuvwxyz 0123456789</p>
+  </div>
+
+  <!-- ===== FIRA ===== -->
+  <div class="option t-card use-fira" data-choice="fira" onclick="toggleSelect(this)">
+    <div class="t-letter">B</div>
+    <p class="t-title">Fira Sans + Fira Code <span class="t-badge-reco">skill #1</span></p>
+    <p class="t-meta">"Dashboard Data" · técnica, precisa, números muy legibles.</p>
+    <div class="hero-sample">
+      <div class="hero-title">Dashboard</div>
+      <div class="hero-sub">Pedidos en operación</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-label">Pendientes</div>
+      <div class="kpi-val use-fira-mono">247</div>
+      <div class="kpi-delta use-fira-mono">+12 hoy</div>
+    </div>
+    <div class="order-prev">
+      <div class="order-line1">
+        <span class="order-name">Cliente Ejemplo</span>
+        <span class="order-phone use-fira-mono">300-000-0001</span>
+      </div>
+      <div class="order-line2">Producto demo · Bogotá · hace 2h</div>
+      <div class="order-line3 use-fira-mono">$89.000</div>
+    </div>
+    <p class="sample-text">abcdefghijklmnopqrstuvwxyz 0123456789</p>
+  </div>
+
+  <!-- ===== GEIST ===== -->
+  <div class="option t-card use-geist" data-choice="geist" onclick="toggleSelect(this)">
+    <div class="t-letter">C</div>
+    <p class="t-title">Geist + Geist Mono</p>
+    <p class="t-meta">Fuente house de Vercel. Encaja perfecto con el look B dark.</p>
+    <div class="hero-sample">
+      <div class="hero-title">Dashboard</div>
+      <div class="hero-sub">Pedidos en operación</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-label">Pendientes</div>
+      <div class="kpi-val use-geist-mono">247</div>
+      <div class="kpi-delta use-geist-mono">+12 hoy</div>
+    </div>
+    <div class="order-prev">
+      <div class="order-line1">
+        <span class="order-name">Cliente Ejemplo</span>
+        <span class="order-phone use-geist-mono">300-000-0001</span>
+      </div>
+      <div class="order-line2">Producto demo · Bogotá · hace 2h</div>
+      <div class="order-line3 use-geist-mono">$89.000</div>
+    </div>
+    <p class="sample-text">abcdefghijklmnopqrstuvwxyz 0123456789</p>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 24px; text-align: center;">Si no tenés preferencia fuerte, mi sugerencia es <strong>C (Geist)</strong> porque es la tipografía que diseñó Vercel exactamente para este tipo de look (el que elegiste en B). Pero <strong>A (Inter)</strong> también está súper sólida y es un pivot más barato (0 cambios en el bundle).</p>
