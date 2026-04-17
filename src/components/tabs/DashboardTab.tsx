@@ -56,32 +56,21 @@ export default function DashboardTab() {
   useEffect(() => {
     if (!user) return;
     const today = new Date().toLocaleDateString('en-CA');
-    Promise.all([
-      supabase.from('order_results').select('operator_id, result').eq('result_date', today),
-      supabase.from('profiles').select('user_id, display_name'),
-    ]).then(([resultsRes, profilesRes]) => {
-      if (resultsRes.error || !resultsRes.data) return;
-      const names: Record<string, string> = {};
-      (profilesRes.data || []).forEach((p: { user_id: string; display_name: string }) => {
-        names[p.user_id] = p.display_name;
-      });
-      const byOp: Record<string, { conf: number; canc: number; noresp: number }> = {};
-      resultsRes.data.forEach((r: { operator_id: string; result: string }) => {
-        if (!byOp[r.operator_id]) byOp[r.operator_id] = { conf: 0, canc: 0, noresp: 0 };
-        if (r.result === 'conf') byOp[r.operator_id].conf++;
-        else if (r.result === 'canc') byOp[r.operator_id].canc++;
-        else byOp[r.operator_id].noresp++;
-      });
-      const ranking = Object.entries(byOp).map(([opId, s]) => {
-        const total = s.conf + s.canc + s.noresp;
-        return {
-          operatorId: opId,
-          name: names[opId] || 'Operador',
-          ...s,
-          total,
-          tasa: total > 0 ? Math.round(s.conf / total * 100) : 0,
-        };
-      });
+    supabase.rpc('get_daily_operator_stats', { p_date: today }).then(({ data, error }) => {
+      if (error || !data) return;
+      const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
+        .map(r => {
+          const total = Number(r.conf) + Number(r.canc) + Number(r.noresp);
+          return {
+            operatorId: r.operator_id,
+            name: r.display_name || 'Operador',
+            conf: Number(r.conf),
+            canc: Number(r.canc),
+            noresp: Number(r.noresp),
+            total,
+            tasa: total > 0 ? Math.round(Number(r.conf) / total * 100) : 0,
+          };
+        });
       ranking.sort((a, b) => b.total - a.total);
       setOperatorRanking(ranking);
     });
