@@ -11,6 +11,7 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
+import TasaMetaBanner from '@/components/TasaMetaBanner';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -140,6 +141,7 @@ export default function ConfirmarTab({ profile }: Props) {
 
   return (
     <div className="max-w-5xl mx-auto">
+      <div className="mb-4"><TasaMetaBanner /></div>
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-muted-foreground">{formatDateES(today)}</p>
         {excelLoaded && (

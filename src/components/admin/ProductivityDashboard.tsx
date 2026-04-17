@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw, TrendingUp } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
-type Range = '24h' | '7d' | '30d';
+type Range = 'today' | '24h' | '7d' | '30d';
 
 interface Row {
   operator_id: string;
@@ -21,7 +21,12 @@ interface Row {
   tasa_confirmacion: number;
 }
 
-const RANGE_LABELS: Record<Range, string> = { '24h': 'Últimas 24h', '7d': 'Últimos 7 días', '30d': 'Últimos 30 días' };
+const RANGE_LABELS: Record<Range, string> = {
+  'today': 'Hoy',
+  '24h': 'Últimas 24h',
+  '7d': 'Últimos 7 días',
+  '30d': 'Últimos 30 días',
+};
 
 function confColor(v: number): string {
   if (v >= 70) return 'bg-green-500/10 text-green-600 dark:text-green-400';
@@ -30,7 +35,7 @@ function confColor(v: number): string {
 }
 
 export default function ProductivityDashboard() {
-  const [range, setRange] = useState<Range>('24h');
+  const [range, setRange] = useState<Range>('today');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -91,7 +96,7 @@ export default function ProductivityDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-border bg-card p-0.5">
-            {(['24h', '7d', '30d'] as Range[]).map(r => (
+            {(['today', '24h', '7d', '30d'] as Range[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
