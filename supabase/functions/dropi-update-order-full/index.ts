@@ -184,14 +184,8 @@ Deno.serve(async (req: Request) => {
       return jsonErr(`Pedido ${externalId} no encontrado`, 404);
     }
 
-    // ---- Ownership check (admin or assigned operator) ----
-    const { data: isAdminData } = await sbAdmin.rpc("has_role", {
-      _user_id: user.id, _role: "admin",
-    });
-    const isAdmin = isAdminData === true;
-    if (!isAdmin && orderRow.assigned_to !== user.id) {
-      return jsonErr("No tienes permiso para editar este pedido", 403);
-    }
+    // Ownership check removido (cola libre). El lock de orders + claim_order
+    // ya garantiza que solo una operadora edita a la vez.
 
     // ---- Combined name handling ----
     // Dropi expects name + surname; our DB stores a single nombre column.
