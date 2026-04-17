@@ -217,7 +217,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     markingInFlight.current.add(order.dbId);
     revertedRef.current = false;
 
-    setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
+    setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result, reason } : o));
     setCounter(prev => {
       const next = {
         conf: prev.conf + (result === 'conf' ? 1 : 0),
@@ -294,7 +294,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
     if (error) {
       toast.error('Error guardando resultado');
-      setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
+      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
       setCounter(prev => ({
         conf: prev.conf - (result === 'conf' ? 1 : 0),
         canc: prev.canc - (result === 'canc' ? 1 : 0),
