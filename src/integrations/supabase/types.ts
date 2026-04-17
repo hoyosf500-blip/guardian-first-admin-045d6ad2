@@ -507,6 +507,16 @@ export type Database = {
           total_atendidos: number
         }[]
       }
+      operator_today_tasa: {
+        Args: never
+        Returns: {
+          cancelados: number
+          confirmados: number
+          noresp: number
+          tasa_confirmacion: number
+          total: number
+        }[]
+      }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
     }
     Enums: {
