@@ -160,6 +160,7 @@ export type Database = {
       order_results: {
         Row: {
           created_at: string
+          dropi_sync_status: string
           id: string
           module: string
           operator_id: string
@@ -168,10 +169,12 @@ export type Database = {
           reason: string | null
           result: string
           result_date: string
+          result_notes: string | null
           result_time: string | null
         }
         Insert: {
           created_at?: string
+          dropi_sync_status?: string
           id?: string
           module?: string
           operator_id: string
@@ -180,10 +183,12 @@ export type Database = {
           reason?: string | null
           result: string
           result_date?: string
+          result_notes?: string | null
           result_time?: string | null
         }
         Update: {
           created_at?: string
+          dropi_sync_status?: string
           id?: string
           module?: string
           operator_id?: string
@@ -192,6 +197,7 @@ export type Database = {
           reason?: string | null
           result?: string
           result_date?: string
+          result_notes?: string | null
           result_time?: string | null
         }
         Relationships: [
