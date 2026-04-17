@@ -22,11 +22,13 @@ export function useNovedades(user: User | null): NovedadesState {
     if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
     try {
+      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
-        .eq('novedad_sol', false);
+        .eq('novedad_sol', false)
+        .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
         return;
