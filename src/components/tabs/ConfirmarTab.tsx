@@ -117,7 +117,7 @@ export default function ConfirmarTab({ profile }: Props) {
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
     if (filter === 'noresp' && o.result !== 'noresp') return false;
-    if (filter.startsWith('prod_') && (o.producto !== filter.slice(5) || o.result)) return false;
+    if (filter.startsWith('prod_') && o.producto !== filter.slice(5)) return false;
     // Date filter
     if (dateFrom || dateTo) {
       const orderDate = parseDate(o.fecha);

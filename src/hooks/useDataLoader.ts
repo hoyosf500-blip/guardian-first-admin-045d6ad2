@@ -47,6 +47,9 @@ export function useDataLoader(user: User | null): DataLoaderState {
         return;
       }
       if (dbOrders) {
+        if (dbOrders.length === 5000) {
+          toast.warning('Se cargaron 5000 pedidos (límite máximo). Algunos pedidos antiguos pueden no mostrarse.');
+        }
         const mapped = dbOrders.map((o, idx) => dbToOrderData(o, idx));
         mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
         setSegData(mapped);

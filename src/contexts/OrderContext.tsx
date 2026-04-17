@@ -75,7 +75,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     const seen = new Set<string>();
     const dedupPendientes = pendientes.filter(o => {
-      const key = (o.phone || '') + '|' + (o.producto || '');
+      // Prefer externalId as dedup key — it's unique per order in Dropi.
+      // Fall back to phone+producto for orders loaded from Excel without externalId.
+      const key = o.externalId || ((o.phone || '') + '|' + (o.producto || ''));
       if (!o.phone || seen.has(key)) return false;
       seen.add(key);
       return true;

@@ -144,7 +144,7 @@ export function calcPriority(order: {
   valor?: number;
 }): number {
   let score = 0;
-  const sinEscaneo = order.diasConf > 0 ? order.diasConf : order.dias;
+  const sinEscaneo = order.diasConf !== undefined && order.diasConf >= 0 ? order.diasConf : order.dias;
   const e = (order.estado || '').toUpperCase();
   const stage = getSegStage(e);
 
