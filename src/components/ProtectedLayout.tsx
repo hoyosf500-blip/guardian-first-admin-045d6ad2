@@ -7,6 +7,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
+import OpeningReportGate from '@/components/OpeningReportGate';
 import type { LucideIcon } from 'lucide-react';
 
 function InlineRouteLoader() {
@@ -208,10 +209,12 @@ export default function ProtectedLayout() {
 
           {/* Page content */}
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
-            {isConfirmar && <CounterBar />}
-            <Suspense fallback={<InlineRouteLoader />}>
-              <Outlet />
-            </Suspense>
+            <OpeningReportGate>
+              {isConfirmar && <CounterBar />}
+              <Suspense fallback={<InlineRouteLoader />}>
+                <Outlet />
+              </Suspense>
+            </OpeningReportGate>
           </main>
         </div>
       </div>

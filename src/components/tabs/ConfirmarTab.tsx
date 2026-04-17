@@ -12,7 +12,6 @@ import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
-import OpeningReportGate from '@/components/OpeningReportGate';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
@@ -143,7 +142,6 @@ export default function ConfirmarTab({ profile }: Props) {
   const pending = workQueue.filter(o => !o.result).length;
 
   return (
-    <OpeningReportGate>
     <div className="max-w-5xl mx-auto">
       <div className="mb-4 flex items-start gap-2">
         <div className="flex-1"><TasaMetaBanner /></div>
@@ -383,6 +381,5 @@ export default function ConfirmarTab({ profile }: Props) {
         </>
       )}
     </div>
-    </OpeningReportGate>
   );
 }
