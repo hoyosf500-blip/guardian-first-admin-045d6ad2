@@ -5,6 +5,7 @@ import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-reac
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Props {
   items: OrderData[];
