@@ -60,6 +60,8 @@ All authenticated routes share `ProtectedLayout` which:
 
 `AuthContext` (`src/contexts/AuthContext.tsx`) reads `profiles` and `user_roles` from Supabase. `isAdmin = user_roles.some(r => r.role === 'admin')`. The ref guard `profileFetchedFor` prevents double-fetch on fast connections.
 
+Roles in `user_roles`: `admin` and `operator`. Operators see all tabs except Admin. RLS policies on the `orders` table use `auth.uid()` — operators can only read/write their own rows unless an admin-scoped policy overrides. See migration `20260416220000_fix_orders_rls_operator_view.sql` for the current operator SELECT policy.
+
 ### Key Domain Types
 
 - `OrderData` — canonical in-memory order shape (`src/lib/orderUtils.ts`)
@@ -78,6 +80,11 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `ai-order-assistant` — Claude-powered order assistant
 
 The Dropi bearer token is stored in the `settings` table (key: `dropi_bearer_token`) and read at runtime — not hardcoded.
+
+### Key RPCs (Supabase DB Functions)
+
+- `operator_daily_stats(operator_id, date)` — returns per-operator KPI counts for the dashboard; defined in `20260416230000_operator_daily_stats_rpc.sql`
+- `get_dropi_fingerprint(phone)` — repeat-buyer detection; defined in `20260416060000_dropi_fingerprint_rpc.sql`
 
 ### Test Files
 
