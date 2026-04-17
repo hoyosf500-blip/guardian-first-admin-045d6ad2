@@ -320,6 +320,14 @@ export default function CallView({ items }: Props) {
           </div>
         </div>
       )}
+
+      {editingOrder && (
+        <EditOrderDialog
+          open={!!editingOrder}
+          onOpenChange={(o) => { if (!o) setEditingOrder(null); }}
+          order={editingOrder}
+        />
+      )}
     </>
   );
 }
