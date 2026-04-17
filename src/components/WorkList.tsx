@@ -31,6 +31,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
   }
 
   return (
+    <>
     <div className="space-y-0 rounded-xl border border-border overflow-hidden">
       {items.slice(0, visibleCount).map((o, i) => {
         const pLevel = getPriorityLevel(calcPriority(o));
