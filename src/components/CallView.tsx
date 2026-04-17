@@ -52,7 +52,7 @@ export default function CallView({ items }: Props) {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
-  const { ask: askAi, get: getAi } = useAiInsight();
+  // AI hook removed
 
   const o = items[Math.min(callIdx, items.length - 1)];
 
