@@ -27,32 +27,44 @@ export default function CallView({ items }: Props) {
   const { markResult, undoLast } = useOrders();
   const { user } = useAuth();
   const { claimOrder, releaseOrder } = useOrderLock();
-  // Persist callIdx across tab discards so the operator returns to the
-  // exact same order after going out to the transportadora's page.
-  const [callIdx, setCallIdx] = useSessionState<number>('confirmar:callIdx', 0);
+  // BUG B fix: persist the customer's stable identifier (externalId or dbId),
+  // not the array index. Indexes break when items reorder due to refresh/sync.
+  const [callOrderId, setCallOrderId] = useSessionState<string | null>(
+    'confirmar:callOrderId',
+    null,
+  );
 
-  // Re-clamp index when items change (queue shrink, data refresh) and jump
-  // to the first pending order if current one is already resolved.
+  const orderKey = (o: OrderData | undefined) =>
+    o ? (o.externalId || o.dbId || null) : null;
+
+  // Compute the real index from the persisted ID. If the customer is gone from
+  // the queue (-1), fall back to the first pending order.
+  let callIdx = callOrderId
+    ? items.findIndex(o => (o.externalId || o.dbId) === callOrderId)
+    : -1;
+  if (callIdx < 0) {
+    const firstPending = items.findIndex(o => !o.result);
+    callIdx = firstPending >= 0 ? firstPending : 0;
+  }
+
+  // Re-anchor the persisted ID only when missing or stale. Never trigger on
+  // items.length alone — that was causing the operator to lose their customer.
   useEffect(() => {
     if (!items.length) return;
-    if (callIdx >= items.length) {
-      setCallIdx(Math.max(0, items.length - 1));
-      return;
-    }
-    const current = items[callIdx];
-    if (!current || current.result) {
-      const firstPending = items.findIndex(o => !o.result);
-      if (firstPending >= 0 && firstPending !== callIdx) {
-        setCallIdx(firstPending);
-      }
+    const exists = callOrderId
+      ? items.some(o => (o.externalId || o.dbId) === callOrderId)
+      : false;
+    if (!exists) {
+      const firstPending = items.find(o => !o.result) || items[0];
+      const k = orderKey(firstPending);
+      if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [callOrderId, items]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
-  // AI hook removed
 
   const o = items[Math.min(callIdx, items.length - 1)];
 
