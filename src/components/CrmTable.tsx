@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
 import CrmCallView from './CrmCallView';
 import { TruncatedText } from '@/components/TruncatedText';
+import LockBadge from '@/components/LockBadge';
 
 interface Touchpoint {
   id: string;
@@ -645,6 +646,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 {pConfig.label}
               </span>
             )}
+            <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
           </div>
         </div>
 

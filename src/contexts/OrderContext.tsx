@@ -8,6 +8,7 @@ import { useCelebration } from '@/hooks/useCelebration';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { useNovedades } from '@/hooks/useNovedades';
 import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
+import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -64,6 +65,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     void novedades.loadNovedades(true);
     void dataLoader.loadSegData(true);
     void dataLoader.loadResData(true);
+  });
+
+  // Realtime: when any operator updates orders or inserts an order_result,
+  // refetch all queue caches so the admin (and other operators) see the
+  // change in seconds without a manual reload. Bursts are debounced inside
+  // the hook so a 2000-row sync only triggers one refetch.
+  useRealtimeOrders(user, {
+    onOrderChange: () => {
+      void novedades.loadNovedades(true);
+      void dataLoader.loadSegData(true);
+      void dataLoader.loadResData(true);
+    },
+    onResultChange: () => {
+      void dataLoader.loadSegData(true);
+      void dataLoader.loadResData(true);
+    },
   });
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
