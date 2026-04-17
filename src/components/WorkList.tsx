@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { OrderData, formatPhone } from '@/lib/orderUtils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw, Pencil } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
@@ -102,8 +102,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
                   ${o.valor.toLocaleString()}
                 </span>
               )}
-              {/* Edit order button — visible to operators that own the pedido.
-                  Trigger protect_order_financial_fields blocks edits to non-owned orders. */}
+              {/* Edit order button — visible to anyone; trigger enforces ownership. */}
               {o.externalId && (
                 <button
                   type="button"
@@ -111,9 +110,9 @@ export default function WorkList({ items, onOpenCall }: Props) {
                   onKeyDown={(e) => e.stopPropagation()}
                   aria-label={`Editar datos del pedido de ${o.nombre}`}
                   title="Editar datos del cliente"
-                  className="w-7 h-7 rounded-md bg-primary/10 hover:bg-primary/20 border border-primary/20 hover:border-primary/40 text-primary flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                  className="w-7 h-7 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-500 flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
                 >
-                  <Pencil size={12} aria-hidden="true" />
+                  <UserCog size={13} aria-hidden="true" />
                 </button>
               )}
               {/* Priority badge (high/critical only) */}
