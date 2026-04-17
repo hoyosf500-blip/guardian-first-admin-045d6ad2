@@ -99,9 +99,10 @@ export default function CallView({ items }: Props) {
     claimOrder(orderId).then(claimed => {
       if (cancelled) return;
       if (!claimed) {
-        const nextIdx = items.findIndex((it, i) => i > callIdx && !it.result);
-        if (nextIdx >= 0) {
-          setCallIdx(nextIdx);
+        const next = items.find((it, i) => i > callIdx && !it.result);
+        const k = orderKey(next);
+        if (k) {
+          setCallOrderId(k);
           toast.info('Pedido en uso por otra operadora — saltando al siguiente');
         } else {
           toast.info('Pedidos disponibles agotados — todos están en atención');
@@ -110,10 +111,9 @@ export default function CallView({ items }: Props) {
     });
     return () => {
       cancelled = true;
-      // Release if the operator navigates away without marking a result.
       void releaseOrder(orderId);
     };
-  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallIdx, o?.result]);
+  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallOrderId, o?.result]);
 
   if (!items.length || !o) {
     return (
@@ -129,7 +129,6 @@ export default function CallView({ items }: Props) {
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
-    // Release the lock immediately after registering the result.
     if (o.dbId) void releaseOrder(o.dbId);
     setShowCancelModal(false);
     toast.success(
@@ -138,13 +137,16 @@ export default function CallView({ items }: Props) {
       `No respondió — ${o.nombre.split(' ')[0]}`,
     );
     setTimeout(() => {
-      const nextIdx = items.findIndex((item, i) => i > callIdx && !item.result);
-      if (nextIdx >= 0) setCallIdx(nextIdx);
+      const next = items.find((item, i) => i > callIdx && !item.result);
+      const k = orderKey(next);
+      if (k) setCallOrderId(k);
     }, 400);
   };
 
   const navCall = (dir: number) => {
-    setCallIdx(Math.max(0, Math.min(items.length - 1, callIdx + dir)));
+    const target = Math.max(0, Math.min(items.length - 1, callIdx + dir));
+    const k = orderKey(items[target]);
+    if (k) setCallOrderId(k);
   };
 
   const copyPhone = () => {
