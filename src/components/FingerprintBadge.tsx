@@ -88,6 +88,13 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
         });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const d = raw as Record<string, any> | null;
+        if (error) {
+          console.error('[FingerprintBadge] RPC error', { phone, error });
+        } else if (d && d.ok === false) {
+          console.error('[FingerprintBadge] RPC returned ok=false', { phone, payload: d });
+        } else if (d?.ok && !d.fingerprint?.found) {
+          console.warn('[FingerprintBadge] No fingerprint found for phone', { phone });
+        }
         if (!cancelled && !error && d?.ok && d.fingerprint?.found) {
           const gp = d.fingerprint.global_profile;
           const result: FpData = {

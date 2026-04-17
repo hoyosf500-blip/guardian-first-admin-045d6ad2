@@ -55,14 +55,22 @@ export function useRealtimeOrders(user: User | null, { onOrderChange, onResultCh
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
-        fireOrder,
+        (payload) => {
+          console.log('[realtime] orders event', payload.eventType, payload);
+          fireOrder();
+        },
       )
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'order_results' },
-        fireResult,
+        (payload) => {
+          console.log('[realtime] order_results INSERT', payload);
+          fireResult();
+        },
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[realtime] channel status', status);
+      });
 
     return () => {
       if (orderTimer) clearTimeout(orderTimer);
