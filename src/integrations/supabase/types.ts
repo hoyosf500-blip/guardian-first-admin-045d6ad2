@@ -499,15 +499,13 @@ export type Database = {
           cancelados: number
           confirmados: number
           display_name: string
+          noresp: number
           novedades_resueltas: number
           operator_id: string
+          tasa_confirmacion: number
           tasa_contacto: number
-          total_asignados: number
+          total_atendidos: number
         }[]
-      }
-      reassign_unattended: {
-        Args: { p_after_minutes?: number }
-        Returns: number
       }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
     }
