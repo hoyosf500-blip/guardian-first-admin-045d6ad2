@@ -130,7 +130,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
       supabase.from('order_results')
-        .select('phone, result, reason, result_time, created_at')
+        .select('order_id, phone, result, reason, result_time, created_at')
         .eq('operator_id', user.id)
         .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
