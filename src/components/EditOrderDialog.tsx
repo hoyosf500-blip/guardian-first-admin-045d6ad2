@@ -27,10 +27,7 @@ function splitName(full: string): { nombre: string; apellido: string } {
 
 export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }: Props) {
   // Pre-populate every field from the current order. Email now lives on
-  // OrderData so it survives the hop through dbToOrderData (was previously
-  // empty even when the DB had a value). All Select components below are
-  // controlled with `value=` (never defaultValue) so the current depto/
-  // ciudad are visually selected on first paint.
+  // OrderData so it survives the hop through dbToOrderData.
   const initial = useMemo(() => {
     const { nombre, apellido } = splitName(order.nombre);
     return {
@@ -52,26 +49,51 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
     if (open) setForm(initial);
   }, [open, initial]);
 
+  // Build depto option list. If the order's depto matches the canonical
+  // list case-insensitively (e.g. DB has "ANTIOQUIA", canonical is
+  // "Antioquia"), normalize the form value to the canonical casing so the
+  // Select can find its <SelectItem> and show it. Otherwise prepend the raw
+  // value as an extra option to avoid losing data.
+  const deptoOptions = useMemo(() => {
+    const list = [...DEPARTAMENTOS_NOMBRES];
+    if (!form.departamento) return list;
+    const canonical = list.find(d => d.toLowerCase() === form.departamento.toLowerCase());
+    if (!canonical) list.unshift(form.departamento);
+    return list;
+  }, [form.departamento]);
+
+  // Auto-normalize departamento casing once on mount so the Select binds.
+  useEffect(() => {
+    if (!form.departamento) return;
+    const canonical = DEPARTAMENTOS_NOMBRES.find(
+      d => d.toLowerCase() === form.departamento.toLowerCase(),
+    );
+    if (canonical && canonical !== form.departamento) {
+      setForm(f => ({ ...f, departamento: canonical }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.departamento]);
+
   const ciudades = useMemo(() => getCiudadesDe(form.departamento), [form.departamento]);
 
-  // If current ciudad isn't in the new departamento's list, surface it as
-  // an extra option so the operator doesn't lose the value silently.
+  // Same trick for ciudad: normalize to canonical casing if there's a
+  // case-insensitive match, otherwise surface raw value as extra option.
   const ciudadOptions = useMemo(() => {
     const list = [...ciudades];
-    if (form.ciudad && !list.some(c => c.toLowerCase() === form.ciudad.toLowerCase())) {
-      list.unshift(form.ciudad);
-    }
+    if (!form.ciudad) return list;
+    const canonical = list.find(c => c.toLowerCase() === form.ciudad.toLowerCase());
+    if (!canonical) list.unshift(form.ciudad);
     return list;
   }, [ciudades, form.ciudad]);
 
-  // If current departamento isn't in the canonical list, prepend it
-  const deptoOptions = useMemo(() => {
-    const list = [...DEPARTAMENTOS_NOMBRES];
-    if (form.departamento && !list.some(d => d.toLowerCase() === form.departamento.toLowerCase())) {
-      list.unshift(form.departamento);
+  useEffect(() => {
+    if (!form.ciudad || !ciudades.length) return;
+    const canonical = ciudades.find(c => c.toLowerCase() === form.ciudad.toLowerCase());
+    if (canonical && canonical !== form.ciudad) {
+      setForm(f => ({ ...f, ciudad: canonical }));
     }
-    return list;
-  }, [form.departamento]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ciudades]);
 
   const handleSubmit = async () => {
     if (!order.externalId) {
