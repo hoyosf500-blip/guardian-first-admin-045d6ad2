@@ -139,7 +139,11 @@ export type Database = {
       operator_daily_reports: {
         Row: {
           closing_at: string | null
+          closing_cancelados: number | null
+          closing_confirmados: number | null
+          closing_noresp: number | null
           closing_notes: string | null
+          closing_pending_tomorrow: number | null
           created_at: string
           id: string
           opening_at: string | null
@@ -152,7 +156,11 @@ export type Database = {
         }
         Insert: {
           closing_at?: string | null
+          closing_cancelados?: number | null
+          closing_confirmados?: number | null
+          closing_noresp?: number | null
           closing_notes?: string | null
+          closing_pending_tomorrow?: number | null
           created_at?: string
           id?: string
           opening_at?: string | null
@@ -165,7 +173,11 @@ export type Database = {
         }
         Update: {
           closing_at?: string | null
+          closing_cancelados?: number | null
+          closing_confirmados?: number | null
+          closing_noresp?: number | null
           closing_notes?: string | null
+          closing_pending_tomorrow?: number | null
           created_at?: string
           id?: string
           opening_at?: string | null
@@ -492,6 +504,26 @@ export type Database = {
           user_id: string
         }[]
       }
+      admin_daily_reports_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          cancelados: number
+          confirmados: number
+          fecha: string
+          guias_apertura: number
+          hora: string
+          noresp: number
+          notas: string
+          operadora: string
+          pct_cancelados: number
+          pct_confirmacion: number
+          pedidos_nuevos: number
+          pendientes_ayer: number
+          pendientes_manana: number
+          tipo: string
+          total_gestionados: number
+        }[]
+      }
       claim_order: {
         Args: { p_order_id: string }
         Returns: {
@@ -595,7 +627,10 @@ export type Database = {
         }[]
       }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
-      submit_closing_report: { Args: { p_notes: string }; Returns: undefined }
+      submit_closing_report: {
+        Args: { p_notes?: string; p_pending_tomorrow: number }
+        Returns: undefined
+      }
       submit_opening_report: {
         Args: {
           p_guides_yesterday: number
@@ -604,6 +639,16 @@ export type Database = {
           p_pending_yesterday: number
         }
         Returns: undefined
+      }
+      today_call_stats: {
+        Args: never
+        Returns: {
+          cancelados: number
+          confirmados: number
+          noresp: number
+          tasa_conf: number
+          total: number
+        }[]
       }
     }
     Enums: {
