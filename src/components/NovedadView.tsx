@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Send,
   X,
+  User,
 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 
