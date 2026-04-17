@@ -8,7 +8,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw, Lock, Pencil } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
 
@@ -219,70 +219,20 @@ export default function CallView({ items }: Props) {
           </div>
         )}
 
-        {/* AI call script */}
-        {!o.result && (() => {
-          const scriptKey = `script-${o.phone}-${o.idx}`;
-          const ai = getAi(scriptKey);
-          const buildContext = () => {
-            const parts = [
-              `Cliente: ${o.nombre}`,
-              `Teléfono: ${o.phone}`,
-              `Producto: ${o.producto || 'N/A'}`,
-              `Ciudad: ${o.ciudad || 'N/A'}`,
-              `Dirección: ${o.direccion || 'N/A'}`,
-              `Valor: $${o.valor.toLocaleString()} (incluye flete)`,
-              `Días desde pedido: ${o.dias}`,
-              `Estado: ${o.estado}`,
-            ];
-            if (o.novedad) parts.push(`Novedad: ${o.novedad}${o.novedadSol ? ' (RESUELTA)' : ''}`);
-            if (vip?.isVip) parts.push(`Cliente VIP: ${vip.entregados}/${vip.total} pedidos entregados (${vip.efectividad}%)`);
-            if (o.retryCount) parts.push(`Reintentos previos: ${o.retryCount}/3 (no contestó antes)`);
-            if (o.transportadora) parts.push(`Transportadora: ${o.transportadora}`);
-            return parts.join('\n');
-          };
-          return (
-            <div className="mb-3">
-              {!ai.reply && !ai.loading && (
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => askAi(scriptKey, 'call_script', buildContext())}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                  >
-                    <Sparkles size={13} aria-hidden="true" /> Generar guión IA
-                  </button>
-                  {o.externalId && (
-                    <button
-                      type="button"
-                      onClick={() => setEditingOrder(o)}
-                      title="Editar datos del cliente"
-                      aria-label="Editar datos del cliente"
-                      className="px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs font-semibold hover:bg-primary hover:text-primary-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none inline-flex items-center gap-1.5"
-                    >
-                      <Pencil size={13} aria-hidden="true" /> Editar
-                    </button>
-                  )}
-                </div>
-              )}
-              {ai.loading && (
-                <div className="flex items-center gap-2 py-2.5 px-3 rounded-lg bg-accent/5 border border-accent/20 text-xs text-accent">
-                  <RefreshCw size={12} className="animate-spin" aria-hidden="true" /> Generando guión...
-                </div>
-              )}
-              {ai.reply && (
-                <div className="p-3 rounded-lg bg-accent/5 border border-accent/25 text-xs text-foreground whitespace-pre-line leading-relaxed">
-                  <div className="flex items-center gap-1.5 text-accent font-semibold mb-1.5">
-                    <Sparkles size={11} aria-hidden="true" /> Guión sugerido
-                  </div>
-                  {ai.reply}
-                </div>
-              )}
-              {ai.error && (
-                <div className="text-[10px] text-red-500 mt-1">IA no disponible: {ai.error}</div>
-              )}
-            </div>
-          );
-        })()}
+        {/* Edit order button (AI script generator removed — unused) */}
+        {!o.result && o.externalId && (
+          <div className="mb-3">
+            <button
+              type="button"
+              onClick={() => setEditingOrder(o)}
+              title="Editar datos del cliente"
+              aria-label="Editar datos del cliente"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+            >
+              <UserCog size={14} aria-hidden="true" /> Editar datos del cliente
+            </button>
+          </div>
+        )}
 
         {!o.result ? (
           <div className="grid grid-cols-3 gap-2 mt-4">
