@@ -234,6 +234,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       operator_id: user.id,
       result_date: today,
       result_time: now,
+      dropi_sync_status: 'synced',
     }).select('id').single();
 
     if (!error && result === 'conf' && order.dbId) {
