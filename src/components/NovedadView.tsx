@@ -120,6 +120,14 @@ export default function NovedadView({ items }: Props) {
 
   return (
     <>
+      {/* Persistent "currently attending" banner — survives tab switches */}
+      <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
+        <User size={12} className="text-primary" />
+        <span className="text-muted-foreground">Atendiendo:</span>
+        <span className="font-semibold text-foreground truncate">{o.nombre}</span>
+        <span className="text-muted-foreground">·</span>
+        <span className="font-mono text-foreground">{formatPhone(o.phone)}</span>
+      </div>
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-1.5">
