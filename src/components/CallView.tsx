@@ -155,6 +155,12 @@ export default function CallView({ items }: Props) {
 
   return (
     <>
+      {!o.result && (
+        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
+          <Phone size={12} />
+          Atendiendo: {o.nombre} · {formatPhone(o.phone)}
+        </div>
+      )}
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-1.5">
