@@ -28,29 +28,29 @@ const RISK_CONFIG: Record<string, {
   label: string;
 }> = {
   green: {
-    border: 'border-emerald-500/30',
-    stripe: 'bg-emerald-500',
-    chipBg: 'bg-emerald-500/15',
-    chipBorder: 'border-emerald-500/40',
-    chipText: 'text-emerald-500',
+    border: 'border-success/30',
+    stripe: 'bg-success',
+    chipBg: 'bg-success/15',
+    chipBorder: 'border-success/40',
+    chipText: 'text-success',
     icon: ShieldCheck,
     label: 'Seguro',
   },
   yellow: {
-    border: 'border-orange-500/30',
-    stripe: 'bg-orange-500',
-    chipBg: 'bg-orange-500/15',
-    chipBorder: 'border-orange-500/40',
-    chipText: 'text-orange-500',
+    border: 'border-warning/30',
+    stripe: 'bg-warning',
+    chipBg: 'bg-warning/15',
+    chipBorder: 'border-warning/40',
+    chipText: 'text-warning',
     icon: Shield,
     label: 'Probable',
   },
   red: {
-    border: 'border-red-500/30',
-    stripe: 'bg-red-500',
-    chipBg: 'bg-red-500/15',
-    chipBorder: 'border-red-500/40',
-    chipText: 'text-red-500',
+    border: 'border-danger/30',
+    stripe: 'bg-danger',
+    chipBg: 'bg-danger/15',
+    chipBorder: 'border-danger/40',
+    chipText: 'text-danger',
     icon: ShieldAlert,
     label: 'Riesgoso',
   },
@@ -60,15 +60,14 @@ function rateColor(value: number, goodAtOrAbove: number, warnAtOrAbove: number):
   text: string; fill: string;
 } {
   // Entregas: verde si >= good, ámbar si >= warn, rojo si no.
-  if (value >= goodAtOrAbove) return { text: 'text-emerald-500', fill: 'bg-emerald-500' };
-  if (value >= warnAtOrAbove) return { text: 'text-orange-500', fill: 'bg-orange-500' };
-  return { text: 'text-red-500', fill: 'bg-red-500' };
+  if (value >= goodAtOrAbove) return { text: 'text-success', fill: 'bg-success' };
+  if (value >= warnAtOrAbove) return { text: 'text-warning', fill: 'bg-warning' };
+  return { text: 'text-danger', fill: 'bg-danger' };
 }
 
 function devolutionColor(): { text: string; fill: string } {
-  // Devoluciones siempre en rojo — es señal clara de riesgo, no queremos
-  // colorearlas en ámbar "probable" porque confunde con la advertencia.
-  return { text: 'text-red-500', fill: 'bg-red-500' };
+  // Devoluciones siempre en rojo — señal clara de riesgo.
+  return { text: 'text-danger', fill: 'bg-danger' };
 }
 
 export default function FingerprintBadge({ phone }: { phone: string }) {
@@ -181,22 +180,22 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
           <div className="text-xl font-bold text-foreground tabular-nums leading-none">{data.orders}</div>
         </div>
         <div className="px-3 py-3 text-center border-r border-border/60">
-          <div className="flex items-center justify-center gap-1 mb-1 text-emerald-500">
+          <div className="flex items-center justify-center gap-1 mb-1 text-success">
             <CheckCircle2 size={11} aria-hidden="true" />
             <span className="text-[10px] font-semibold uppercase tracking-wider">Entregados</span>
           </div>
-          <div className="text-xl font-bold text-emerald-500 tabular-nums leading-none">{data.delivered}</div>
+          <div className="text-xl font-bold text-success tabular-nums leading-none">{data.delivered}</div>
         </div>
         <div className="px-3 py-3 text-center">
-          <div className="flex items-center justify-center gap-1 mb-1 text-red-500">
+          <div className="flex items-center justify-center gap-1 mb-1 text-danger">
             <RotateCcw size={11} aria-hidden="true" />
             <span className="text-[10px] font-semibold uppercase tracking-wider">Devueltos</span>
           </div>
-          <div className="text-xl font-bold text-red-500 tabular-nums leading-none">{data.returned}</div>
+          <div className="text-xl font-bold text-danger tabular-nums leading-none">{data.returned}</div>
         </div>
       </div>
 
-      {/* Progress bars — taller, solid track, clearly visible fills */}
+      {/* Progress bars — visible track + saturated fill, semantic tokens */}
       <div className="px-4 py-3.5 space-y-3">
         <div>
           <div className="flex items-center justify-between mb-1.5">
@@ -206,7 +205,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             </span>
           </div>
           <div
-            className="h-3 rounded-full bg-zinc-800 dark:bg-zinc-800 ring-1 ring-inset ring-zinc-700 overflow-hidden"
+            className="h-2.5 rounded-full bg-muted border border-border overflow-hidden"
             role="progressbar"
             aria-valuenow={pctEntrega}
             aria-valuemin={0}
@@ -214,8 +213,8 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de entrega ${pctEntrega}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 shadow-[0_0_8px_currentColor] ${entregaStyle.fill}`}
-              style={{ width: `${Math.max(pctEntrega, pctEntrega > 0 ? 6 : 0)}%`, minWidth: pctEntrega > 0 ? '10px' : '0' }}
+              className={`h-full rounded-full transition-[width] duration-500 ${entregaStyle.fill}`}
+              style={{ width: `${pctEntrega}%`, minWidth: pctEntrega > 0 ? '8px' : '0' }}
             />
           </div>
         </div>
@@ -227,7 +226,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             </span>
           </div>
           <div
-            className="h-3 rounded-full bg-zinc-800 dark:bg-zinc-800 ring-1 ring-inset ring-zinc-700 overflow-hidden"
+            className="h-2.5 rounded-full bg-muted border border-border overflow-hidden"
             role="progressbar"
             aria-valuenow={pctDevol}
             aria-valuemin={0}
@@ -235,8 +234,8 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de devolución ${pctDevol}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 shadow-[0_0_8px_currentColor] ${devolStyle.fill}`}
-              style={{ width: `${Math.max(pctDevol, pctDevol > 0 ? 6 : 0)}%`, minWidth: pctDevol > 0 ? '10px' : '0' }}
+              className={`h-full rounded-full transition-[width] duration-500 ${devolStyle.fill}`}
+              style={{ width: `${pctDevol}%`, minWidth: pctDevol > 0 ? '8px' : '0' }}
             />
           </div>
         </div>
