@@ -51,7 +51,7 @@ export default function NovedadesTab() {
           </div>
         </div>
         <button
-          onClick={() => loadNovedades()}
+          onClick={() => loadNovedades(true)}
           disabled={novedadesLoading}
           className="h-9 px-3 rounded-lg border border-border bg-surface text-muted-foreground text-xs font-semibold flex items-center gap-1.5 hover:text-foreground hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer"
         >
