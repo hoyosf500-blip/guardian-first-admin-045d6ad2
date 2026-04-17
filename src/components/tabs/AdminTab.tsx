@@ -527,8 +527,10 @@ export default function AdminTab() {
           </motion.div>
 
           <ReportsTable />
-        </div>
-      )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
+
