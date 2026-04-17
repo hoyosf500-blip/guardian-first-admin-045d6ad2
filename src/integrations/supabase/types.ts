@@ -136,6 +136,39 @@ export type Database = {
           },
         ]
       }
+      operator_daily_reports: {
+        Row: {
+          closing_at: string | null
+          closing_notes: string | null
+          created_at: string
+          id: string
+          opening_at: string | null
+          opening_notes: string | null
+          report_date: string
+          user_id: string
+        }
+        Insert: {
+          closing_at?: string | null
+          closing_notes?: string | null
+          created_at?: string
+          id?: string
+          opening_at?: string | null
+          opening_notes?: string | null
+          report_date: string
+          user_id: string
+        }
+        Update: {
+          closing_at?: string | null
+          closing_notes?: string | null
+          created_at?: string
+          id?: string
+          opening_at?: string | null
+          opening_notes?: string | null
+          report_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       operator_pool: {
         Row: {
           active: boolean
@@ -493,6 +526,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      opening_report_status: {
+        Args: never
+        Returns: {
+          has_closing: boolean
+          has_opening: boolean
+        }[]
+      }
       operator_productivity_stats: {
         Args: { p_range?: string }
         Returns: {
@@ -517,7 +557,18 @@ export type Database = {
           total: number
         }[]
       }
+      pending_retry_list: {
+        Args: never
+        Returns: {
+          attempts: number
+          external_id: string
+          nombre: string
+          phone: string
+        }[]
+      }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
+      submit_closing_report: { Args: { p_notes: string }; Returns: undefined }
+      submit_opening_report: { Args: { p_notes: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "operator"
