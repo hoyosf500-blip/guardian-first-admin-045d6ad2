@@ -27,32 +27,44 @@ export default function CallView({ items }: Props) {
   const { markResult, undoLast } = useOrders();
   const { user } = useAuth();
   const { claimOrder, releaseOrder } = useOrderLock();
-  // Persist callIdx across tab discards so the operator returns to the
-  // exact same order after going out to the transportadora's page.
-  const [callIdx, setCallIdx] = useSessionState<number>('confirmar:callIdx', 0);
+  // BUG B fix: persist the customer's stable identifier (externalId or dbId),
+  // not the array index. Indexes break when items reorder due to refresh/sync.
+  const [callOrderId, setCallOrderId] = useSessionState<string | null>(
+    'confirmar:callOrderId',
+    null,
+  );
 
-  // Re-clamp index when items change (queue shrink, data refresh) and jump
-  // to the first pending order if current one is already resolved.
+  const orderKey = (o: OrderData | undefined) =>
+    o ? (o.externalId || o.dbId || null) : null;
+
+  // Compute the real index from the persisted ID. If the customer is gone from
+  // the queue (-1), fall back to the first pending order.
+  let callIdx = callOrderId
+    ? items.findIndex(o => (o.externalId || o.dbId) === callOrderId)
+    : -1;
+  if (callIdx < 0) {
+    const firstPending = items.findIndex(o => !o.result);
+    callIdx = firstPending >= 0 ? firstPending : 0;
+  }
+
+  // Re-anchor the persisted ID only when missing or stale. Never trigger on
+  // items.length alone — that was causing the operator to lose their customer.
   useEffect(() => {
     if (!items.length) return;
-    if (callIdx >= items.length) {
-      setCallIdx(Math.max(0, items.length - 1));
-      return;
-    }
-    const current = items[callIdx];
-    if (!current || current.result) {
-      const firstPending = items.findIndex(o => !o.result);
-      if (firstPending >= 0 && firstPending !== callIdx) {
-        setCallIdx(firstPending);
-      }
+    const exists = callOrderId
+      ? items.some(o => (o.externalId || o.dbId) === callOrderId)
+      : false;
+    if (!exists) {
+      const firstPending = items.find(o => !o.result) || items[0];
+      const k = orderKey(firstPending);
+      if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [callOrderId, items]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
-  // AI hook removed
 
   const o = items[Math.min(callIdx, items.length - 1)];
 
@@ -87,9 +99,10 @@ export default function CallView({ items }: Props) {
     claimOrder(orderId).then(claimed => {
       if (cancelled) return;
       if (!claimed) {
-        const nextIdx = items.findIndex((it, i) => i > callIdx && !it.result);
-        if (nextIdx >= 0) {
-          setCallIdx(nextIdx);
+        const next = items.find((it, i) => i > callIdx && !it.result);
+        const k = orderKey(next);
+        if (k) {
+          setCallOrderId(k);
           toast.info('Pedido en uso por otra operadora — saltando al siguiente');
         } else {
           toast.info('Pedidos disponibles agotados — todos están en atención');
@@ -98,10 +111,9 @@ export default function CallView({ items }: Props) {
     });
     return () => {
       cancelled = true;
-      // Release if the operator navigates away without marking a result.
       void releaseOrder(orderId);
     };
-  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallIdx, o?.result]);
+  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallOrderId, o?.result]);
 
   if (!items.length || !o) {
     return (
@@ -117,7 +129,6 @@ export default function CallView({ items }: Props) {
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
-    // Release the lock immediately after registering the result.
     if (o.dbId) void releaseOrder(o.dbId);
     setShowCancelModal(false);
     toast.success(
@@ -126,13 +137,16 @@ export default function CallView({ items }: Props) {
       `No respondió — ${o.nombre.split(' ')[0]}`,
     );
     setTimeout(() => {
-      const nextIdx = items.findIndex((item, i) => i > callIdx && !item.result);
-      if (nextIdx >= 0) setCallIdx(nextIdx);
+      const next = items.find((item, i) => i > callIdx && !item.result);
+      const k = orderKey(next);
+      if (k) setCallOrderId(k);
     }, 400);
   };
 
   const navCall = (dir: number) => {
-    setCallIdx(Math.max(0, Math.min(items.length - 1, callIdx + dir)));
+    const target = Math.max(0, Math.min(items.length - 1, callIdx + dir));
+    const k = orderKey(items[target]);
+    if (k) setCallOrderId(k);
   };
 
   const copyPhone = () => {
@@ -141,6 +155,12 @@ export default function CallView({ items }: Props) {
 
   return (
     <>
+      {!o.result && (
+        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
+          <Phone size={12} />
+          Atendiendo: {o.nombre} · {formatPhone(o.phone)}
+        </div>
+      )}
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-1.5">

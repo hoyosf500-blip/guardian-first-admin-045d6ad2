@@ -334,12 +334,51 @@ Deno.serve(async (req: Request) => {
       console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders`);
     }
 
+    // Retry order_results that failed to sync to Dropi (BUG A fix).
+    // We don't call dropi-update-order from here (no JWT context); instead
+    // we surface them via marking — the next time the operator opens the
+    // Confirmar tab, the local result is preserved and the cron sync above
+    // will eventually overwrite the Dropi-side estado on the bulk pull.
+    let retried = 0;
+    try {
+      const { data: pendingRows } = await sb
+        .from("order_results")
+        .select("id, order_id")
+        .in("dropi_sync_status", ["pending", "failed"])
+        .eq("result", "conf")
+        .gte("result_date", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0])
+        .limit(200);
+
+      for (const row of pendingRows || []) {
+        try {
+          const { data: invokeData, error: invokeErr } = await sb.functions.invoke(
+            "dropi-update-order",
+            { body: { dbId: row.order_id } },
+          );
+          const ok = !invokeErr && (invokeData as { ok?: boolean } | null)?.ok !== false;
+          await sb
+            .from("order_results")
+            .update({
+              dropi_sync_status: ok ? "synced" : "failed",
+              result_notes: ok ? null : `Reintento cron falló: ${invokeErr?.message || "error"}`,
+            })
+            .eq("id", row.id);
+          if (ok) retried++;
+        } catch (e) {
+          console.error("dropi-cron retry error:", e);
+        }
+      }
+      if (retried > 0) console.log(`dropi-cron: retried ${retried} pending sync rows`);
+    } catch (e) {
+      console.error("dropi-cron retry block error:", e);
+    }
+
     // Log the sync
     await sb.from("sync_logs").insert({
       source: "dropi-cron",
       status: "success",
       synced_count: totalSynced,
-      duplicates_count: 0,
+      duplicates_count: retried,
       total_count: totalFromDropi,
       triggered_by: uploadedBy,
     });

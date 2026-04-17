@@ -125,11 +125,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }));
 
     if (user) {
-      const today = new Date().toLocaleDateString('en-CA');
+      // BUG A fix: pull last 7 days so confirmations done late yesterday
+      // (or near midnight) don't reappear in the queue today.
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
       supabase.from('order_results')
         .select('phone, result, reason, result_time, created_at')
         .eq('operator_id', user.id)
-        .eq('result_date', today)
+        .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
           if (data) {
             const now = Date.now();
@@ -231,6 +234,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       operator_id: user.id,
       result_date: today,
       result_time: now,
+      dropi_sync_status: 'synced',
     }).select('id').single();
 
     if (!error && result === 'conf' && order.dbId) {
@@ -242,21 +246,24 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         const insertedResultId = insertedResult?.id;
         toast.loading('Dropi: actualizando…', { id: toastId });
 
-        const rollbackDropiFailure = async (errMsg: string) => {
+        const markDropiFailure = async (errMsg: string) => {
           if (revertedRef.current) return;
           revertedRef.current = true;
-          toast.error(`Dropi falló: ${errMsg}. Pedido revertido — volvé a confirmarlo.`, { id: toastId, duration: 10000 });
-          if (order.dbId) {
-            await supabase.from('orders').update({ estado: 'PENDIENTE CONFIRMACION' }).eq('id', order.dbId);
-          }
+          // BUG A fix: do NOT silently rollback. Keep the local confirmation,
+          // mark the order_results row as failed so dropi-cron retries it,
+          // and warn the operator with a destructive long-duration toast.
           if (insertedResultId) {
-            await supabase.from('order_results').delete().eq('id', insertedResultId);
+            await (supabase.from('order_results') as unknown as {
+              update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+            }).update({
+              dropi_sync_status: 'failed',
+              result_notes: `Dropi sync pendiente - reintentar (${errMsg})`,
+            }).eq('id', insertedResultId);
           }
-          setWorkQueue(prev => prev.map(o => o.dbId === order.dbId
-            ? { ...o, estado: 'PENDIENTE CONFIRMACION', result: undefined, reason: undefined }
-            : o));
-          setCounter(prev => ({ ...prev, conf: Math.max(0, prev.conf - 1) }));
-          setLastMark(null);
+          toast.error(
+            '⚠ Confirmación guardada localmente pero Dropi no respondió. Aparecerá en la pestaña "Novedades" para reintentar.',
+            { id: toastId, duration: 10000 },
+          );
         };
 
         supabase.functions
@@ -265,14 +272,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
             if (res?.error || data?.ok === false) {
               const msg = res?.error?.message || data?.error || 'Error desconocido';
-              rollbackDropiFailure(msg);
+              markDropiFailure(msg);
             } else {
               toast.success('Dropi OK', { id: toastId, duration: 2500 });
             }
           })
           .catch((err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
-            rollbackDropiFailure(`red — ${msg}`);
+            markDropiFailure(`red — ${msg}`);
           });
       }
     }
