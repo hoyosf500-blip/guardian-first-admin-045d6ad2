@@ -33,6 +33,8 @@ export function useRealtimeOrders(user: User | null, { onOrderChange, onResultCh
 
     let orderTimer: ReturnType<typeof setTimeout> | null = null;
     let resultTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const fireOrder = () => {
       if (orderTimer) clearTimeout(orderTimer);
@@ -50,32 +52,44 @@ export function useRealtimeOrders(user: User | null, { onOrderChange, onResultCh
       }, 500);
     };
 
-    const channel = supabase
-      .channel(`realtime-orders-${user.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
-        (payload) => {
-          console.log('[realtime] orders event', payload.eventType, payload);
-          fireOrder();
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'order_results' },
-        (payload) => {
-          console.log('[realtime] order_results INSERT', payload);
-          fireResult();
-        },
-      )
-      .subscribe((status) => {
-        console.log('[realtime] channel status', status);
-      });
+    (async () => {
+      // Realtime applies RLS, so it needs the user's JWT. Without this the
+      // connection negotiates anonymously and the server eventually drops it
+      // with TIMED_OUT.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
+
+      channel = supabase
+        .channel(`realtime-orders-${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          (payload) => {
+            console.log('[realtime] orders event', payload.eventType, payload);
+            fireOrder();
+          },
+        )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'order_results' },
+          (payload) => {
+            console.log('[realtime] order_results INSERT', payload);
+            fireResult();
+          },
+        )
+        .subscribe((status) => {
+          console.log('[realtime] channel status', status);
+        });
+    })();
 
     return () => {
+      cancelled = true;
       if (orderTimer) clearTimeout(orderTimer);
       if (resultTimer) clearTimeout(resultTimer);
-      void supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [user]);
 }
