@@ -153,5 +153,13 @@ export default function WorkList({ items, onOpenCall }: Props) {
         </div>
       )}
     </div>
+    {editingOrder && (
+      <EditOrderDialog
+        open={!!editingOrder}
+        onOpenChange={(o) => { if (!o) setEditingOrder(null); }}
+        order={editingOrder}
+      />
+    )}
+    </>
   );
 }
