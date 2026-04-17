@@ -8,8 +8,9 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw, Lock, Pencil } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
+import EditOrderDialog from '@/components/EditOrderDialog';
 
 interface VipInfo {
   isVip: boolean;
@@ -49,6 +50,7 @@ export default function CallView({ items }: Props) {
   }, [items.length]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
   const { ask: askAi, get: getAi } = useAiInsight();
 
