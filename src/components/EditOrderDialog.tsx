@@ -100,11 +100,40 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
           email: form.email.trim(),
         },
       });
-      if (error) throw error;
-      if (data && data.ok === false) {
-        throw new Error(data.error || 'Error desconocido');
+
+      // Edge function returned an explicit Dropi failure (ok:false with detail).
+      // Show enriched toast with collapsible technical details so we can copy
+      // the exact error and iterate.
+      const dropiHttpStatus = (data as { dropiHttpStatus?: number } | null)?.dropiHttpStatus;
+      const dropiBody = (data as { dropiBody?: unknown } | null)?.dropiBody;
+      const isDropiFailure =
+        (data && (data as { ok?: boolean }).ok === false) ||
+        (typeof dropiHttpStatus === 'number' && dropiHttpStatus >= 400);
+
+      if (error || isDropiFailure) {
+        const shortMsg =
+          (data as { error?: string } | null)?.error ||
+          (error instanceof Error ? error.message : 'Error desconocido');
+        toast.error('Dropi rechazó el cambio', {
+          description: (
+            <div className="space-y-2">
+              <p className="text-xs">{shortMsg}</p>
+              {(dropiHttpStatus !== undefined || dropiBody !== undefined) && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-semibold">Detalle técnico</summary>
+                  <pre className="font-mono text-[11px] mt-1 p-2 bg-muted/40 rounded border border-border whitespace-pre-wrap break-all max-h-48 overflow-auto">
+{`HTTP ${dropiHttpStatus ?? 'n/a'}\n\n${JSON.stringify(dropiBody ?? {}, null, 2)}`}
+                  </pre>
+                </details>
+              )}
+            </div>
+          ),
+          duration: 15000,
+        });
+        return; // do not close dialog; keep operator's edits
       }
-      if (data?.noChange) {
+
+      if ((data as { noChange?: boolean } | null)?.noChange) {
         toast.info('No había cambios que sincronizar');
       } else {
         toast.success('Orden actualizada y sincronizada con Dropi');
