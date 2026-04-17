@@ -96,7 +96,7 @@ export default function ProductivityDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-border bg-card p-0.5">
-            {(['24h', '7d', '30d'] as Range[]).map(r => (
+            {(['today', '24h', '7d', '30d'] as Range[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
