@@ -5,7 +5,7 @@ import { useOrderLock } from '@/hooks/useOrderLock';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
-import { useAiInsight } from '@/hooks/useAiInsight';
+// AI script generator removed — operadoras no lo usaban
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';
