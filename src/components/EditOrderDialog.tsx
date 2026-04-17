@@ -27,6 +27,7 @@ function splitName(full: string): { nombre: string; apellido: string } {
 }
 
 export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }: Props) {
+  const { isAdmin } = useAuth();
   const initial = useMemo(() => {
     const { nombre, apellido } = splitName(order.nombre);
     return {
