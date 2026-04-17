@@ -35,12 +35,13 @@ export function useDataLoader(user: User | null): DataLoaderState {
     if (segLoaded && !force) return;
     setSegLoading(true);
     try {
-      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      // BUG 5 fix: el lock solo aplica en Confirmar. Quitar el filtro
+      // locked_by aquí — si no, los pedidos en atención desaparecen 15 min
+      // de Seguimiento.
       const { data: dbOrders, error } = await supabase
         .from('orders')
         .select('*')
         .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
         .order('created_at', { ascending: false })
         .limit(5000);
       if (error) {
@@ -68,14 +69,13 @@ export function useDataLoader(user: User | null): DataLoaderState {
     if (resLoaded && !force) return;
     setResLoading(true);
     try {
-      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      // BUG 5 fix: lock solo aplica en Confirmar.
       const { data: dbOrders, error } = await supabase
         .from('orders')
         .select('*')
         .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
         .not('estado', 'eq', 'ENTREGADO')
         .not('estado', 'eq', 'CANCELADO')
-        .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
         .order('created_at', { ascending: false })
         .limit(2000);
       if (error) {

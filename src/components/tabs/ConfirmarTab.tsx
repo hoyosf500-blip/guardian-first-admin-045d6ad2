@@ -154,6 +154,7 @@ export default function ConfirmarTab({ profile }: Props) {
               sessionStorage.removeItem('confirmar:dateFrom');
               sessionStorage.removeItem('confirmar:dateTo');
               sessionStorage.removeItem('confirmar:callIdx');
+              sessionStorage.removeItem('confirmar:callOrderId');
             } catch { /* storage disabled */ }
           }}
             className="text-xs px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">

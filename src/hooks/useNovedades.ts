@@ -22,13 +22,12 @@ export function useNovedades(user: User | null): NovedadesState {
     if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
     try {
-      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+      // BUG 5 fix: lock solo aplica en Confirmar.
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
-        .eq('novedad_sol', false)
-        .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
+        .eq('novedad_sol', false);
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
         return;
