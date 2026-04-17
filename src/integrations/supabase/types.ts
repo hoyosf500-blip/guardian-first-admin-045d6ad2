@@ -143,7 +143,10 @@ export type Database = {
           created_at: string
           id: string
           opening_at: string | null
+          opening_guides_yesterday: number | null
+          opening_new_orders: number | null
           opening_notes: string | null
+          opening_pending_yesterday: number | null
           report_date: string
           user_id: string
         }
@@ -153,7 +156,10 @@ export type Database = {
           created_at?: string
           id?: string
           opening_at?: string | null
+          opening_guides_yesterday?: number | null
+          opening_new_orders?: number | null
           opening_notes?: string | null
+          opening_pending_yesterday?: number | null
           report_date: string
           user_id: string
         }
@@ -163,7 +169,10 @@ export type Database = {
           created_at?: string
           id?: string
           opening_at?: string | null
+          opening_guides_yesterday?: number | null
+          opening_new_orders?: number | null
           opening_notes?: string | null
+          opening_pending_yesterday?: number | null
           report_date?: string
           user_id?: string
         }
@@ -464,6 +473,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_daily_reports: {
+        Args: { p_date: string }
+        Returns: {
+          cancelados: number
+          closing_at: string
+          closing_notes: string
+          confirmados: number
+          display_name: string
+          noresp: number
+          opening_at: string
+          opening_guides_yesterday: number
+          opening_new_orders: number
+          opening_notes: string
+          opening_pending_yesterday: number
+          status: string
+          tasa_confirmacion: number
+          user_id: string
+        }[]
+      }
       claim_order: {
         Args: { p_order_id: string }
         Returns: {
@@ -568,7 +596,15 @@ export type Database = {
       }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       submit_closing_report: { Args: { p_notes: string }; Returns: undefined }
-      submit_opening_report: { Args: { p_notes: string }; Returns: undefined }
+      submit_opening_report: {
+        Args: {
+          p_guides_yesterday: number
+          p_new_orders: number
+          p_notes?: string
+          p_pending_yesterday: number
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "operator"
