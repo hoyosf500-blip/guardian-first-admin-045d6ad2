@@ -3,6 +3,7 @@ import { OrderData, formatPhone } from '@/lib/orderUtils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
+import LockBadge from '@/components/LockBadge';
 
 interface Props {
   items: OrderData[];
@@ -101,6 +102,8 @@ export default function WorkList({ items, onOpenCall }: Props) {
                   {pCfg.label}
                 </span>
               )}
+              {/* Lock badge — visible only when another operator owns the lock */}
+              <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
               {/* Retry badge */}
               {o.retryCount && !o.result && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-orange-500/15 text-orange-500 border border-orange-500/20 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Reintento ${o.retryCount} de 3`}>
