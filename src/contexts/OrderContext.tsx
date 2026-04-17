@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 import { useDataLoader } from '@/hooks/useDataLoader';
 import { useNovedades } from '@/hooks/useNovedades';
+import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -42,7 +43,7 @@ interface OrderState {
 const OrderContext = createContext<OrderState | undefined>(undefined);
 
 export function OrderProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
@@ -55,6 +56,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // Extracted hooks for data loading and novedades
   const dataLoader = useDataLoader(user);
   const novedades = useNovedades(user);
+
+  // Auto-sync con Dropi cada 5 min mientras un admin esté con la app abierta.
+  // Al terminar refresca la cola de novedades para que los pedidos ya
+  // resueltos en Dropi desaparezcan sin intervención manual.
+  useAutoDropiSync(isAdmin, user?.id, () => {
+    void novedades.loadNovedades(true);
+    void dataLoader.loadSegData(true);
+    void dataLoader.loadResData(true);
+  });
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
   const markingInFlight = useRef(new Set<string>());
