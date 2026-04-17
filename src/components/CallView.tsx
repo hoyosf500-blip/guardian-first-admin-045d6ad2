@@ -89,6 +89,8 @@ export default function CallView({ items }: Props) {
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
+    // Release the lock immediately after registering the result.
+    if (o.dbId) void releaseOrder(o.dbId);
     setShowCancelModal(false);
     toast.success(
       result === 'conf' ? `Confirmado — ${o.nombre.split(' ')[0]}` :
