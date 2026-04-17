@@ -56,17 +56,14 @@ const RISK_CONFIG: Record<string, {
   },
 };
 
-function rateColor(value: number, goodAtOrAbove: number, warnAtOrAbove: number): {
-  text: string; fill: string;
-} {
-  // Entregas: verde si >= good, ámbar si >= warn, rojo si no.
-  if (value >= goodAtOrAbove) return { text: 'text-success', fill: 'bg-success' };
-  if (value >= warnAtOrAbove) return { text: 'text-warning', fill: 'bg-warning' };
-  return { text: 'text-danger', fill: 'bg-danger' };
+function deliveryColor(): { text: string; fill: string } {
+  // Entregas siempre en verde — es la métrica positiva, el color fija la
+  // categoría (como ingresos vs gastos en un dashboard financiero).
+  return { text: 'text-success', fill: 'bg-success' };
 }
 
 function devolutionColor(): { text: string; fill: string } {
-  // Devoluciones siempre en rojo — señal clara de riesgo.
+  // Devoluciones siempre en rojo — señal clara de riesgo / categoría negativa.
   return { text: 'text-danger', fill: 'bg-danger' };
 }
 
@@ -145,7 +142,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
   const RiskIcon = cfg.icon;
   const pctEntrega = data.orders > 0 ? Math.round((data.delivered / data.orders) * 100) : 0;
   const pctDevol = data.orders > 0 ? Math.round((data.returned / data.orders) * 100) : 0;
-  const entregaStyle = rateColor(pctEntrega, 60, 40);
+  const entregaStyle = deliveryColor();
   const devolStyle = devolutionColor();
 
   return (
