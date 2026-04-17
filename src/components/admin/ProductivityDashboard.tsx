@@ -104,10 +104,6 @@ export default function ProductivityDashboard() {
               </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={reassignUnattended} disabled={reassigning}>
-            <Shuffle size={14} className={`mr-1.5 ${reassigning ? 'animate-spin' : ''}`} />
-            Reasignar no atendidos
-          </Button>
           <Button size="sm" variant="outline" onClick={() => load(true)} disabled={refreshing}>
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           </Button>
