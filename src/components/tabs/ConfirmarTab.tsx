@@ -12,7 +12,9 @@ import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw } from 'lucide-react';
+import OpeningReportGate from '@/components/OpeningReportGate';
+import ClosingReportDialog from '@/components/ClosingReportDialog';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -41,6 +43,7 @@ export default function ConfirmarTab({ profile }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
+  const [closing, setClosing] = useState(false);
   const today = new Date().toISOString().split('T')[0];
 
   // Auto-load orders from DB on mount if not already loaded. Uses a strict
@@ -140,8 +143,15 @@ export default function ConfirmarTab({ profile }: Props) {
   const pending = workQueue.filter(o => !o.result).length;
 
   return (
+    <OpeningReportGate>
     <div className="max-w-5xl mx-auto">
-      <div className="mb-4"><TasaMetaBanner /></div>
+      <div className="mb-4 flex items-start gap-2">
+        <div className="flex-1"><TasaMetaBanner /></div>
+        <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5">
+          <Moon size={14} /> Cerrar turno
+        </Button>
+      </div>
+      <ClosingReportDialog open={closing} onClose={() => setClosing(false)} />
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-muted-foreground">{formatDateES(today)}</p>
         {excelLoaded && (
@@ -373,5 +383,6 @@ export default function ConfirmarTab({ profile }: Props) {
         </>
       )}
     </div>
+    </OpeningReportGate>
   );
 }
