@@ -187,13 +187,25 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseServiceKey);
 
-    // ---- Auth: require admin role for authenticated callers ----
-    // pg_cron calls via pg_net may arrive with no valid JWT (internal routing
-    // bypasses the Supabase API gateway). When no auth header is present we
-    // allow the call — the gateway already blocks unauthenticated external
-    // requests. When a JWT IS present (e.g. "Forzar sync" from Dashboard)
-    // we validate it and require admin role so a regular operator cannot
-    // spam syncs or exhaust Dropi rate limits.
+    // ---- Auth path 1: shared secret for pg_cron ----
+    // The pg_cron job sends x-cron-secret matching app_settings.cron_shared_secret.
+    // Needed because we can't embed the service_role key in a SQL cron command.
+    const cronSecretHeader = req.headers.get("x-cron-secret");
+    if (cronSecretHeader) {
+      const { data: secretRow } = await sb
+        .from("app_settings")
+        .select("value")
+        .eq("key", "cron_shared_secret")
+        .maybeSingle();
+      if (!secretRow?.value || secretRow.value !== cronSecretHeader) {
+        return new Response(JSON.stringify({ error: "Cron secret invalido" }), {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        });
+      }
+      console.log("dropi-cron: authenticated via cron shared secret");
+    } else {
+    // ---- Auth path 2: require admin role for authenticated callers ----
     const authHeader = req.headers.get("Authorization");
     if (authHeader && authHeader !== `Bearer ${supabaseServiceKey}`) {
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
@@ -220,6 +232,7 @@ Deno.serve(async (req: Request) => {
         );
       }
       console.log(`dropi-cron: triggered by admin ${user.id}`);
+    }
     }
 
     // Get Dropi API key from app_settings or env
