@@ -57,6 +57,9 @@ export default function SeguimientoTab() {
   const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo', '');
   const [initialDelayed, setInitialDelayed] = useSessionState<boolean>('seg:initialDelayed', false);
   const [stalledCategoryFilter, setStalledCategoryFilter] = useSessionState<string | null>('seg:stalledCategoryFilter', null);
+  // Owns the status filter so the stat cards ABOVE the table act as the single
+  // source of truth (no duplicate pill row below).
+  const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
 
   useEffect(() => { loadSegData(); }, [loadSegData]);
 
@@ -131,30 +134,83 @@ export default function SeguimientoTab() {
    * only apply where they carry real meaning (success/warning/danger).
    */
   type StatTone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
-  const STAT_TONE: Record<StatTone, { iconBg: string; iconText: string; ring: string }> = {
-    neutral: { iconBg: 'bg-muted', iconText: 'text-foreground', ring: '' },
-    accent:  { iconBg: 'bg-accent/15', iconText: 'text-accent', ring: 'ring-1 ring-accent/30' },
-    warning: { iconBg: 'bg-orange-500/15', iconText: 'text-orange-500', ring: '' },
-    danger:  { iconBg: 'bg-red-500/15', iconText: 'text-red-500', ring: '' },
-    success: { iconBg: 'bg-emerald-500/15', iconText: 'text-emerald-500', ring: '' },
-    muted:   { iconBg: 'bg-muted/60', iconText: 'text-muted-foreground', ring: '' },
+  /**
+   * Each tone carries: the icon bg, icon color, the number accent, an ambient
+   * glow for the card (subtle — only visible as a faint halo) and the ring
+   * used when a card is selected as the active filter.
+   */
+  const STAT_TONE: Record<StatTone, {
+    iconBg: string; iconText: string;
+    numberColor: string; cardHover: string;
+    activeRing: string; activeBg: string; activeShadow: string;
+  }> = {
+    neutral: {
+      iconBg: 'bg-zinc-800', iconText: 'text-zinc-300',
+      numberColor: 'text-foreground',
+      cardHover: 'hover:border-zinc-600 hover:bg-zinc-900/80',
+      activeRing: 'ring-2 ring-accent/60 border-accent/60',
+      activeBg: 'bg-accent/5',
+      activeShadow: 'shadow-lg shadow-accent/10',
+    },
+    accent: {
+      iconBg: 'bg-accent/20', iconText: 'text-accent',
+      numberColor: 'text-accent',
+      cardHover: 'hover:border-accent/50 hover:bg-accent/10 hover:shadow-lg hover:shadow-accent/20',
+      activeRing: 'ring-2 ring-accent border-accent',
+      activeBg: 'bg-accent/15',
+      activeShadow: 'shadow-lg shadow-accent/25',
+    },
+    warning: {
+      iconBg: 'bg-orange-500/15', iconText: 'text-orange-500',
+      numberColor: 'text-orange-500',
+      cardHover: 'hover:border-orange-500/40 hover:bg-orange-500/5',
+      activeRing: 'ring-2 ring-orange-500/70 border-orange-500/70',
+      activeBg: 'bg-orange-500/10',
+      activeShadow: 'shadow-lg shadow-orange-500/20',
+    },
+    danger: {
+      iconBg: 'bg-red-500/15', iconText: 'text-red-500',
+      numberColor: 'text-red-500',
+      cardHover: 'hover:border-red-500/40 hover:bg-red-500/5',
+      activeRing: 'ring-2 ring-red-500/70 border-red-500/70',
+      activeBg: 'bg-red-500/10',
+      activeShadow: 'shadow-lg shadow-red-500/20',
+    },
+    success: {
+      iconBg: 'bg-emerald-500/15', iconText: 'text-emerald-500',
+      numberColor: 'text-emerald-500',
+      cardHover: 'hover:border-emerald-500/40 hover:bg-emerald-500/5',
+      activeRing: 'ring-2 ring-emerald-500/70 border-emerald-500/70',
+      activeBg: 'bg-emerald-500/10',
+      activeShadow: 'shadow-lg shadow-emerald-500/20',
+    },
+    muted: {
+      iconBg: 'bg-zinc-800/60', iconText: 'text-muted-foreground',
+      numberColor: 'text-muted-foreground',
+      cardHover: 'hover:border-zinc-600 hover:text-foreground',
+      activeRing: 'ring-2 ring-zinc-500 border-zinc-500',
+      activeBg: 'bg-zinc-800/50',
+      activeShadow: 'shadow-lg',
+    },
   };
 
-  const statCards: { label: string; value: number; icon: React.ReactNode; tone: StatTone }[] = [
-    { label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, tone: 'neutral' },
-    { label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, tone: 'neutral' },
-    { label: 'Bodega Transp.', value: stats.bodega_trans, icon: <Package size={15} />, tone: 'neutral' },
-    { label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, tone: 'neutral' },
-    { label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, tone: 'accent' },
-    { label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, tone: 'warning' },
-    { label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, tone: 'success' },
-    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, tone: 'warning' },
-    { label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, tone: 'danger' },
-    { label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, tone: 'danger' },
-    { label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, tone: 'danger' },
-    { label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, tone: 'muted' },
-    { label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, tone: 'success' },
-    { label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, tone: 'muted' },
+  // `key` matches CrmTable.STATUS_COLUMNS[*].key so clicking a card drives the
+  // table filter without translation.
+  const statCards: { key: string; label: string; value: number; icon: React.ReactNode; tone: StatTone }[] = [
+    { key: 'procesamiento', label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, tone: 'neutral' },
+    { key: 'guia', label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, tone: 'neutral' },
+    { key: 'bodega_trans', label: 'Bodega Transp.', value: stats.bodega_trans, icon: <Package size={15} />, tone: 'neutral' },
+    { key: 'transito', label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, tone: 'neutral' },
+    { key: 'reparto', label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, tone: 'accent' },
+    { key: 'novedad', label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, tone: 'warning' },
+    { key: 'novedad_sol', label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, tone: 'success' },
+    { key: 'oficina', label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, tone: 'warning' },
+    { key: 'rechazado', label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, tone: 'danger' },
+    { key: 'devolucion_transito', label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, tone: 'danger' },
+    { key: 'devolucion', label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, tone: 'danger' },
+    { key: 'indemnizada', label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, tone: 'muted' },
+    { key: 'entregado', label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, tone: 'success' },
+    { key: 'cancelado', label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, tone: 'muted' },
   ];
 
   // Fullscreen loading only on the very first fetch. On subsequent refreshes
@@ -351,24 +407,42 @@ export default function SeguimientoTab() {
           </motion.div>
         )}
 
-        {/* Stat cards row */}
+        {/* Stat cards — clickable filters. Click a card to filter the table
+            below; click again to clear. This replaces the old pills row so
+            there's one single source of truth for the active status. */}
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
           {statCards.filter(c => c.value > 0).map((card, i) => {
             const t = STAT_TONE[card.tone];
+            const isActive = statusFilter === card.key;
             return (
-              <motion.div
-                key={card.label}
+              <motion.button
+                key={card.key}
+                type="button"
+                aria-pressed={isActive}
+                aria-label={`Filtrar por ${card.label}: ${card.value} pedidos`}
+                onClick={() => setStatusFilter(isActive ? null : card.key)}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
-                className={`bg-surface border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 hover:border-border-strong transition-colors duration-200 ${t.ring}`}
+                whileTap={{ scale: 0.97 }}
+                className={`group relative bg-surface border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 transition-all duration-200 cursor-pointer focus-visible:outline-none text-center ${
+                  isActive
+                    ? `${t.activeRing} ${t.activeBg} ${t.activeShadow}`
+                    : `border-border ${t.cardHover}`
+                }`}
               >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.iconBg} ${t.iconText}`}>
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText}`}>
                   {card.icon}
                 </div>
-                <span className="text-lg font-bold text-foreground leading-none tabular-nums">{card.value}</span>
-                <span className="text-[9px] text-muted-foreground font-medium text-center leading-tight uppercase tracking-wide">{card.label}</span>
-              </motion.div>
+                <span className={`text-xl font-bold leading-none tabular-nums ${isActive ? t.numberColor : 'text-foreground'}`}>
+                  {card.value}
+                </span>
+                <span className={`text-[9px] font-semibold text-center leading-tight uppercase tracking-wider ${
+                  isActive ? t.numberColor : 'text-muted-foreground'
+                }`}>
+                  {card.label}
+                </span>
+              </motion.button>
             );
           })}
         </div>
@@ -383,6 +457,8 @@ export default function SeguimientoTab() {
         emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
         initialDelayed={initialDelayed}
         stalledCategoryFilter={stalledCategoryFilter}
+        controlledStatusFilter={statusFilter}
+        onControlledStatusFilterChange={setStatusFilter}
       />
     </div>
   );

@@ -41,6 +41,13 @@ interface CrmTableProps {
   emptyDesc: string;
   initialDelayed?: boolean;
   stalledCategoryFilter?: string | null;
+  /**
+   * When provided, the parent owns the status filter (e.g. via the Seguimiento
+   * stat cards) and the internal filter pills row is hidden. Passing `null`
+   * means "no filter active".
+   */
+  controlledStatusFilter?: string | null;
+  onControlledStatusFilterChange?: (key: string | null) => void;
 }
 
 /**
@@ -201,7 +208,7 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
   'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
 };
 
-export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter }: CrmTableProps) {
+export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -212,7 +219,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   // operator's filter chip / search / toggle state).
   const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
   const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
-  const [activeFilter, setActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
+  const [internalActiveFilter, setInternalActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
+  const isControlled = controlledStatusFilter !== undefined;
+  const activeFilter = isControlled ? (controlledStatusFilter ?? null) : internalActiveFilter;
+  const setActiveFilter = (next: string | null | ((prev: string | null) => string | null)) => {
+    const resolved = typeof next === 'function' ? next(activeFilter) : next;
+    if (isControlled) {
+      onControlledStatusFilterChange?.(resolved);
+    } else {
+      setInternalActiveFilter(resolved);
+    }
+  };
   const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
   // Lista / Llamar toggle — persisted per module so it survives tab
   // discards (common on mobile when the operator goes out to the
@@ -441,32 +458,36 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
         </div>
       </div>
 
-      {/* Status filter pills — unified tone system, no rainbow */}
-      <div className="flex gap-1.5 flex-wrap">
-        {STATUS_COLUMNS.filter(c => allCounts[c.key] > 0).map(col => {
-          const isActive = activeFilter === col.key;
-          const t = TONE_STYLES[col.tone];
-          return (
-            <button
-              key={col.key}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => setActiveFilter(isActive ? null : col.key)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                isActive ? t.pillActive : t.pillIdle
-              }`}
-            >
-              {col.icon}
-              <span>{col.label}</span>
-              <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
-                isActive ? t.activeCountBg : t.idleCountBg
-              }`}>
-                {allCounts[col.key]}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Status filter pills — only render when NOT controlled by a parent
+          (e.g. Rescate). In Seguimiento the stat cards ARE the filter, so we
+          hide this row to avoid a duplicated status strip under the cards. */}
+      {!isControlled && (
+        <div className="flex gap-1.5 flex-wrap">
+          {STATUS_COLUMNS.filter(c => allCounts[c.key] > 0).map(col => {
+            const isActive = activeFilter === col.key;
+            const t = TONE_STYLES[col.tone];
+            return (
+              <button
+                key={col.key}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setActiveFilter(isActive ? null : col.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                  isActive ? t.pillActive : t.pillIdle
+                }`}
+              >
+                {col.icon}
+                <span>{col.label}</span>
+                <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                  isActive ? t.activeCountBg : t.idleCountBg
+                }`}>
+                  {allCounts[col.key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {onlyDelayed && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3">

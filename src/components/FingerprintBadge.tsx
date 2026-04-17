@@ -59,16 +59,15 @@ const RISK_CONFIG: Record<string, {
 function rateColor(value: number, goodAtOrAbove: number, warnAtOrAbove: number): {
   text: string; fill: string;
 } {
+  // Entregas: verde si >= good, ámbar si >= warn, rojo si no.
   if (value >= goodAtOrAbove) return { text: 'text-emerald-500', fill: 'bg-emerald-500' };
   if (value >= warnAtOrAbove) return { text: 'text-orange-500', fill: 'bg-orange-500' };
   return { text: 'text-red-500', fill: 'bg-red-500' };
 }
 
-function rateColorInverse(value: number, goodAtOrBelow: number, warnAtOrBelow: number): {
-  text: string; fill: string;
-} {
-  if (value <= goodAtOrBelow) return { text: 'text-emerald-500', fill: 'bg-emerald-500' };
-  if (value <= warnAtOrBelow) return { text: 'text-orange-500', fill: 'bg-orange-500' };
+function devolutionColor(): { text: string; fill: string } {
+  // Devoluciones siempre en rojo — es señal clara de riesgo, no queremos
+  // colorearlas en ámbar "probable" porque confunde con la advertencia.
   return { text: 'text-red-500', fill: 'bg-red-500' };
 }
 
@@ -148,7 +147,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
   const pctEntrega = data.orders > 0 ? Math.round((data.delivered / data.orders) * 100) : 0;
   const pctDevol = data.orders > 0 ? Math.round((data.returned / data.orders) * 100) : 0;
   const entregaStyle = rateColor(pctEntrega, 60, 40);
-  const devolStyle = rateColorInverse(pctDevol, 20, 40);
+  const devolStyle = devolutionColor();
 
   return (
     <div className={`relative rounded-xl border ${cfg.border} bg-card overflow-hidden shadow-sm`}>
@@ -207,7 +206,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             </span>
           </div>
           <div
-            className="h-2.5 rounded-full bg-muted border border-border overflow-hidden"
+            className="h-3 rounded-full bg-zinc-800 dark:bg-zinc-800 ring-1 ring-inset ring-zinc-700 overflow-hidden"
             role="progressbar"
             aria-valuenow={pctEntrega}
             aria-valuemin={0}
@@ -215,8 +214,8 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de entrega ${pctEntrega}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ${entregaStyle.fill}`}
-              style={{ width: `${Math.max(pctEntrega, pctEntrega > 0 ? 4 : 0)}%` }}
+              className={`h-full rounded-full transition-[width] duration-500 shadow-[0_0_8px_currentColor] ${entregaStyle.fill}`}
+              style={{ width: `${Math.max(pctEntrega, pctEntrega > 0 ? 6 : 0)}%`, minWidth: pctEntrega > 0 ? '10px' : '0' }}
             />
           </div>
         </div>
@@ -228,7 +227,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             </span>
           </div>
           <div
-            className="h-2.5 rounded-full bg-muted border border-border overflow-hidden"
+            className="h-3 rounded-full bg-zinc-800 dark:bg-zinc-800 ring-1 ring-inset ring-zinc-700 overflow-hidden"
             role="progressbar"
             aria-valuenow={pctDevol}
             aria-valuemin={0}
@@ -236,8 +235,8 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de devolución ${pctDevol}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ${devolStyle.fill}`}
-              style={{ width: `${Math.max(pctDevol, pctDevol > 0 ? 4 : 0)}%` }}
+              className={`h-full rounded-full transition-[width] duration-500 shadow-[0_0_8px_currentColor] ${devolStyle.fill}`}
+              style={{ width: `${Math.max(pctDevol, pctDevol > 0 ? 6 : 0)}%`, minWidth: pctDevol > 0 ? '10px' : '0' }}
             />
           </div>
         </div>
