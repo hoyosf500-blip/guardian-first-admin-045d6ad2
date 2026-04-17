@@ -16,7 +16,7 @@ export default function OpeningReportGate({ children }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user) { setLoading(false); return; }
     const { data, error } = await (supabase.rpc as unknown as (
       fn: string
     ) => Promise<{ data: { has_opening: boolean; has_closing: boolean }[] | null; error: unknown }>)('opening_report_status');

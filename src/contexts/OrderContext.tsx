@@ -213,11 +213,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               });
             }
 
+            // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta diaria.
             const c = { conf: 0, canc: 0, noresp: 0 };
-            resultMap.forEach(({ result: r }) => {
-              if (r === 'conf') c.conf++;
-              else if (r === 'canc') c.canc++;
-              else c.noresp++;
+            (data as ResultRow[]).forEach(r => {
+              if (!isCallOutcome(r.result)) return;
+              if (r.result_date !== todayLocal) return;
+              if (r.result === 'conf') c.conf++;
+              else if (r.result === 'canc') c.canc++;
+              else if (r.result === 'noresp') c.noresp++;
             });
             setCounter(c);
           }
