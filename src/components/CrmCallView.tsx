@@ -65,15 +65,35 @@ function isExcludedFromDelay(estado: string): boolean {
 export default function CrmCallView({
   items, actions, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
 }: Props) {
-  const [callIdx, setCallIdx] = useSessionState<number>(`crmcall:${storageKey}:idx`, 0);
+  // BUG B fix: persist the *order id* of the customer being attended, not
+  // the array index. When `items` reorders (refresh, sync, filter change)
+  // the index points to a different customer; the id stays stable.
+  const [callOrderId, setCallOrderId] = useSessionState<string | null>(
+    `crmcall:${storageKey}:callOrderId`,
+    null,
+  );
 
-  // Clamp restored index when the list shrinks
+  const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
+
+  // Derive the index from the stored id every render.
+  let derivedIdx = callOrderId ? items.findIndex((it) => keyOf(it) === callOrderId) : -1;
+  if (derivedIdx < 0) {
+    const firstUnmanaged = items.findIndex((it) => !managed[it.phone]);
+    derivedIdx = firstUnmanaged >= 0 ? firstUnmanaged : 0;
+  }
+
+  // Only re-seed when the stored customer is gone (or never set).
   useEffect(() => {
-    if (items.length && callIdx >= items.length) {
-      setCallIdx(Math.max(0, items.length - 1));
+    if (!items.length) return;
+    const exists = callOrderId && items.some((it) => keyOf(it) === callOrderId);
+    if (!exists) {
+      const firstUnmanaged = items.findIndex((it) => !managed[it.phone]);
+      const target = items[firstUnmanaged >= 0 ? firstUnmanaged : 0];
+      const k = target ? keyOf(target) : null;
+      if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [callOrderId, items]);
 
   if (!items.length) {
     return (
