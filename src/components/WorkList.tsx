@@ -5,6 +5,7 @@ import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-reac
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Props {
   items: OrderData[];
@@ -20,6 +21,7 @@ function timeAgo(dias: number): string {
 export default function WorkList({ items, onOpenCall }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
+  const { isAdmin } = useAuth();
 
   if (!items.length) {
     return (
@@ -99,14 +101,15 @@ export default function WorkList({ items, onOpenCall }: Props) {
                   ${o.valor.toLocaleString()}
                 </span>
               )}
-              {/* Edit order button — opens modal to edit customer info + sync to Dropi */}
-              {o.externalId && (
+              {/* Edit order button — admin-only feature flag while validating with Dropi.
+                  Quitar el `&& isAdmin` cuando esté validado en producción. */}
+              {o.externalId && isAdmin && (
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setEditingOrder(o); }}
                   onKeyDown={(e) => e.stopPropagation()}
                   aria-label={`Editar datos del pedido de ${o.nombre}`}
-                  title="Editar datos del cliente"
+                  title="Editar datos del cliente (modo prueba — solo admin)"
                   className="w-7 h-7 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-500 flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
                 >
                   <UserCog size={13} aria-hidden="true" />

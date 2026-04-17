@@ -8,7 +8,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { toast } from 'sonner';
-import { Loader2, User } from 'lucide-react';
+import { Loader2, User, AlertTriangle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Props {
   open: boolean;
@@ -26,6 +27,7 @@ function splitName(full: string): { nombre: string; apellido: string } {
 }
 
 export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }: Props) {
+  const { isAdmin } = useAuth();
   const initial = useMemo(() => {
     const { nombre, apellido } = splitName(order.nombre);
     return {
@@ -98,11 +100,40 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
           email: form.email.trim(),
         },
       });
-      if (error) throw error;
-      if (data && data.ok === false) {
-        throw new Error(data.error || 'Error desconocido');
+
+      // Edge function returned an explicit Dropi failure (ok:false with detail).
+      // Show enriched toast with collapsible technical details so we can copy
+      // the exact error and iterate.
+      const dropiHttpStatus = (data as { dropiHttpStatus?: number } | null)?.dropiHttpStatus;
+      const dropiBody = (data as { dropiBody?: unknown } | null)?.dropiBody;
+      const isDropiFailure =
+        (data && (data as { ok?: boolean }).ok === false) ||
+        (typeof dropiHttpStatus === 'number' && dropiHttpStatus >= 400);
+
+      if (error || isDropiFailure) {
+        const shortMsg =
+          (data as { error?: string } | null)?.error ||
+          (error instanceof Error ? error.message : 'Error desconocido');
+        toast.error('Dropi rechazó el cambio', {
+          description: (
+            <div className="space-y-2">
+              <p className="text-xs">{shortMsg}</p>
+              {(dropiHttpStatus !== undefined || dropiBody !== undefined) && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-semibold">Detalle técnico</summary>
+                  <pre className="font-mono text-[11px] mt-1 p-2 bg-muted/40 rounded border border-border whitespace-pre-wrap break-all max-h-48 overflow-auto">
+{`HTTP ${dropiHttpStatus ?? 'n/a'}\n\n${JSON.stringify(dropiBody ?? {}, null, 2)}`}
+                  </pre>
+                </details>
+              )}
+            </div>
+          ),
+          duration: 15000,
+        });
+        return; // do not close dialog; keep operator's edits
       }
-      if (data?.noChange) {
+
+      if ((data as { noChange?: boolean } | null)?.noChange) {
         toast.info('No había cambios que sincronizar');
       } else {
         toast.success('Orden actualizada y sincronizada con Dropi');
@@ -131,6 +162,19 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
             </div>
           </div>
         </DialogHeader>
+
+        {/* Admin-only test-mode banner. Quitar este bloque cuando esté validado. */}
+        {isAdmin && (
+          <div className="flex gap-2 items-start rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300">
+            <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <p>
+              <span aria-hidden="true">⚠️ </span>
+              <span className="font-semibold">Modo prueba</span> — esta función está en validación con Dropi.
+              Después de actualizar, revisa en el panel de Dropi que el cambio se haya guardado antes de
+              confirmarle al cliente.
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
           <div>
