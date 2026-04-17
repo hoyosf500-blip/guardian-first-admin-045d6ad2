@@ -127,9 +127,11 @@ export default function ProductivityDashboard() {
                     <TableHead>Operadora</TableHead>
                     <TableHead className="text-right">Confirmados</TableHead>
                     <TableHead className="text-right">Cancelados</TableHead>
+                    <TableHead className="text-right">No resp.</TableHead>
                     <TableHead className="text-right">Nov. resueltas</TableHead>
-                    <TableHead className="text-right">Asignados</TableHead>
+                    <TableHead className="text-right">Atendidos</TableHead>
                     <TableHead className="text-right">Tasa contacto</TableHead>
+                    <TableHead className="text-right">Tasa confirmación</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -146,9 +148,15 @@ export default function ProductivityDashboard() {
                           {r.cancelados}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{r.noresp}</TableCell>
                       <TableCell className="text-right">{r.novedades_resueltas}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{r.total_asignados}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">{r.total_atendidos}</TableCell>
                       <TableCell className="text-right font-mono text-xs">{r.tasa_contacto}%</TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant="secondary" className={`${confColor(r.tasa_confirmacion)} hover:${confColor(r.tasa_confirmacion)} font-mono text-xs`}>
+                          {r.tasa_confirmacion}%
+                        </Badge>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
