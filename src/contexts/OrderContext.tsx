@@ -150,32 +150,33 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             const resultMap = new Map<string, { result: string; reason: string }>();
             data.forEach(r => {
               if (!isCallOutcome(r.result)) return;
+              if (!r.order_id) return; // defensivo: resultados viejos sin order_id se ignoran
               if (r.result === 'noresp') {
                 const attempts = (phoneResults.get(r.phone) || []).filter(x => x.result === 'noresp').length;
                 if (attempts >= 3) {
-                  resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                  resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
                 } else {
                   const createdAt = new Date(r.created_at).getTime();
                   const hoursElapsed = (now - createdAt) / (1000 * 60 * 60);
                   if (hoursElapsed < 3) {
-                    resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                    resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
                   }
                 }
               } else {
-                resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
               }
             });
 
             const retryPhones = new Map<string, number>();
             phoneResults.forEach((results, phone) => {
               const nrAttempts = results.filter(x => x.result === 'noresp').length;
-              if (nrAttempts > 0 && nrAttempts < 3 && !resultMap.has(phone)) {
+              if (nrAttempts > 0 && nrAttempts < 3) {
                 retryPhones.set(phone, nrAttempts);
               }
             });
 
             const updated = dedupPendientes.map(o => {
-              const r = resultMap.get(o.phone);
+              const r = o.dbId ? resultMap.get(o.dbId) : undefined;
               const retry = retryPhones.get(o.phone);
               if (r) return { ...o, result: r.result, reason: r.reason };
               if (retry) return { ...o, retryCount: retry };
