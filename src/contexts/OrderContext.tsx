@@ -130,7 +130,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
       supabase.from('order_results')
-        .select('phone, result, reason, result_time, created_at')
+        .select('order_id, phone, result, reason, result_time, created_at')
         .eq('operator_id', user.id)
         .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
@@ -150,32 +150,33 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             const resultMap = new Map<string, { result: string; reason: string }>();
             data.forEach(r => {
               if (!isCallOutcome(r.result)) return;
+              if (!r.order_id) return; // defensivo: resultados viejos sin order_id se ignoran
               if (r.result === 'noresp') {
                 const attempts = (phoneResults.get(r.phone) || []).filter(x => x.result === 'noresp').length;
                 if (attempts >= 3) {
-                  resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                  resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
                 } else {
                   const createdAt = new Date(r.created_at).getTime();
                   const hoursElapsed = (now - createdAt) / (1000 * 60 * 60);
                   if (hoursElapsed < 3) {
-                    resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                    resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
                   }
                 }
               } else {
-                resultMap.set(r.phone, { result: r.result, reason: r.reason || '' });
+                resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
               }
             });
 
             const retryPhones = new Map<string, number>();
             phoneResults.forEach((results, phone) => {
               const nrAttempts = results.filter(x => x.result === 'noresp').length;
-              if (nrAttempts > 0 && nrAttempts < 3 && !resultMap.has(phone)) {
+              if (nrAttempts > 0 && nrAttempts < 3) {
                 retryPhones.set(phone, nrAttempts);
               }
             });
 
             const updated = dedupPendientes.map(o => {
-              const r = resultMap.get(o.phone);
+              const r = o.dbId ? resultMap.get(o.dbId) : undefined;
               const retry = retryPhones.get(o.phone);
               if (r) return { ...o, result: r.result, reason: r.reason };
               if (retry) return { ...o, retryCount: retry };
@@ -216,7 +217,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     markingInFlight.current.add(order.dbId);
     revertedRef.current = false;
 
-    setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
+    setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result, reason } : o));
     setCounter(prev => {
       const next = {
         conf: prev.conf + (result === 'conf' ? 1 : 0),
@@ -293,7 +294,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }
     if (error) {
       toast.error('Error guardando resultado');
-      setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
+      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
       setCounter(prev => ({
         conf: prev.conf - (result === 'conf' ? 1 : 0),
         canc: prev.canc - (result === 'canc' ? 1 : 0),
