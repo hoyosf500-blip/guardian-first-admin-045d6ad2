@@ -179,6 +179,7 @@ const CORS_HEADERS = {
 };
 
 Deno.serve(async (req: Request) => {
+  console.log("dropi-cron v3 — secret branch active");
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
   }
