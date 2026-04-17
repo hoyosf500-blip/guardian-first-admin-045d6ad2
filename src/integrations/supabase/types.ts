@@ -202,6 +202,8 @@ export type Database = {
           flete: number | null
           guia: string | null
           id: string
+          locked_at: string | null
+          locked_by: string | null
           nombre: string
           novedad: string | null
           novedad_sol: boolean | null
@@ -232,6 +234,8 @@ export type Database = {
           flete?: number | null
           guia?: string | null
           id?: string
+          locked_at?: string | null
+          locked_by?: string | null
           nombre: string
           novedad?: string | null
           novedad_sol?: boolean | null
@@ -262,6 +266,8 @@ export type Database = {
           flete?: number | null
           guia?: string | null
           id?: string
+          locked_at?: string | null
+          locked_by?: string | null
           nombre?: string
           novedad?: string | null
           novedad_sol?: boolean | null
@@ -389,6 +395,47 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_order: {
+        Args: { p_order_id: string }
+        Returns: {
+          assigned_to: string | null
+          cantidad: number | null
+          ciudad: string | null
+          costo_dev: number | null
+          costo_prod: number | null
+          created_at: string
+          departamento: string | null
+          dias: number | null
+          dias_conf: number | null
+          direccion: string | null
+          estado: string | null
+          external_id: string | null
+          fecha: string | null
+          fecha_conf: string | null
+          flete: number | null
+          guia: string | null
+          id: string
+          locked_at: string | null
+          locked_by: string | null
+          nombre: string
+          novedad: string | null
+          novedad_sol: boolean | null
+          phone: string
+          producto: string | null
+          tags: string | null
+          tienda: string | null
+          transportadora: string | null
+          upload_date: string
+          uploaded_by: string
+          valor: number | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       get_daily_operator_stats: {
         Args: { p_date: string }
@@ -407,6 +454,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      release_order: { Args: { p_order_id: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "operator"
