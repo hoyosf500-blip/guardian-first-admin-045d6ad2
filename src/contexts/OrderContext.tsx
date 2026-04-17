@@ -130,7 +130,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
       supabase.from('order_results')
-        .select('order_id, phone, result, reason, result_time, created_at')
+        .select('order_id, phone, result, reason, result_time, result_date, created_at')
         .eq('operator_id', user.id)
         .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
@@ -140,41 +140,63 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // 'edicion_orden' must NOT mark a pedido as resuelto ni inflar el
             // counter de "no respondió".
             const isCallOutcome = (r: string) => r === 'conf' || r === 'canc' || r === 'noresp';
-            const phoneResults = new Map<string, typeof data>();
-            data.forEach(r => {
-              if (!isCallOutcome(r.result)) return;
-              if (!phoneResults.has(r.phone)) phoneResults.set(r.phone, []);
-              phoneResults.get(r.phone)!.push(r);
+            const todayLocal = new Date().toLocaleDateString('en-CA');
+            const COOLDOWN_HOURS = 2;
+            const MAX_DAILY_ATTEMPTS = 3;
+
+            type ResultRow = {
+              order_id: string | null;
+              phone: string;
+              result: string;
+              reason: string | null;
+              result_time: string | null;
+              result_date: string | null;
+              created_at: string;
+            };
+
+            // Noresps de HOY agrupados por phone
+            const todayNoresp = new Map<string, ResultRow[]>();
+            (data as ResultRow[]).forEach(r => {
+              if (r.result !== 'noresp') return;
+              if (r.result_date !== todayLocal) return;
+              if (!todayNoresp.has(r.phone)) todayNoresp.set(r.phone, []);
+              todayNoresp.get(r.phone)!.push(r);
             });
 
+            // resultMap: conf/canc siempre; noresp solo si alcanzó cap de hoy o sigue
+            // en cooldown de 2h
             const resultMap = new Map<string, { result: string; reason: string }>();
-            data.forEach(r => {
+            (data as ResultRow[]).forEach(r => {
               if (!isCallOutcome(r.result)) return;
-              if (!r.order_id) return; // defensivo: resultados viejos sin order_id se ignoran
-              if (r.result === 'noresp') {
-                const attempts = (phoneResults.get(r.phone) || []).filter(x => x.result === 'noresp').length;
-                if (attempts >= 3) {
-                  resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
-                } else {
-                  const createdAt = new Date(r.created_at).getTime();
-                  const hoursElapsed = (now - createdAt) / (1000 * 60 * 60);
-                  if (hoursElapsed < 3) {
-                    resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
-                  }
-                }
-              } else {
+              if (!r.order_id) return;
+              if (r.result === 'conf' || r.result === 'canc') {
                 resultMap.set(r.order_id, { result: r.result, reason: r.reason || '' });
+                return;
+              }
+              if (r.result_date !== todayLocal) return;
+              const todayCount = (todayNoresp.get(r.phone) || []).length;
+              if (todayCount >= MAX_DAILY_ATTEMPTS) {
+                resultMap.set(r.order_id, { result: 'noresp', reason: r.reason || '' });
+                return;
+              }
+              const hoursElapsed = (now - new Date(r.created_at).getTime()) / (1000 * 60 * 60);
+              if (hoursElapsed < COOLDOWN_HOURS) {
+                resultMap.set(r.order_id, { result: 'noresp', reason: r.reason || '' });
               }
             });
 
+            // retryPhones: solo noresps de HOY con <3 intentos Y última hace >=2h
             const retryPhones = new Map<string, number>();
-            phoneResults.forEach((results, phone) => {
-              const nrAttempts = results.filter(x => x.result === 'noresp').length;
-              if (nrAttempts > 0 && nrAttempts < 3) {
-                retryPhones.set(phone, nrAttempts);
+            todayNoresp.forEach((results, phone) => {
+              const count = results.length;
+              if (count === 0 || count >= MAX_DAILY_ATTEMPTS) return;
+              const latest = results.reduce((max, r) =>
+                Math.max(max, new Date(r.created_at).getTime()), 0);
+              const hoursSinceLatest = (now - latest) / (1000 * 60 * 60);
+              if (hoursSinceLatest >= COOLDOWN_HOURS) {
+                retryPhones.set(phone, count);
               }
             });
-
             const updated = dedupPendientes.map(o => {
               const r = o.dbId ? resultMap.get(o.dbId) : undefined;
               const retry = retryPhones.get(o.phone);
