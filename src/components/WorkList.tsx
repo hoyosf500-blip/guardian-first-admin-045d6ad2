@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { OrderData, formatPhone } from '@/lib/orderUtils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
+import EditOrderDialog from '@/components/EditOrderDialog';
 
 interface Props {
   items: OrderData[];
@@ -18,6 +19,7 @@ function timeAgo(dias: number): string {
 
 export default function WorkList({ items, onOpenCall }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
+  const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
 
   if (!items.length) {
     return (
@@ -29,6 +31,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
   }
 
   return (
+    <>
     <div className="space-y-0 rounded-xl border border-border overflow-hidden">
       {items.slice(0, visibleCount).map((o, i) => {
         const pLevel = getPriorityLevel(calcPriority(o));
@@ -96,6 +99,19 @@ export default function WorkList({ items, onOpenCall }: Props) {
                   ${o.valor.toLocaleString()}
                 </span>
               )}
+              {/* Edit order button — opens modal to edit customer info + sync to Dropi */}
+              {o.externalId && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setEditingOrder(o); }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  aria-label={`Editar datos del pedido de ${o.nombre}`}
+                  title="Editar datos del cliente"
+                  className="w-7 h-7 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-500 flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                >
+                  <UserCog size={13} aria-hidden="true" />
+                </button>
+              )}
               {/* Priority badge (high/critical only) */}
               {pLevel !== 'low' && (
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${pCfg.bgClass} ${pCfg.color}`}>
@@ -137,5 +153,13 @@ export default function WorkList({ items, onOpenCall }: Props) {
         </div>
       )}
     </div>
+    {editingOrder && (
+      <EditOrderDialog
+        open={!!editingOrder}
+        onOpenChange={(o) => { if (!o) setEditingOrder(null); }}
+        order={editingOrder}
+      />
+    )}
+    </>
   );
 }

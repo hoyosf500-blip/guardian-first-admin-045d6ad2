@@ -216,6 +216,7 @@ export type Database = {
           dias: number | null
           dias_conf: number | null
           direccion: string | null
+          email: string | null
           estado: string | null
           external_id: string | null
           fecha: string | null
@@ -223,6 +224,8 @@ export type Database = {
           flete: number | null
           guia: string | null
           id: string
+          last_edit_sync_at: string | null
+          last_edited_by: string | null
           locked_at: string | null
           locked_by: string | null
           nombre: string
@@ -248,6 +251,7 @@ export type Database = {
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
+          email?: string | null
           estado?: string | null
           external_id?: string | null
           fecha?: string | null
@@ -255,6 +259,8 @@ export type Database = {
           flete?: number | null
           guia?: string | null
           id?: string
+          last_edit_sync_at?: string | null
+          last_edited_by?: string | null
           locked_at?: string | null
           locked_by?: string | null
           nombre: string
@@ -280,6 +286,7 @@ export type Database = {
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
+          email?: string | null
           estado?: string | null
           external_id?: string | null
           fecha?: string | null
@@ -287,6 +294,8 @@ export type Database = {
           flete?: number | null
           guia?: string | null
           id?: string
+          last_edit_sync_at?: string | null
+          last_edited_by?: string | null
           locked_at?: string | null
           locked_by?: string | null
           nombre?: string
@@ -429,6 +438,7 @@ export type Database = {
           dias: number | null
           dias_conf: number | null
           direccion: string | null
+          email: string | null
           estado: string | null
           external_id: string | null
           fecha: string | null
@@ -436,6 +446,8 @@ export type Database = {
           flete: number | null
           guia: string | null
           id: string
+          last_edit_sync_at: string | null
+          last_edited_by: string | null
           locked_at: string | null
           locked_by: string | null
           nombre: string
