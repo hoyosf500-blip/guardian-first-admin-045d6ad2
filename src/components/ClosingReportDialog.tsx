@@ -2,9 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Moon, PhoneCall, PhoneOff, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Moon, PhoneCall, PhoneOff, Package, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Props { open: boolean; onClose: () => void }
@@ -22,16 +21,14 @@ interface TodayStats {
   noresp: number;
   total: number;
   tasa_conf: number;
+  pending_tomorrow: number;
 }
-
-const isValidInt = (v: string) => /^\d+$/.test(v.trim());
 
 export default function ClosingReportDialog({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<PendingRow[]>([]);
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [step, setStep] = useState(1);
-  const [pendingTomorrow, setPendingTomorrow] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -50,6 +47,7 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
         noresp: Number(s.noresp) || 0,
         total: Number(s.total) || 0,
         tasa_conf: Number(s.tasa_conf) || 0,
+        pending_tomorrow: Number(s.pending_tomorrow) || 0,
       });
     }
     setLoading(false);
@@ -58,22 +56,16 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
   useEffect(() => {
     if (open) {
       setStep(1);
-      setPendingTomorrow('');
       setNotes('');
       void load();
     }
   }, [open, load]);
 
   const submit = useCallback(async () => {
-    if (!isValidInt(pendingTomorrow)) {
-      toast.error('Pendientes para mañana es obligatorio');
-      return;
-    }
     setSubmitting(true);
     const { error } = await (supabase.rpc as unknown as (
       fn: string, args: Record<string, unknown>
     ) => Promise<{ error: { message?: string } | null }>)('submit_closing_report', {
-      p_pending_tomorrow: parseInt(pendingTomorrow, 10),
       p_notes: notes,
     });
     setSubmitting(false);
@@ -84,7 +76,7 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
     }
     toast.success('Turno cerrado');
     onClose();
-  }, [pendingTomorrow, notes, load, onClose]);
+  }, [notes, load, onClose]);
 
   const blocked = pending.length > 0;
 
@@ -94,12 +86,12 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Moon size={18} className="text-accent" />
-            Cerrar turno {!blocked && !loading && <span className="text-xs text-muted-foreground font-normal">— paso {step} de 3</span>}
+            Cerrar turno {!blocked && !loading && <span className="text-xs text-muted-foreground font-normal">— paso {step} de 2</span>}
           </DialogTitle>
           <DialogDescription>
             {blocked
               ? 'Antes de cerrar, completa los reintentos pendientes.'
-              : 'Confirma los números del día y registra los pendientes para mañana.'}
+              : 'Resumen automático del día. Solo agrega notas si lo necesitas.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -130,7 +122,9 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
           <div className="space-y-4">
             {step === 1 && (
               <div className="space-y-3">
-                <p className="text-xs text-muted-foreground">¿Cuántos gestionaste hoy? Estos números vienen del sistema, no se editan.</p>
+                <p className="text-xs text-muted-foreground">
+                  Todos estos números los calcula el sistema automáticamente — no se editan.
+                </p>
                 <div className="grid grid-cols-3 gap-2">
                   <StatCard
                     icon={<CheckCircle2 size={14} className="text-green" />}
@@ -159,6 +153,14 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                     {stats?.total ?? 0} <span className="text-muted-foreground font-normal">· {stats?.tasa_conf ?? 0}% conf.</span>
                   </div>
                 </div>
+                <div className="flex items-center justify-between bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2 text-accent">
+                    <Package size={12} /> Pendientes para mañana
+                  </div>
+                  <div className="font-mono font-bold text-accent">
+                    {stats?.pending_tomorrow ?? 0}
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
                   <Button onClick={() => setStep(2)} className="flex-1">
@@ -170,34 +172,6 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
 
             {step === 2 && (
               <div className="space-y-3">
-                <label className="text-xs font-medium text-foreground">¿Cuántos pendientes para mañana?</label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={pendingTomorrow}
-                  onChange={(e) => setPendingTomorrow(e.target.value)}
-                  placeholder="0"
-                  autoFocus
-                />
-                <p className="text-xs text-muted-foreground">Pedidos que quedan abiertos y la próxima operadora debe retomar.</p>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
-                    <ArrowLeft size={14} /> Atrás
-                  </Button>
-                  <Button
-                    onClick={() => setStep(3)}
-                    disabled={!isValidInt(pendingTomorrow)}
-                    className="flex-1"
-                  >
-                    Siguiente <ArrowRight size={14} />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {step === 3 && (
-              <div className="space-y-3">
                 <label className="text-xs font-medium text-foreground">Notas de cierre (opcional)</label>
                 <Textarea
                   value={notes}
@@ -205,9 +179,10 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                   placeholder="¿Algo que reportar al cerrar el turno?"
                   rows={4}
                   className="resize-none"
+                  autoFocus
                 />
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setStep(2)} className="flex-1">
+                  <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
                     <ArrowLeft size={14} /> Atrás
                   </Button>
                   <Button onClick={submit} disabled={submitting} className="flex-1">
