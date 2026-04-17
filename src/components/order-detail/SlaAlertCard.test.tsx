@@ -19,7 +19,7 @@ function makeOrder(overrides: Partial<OrderData> = {}): OrderData {
     valor: 50000, flete: 8000, costoProd: 15000, costoDev: 5000,
     cantidad: 1, direccion: 'Calle 1', novedad: '', guia: 'G123',
     transportadora: 'TCC', tags: '', departamento: 'Cundinamarca',
-    tienda: 'Mi tienda', novedadSol: false,
+    tienda: 'Mi tienda', email: '', novedadSol: false,
     ...overrides,
   };
 }
