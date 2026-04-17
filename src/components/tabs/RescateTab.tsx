@@ -5,11 +5,17 @@ import { LifeBuoy, RefreshCw, AlertTriangle, MapPin, RotateCcw, ShieldAlert } fr
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 
+/** Tono semántico → clases tokenizadas. Sin hex inline. */
+const TONE = {
+  danger:  { bg: 'bg-danger/10',  border: 'border-danger/25',  text: 'text-danger',  stripe: 'bg-danger' },
+  warning: { bg: 'bg-warning/10', border: 'border-warning/25', text: 'text-warning', stripe: 'bg-warning' },
+  info:    { bg: 'bg-info/10',    border: 'border-info/25',    text: 'text-info',    stripe: 'bg-info' },
+  ai:      { bg: 'bg-ai/10',      border: 'border-ai/25',      text: 'text-ai',      stripe: 'bg-ai' },
+} as const;
+
+type Tone = keyof typeof TONE;
 
 export default function RescateTab() {
-  // Cached in OrderContext so the data survives route unmounts. Without the
-  // cache the operator sees "Cargando rescate..." every time they switch
-  // tabs and any filter/selection state is lost.
   const { resData, resLoaded, resLoading, loadResData } = useOrders();
 
   useEffect(() => { loadResData(); }, [loadResData]);
@@ -28,13 +34,11 @@ export default function RescateTab() {
     return { novedades, oficina, devoluciones, retrasados, valorEnRiesgo };
   }, [resData]);
 
-  // Fullscreen loading only on the first fetch. After that, data stays on
-  // screen across route navigations since it lives in OrderContext.
   if (!resLoaded && resLoading) {
     return (
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <RefreshCw size={32} className="text-primary animate-spin" />
+          <RefreshCw size={32} className="text-accent animate-spin" />
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">Cargando rescate...</p>
             <p className="text-xs text-muted-foreground mt-1">Buscando pedidos en riesgo</p>
@@ -44,11 +48,11 @@ export default function RescateTab() {
     );
   }
 
-  const statCards = [
-    { label: 'Novedades', value: stats.novedades, icon: <AlertTriangle size={16} />, iconStyle: { background: '#ef4444' }, textColor: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/15 dark:bg-red-500/10' },
-    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={16} />, iconStyle: { background: '#a855f7' }, textColor: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/15 dark:bg-purple-500/10' },
-    { label: 'Devoluciones', value: stats.devoluciones, icon: <RotateCcw size={16} />, iconStyle: { background: '#e11d48' }, textColor: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-500/15 dark:bg-rose-500/10' },
-    { label: 'Retrasados 5d+', value: stats.retrasados, icon: <ShieldAlert size={16} />, iconStyle: { background: '#f97316' }, textColor: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-500/15 dark:bg-orange-500/10' },
+  const statCards: Array<{ label: string; value: number; icon: JSX.Element; tone: Tone }> = [
+    { label: 'Novedades',      value: stats.novedades,    icon: <AlertTriangle size={16} />, tone: 'danger' },
+    { label: 'En Oficina',     value: stats.oficina,      icon: <MapPin size={16} />,        tone: 'ai' },
+    { label: 'Devoluciones',   value: stats.devoluciones, icon: <RotateCcw size={16} />,     tone: 'danger' },
+    { label: 'Retrasados 5d+', value: stats.retrasados,   icon: <ShieldAlert size={16} />,   tone: 'warning' },
   ];
 
   return (
@@ -60,23 +64,24 @@ export default function RescateTab() {
         className="mb-6 space-y-4"
       >
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg" style={{ background: 'linear-gradient(135deg, #ef4444, #e11d48)', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}>
-                <LifeBuoy size={18} className="text-white" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-foreground">Rescate</h2>
-                <p className="text-xs text-muted-foreground">Pedidos en riesgo que necesitan acción inmediata</p>
-              </div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-danger to-danger/70 text-danger-foreground shadow-ds-md"
+              aria-hidden="true"
+            >
+              <LifeBuoy size={18} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground tracking-tight">Rescate</h2>
+              <p className="text-xs text-muted-foreground">Pedidos en riesgo que necesitan acción inmediata</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {resData.length > 0 && (
-              <div className="hidden sm:flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2">
+              <div className="hidden sm:flex items-center gap-2 rounded-xl border border-danger/20 bg-danger/5 px-4 py-2">
                 <span className="text-xs text-muted-foreground">Valor en riesgo</span>
-                <span className="text-sm font-bold text-red-600 dark:text-red-400">
+                <span className="text-sm font-bold text-danger tabular-nums">
                   ${stats.valorEnRiesgo.toLocaleString('es-CO')}
                 </span>
               </div>
@@ -84,7 +89,7 @@ export default function RescateTab() {
             <button
               onClick={() => loadResData(true)}
               disabled={resLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary text-muted-foreground text-xs font-medium hover:text-foreground hover:bg-secondary/80 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-muted-foreground text-xs font-semibold hover:text-foreground hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw size={13} className={resLoading ? 'animate-spin' : ''} /> Actualizar
             </button>
@@ -94,23 +99,27 @@ export default function RescateTab() {
         {/* Stats row */}
         {resData.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {statCards.map((s, i) => (
-              <motion.div
-                key={s.label}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: i * 0.05, duration: 0.2 }}
-                className={`${s.bg} rounded-xl border border-border/40 px-4 py-3 flex items-center gap-3`}
-              >
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-md" style={s.iconStyle}>
-                  {s.icon}
-                </div>
-                <div>
-                  <p className={`text-lg font-black ${s.textColor}`}>{s.value}</p>
-                  <p className="text-[10px] font-medium text-muted-foreground leading-tight">{s.label}</p>
-                </div>
-              </motion.div>
-            ))}
+            {statCards.map((s, i) => {
+              const t = TONE[s.tone];
+              return (
+                <motion.div
+                  key={s.label}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05, duration: 0.22 }}
+                  className={`relative overflow-hidden rounded-xl border ${t.border} ${t.bg} px-4 py-3 flex items-center gap-3 shadow-ds-xs`}
+                >
+                  <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${t.stripe}`} aria-hidden="true" />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${t.bg} ${t.text} border ${t.border}`}>
+                    {s.icon}
+                  </div>
+                  <div>
+                    <p className={`text-lg font-bold tabular-nums ${t.text}`}>{s.value}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight">{s.label}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </motion.div>

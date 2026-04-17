@@ -205,10 +205,10 @@ function buildMonthlyChart(orders: HistoryOrder[]): MonthData[] {
 // ── Tabs config ─────────────────────────────────────────────────────
 
 const TABS: { key: OrderCategory; label: string; activeClass: string }[] = [
-  { key: 'todos',      label: 'Todos',      activeClass: 'bg-primary/10 text-primary' },
-  { key: 'entregado',  label: 'Entregados',  activeClass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
-  { key: 'no_entrega', label: 'No Entrega',  activeClass: 'bg-rose-500/15 text-rose-600 dark:text-rose-400' },
-  { key: 'en_camino',  label: 'En Camino',   activeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
+  { key: 'todos',      label: 'Todos',       activeClass: 'bg-accent/12 text-accent border border-accent/30' },
+  { key: 'entregado',  label: 'Entregados',  activeClass: 'bg-success/12 text-success border border-success/30' },
+  { key: 'no_entrega', label: 'No Entrega',  activeClass: 'bg-danger/12 text-danger border border-danger/30' },
+  { key: 'en_camino',  label: 'En Camino',   activeClass: 'bg-info/12 text-info border border-info/30' },
 ];
 
 // Muted fill for the gauge background — works in light and dark themes
@@ -351,7 +351,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <Shield size={16} className="text-primary" />
+          <Shield size={16} className="text-accent" />
           <h3 className="text-sm font-bold text-foreground">Huella del comprador</h3>
           <span className="text-xs text-muted-foreground">· {total} pedido{total === 1 ? '' : 's'}</span>
         </div>
@@ -579,18 +579,18 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           <div className="px-5 py-3 border-b border-border">
             {!ai.reply && !ai.loading && (
               <button onClick={() => askAi(aiKey, 'customer_profile', buildCtx())}
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-xs font-semibold hover:bg-violet-500/20 transition-colors">
-                <Sparkles size={12} /> Perfil IA del cliente
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-ai/10 border border-ai/25 text-ai text-xs font-semibold hover:bg-ai/15 hover:border-ai/40 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ai/40 focus-visible:outline-none">
+                <Sparkles size={12} aria-hidden="true" /> Perfil IA del cliente
               </button>
             )}
             {ai.loading && (
-              <div className="flex items-center gap-1.5 py-2 text-xs text-violet-500">
-                <RefreshCw size={12} className="animate-spin" /> Analizando cliente...
+              <div className="flex items-center gap-1.5 py-2 text-xs text-ai">
+                <RefreshCw size={12} className="animate-spin" aria-hidden="true" /> Analizando cliente...
               </div>
             )}
             {ai.reply && (
-              <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20 text-xs text-foreground whitespace-pre-line leading-relaxed">
-                <span className="text-violet-600 dark:text-violet-400 font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} /> Perfil IA</span>
+              <div className="p-3 rounded-lg bg-ai/5 border border-ai/25 text-xs text-foreground whitespace-pre-line leading-relaxed">
+                <span className="text-ai font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} aria-hidden="true" /> Perfil IA</span>
                 <br />{ai.reply}
               </div>
             )}

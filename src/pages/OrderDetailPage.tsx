@@ -309,7 +309,7 @@ export default function OrderDetailPage() {
         <Package size={32} className="text-muted-foreground" />
         <p className="text-sm font-semibold text-foreground">Pedido no encontrado</p>
         <p className="text-xs text-muted-foreground">ID: {externalId}</p>
-        <button onClick={() => navigate(-1)} className="text-xs text-primary hover:underline mt-2">← Volver</button>
+        <button onClick={() => navigate(-1)} className="text-xs text-accent hover:underline mt-2 cursor-pointer">← Volver</button>
       </div>
     );
   }
@@ -340,11 +340,11 @@ export default function OrderDetailPage() {
             </button>
           </div>
         </div>
-        <span className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
-          estadoUpper.includes('ENTREGADO') ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' :
-          estadoUpper.includes('DEVOL') ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20' :
-          estadoUpper.includes('NOVEDAD') ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' :
-          'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+        <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
+          estadoUpper.includes('ENTREGADO') ? 'bg-success/12 text-success border-success/30' :
+          estadoUpper.includes('DEVOL') ? 'bg-danger/12 text-danger border-danger/30' :
+          estadoUpper.includes('NOVEDAD') ? 'bg-warning/12 text-warning border-warning/30' :
+          'bg-info/12 text-info border-info/30'
         }`}>
           {order.estado}
         </span>
@@ -353,7 +353,7 @@ export default function OrderDetailPage() {
         {showConfirmShortcut && (
           <button
             onClick={() => navigate('/confirmar')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-semibold hover:bg-blue-500/20 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent/12 text-accent border border-accent/30 text-xs font-semibold hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
           >
             <PhoneCall size={12} /> Ir a Confirmar
           </button>
@@ -363,7 +363,7 @@ export default function OrderDetailPage() {
             <button
               onClick={() => setShowReofferInput(true)}
               disabled={resolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-semibold hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-info/12 text-info border border-info/30 text-xs font-semibold hover:bg-info/20 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RotateCcw size={12} /> Reprogramar
             </button>
@@ -374,7 +374,7 @@ export default function OrderDetailPage() {
                 }
               }}
               disabled={resolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 text-xs font-semibold hover:bg-red-500/20 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-danger/12 text-danger border border-danger/30 text-xs font-semibold hover:bg-danger/20 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Undo2 size={12} /> Devolver
             </button>
@@ -385,8 +385,8 @@ export default function OrderDetailPage() {
       {/* Reoffer solution input (F3) */}
       {showReofferInput && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 flex flex-col gap-2">
-          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">Solución para reprogramar entrega:</p>
+          className="bg-info/5 border border-info/25 rounded-xl p-4 flex flex-col gap-2">
+          <p className="text-xs font-semibold text-info">Solución para reprogramar entrega:</p>
           <input
             value={solutionText}
             onChange={(e) => setSolutionText(e.target.value)}
@@ -394,13 +394,13 @@ export default function OrderDetailPage() {
             placeholder="Ej: Cliente pide enviar el martes, nueva dirección Cra 45 #12-30"
             disabled={resolving}
             autoFocus
-            className="bg-secondary/70 border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+            className="bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
           />
           <div className="flex gap-2">
             <button
               onClick={() => handleResolveNovedad('reoffer')}
               disabled={resolving || solutionText.trim().length < 3}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
             >
               {resolving ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
               {resolving ? 'Enviando…' : 'Enviar a Dropi'}
@@ -408,7 +408,7 @@ export default function OrderDetailPage() {
             <button
               onClick={() => { setShowReofferInput(false); setSolutionText(''); }}
               disabled={resolving}
-              className="px-3 py-2 rounded-lg bg-secondary text-muted-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors disabled:opacity-50"
+              className="px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground text-xs font-semibold hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50 cursor-pointer"
             >
               Cancelar
             </button>
@@ -474,10 +474,10 @@ export default function OrderDetailPage() {
 
           {order.novedad && (
             <div className="space-y-2">
-              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/5 border border-red-500/20">
-                <AlertTriangle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-danger/8 border border-danger/25">
+                <AlertTriangle size={13} className="text-danger mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <div>
-                  <div className="text-[10px] font-semibold text-red-500 mb-0.5">Novedad</div>
+                  <div className="text-[10px] font-semibold text-danger uppercase tracking-wider mb-0.5">Novedad</div>
                   <div className="text-xs text-foreground">{order.novedad}</div>
                 </div>
               </div>
@@ -617,7 +617,7 @@ function InfoRow({ icon, label, value, copyable, highlight }: { icon: React.Reac
       <div className="text-muted-foreground/60 flex-shrink-0">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="text-[10px] text-muted-foreground">{label}</div>
-        <div className={`text-xs truncate ${highlight ? 'font-bold text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>{value}</div>
+        <div className={`text-xs truncate ${highlight ? 'font-bold text-success' : 'text-foreground'}`}>{value}</div>
       </div>
       {copyable && (
         <button onClick={() => { navigator.clipboard.writeText(value); toast.success('Copiado'); }}

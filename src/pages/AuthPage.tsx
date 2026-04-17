@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Check, Package, Phone, BarChart3 } from 'lucide-react';
+import { Sun, Moon, Check, Package, Phone, BarChart3, ShieldCheck } from 'lucide-react';
 
 export default function AuthPage() {
   const { signIn, signUp, user } = useAuth();
@@ -31,53 +31,62 @@ export default function AuthPage() {
     setLoading(false);
   };
 
+  const features = [
+    { icon: Phone, text: 'Confirmación inteligente de pedidos' },
+    { icon: Package, text: 'Seguimiento y rescate de envíos' },
+    { icon: BarChart3, text: 'Dashboard con analíticas en tiempo real' },
+    { icon: ShieldCheck, text: 'Sincronización directa con Dropi' },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-primary/70 items-center justify-center p-12 relative overflow-hidden">
+      {/* Left panel — brand identity */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-accent via-accent/90 to-accent/70 items-center justify-center p-12 relative overflow-hidden">
         {/* Decorative blobs */}
-        <div className="absolute top-20 -left-20 w-64 h-64 bg-white/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 right-10 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
-        
-        <div className="max-w-md text-primary-foreground relative z-10">
-          <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center text-2xl font-bold mb-8 shadow-xl">
+        <div className="absolute top-20 -left-20 w-64 h-64 bg-accent-foreground/10 rounded-full blur-3xl" aria-hidden="true" />
+        <div className="absolute bottom-20 right-10 w-80 h-80 bg-accent-foreground/10 rounded-full blur-3xl" aria-hidden="true" />
+        <div className="absolute inset-0 opacity-[0.04] bg-[radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] [background-size:24px_24px] text-accent-foreground" aria-hidden="true" />
+
+        <div className="max-w-md text-accent-foreground relative z-10">
+          <div className="w-14 h-14 rounded-2xl bg-accent-foreground/15 backdrop-blur-sm flex items-center justify-center text-2xl font-extrabold mb-8 shadow-ds-lg ring-1 ring-accent-foreground/20">
             P
           </div>
-          <h2 className="text-4xl font-bold mb-4 leading-tight">Panel Operadora<br />COD</h2>
-          <p className="text-primary-foreground/70 text-lg leading-relaxed">
+          <h2 className="text-4xl font-extrabold mb-4 leading-[1.1] tracking-tight">
+            Panel Operadora<br />COD
+          </h2>
+          <p className="text-accent-foreground/80 text-base leading-relaxed">
             Gestiona pedidos, confirma órdenes y rastrea envíos desde una sola plataforma.
           </p>
-          <div className="mt-12 space-y-4">
-            {[
-              { icon: Phone, text: 'Confirmación inteligente de pedidos' },
-              { icon: Package, text: 'Seguimiento y rescate de envíos' },
-              { icon: BarChart3, text: 'Dashboard con analíticas en tiempo real' },
-            ].map(item => (
-              <div key={item.text} className="flex items-center gap-3 text-sm text-primary-foreground/70">
-                <span className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
-                  <item.icon size={14} />
+          <div className="mt-12 space-y-3">
+            {features.map(item => (
+              <div key={item.text} className="flex items-center gap-3 text-sm text-accent-foreground/85">
+                <span className="w-8 h-8 rounded-xl bg-accent-foreground/12 flex items-center justify-center flex-shrink-0">
+                  <item.icon size={14} aria-hidden="true" />
                 </span>
-                {item.text}
+                <span>{item.text}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <button onClick={toggleTheme}
-          className="absolute top-4 right-4 w-9 h-9 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-all">
+      {/* Right panel — form */}
+      <div className="flex-1 flex items-center justify-center p-6 relative">
+        <button
+          onClick={toggleTheme}
+          aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
+          className="absolute top-4 right-4 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
           {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-primary-foreground text-sm font-bold shadow-lg">P</div>
-            <span className="text-lg font-bold text-foreground">Panel COD</span>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-accent-foreground text-sm font-extrabold shadow-ds-md">P</div>
+            <span className="text-lg font-bold text-foreground tracking-tight">Panel COD</span>
           </div>
 
-          <h1 className="text-2xl font-bold text-foreground mb-1">
+          <h1 className="text-2xl font-extrabold text-foreground tracking-tight mb-1">
             {mode === 'login' ? 'Bienvenido de nuevo' : 'Crear cuenta'}
           </h1>
           <p className="text-sm text-muted-foreground mb-8">
@@ -87,36 +96,66 @@ export default function AuthPage() {
           <form onSubmit={handleSubmit} className="space-y-3.5">
             {mode === 'register' && (
               <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5">Nombre</label>
-                <input type="text" placeholder="Tu nombre" value={displayName} onChange={e => setDisplayName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all" />
+                <label htmlFor="auth-name" className="block text-xs font-semibold text-foreground mb-1.5">Nombre</label>
+                <input
+                  id="auth-name"
+                  type="text"
+                  placeholder="Tu nombre"
+                  value={displayName}
+                  onChange={e => setDisplayName(e.target.value)}
+                  autoComplete="name"
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
               </div>
             )}
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
-              <input type="email" placeholder="tu@email.com" value={email} onChange={e => setEmail(e.target.value)} required
-                className="w-full px-4 py-3 rounded-xl bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all" />
+              <label htmlFor="auth-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
+              <input
+                id="auth-email"
+                type="email"
+                placeholder="tu@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Contraseña</label>
-              <input type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
-                className="w-full px-4 py-3 rounded-xl bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all" />
+              <label htmlFor="auth-password" className="block text-xs font-semibold text-foreground mb-1.5">Contraseña</label>
+              <input
+                id="auth-password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+              />
             </div>
-            <button type="submit" disabled={loading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-semibold text-sm disabled:opacity-50 hover:opacity-90 active:scale-[0.98] transition-all mt-1 shadow-lg shadow-primary/15">
-              {loading ? '...' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              {loading ? 'Procesando…' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+              className="text-sm text-muted-foreground hover:text-accent transition-colors duration-200 cursor-pointer"
+            >
               {mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
             </button>
           </div>
 
           {mode === 'register' && (
-            <p className="mt-4 text-xs text-muted-foreground text-center">
+            <p className="mt-4 text-xs text-muted-foreground text-center flex items-center justify-center gap-1.5">
+              <Check size={12} className="text-success" aria-hidden="true" />
               El primer usuario registrado será administrador automáticamente
             </p>
           )}

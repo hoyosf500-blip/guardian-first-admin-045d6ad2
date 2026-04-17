@@ -14,11 +14,11 @@ interface Props {
 }
 
 const LEVEL_STYLES: Record<AlertLevel, { bg: string; border: string; borderL: string; text: string; iconClass: string }> = {
-  ok:       { bg: 'bg-green-500/10',   border: 'border-green-500/30',   borderL: 'border-l-green-500',   text: 'text-green-600 dark:text-green-400',     iconClass: 'text-green-500' },
-  watch:    { bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30',  borderL: 'border-l-yellow-500',  text: 'text-yellow-600 dark:text-yellow-400',   iconClass: 'text-yellow-500' },
-  alert:    { bg: 'bg-orange-500/10',  border: 'border-orange-500/30',  borderL: 'border-l-orange-500',  text: 'text-orange-600 dark:text-orange-400',   iconClass: 'text-orange-500' },
-  critical: { bg: 'bg-red-500/10',     border: 'border-red-500/30',     borderL: 'border-l-red-500',     text: 'text-red-600 dark:text-red-400',         iconClass: 'text-red-500' },
-  lost:     { bg: 'bg-gray-500/10',    border: 'border-gray-500/30',    borderL: 'border-l-gray-500',    text: 'text-gray-600 dark:text-gray-400',       iconClass: 'text-gray-500' },
+  ok:       { bg: 'bg-success/10', border: 'border-success/25', borderL: 'border-l-success', text: 'text-success', iconClass: 'text-success' },
+  watch:    { bg: 'bg-warning/10', border: 'border-warning/25', borderL: 'border-l-warning', text: 'text-warning', iconClass: 'text-warning' },
+  alert:    { bg: 'bg-warning/10', border: 'border-warning/25', borderL: 'border-l-warning', text: 'text-warning', iconClass: 'text-warning' },
+  critical: { bg: 'bg-danger/10',  border: 'border-danger/25',  borderL: 'border-l-danger',  text: 'text-danger',  iconClass: 'text-danger' },
+  lost:     { bg: 'bg-muted/40',   border: 'border-border',     borderL: 'border-l-muted-foreground', text: 'text-muted-foreground', iconClass: 'text-muted-foreground' },
 };
 
 function LevelIcon({ level, className }: { level: AlertLevel; className?: string }) {
@@ -51,10 +51,10 @@ export default function SlaAlertCard({ order }: Props) {
     : null;
 
   const progressColor =
-    pct < 50 ? 'bg-green-500'
-    : pct < 75 ? 'bg-yellow-500'
-    : pct < 100 ? 'bg-orange-500'
-    : 'bg-red-500';
+    pct < 50 ? 'bg-success'
+    : pct < 75 ? 'bg-warning'
+    : pct < 100 ? 'bg-warning'
+    : 'bg-danger';
 
   return (
     <motion.div
@@ -125,7 +125,7 @@ export default function SlaAlertCard({ order }: Props) {
           {/* Suggested action banner */}
           {suggested && (
             <div className="mt-3 p-3 rounded-lg bg-card border border-border flex items-start gap-2">
-              <AlertTriangle size={14} className="text-orange-500 flex-shrink-0 mt-0.5" />
+              <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
                   Acción sugerida

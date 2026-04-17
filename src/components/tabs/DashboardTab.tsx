@@ -319,20 +319,37 @@ export default function DashboardTab() {
     window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal: ${total} | Tasa: ${tasa}%\nPendientes: ${pendLeft}`)}`, '_blank');
   };
 
-  const tickStyle = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
-  const tooltipStyle = { backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px', fontSize: '12px', color: '#fafafa' };
-  const COLORS = ['#fbbf24', '#3b82f6', '#22c55e', '#ef4444', '#a855f7', '#06b6d4', '#71717a'];
+  // Chart theming uses HSL CSS vars so dark/light modes adapt automatically.
+  const hsl = (v: string) => `hsl(var(${v}))`;
+  const tickStyle = { fontSize: 10, fill: hsl('--muted-foreground') };
+  const tooltipStyle = {
+    backgroundColor: hsl('--card'),
+    border: `1px solid ${hsl('--border')}`,
+    borderRadius: '10px',
+    fontSize: '12px',
+    color: hsl('--foreground'),
+    boxShadow: 'var(--shadow-md)',
+  };
+  const CHART_ACCENT  = hsl('--accent');
+  const CHART_SUCCESS = hsl('--success');
+  const CHART_DANGER  = hsl('--danger');
+  const CHART_WARNING = hsl('--warning');
+  const CHART_INFO    = hsl('--info');
+  const CHART_AI      = hsl('--ai');
+  const CHART_MUTED   = hsl('--muted-foreground');
+  const CHART_GRID    = hsl('--border');
+  const COLORS = [CHART_ACCENT, CHART_INFO, CHART_SUCCESS, CHART_DANGER, CHART_AI, '#06b6d4', CHART_MUTED];
 
-  const tasaColor = tasa >= 80 ? 'text-green' : tasa >= 60 ? 'text-orange' : 'text-red';
-  const tasaStroke = tasa >= 80 ? '#22c55e' : tasa >= 60 ? '#f97316' : '#ef4444';
-  const tasaBg = tasa >= 80 ? 'bg-green/10' : tasa >= 60 ? 'bg-orange/10' : 'bg-red/10';
+  const tasaColor  = tasa >= 80 ? 'text-success' : tasa >= 60 ? 'text-warning' : 'text-danger';
+  const tasaStroke = tasa >= 80 ? CHART_SUCCESS : tasa >= 60 ? CHART_WARNING : CHART_DANGER;
+  const tasaBg     = tasa >= 80 ? 'bg-success/10 border border-success/25' : tasa >= 60 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
 
   function TrendBadge({ current, previous, suffix = '' }: { current: number; previous: number; suffix?: string }) {
     const diff = current - previous;
     if (diff === 0) return <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><Minus size={10} /> sin cambio</span>;
     const up = diff > 0;
     return (
-      <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${up ? 'text-green' : 'text-red'}`}>
+      <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${up ? 'text-success' : 'text-danger'}`}>
         {up ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
         {up ? '+' : ''}{diff}{suffix} vs ayer
       </span>
@@ -392,7 +409,7 @@ export default function DashboardTab() {
                   <button onClick={() => { copiarResumen(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-foreground hover:bg-surface transition-colors duration-200 cursor-pointer">
                     <Copy size={13} aria-hidden="true" /> Copiar resumen
                   </button>
-                  <button onClick={() => { enviarWA(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-green hover:bg-surface transition-colors duration-200 cursor-pointer">
+                  <button onClick={() => { enviarWA(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-success hover:bg-surface transition-colors duration-200 cursor-pointer">
                     <MessageSquare size={13} aria-hidden="true" /> Enviar por WhatsApp
                   </button>
                 </div>
@@ -408,21 +425,21 @@ export default function DashboardTab() {
       {syncStatus && (
         <motion.div {...fadeUp(0.03)} className={`mb-5 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border px-4 py-3 ${
           syncStatus.broken
-            ? 'border-red/30 bg-red/10'
+            ? 'border-danger/30 bg-danger/10'
             : syncStatus.warning
-              ? 'border-orange/30 bg-orange/10'
-              : 'border-green/30 bg-green/10'
+              ? 'border-warning/30 bg-warning/10'
+              : 'border-success/30 bg-success/10'
         }`}>
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-            syncStatus.broken ? 'bg-red/20' : syncStatus.warning ? 'bg-orange/20' : 'bg-green/20'
+            syncStatus.broken ? 'bg-danger/20' : syncStatus.warning ? 'bg-warning/20' : 'bg-success/20'
           }`}>
-            {syncStatus.broken ? <CloudOff size={18} className="text-red" />
-              : syncStatus.warning ? <Clock size={18} className="text-orange" />
-              : <CloudDownload size={18} className="text-green" />}
+            {syncStatus.broken ? <CloudOff size={18} className="text-danger" aria-hidden="true" />
+              : syncStatus.warning ? <Clock size={18} className="text-warning" aria-hidden="true" />
+              : <CloudDownload size={18} className="text-success" aria-hidden="true" />}
           </div>
           <div className="flex-1 min-w-0">
             <div className={`text-xs font-semibold ${
-              syncStatus.broken ? 'text-red' : syncStatus.warning ? 'text-orange' : 'text-green'
+              syncStatus.broken ? 'text-danger' : syncStatus.warning ? 'text-warning' : 'text-success'
             }`}>
               {syncStatus.broken
                 ? (syncStatus.isError ? `Sync caído: ${lastSync?.error_message || 'error'}` : `Sin sincronización hace ${syncStatus.ageLabel}`)
@@ -437,7 +454,7 @@ export default function DashboardTab() {
           <button
             onClick={resyncNow}
             disabled={resyncing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-medium text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-medium text-foreground hover:bg-muted/60 hover:border-accent/40 transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <RefreshCw size={12} className={resyncing ? 'animate-spin' : ''} />
             {resyncing ? 'Sincronizando...' : 'Forzar sync'}
@@ -485,10 +502,10 @@ export default function DashboardTab() {
 
             {/* Compact KPIs */}
             {[
-              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-green', iconBg: 'bg-green/15 border-green/20', iconColor: 'text-green', spark: sparkData.conf, sparkColor: '#22c55e' },
-              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-red', iconBg: 'bg-red/15 border-red/20', iconColor: 'text-red', spark: sparkData.canc, sparkColor: '#ef4444' },
-              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-foreground', iconBg: 'bg-card border-border', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
-              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-accent/15 border-accent/20', iconColor: 'text-accent', spark: sparkData.total, sparkColor: '#fbbf24', extra: `${statusBreakdown.pendientes} pendientes` },
+              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-success', iconBg: 'bg-success/12 border-success/25', iconColor: 'text-success', spark: sparkData.conf, sparkColor: CHART_SUCCESS },
+              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-danger', iconBg: 'bg-danger/12 border-danger/25', iconColor: 'text-danger', spark: sparkData.canc, sparkColor: CHART_DANGER },
+              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-foreground', iconBg: 'bg-muted/60 border-border', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-accent/12 border-accent/25', iconColor: 'text-accent', spark: sparkData.total, sparkColor: CHART_ACCENT, extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k) => {
               const Icon = k.icon;
               const isZero = k.value === 0;
@@ -532,15 +549,15 @@ export default function DashboardTab() {
                   <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                     <defs>
                       <linearGradient id="tGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.20} />
-                        <stop offset="100%" stopColor="#fbbf24" stopOpacity={0} />
+                        <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.25} />
+                        <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={tickStyle} axisLine={false} tickLine={false} unit="%" />
                     <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v}%`, 'Tasa']} />
-                    <Area type="monotone" dataKey="tasa" stroke="#fbbf24" strokeWidth={2} fill="url(#tGrad)" dot={{ r: 2, fill: '#fbbf24', strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: '#18181b' }} />
+                    <Area type="monotone" dataKey="tasa" stroke={CHART_ACCENT} strokeWidth={2} fill="url(#tGrad)" dot={{ r: 2, fill: CHART_ACCENT, strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: hsl('--background') }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -549,20 +566,20 @@ export default function DashboardTab() {
             <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Layers size={14} className="text-green" aria-hidden="true" /> Gestiones por día
+                  <Layers size={14} className="text-success" aria-hidden="true" /> Gestiones por día
                 </h3>
               </div>
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '6px' }} formatter={(v: string) => v === 'conf' ? 'Confirmados' : v === 'canc' ? 'Cancelados' : 'No respondió'} />
-                    <Bar dataKey="conf" stackId="a" fill="#22c55e" name="conf" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="canc" stackId="a" fill="#ef4444" name="canc" />
-                    <Bar dataKey="noresp" stackId="a" fill="#71717a" radius={[3, 3, 0, 0]} name="noresp" />
+                    <Bar dataKey="conf" stackId="a" fill={CHART_SUCCESS} name="conf" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="canc" stackId="a" fill={CHART_DANGER} name="canc" />
+                    <Bar dataKey="noresp" stackId="a" fill={CHART_MUTED} radius={[3, 3, 0, 0]} name="noresp" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -592,7 +609,7 @@ export default function DashboardTab() {
                   <tbody>
                     {operatorRanking.map((op, idx) => {
                       const isMe = op.operatorId === user?.id;
-                      const tasaC = op.tasa >= 80 ? 'text-green' : op.tasa >= 60 ? 'text-orange' : 'text-red';
+                      const tasaC = op.tasa >= 80 ? 'text-success' : op.tasa >= 60 ? 'text-warning' : 'text-danger';
                       return (
                         <tr key={op.operatorId} className={`border-b border-border last:border-0 transition-colors duration-200 ${isMe ? 'bg-accent/8' : 'hover:bg-card'}`}>
                           <td className="px-5 py-2.5 font-mono font-bold">
@@ -601,8 +618,8 @@ export default function DashboardTab() {
                           <td className="px-3 py-2.5 font-medium">
                             {op.name}{isMe && <span className="ml-1.5 text-[10px] text-accent font-semibold">(tú)</span>}
                           </td>
-                          <td className="px-3 py-2.5 text-center font-mono text-green">{op.conf}</td>
-                          <td className="px-3 py-2.5 text-center font-mono text-red">{op.canc}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-success">{op.conf}</td>
+                          <td className="px-3 py-2.5 text-center font-mono text-danger">{op.canc}</td>
                           <td className="px-3 py-2.5 text-center font-mono text-muted-foreground">{op.noresp}</td>
                           <td className="px-3 py-2.5 text-center font-mono font-bold">{op.total}</td>
                           <td className={`px-3 py-2.5 text-center font-mono font-bold ${tasaC}`}>{op.tasa}%</td>
@@ -632,7 +649,7 @@ export default function DashboardTab() {
                         {prods.slice(0, 7).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>
                       <Tooltip contentStyle={tooltipStyle} formatter={(v: number, n: string) => [`${v}`, n]} />
-                      <Legend wrapperStyle={{ fontSize: '10px', color: '#a1a1aa' }} layout="vertical" align="right" verticalAlign="middle" />
+                      <Legend wrapperStyle={{ fontSize: '10px', color: CHART_MUTED }} layout="vertical" align="right" verticalAlign="middle" />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -657,16 +674,16 @@ export default function DashboardTab() {
                     <tbody>
                       {prods.map(([name, d]) => {
                         const efect = d.total > 0 ? Math.round(d.entreg / d.total * 100) : 0;
-                        const ec = efect >= 55 ? 'text-green' : efect >= 40 ? 'text-orange' : 'text-red';
+                        const ec = efect >= 55 ? 'text-success' : efect >= 40 ? 'text-warning' : 'text-danger';
                         return (
                           <tr key={name} className="border-b border-border last:border-0 hover:bg-card transition-colors duration-200">
                             <td className="px-5 py-2.5 font-medium max-w-[160px]">
                               <TruncatedText text={name} maxChars={22} className="block" />
                             </td>
                             <td className="px-3 py-2.5 text-center font-mono">{d.total}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-green">{d.entreg}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-red">{d.canc}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-orange">{d.nov}</td>
+                            <td className="px-3 py-2.5 text-center font-mono text-success">{d.entreg}</td>
+                            <td className="px-3 py-2.5 text-center font-mono text-danger">{d.canc}</td>
+                            <td className="px-3 py-2.5 text-center font-mono text-warning">{d.nov}</td>
                             <td className={`px-3 py-2.5 text-center font-mono font-bold ${ec}`}>{efect}%</td>
                           </tr>
                         );
@@ -688,10 +705,10 @@ export default function DashboardTab() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-green', iconBg: 'bg-green/15 border-green/20', iconColor: 'text-green' },
-                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-red', iconBg: 'bg-red/15 border-red/20', iconColor: 'text-red' },
-                { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconBg: 'bg-card border-border', iconColor: 'text-muted-foreground' },
-                { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-orange', iconBg: 'bg-orange/15 border-orange/20', iconColor: 'text-orange' },
+                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-success', iconBg: 'bg-success/12 border-success/25', iconColor: 'text-success' },
+                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-danger', iconBg: 'bg-danger/12 border-danger/25', iconColor: 'text-danger' },
+                { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconBg: 'bg-muted/60 border-border', iconColor: 'text-muted-foreground' },
+                { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-warning', iconBg: 'bg-warning/12 border-warning/25', iconColor: 'text-warning' },
               ].map(item => {
                 const Icon = item.icon;
                 return (
