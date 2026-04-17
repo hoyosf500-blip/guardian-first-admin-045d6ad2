@@ -3,7 +3,8 @@
  * Tracks order risk based on carrier scanning activity
  */
 
-export { CARRIER_DEADLINES } from './constants';
+import { CARRIER_DEADLINES } from './constants';
+export { CARRIER_DEADLINES };
 
 export type AlertLevel = 'ok' | 'watch' | 'alert' | 'critical' | 'lost';
 
