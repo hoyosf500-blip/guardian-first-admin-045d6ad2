@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useOrderLock } from '@/hooks/useOrderLock';
 import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw, Lock } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 
 interface VipInfo {
@@ -22,6 +24,8 @@ interface Props {
 
 export default function CallView({ items }: Props) {
   const { markResult, undoLast } = useOrders();
+  const { user } = useAuth();
+  const { claimOrder, releaseOrder } = useOrderLock();
   // Persist callIdx across tab discards so the operator returns to the
   // exact same order after going out to the transportadora's page.
   const [callIdx, setCallIdx] = useSessionState<number>('confirmar:callIdx', 0);
@@ -73,6 +77,30 @@ export default function CallView({ items }: Props) {
     return () => { cancelled = true; };
   }, [o?.phone]);
 
+  // Claim a lock on the current order; if held by someone else, skip forward.
+  useEffect(() => {
+    if (!o?.dbId || !user || o.result) return;
+    const orderId = o.dbId;
+    let cancelled = false;
+    claimOrder(orderId).then(claimed => {
+      if (cancelled) return;
+      if (!claimed) {
+        const nextIdx = items.findIndex((it, i) => i > callIdx && !it.result);
+        if (nextIdx >= 0) {
+          setCallIdx(nextIdx);
+          toast.info('Pedido en uso por otra operadora — saltando al siguiente');
+        } else {
+          toast.info('Pedidos disponibles agotados — todos están en atención');
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+      // Release if the operator navigates away without marking a result.
+      void releaseOrder(orderId);
+    };
+  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallIdx, o?.result]);
+
   if (!items.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -87,6 +115,8 @@ export default function CallView({ items }: Props) {
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
+    // Release the lock immediately after registering the result.
+    if (o.dbId) void releaseOrder(o.dbId);
     setShowCancelModal(false);
     toast.success(
       result === 'conf' ? `Confirmado — ${o.nombre.split(' ')[0]}` :

@@ -38,6 +38,8 @@ export interface OrderData {
   dbId?: string;
   assignedTo?: string;
   retryCount?: number; // How many previous noresp attempts today
+  lockedBy?: string | null;
+  lockedAt?: string | null;
 }
 
 /** Shape of a raw DB row from the orders table (all fields nullable) */
@@ -67,6 +69,8 @@ export interface DbOrderRow {
   tags?: string | null;
   tienda?: string | null;
   novedad_sol?: boolean | null;
+  locked_by?: string | null;
+  locked_at?: string | null;
 }
 
 /** Convert a raw DB row into an OrderData object */
@@ -83,6 +87,8 @@ export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
     transportadora: o.transportadora || '', tags: o.tags || '',
     departamento: o.departamento || '', tienda: o.tienda || '',
     novedadSol: o.novedad_sol || false,
+    lockedBy: o.locked_by ?? null,
+    lockedAt: o.locked_at ?? null,
   };
 }
 

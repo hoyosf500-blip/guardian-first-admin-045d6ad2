@@ -22,11 +22,13 @@ export function useNovedades(user: User | null): NovedadesState {
     if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
     try {
+      const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
-        .eq('novedad_sol', false);
+        .eq('novedad_sol', false)
+        .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
         return;
@@ -112,6 +114,12 @@ export function useNovedades(user: User | null): NovedadesState {
             rollbackNovedad();
           } else {
             toast.success('Dropi: novedad reportada', { id: toastId, duration: 2500 });
+            // Release lock now that the novedad is resolved.
+            if (order.dbId) {
+              void (supabase.rpc as unknown as (
+                fn: string, args: Record<string, unknown>
+              ) => Promise<unknown>)('release_order', { p_order_id: order.dbId });
+            }
             setTimeout(() => {
               setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
             }, 800);
@@ -124,6 +132,11 @@ export function useNovedades(user: User | null): NovedadesState {
         });
     } else {
       toast.success('Novedad marcada como resuelta localmente', { duration: 2500 });
+      if (order.dbId) {
+        void (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>
+        ) => Promise<unknown>)('release_order', { p_order_id: order.dbId });
+      }
       setTimeout(() => {
         setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
       }, 800);
