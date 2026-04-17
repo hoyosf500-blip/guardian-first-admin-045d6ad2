@@ -35,7 +35,7 @@ function confColor(v: number): string {
 }
 
 export default function ProductivityDashboard() {
-  const [range, setRange] = useState<Range>('24h');
+  const [range, setRange] = useState<Range>('today');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
