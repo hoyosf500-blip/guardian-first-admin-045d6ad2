@@ -32,6 +32,7 @@ export interface OrderData {
   tags: string;
   departamento: string;
   tienda: string;
+  email: string;
   novedadSol: boolean;
   result?: string;
   reason?: string;
@@ -86,6 +87,7 @@ export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
     novedad: o.novedad || '', guia: o.guia || '',
     transportadora: o.transportadora || '', tags: o.tags || '',
     departamento: o.departamento || '', tienda: o.tienda || '',
+    email: o.email || '',
     novedadSol: o.novedad_sol || false,
     lockedBy: o.locked_by ?? null,
     lockedAt: o.locked_at ?? null,
