@@ -390,6 +390,16 @@ export type Database = {
     }
     Functions: {
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
+      get_daily_operator_stats: {
+        Args: { p_date: string }
+        Returns: {
+          canc: number
+          conf: number
+          display_name: string
+          noresp: number
+          operator_id: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
