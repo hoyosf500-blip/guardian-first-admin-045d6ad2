@@ -29,22 +29,36 @@ interface Props {
 
 export default function NovedadView({ items }: Props) {
   const { resolveNovedad } = useOrders();
-  // Persist callIdx across tab discards (mobile browsers discard bg tabs
-  // aggressively when the operator goes to the transportadora page).
-  const [callIdx, setCallIdx] = useSessionState<number>('novedades:callIdx', 0);
+  // BUG B fix: persist by *order id*, not array index. When the queue
+  // reorders or the operator returns from the carrier tab we keep showing
+  // the same customer instead of jumping to a random one at that index.
+  const [callOrderId, setCallOrderId] = useSessionState<string | null>(
+    'novedades:callOrderId',
+    null,
+  );
   const [solution, setSolution] = useState('');
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Clamp the restored index in case the queue shrunk while away.
+  const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
+
+  // Derive index from the stored id every render.
+  let derivedIdx = callOrderId ? items.findIndex((it) => keyOf(it) === callOrderId) : -1;
+  if (derivedIdx < 0) derivedIdx = 0;
+
+  // Only re-seed when the stored customer is gone (or never set).
   useEffect(() => {
-    if (items.length && callIdx >= items.length) {
-      setCallIdx(Math.max(0, items.length - 1));
+    if (!items.length) return;
+    const exists = callOrderId && items.some((it) => keyOf(it) === callOrderId);
+    if (!exists) {
+      const k = items[0] ? keyOf(items[0]) : null;
+      if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.length]);
+  }, [callOrderId, items]);
 
-  const o = items[Math.min(callIdx, items.length - 1)];
+  const callIdx = Math.max(0, Math.min(derivedIdx, items.length - 1));
+  const o = items[callIdx];
 
   // Reset local state when the current order changes
   useEffect(() => {
@@ -72,7 +86,8 @@ export default function NovedadView({ items }: Props) {
   };
 
   const navCall = (dir: number) => {
-    setCallIdx(Math.max(0, Math.min(items.length - 1, callIdx + dir)));
+    const target = items[Math.max(0, Math.min(items.length - 1, callIdx + dir))];
+    if (target) setCallOrderId(keyOf(target));
   };
 
   const handleReoffer = async () => {
