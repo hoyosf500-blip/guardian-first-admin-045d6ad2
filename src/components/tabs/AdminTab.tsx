@@ -288,6 +288,19 @@ export default function AdminTab() {
     <div className="max-w-5xl mx-auto">
       <p className="text-sm text-muted-foreground mb-5">Panel de administración</p>
 
+      <Tabs defaultValue="config" className="w-full">
+        <TabsList className="mb-5">
+          <TabsTrigger value="config">Configuración</TabsTrigger>
+          <TabsTrigger value="productividad">Productividad</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="productividad" className="mt-0">
+          <ProductivityDashboard />
+        </TabsContent>
+
+        <TabsContent value="config" className="mt-0 space-y-0">
+          <div>
+
       {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
         <motion.div {...fadeUp} className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
           <div className="flex items-start gap-3">
