@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
-import { OrderData, formatPhone, getTrackingUrl, truncate } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData } from '@/lib/orderUtils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
 // AI script generator removed — operadoras no lo usaban
@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function CallView({ items }: Props) {
-  const { markResult, undoLast } = useOrders();
+  const { markResult, undoLast, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user } = useAuth();
   const { claimOrder, releaseOrder } = useOrderLock();
   // BUG B fix: persist the customer's stable identifier (externalId or dbId),
@@ -92,6 +92,10 @@ export default function CallView({ items }: Props) {
   }, [o?.phone]);
 
   // Claim a lock on the current order; if held by someone else, skip forward.
+  // BUG 3 fix: NO liberar el lock en cleanup. Cambiar de pestaña desmonta
+  // CallView y soltaba el lock — otra operadora lo tomaba y al volver Mayra
+  // perdía el cliente. El lock se libera al marcar el pedido (markResult)
+  // o automáticamente por el cron release-stale-locks tras 15 min.
   useEffect(() => {
     if (!o?.dbId || !user || o.result) return;
     const orderId = o.dbId;
@@ -109,11 +113,17 @@ export default function CallView({ items }: Props) {
         }
       }
     });
-    return () => {
-      cancelled = true;
-      void releaseOrder(orderId);
+    return () => { cancelled = true; };
+  }, [o?.dbId, user, claimOrder, callIdx, items, setCallOrderId, o?.result]);
+
+  // Best-effort release on tab close so locks no quedan huérfanos hasta el cron.
+  useEffect(() => {
+    const handler = () => {
+      if (o?.dbId) void releaseOrder(o.dbId);
     };
-  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallOrderId, o?.result]);
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [o?.dbId, releaseOrder]);
 
   if (!items.length || !o) {
     return (
@@ -294,8 +304,21 @@ export default function CallView({ items }: Props) {
       {editingOrder && (
         <EditOrderDialog
           open={!!editingOrder}
-          onOpenChange={(o) => { if (!o) setEditingOrder(null); }}
+          onOpenChange={(op) => { if (!op) setEditingOrder(null); }}
           order={editingOrder}
+          onSuccess={async () => {
+            // BUG 4 fix: re-fetch del pedido editado para refrescar pantalla.
+            if (!editingOrder?.dbId) return;
+            const { data } = await supabase.from('orders').select('*').eq('id', editingOrder.dbId).maybeSingle();
+            if (data) {
+              const updated = dbToOrderData(data, 0);
+              const merged = allOrders.map(ord => ord.dbId === updated.dbId
+                ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
+                : ord);
+              setAllOrders(merged);
+              buildWorkQueue(merged);
+            }
+          }}
         />
       )}
     </>

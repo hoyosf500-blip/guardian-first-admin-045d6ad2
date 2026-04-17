@@ -136,14 +136,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .then(({ data }) => {
           if (data) {
             const now = Date.now();
+            // BUG 1/2 fix: only consider real call outcomes. Audit rows like
+            // 'edicion_orden' must NOT mark a pedido as resuelto ni inflar el
+            // counter de "no respondió".
+            const isCallOutcome = (r: string) => r === 'conf' || r === 'canc' || r === 'noresp';
             const phoneResults = new Map<string, typeof data>();
             data.forEach(r => {
+              if (!isCallOutcome(r.result)) return;
               if (!phoneResults.has(r.phone)) phoneResults.set(r.phone, []);
               phoneResults.get(r.phone)!.push(r);
             });
 
             const resultMap = new Map<string, { result: string; reason: string }>();
             data.forEach(r => {
+              if (!isCallOutcome(r.result)) return;
               if (r.result === 'noresp') {
                 const attempts = (phoneResults.get(r.phone) || []).filter(x => x.result === 'noresp').length;
                 if (attempts >= 3) {
@@ -204,8 +210,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (markingInFlight.current.has(order.phone)) return;
-    markingInFlight.current.add(order.phone);
+    // BUG 7 fix: dedupe por dbId (único por pedido), no por phone — un
+    // cliente con 2 pedidos puede confirmar ambos en paralelo.
+    if (markingInFlight.current.has(order.dbId)) return;
+    markingInFlight.current.add(order.dbId);
     revertedRef.current = false;
 
     setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result, reason } : o));
@@ -316,7 +324,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         ) => Promise<{ error: unknown }>)('release_order', { p_order_id: order.dbId });
       }
     }
-    markingInFlight.current.delete(order.phone);
+    markingInFlight.current.delete(order.dbId);
   }, [user, timerStart, checkMilestone]);
 
   const undoLast = useCallback(async () => {
