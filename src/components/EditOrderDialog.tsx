@@ -163,6 +163,19 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
           </div>
         </DialogHeader>
 
+        {/* Admin-only test-mode banner. Quitar este bloque cuando esté validado. */}
+        {isAdmin && (
+          <div className="flex gap-2 items-start rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300">
+            <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <p>
+              <span aria-hidden="true">⚠️ </span>
+              <span className="font-semibold">Modo prueba</span> — esta función está en validación con Dropi.
+              Después de actualizar, revisa en el panel de Dropi que el cambio se haya guardado antes de
+              confirmarle al cliente.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
           <div>
             <Label htmlFor="edit-nombre">Nombre *</Label>
