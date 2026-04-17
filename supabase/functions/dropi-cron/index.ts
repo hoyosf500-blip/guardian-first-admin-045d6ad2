@@ -2,8 +2,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
- * Syncs orders from the last 7 days to capture status changes.
- * No user auth required — uses service role key.
+ * Syncs orders from the last 90 days to capture status changes.
+ * Auth: pg_cron sends x-cron-secret; admins send Authorization Bearer JWT.
+ * v2 — force redeploy to apply shared-secret auth branch.
  */
 
 const DROPI_API = "https://api.dropi.co";
