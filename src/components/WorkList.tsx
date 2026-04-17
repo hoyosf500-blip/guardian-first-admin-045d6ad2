@@ -19,6 +19,7 @@ function timeAgo(dias: number): string {
 
 export default function WorkList({ items, onOpenCall }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
+  const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
 
   if (!items.length) {
     return (
