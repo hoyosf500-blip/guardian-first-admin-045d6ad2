@@ -24,6 +24,8 @@ interface Props {
 
 export default function CallView({ items }: Props) {
   const { markResult, undoLast } = useOrders();
+  const { user } = useAuth();
+  const { claimOrder, releaseOrder } = useOrderLock();
   // Persist callIdx across tab discards so the operator returns to the
   // exact same order after going out to the transportadora's page.
   const [callIdx, setCallIdx] = useSessionState<number>('confirmar:callIdx', 0);
@@ -74,6 +76,30 @@ export default function CallView({ items }: Props) {
       });
     return () => { cancelled = true; };
   }, [o?.phone]);
+
+  // Claim a lock on the current order; if held by someone else, skip forward.
+  useEffect(() => {
+    if (!o?.dbId || !user || o.result) return;
+    const orderId = o.dbId;
+    let cancelled = false;
+    claimOrder(orderId).then(claimed => {
+      if (cancelled) return;
+      if (!claimed) {
+        const nextIdx = items.findIndex((it, i) => i > callIdx && !it.result);
+        if (nextIdx >= 0) {
+          setCallIdx(nextIdx);
+          toast.info('Pedido en uso por otra operadora — saltando al siguiente');
+        } else {
+          toast.info('Pedidos disponibles agotados — todos están en atención');
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+      // Release if the operator navigates away without marking a result.
+      void releaseOrder(orderId);
+    };
+  }, [o?.dbId, user, claimOrder, releaseOrder, callIdx, items, setCallIdx, o?.result]);
 
   if (!items.length || !o) {
     return (
