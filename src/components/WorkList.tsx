@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { OrderData, formatPhone } from '@/lib/orderUtils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
+import EditOrderDialog from '@/components/EditOrderDialog';
 
 interface Props {
   items: OrderData[];
