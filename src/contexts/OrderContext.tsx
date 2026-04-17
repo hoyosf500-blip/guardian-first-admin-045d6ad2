@@ -283,6 +283,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       if (tpData?.id) {
         setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
       }
+
+      // Release the per-order lock now that this operator is done with it.
+      // Use rpc cast — claim/release_order are not yet in generated types.
+      if (order.dbId) {
+        await (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>
+        ) => Promise<{ error: unknown }>)('release_order', { p_order_id: order.dbId });
+      }
     }
     markingInFlight.current.delete(order.phone);
   }, [user, timerStart, checkMilestone]);
