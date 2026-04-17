@@ -8,8 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { toast } from 'sonner';
-import { Loader2, User, AlertTriangle } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { Loader2, User, MapPin, Pencil } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -27,7 +26,11 @@ function splitName(full: string): { nombre: string; apellido: string } {
 }
 
 export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }: Props) {
-  const { isAdmin } = useAuth();
+  // Pre-populate every field from the current order. Email now lives on
+  // OrderData so it survives the hop through dbToOrderData (was previously
+  // empty even when the DB had a value). All Select components below are
+  // controlled with `value=` (never defaultValue) so the current depto/
+  // ciudad are visually selected on first paint.
   const initial = useMemo(() => {
     const { nombre, apellido } = splitName(order.nombre);
     return {
@@ -37,7 +40,7 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
       departamento: order.departamento || '',
       ciudad: order.ciudad || '',
       direccion: order.direccion || '',
-      email: '',
+      email: order.email || '',
     };
   }, [order]);
 
@@ -101,9 +104,6 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
         },
       });
 
-      // Edge function returned an explicit Dropi failure (ok:false with detail).
-      // Show enriched toast with collapsible technical details so we can copy
-      // the exact error and iterate.
       const dropiHttpStatus = (data as { dropiHttpStatus?: number } | null)?.dropiHttpStatus;
       const dropiBody = (data as { dropiBody?: unknown } | null)?.dropiBody;
       const isDropiFailure =
@@ -152,105 +152,138 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
-              <User size={18} className="text-emerald-500" />
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center flex-shrink-0">
+              <Pencil size={18} className="text-primary" aria-hidden="true" />
             </div>
             <div>
-              <DialogTitle>Editar orden</DialogTitle>
-              <DialogDescription>Información del cliente — se sincroniza con Dropi</DialogDescription>
+              <DialogTitle className="text-lg">Editar orden</DialogTitle>
+              <DialogDescription className="text-xs">
+                Los cambios se sincronizan con Dropi automáticamente
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        {/* Admin-only test-mode banner. Quitar este bloque cuando esté validado. */}
-        {isAdmin && (
-          <div className="flex gap-2 items-start rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-300">
-            <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-            <p>
-              <span aria-hidden="true">⚠️ </span>
-              <span className="font-semibold">Modo prueba</span> — esta función está en validación con Dropi.
-              Después de actualizar, revisa en el panel de Dropi que el cambio se haya guardado antes de
-              confirmarle al cliente.
-            </p>
-          </div>
-        )}
+        <div className="space-y-6 py-2">
+          {/* ---- Información del cliente ---- */}
+          <section className="space-y-3">
+            <header className="flex items-center gap-2 pb-2 border-b border-border">
+              <User size={14} className="text-muted-foreground" aria-hidden="true" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Información del cliente
+              </h3>
+            </header>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-nombre" className="text-xs">Nombre *</Label>
+                <Input
+                  id="edit-nombre"
+                  value={form.nombre}
+                  onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-apellido" className="text-xs">Apellido</Label>
+                <Input
+                  id="edit-apellido"
+                  value={form.apellido}
+                  onChange={e => setForm(f => ({ ...f, apellido: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-phone" className="text-xs">Teléfono (solo dígitos)</Label>
+                <Input
+                  id="edit-phone"
+                  inputMode="numeric"
+                  value={form.phone}
+                  onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 15) }))}
+                  placeholder="573001234567"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-email" className="text-xs">Email (opcional)</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={form.email}
+                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="cliente@ejemplo.com"
+                />
+              </div>
+            </div>
+          </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
-          <div>
-            <Label htmlFor="edit-nombre">Nombre *</Label>
-            <Input id="edit-nombre" value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
-          </div>
-          <div>
-            <Label htmlFor="edit-apellido">Apellido</Label>
-            <Input id="edit-apellido" value={form.apellido} onChange={e => setForm(f => ({ ...f, apellido: e.target.value }))} />
-          </div>
+          {/* ---- Dirección de entrega ---- */}
+          <section className="space-y-3">
+            <header className="flex items-center gap-2 pb-2 border-b border-border">
+              <MapPin size={14} className="text-muted-foreground" aria-hidden="true" />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Dirección de entrega
+              </h3>
+            </header>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Departamento *</Label>
+                <Select
+                  value={form.departamento || undefined}
+                  onValueChange={(v) => setForm(f => ({ ...f, departamento: v, ciudad: '' }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {deptoOptions.map(d => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="md:col-span-2">
-            <Label htmlFor="edit-phone">Teléfono (solo dígitos)</Label>
-            <Input
-              id="edit-phone"
-              inputMode="numeric"
-              value={form.phone}
-              onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 15) }))}
-              placeholder="573001234567"
-            />
-          </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Ciudad *</Label>
+                <Select
+                  value={form.ciudad || undefined}
+                  onValueChange={(v) => setForm(f => ({ ...f, ciudad: v }))}
+                  disabled={!form.departamento}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elige depto. primero'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ciudadOptions.map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div>
-            <Label>Departamento *</Label>
-            <Select
-              value={form.departamento}
-              onValueChange={(v) => setForm(f => ({ ...f, departamento: v, ciudad: '' }))}
-            >
-              <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-              <SelectContent>
-                {deptoOptions.map(d => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>Ciudad *</Label>
-            <Select
-              value={form.ciudad}
-              onValueChange={(v) => setForm(f => ({ ...f, ciudad: v }))}
-              disabled={!form.departamento}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elige depto. primero'} />
-              </SelectTrigger>
-              <SelectContent>
-                {ciudadOptions.map(c => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="md:col-span-2">
-            <Label htmlFor="edit-direccion">Dirección *</Label>
-            <Input id="edit-direccion" value={form.direccion} onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))} />
-          </div>
-
-          <div className="md:col-span-2">
-            <Label htmlFor="edit-email">Email (opcional)</Label>
-            <Input id="edit-email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="cliente@ejemplo.com" />
-          </div>
+              <div className="md:col-span-2 space-y-1.5">
+                <Label htmlFor="edit-direccion" className="text-xs">Dirección *</Label>
+                <Input
+                  id="edit-direccion"
+                  value={form.direccion}
+                  onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))}
+                  placeholder="Calle 123 # 45-67, Apto 101"
+                />
+              </div>
+            </div>
+          </section>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+        <DialogFooter className="gap-2 pt-2">
+          <Button
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+          >
             Cancelar
           </Button>
           <Button
             onClick={handleSubmit}
             disabled={submitting}
-            className="bg-orange-500 hover:bg-orange-600 text-white"
+            size="lg"
+            className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6"
           >
-            {submitting && <Loader2 size={14} className="mr-2 animate-spin" />}
+            {submitting && <Loader2 size={14} className="mr-2 animate-spin" aria-hidden="true" />}
             Actualizar Orden
           </Button>
         </DialogFooter>

@@ -290,6 +290,11 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- Audit log via order_results ----
+    // Uses sbAdmin (service role) so RLS doesn't block; we still set
+    // operator_id to the real user so dashboards attribute correctly.
+    // Logs the failure if any so we don't silently lose audit rows
+    // (the previous version swallowed errors and made it look like the
+    // edit happened with no trail).
     const auditPayload = {
       antes: {
         nombre: orderRow.nombre,
@@ -309,14 +314,20 @@ Deno.serve(async (req: Request) => {
       },
     };
 
-    await sbAdmin.from("order_results").insert({
+    const { error: auditErr } = await sbAdmin.from("order_results").insert({
       order_id: orderRow.id,
-      phone,
+      phone: phone || orderRow.phone || "",
       operator_id: user.id,
       module: "confirmar",
       result: "edicion_orden",
       reason: JSON.stringify(auditPayload).slice(0, 2000),
     });
+
+    if (auditErr) {
+      // Don't fail the whole request — Dropi + DB already succeeded.
+      // Just surface the error so we can see it in function logs.
+      console.error("[dropi-update-order-full] audit insert failed:", auditErr);
+    }
 
     return new Response(
       JSON.stringify({ ok: true, externalId, dropiHttpStatus: dropi.httpStatus }),

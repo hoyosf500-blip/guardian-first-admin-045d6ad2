@@ -8,8 +8,9 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw, Lock } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Sparkles, RefreshCw, Lock, Pencil } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
+import EditOrderDialog from '@/components/EditOrderDialog';
 
 interface VipInfo {
   isVip: boolean;
@@ -49,6 +50,7 @@ export default function CallView({ items }: Props) {
   }, [items.length]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
   const { ask: askAi, get: getAi } = useAiInsight();
 
@@ -241,13 +243,26 @@ export default function CallView({ items }: Props) {
           return (
             <div className="mb-3">
               {!ai.reply && !ai.loading && (
-                <button
-                  type="button"
-                  onClick={() => askAi(scriptKey, 'call_script', buildContext())}
-                  className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                >
-                  <Sparkles size={13} aria-hidden="true" /> Generar guión IA
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => askAi(scriptKey, 'call_script', buildContext())}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-semibold hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                  >
+                    <Sparkles size={13} aria-hidden="true" /> Generar guión IA
+                  </button>
+                  {o.externalId && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingOrder(o)}
+                      title="Editar datos del cliente"
+                      aria-label="Editar datos del cliente"
+                      className="px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs font-semibold hover:bg-primary hover:text-primary-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none inline-flex items-center gap-1.5"
+                    >
+                      <Pencil size={13} aria-hidden="true" /> Editar
+                    </button>
+                  )}
+                </div>
               )}
               {ai.loading && (
                 <div className="flex items-center gap-2 py-2.5 px-3 rounded-lg bg-accent/5 border border-accent/20 text-xs text-accent">
@@ -304,6 +319,14 @@ export default function CallView({ items }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {editingOrder && (
+        <EditOrderDialog
+          open={!!editingOrder}
+          onOpenChange={(o) => { if (!o) setEditingOrder(null); }}
+          order={editingOrder}
+        />
       )}
     </>
   );
