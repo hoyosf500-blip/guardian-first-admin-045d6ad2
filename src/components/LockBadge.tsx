@@ -16,20 +16,22 @@ async function resolveName(userId: string): Promise<string> {
   if (cached) return cached;
   const pending = inFlight.get(userId);
   if (pending) return pending;
-  const promise = supabase
-    .from('profiles')
-    .select('display_name')
-    .eq('user_id', userId)
-    .maybeSingle()
-    .then(({ data }) => {
+  const promise = (async () => {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('user_id', userId)
+        .maybeSingle();
       const name = data?.display_name?.trim() || 'Operadora';
       nameCache.set(userId, name);
-      inFlight.delete(userId);
       return name;
-    }, () => {
-      inFlight.delete(userId);
+    } catch {
       return 'Operadora';
-    });
+    } finally {
+      inFlight.delete(userId);
+    }
+  })();
   inFlight.set(userId, promise);
   return promise;
 }
