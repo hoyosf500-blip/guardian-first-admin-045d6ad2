@@ -454,6 +454,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      operator_productivity_stats: {
+        Args: { p_range?: string }
+        Returns: {
+          cancelados: number
+          confirmados: number
+          display_name: string
+          novedades_resueltas: number
+          operator_id: string
+          tasa_contacto: number
+          total_asignados: number
+        }[]
+      }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
     }
     Enums: {
