@@ -136,6 +136,27 @@ export type Database = {
           },
         ]
       }
+      operator_pool: {
+        Row: {
+          active: boolean
+          created_at: string
+          slot: number
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          slot: number
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          slot?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       order_results: {
         Row: {
           created_at: string
@@ -465,6 +486,10 @@ export type Database = {
           tasa_contacto: number
           total_asignados: number
         }[]
+      }
+      reassign_unattended: {
+        Args: { p_after_minutes?: number }
+        Returns: number
       }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
     }

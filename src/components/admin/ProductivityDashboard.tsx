@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, TrendingUp } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, Shuffle } from 'lucide-react';
+import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
 type Range = '24h' | '7d' | '30d';
@@ -39,6 +40,21 @@ export default function ProductivityDashboard() {
     setLoading(false);
     setRefreshing(false);
   }, [range]);
+
+  const [reassigning, setReassigning] = useState(false);
+
+  const reassignUnattended = async () => {
+    setReassigning(true);
+    const { data, error } = await supabase.rpc('reassign_unattended' as never, { p_after_minutes: 120 } as never);
+    setReassigning(false);
+    if (error) {
+      toast.error('Error al reasignar', { description: error.message });
+      return;
+    }
+    const count = (data as number) ?? 0;
+    toast.success(count === 0 ? 'Sin pedidos para reasignar' : `${count} pedido(s) reasignados`);
+    if (count > 0) load(true);
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -95,6 +111,10 @@ export default function ProductivityDashboard() {
               </button>
             ))}
           </div>
+          <Button size="sm" variant="outline" onClick={reassignUnattended} disabled={reassigning}>
+            <Shuffle size={14} className={`mr-1.5 ${reassigning ? 'animate-spin' : ''}`} />
+            Reasignar no atendidos
+          </Button>
           <Button size="sm" variant="outline" onClick={() => load(true)} disabled={refreshing}>
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
           </Button>
