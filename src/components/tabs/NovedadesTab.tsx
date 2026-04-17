@@ -99,6 +99,11 @@ export default function NovedadesTab() {
               className="w-full h-10 rounded-lg border border-border bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
             />
           </div>
+          {search && (
+            <p className="text-xs text-muted-foreground mt-2 pl-1">
+              {filtered.length} de {novedadesQueue.length} coincidencias
+            </p>
+          )}
         </div>
       )}
 
