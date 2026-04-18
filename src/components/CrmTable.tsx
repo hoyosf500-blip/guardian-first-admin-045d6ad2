@@ -18,6 +18,7 @@ import CrmCallView from './CrmCallView';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { getActionSLA } from '@/lib/actionSla';
+import { bogotaToday } from '@/lib/utils';
 
 interface Touchpoint {
   id: string;
@@ -320,15 +321,20 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     return new Date(tps[0].created_at).getTime();
   }, [phoneTouchpoints]);
 
-  const markAction = async (phone: string, action: string) => {
-    setResults(prev => ({ ...prev, [phone]: action }));
+  const markAction = async (order: OrderData, action: string) => {
+    const slaMs = getActionSLA(action) * 3600000;
+    const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
+    const label = `${action} · vuelve en ${hoursLeft}h`;
+    if (order.dbId) {
+      setResults(prev => ({ ...prev, [order.dbId!]: label }));
+    }
     if (user) {
       const now = new Date();
       const tp = {
-        phone,
+        phone: order.phone,
         action: `${module}: ${action}`,
         operator_id: user.id,
-        action_date: now.toISOString().split('T')[0],
+        action_date: bogotaToday(),
         action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
       };
       const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
@@ -584,7 +590,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
-                        onAction={(action) => markAction(o.phone, action)}
+                        onAction={(action) => markAction(o, action)}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
                         getOperatorName={getOperatorName}
