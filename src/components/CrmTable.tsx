@@ -578,7 +578,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                       <OrderCard
                         key={`${o.phone}-${o.idx}`}
                         order={o}
-                        managed={results[o.phone]}
+                        managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
                         onAction={(action) => markAction(o.phone, action)}
