@@ -17,6 +17,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import CrmCallView from './CrmCallView';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
+import { getActionSLA } from '@/lib/actionSla';
 
 interface Touchpoint {
   id: string;
@@ -263,35 +264,37 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     };
 
     fetchAllTouchpoints().then(allTp => {
-      const moduleTp = allTp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
+      const moduleTp = allTp.filter(t =>
+        t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`)
+      );
       setTouchpoints(moduleTp);
 
-      // Ventana de 7 días (ms-based, TZ-agnostic para "hace X tiempo")
-      const nowMs = Date.now();
-      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-
-      // Mapa phone -> último touchpoint reciente
-      const recentByPhone: Record<string, { action: string; when: number }> = {};
+      // Último touchpoint por teléfono
+      const latestByPhone: Record<string, { action: string; when: number }> = {};
       moduleTp.forEach(t => {
         const when = new Date(t.created_at).getTime();
-        if (nowMs - when > SEVEN_DAYS) return;
-        const prev = recentByPhone[t.phone];
+        const prev = latestByPhone[t.phone];
         if (!prev || when > prev.when) {
-          recentByPhone[t.phone] = {
-            action: t.action.replace(/^(SEG|RESCUE): ?/, ''),
-            when,
-          };
+          latestByPhone[t.phone] = { action: t.action, when };
         }
       });
 
-      // Indexar por dbId (único por pedido), no por phone
-      const managed: Record<string, string> = {};
+      // Snooze vivo por pedido: según SLA de la acción usada
+      const nowMs = Date.now();
+      const snoozed: Record<string, string> = {};
       data.forEach(o => {
         if (!o.dbId) return;
-        const hit = recentByPhone[o.phone];
-        if (hit) managed[o.dbId] = hit.action;
+        const hit = latestByPhone[o.phone];
+        if (!hit) return;
+        const slaMs = getActionSLA(hit.action) * 3600000;
+        const remainingMs = slaMs - (nowMs - hit.when);
+        if (remainingMs > 0) {
+          const hoursLeft = Math.max(1, Math.round(remainingMs / 3600000));
+          const label = hit.action.replace(/^(SEG|RESCUE):\s*/, '');
+          snoozed[o.dbId] = `${label} · vuelve en ${hoursLeft}h`;
+        }
       });
-      setResults(managed);
+      setResults(snoozed);
     });
 
     supabase.from('profiles').select('user_id, display_name').then(({ data: p, error }) => {
@@ -442,7 +445,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             }`}
           >
             <CheckCircle size={14} aria-hidden="true" />
-            <span>Gestionados</span>
+            <span>Mostrar En espera</span>
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
               {managedCount}
             </span>
