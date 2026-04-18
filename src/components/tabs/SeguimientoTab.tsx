@@ -95,7 +95,7 @@ export default function SeguimientoTab() {
     };
     filteredByDate.forEach(o => {
       const cat = classifyEstado(o.estado);
-      if (cat in s) (s as any)[cat]++;
+      if (cat in s) (s as Record<string, number>)[cat]++;
     });
     return s;
   }, [filteredByDate]);

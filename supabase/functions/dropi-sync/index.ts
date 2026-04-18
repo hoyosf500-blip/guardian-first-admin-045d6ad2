@@ -257,7 +257,7 @@ Deno.serve(async (req: Request) => {
     const today = new Date().toISOString().split("T")[0];
 
     let totalSynced = 0;
-    let totalDuplicates = 0;
+    const totalDuplicates = 0;
     let totalFromDropi = 0;
 
     for (const chunk of chunks) {

@@ -102,7 +102,7 @@ export function parseDate(dateStr: string): Date | null {
     let d: Date | null = null;
 
     // DD/MM/YYYY or DD-MM-YYYY
-    const dmy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    const dmy = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
     if (dmy) {
       let yearNum = parseInt(dmy[3]);
       if (yearNum < 100) yearNum += 2000;

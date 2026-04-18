@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import SlaAlertCard from './SlaAlertCard';
@@ -6,7 +7,7 @@ import type { OrderData } from '@/lib/orderUtils';
 // Mock framer-motion to avoid animation issues in tests
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    div: ({ children, ...props }: ComponentProps<'div'>) => <div {...props}>{children}</div>,
   },
 }));
 

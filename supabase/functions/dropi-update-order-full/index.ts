@@ -31,8 +31,9 @@ const corsHeaders = {
 const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_STORE_URL = "https://rushmira.com/";
 
-// deno-lint-ignore no-explicit-any
-type SB = any;
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+type SB = SupabaseClient;
+type SettingRow = { key: string; value: string | null };
 
 interface EditPayload {
   externalId: string;
@@ -55,8 +56,7 @@ async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> 
     throw new Error(`No se pudo leer app_settings: ${error.message}`);
   }
   const map = new Map<string, string>();
-  // deno-lint-ignore no-explicit-any
-  (data || []).forEach((row: any) => map.set(String(row.key), String(row.value || "")));
+  ((data || []) as SettingRow[]).forEach((row) => map.set(String(row.key), String(row.value || "")));
   const apiKey = map.get("dropi_api_key") || Deno.env.get("DROPI_API_KEY") || "";
   const storeUrl = map.get("dropi_store_url") || DEFAULT_STORE_URL;
   return { apiKey, storeUrl };

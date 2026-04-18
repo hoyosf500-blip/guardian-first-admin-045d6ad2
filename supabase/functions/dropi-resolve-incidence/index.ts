@@ -50,8 +50,9 @@ const DROPI_INCIDENCE_PATH = "/api/orders/saveincidencesolution";
 const DEFAULT_STORE_URL = "https://rushmira.com/";
 const MAX_SOLUTION_LEN = 500;
 
-// deno-lint-ignore no-explicit-any
-type SB = any;
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+type SB = SupabaseClient;
+type SettingRow = { key: string; value: string | null };
 
 type ResolveAction = "reoffer" | "return";
 
@@ -66,8 +67,7 @@ async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> 
   }
 
   const map = new Map<string, string>();
-  // deno-lint-ignore no-explicit-any
-  (data || []).forEach((row: any) =>
+  ((data || []) as SettingRow[]).forEach((row) =>
     map.set(String(row.key), String(row.value || "")),
   );
 

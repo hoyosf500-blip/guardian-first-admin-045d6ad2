@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import CommunicationLog from './CommunicationLog';
@@ -6,8 +7,8 @@ import type { TimelineEvent } from '@/lib/timelineBuilder';
 // Mock framer-motion
 vi.mock('framer-motion', () => ({
   motion: {
-    div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-    li: ({ children, ...props }: any) => <li {...props}>{children}</li>,
+    div: ({ children, ...props }: ComponentProps<'div'>) => <div {...props}>{children}</div>,
+    li: ({ children, ...props }: ComponentProps<'li'>) => <li {...props}>{children}</li>,
   },
 }));
 

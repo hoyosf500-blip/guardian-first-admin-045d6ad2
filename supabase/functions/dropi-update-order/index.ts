@@ -50,8 +50,9 @@ const DEFAULT_STORE_URL = "https://rushmira.com/";
 // integration key. Add new values here as new flows are implemented.
 const ALLOWED_STATUSES = ["PENDIENTE", "GUIA_GENERADA", "CONFIRMADO"];
 
-// deno-lint-ignore no-explicit-any
-type SB = any;
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+type SB = SupabaseClient;
+type SettingRow = { key: string; value: string | null };
 
 async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> {
   const { data, error } = await sb
@@ -64,8 +65,7 @@ async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> 
   }
 
   const map = new Map<string, string>();
-  // deno-lint-ignore no-explicit-any
-  (data || []).forEach((row: any) =>
+  ((data || []) as SettingRow[]).forEach((row) =>
     map.set(String(row.key), String(row.value || "")),
   );
 
