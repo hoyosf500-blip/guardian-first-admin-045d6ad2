@@ -265,12 +265,31 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     fetchAllTouchpoints().then(allTp => {
       const moduleTp = allTp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
       setTouchpoints(moduleTp);
-      const managed: Record<string, string> = {};
-      const today = new Date().toISOString().split('T')[0];
+
+      // Ventana de 7 días (ms-based, TZ-agnostic para "hace X tiempo")
+      const nowMs = Date.now();
+      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+
+      // Mapa phone -> último touchpoint reciente
+      const recentByPhone: Record<string, { action: string; when: number }> = {};
       moduleTp.forEach(t => {
-        if (t.action_date === today && !managed[t.phone]) {
-          managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
+        const when = new Date(t.created_at).getTime();
+        if (nowMs - when > SEVEN_DAYS) return;
+        const prev = recentByPhone[t.phone];
+        if (!prev || when > prev.when) {
+          recentByPhone[t.phone] = {
+            action: t.action.replace(/^(SEG|RESCUE): ?/, ''),
+            when,
+          };
         }
+      });
+
+      // Indexar por dbId (único por pedido), no por phone
+      const managed: Record<string, string> = {};
+      data.forEach(o => {
+        if (!o.dbId) return;
+        const hit = recentByPhone[o.phone];
+        if (hit) managed[o.dbId] = hit.action;
       });
       setResults(managed);
     });
@@ -315,14 +334,14 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
-  const managedCount = useMemo(() => data.filter(o => results[o.phone]).length, [data, results]);
+  const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
   const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
 
   const filtered = useMemo(() => {
     let list = data;
     // Hide managed orders unless showManaged is on
     if (!showManaged) {
-      list = list.filter(o => !results[o.phone]);
+      list = list.filter(o => !(o.dbId && results[o.dbId]));
     }
     if (search) {
       const s = search.toLowerCase();
@@ -559,7 +578,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                       <OrderCard
                         key={`${o.phone}-${o.idx}`}
                         order={o}
-                        managed={results[o.phone]}
+                        managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
                         onAction={(action) => markAction(o.phone, action)}
