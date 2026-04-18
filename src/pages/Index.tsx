@@ -1,7 +1,7 @@
-import { useAuth } from '@/contexts/AuthContext';
-import { Package } from 'lucide-react';
-import AuthPage from './AuthPage';
-import PanelPage from './PanelPage';
+import { useAuth } from "@/contexts/AuthContext";
+import { Package } from "lucide-react";
+import AuthPage from "./AuthPage";
+import PanelPage from "./PanelPage";
 
 export default function Index() {
   const { user, loading } = useAuth();
