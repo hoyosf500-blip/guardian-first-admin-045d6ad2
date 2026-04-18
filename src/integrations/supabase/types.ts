@@ -626,11 +626,9 @@ export type Database = {
           phone: string
         }[]
       }
+      pending_tomorrow_count: { Args: never; Returns: number }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
-      submit_closing_report: {
-        Args: { p_notes?: string; p_pending_tomorrow: number }
-        Returns: undefined
-      }
+      submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
       submit_opening_report: {
         Args: {
           p_guides_yesterday: number
@@ -646,6 +644,7 @@ export type Database = {
           cancelados: number
           confirmados: number
           noresp: number
+          pending_tomorrow: number
           tasa_conf: number
           total: number
         }[]

@@ -358,8 +358,11 @@ Deno.serve(async (req: Request) => {
         )
         .limit(200);
 
-      for (const row of (pendingRows || []) as Array<{ id: string; order_id: string; orders: { external_id: string | null } | null }>) {
-        const externalId = row.orders?.external_id;
+      for (const row of (pendingRows || []) as unknown as Array<{ id: string; order_id: string; orders: { external_id: string | null } | { external_id: string | null }[] | null }>) {
+        const ordersField = row.orders;
+        const externalId = Array.isArray(ordersField)
+          ? ordersField[0]?.external_id
+          : ordersField?.external_id;
         if (!externalId) {
           await sb
             .from("order_results")
