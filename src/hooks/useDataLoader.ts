@@ -50,6 +50,12 @@ export function useDataLoader(user: User | null): DataLoaderState {
           .from('orders')
           .select('*')
           .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
+          .not('estado', 'eq', 'ENTREGADO')
+          .not('estado', 'eq', 'CANCELADO')
+          .not('estado', 'eq', 'RECHAZADO')
+          .not('estado', 'eq', 'DEVOLUCION')
+          .not('estado', 'eq', 'DEVOLUCION EN TRANSITO')
+          .not('estado', 'ilike', '%INDEMNIZADA%')
           .order('created_at', { ascending: false })
           .range(fromIdx, toIdx);
         if (error) {

@@ -265,12 +265,31 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     fetchAllTouchpoints().then(allTp => {
       const moduleTp = allTp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
       setTouchpoints(moduleTp);
-      const managed: Record<string, string> = {};
-      const today = new Date().toISOString().split('T')[0];
+
+      // Ventana de 7 días (ms-based, TZ-agnostic para "hace X tiempo")
+      const nowMs = Date.now();
+      const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+
+      // Mapa phone -> último touchpoint reciente
+      const recentByPhone: Record<string, { action: string; when: number }> = {};
       moduleTp.forEach(t => {
-        if (t.action_date === today && !managed[t.phone]) {
-          managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
+        const when = new Date(t.created_at).getTime();
+        if (nowMs - when > SEVEN_DAYS) return;
+        const prev = recentByPhone[t.phone];
+        if (!prev || when > prev.when) {
+          recentByPhone[t.phone] = {
+            action: t.action.replace(/^(SEG|RESCUE): ?/, ''),
+            when,
+          };
         }
+      });
+
+      // Indexar por dbId (único por pedido), no por phone
+      const managed: Record<string, string> = {};
+      data.forEach(o => {
+        if (!o.dbId) return;
+        const hit = recentByPhone[o.phone];
+        if (hit) managed[o.dbId] = hit.action;
       });
       setResults(managed);
     });
