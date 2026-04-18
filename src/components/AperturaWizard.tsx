@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { CheckCircle2, Package, Tag, ClipboardList, ArrowLeft, ArrowRight, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { bogotaToday } from '@/lib/utils';
 
 interface Props {
   onComplete: () => void;
@@ -19,7 +20,7 @@ export default function AperturaWizard({ onComplete }: Props) {
 
   const enviar = async () => {
     if (!user) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = bogotaToday();
     const { error } = await supabase.from('daily_reports').insert({
       operator_id: user.id,
       report_date: today,

@@ -12,6 +12,7 @@ import {
 import { motion } from 'framer-motion';
 import { buildTimeline } from '@/lib/timelineBuilder';
 import { sanitizeNote, sanitizeAction } from '@/lib/sanitize';
+import { bogotaToday } from '@/lib/utils';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
@@ -199,7 +200,7 @@ export default function OrderDetailPage() {
     );
     if (recent) return; // skip, still within debounce window
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = bogotaToday();
     const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
     const cleanAction = sanitizeAction(`${channel}: ${detail}`);
@@ -227,7 +228,7 @@ export default function OrderDetailPage() {
     }
 
     setResolving(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = bogotaToday();
     const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 
     const touchAction = action === 'reoffer'

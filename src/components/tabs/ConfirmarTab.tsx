@@ -16,7 +16,7 @@ import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { cn, bogotaToday } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -43,7 +43,7 @@ export default function ConfirmarTab({ profile }: Props) {
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
   const [closing, setClosing] = useState(false);
-  const today = new Date().toISOString().split('T')[0];
+  const today = bogotaToday();
 
   // Auto-load orders from DB on mount if not already loaded. Uses a strict
   // eq() match on PENDIENTE CONFIRMACION instead of ilike('%PENDIENTE%') —
