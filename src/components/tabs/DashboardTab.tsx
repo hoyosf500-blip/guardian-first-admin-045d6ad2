@@ -2,6 +2,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
+import { bogotaToday } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -55,7 +56,7 @@ export default function DashboardTab() {
 
   useEffect(() => {
     if (!user) return;
-    const today = new Date().toLocaleDateString('en-CA');
+    const today = bogotaToday();
     supabase.rpc('get_daily_operator_stats', { p_date: today }).then(({ data, error }) => {
       if (error || !data) return;
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)

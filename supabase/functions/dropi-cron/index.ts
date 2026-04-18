@@ -312,8 +312,11 @@ Deno.serve(async (req: Request) => {
       await sleep(RATE_LIMIT_MS);
     }
 
-    // Restore estado for orders confirmed locally today (so sync doesn't overwrite local confirmations)
-    const todayDate = new Date().toISOString().split("T")[0];
+    // Restore estado for orders confirmed locally today. Usa fecha de Bogotá
+    // para calzar con result_date que se escribe desde el cliente (el cron
+    // corre en UTC y a partir de las 19:00 COL devolvía la fecha siguiente
+    // dejando fuera las confirmaciones de la tarde).
+    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
     const { data: confirmedToday } = await sb
       .from("order_results")
       .select("order_id")
@@ -341,19 +344,36 @@ Deno.serve(async (req: Request) => {
     // will eventually overwrite the Dropi-side estado on the bulk pull.
     let retried = 0;
     try {
+      // BUG fix: dropi-update-order espera { externalId }, no { dbId }.
+      // Hacemos JOIN implícito con orders para traer external_id junto al id.
       const { data: pendingRows } = await sb
         .from("order_results")
-        .select("id, order_id")
+        .select("id, order_id, orders:order_id(external_id)")
         .in("dropi_sync_status", ["pending", "failed"])
         .eq("result", "conf")
-        .gte("result_date", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0])
+        .gte(
+          "result_date",
+          new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" })
+            .format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+        )
         .limit(200);
 
-      for (const row of pendingRows || []) {
+      for (const row of (pendingRows || []) as Array<{ id: string; order_id: string; orders: { external_id: string | null } | null }>) {
+        const externalId = row.orders?.external_id;
+        if (!externalId) {
+          await sb
+            .from("order_results")
+            .update({
+              dropi_sync_status: "failed",
+              result_notes: "Reintento cron omitido: pedido sin external_id",
+            })
+            .eq("id", row.id);
+          continue;
+        }
         try {
           const { data: invokeData, error: invokeErr } = await sb.functions.invoke(
             "dropi-update-order",
-            { body: { dbId: row.order_id } },
+            { body: { externalId } },
           );
           const ok = !invokeErr && (invokeData as { ok?: boolean } | null)?.ok !== false;
           await sb

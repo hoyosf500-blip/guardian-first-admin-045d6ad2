@@ -185,6 +185,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // ---- Role check: solo admin u operator pueden tocar Dropi ----
+    // Antes cualquier usuario autenticado podía PUT a cualquier pedido.
+    // Limitamos a los roles que realmente operan el CRM.
+    const { data: roles } = await sb
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+    const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "No tienes permiso para actualizar pedidos en Dropi" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ---- Parse body ----
     let body: Record<string, unknown> = {};
     try {

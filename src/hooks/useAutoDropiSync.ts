@@ -10,6 +10,10 @@ export function useAutoDropiSync(
   onSyncComplete?: () => void,
 ) {
   const runningRef = useRef(false);
+  // Mantener onSyncComplete en un ref evita que el interval se reinicie
+  // en cada render del componente padre (el callback cambia de identidad).
+  const onSyncCompleteRef = useRef(onSyncComplete);
+  useEffect(() => { onSyncCompleteRef.current = onSyncComplete; }, [onSyncComplete]);
 
   useEffect(() => {
     if (!isAdmin || !userId) return;
@@ -30,7 +34,7 @@ export function useAutoDropiSync(
         if (error) {
           console.warn('[auto-dropi-sync] failed:', error.message);
         } else {
-          onSyncComplete?.();
+          onSyncCompleteRef.current?.();
         }
       } catch (err) {
         console.warn('[auto-dropi-sync] exception:', err);
@@ -42,5 +46,5 @@ export function useAutoDropiSync(
     runSync();
     const interval = setInterval(runSync, SYNC_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [isAdmin, userId, onSyncComplete]);
+  }, [isAdmin, userId]);
 }

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
+import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 import { useDataLoader } from '@/hooks/useDataLoader';
@@ -140,7 +141,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // 'edicion_orden' must NOT mark a pedido as resuelto ni inflar el
             // counter de "no respondió".
             const isCallOutcome = (r: string) => r === 'conf' || r === 'canc' || r === 'noresp';
-            const todayLocal = new Date().toLocaleDateString('en-CA');
+            const todayLocal = bogotaToday();
             const COOLDOWN_HOURS = 2;
             const MAX_DAILY_ATTEMPTS = 3;
 
@@ -257,8 +258,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     if (!timerStart) setTimerStart(Date.now());
 
-    const today = new Date().toLocaleDateString('en-CA');
-    const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const today = bogotaToday();
+    const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
 
     const { error, data: insertedResult } = await supabase.from('order_results').insert({
       order_id: order.dbId,
@@ -363,7 +364,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     revertedRef.current = true;
     const { order, result, resultId, touchpointId } = lastMark;
 
-    setWorkQueue(prev => prev.map(o => o.phone === order.phone ? { ...o, result: undefined, reason: undefined } : o));
+    setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
     setCounter(prev => ({
       conf: prev.conf - (result === 'conf' ? 1 : 0),
       canc: prev.canc - (result === 'canc' ? 1 : 0),

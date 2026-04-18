@@ -35,28 +35,40 @@ export function useDataLoader(user: User | null): DataLoaderState {
     if (segLoaded && !force) return;
     setSegLoading(true);
     try {
-      // BUG 5 fix: el lock solo aplica en Confirmar. Quitar el filtro
-      // locked_by aquí — si no, los pedidos en atención desaparecen 15 min
-      // de Seguimiento.
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      if (error) {
-        console.error('Error loading seg orders:', error);
-        toast.error('Error cargando seguimiento: ' + error.message);
-        return;
-      }
-      if (dbOrders) {
-        if (dbOrders.length === 5000) {
-          toast.warning('Se cargaron 5000 pedidos (límite máximo). Algunos pedidos antiguos pueden no mostrarse.');
+      // Paginación: Supabase limita cada SELECT a ~1000 filas por defecto.
+      // Leemos en páginas hasta completar o llegar a HARD_LIMIT — evita el
+      // antiguo problema de "solo se ven los 5000 más recientes".
+      const PAGE_SIZE = 1000;
+      const HARD_LIMIT = 20000;
+      type Row = Parameters<typeof dbToOrderData>[0];
+      const all: Row[] = [];
+      let fromIdx = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const toIdx = fromIdx + PAGE_SIZE - 1;
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
+          .order('created_at', { ascending: false })
+          .range(fromIdx, toIdx);
+        if (error) {
+          console.error('Error loading seg orders:', error);
+          toast.error('Error cargando seguimiento: ' + error.message);
+          return;
         }
-        const mapped = dbOrders.map((o, idx) => dbToOrderData(o, idx));
-        mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
-        setSegData(mapped);
+        const rows = (data || []) as Row[];
+        all.push(...rows);
+        if (rows.length < PAGE_SIZE) break;
+        if (all.length >= HARD_LIMIT) {
+          toast.warning(`Se cargaron ${HARD_LIMIT} pedidos (tope máx). Pide a un admin subir el límite si faltan pedidos antiguos.`);
+          break;
+        }
+        fromIdx += PAGE_SIZE;
       }
+      const mapped = all.map((o, idx) => dbToOrderData(o, idx));
+      mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
+      setSegData(mapped);
       setSegLastUpdate(new Date());
       setSegLoaded(true);
     } finally {

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
+import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface NovedadesState {
@@ -23,10 +24,13 @@ export function useNovedades(user: User | null): NovedadesState {
     setNovedadesLoading(true);
     try {
       // BUG 5 fix: lock solo aplica en Confirmar.
+      // Match any estado que contenga NOVEDAD o INTENTO DE ENTREGA — Dropi usa
+      // variantes ('NOVEDAD PENDIENTE', 'NOVEDAD EN RUTA', etc.) y un .in()
+      // estricto dejaba pedidos fuera de la cola.
       const { data, error } = await supabase
         .from('orders')
         .select('*')
-        .in('estado', ['NOVEDAD', 'INTENTO DE ENTREGA'])
+        .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
         .eq('novedad_sol', false);
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
@@ -58,8 +62,9 @@ export function useNovedades(user: User | null): NovedadesState {
       o.dbId === order.dbId ? { ...o, result: 'resolving', novedadSol: true } : o,
     ));
 
-    const today = new Date().toLocaleDateString('en-CA');
-    const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const today = bogotaToday();
+    const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
+    const prevEstado = order.estado;
 
     const touchAction = action === 'reoffer'
       ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
@@ -89,7 +94,9 @@ export function useNovedades(user: User | null): NovedadesState {
 
     const rollbackNovedad = async () => {
       if (order.dbId) {
-        await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.dbId);
+        // Preserva el estado previo (p.ej. 'INTENTO DE ENTREGA') en lugar de
+        // sobreescribir a 'NOVEDAD' y perder el matiz original.
+        await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.dbId);
       }
       setNovedadesQueue(prev => prev.map(o =>
         o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
