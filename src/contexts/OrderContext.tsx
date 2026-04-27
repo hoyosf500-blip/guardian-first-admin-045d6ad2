@@ -152,6 +152,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const buildWorkQueue = useCallback((orders: OrderData[]) => {
+    const buildId = ++lastBuildIdRef.current;
     const pendientes = orders.filter(o => isPendiente(o.estado));
     pendientes.sort((a, b) => calcPriority(b) - calcPriority(a) || b.dias - a.dias);
 
@@ -188,6 +189,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .eq('operator_id', user.id)
         .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
+          // Si llegó un buildWorkQueue más nuevo mientras el fetch corría,
+          // descarta este resultado — el estado ya fue reemplazado por
+          // datos más frescos.
+          if (buildId !== lastBuildIdRef.current) return;
           if (data) {
             const now = Date.now();
             // BUG 1/2 fix: only consider real call outcomes. Audit rows like
