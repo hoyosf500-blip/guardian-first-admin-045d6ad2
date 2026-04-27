@@ -14,11 +14,19 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
+import { useSegAssignment } from '@/hooks/useSegAssignment';
 import CrmCallView from './CrmCallView';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { getActionSLA } from '@/lib/actionSla';
 import { bogotaToday } from '@/lib/utils';
+
+/**
+ * Acciones que liberan la asignación del pedido (assigned_to = NULL).
+ * El resto de acciones mantiene al pedido asignado a la operadora que las
+ * ejecutó para que pueda darle continuidad al día siguiente.
+ */
+const RESOLVING_ACTIONS = new Set(['Resuelto', 'Devolucion solicitada', 'Solicite devolucion']);
 
 interface Touchpoint {
   id: string;
@@ -233,6 +241,10 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     }
   };
   const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
+  // Asignación: 'available' = míos + sin asignar (default operativo).
+  // 'all' = todos, para auditar quién está atendiendo qué.
+  const [assignmentFilter, setAssignmentFilter] = useSessionState<'available' | 'all'>(`crmtable:${module}:assignmentFilter`, 'available');
+  const { claimSegOrder, releaseSegOrder } = useSegAssignment();
   // Lista / Llamar toggle — persisted per module so it survives tab
   // discards (common on mobile when the operator goes out to the
   // transportadora's tracking page).
@@ -321,6 +333,22 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   }, [phoneTouchpoints]);
 
   const markAction = async (order: OrderData, action: string) => {
+    // Bloquea la acción si el pedido ya pertenece a otra operadora.
+    if (user && order.assignedTo && order.assignedTo !== user.id) {
+      const owner = getOperatorName(order.assignedTo);
+      toast.error(`Pedido en atención por ${owner}`);
+      return;
+    }
+    // Auto-claim al primer toque: si está sin asignar, lo reclama el caller.
+    // Si claim_seg_order devuelve false significa que otra operadora lo tomó
+    // entre el render y el click (race con realtime). Aborta la acción.
+    if (user && order.dbId && !order.assignedTo) {
+      const claimed = await claimSegOrder(order.dbId);
+      if (!claimed) {
+        toast.error('Otra operadora tomó este pedido');
+        return;
+      }
+    }
     const slaMs = getActionSLA(action) * 3600000;
     const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
     const label = `${action} · vuelve en ${hoursLeft}h`;
@@ -339,7 +367,24 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
       if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
     }
+    // Liberación condicional: solo las acciones resolutivas (Resuelto,
+    // Devolucion solicitada, Solicite devolucion) sueltan la asignación.
+    // El resto mantiene al pedido en la cartera de la operadora para
+    // continuidad al día siguiente.
+    if (order.dbId && RESOLVING_ACTIONS.has(action)) {
+      await releaseSegOrder(order.dbId);
+    }
     toast.success(action);
+  };
+
+  const handleReleaseOrder = async (order: OrderData) => {
+    if (!order.dbId) return;
+    const ok = await releaseSegOrder(order.dbId);
+    if (ok) {
+      toast.success('Pedido liberado');
+    } else {
+      toast.error('No se pudo liberar — verifica que sea tuyo');
+    }
   };
 
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
@@ -347,6 +392,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
 
   const filtered = useMemo(() => {
     let list = data;
+    // Filtro de asignación: por defecto cada operadora ve "Disponibles"
+    // (sin asignar + suyos). Toggle "Todos" lo deshabilita para auditoría.
+    if (assignmentFilter === 'available' && user) {
+      list = list.filter(o => !o.assignedTo || o.assignedTo === user.id);
+    }
     // Hide managed orders unless showManaged is on
     if (!showManaged) {
       list = list.filter(o => !(o.dbId && results[o.dbId]));
@@ -370,7 +420,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -456,6 +506,36 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             </span>
           </button>
         )}
+
+        {/* Disponibles / Todos — filtro de asignación.
+            "Disponibles" = sin asignar + suyos (default operativo).
+            "Todos" = ver toda la cola (auditoría / ver lo de la otra). */}
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+          <button
+            type="button"
+            onClick={() => setAssignmentFilter('available')}
+            aria-pressed={assignmentFilter === 'available'}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              assignmentFilter === 'available'
+                ? 'bg-accent text-accent-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <User size={13} aria-hidden="true" /> Disponibles
+          </button>
+          <button
+            type="button"
+            onClick={() => setAssignmentFilter('all')}
+            aria-pressed={assignmentFilter === 'all'}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              assignmentFilter === 'all'
+                ? 'bg-accent text-accent-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Layers size={13} aria-hidden="true" /> Todos
+          </button>
+        </div>
 
         {/* Lista / Llamar toggle */}
         <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
@@ -590,6 +670,8 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         expanded={expandedPhone === o.phone}
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
                         onAction={(action) => markAction(o, action)}
+                        onRelease={() => handleReleaseOrder(o)}
+                        currentUserId={user?.id}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
                         getOperatorName={getOperatorName}
@@ -618,6 +700,8 @@ interface OrderCardProps {
   expanded: boolean;
   onToggle: () => void;
   onAction: (action: string) => void;
+  onRelease: () => void;
+  currentUserId: string | undefined;
   actions: string[];
   touchpoints: Touchpoint[];
   getOperatorName: (id: string) => string;
@@ -627,7 +711,10 @@ interface OrderCardProps {
   statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, touchpoints: tps, getOperatorName, index, statusColor }: OrderCardProps) {
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, onRelease, currentUserId, actions, touchpoints: tps, getOperatorName, index, statusColor }: OrderCardProps) {
+  const isMine = !!(o.assignedTo && currentUserId && o.assignedTo === currentUserId);
+  const isOtherOwner = !!(o.assignedTo && currentUserId && o.assignedTo !== currentUserId);
+  const ownerName = isOtherOwner && o.assignedTo ? getOperatorName(o.assignedTo) : '';
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
@@ -674,6 +761,22 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
               </span>
             )}
             <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
+            {isMine && (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                title="Asignado a ti"
+              >
+                <User size={9} aria-hidden="true" /> Mío
+              </span>
+            )}
+            {isOtherOwner && (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                title={`Atendido por ${ownerName}`}
+              >
+                <User size={9} aria-hidden="true" /> {ownerName}
+              </span>
+            )}
           </div>
         </div>
 
@@ -835,21 +938,44 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 </div>
               )}
 
+              {/* Aviso si el pedido es de otra operadora */}
+              {isOtherOwner && (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 border bg-amber-500/10 border-amber-500/25">
+                  <User size={12} className="text-amber-600 dark:text-amber-400" />
+                  <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                    Atendido por {ownerName} — no puedes ejecutar acciones
+                  </span>
+                </div>
+              )}
+
               {/* Quick actions */}
               <div className="flex gap-2">
-                <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
-                  onClick={() => onAction('WhatsApp enviado')}
-                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
-                  <Send size={12} /> WhatsApp
-                </a>
-                <a href={`tel:+57${o.phone}`}
-                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
-                  <PhoneIcon size={12} /> Llamar
-                </a>
+                {isOtherOwner ? (
+                  <>
+                    <button disabled className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500/40 text-white font-semibold inline-flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60">
+                      <Send size={12} /> WhatsApp
+                    </button>
+                    <button disabled className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold inline-flex items-center justify-center gap-1.5 border border-border/50 cursor-not-allowed opacity-60">
+                      <PhoneIcon size={12} /> Llamar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
+                      onClick={() => onAction('WhatsApp enviado')}
+                      className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
+                      <Send size={12} /> WhatsApp
+                    </a>
+                    <a href={`tel:+57${o.phone}`}
+                      className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
+                      <PhoneIcon size={12} /> Llamar
+                    </a>
+                  </>
+                )}
               </div>
 
               {/* CRM actions */}
-              {!managed && (
+              {!managed && !isOtherOwner && (
                 <div className="flex flex-wrap gap-1.5">
                   {actions.map(a => (
                     <button key={a} onClick={() => onAction(a)}
@@ -858,6 +984,17 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                     </button>
                   ))}
                 </div>
+              )}
+
+              {/* Liberar — solo visible si el pedido está asignado a la operadora actual */}
+              {isMine && (
+                <button
+                  onClick={onRelease}
+                  className="w-full text-[10px] px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold hover:bg-amber-500/20 border border-amber-500/25 inline-flex items-center justify-center gap-1.5 transition-colors"
+                  title="Liberar este pedido para que otra operadora pueda tomarlo"
+                >
+                  <RotateCcw size={11} /> Liberar pedido
+                </button>
               )}
             </div>
           </motion.div>

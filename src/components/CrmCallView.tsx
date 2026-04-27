@@ -28,7 +28,7 @@ interface Props {
   managed: Record<string, string>;
   phoneTouchpoints: Record<string, Touchpoint[]>;
   getOperatorName: (id: string) => string;
-  onAction: (phone: string, action: string) => void;
+  onAction: (order: OrderData, action: string) => void;
   /** Unique key for sessionStorage (e.g. "seg" or "rescue"). */
   storageKey: string;
   module: string;
@@ -136,7 +136,7 @@ export default function CrmCallView({
   };
 
   const handleAction = async (action: string) => {
-    onAction(o.phone, action);
+    onAction(o, action);
     // Jump to next unmanaged after a short delay so the UI can show feedback
     setTimeout(jumpToFirstUnmanaged, 450);
   };
