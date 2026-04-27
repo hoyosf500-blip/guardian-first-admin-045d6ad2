@@ -104,7 +104,7 @@ export function useDataLoader(user: User | null): DataLoaderState {
       }
       const mapped = all.map((o, idx) => dbToOrderData(o, idx));
       mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
-      setSegData(mapped);
+      setSegData(prev => smartMerge(prev, mapped));
       setSegLastUpdate(new Date());
       setSegLoaded(true);
     } finally {
