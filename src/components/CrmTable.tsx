@@ -734,9 +734,17 @@ interface OrderCardProps {
   statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
-  const isMine = !!(o.assignedTo && currentUserId && o.assignedTo === currentUserId);
-  const isOtherOwner = !!(o.assignedTo && currentUserId && o.assignedTo !== currentUserId);
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
+  const isMine = !!(
+    o.assignedTo && currentUserId
+    && o.assignedTo === currentUserId
+    && !adminIds.includes(o.assignedTo)
+  );
+  const isOtherOwner = !!(
+    o.assignedTo && currentUserId
+    && o.assignedTo !== currentUserId
+    && !adminIds.includes(o.assignedTo)
+  );
   const ownerName = isOtherOwner && o.assignedTo ? getOperatorName(o.assignedTo) : '';
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
