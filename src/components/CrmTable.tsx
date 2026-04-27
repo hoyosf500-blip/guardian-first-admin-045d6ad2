@@ -411,7 +411,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     // Filtro de asignación: por defecto cada operadora ve "Disponibles"
     // (sin asignar + suyos). Toggle "Todos" lo deshabilita para auditoría.
     if (assignmentFilter === 'available' && user) {
-      list = list.filter(o => !o.assignedTo || o.assignedTo === user.id);
+      list = list.filter(o =>
+        !o.assignedTo
+        || o.assignedTo === user.id
+        || adminIds.includes(o.assignedTo)
+      );
     }
     // Hide managed orders unless showManaged is on
     if (!showManaged) {
