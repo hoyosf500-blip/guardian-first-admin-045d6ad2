@@ -442,10 +442,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     return list;
   }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user, adminIds]);
 
-  // Recuerda el orden de las cards entre refreshes para evitar reordenamientos
-  // visuales mientras la operadora interactúa (card expandida o vista 'call').
-  const stableOrderRef = useRef<Map<string, number>>(new Map());
-
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
     STATUS_COLUMNS.forEach(c => { groups[c.key] = []; });
@@ -453,40 +449,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       const key = classifyOrder(o.estado);
       groups[key].push(o);
     });
-
-    const hasActiveInteraction = expandedPhone !== null || view === 'call';
-
     for (const key of Object.keys(groups)) {
-      if (hasActiveInteraction && stableOrderRef.current.size > 0) {
-        // Preservar posiciones previas; nuevos pedidos al final.
-        groups[key].sort((a, b) => {
-          const aId = a.dbId || a.phone;
-          const bId = b.dbId || b.phone;
-          const aPos = stableOrderRef.current.get(aId);
-          const bPos = stableOrderRef.current.get(bId);
-          if (aPos !== undefined && bPos !== undefined) return aPos - bPos;
-          if (aPos !== undefined) return -1;
-          if (bPos !== undefined) return 1;
-          return getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a);
-        });
-      } else {
-        groups[key].sort((a, b) => getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a));
-      }
+      groups[key].sort((a, b) => getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a));
     }
-
-    // Sin interacción: refrescar la memoria con el orden actual.
-    if (!hasActiveInteraction) {
-      const newOrder = new Map<string, number>();
-      let idx = 0;
-      Object.values(groups).flat().forEach(o => {
-        const id = o.dbId || o.phone;
-        newOrder.set(id, idx++);
-      });
-      stableOrderRef.current = newOrder;
-    }
-
     return groups;
-  }, [filtered, expandedPhone, view]);
+  }, [filtered]);
 
   // Count all data (not filtered) for pills
   const allCounts = useMemo(() => {
