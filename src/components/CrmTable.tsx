@@ -795,6 +795,48 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
           )}
         </div>
 
+        {/* Contact history badge — visibilidad cruzada entre operadoras de
+            cuántas veces y quién ha contactado a este cliente.
+            Resuelve: "no sé si la otra ya llamó o cuántas veces" */}
+        {(() => {
+          if (tps.length === 0) {
+            return (
+              <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25">
+                <PhoneIcon size={9} /> Sin contactar
+              </div>
+            );
+          }
+          const last = tps[0];
+          const lastMs = new Date(last.created_at).getTime();
+          const hoursAgo = (Date.now() - lastMs) / 3600000;
+          const opName = getOperatorName(last.operator_id);
+          let cls: string;
+          let timeLabel: string;
+          if (hoursAgo < 1) {
+            cls = 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25';
+            timeLabel = `hace ${Math.max(1, Math.round(hoursAgo * 60))}min`;
+          } else if (hoursAgo < 24) {
+            cls = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25';
+            timeLabel = `hace ${Math.round(hoursAgo)}h`;
+          } else if (hoursAgo < 72) {
+            cls = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25';
+            timeLabel = `hace ${Math.round(hoursAgo / 24)}d`;
+          } else {
+            cls = 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25';
+            timeLabel = `hace ${Math.round(hoursAgo / 24)}d`;
+          }
+          return (
+            <div className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md border ${cls}`}>
+              <PhoneIcon size={9} />
+              <span>{tps.length} {tps.length === 1 ? 'contacto' : 'contactos'}</span>
+              <span className="opacity-60">·</span>
+              <span>{opName}</span>
+              <span className="opacity-60">·</span>
+              <span>{timeLabel}</span>
+            </div>
+          );
+        })()}
+
         {/* Guía + tracking — Rastrear is now a proper button, amber outline that goes solid on hover */}
         {o.guia && (
           <div className="mt-2.5 flex items-center gap-2">
