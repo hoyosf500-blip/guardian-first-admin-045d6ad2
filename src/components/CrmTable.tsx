@@ -229,6 +229,10 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   // operadora por error) sin necesidad de tocar la DB cada vez.
   const [adminIds, setAdminIds] = useState<string[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
+  // Preservar scrollTop por columna durante refreshes (cron Dropi cada 1 min).
+  // Si React remonta el contenedor, useLayoutEffect restaura antes del paint
+  // para que la operadora no pierda su posición de scroll.
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map());
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
   const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
   const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
