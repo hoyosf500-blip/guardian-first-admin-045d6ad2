@@ -231,10 +231,13 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
 function ColumnBody({
   columnKey,
   scrollPositionsRef,
+  onActivity,
   children,
 }: {
   columnKey: string;
   scrollPositionsRef: React.MutableRefObject<Map<string, number>>;
+  /** Notifica actividad de la operadora para que CrmTable pause refrescos. */
+  onActivity?: () => void;
   children: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -250,7 +253,10 @@ function ColumnBody({
       ref={scrollRef}
       onScroll={(e) => {
         scrollPositionsRef.current.set(columnKey, (e.target as HTMLDivElement).scrollTop);
+        onActivity?.();
       }}
+      onWheel={() => { onActivity?.(); }}
+      onTouchMove={() => { onActivity?.(); }}
       className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto"
     >
       {children}
@@ -258,7 +264,7 @@ function ColumnBody({
   );
 }
 
-export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
+export default function CrmTable({ data: dataProp, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [allTouchpoints, setAllTouchpoints] = useState<Touchpoint[]>([]);
@@ -293,6 +299,79 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
   // Guard contra doble-click: trackea dbIds en vuelo en markAction.
   const markingInFlightRef = useRef<Set<string>>(new Set());
+
+  // ──────────────────────────────────────────────────────────────────
+  // Anti-parpadeo / anti scroll-jump.
+  // El padre (OrderProvider) refresca `dataProp` cuando llegan eventos
+  // de realtime o termina el cron de Dropi (cada 1 min). Si la
+  // operadora está scrolleando o leyendo, ese refresh reordena cards
+  // bajo su scroll y le hace perder el sitio.
+  //
+  // `data` (state local) se desincroniza temporalmente de `dataProp`
+  // si la operadora estuvo activa en los últimos 4 s. Mientras tanto
+  // bufferizamos en `pendingDataRef` y mostramos un banner discreto
+  // con el conteo de cambios. Cuando deja de moverse 4 s, aplicamos
+  // automáticamente; también puede aplicar manual con el banner.
+  // ──────────────────────────────────────────────────────────────────
+  const QUIET_WINDOW_MS = 4000;
+  const [data, setData] = useState<OrderData[]>(dataProp);
+  const [pendingChanges, setPendingChanges] = useState(0);
+  const lastActivityRef = useRef<number>(0);
+  const pendingDataRef = useRef<OrderData[] | null>(null);
+  const dataRef = useRef<OrderData[]>(data);
+  dataRef.current = data;
+
+  const bumpActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  const applyPendingNow = useCallback(() => {
+    if (pendingDataRef.current) {
+      setData(pendingDataRef.current);
+      pendingDataRef.current = null;
+      setPendingChanges(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Carga inicial (data local vacío): aplicar sin esperar quiet window.
+    if (dataRef.current.length === 0) {
+      setData(dataProp);
+      return;
+    }
+    const isQuiet = Date.now() - lastActivityRef.current >= QUIET_WINDOW_MS;
+    if (isQuiet) {
+      setData(dataProp);
+      pendingDataRef.current = null;
+      setPendingChanges(0);
+      return;
+    }
+    // Operadora activa: bufferizar y contar diff aprox para el banner.
+    pendingDataRef.current = dataProp;
+    const prevById = new Map(dataRef.current.map(o => [o.dbId || `${o.phone}|${o.idx}`, o]));
+    const nextById = new Map(dataProp.map(o => [o.dbId || `${o.phone}|${o.idx}`, o]));
+    let diffCount = 0;
+    nextById.forEach((n, id) => {
+      const old = prevById.get(id);
+      if (!old) diffCount++;
+      else if (old.estado !== n.estado || old.assignedTo !== n.assignedTo) diffCount++;
+    });
+    prevById.forEach((_o, id) => {
+      if (!nextById.has(id)) diffCount++;
+    });
+    setPendingChanges(diffCount);
+  }, [dataProp]);
+
+  // Auto-apply cuando la operadora deje de moverse durante QUIET_WINDOW_MS.
+  useEffect(() => {
+    if (pendingChanges === 0) return;
+    const t = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= QUIET_WINDOW_MS) {
+        applyPendingNow();
+      }
+    }, 1500);
+    return () => clearInterval(t);
+  }, [pendingChanges, applyPendingNow]);
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
@@ -527,12 +606,32 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     );
   }
 
+  // Mantenemos TODAS las columnas montadas (incluso las vacías) ocultándolas
+  // con `display:none` en el render. Si se desmontan al quedar vacías, al
+  // volver a aparecer se remontan con scrollTop=0 — eso era lo que hacía
+  // que la operadora "saltara al tope" mientras estaba bajando. El minWidth
+  // del contenedor sigue contando solo las columnas con items.
   const activeColumns = activeFilter
-    ? STATUS_COLUMNS.filter(c => c.key === activeFilter && columns[c.key].length > 0)
-    : STATUS_COLUMNS.filter(c => columns[c.key].length > 0);
+    ? STATUS_COLUMNS.filter(c => c.key === activeFilter)
+    : STATUS_COLUMNS;
+  const visibleColumnCount = activeColumns.filter(c => columns[c.key].length > 0).length;
 
   return (
     <div className="space-y-5">
+      {/* Banner de actualizaciones pendientes — aparece cuando llegaron
+          cambios desde realtime mientras la operadora estaba scrolleando.
+          Click aplica el merge y reordena la lista. */}
+      {pendingChanges > 0 && (
+        <button
+          type="button"
+          onClick={applyPendingNow}
+          className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+          aria-live="polite"
+        >
+          <RotateCcw size={14} aria-hidden="true" />
+          <span>{pendingChanges} {pendingChanges === 1 ? 'actualización disponible' : 'actualizaciones disponibles'} — clic para aplicar</span>
+        </button>
+      )}
       {/* Search + delayed filter */}
       <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative flex-1">
@@ -540,7 +639,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); bumpActivity(); }}
             placeholder="Buscar nombre, teléfono, guía, ciudad..."
             aria-label="Buscar pedidos"
             className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
@@ -708,16 +807,21 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
           <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-r from-background to-transparent opacity-0 transition-opacity" id="scroll-fade-left" />
           <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-l from-background to-transparent" />
           <div className="overflow-x-auto pb-4 -mx-2 px-2 scroll-hint">
-            <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 300}px` }}>
+            <div className="flex gap-3" style={{ minWidth: `${Math.max(1, visibleColumnCount) * 300}px` }}>
             {activeColumns.map((col, colIdx) => {
               const items = columns[col.key];
               const t = TONE_STYLES[col.tone];
+              const isEmpty = items.length === 0;
               return (
                 <motion.div
                   key={col.key}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: colIdx * 0.04, duration: 0.25 }}
+                  // `display:none` en vez de unmount — preserva scrollTop del
+                  // ColumnBody hijo entre refrescos cuando la columna queda
+                  // momentáneamente vacía.
+                  style={isEmpty ? { display: 'none' } : undefined}
                   className="flex-1 min-w-[280px] max-w-[340px] flex flex-col"
                 >
                   {/* Column header — solid surface + thin tone accent bar */}
@@ -735,7 +839,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   </div>
 
                   {/* Column body */}
-                  <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef}>
+                  <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef} onActivity={bumpActivity}>
                     {items.map((o, i) => (
                       <OrderCard
                         key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
