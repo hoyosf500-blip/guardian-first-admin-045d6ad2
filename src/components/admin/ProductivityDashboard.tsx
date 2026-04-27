@@ -16,6 +16,10 @@ interface Row {
   cancelados: number;
   noresp: number;
   novedades_resueltas: number;
+  seg_acciones: number;
+  seg_resueltos: number;
+  rescate_acciones: number;
+  rescate_resueltos: number;
   total_atendidos: number;
   tasa_contacto: number;
   tasa_confirmacion: number;
@@ -133,6 +137,8 @@ export default function ProductivityDashboard() {
                     <TableHead className="text-right">Cancelados</TableHead>
                     <TableHead className="text-right">No resp.</TableHead>
                     <TableHead className="text-right">Nov. resueltas</TableHead>
+                    <TableHead className="text-right" title="Acciones / Resueltos en Seguimiento">Seg (acc / res)</TableHead>
+                    <TableHead className="text-right" title="Acciones / Resueltos en Rescate">Resc (acc / res)</TableHead>
                     <TableHead className="text-right">Atendidos</TableHead>
                     <TableHead className="text-right">Tasa contacto</TableHead>
                     <TableHead className="text-right">Tasa confirmación</TableHead>
@@ -154,6 +160,16 @@ export default function ProductivityDashboard() {
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{r.noresp}</TableCell>
                       <TableCell className="text-right">{r.novedades_resueltas}</TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        <span className="text-foreground">{r.seg_acciones}</span>
+                        <span className="text-muted-foreground"> / </span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{r.seg_resueltos}</span>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        <span className="text-foreground">{r.rescate_acciones}</span>
+                        <span className="text-muted-foreground"> / </span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{r.rescate_resueltos}</span>
+                      </TableCell>
                       <TableCell className="text-right text-muted-foreground">{r.total_atendidos}</TableCell>
                       <TableCell className="text-right font-mono text-xs">{r.tasa_contacto}%</TableCell>
                       <TableCell className="text-right">
