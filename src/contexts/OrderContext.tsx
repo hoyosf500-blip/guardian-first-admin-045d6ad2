@@ -6,7 +6,7 @@ import { calcPriority } from '@/lib/alertSystem';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
-import { useDataLoader } from '@/hooks/useDataLoader';
+import { useDataLoader, smartMerge } from '@/hooks/useDataLoader';
 import { useNovedades } from '@/hooks/useNovedades';
 import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
