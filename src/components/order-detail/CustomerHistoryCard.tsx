@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { calcBadge, estadoColor } from '@/lib/customerUtils';
+import { formatCOP } from '@/lib/utils';
 
 interface Props {
   currentPhone: string;
