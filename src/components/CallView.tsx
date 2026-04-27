@@ -107,9 +107,16 @@ export default function CallView({ items }: Props) {
         const k = orderKey(next);
         if (k) {
           setCallOrderId(k);
-          toast.info('Pedido en uso por otra operadora — saltando al siguiente');
+          // ID estable: si la operadora salta varios pedidos lockeados en
+          // cadena (mismo cliente con varios pedidos), Sonner reusa el
+          // toast existente en vez de apilar 5 avisos iguales.
+          toast.info('Pedido en uso por otra operadora — saltando al siguiente', {
+            id: 'lock-skip',
+          });
         } else {
-          toast.info('Pedidos disponibles agotados — todos están en atención');
+          toast.info('Pedidos disponibles agotados — todos están en atención', {
+            id: 'lock-skip',
+          });
         }
       }
     });

@@ -130,8 +130,12 @@ export default function CrmCallView({
   const navCall = (dir: number) => goTo(idx + dir);
 
   const jumpToFirstUnmanaged = () => {
-    const next = items.findIndex((it, i) => i > idx && !managed[it.phone]);
-    if (next >= 0) goTo(next);
+    // Busca primero después de la posición actual.
+    let next = items.findIndex((it, i) => i > idx && !managed[it.phone]);
+    // Si no hay, fallback desde el inicio: cubre el caso de pedidos
+    // nuevos que llegaron por realtime y se ordenaron antes (más urgentes).
+    if (next < 0) next = items.findIndex((it) => !managed[it.phone]);
+    if (next >= 0 && next !== idx) goTo(next);
     else toast.success('Todos los pedidos de la lista están gestionados');
   };
 

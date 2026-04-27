@@ -77,35 +77,39 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
     setAllOrdersState(orders);
     buildWorkQueue(orders);
+    // Marca la sesión como cargada para que ConfirmarTab no dispare su
+    // propia query duplicada cuando la operadora navegue entre tabs.
+    setExcelLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // Auto-sync con Dropi cada 5 min mientras un admin esté con la app abierta.
-  // Al terminar refresca la cola de novedades para que los pedidos ya
-  // resueltos en Dropi desaparezcan sin intervención manual.
-  useAutoDropiSync(isAdmin, user?.id, () => {
-    void novedades.loadNovedades(true);
-    void dataLoader.loadSegData(true);
-    void dataLoader.loadResData(true);
-    void loadWorkQueue();
-  });
-
-  // Realtime: when any operator updates orders or inserts an order_result,
-  // refetch all queue caches so the admin (and other operators) see the
-  // change in seconds without a manual reload. Bursts are debounced inside
-  // the hook so a 2000-row sync only triggers one refetch.
-  useRealtimeOrders(user, {
-    onOrderChange: () => {
+  // Coalesce los reloads de realtime + auto-Dropi-sync en un solo timer.
+  // Antes había 2 callbacks (onOrderChange + onResultChange), cada uno
+  // disparaba 3-4 fetches; al confirmar un pedido se generaban 7-8
+  // requests en 500ms. Con este wrapper el burst se aplana a 4 fetches.
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedRefreshAll = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
       void novedades.loadNovedades(true);
       void dataLoader.loadSegData(true);
       void dataLoader.loadResData(true);
       void loadWorkQueue();
-    },
-    onResultChange: () => {
-      void dataLoader.loadSegData(true);
-      void dataLoader.loadResData(true);
-      void loadWorkQueue();
-    },
+      refreshTimerRef.current = null;
+    }, 800);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-sync con Dropi cada 5 min mientras un admin esté con la app abierta.
+  // Al terminar refresca todas las colas vía debouncedRefreshAll.
+  useAutoDropiSync(isAdmin, user?.id, debouncedRefreshAll);
+
+  // Realtime: cuando cualquier operadora cambia orders o inserta un
+  // order_result, todos los caches se refrescan vía el mismo timer
+  // debounced para evitar el ráfaga de fetches duplicados.
+  useRealtimeOrders(user, {
+    onOrderChange: debouncedRefreshAll,
+    onResultChange: debouncedRefreshAll,
   });
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
