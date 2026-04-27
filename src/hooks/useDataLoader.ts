@@ -142,7 +142,7 @@ export function useDataLoader(user: User | null): DataLoaderState {
               e.includes('DEVOL');
           });
         orders.sort((a, b) => calcPriority(b) - calcPriority(a));
-        setResData(orders);
+        setResData(prev => smartMerge(prev, orders));
       }
       setResLoaded(true);
     } finally {
