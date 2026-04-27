@@ -568,6 +568,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       get_daily_operator_stats: {
         Args: { p_date: string }
@@ -602,6 +603,10 @@ export type Database = {
           noresp: number
           novedades_resueltas: number
           operator_id: string
+          rescate_acciones: number
+          rescate_resueltos: number
+          seg_acciones: number
+          seg_resueltos: number
           tasa_confirmacion: number
           tasa_contacto: number
           total_atendidos: number
@@ -628,6 +633,7 @@ export type Database = {
       }
       pending_tomorrow_count: { Args: never; Returns: number }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
+      release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
       submit_opening_report: {
         Args: {
