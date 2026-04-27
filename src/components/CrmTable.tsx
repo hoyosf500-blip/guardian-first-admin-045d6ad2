@@ -790,10 +790,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
   const isDelayed = diasEnEstatus >= 2;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.015, 0.3), duration: 0.2 }}
+    <div
       className={`group bg-card rounded-xl border border-border/50 overflow-hidden transition-all duration-200 hover:border-border hover:shadow-md ${managed ? 'opacity-40' : ''}`}
     >
       {/* Card body */}
