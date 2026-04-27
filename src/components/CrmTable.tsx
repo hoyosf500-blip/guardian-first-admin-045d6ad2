@@ -218,6 +218,41 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
   'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
 };
 
+/**
+ * Wrapper que preserva scrollTop por columna entre re-renders.
+ * Si React remonta el contenedor (p. ej. tras smartMerge que cambió el array),
+ * useLayoutEffect restaura la posición ANTES del paint, evitando el "salto al tope".
+ */
+function ColumnBody({
+  columnKey,
+  scrollPositionsRef,
+  children,
+}: {
+  columnKey: string;
+  scrollPositionsRef: React.MutableRefObject<Map<string, number>>;
+  children: ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!scrollRef.current) return;
+    const saved = scrollPositionsRef.current.get(columnKey);
+    if (saved !== undefined && scrollRef.current.scrollTop !== saved) {
+      scrollRef.current.scrollTop = saved;
+    }
+  });
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={(e) => {
+        scrollPositionsRef.current.set(columnKey, (e.target as HTMLDivElement).scrollTop);
+      }}
+      className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto"
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
