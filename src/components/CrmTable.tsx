@@ -571,8 +571,14 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   const filtered = useMemo(() => {
     let list = data;
     // Filtro de asignación: por defecto cada operadora ve "Disponibles"
-    // (sin asignar + suyos). Toggle "Todos" lo deshabilita para auditoría.
-    if (assignmentFilter === 'available' && user) {
+    // (sin asignar + suyos + de admins). Toggle "Todos" lo deshabilita
+    // para auditoría.
+    //
+    // Admins SIEMPRE ven todos los pedidos. Antes el filtro 'available'
+    // los excluía cuando las operadoras tenían assigned_to, dejando al
+    // admin sin visibilidad de Seguimiento/Rescate aunque el toggle
+    // estuviera en 'available'. (El admin auditoría → necesita ver todo.)
+    if (assignmentFilter === 'available' && user && !isAdmin) {
       list = list.filter(o =>
         !o.assignedTo
         || o.assignedTo === user.id
