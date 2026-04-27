@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
-import { OrderData, dbToOrderData, isDespachado } from '@/lib/orderUtils';
+import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 
@@ -47,6 +47,10 @@ export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
   return merged;
 }
 
+// Fix 22: lista explícita de columnas para queries de orders. Evita SELECT *
+// que trae columnas innecesarias en cada fetch.
+const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
+
 interface DataLoaderState {
   segData: OrderData[];
   setSegData: React.Dispatch<React.SetStateAction<OrderData[]>>;
@@ -55,12 +59,6 @@ interface DataLoaderState {
   segLoading: boolean;
   segLastUpdate: Date | null;
   loadSegData: (force?: boolean) => Promise<void>;
-  resData: OrderData[];
-  setResData: React.Dispatch<React.SetStateAction<OrderData[]>>;
-  resLoaded: boolean;
-  setResLoaded: React.Dispatch<React.SetStateAction<boolean>>;
-  resLoading: boolean;
-  loadResData: (force?: boolean) => Promise<void>;
 }
 
 export function useDataLoader(user: User | null): DataLoaderState {
@@ -68,9 +66,6 @@ export function useDataLoader(user: User | null): DataLoaderState {
   const [segLoaded, setSegLoaded] = useState(false);
   const [segLoading, setSegLoading] = useState(false);
   const [segLastUpdate, setSegLastUpdate] = useState<Date | null>(null);
-  const [resData, setResData] = useState<OrderData[]>([]);
-  const [resLoaded, setResLoaded] = useState(false);
-  const [resLoading, setResLoading] = useState(false);
 
   const loadSegData = useCallback(async (force = false) => {
     if (!user) return;
@@ -90,7 +85,7 @@ export function useDataLoader(user: User | null): DataLoaderState {
         const toIdx = fromIdx + PAGE_SIZE - 1;
         const { data, error } = await supabase
           .from('orders')
-          .select('*')
+          .select(ORDER_COLUMNS)
           .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
           .not('estado', 'eq', 'ENTREGADO')
           .not('estado', 'eq', 'CANCELADO')
@@ -124,56 +119,16 @@ export function useDataLoader(user: User | null): DataLoaderState {
     }
   }, [user, segLoaded]);
 
-  const loadResData = useCallback(async (force = false) => {
-    if (!user) return;
-    if (resLoaded && !force) return;
-    setResLoading(true);
-    try {
-      // BUG 5 fix: lock solo aplica en Confirmar.
-      const { data: dbOrders, error } = await supabase
-        .from('orders')
-        .select('*')
-        .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-        .not('estado', 'eq', 'ENTREGADO')
-        .not('estado', 'eq', 'CANCELADO')
-        .order('created_at', { ascending: false })
-        .limit(2000);
-      if (error) {
-        console.error('Error loading rescue orders:', error);
-        toast.error('Error cargando rescate: ' + error.message);
-        return;
-      }
-      if (dbOrders) {
-        const orders = dbOrders
-          .map((o, idx) => dbToOrderData(o, idx))
-          .filter(o => {
-            const e = o.estado.toUpperCase();
-            return (isDespachado(e) && o.diasConf >= 5) ||
-              (e.includes('NOVEDAD') && !o.novedadSol) ||
-              e.includes('OFICINA') || e.includes('RECLAME') ||
-              e.includes('DEVOL');
-          });
-        orders.sort((a, b) => calcPriority(b) - calcPriority(a));
-        setResData(prev => smartMerge(prev, orders));
-      }
-      setResLoaded(true);
-    } finally {
-      setResLoading(false);
-    }
-  }, [user, resLoaded]);
-
   // Auto-refresh every 5 min after initial load
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
       if (segLoaded) loadSegData(true);
-      if (resLoaded) loadResData(true);
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [user, segLoaded, resLoaded, loadSegData, loadResData]);
+  }, [user, segLoaded, loadSegData]);
 
   return {
     segData, setSegData, segLoaded, setSegLoaded, segLoading, segLastUpdate, loadSegData,
-    resData, setResData, resLoaded, setResLoaded, resLoading, loadResData,
   };
 }
