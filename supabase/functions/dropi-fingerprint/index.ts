@@ -13,8 +13,7 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // C4 fix: requerir JWT válido. Antes la función estaba abierta y filtraba
-  // datos de fingerprint a cualquiera con la URL.
+  // Validación JWT
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "No autorizado" }), {
@@ -22,21 +21,17 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-  {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey =
-      Deno.env.get("SUPABASE_ANON_KEY") ||
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-    const anonClient = createClient(supabaseUrl, anonKey);
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(
-      authHeader.replace("Bearer ", ""),
-    );
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Token inválido" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+  const sbUrlAuth = Deno.env.get("SUPABASE_URL")!;
+  const anonKeyAuth = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+  const anonClientAuth = createClient(sbUrlAuth, anonKeyAuth);
+  const { data: { user: userAuth }, error: authErrorFp } = await anonClientAuth.auth.getUser(
+    authHeader.replace("Bearer ", ""),
+  );
+  if (authErrorFp || !userAuth) {
+    return new Response(JSON.stringify({ error: "Token inválido" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
