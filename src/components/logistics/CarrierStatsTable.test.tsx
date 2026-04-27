@@ -17,8 +17,10 @@ const SAMPLE: CarrierStats[] = [
 describe('CarrierStatsTable', () => {
   it('renderiza la transportadora con sus métricas', () => {
     render(<CarrierStatsTable rows={SAMPLE} />);
-    expect(screen.getByText('Servientrega')).toBeInTheDocument();
-    expect(screen.getByText('70.0%')).toBeInTheDocument();
+    // El nombre y los % aparecen en varios lugares (insight callouts,
+    // tabla, chart YAxis), por eso getAllByText. 3.2d sigue siendo único.
+    expect(screen.getAllByText('Servientrega').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/70\.0%/).length).toBeGreaterThan(0);
     expect(screen.getByText('3.2d')).toBeInTheDocument();
   });
 
