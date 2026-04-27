@@ -423,7 +423,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       }
     }
     markingInFlight.current.delete(order.dbId);
-  }, [user, timerStart, checkMilestone]);
+  // MED-1: timerStart NO se lee dentro del callback (solo se setea con
+  // setter funcional). Tenerlo en deps invalidaba ctxValue cada confirmación
+  // y disparaba re-render en cascada en todos los consumers.
+  }, [user, checkMilestone]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
