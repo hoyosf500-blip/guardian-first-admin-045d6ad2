@@ -252,7 +252,25 @@ export default function ConfirmarTab({ profile }: Props) {
         </div>
       )}
 
-      {excelLoaded && (
+      {excelLoaded && workQueue.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
+          <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+            <Phone size={24} className="text-muted-foreground" aria-hidden="true" />
+          </div>
+          <h3 className="text-base font-semibold text-foreground mb-1">No hay pedidos disponibles para confirmar</h3>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Espera al próximo sync con Dropi o sube un Excel manualmente.
+          </p>
+          <button
+            onClick={() => { resetOrders(); setExcelLoaded(false); }}
+            className="mt-4 text-xs px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors"
+          >
+            Volver al inicio
+          </button>
+        </div>
+      )}
+
+      {excelLoaded && workQueue.length > 0 && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             {[
