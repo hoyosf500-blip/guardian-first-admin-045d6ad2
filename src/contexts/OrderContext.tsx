@@ -474,18 +474,34 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     });
   }, [dataLoader.segData]);
 
+  // C5: useMemo del value del Provider. Antes el objeto literal se
+  // recreaba en CADA render de OrderProvider, lo que disparaba re-render
+  // en TODOS los consumidores de useOrders() — incluso si la única razón
+  // del render era un cambio que no les concernía (ej. counter cambia y
+  // SeguimientoTab re-renderiza la lista entera).
+  const ctxValue = useMemo(() => ({
+    allOrders, workQueue,
+    segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
+    segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
+    resData, resLoaded: dataLoader.segLoaded, resLoading: dataLoader.segLoading,
+    loadResData: dataLoader.loadSegData,
+    novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
+    counter, timerStart,
+    loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
+    loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
+  }), [
+    allOrders, workQueue,
+    dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
+    dataLoader.segLastUpdate, dataLoader.loadSegData,
+    resData,
+    novedades.novedadesQueue, novedades.novedadesLoading,
+    counter, timerStart,
+    loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
+    novedades.loadNovedades, novedades.resolveNovedad,
+  ]);
+
   return (
-    <OrderContext.Provider value={{
-      allOrders, workQueue,
-      segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
-      segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
-      resData, resLoaded: dataLoader.segLoaded, resLoading: dataLoader.segLoading,
-      loadResData: dataLoader.loadSegData,
-      novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
-      counter, timerStart,
-      loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
-      loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
-    }}>
+    <OrderContext.Provider value={ctxValue}>
       {children}
     </OrderContext.Provider>
   );

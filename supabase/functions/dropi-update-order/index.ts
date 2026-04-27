@@ -168,42 +168,39 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fix 9: si la llamada viene con el service role token (ej: dropi-cron
-    // reintentando syncs fallidos), saltamos la validación de JWT y la
-    // verificación de roles. Antes el cron retry fallaba con 401 porque
-    // no tiene un user JWT.
-    const isInternal = authHeader === `Bearer ${supabaseServiceKey}`;
-    let user: { id: string } | null = null;
+    // C1: Eliminado el bypass que aceptaba `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+    // como autenticación válida. La service-role key NUNCA debe compararse
+    // contra input del caller — un admin con acceso a app_settings podía
+    // leerla del legacy `dropi_service_role_fallback` y operar sobre
+    // cualquier pedido sin audit trail. El antiguo retry de dropi-cron
+    // que dependía de este bypass fue removido también.
+    const anonKey =
+      Deno.env.get("SUPABASE_ANON_KEY") ||
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+    const anonClient = createClient(supabaseUrl, anonKey);
+    const {
+      data: { user: authUser },
+      error: authError,
+    } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
+    if (authError || !authUser) {
+      return new Response(JSON.stringify({ error: "Token inválido" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const user: { id: string } = authUser;
 
-    if (!isInternal) {
-      const anonKey =
-        Deno.env.get("SUPABASE_ANON_KEY") ||
-        Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-      const anonClient = createClient(supabaseUrl, anonKey);
-      const {
-        data: { user: authUser },
-        error: authError,
-      } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
-      if (authError || !authUser) {
-        return new Response(JSON.stringify({ error: "Token inválido" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      user = authUser;
-
-      // ---- Role check: solo admin u operator pueden tocar Dropi ----
-      const { data: roles } = await sb
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", authUser.id);
-      const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
-      if (!allowed) {
-        return new Response(JSON.stringify({ error: "No tienes permiso para actualizar pedidos en Dropi" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    // ---- Role check: solo admin u operator pueden tocar Dropi ----
+    const { data: roles } = await sb
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", authUser.id);
+    const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "No tienes permiso para actualizar pedidos en Dropi" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ---- Parse body ----

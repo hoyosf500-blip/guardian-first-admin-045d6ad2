@@ -342,66 +342,16 @@ Deno.serve(async (req: Request) => {
       console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders`);
     }
 
-    // Retry order_results that failed to sync to Dropi (BUG A fix).
-    // We don't call dropi-update-order from here (no JWT context); instead
-    // we surface them via marking — the next time the operator opens the
-    // Confirmar tab, the local result is preserved and the cron sync above
-    // will eventually overwrite the Dropi-side estado on the bulk pull.
-    let retried = 0;
-    try {
-      // BUG fix: dropi-update-order espera { externalId }, no { dbId }.
-      // Hacemos JOIN implícito con orders para traer external_id junto al id.
-      const { data: pendingRows } = await sb
-        .from("order_results")
-        .select("id, order_id, orders:order_id(external_id)")
-        .in("dropi_sync_status", ["pending", "failed"])
-        .eq("result", "conf")
-        .gte(
-          "result_date",
-          new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" })
-            .format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
-        )
-        .limit(200);
+    // C1: Retry de results pendientes ELIMINADO. Antes invocaba a
+    // `dropi-update-order` pasando el SUPABASE_SERVICE_ROLE_KEY como Bearer
+    // — eso requería un bypass de auth en esa edge function que es un
+    // agujero de seguridad. Los results con `dropi_sync_status='failed'`
+    // quedan visibles para que la operadora reintente manualmente desde
+    // la UI. El bulk pull de arriba ya re-sincroniza el estado de Dropi
+    // hacia la DB local.
+    const retried = 0;
 
-      for (const row of (pendingRows || []) as unknown as Array<{ id: string; order_id: string; orders: { external_id: string | null } | { external_id: string | null }[] | null }>) {
-        const ordersField = row.orders;
-        const externalId = Array.isArray(ordersField)
-          ? ordersField[0]?.external_id
-          : ordersField?.external_id;
-        if (!externalId) {
-          await sb
-            .from("order_results")
-            .update({
-              dropi_sync_status: "failed",
-              result_notes: "Reintento cron omitido: pedido sin external_id",
-            })
-            .eq("id", row.id);
-          continue;
-        }
-        try {
-          const { data: invokeData, error: invokeErr } = await sb.functions.invoke(
-            "dropi-update-order",
-            { body: { externalId } },
-          );
-          const ok = !invokeErr && (invokeData as { ok?: boolean } | null)?.ok !== false;
-          await sb
-            .from("order_results")
-            .update({
-              dropi_sync_status: ok ? "synced" : "failed",
-              result_notes: ok ? null : `Reintento cron falló: ${invokeErr?.message || "error"}`,
-            })
-            .eq("id", row.id);
-          if (ok) retried++;
-        } catch (e) {
-          console.error("dropi-cron retry error:", e);
-        }
-      }
-      if (retried > 0) console.log(`dropi-cron: retried ${retried} pending sync rows`);
-    } catch (e) {
-      console.error("dropi-cron retry block error:", e);
-    }
-
-    // Detectar y cancelar pedidos huérfanos: cuando Dropi edita un pedido,
+// Detectar y cancelar pedidos huérfanos: cuando Dropi edita un pedido,
     // crea uno nuevo y deja el viejo en PENDIENTE CONFIRMACION. Esta RPC
     // busca pedidos viejos con un duplicado más nuevo en estado terminal
     // (mismo phone+producto) y los marca como CANCELADO.

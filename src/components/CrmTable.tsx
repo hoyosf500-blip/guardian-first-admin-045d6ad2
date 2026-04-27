@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, ReactNode } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, memo, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -892,7 +892,12 @@ interface OrderCardProps {
   statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
+// C5: React.memo. Antes cualquier setState de CrmTable (ej. setExpandedPhone,
+// setResults, setPendingChanges) re-renderizaba TODOS los OrderCard de TODAS
+// las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
+// con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
+// el render si las props del card no cambiaron.
+const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
   const isMine = !!(
     o.assignedTo && currentUserId
     && o.assignedTo === currentUserId
@@ -1223,4 +1228,4 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
       </AnimatePresence>
     </div>
   );
-}
+});
