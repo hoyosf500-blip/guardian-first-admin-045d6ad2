@@ -41,6 +41,22 @@ curl https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-relay/egress-ip
 
 ---
 
+## ⚙️ Configuración (sólo dueño del proyecto)
+
+El relay requiere un único secret en Lovable Cloud que actúa como
+shared secret entre el cliente externo y la edge function.
+
+```bash
+supabase secrets set RELAY_SHARED_SECRET=<uuid-aleatorio>
+```
+
+Generá el valor con `uuidgen` o `openssl rand -hex 32`. Después de
+setearlo, pasáselo a tu amiga por canal seguro (ver tabla arriba).
+Si se filtra, regenerá y volvé a setear — la edge function lee el
+secret en cada request, así que la rotación es inmediata sin redeploy.
+
+---
+
 ## 🔌 Endpoints
 
 ### `GET /dropi-relay/health`
