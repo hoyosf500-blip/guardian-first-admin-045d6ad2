@@ -69,8 +69,12 @@ export default function ConfirmarTab({ profile }: Props) {
           const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
           setAllOrders(orders);
           buildWorkQueue(orders);
-          setExcelLoaded(true);
         }
+        // Fix D7: marcar como cargado SIEMPRE que la query termine sin
+        // error, incluso si vino vacía. Antes solo se marcaba con
+        // dbOrders.length > 0, así que en días con cero pedidos disponibles
+        // la pantalla quedaba en spinner eterno + AperturaWizard genérico.
+        setExcelLoaded(true);
         setAutoLoading(false);
       }, (err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
