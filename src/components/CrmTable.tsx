@@ -442,6 +442,10 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     return list;
   }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user, adminIds]);
 
+  // Recuerda el orden de las cards entre refreshes para evitar reordenamientos
+  // visuales mientras la operadora interactúa (card expandida o vista 'call').
+  const stableOrderRef = useRef<Map<string, number>>(new Map());
+
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
     STATUS_COLUMNS.forEach(c => { groups[c.key] = []; });
@@ -449,11 +453,40 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       const key = classifyOrder(o.estado);
       groups[key].push(o);
     });
+
+    const hasActiveInteraction = expandedPhone !== null || view === 'call';
+
     for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) => getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a));
+      if (hasActiveInteraction && stableOrderRef.current.size > 0) {
+        // Preservar posiciones previas; nuevos pedidos al final.
+        groups[key].sort((a, b) => {
+          const aId = a.dbId || a.phone;
+          const bId = b.dbId || b.phone;
+          const aPos = stableOrderRef.current.get(aId);
+          const bPos = stableOrderRef.current.get(bId);
+          if (aPos !== undefined && bPos !== undefined) return aPos - bPos;
+          if (aPos !== undefined) return -1;
+          if (bPos !== undefined) return 1;
+          return getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a);
+        });
+      } else {
+        groups[key].sort((a, b) => getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a));
+      }
     }
+
+    // Sin interacción: refrescar la memoria con el orden actual.
+    if (!hasActiveInteraction) {
+      const newOrder = new Map<string, number>();
+      let idx = 0;
+      Object.values(groups).flat().forEach(o => {
+        const id = o.dbId || o.phone;
+        newOrder.set(id, idx++);
+      });
+      stableOrderRef.current = newOrder;
+    }
+
     return groups;
-  }, [filtered]);
+  }, [filtered, expandedPhone, view]);
 
   // Count all data (not filtered) for pills
   const allCounts = useMemo(() => {
@@ -684,7 +717,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   <div className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
                     {items.map((o, i) => (
                       <OrderCard
-                        key={`${o.phone}-${o.idx}`}
+                        key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
                         order={o}
                         managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
@@ -757,10 +790,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
   const isDelayed = diasEnEstatus >= 2;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.015, 0.3), duration: 0.2 }}
+    <div
       className={`group bg-card rounded-xl border border-border/50 overflow-hidden transition-all duration-200 hover:border-border hover:shadow-md ${managed ? 'opacity-40' : ''}`}
     >
       {/* Card body */}
@@ -1066,6 +1096,6 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
