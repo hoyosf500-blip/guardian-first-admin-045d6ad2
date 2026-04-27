@@ -337,7 +337,15 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   const QUIET_WINDOW_MS = 5 * 60 * 1000;
   const [data, setData] = useState<OrderData[]>(dataProp);
   const [pendingChanges, setPendingChanges] = useState(0);
-  const lastActivityRef = useRef<number>(0);
+  // CRÍTICO: inicializar en Date.now(), NO en 0. Si arrancara en 0,
+  // `Date.now() - 0 ≈ 1.7e12 ms` siempre es mayor que QUIET_WINDOW_MS,
+  // lo que hacía `isQuiet=true` desde el primer render → la lista se
+  // aplicaba al toque cada vez que llegaba un realtime push, antes
+  // de que la operadora hiciera scroll y disparara bumpActivity.
+  // Resultado: parpadeo constante reportado como "no deja hacer nada".
+  // Con Date.now() la operadora entra "activa" y la lista queda
+  // congelada hasta que pulse el banner.
+  const lastActivityRef = useRef<number>(Date.now());
   const pendingDataRef = useRef<OrderData[] | null>(null);
   const dataRef = useRef<OrderData[]>(data);
   dataRef.current = data;
