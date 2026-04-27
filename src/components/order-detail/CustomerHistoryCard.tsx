@@ -684,7 +684,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                 )}
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <span className="text-xs font-bold text-foreground">${(Number(o.valor) || 0).toLocaleString()}</span>
+                <span className="text-xs font-bold text-foreground">{formatCOP(Number(o.valor) || 0)}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${estadoColor(o.estado)}`}>
                   {o.estado || '—'}
                 </span>
