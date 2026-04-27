@@ -717,7 +717,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   <div className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
                     {items.map((o, i) => (
                       <OrderCard
-                        key={`${o.phone}-${o.idx}`}
+                        key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
                         order={o}
                         managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
