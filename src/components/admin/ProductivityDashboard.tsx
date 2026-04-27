@@ -348,7 +348,7 @@ export default function ProductivityDashboard() {
             </Card>
           )}
         </>
-      )}
+      ) : null}
 
       {!loading && rows.length > 0 && (
         <Card>
@@ -378,7 +378,7 @@ export default function ProductivityDashboard() {
             </div>
           </CardContent>
         </Card>
-      ) : null}
+      )}
     </div>
   );
 }
