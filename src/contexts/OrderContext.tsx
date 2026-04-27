@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
-import { OrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
+import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -34,6 +34,7 @@ interface OrderState {
   setExcelLoaded: (v: boolean) => void;
   setAllOrders: (orders: OrderData[]) => void;
   buildWorkQueue: (orders: OrderData[]) => void;
+  loadWorkQueue: () => Promise<void>;
   markResult: (order: OrderData, result: string, reason?: string) => Promise<void>;
   undoLast: () => Promise<void>;
   lastMark: { order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null;
@@ -59,6 +60,26 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const dataLoader = useDataLoader(user);
   const novedades = useNovedades(user);
 
+  // loadWorkQueue: refresca la cola de Confirmar desde DB respetando los
+  // locks de las otras operadoras. Es la pieza clave del modelo PUSH:
+  // cuando otra operadora libera un pedido (al confirmar/cancelar/timeout),
+  // realtime la dispara y la operadora libre ve los pedidos disponibles
+  // sin tener que dar click en "Actualizar".
+  const loadWorkQueue = useCallback(async () => {
+    if (!user) return;
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: dbOrders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('estado', 'PENDIENTE CONFIRMACION')
+      .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
+    if (error || !dbOrders) return;
+    const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
+    setAllOrdersState(orders);
+    buildWorkQueue(orders);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   // Auto-sync con Dropi cada 5 min mientras un admin esté con la app abierta.
   // Al terminar refresca la cola de novedades para que los pedidos ya
   // resueltos en Dropi desaparezcan sin intervención manual.
@@ -66,6 +87,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     void novedades.loadNovedades(true);
     void dataLoader.loadSegData(true);
     void dataLoader.loadResData(true);
+    void loadWorkQueue();
   });
 
   // Realtime: when any operator updates orders or inserts an order_result,
@@ -77,10 +99,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       void novedades.loadNovedades(true);
       void dataLoader.loadSegData(true);
       void dataLoader.loadResData(true);
+      void loadWorkQueue();
     },
     onResultChange: () => {
       void dataLoader.loadSegData(true);
       void dataLoader.loadResData(true);
+      void loadWorkQueue();
     },
   });
 
@@ -402,7 +426,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       loadResData: dataLoader.loadResData,
       novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
       counter, timerStart,
-      loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, markResult, undoLast, lastMark, resetOrders,
+      loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
       loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
     }}>
       {children}
