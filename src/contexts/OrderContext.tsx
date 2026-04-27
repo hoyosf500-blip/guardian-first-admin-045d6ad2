@@ -168,13 +168,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     });
 
     setWorkQueue(prev => smartMerge(prev, dedupPendientes));
-    const segNext = orders.filter(o => {
-      const e = o.estado.toUpperCase();
-      return isConfirmado(e) || isDespachado(e) || isNovedad(e) || isOficina(e) || isDevolucion(e);
-    });
-    dataLoader.setSegData(prev => smartMerge(prev, segNext));
-    // Fix 21: resData se deriva de segData con useMemo más abajo, no se
-    // vuelve a setear acá. Evita doble fuente de verdad.
+    // ANTES: aquí setSegData(smartMerge(prev, segNext)) con la lista
+    // PENDIENTE-only. Pero esa lista NO contiene Seguimiento (filtra
+    // por isPendiente arriba), así que `segNext` era un subconjunto
+    // muy pequeño y `smartMerge` veía deletions → array nuevo
+    // pisoteando la Seguimiento real. Resultado: cada evento Confirmar
+    // hacía parpadear Seguimiento. Ahora Seguimiento solo se actualiza
+    // por loadSegData() (su query propia), no por buildWorkQueue.
 
     if (user) {
       // BUG A fix: pull last 7 days so confirmations done late yesterday

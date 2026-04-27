@@ -318,41 +318,23 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   const markingInFlightRef = useRef<Set<string>>(new Set());
 
   // ──────────────────────────────────────────────────────────────────
-  // Anti-parpadeo / anti scroll-jump.
-  // El padre (OrderProvider) refresca `dataProp` cuando llegan eventos
-  // de realtime o termina el cron de Dropi (cada 5 min). Si la
-  // operadora está scrolleando o leyendo, ese refresh reordena cards
-  // bajo su scroll y le hace perder el sitio.
+  // Modelo MANUAL (estilo Twitter "N nuevos tweets — click para cargar").
+  // Ningún auto-apply: la lista se queda EXACTAMENTE como está hasta
+  // que la operadora decida con click. Si está en una llamada y hay 20
+  // cambios pendientes, los 20 esperan al banner. Patrón validado por
+  // research: Twitter, Linear, Jira coinciden en que auto-refresh sobre
+  // una lista activa rompe el flujo de trabajo.
   //
-  // Modelo:
-  //  - Mientras la operadora está activa (mouse, teclado, scroll en
-  //    los últimos 30 s), bufferizamos cambios en `pendingDataRef` y
-  //    mostramos banner con el conteo.
-  //  - Cuando lleva 30 s quieta (pausa real, ya soltó la cola), un
-  //    setInterval chequea y aplica el buffer automáticamente — la
-  //    lista vuelve a estar al día sin que ella tenga que clicar.
-  //  - Click manual en el banner aplica al instante.
-  //
-  // 30 s es el balance: suficiente para una pausa de pensar / leer un
-  // nombre / atender un mensaje breve sin que la lista salte bajo el
-  // cursor; corto suficiente para que tras una pausa real (atender
-  // llamada externa, tomar agua) los datos no queden congelados.
+  // Anti-flicker pasivo: si `dataProp` llega con la MISMA referencia
+  // que ya tenemos (smartMerge en el padre devolvió `prev` porque nada
+  // cambió de fondo), salimos sin tocar state — sin esto cada render
+  // de OrderProvider re-corría diff y podía inflar el contador.
   // ──────────────────────────────────────────────────────────────────
-  const QUIET_WINDOW_MS = 30 * 1000;
   const [data, setData] = useState<OrderData[]>(dataProp);
   const [pendingChanges, setPendingChanges] = useState(0);
-  // CRÍTICO: inicializar en Date.now() (no en 0). Si arranca en 0,
-  // `Date.now() - 0` siempre es mayor que QUIET_WINDOW_MS, lo que
-  // hacía `isQuiet=true` desde el primer render y la lista aplicaba
-  // al toque cada realtime push antes de que disparara bumpActivity.
-  const lastActivityRef = useRef<number>(Date.now());
   const pendingDataRef = useRef<OrderData[] | null>(null);
   const dataRef = useRef<OrderData[]>(data);
   dataRef.current = data;
-
-  const bumpActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-  }, []);
 
   const applyPendingNow = useCallback(() => {
     if (pendingDataRef.current) {
@@ -363,19 +345,20 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   }, []);
 
   useEffect(() => {
-    // Carga inicial (data local vacío): aplicar sin esperar quiet window.
+    // Short-circuit: misma referencia = nada cambió de verdad → no tocar.
+    // smartMerge en useDataLoader devuelve `prev` cuando ningún campo
+    // relevante cambió, entonces `dataProp === dataRef.current` significa
+    // que el realtime push fue a un campo que ignoramos.
+    if (dataProp === dataRef.current) return;
+
+    // Carga inicial: aplicar directo, sin banner.
     if (dataRef.current.length === 0) {
       setData(dataProp);
       return;
     }
-    const isQuiet = Date.now() - lastActivityRef.current >= QUIET_WINDOW_MS;
-    if (isQuiet) {
-      setData(dataProp);
-      pendingDataRef.current = null;
-      setPendingChanges(0);
-      return;
-    }
-    // Operadora activa: bufferizar y contar diff aprox para el banner.
+
+    // Cualquier otro cambio: bufferizar y mostrar banner. La lista
+    // visible NO se mueve hasta que la operadora haga click.
     pendingDataRef.current = dataProp;
     const prevById = new Map(dataRef.current.map(o => [o.dbId || `${o.phone}|${o.idx}`, o]));
     const nextById = new Map(dataProp.map(o => [o.dbId || `${o.phone}|${o.idx}`, o]));
@@ -388,51 +371,8 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     prevById.forEach((_o, id) => {
       if (!nextById.has(id)) diffCount++;
     });
-    setPendingChanges(diffCount);
+    if (diffCount > 0) setPendingChanges(diffCount);
   }, [dataProp]);
-
-  // Listener global de actividad: cualquier mouse, teclado o touch en
-  // toda la página resetea el contador. Sin esto solo escuchábamos
-  // scroll dentro de las columnas, así que tipear en otro input o mover
-  // el mouse no contaba como "activa" y la lista podía aplicar mientras
-  // la operadora estaba a punto de hacer click.
-  //
-  // mousemove se throttlea a 250ms para no flood-ear el ref en cada
-  // frame; los demás eventos son discretos así que disparan directo.
-  useEffect(() => {
-    let lastMouseMove = 0;
-    const onActivity = () => bumpActivity();
-    const onMouseMove = () => {
-      const now = Date.now();
-      if (now - lastMouseMove < 250) return;
-      lastMouseMove = now;
-      lastActivityRef.current = now;
-    };
-    window.addEventListener('keydown', onActivity);
-    window.addEventListener('mousedown', onActivity);
-    window.addEventListener('touchstart', onActivity);
-    window.addEventListener('mousemove', onMouseMove);
-    return () => {
-      window.removeEventListener('keydown', onActivity);
-      window.removeEventListener('mousedown', onActivity);
-      window.removeEventListener('touchstart', onActivity);
-      window.removeEventListener('mousemove', onMouseMove);
-    };
-  }, [bumpActivity]);
-
-  // Auto-apply: cuando la operadora deja de moverse durante
-  // QUIET_WINDOW_MS y hay cambios pendientes, los aplicamos. Chequeo
-  // cada 2s para que el reorder llegue rápido tras la pausa pero sin
-  // CPU extra.
-  useEffect(() => {
-    if (pendingChanges === 0) return;
-    const t = setInterval(() => {
-      if (Date.now() - lastActivityRef.current >= QUIET_WINDOW_MS) {
-        applyPendingNow();
-      }
-    }, 2000);
-    return () => clearInterval(t);
-  }, [pendingChanges, applyPendingNow]);
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
@@ -441,15 +381,34 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     }
   }, [initialDelayed, setOnlyDelayed]);
 
+  // Profiles: lista de operadoras prácticamente estática. Se carga una
+  // sola vez al montar; antes se refetcheaba cada vez que `data`
+  // cambiaba de referencia y el `setProfiles(p)` con array nuevo
+  // invalidaba `profileMap` → re-render de cards bajo el cursor.
   useEffect(() => {
-    if (!data.length) return;
-    const phones = [...new Set(data.map(o => o.phone))];
+    let cancelled = false;
+    supabase.from('profiles').select('user_id, display_name').then(({ data: p, error }) => {
+      if (cancelled) return;
+      if (error) console.error('Error loading profiles:', error.message);
+      if (p) setProfiles(p);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Touchpoints: depende de la lista de phones (no de la referencia de
+  // `data`). Si llega un realtime push que cambia un campo no-relevante
+  // pero la lista de phones es la misma, el effect NO corre.
+  // `phonesKey` es un string canónico que React puede comparar barato.
+  const phonesKey = useMemo(
+    () => [...new Set(data.map(o => o.phone))].sort().join('|'),
+    [data],
+  );
+
+  useEffect(() => {
+    if (!phonesKey) return;
+    const phones = phonesKey.split('|').filter(Boolean);
     const prefix = module === 'SEG' ? 'SEG' : 'RESCUE';
 
-    // H10: cancelled flag — el effect re-corre cada vez que `data` cambia
-    // (cada minuto del cron Dropi). Sin cancelación, llamadas viejas en
-    // vuelo hacen setState sobre data que el componente ya descartó, o
-    // peor sobre el componente desmontado. Cada batch siguiente chequea.
     let cancelled = false;
 
     const fetchAllTouchpoints = async () => {
@@ -487,7 +446,7 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
 
       const nowMs = Date.now();
       const snoozed: Record<string, string> = {};
-      data.forEach(o => {
+      dataRef.current.forEach(o => {
         if (!o.dbId) return;
         const hit = latestByPhone[o.phone];
         if (!hit) return;
@@ -499,17 +458,24 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
           snoozed[o.dbId] = `${label} · vuelve en ${hoursLeft}h`;
         }
       });
-      setResults(snoozed);
-    });
-
-    supabase.from('profiles').select('user_id, display_name').then(({ data: p, error }) => {
-      if (cancelled) return;
-      if (error) console.error('Error loading profiles:', error.message);
-      if (p) setProfiles(p);
+      // Solo actualiza results si cambió algo: evita invalidar la
+      // referencia y re-renderizar cards cuyo snooze no cambió.
+      setResults(prev => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(snoozed);
+        if (prevKeys.length === nextKeys.length) {
+          let identical = true;
+          for (const k of nextKeys) {
+            if (prev[k] !== snoozed[k]) { identical = false; break; }
+          }
+          if (identical) return prev;
+        }
+        return snoozed;
+      });
     });
 
     return () => { cancelled = true; };
-  }, [data, module]);
+  }, [phonesKey, module]);
 
   // C3: lista de admins. Pedidos con assigned_to apuntando a admin se
   // tratan como pool libre / sin asignar.
@@ -697,19 +663,24 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
 
   return (
     <div className="space-y-5">
-      {/* Banner de actualizaciones pendientes — aparece cuando llegaron
-          cambios desde realtime mientras la operadora estaba scrolleando.
-          Click aplica el merge y reordena la lista. */}
+      {/* Banner de actualizaciones pendientes (estilo Twitter "N nuevos
+          tweets"). Sticky arriba para que la operadora lo vea aunque
+          esté abajo en la lista. La lista NO se mueve hasta que ella
+          haga click — patrón validado por research (Linear/Jira/Twitter
+          coinciden en que auto-refresh sobre lista activa rompe el
+          flujo de trabajo). */}
       {pendingChanges > 0 && (
-        <button
-          type="button"
-          onClick={applyPendingNow}
-          className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
-          aria-live="polite"
-        >
-          <RotateCcw size={14} aria-hidden="true" />
-          <span>{pendingChanges} {pendingChanges === 1 ? 'actualización disponible' : 'actualizaciones disponibles'} — clic para aplicar</span>
-        </button>
+        <div className="sticky top-2 z-30">
+          <button
+            type="button"
+            onClick={applyPendingNow}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border-2 border-orange-500 bg-orange-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/30 hover:bg-orange-600 hover:border-orange-600 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none"
+            aria-live="polite"
+          >
+            <RotateCcw size={16} aria-hidden="true" />
+            <span>{pendingChanges} {pendingChanges === 1 ? 'cambio nuevo' : 'cambios nuevos'} — clic para actualizar</span>
+          </button>
+        </div>
       )}
       {/* Search + delayed filter */}
       <div className="flex flex-col gap-3 lg:flex-row">
@@ -718,7 +689,7 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
           <input
             type="text"
             value={search}
-            onChange={e => { setSearch(e.target.value); bumpActivity(); }}
+            onChange={e => setSearch(e.target.value)}
             placeholder="Buscar nombre, teléfono, guía, ciudad..."
             aria-label="Buscar pedidos"
             className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
@@ -918,7 +889,7 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
                   </div>
 
                   {/* Column body */}
-                  <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef} onActivity={bumpActivity}>
+                  <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef}>
                     {items.map((o, i) => (
                       <OrderCard
                         key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
