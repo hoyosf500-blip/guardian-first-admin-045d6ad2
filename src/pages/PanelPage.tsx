@@ -9,8 +9,9 @@ import CounterBar from '@/components/CounterBar';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useChangeAlerts } from '@/hooks/useChangeAlerts';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu } from 'lucide-react';
+import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 type Tab = 'dashboard' | 'confirmar' | 'seguimiento' | 'rescate' | 'admin';
@@ -24,13 +25,28 @@ const NAV_ITEMS: { id: Tab; icon: LucideIcon; label: string; adminOnly?: boolean
 ];
 
 export default function PanelPage() {
-  const { profile, isAdmin, signOut } = useAuth();
+  const { profile, isAdmin, signOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const { theme, toggleTheme } = useTheme();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { badges, banner, markSeen, dismissBanner } = useChangeAlerts(user?.id);
 
   const visibleTabs = NAV_ITEMS.filter(t => !t.adminOnly || isAdmin);
+
+  const handleTabClick = (tabId: Tab) => {
+    setActiveTab(tabId);
+    if (tabId === 'seguimiento' || tabId === 'rescate') {
+      markSeen(tabId);
+    }
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const tabBadge = (tabId: Tab): number => {
+    if (tabId === 'seguimiento') return badges.seguimiento;
+    if (tabId === 'rescate') return badges.rescate;
+    return 0;
+  };
 
   return (
     <OrderProvider>
@@ -59,10 +75,11 @@ export default function PanelPage() {
             {visibleTabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
+              const badge = tabBadge(tab.id);
               return (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); if (isMobile) setSidebarOpen(false); }}
+                  onClick={() => handleTabClick(tab.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/15'
@@ -70,7 +87,12 @@ export default function PanelPage() {
                   }`}
                 >
                   <Icon size={18} />
-                  {tab.label}
+                  <span className="flex-1 text-left">{tab.label}</span>
+                  {badge > 0 && (
+                    <span className="min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -120,6 +142,14 @@ export default function PanelPage() {
           </header>
 
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
+            {banner && (
+              <div className="mb-4 flex items-center gap-3 rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-2.5 text-xs font-semibold text-blue-600 dark:text-blue-400">
+                <span className="flex-1">{banner}</span>
+                <button onClick={dismissBanner} className="p-0.5 rounded hover:bg-blue-500/20 transition-colors">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
             {activeTab === 'confirmar' && <CounterBar />}
             <AnimatePresence mode="wait">
               <motion.div

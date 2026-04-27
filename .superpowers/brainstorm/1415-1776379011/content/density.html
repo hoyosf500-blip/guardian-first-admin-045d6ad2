@@ -1,0 +1,225 @@
+<h2>¿Qué densidad querés en las listas de pedidos?</h2>
+<p class="subtitle">Los 3 previews muestran la misma lista de pedidos pendientes con el estilo B (dark). La diferencia es cuánta info cabe en pantalla vs. cuánto espacio respira cada fila. Pensá en vos operando 8 horas seguidas.</p>
+
+<style>
+  .d-card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 0; cursor: pointer; transition: all 0.18s ease; overflow: hidden; position: relative; }
+  .d-card:hover { border-color: #3f3f46; box-shadow: 0 12px 28px rgba(0,0,0,0.4); }
+  .d-card.selected-card { border-color: #fbbf24; box-shadow: 0 0 0 2px rgba(251,191,36,0.25); }
+  .d-head { padding: 16px 16px 10px; border-bottom: 1px solid #27272a; }
+  .d-title { font-size: 14px; font-weight: 700; color: #fafafa; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .d-sub { font-size: 11px; color: #a1a1aa; margin: 0; }
+  .d-stats { font-size: 10px; color: #71717a; margin-top: 8px; font-family: ui-monospace, monospace; }
+  .d-letter { position: absolute; top: 14px; right: 16px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: #27272a; color: #fafafa; font-weight: 700; font-size: 13px; z-index: 2; }
+  .d-body { padding: 10px; background: #09090b; }
+
+  /* ---- COMPACT (high density) ---- */
+  .row-compact { display: grid; grid-template-columns: 50px 1fr 70px 90px 70px; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid #18181b; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px; }
+  .row-compact:hover { background: #18181b; }
+  .row-compact .id { font-family: ui-monospace, monospace; color: #71717a; font-size: 11px; }
+  .row-compact .name { color: #fafafa; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-compact .name-sub { color: #71717a; font-size: 10px; font-weight: 400; margin-left: 6px; }
+  .row-compact .val { color: #fafafa; font-family: ui-monospace, monospace; font-size: 11px; text-align: right; }
+  .row-compact .time { color: #71717a; font-size: 10px; font-family: ui-monospace, monospace; text-align: right; }
+  .row-compact .badge { background: rgba(251,191,36,0.15); color: #fbbf24; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; text-align: center; border: 1px solid rgba(251,191,36,0.3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* ---- COMFORTABLE (2-line, medium) ---- */
+  .row-comfort { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #18181b; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .row-comfort:hover { background: #18181b; }
+  .row-comfort .line1 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .row-comfort .line1 .name { color: #fafafa; font-weight: 600; font-size: 13px; }
+  .row-comfort .line1 .phone { color: #71717a; font-size: 11px; font-family: ui-monospace, monospace; }
+  .row-comfort .line2 { font-size: 11px; color: #a1a1aa; }
+  .row-comfort .line2 .prod { color: #d4d4d8; }
+  .row-comfort .line2 .sep { color: #52525b; margin: 0 6px; }
+  .row-comfort .right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .row-comfort .val { color: #fafafa; font-weight: 600; font-size: 12px; font-family: ui-monospace, monospace; }
+  .row-comfort .badge { background: rgba(251,191,36,0.15); color: #fbbf24; font-size: 9px; font-weight: 700; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(251,191,36,0.3); letter-spacing: 0.04em; text-transform: uppercase; }
+
+  /* ---- SPACIOUS (card-like, low density) ---- */
+  .row-spacious { padding: 16px; border-bottom: 1px solid #18181b; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .row-spacious:hover { background: #18181b; }
+  .row-spacious .top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+  .row-spacious .avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; margin-right: 12px; flex-shrink: 0; }
+  .row-spacious .top-left { display: flex; align-items: center; flex: 1; }
+  .row-spacious .top-left-info .name { color: #fafafa; font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .row-spacious .top-left-info .phone { color: #a1a1aa; font-size: 12px; font-family: ui-monospace, monospace; }
+  .row-spacious .badge { background: rgba(251,191,36,0.15); color: #fbbf24; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(251,191,36,0.3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .row-spacious .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-top: 10px; border-top: 1px solid #27272a; }
+  .row-spacious .meta-item .label { font-size: 9px; color: #71717a; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 2px; }
+  .row-spacious .meta-item .value { font-size: 12px; color: #e4e4e7; font-weight: 500; }
+
+  .disclaimer { font-size: 10px; color: #71717a; padding: 10px 14px; border-top: 1px solid #18181b; font-style: italic; }
+</style>
+
+<div class="options" style="grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+
+  <!-- ===== A: COMPACT ===== -->
+  <div class="option d-card" data-choice="compact" onclick="toggleSelect(this)">
+    <div class="d-letter">A</div>
+    <div class="d-head">
+      <p class="d-title">Compacta</p>
+      <p class="d-sub">1 fila por pedido, datos esenciales en una línea.</p>
+      <p class="d-stats">~18 pedidos / pantalla · filas de 28px</p>
+    </div>
+    <div class="d-body">
+      <div class="row-compact">
+        <span class="id">#0001</span>
+        <span class="name">Cliente A <span class="name-sub">Producto demo</span></span>
+        <span class="val">$89.000</span>
+        <span class="time">Bogotá · 2h</span>
+        <span class="badge">Pend</span>
+      </div>
+      <div class="row-compact">
+        <span class="id">#0002</span>
+        <span class="name">Cliente B <span class="name-sub">Producto demo</span></span>
+        <span class="val">$45.000</span>
+        <span class="time">Medellín · 3h</span>
+        <span class="badge">Pend</span>
+      </div>
+      <div class="row-compact">
+        <span class="id">#0003</span>
+        <span class="name">Cliente C <span class="name-sub">Producto demo</span></span>
+        <span class="val">$120.000</span>
+        <span class="time">Cali · 4h</span>
+        <span class="badge">Pend</span>
+      </div>
+      <div class="row-compact">
+        <span class="id">#0004</span>
+        <span class="name">Cliente D <span class="name-sub">Producto demo</span></span>
+        <span class="val">$68.000</span>
+        <span class="time">Barranq. · 5h</span>
+        <span class="badge">Pend</span>
+      </div>
+      <div class="row-compact">
+        <span class="id">#0005</span>
+        <span class="name">Cliente E <span class="name-sub">Producto demo</span></span>
+        <span class="val">$34.500</span>
+        <span class="time">Bucaram. · 6h</span>
+        <span class="badge">Pend</span>
+      </div>
+      <div class="row-compact">
+        <span class="id">#0006</span>
+        <span class="name">Cliente F <span class="name-sub">Producto demo</span></span>
+        <span class="val">$155.000</span>
+        <span class="time">Pereira · 7h</span>
+        <span class="badge">Pend</span>
+      </div>
+    </div>
+    <p class="disclaimer">Para power users que escanean rápido. Tooltip al hover muestra detalle completo.</p>
+  </div>
+
+  <!-- ===== B: COMFORTABLE ===== -->
+  <div class="option d-card" data-choice="comfortable" onclick="toggleSelect(this)">
+    <div class="d-letter">B</div>
+    <div class="d-head">
+      <p class="d-title">Cómoda <span style="color:#fbbf24;font-size:10px;margin-left:4px;">recomendada</span></p>
+      <p class="d-sub">2 líneas por fila: nombre+teléfono arriba, producto+ciudad abajo.</p>
+      <p class="d-stats">~10 pedidos / pantalla · filas de 56px</p>
+    </div>
+    <div class="d-body">
+      <div class="row-comfort">
+        <div>
+          <div class="line1">
+            <span class="name">Cliente A</span>
+            <span class="phone">300-000-0001</span>
+          </div>
+          <div class="line2"><span class="prod">Producto demo XL</span><span class="sep">·</span>Bogotá<span class="sep">·</span>hace 2h</div>
+        </div>
+        <div class="right">
+          <span class="val">$89.000</span>
+          <span class="badge">Pendiente</span>
+        </div>
+      </div>
+      <div class="row-comfort">
+        <div>
+          <div class="line1">
+            <span class="name">Cliente B</span>
+            <span class="phone">300-000-0002</span>
+          </div>
+          <div class="line2"><span class="prod">Producto demo</span><span class="sep">·</span>Medellín<span class="sep">·</span>hace 3h</div>
+        </div>
+        <div class="right">
+          <span class="val">$45.000</span>
+          <span class="badge">Pendiente</span>
+        </div>
+      </div>
+      <div class="row-comfort">
+        <div>
+          <div class="line1">
+            <span class="name">Cliente C</span>
+            <span class="phone">300-000-0003</span>
+          </div>
+          <div class="line2"><span class="prod">Producto demo</span><span class="sep">·</span>Cali<span class="sep">·</span>hace 4h</div>
+        </div>
+        <div class="right">
+          <span class="val">$120.000</span>
+          <span class="badge">Pendiente</span>
+        </div>
+      </div>
+      <div class="row-comfort">
+        <div>
+          <div class="line1">
+            <span class="name">Cliente D</span>
+            <span class="phone">300-000-0004</span>
+          </div>
+          <div class="line2"><span class="prod">Producto demo</span><span class="sep">·</span>Barranquilla<span class="sep">·</span>hace 5h</div>
+        </div>
+        <div class="right">
+          <span class="val">$68.000</span>
+          <span class="badge">Pendiente</span>
+        </div>
+      </div>
+    </div>
+    <p class="disclaimer">Balance entre ver pedidos rápido y poder leer sin esforzar la vista.</p>
+  </div>
+
+  <!-- ===== C: SPACIOUS ===== -->
+  <div class="option d-card" data-choice="spacious" onclick="toggleSelect(this)">
+    <div class="d-letter">C</div>
+    <div class="d-head">
+      <p class="d-title">Amplia</p>
+      <p class="d-sub">Cards tipo ficha: avatar, 3 secciones, mucho respiro.</p>
+      <p class="d-stats">~4 pedidos / pantalla · filas de 130px</p>
+    </div>
+    <div class="d-body">
+      <div class="row-spacious">
+        <div class="top">
+          <div class="top-left">
+            <div class="avatar">CA</div>
+            <div class="top-left-info">
+              <div class="name">Cliente A</div>
+              <div class="phone">300-000-0001</div>
+            </div>
+          </div>
+          <span class="badge">Pendiente</span>
+        </div>
+        <div class="meta">
+          <div class="meta-item"><div class="label">Producto</div><div class="value">Producto demo</div></div>
+          <div class="meta-item"><div class="label">Valor</div><div class="value">$89.000</div></div>
+          <div class="meta-item"><div class="label">Ciudad</div><div class="value">Bogotá</div></div>
+        </div>
+      </div>
+      <div class="row-spacious">
+        <div class="top">
+          <div class="top-left">
+            <div class="avatar">CB</div>
+            <div class="top-left-info">
+              <div class="name">Cliente B</div>
+              <div class="phone">300-000-0002</div>
+            </div>
+          </div>
+          <span class="badge">Pendiente</span>
+        </div>
+        <div class="meta">
+          <div class="meta-item"><div class="label">Producto</div><div class="value">Producto demo</div></div>
+          <div class="meta-item"><div class="label">Valor</div><div class="value">$45.000</div></div>
+          <div class="meta-item"><div class="label">Ciudad</div><div class="value">Medellín</div></div>
+        </div>
+      </div>
+    </div>
+    <p class="disclaimer">Linda pero lenta para escanear muchas filas. Mejor para fichas de detalle.</p>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 24px; text-align: center;">Recomiendo <strong>B (Cómoda)</strong> — con el volumen que manejás (cientos por día), ver 10 de un vistazo es mejor que ver 4. La compacta ahorra espacio pero obliga a abrir cada fila para leer bien.</p>

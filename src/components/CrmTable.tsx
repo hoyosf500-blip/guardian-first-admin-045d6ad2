@@ -2,16 +2,23 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, truncate, getTrackingUrl, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
   Package, Truck, MapPin, RotateCcw, Layers, DollarSign,
-  Send, Tag, CheckCircle, ChevronDown, Search
+  Send, Tag, CheckCircle, ChevronDown, Search, List,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSessionState } from '@/hooks/useSessionState';
+import CrmCallView from './CrmCallView';
+import { TruncatedText } from '@/components/TruncatedText';
+import LockBadge from '@/components/LockBadge';
+import { getActionSLA } from '@/lib/actionSla';
+import { bogotaToday } from '@/lib/utils';
 
 interface Touchpoint {
   id: string;
@@ -37,110 +44,140 @@ interface CrmTableProps {
   emptyDesc: string;
   initialDelayed?: boolean;
   stalledCategoryFilter?: string | null;
+  /**
+   * When provided, the parent owns the status filter (e.g. via the Seguimiento
+   * stat cards) and the internal filter pills row is hidden. Passing `null`
+   * means "no filter active".
+   */
+  controlledStatusFilter?: string | null;
+  onControlledStatusFilterChange?: (key: string | null) => void;
 }
+
+/**
+ * Unified tone system — only 5 tones across 14 statuses so the CRM stops looking
+ * like a rainbow. Amber is only for the primary "in route" state so it carries
+ * real signal instead of being random decoration.
+ */
+type Tone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
 
 interface StatusColumn {
   key: string;
   label: string;
   icon: React.ReactNode;
-  color: string;       // Tailwind color for accents
-  bgGradient: string;  // Header gradient
-  pillBg: string;      // Filter pill background
-  pillText: string;    // Filter pill text
+  tone: Tone;
   match: (estado: string) => boolean;
 }
 
+const TONE_STYLES: Record<Tone, {
+  dot: string;
+  headerBg: string;
+  headerBorder: string;
+  headerText: string;
+  headerCount: string;
+  pillIdle: string;
+  pillActive: string;
+  activeCountBg: string;
+  idleCountBg: string;
+}> = {
+  neutral: {
+    dot: 'bg-foreground/60',
+    headerBg: 'bg-surface',
+    headerBorder: 'border-border',
+    headerText: 'text-foreground',
+    headerCount: 'bg-card text-foreground border border-border',
+    pillIdle: 'bg-surface border-border text-foreground hover:border-border-strong',
+    pillActive: 'bg-card border-border-strong text-foreground',
+    activeCountBg: 'bg-accent text-accent-foreground',
+    idleCountBg: 'bg-card text-muted-foreground border border-border',
+  },
+  accent: {
+    dot: 'bg-accent',
+    headerBg: 'bg-accent/10',
+    headerBorder: 'border-accent/30',
+    headerText: 'text-accent',
+    headerCount: 'bg-accent text-accent-foreground',
+    pillIdle: 'bg-accent/5 border-accent/20 text-accent hover:bg-accent/10 hover:border-accent/40',
+    pillActive: 'bg-accent text-accent-foreground border-accent',
+    activeCountBg: 'bg-black/20 text-accent-foreground',
+    idleCountBg: 'bg-accent/15 text-accent',
+  },
+  warning: {
+    dot: 'bg-orange-500',
+    headerBg: 'bg-orange-500/8',
+    headerBorder: 'border-orange-500/30',
+    headerText: 'text-orange-500',
+    headerCount: 'bg-orange-500/15 text-orange-500 border border-orange-500/30',
+    pillIdle: 'bg-orange-500/5 border-orange-500/20 text-orange-500 hover:bg-orange-500/10 hover:border-orange-500/40',
+    pillActive: 'bg-orange-500 text-white border-orange-500',
+    activeCountBg: 'bg-black/25 text-white',
+    idleCountBg: 'bg-orange-500/15 text-orange-500',
+  },
+  danger: {
+    dot: 'bg-red-500',
+    headerBg: 'bg-red-500/8',
+    headerBorder: 'border-red-500/30',
+    headerText: 'text-red-500',
+    headerCount: 'bg-red-500/15 text-red-500 border border-red-500/30',
+    pillIdle: 'bg-red-500/5 border-red-500/20 text-red-500 hover:bg-red-500/10 hover:border-red-500/40',
+    pillActive: 'bg-red-500 text-white border-red-500',
+    activeCountBg: 'bg-black/25 text-white',
+    idleCountBg: 'bg-red-500/15 text-red-500',
+  },
+  success: {
+    dot: 'bg-emerald-500',
+    headerBg: 'bg-emerald-500/8',
+    headerBorder: 'border-emerald-500/30',
+    headerText: 'text-emerald-500',
+    headerCount: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
+    pillIdle: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10 hover:border-emerald-500/40',
+    pillActive: 'bg-emerald-500 text-white border-emerald-500',
+    activeCountBg: 'bg-black/25 text-white',
+    idleCountBg: 'bg-emerald-500/15 text-emerald-500',
+  },
+  muted: {
+    dot: 'bg-muted-foreground/60',
+    headerBg: 'bg-muted/40',
+    headerBorder: 'border-border',
+    headerText: 'text-muted-foreground',
+    headerCount: 'bg-card text-muted-foreground border border-border',
+    pillIdle: 'bg-muted/40 border-border text-muted-foreground hover:border-border-strong hover:text-foreground',
+    pillActive: 'bg-muted-foreground/20 border-border-strong text-foreground',
+    activeCountBg: 'bg-foreground/15 text-foreground',
+    idleCountBg: 'bg-card text-muted-foreground border border-border',
+  },
+};
+
 const STATUS_COLUMNS: StatusColumn[] = [
-  {
-    key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />,
-    color: 'blue', bgGradient: 'from-blue-500 to-blue-600',
-    pillBg: 'bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20', pillText: 'text-blue-600 dark:text-blue-400',
-    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e)
-  },
-  {
-    key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />,
-    color: 'cyan', bgGradient: 'from-cyan-500 to-teal-500',
-    pillBg: 'bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20', pillText: 'text-cyan-600 dark:text-cyan-400',
-    match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e)
-  },
-  {
-    key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />,
-    color: 'indigo', bgGradient: 'from-indigo-500 to-indigo-600',
-    pillBg: 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20', pillText: 'text-indigo-600 dark:text-indigo-400',
-    match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e)
-  },
-  {
-    key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />,
-    color: 'orange', bgGradient: 'from-orange-500 to-amber-500',
-    pillBg: 'bg-orange-500/10 border-orange-500/20 hover:bg-orange-500/20', pillText: 'text-orange-600 dark:text-orange-400',
-    match: (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e)
-  },
-  {
-    key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />,
-    color: 'amber', bgGradient: 'from-amber-500 to-yellow-500',
-    pillBg: 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20', pillText: 'text-amber-600 dark:text-amber-400',
-    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e)
-  },
-  {
-    key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />,
-    color: 'red', bgGradient: 'from-red-500 to-rose-500',
-    pillBg: 'bg-red-500/10 border-red-500/20 hover:bg-red-500/20', pillText: 'text-red-600 dark:text-red-400',
-    match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA'
-  },
-  {
-    key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />,
-    color: 'purple', bgGradient: 'from-fuchsia-500 to-purple-600',
-    pillBg: 'bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20', pillText: 'text-purple-600 dark:text-purple-400',
-    match: (e) => e.includes('OFICINA') || e.includes('RECLAME')
-  },
-  {
-    key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />,
-    color: 'yellow', bgGradient: 'from-yellow-600 to-orange-600',
-    pillBg: 'bg-yellow-500/10 border-yellow-500/20 hover:bg-yellow-500/20', pillText: 'text-yellow-600 dark:text-yellow-400',
-    match: (e) => e === 'RECHAZADO'
-  },
-  {
-    key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />,
-    color: 'teal', bgGradient: 'from-teal-500 to-emerald-500',
-    pillBg: 'bg-teal-500/10 border-teal-500/20 hover:bg-teal-500/20', pillText: 'text-teal-600 dark:text-teal-400',
-    match: (e) => e === 'NOVEDAD SOLUCIONADA'
-  },
-  {
-    key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />,
-    color: 'pink', bgGradient: 'from-pink-500 to-rose-500',
-    pillBg: 'bg-pink-500/10 border-pink-500/20 hover:bg-pink-500/20', pillText: 'text-pink-600 dark:text-pink-400',
-    match: (e) => e === 'DEVOLUCION EN TRANSITO'
-  },
-  {
-    key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />,
-    color: 'rose', bgGradient: 'from-rose-600 to-red-600',
-    pillBg: 'bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20', pillText: 'text-rose-600 dark:text-rose-400',
-    match: (e) => e === 'DEVOLUCION'
-  },
-  {
-    key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />,
-    color: 'violet', bgGradient: 'from-violet-500 to-purple-600',
-    pillBg: 'bg-violet-500/10 border-violet-500/20 hover:bg-violet-500/20', pillText: 'text-violet-600 dark:text-violet-400',
-    match: (e) => e.includes('INDEMNIZADA')
-  },
-  {
-    key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />,
-    color: 'emerald', bgGradient: 'from-emerald-500 to-green-500',
-    pillBg: 'bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20', pillText: 'text-emerald-600 dark:text-emerald-400',
-    match: (e) => e === 'ENTREGADO'
-  },
-  {
-    key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />,
-    color: 'slate', bgGradient: 'from-slate-500 to-slate-600',
-    pillBg: 'bg-slate-500/10 border-slate-500/20 hover:bg-slate-500/20', pillText: 'text-slate-600 dark:text-slate-400',
-    match: (e) => e === 'CANCELADO'
-  },
-  {
-    key: 'otros', label: 'Otros', icon: <Layers size={14} />,
-    color: 'slate', bgGradient: 'from-gray-500 to-gray-600',
-    pillBg: 'bg-gray-500/10 border-gray-500/20 hover:bg-gray-500/20', pillText: 'text-gray-600 dark:text-gray-400',
-    match: () => true
-  },
+  { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />, tone: 'neutral',
+    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) },
+  { key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />, tone: 'neutral',
+    match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e) },
+  { key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />, tone: 'neutral',
+    match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e) },
+  { key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />, tone: 'neutral',
+    match: (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e) },
+  { key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />, tone: 'accent',
+    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e) },
+  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />, tone: 'warning',
+    match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
+  { key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />, tone: 'warning',
+    match: (e) => e.includes('OFICINA') || e.includes('RECLAME') },
+  { key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />, tone: 'danger',
+    match: (e) => e === 'RECHAZADO' },
+  { key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />, tone: 'success',
+    match: (e) => e === 'NOVEDAD SOLUCIONADA' },
+  { key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />, tone: 'danger',
+    match: (e) => e === 'DEVOLUCION EN TRANSITO' },
+  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />, tone: 'danger',
+    match: (e) => e === 'DEVOLUCION' },
+  { key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />, tone: 'muted',
+    match: (e) => e.includes('INDEMNIZADA') },
+  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />, tone: 'success',
+    match: (e) => e === 'ENTREGADO' },
+  { key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />, tone: 'muted',
+    match: (e) => e === 'CANCELADO' },
+  { key: 'otros', label: 'Otros', icon: <Layers size={14} />, tone: 'muted',
+    match: () => true },
 ];
 
 function classifyOrder(estado: string): string {
@@ -173,23 +210,40 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
   'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
 };
 
-export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter }: CrmTableProps) {
+export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [onlyDelayed, setOnlyDelayed] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [showManaged, setShowManaged] = useState(false);
+  // Filter state persisted per module so it survives both tab discards AND
+  // internal route navigations (previously every tab switch reset the
+  // operator's filter chip / search / toggle state).
+  const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
+  const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
+  const [internalActiveFilter, setInternalActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
+  const isControlled = controlledStatusFilter !== undefined;
+  const activeFilter = isControlled ? (controlledStatusFilter ?? null) : internalActiveFilter;
+  const setActiveFilter = (next: string | null | ((prev: string | null) => string | null)) => {
+    const resolved = typeof next === 'function' ? next(activeFilter) : next;
+    if (isControlled) {
+      onControlledStatusFilterChange?.(resolved);
+    } else {
+      setInternalActiveFilter(resolved);
+    }
+  };
+  const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
+  // Lista / Llamar toggle — persisted per module so it survives tab
+  // discards (common on mobile when the operator goes out to the
+  // transportadora's tracking page).
+  const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
     if (initialDelayed !== undefined) {
       setOnlyDelayed(initialDelayed);
     }
-  }, [initialDelayed]);
+  }, [initialDelayed, setOnlyDelayed]);
 
   useEffect(() => {
     if (!data.length) return;
@@ -210,19 +264,41 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     };
 
     fetchAllTouchpoints().then(allTp => {
-      const moduleTp = allTp.filter(t => t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`));
+      const moduleTp = allTp.filter(t =>
+        t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`)
+      );
       setTouchpoints(moduleTp);
-      const managed: Record<string, string> = {};
-      const today = new Date().toISOString().split('T')[0];
+
+      // Último touchpoint por teléfono
+      const latestByPhone: Record<string, { action: string; when: number }> = {};
       moduleTp.forEach(t => {
-        if (t.action_date === today && !managed[t.phone]) {
-          managed[t.phone] = t.action.replace(/^(SEG|RESCUE): ?/, '');
+        const when = new Date(t.created_at).getTime();
+        const prev = latestByPhone[t.phone];
+        if (!prev || when > prev.when) {
+          latestByPhone[t.phone] = { action: t.action, when };
         }
       });
-      setResults(managed);
+
+      // Snooze vivo por pedido: según SLA de la acción usada
+      const nowMs = Date.now();
+      const snoozed: Record<string, string> = {};
+      data.forEach(o => {
+        if (!o.dbId) return;
+        const hit = latestByPhone[o.phone];
+        if (!hit) return;
+        const slaMs = getActionSLA(hit.action) * 3600000;
+        const remainingMs = slaMs - (nowMs - hit.when);
+        if (remainingMs > 0) {
+          const hoursLeft = Math.max(1, Math.round(remainingMs / 3600000));
+          const label = hit.action.replace(/^(SEG|RESCUE):\s*/, '');
+          snoozed[o.dbId] = `${label} · vuelve en ${hoursLeft}h`;
+        }
+      });
+      setResults(snoozed);
     });
 
-    supabase.from('profiles').select('user_id, display_name').then(({ data: p }) => {
+    supabase.from('profiles').select('user_id, display_name').then(({ data: p, error }) => {
+      if (error) console.error('Error loading profiles:', error.message);
       if (p) setProfiles(p);
     });
   }, [data, module]);
@@ -244,15 +320,20 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     return new Date(tps[0].created_at).getTime();
   }, [phoneTouchpoints]);
 
-  const markAction = async (phone: string, action: string) => {
-    setResults(prev => ({ ...prev, [phone]: action }));
+  const markAction = async (order: OrderData, action: string) => {
+    const slaMs = getActionSLA(action) * 3600000;
+    const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
+    const label = `${action} · vuelve en ${hoursLeft}h`;
+    if (order.dbId) {
+      setResults(prev => ({ ...prev, [order.dbId!]: label }));
+    }
     if (user) {
       const now = new Date();
       const tp = {
-        phone,
+        phone: order.phone,
         action: `${module}: ${action}`,
         operator_id: user.id,
-        action_date: now.toISOString().split('T')[0],
+        action_date: bogotaToday(),
         action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
       };
       const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
@@ -261,14 +342,14 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
-  const managedCount = useMemo(() => data.filter(o => results[o.phone]).length, [data, results]);
+  const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
   const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
 
   const filtered = useMemo(() => {
     let list = data;
     // Hide managed orders unless showManaged is on
     if (!showManaged) {
-      list = list.filter(o => !results[o.phone]);
+      list = list.filter(o => !(o.dbId && results[o.dbId]));
     }
     if (search) {
       const s = search.toLowerCase();
@@ -331,25 +412,29 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       {/* Search + delayed filter */}
       <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
             placeholder="Buscar nombre, teléfono, guía, ciudad..."
-            className="w-full pl-11 pr-4 py-3 bg-card border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+            aria-label="Buscar pedidos"
+            className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
           />
         </div>
         <button
           type="button"
           aria-pressed={onlyDelayed}
           onClick={() => setOnlyDelayed(prev => !prev)}
-          className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+          className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
             onlyDelayed
-              ? 'border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/25'
-              : 'border-border bg-card text-foreground hover:border-orange-400/40 hover:text-orange-500'
+              ? 'border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/20'
+              : 'border-border bg-surface text-foreground hover:border-orange-400/50 hover:text-orange-500'
           }`}
         >
-          <Clock size={15} />
+          <Clock size={14} aria-hidden="true" />
           <span>Retrasados (2d+)</span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
             {delayedCount}
           </span>
         </button>
@@ -358,46 +443,79 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             type="button"
             aria-pressed={showManaged}
             onClick={() => setShowManaged(prev => !prev)}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 text-sm font-semibold transition-all whitespace-nowrap ${
+            className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               showManaged
-                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
-                : 'border-border bg-card text-foreground hover:border-emerald-400/40 hover:text-emerald-500'
+                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                : 'border-border bg-surface text-foreground hover:border-emerald-400/50 hover:text-emerald-500'
             }`}
           >
-            <CheckCircle size={15} />
-            <span>Gestionados</span>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-secondary text-foreground'}`}>
+            <CheckCircle size={14} aria-hidden="true" />
+            <span>Mostrar En espera</span>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
               {managedCount}
             </span>
           </button>
         )}
+
+        {/* Lista / Llamar toggle */}
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+          <button
+            type="button"
+            onClick={() => setView('list')}
+            aria-pressed={view === 'list'}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              view === 'list'
+                ? 'bg-accent text-accent-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <List size={13} aria-hidden="true" /> Lista
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('call')}
+            aria-pressed={view === 'call'}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              view === 'call'
+                ? 'bg-accent text-accent-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <PhoneIcon size={13} aria-hidden="true" /> Llamar
+          </button>
+        </div>
       </div>
 
-      {/* Status filter pills */}
-      <div className="flex gap-2 flex-wrap">
-        {STATUS_COLUMNS.filter(c => allCounts[c.key] > 0).map(col => {
-          const isActive = activeFilter === col.key;
-          return (
-            <button
-              key={col.key}
-              onClick={() => setActiveFilter(isActive ? null : col.key)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                isActive
-                  ? `bg-gradient-to-r ${col.bgGradient} text-white border-transparent shadow-lg`
-                  : `${col.pillBg} ${col.pillText} border`
-              }`}
-            >
-              {col.icon}
-              <span>{col.label}</span>
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                isActive ? 'bg-white/25' : 'bg-secondary'
-              }`}>
-                {allCounts[col.key]}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Status filter pills — only render when NOT controlled by a parent
+          (e.g. Rescate). In Seguimiento the stat cards ARE the filter, so we
+          hide this row to avoid a duplicated status strip under the cards. */}
+      {!isControlled && (
+        <div className="flex gap-1.5 flex-wrap">
+          {STATUS_COLUMNS.filter(c => allCounts[c.key] > 0).map(col => {
+            const isActive = activeFilter === col.key;
+            const t = TONE_STYLES[col.tone];
+            return (
+              <button
+                key={col.key}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setActiveFilter(isActive ? null : col.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                  isActive ? t.pillActive : t.pillIdle
+                }`}
+              >
+                {col.icon}
+                <span>{col.label}</span>
+                <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                  isActive ? t.activeCountBg : t.idleCountBg
+                }`}>
+                  {allCounts[col.key]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {onlyDelayed && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3">
@@ -419,6 +537,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             {onlyDelayed ? 'No encontramos pedidos retrasados.' : 'Prueba ajustando la búsqueda.'}
           </p>
         </div>
+      ) : view === 'call' ? (
+        <CrmCallView
+          items={filtered}
+          actions={actions}
+          managed={results}
+          phoneTouchpoints={phoneTouchpoints}
+          getOperatorName={getOperatorName}
+          onAction={markAction}
+          storageKey={module.toLowerCase()}
+          module={module}
+        />
       ) : (
         <div className="relative">
           {/* Scroll fade indicators */}
@@ -428,6 +557,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
             <div className="flex gap-3" style={{ minWidth: `${activeColumns.length * 300}px` }}>
             {activeColumns.map((col, colIdx) => {
               const items = columns[col.key];
+              const t = TONE_STYLES[col.tone];
               return (
                 <motion.div
                   key={col.key}
@@ -436,36 +566,37 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   transition={{ delay: colIdx * 0.04, duration: 0.25 }}
                   className="flex-1 min-w-[280px] max-w-[340px] flex flex-col"
                 >
-                  {/* Column header */}
-                  <div className={`bg-gradient-to-r ${col.bgGradient} rounded-t-xl px-4 py-3 flex items-center justify-between`}>
-                    <div className="flex items-center gap-2.5 text-white">
-                      <div className="w-7 h-7 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                  {/* Column header — solid surface + thin tone accent bar */}
+                  <div className={`relative rounded-t-xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-2.5 flex items-center justify-between`}>
+                    <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-tl-xl ${t.dot}`} aria-hidden="true" />
+                    <div className={`flex items-center gap-2 pl-1.5 ${t.headerText}`}>
+                      <span className="flex items-center justify-center w-6 h-6 rounded-md bg-card/60 border border-border/60">
                         {col.icon}
-                      </div>
-                      <span className="text-sm font-bold">{col.label}</span>
+                      </span>
+                      <span className="text-[13px] font-semibold tracking-tight text-foreground">{col.label}</span>
                     </div>
-                    <span className="text-white/90 text-lg font-black bg-white/20 backdrop-blur-sm rounded-lg px-3 py-0.5 min-w-[36px] text-center">
+                    <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md text-[11px] font-bold tabular-nums ${t.headerCount}`}>
                       {items.length}
                     </span>
                   </div>
 
                   {/* Column body */}
-                  <div className="bg-card/50 rounded-b-xl border border-border/40 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
+                  <div className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
                     {items.map((o, i) => (
                       <OrderCard
-                        key={o.phone + o.idx}
+                        key={`${o.phone}-${o.idx}`}
                         order={o}
-                        managed={results[o.phone]}
+                        managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
-                        onAction={(action) => markAction(o.phone, action)}
+                        onAction={(action) => markAction(o, action)}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
                         getOperatorName={getOperatorName}
                         getLastTouchTime={getLastTouchTime}
                         module={module}
                         index={i}
-                        statusColor={col.color}
+                        statusColor={col.tone}
                       />
                     ))}
                   </div>
@@ -500,6 +631,9 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
+  const priority = calcPriority(o);
+  const pLevel = getPriorityLevel(priority);
+  const pConfig = PRIORITY_CONFIG[pLevel];
   const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
   const isDelayed = diasEnEstatus >= 2;
@@ -516,7 +650,11 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Name + ID + days */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-bold text-foreground truncate">{o.nombre}</div>
+            <TruncatedText
+              text={o.nombre}
+              cssTruncate
+              className="block text-[13px] font-bold text-foreground truncate"
+            />
             {o.externalId && (
               <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[10px] text-primary hover:underline font-mono mt-0.5 block truncate">
                 {o.externalId}
@@ -524,9 +662,19 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             )}
             {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
           </div>
-          <span className="flex-shrink-0 text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate">
-            {o.estado}
-          </span>
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <TruncatedText
+              text={o.estado}
+              cssTruncate
+              className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate"
+            />
+            {pLevel !== 'low' && (
+              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pConfig.bgClass} ${pConfig.color}`}>
+                {pConfig.label}
+              </span>
+            )}
+            <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
+          </div>
         </div>
 
         {/* Phone row */}
@@ -555,14 +703,19 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
           )}
         </div>
 
-        {/* Guía + tracking */}
+        {/* Guía + tracking — Rastrear is now a proper button, amber outline that goes solid on hover */}
         {o.guia && (
           <div className="mt-2.5 flex items-center gap-2">
-            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-secondary/50 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
-              <Tag size={9} className="text-muted-foreground/60 flex-shrink-0" />
+            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
+              <Tag size={10} className="text-muted-foreground/70 flex-shrink-0" />
               <span className="truncate">{o.guia}</span>
-              <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-                className="flex-shrink-0 transition-colors hover:text-foreground"><Copy size={9} /></button>
+              <button
+                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                aria-label="Copiar guía"
+                className="flex-shrink-0 rounded p-0.5 transition-colors hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                <Copy size={10} />
+              </button>
             </div>
             {trackUrl && (
               <a
@@ -570,23 +723,25 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
-                className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg bg-orange-500 px-3 py-1.5 text-[10px] font-bold text-white shadow-sm transition-all hover:bg-orange-600 no-underline"
+                aria-label="Abrir rastreo de la transportadora"
+                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-[11px] font-semibold text-accent shadow-sm transition-colors duration-200 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
               >
-                <ExternalLink size={10} /> Rastrear
+                <ExternalLink size={12} aria-hidden="true" />
+                <span>Rastrear</span>
               </a>
             )}
           </div>
         )}
 
-        {/* Delay warning */}
+        {/* Delay warning — collapsed to 2 tones so it doesn't fight the column tone */}
         {isDelayed && !isExcludedFromDelay(o.estado) && (
-          <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 ${
-            diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
-            diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
-            'bg-orange-400/10 border border-orange-400/20'
+          <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 border ${
+            diasEnEstatus >= 5
+              ? 'bg-red-500/10 border-red-500/25'
+              : 'bg-orange-500/10 border-orange-500/25'
           }`}>
-            <Clock size={11} className={diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'} />
-            <span className={`text-[10px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'}`}>
+            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-500' : 'text-orange-500'} />
+            <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : 'text-orange-500'}`}>
               {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
           </div>
@@ -595,10 +750,10 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Alert badge */}
         {alert && alert.level !== 'ok' && alert.level !== 'watch' && (
           <div className="mt-2">
-            <span className={`inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md ${
-              alert.level === 'lost' ? 'bg-muted text-muted-foreground' :
-              alert.level === 'critical' ? 'bg-red-500/10 text-red-500' :
-              'bg-orange-500/10 text-orange-500'
+            <span className={`inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md border ${
+              alert.level === 'lost' ? 'bg-muted/60 text-muted-foreground border-border' :
+              alert.level === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/25' :
+              'bg-orange-500/10 text-orange-500 border-orange-500/25'
             }`}>
               {alert.label}
             </span>
@@ -608,7 +763,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
         {/* Managed badge */}
         {managed && (
           <div className="mt-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/25">
               <CheckCircle size={10} /> {managed}
             </span>
           </div>
@@ -624,24 +779,36 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
             <div className="px-3.5 py-3.5 space-y-3 bg-secondary/30">
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Producto', value: truncate(o.producto || '—', 30) },
-                  { label: 'Valor', value: `$${o.valor.toLocaleString()}` },
-                  { label: 'Dirección', value: truncate(o.direccion || '—', 35) },
-                  { label: 'Departamento', value: o.departamento || '—' },
-                ].map(d => (
+                {([
+                  { label: 'Producto', value: o.producto || '—', maxChars: 30 },
+                  { label: 'Valor', value: `$${o.valor.toLocaleString()}`, maxChars: null },
+                  { label: 'Dirección', value: o.direccion || '—', maxChars: 35 },
+                  { label: 'Departamento', value: o.departamento || '—', maxChars: null },
+                ] as const).map(d => (
                   <div key={d.label} className="bg-card rounded-lg p-2.5 border border-border/30">
                     <div className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">{d.label}</div>
-                    <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate">{d.value}</div>
+                    {d.maxChars ? (
+                      <TruncatedText
+                        text={d.value}
+                        maxChars={d.maxChars}
+                        className="block text-[11px] font-semibold text-foreground mt-0.5"
+                      />
+                    ) : (
+                      <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate">{d.value}</div>
+                    )}
                   </div>
                 ))}
               </div>
 
               {/* Novedad */}
               {o.novedad && (
-                <div className="flex items-start gap-2 bg-orange-500/5 border border-orange-500/10 rounded-lg px-3 py-2">
+                <div className="flex items-start gap-2 bg-orange-500/10 border border-orange-500/25 rounded-lg px-3 py-2">
                   <AlertTriangle size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
-                  <span className="text-[11px] text-foreground/80 leading-snug">{truncate(o.novedad, 100)}</span>
+                  <TruncatedText
+                    text={o.novedad}
+                    maxChars={100}
+                    className="text-[11px] text-foreground/90 leading-snug"
+                  />
                 </div>
               )}
 
@@ -670,7 +837,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, actions, t
 
               {/* Quick actions */}
               <div className="flex gap-2">
-                <a href={`https://wa.me/57${o.phone}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
+                <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
                   onClick={() => onAction('WhatsApp enviado')}
                   className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
                   <Send size={12} /> WhatsApp

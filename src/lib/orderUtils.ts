@@ -1,5 +1,12 @@
 import { COL_MAP, CARRIER_TRACK } from './constants';
 
+/** Safely extract an error message from an unknown catch value */
+export function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return 'Error desconocido';
+}
+
 export interface OrderData {
   idx: number;
   id: string;
@@ -25,19 +32,54 @@ export interface OrderData {
   tags: string;
   departamento: string;
   tienda: string;
+  email: string;
   novedadSol: boolean;
   result?: string;
   reason?: string;
   dbId?: string;
   assignedTo?: string;
   retryCount?: number; // How many previous noresp attempts today
+  lockedBy?: string | null;
+  lockedAt?: string | null;
+}
+
+/** Shape of a raw DB row from the orders table (all fields nullable) */
+export interface DbOrderRow {
+  id?: string | null;
+  external_id?: string | null;
+  assigned_to?: string | null;
+  nombre?: string | null;
+  phone?: string | null;
+  ciudad?: string | null;
+  departamento?: string | null;
+  direccion?: string | null;
+  producto?: string | null;
+  estado?: string | null;
+  fecha?: string | null;
+  fecha_conf?: string | null;
+  dias?: number | null;
+  dias_conf?: number | null;
+  valor?: number | null;
+  flete?: number | null;
+  costo_prod?: number | null;
+  costo_dev?: number | null;
+  cantidad?: number | null;
+  novedad?: string | null;
+  guia?: string | null;
+  transportadora?: string | null;
+  tags?: string | null;
+  tienda?: string | null;
+  email?: string | null;
+  novedad_sol?: boolean | null;
+  locked_by?: string | null;
+  locked_at?: string | null;
 }
 
 /** Convert a raw DB row into an OrderData object */
-export function dbToOrderData(o: any, idx: number): OrderData {
+export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
   return {
-    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id,
-    nombre: o.nombre, phone: o.phone, ciudad: o.ciudad || '',
+    idx, id: String(idx), externalId: o.external_id || '', dbId: o.id || undefined, assignedTo: o.assigned_to || undefined,
+    nombre: o.nombre || '', phone: o.phone || '', ciudad: o.ciudad || '',
     producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
     fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,
     valor: Number(o.valor) || 0, flete: Number(o.flete) || 0,
@@ -46,7 +88,10 @@ export function dbToOrderData(o: any, idx: number): OrderData {
     novedad: o.novedad || '', guia: o.guia || '',
     transportadora: o.transportadora || '', tags: o.tags || '',
     departamento: o.departamento || '', tienda: o.tienda || '',
+    email: o.email || '',
     novedadSol: o.novedad_sol || false,
+    lockedBy: o.locked_by ?? null,
+    lockedAt: o.locked_at ?? null,
   };
 }
 
@@ -57,7 +102,7 @@ export function parseDate(dateStr: string): Date | null {
     let d: Date | null = null;
 
     // DD/MM/YYYY or DD-MM-YYYY
-    const dmy = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    const dmy = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
     if (dmy) {
       let yearNum = parseInt(dmy[3]);
       if (yearNum < 100) yearNum += 2000;
@@ -210,6 +255,18 @@ export function formatPhone(p: string): string {
   return p;
 }
 
+/** Normalize a Colombian phone for wa.me/ links (must include 57 prefix exactly once). */
+export function getWhatsAppPhone(phone: string): string {
+  const digits = phone.replace(/[^0-9]/g, '');
+  // 10-digit Colombian mobile (3xx xxx xxxx) → always prepend 57.
+  if (digits.length === 10) return `57${digits}`;
+  // 12-digit already has country code (57 + 10 digits) → use as-is.
+  if (digits.length === 12 && digits.startsWith('57')) return digits;
+  // Anything else: strip a leading 57 if present and re-prepend to normalize.
+  if (digits.startsWith('57') && digits.length > 10) return digits;
+  return `57${digits}`;
+}
+
 export function isPendiente(estado: string): boolean {
   const s = estado.toUpperCase();
   return s === 'PENDIENTE CONFIRMACION';
@@ -314,6 +371,7 @@ export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[]
       tags: String(r[map.TAGS] || ''),
       departamento: String(r[map.DEPARTAMENTO] || ''),
       tienda: String(r[map.TIENDA] || ''),
+      email: '',
       novedadSol: novedadSolVal === 'si' || novedadSolVal === 'sí',
     };
   });

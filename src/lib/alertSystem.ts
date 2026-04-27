@@ -3,17 +3,8 @@
  * Tracks order risk based on carrier scanning activity
  */
 
-export const CARRIER_DEADLINES: Record<string, number> = {
-  'INTERRAPIDISIMO': 5,
-  'INTER RAPIDISIMO': 5,
-  'COORDINADORA': 15,
-  'TCC': 7,
-  'SERVIENTREGA': 7,
-  'ENVIA': 5,
-  'ENVÍA': 5,
-  'VELOCES': 5,
-  'DEPRISA': 7,
-};
+import { CARRIER_DEADLINES } from './constants';
+export { CARRIER_DEADLINES };
 
 export type AlertLevel = 'ok' | 'watch' | 'alert' | 'critical' | 'lost';
 
@@ -56,7 +47,10 @@ export function getAlertLevel(diasConf: number, dias: number, estado: string, tr
   const stage = getSegStage(estado);
 
   const sinEscaneo = diasConf > 0 ? diasConf : dias;
-  if (!sinEscaneo) return null;
+  // diasConf === 0 means "confirmed today" — valid, not missing. The old
+  // `!sinEscaneo` check treated 0 as falsy and returned null, silently
+  // excluding freshly confirmed orders from the alert system.
+  if (sinEscaneo < 0) return null;
 
   // Office countdown
   let officeCD: AlertInfo['officeCD'] = null;
@@ -140,6 +134,71 @@ export function getSuggestedAction(estado: string, novedad: string, transportado
   }
   return 'Contactar al cliente por WhatsApp para confirmar que espera el pedido';
 }
+
+/**
+ * Priority score for ordering work queues (higher = more urgent).
+ * Combines SLA risk, operational stage, and order value.
+ */
+export function calcPriority(order: {
+  diasConf: number; dias: number; estado: string;
+  transportadora: string; novedad?: string; novedadSol?: boolean;
+  valor?: number;
+}): number {
+  let score = 0;
+  const sinEscaneo = order.diasConf !== undefined && order.diasConf >= 0 ? order.diasConf : order.dias;
+  const e = (order.estado || '').toUpperCase();
+  const stage = getSegStage(e);
+
+  // SLA urgency (0–50 pts) — biggest weight
+  if (sinEscaneo >= 5) score += 50;
+  else if (sinEscaneo >= 3) score += 40;
+  else if (sinEscaneo >= 2) score += 25;
+  else if (sinEscaneo >= 1) score += 10;
+
+  // Stage urgency (0–30 pts)
+  if (stage === 'novedad' && !order.novedadSol) score += 30;
+  else if (stage === 'oficina') score += 25;
+  else if (stage === 'devolucion') score += 20;
+  else if (stage === 'transito') score += 5;
+
+  // High-value bonus (0–10 pts)
+  const val = Number(order.valor) || 0;
+  if (val >= 200000) score += 10;
+  else if (val >= 100000) score += 5;
+  else if (val >= 50000) score += 2;
+
+  // Novedad rescue window bonus
+  if ((e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA') && !order.novedadSol) {
+    const rescue = Math.max(0, 3 - sinEscaneo);
+    if (rescue <= 1) score += 15; // last day to rescue
+  }
+
+  // Office countdown bonus
+  if (e.includes('OFICINA') || e.includes('RECLAME')) {
+    const dl = getCarrierDeadline(order.transportadora);
+    const rem = Math.max(0, dl - sinEscaneo);
+    if (rem <= 2) score += 15; // about to expire
+  }
+
+  return score;
+}
+
+/** Priority level for UI display */
+export type PriorityLevel = 'critical' | 'high' | 'medium' | 'low';
+
+export function getPriorityLevel(score: number): PriorityLevel {
+  if (score >= 50) return 'critical';
+  if (score >= 30) return 'high';
+  if (score >= 15) return 'medium';
+  return 'low';
+}
+
+export const PRIORITY_CONFIG: Record<PriorityLevel, { label: string; color: string; bgClass: string }> = {
+  critical: { label: 'Urgente', color: 'text-red-500', bgClass: 'bg-red-500/10 border-red-500/30' },
+  high: { label: 'Alta', color: 'text-orange-500', bgClass: 'bg-orange-500/10 border-orange-500/30' },
+  medium: { label: 'Media', color: 'text-yellow-500', bgClass: 'bg-yellow-500/10 border-yellow-500/30' },
+  low: { label: 'Normal', color: 'text-muted-foreground', bgClass: '' },
+};
 
 /** Carrier performance stats */
 export interface CarrierStat {

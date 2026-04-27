@@ -1,1 +1,4 @@
 project_id = "bokhlpfmttoizjaakntc"
+
+[functions.dropi-relay]
+verify_jwt = false

@@ -11,11 +11,11 @@ interface Props {
 }
 
 const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
-  pending: { icon: Clock, color: 'text-blue' },
-  conf: { icon: CheckCircle2, color: 'text-green' },
-  canc: { icon: XCircle, color: 'text-red' },
-  noresp: { icon: PhoneOff, color: 'text-yellow' },
-  all: { icon: LayoutGrid, color: 'text-muted-foreground' },
+  pending: { icon: Clock,        color: 'text-info' },
+  conf:    { icon: CheckCircle2, color: 'text-success' },
+  canc:    { icon: XCircle,      color: 'text-danger' },
+  noresp:  { icon: PhoneOff,     color: 'text-warning' },
+  all:     { icon: LayoutGrid,   color: 'text-muted-foreground' },
 };
 
 export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch }: Props) {
@@ -57,15 +57,15 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors duration-200 border cursor-pointer ${
                 isActive
-                  ? 'bg-primary/10 text-primary border-primary/25 shadow-sm'
+                  ? 'bg-accent/12 text-accent border-accent/30 shadow-ds-xs'
                   : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70 hover:text-foreground'
               }`}
             >
-              <Icon size={12} className={isActive ? meta.color : ''} />
+              <Icon size={12} className={isActive ? meta.color : ''} aria-hidden="true" />
               <span>{f.label}</span>
-              <span className={`ml-0.5 text-[10px] font-mono tabular-nums ${isActive ? 'text-primary/70' : 'text-muted-foreground/60'}`}>
+              <span className={`ml-0.5 text-[10px] font-mono tabular-nums ${isActive ? 'text-accent/80' : 'text-muted-foreground/60'}`}>
                 {f.count}
               </span>
             </button>
@@ -80,7 +80,7 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono o ciudad..."
-          className="w-full pl-8 pr-3 py-2 bg-muted/30 border border-border/60 rounded-lg text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 transition-all"
+          className="w-full pl-8 pr-3 py-2 bg-muted/30 border border-border/60 rounded-lg text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors duration-200"
         />
       </div>
     </div>

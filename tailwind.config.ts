@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
   darkMode: ["class"],
@@ -50,6 +51,10 @@ export default {
           foreground: "hsl(var(--card-foreground))",
         },
         surface: "hsl(var(--surface))",
+        "border-strong": "hsl(var(--border-strong))",
+        subtle: "hsl(var(--subtle))",
+        "accent-muted": "hsl(var(--accent-muted))",
+        "accent-border": "hsl(var(--accent-border))",
         card2: "hsl(var(--card2))",
         green: "hsl(var(--green))",
         red: "hsl(var(--red))",
@@ -58,6 +63,35 @@ export default {
         cyan: "hsl(var(--cyan))",
         purple: "hsl(var(--purple))",
         yellow: "hsl(var(--yellow))",
+        // Design system v2 — semantic tokens (CRM Data-Dense)
+        brand: {
+          DEFAULT: "hsl(var(--brand))",
+          foreground: "hsl(var(--brand-foreground))",
+        },
+        cta: {
+          DEFAULT: "hsl(var(--cta))",
+          foreground: "hsl(var(--cta-foreground))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        danger: {
+          DEFAULT: "hsl(var(--danger))",
+          foreground: "hsl(var(--danger-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+        },
+        ai: {
+          DEFAULT: "hsl(var(--ai))",
+          foreground: "hsl(var(--ai-foreground))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -70,9 +104,10 @@ export default {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "var(--radius)",           /* 8px */
+        md: "calc(var(--radius) - 2px)", /* 6px inputs/badges */
+        sm: "calc(var(--radius) - 4px)", /* 4px tight */
+        xl: "calc(var(--radius) + 4px)", /* 12px large cards */
       },
       keyframes: {
         "accordion-down": {
@@ -90,5 +125,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 } satisfies Config;

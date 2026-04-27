@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { toast } from 'sonner';
@@ -10,10 +11,12 @@ import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw } from 'lucide-react';
+import TasaMetaBanner from '@/components/TasaMetaBanner';
+import ClosingReportDialog from '@/components/ClosingReportDialog';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { cn, bogotaToday } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -27,29 +30,52 @@ interface Props {
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded } = useOrders();
-  const [view, setView] = useState<'list' | 'call'>('list');
-  const [filter, setFilter] = useState('pending');
-  const [search, setSearch] = useState('');
+  // Persist nav state in sessionStorage so a tab discard (common on mobile
+  // when operator leaves to the transportadora's tracking page) does not
+  // make them lose their place and filters.
+  const [view, setView] = useSessionState<'list' | 'call'>('confirmar:view', 'list');
+  const [filter, setFilter] = useSessionState<string>('confirmar:filter', 'pending');
+  const [search, setSearch] = useSessionState<string>('confirmar:search', '');
+  const [dateFrom, setDateFrom] = useSessionState<string>('confirmar:dateFrom', '');
+  const [dateTo, setDateTo] = useSessionState<string>('confirmar:dateTo', '');
   const [aperturaCompleted, setAperturaCompleted] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const today = new Date().toISOString().split('T')[0];
+  const [closing, setClosing] = useState(false);
+  const today = bogotaToday();
 
-  // Auto-load orders from DB on mount if not already loaded
+  // Auto-load orders from DB on mount if not already loaded. Uses a strict
+  // eq() match on PENDIENTE CONFIRMACION instead of ilike('%PENDIENTE%') —
+  // the old filter also matched "PENDIENTE" (locally confirmed) and
+  // re-surfaced them in the queue. It also handles both the `error` channel
+  // and a Promise rejection so a failing query can't leave the spinner
+  // hanging forever — that is the eternal "Cargando..." Fabian hit when
+  // the Dropi sync fell over.
   useEffect(() => {
     if (excelLoaded || !user || autoLoading) return;
     setAutoLoading(true);
-    supabase.from('orders').select('*').ilike('estado', '%PENDIENTE%')
-      .then(({ data: dbOrders }) => {
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    supabase.from('orders').select('*').eq('estado', 'PENDIENTE CONFIRMACION')
+      .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
+      .then(({ data: dbOrders, error }) => {
+        if (error) {
+          console.error('Error loading orders:', error);
+          toast.error('Error cargando pedidos: ' + error.message);
+          setAutoLoading(false);
+          return;
+        }
         if (dbOrders && dbOrders.length > 0) {
           const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
           setAllOrders(orders);
           buildWorkQueue(orders);
           setExcelLoaded(true);
         }
+        setAutoLoading(false);
+      }, (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('Network error loading orders:', err);
+        toast.error('Error de red: ' + msg);
         setAutoLoading(false);
       });
   }, [user, excelLoaded, today]);
@@ -75,16 +101,18 @@ export default function ConfirmarTab({ profile }: Props) {
             novedad: o.novedad, guia: o.guia, transportadora: o.transportadora,
             tags: o.tags, departamento: o.departamento, tienda: o.tienda, novedad_sol: o.novedadSol,
           }));
-          const { data, error } = await supabase.from('orders').insert(dbOrders).select('id, phone');
+          const { data, error } = await supabase.from('orders').upsert(dbOrders, { onConflict: 'external_id', ignoreDuplicates: false }).select('id');
           if (error) { toast.error('Error guardando pedidos'); return; }
-          const phoneIdMap = new Map(data?.map(d => [d.phone, d.id]) ?? []);
-          orders.forEach(o => { o.dbId = phoneIdMap.get(o.phone); });
+          // Match returned IDs back to orders by insertion order (1:1).
+          // The old Map-by-phone approach silently clobbered dbId when two
+          // orders shared the same phone number (repeat customers).
+          if (data) data.forEach((d, i) => { if (i < orders.length) orders[i].dbId = d.id; });
         }
         setAllOrders(orders);
         buildWorkQueue(orders);
         setExcelLoaded(true);
         toast.success(`${orders.length} pedidos cargados`);
-      } catch (err: any) { toast.error('Error leyendo Excel: ' + err.message); }
+      } catch (err: unknown) { toast.error('Error leyendo Excel: ' + (err instanceof Error ? err.message : 'Error desconocido')); }
     };
     reader.readAsArrayBuffer(file);
   }, [user, today, setAllOrders, buildWorkQueue]);
@@ -94,7 +122,7 @@ export default function ConfirmarTab({ profile }: Props) {
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
     if (filter === 'noresp' && o.result !== 'noresp') return false;
-    if (filter.startsWith('prod_') && (o.producto !== filter.slice(5) || o.result)) return false;
+    if (filter.startsWith('prod_') && o.producto !== filter.slice(5)) return false;
     // Date filter
     if (dateFrom || dateTo) {
       const orderDate = parseDate(o.fecha);
@@ -115,19 +143,39 @@ export default function ConfirmarTab({ profile }: Props) {
 
   return (
     <div className="max-w-5xl mx-auto">
+      <div className="mb-4 flex items-start gap-2">
+        <div className="flex-1"><TasaMetaBanner /></div>
+        <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5">
+          <Moon size={14} /> Cerrar turno
+        </Button>
+      </div>
+      <ClosingReportDialog open={closing} onClose={() => setClosing(false)} />
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-muted-foreground">{formatDateES(today)}</p>
         {excelLoaded && (
-          <button onClick={() => { resetOrders(); setExcelLoaded(false); }}
-            className="text-xs px-3 py-1.5 rounded-lg bg-secondary text-muted-foreground font-medium hover:bg-secondary/80 transition-colors">
+          <button onClick={() => {
+            resetOrders();
+            setExcelLoaded(false);
+            // Also wipe persisted nav state so a fresh upload starts clean.
+            try {
+              sessionStorage.removeItem('confirmar:view');
+              sessionStorage.removeItem('confirmar:filter');
+              sessionStorage.removeItem('confirmar:search');
+              sessionStorage.removeItem('confirmar:dateFrom');
+              sessionStorage.removeItem('confirmar:dateTo');
+              sessionStorage.removeItem('confirmar:callIdx');
+              sessionStorage.removeItem('confirmar:callOrderId');
+            } catch { /* storage disabled */ }
+          }}
+            className="text-xs px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
             Cambiar archivo
           </button>
         )}
       </div>
 
       {autoLoading && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <RefreshCw size={32} className="text-primary animate-spin" />
+        <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
+          <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">Cargando pedidos...</p>
             <p className="text-xs text-muted-foreground mt-1">Recuperando datos de la base de datos</p>
@@ -152,10 +200,11 @@ export default function ConfirmarTab({ profile }: Props) {
                 });
                 if (error) throw error;
                 if (data?.synced > 0 || data?.total > 0) {
-                  // Reload orders from DB
+                  // Reload orders from DB — strict match so we don't pull
+                  // already-confirmed orders back into the queue.
                   const { data: dbOrders } = await supabase.from('orders')
                     .select('*')
-                    .ilike('estado', '%PENDIENTE%');
+                    .eq('estado', 'PENDIENTE CONFIRMACION');
                   if (dbOrders && dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
                     setAllOrders(orders);
@@ -166,17 +215,17 @@ export default function ConfirmarTab({ profile }: Props) {
                 } else {
                   toast.info(data?.message || 'No hay pedidos nuevos en Dropi');
                 }
-              } catch (err: any) {
-                toast.error('Error sincronizando: ' + (err.message || 'Error desconocido'));
+              } catch (err: unknown) {
+                toast.error('Error sincronizando: ' + (err instanceof Error ? err.message : 'Error desconocido'));
               } finally {
                 setSyncing(false);
               }
             }}
             disabled={syncing}
-            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl bg-card border border-border hover:border-blue/30 hover:bg-blue/5 transition-all group"
+            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl bg-surface border border-border hover:border-accent/30 hover:bg-accent/5 transition-colors duration-200 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-blue/10 flex items-center justify-center group-hover:bg-blue/20 transition-colors">
-              {syncing ? <RefreshCw size={20} className="text-blue animate-spin" /> : <CloudDownload size={20} className="text-blue" />}
+            <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/20 flex items-center justify-center group-hover:bg-accent/25 transition-colors duration-200">
+              {syncing ? <RefreshCw size={20} className="text-accent animate-spin" aria-hidden="true" /> : <CloudDownload size={20} className="text-accent" aria-hidden="true" />}
             </div>
             <div className="text-left">
               <div className="text-sm font-semibold text-foreground">
@@ -203,14 +252,14 @@ export default function ConfirmarTab({ profile }: Props) {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             {[
-              { label: 'Por confirmar', value: pending, color: 'text-blue' },
+              { label: 'Por confirmar', value: pending, color: 'text-accent' },
               { label: 'Confirmados', value: counter.conf, color: 'text-green' },
               { label: 'Cancelados', value: counter.canc, color: 'text-red' },
               { label: 'Gestionados', value: total, color: 'text-foreground' },
             ].map(kpi => (
-              <div key={kpi.label} className="bg-card rounded-xl border border-border p-4">
-                <div className="text-xs text-muted-foreground font-medium mb-1">{kpi.label}</div>
-                <div className={`font-mono text-2xl font-bold ${kpi.color}`}>{kpi.value}</div>
+              <div key={kpi.label} className="bg-surface border border-border rounded-xl p-4 hover:border-border-strong transition-colors duration-200">
+                <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-2">{kpi.label}</div>
+                <div className={`font-mono text-3xl font-semibold tabular-nums ${kpi.color}`}>{kpi.value}</div>
               </div>
             ))}
           </div>
@@ -253,7 +302,7 @@ export default function ConfirmarTab({ profile }: Props) {
             );
           })()}
 
-          <div className="bg-card rounded-xl border border-border p-4 mb-4 space-y-3">
+          <div className="bg-surface border border-border rounded-xl p-4 mb-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <Popover>
@@ -305,16 +354,17 @@ export default function ConfirmarTab({ profile }: Props) {
                 )}
               </div>
 
-              <div className="flex gap-1.5">
+              <div className="flex gap-1 bg-card border border-border rounded-lg p-0.5">
                 {([
                   { key: 'list' as const, icon: List, label: 'Lista' },
                   { key: 'call' as const, icon: Phone, label: 'Llamar' },
                 ]).map(v => (
                   <button key={v.key} onClick={() => setView(v.key)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-                      view === v.key ? 'bg-primary text-primary-foreground' : 'bg-muted/50 text-muted-foreground hover:text-foreground'
+                    aria-pressed={view === v.key}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                      view === v.key ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                     }`}>
-                    <v.icon size={13} /> {v.label}
+                    <v.icon size={13} aria-hidden="true" /> {v.label}
                   </button>
                 ))}
               </div>

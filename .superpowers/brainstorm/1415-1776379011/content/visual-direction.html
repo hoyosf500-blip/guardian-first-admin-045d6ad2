@@ -1,0 +1,206 @@
+<h2>¿Qué dirección visual para el rediseño?</h2>
+<p class="subtitle">Cada opción usa datos de ejemplo (nombres y pedidos ficticios) para que veas cómo se siente en contexto. Clickeá la que te llame más, o contame en el chat si ninguna convence.</p>
+
+<style>
+  .dir-card { background: #fff; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 18px; cursor: pointer; transition: all 0.18s ease; }
+  .dir-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.08); }
+  .dir-card.selected-card { border-color: #1E40AF; box-shadow: 0 0 0 2px rgba(30,64,175,0.2); }
+  .dir-title { font-size: 14px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .dir-sub { font-size: 12px; color: #64748b; margin: 0 0 14px; }
+  .dir-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .dir-tag { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: #f1f5f9; color: #475569; }
+
+  /* ----- Preview A: Linear/Stripe ----- */
+  .prev-a { background: #fafafa; border-radius: 8px; padding: 14px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .prev-a .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .prev-a .kpi { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; }
+  .prev-a .kpi-label { font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .prev-a .kpi-val { font-size: 18px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-top: 2px; }
+  .prev-a .order-row { background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .prev-a .order-name { font-size: 12px; font-weight: 600; color: #0f172a; }
+  .prev-a .order-meta { font-size: 10px; color: #6b7280; }
+  .prev-a .badge-a { background: #fef3c7; color: #92400e; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* ----- Preview B: Vercel/Supabase dark ----- */
+  .prev-b { background: #0a0a0a; border-radius: 8px; padding: 14px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .prev-b .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .prev-b .kpi { background: linear-gradient(180deg, #18181b 0%, #0f0f11 100%); border: 1px solid #27272a; border-radius: 8px; padding: 10px; }
+  .prev-b .kpi-label { font-size: 9px; color: #71717a; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .prev-b .kpi-val { font-size: 18px; font-weight: 700; background: linear-gradient(180deg, #fff, #a1a1aa); -webkit-background-clip: text; background-clip: text; color: transparent; margin-top: 2px; }
+  .prev-b .order-row { background: #0f0f11; border: 1px solid #27272a; border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .prev-b .order-name { font-size: 12px; font-weight: 600; color: #fafafa; }
+  .prev-b .order-meta { font-size: 10px; color: #71717a; }
+  .prev-b .badge-b { background: rgba(245, 158, 11, 0.15); color: #fbbf24; font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+  /* ----- Preview C: Glass/Aurora ----- */
+  .prev-c { background: radial-gradient(ellipse at top left, #7c3aed40, transparent 60%), radial-gradient(ellipse at bottom right, #06b6d440, transparent 60%), #0f172a; border-radius: 8px; padding: 14px; font-family: ui-sans-serif, system-ui, sans-serif; position: relative; }
+  .prev-c .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .prev-c .kpi { background: rgba(255,255,255,0.08); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 10px; }
+  .prev-c .kpi-label { font-size: 9px; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .prev-c .kpi-val { font-size: 18px; font-weight: 700; color: #fff; margin-top: 2px; }
+  .prev-c .order-row { background: rgba(255,255,255,0.08); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
+  .prev-c .order-name { font-size: 12px; font-weight: 600; color: #fff; }
+  .prev-c .order-meta { font-size: 10px; color: #cbd5e1; }
+  .prev-c .badge-c { background: linear-gradient(135deg, #a855f7, #06b6d4); color: #fff; font-size: 9px; font-weight: 700; padding: 3px 7px; border-radius: 999px; }
+
+  /* ----- Preview D: Operativo/Bloomberg ----- */
+  .prev-d { background: #fff; border-radius: 8px; padding: 10px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+  .prev-d .kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-bottom: 6px; }
+  .prev-d .kpi { background: #fff; border-left: 3px solid #0ea5e9; padding: 6px 8px; }
+  .prev-d .kpi-label { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+  .prev-d .kpi-val { font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 2px; }
+  .prev-d .order-row { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 6px 8px; display: grid; grid-template-columns: 80px 1fr 60px 80px 60px; gap: 8px; align-items: center; font-size: 11px; }
+  .prev-d .order-row:hover { background: #f8fafc; }
+  .prev-d .order-name { font-weight: 600; color: #0f172a; }
+  .prev-d .order-meta { color: #64748b; font-size: 10px; }
+  .prev-d .badge-d { background: #fbbf24; color: #000; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 0; letter-spacing: 0.04em; }
+</style>
+
+<div class="options" style="grid-template-columns: 1fr 1fr;">
+
+  <div class="option dir-card" data-choice="a" onclick="toggleSelect(this)" style="padding: 0; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; position: relative;">
+    <div style="padding: 18px 18px 0;">
+      <div class="letter" style="position: absolute; top: 18px; right: 18px;">A</div>
+      <p class="dir-title">Linear / Stripe / Notion</p>
+      <p class="dir-sub">Minimal, tipografía fuerte, poco color. Estándar de CRM modernos.</p>
+    </div>
+    <div style="padding: 0 18px;">
+      <div class="prev-a">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">Pendientes</div><div class="kpi-val">247</div></div>
+          <div class="kpi"><div class="kpi-label">Confirmados</div><div class="kpi-val">89</div></div>
+          <div class="kpi"><div class="kpi-label">Novedades</div><div class="kpi-val">14</div></div>
+          <div class="kpi"><div class="kpi-label">Efectividad</div><div class="kpi-val">87%</div></div>
+        </div>
+        <div class="order-row">
+          <div>
+            <div class="order-name">Cliente Ejemplo · 300-000-0000</div>
+            <div class="order-meta">Producto demo · $89.000 · Bogotá</div>
+          </div>
+          <span class="badge-a">Pendiente</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding: 12px 18px 18px;">
+      <div class="dir-tags">
+        <span class="dir-tag">Limpio</span>
+        <span class="dir-tag">Serio</span>
+        <span class="dir-tag">Recomendado CRM</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="option dir-card" data-choice="b" onclick="toggleSelect(this)" style="padding: 0; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; position: relative;">
+    <div style="padding: 18px 18px 0;">
+      <div class="letter" style="position: absolute; top: 18px; right: 18px;">B</div>
+      <p class="dir-title">Vercel / Supabase (Dark First)</p>
+      <p class="dir-sub">Fondo oscuro, cards con gradiente sutil, acentos amber. Moderno pero profesional.</p>
+    </div>
+    <div style="padding: 0 18px;">
+      <div class="prev-b">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">Pendientes</div><div class="kpi-val">247</div></div>
+          <div class="kpi"><div class="kpi-label">Confirmados</div><div class="kpi-val">89</div></div>
+          <div class="kpi"><div class="kpi-label">Novedades</div><div class="kpi-val">14</div></div>
+          <div class="kpi"><div class="kpi-label">Efectividad</div><div class="kpi-val">87%</div></div>
+        </div>
+        <div class="order-row">
+          <div>
+            <div class="order-name">Cliente Ejemplo · 300-000-0000</div>
+            <div class="order-meta">Producto demo · $89.000 · Bogotá</div>
+          </div>
+          <span class="badge-b">Pendiente</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding: 12px 18px 18px;">
+      <div class="dir-tags">
+        <span class="dir-tag">Dark first</span>
+        <span class="dir-tag">Moderno</span>
+        <span class="dir-tag">Buena lectura largas horas</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="option dir-card" data-choice="c" onclick="toggleSelect(this)" style="padding: 0; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; position: relative;">
+    <div style="padding: 18px 18px 0;">
+      <div class="letter" style="position: absolute; top: 18px; right: 18px;">C</div>
+      <p class="dir-title">Glass / Aurora</p>
+      <p class="dir-sub">Fondos con blur, colores saturados, efecto premium. Más "lindo" menos corporativo.</p>
+    </div>
+    <div style="padding: 0 18px;">
+      <div class="prev-c">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">Pendientes</div><div class="kpi-val">247</div></div>
+          <div class="kpi"><div class="kpi-label">Confirmados</div><div class="kpi-val">89</div></div>
+          <div class="kpi"><div class="kpi-label">Novedades</div><div class="kpi-val">14</div></div>
+          <div class="kpi"><div class="kpi-label">Efectividad</div><div class="kpi-val">87%</div></div>
+        </div>
+        <div class="order-row">
+          <div>
+            <div class="order-name">Cliente Ejemplo · 300-000-0000</div>
+            <div class="order-meta">Producto demo · $89.000 · Bogotá</div>
+          </div>
+          <span class="badge-c">Pendiente</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding: 12px 18px 18px;">
+      <div class="dir-tags">
+        <span class="dir-tag">Premium</span>
+        <span class="dir-tag">Más vistoso</span>
+        <span class="dir-tag">Cansa vista en jornadas largas</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="option dir-card" data-choice="d" onclick="toggleSelect(this)" style="padding: 0; border: 1px solid rgba(0,0,0,0.08); overflow: hidden; position: relative;">
+    <div style="padding: 18px 18px 0;">
+      <div class="letter" style="position: absolute; top: 18px; right: 18px;">D</div>
+      <p class="dir-title">Operativo / Bloomberg Terminal</p>
+      <p class="dir-sub">Densidad máxima, mono, mucha info por pantalla. Para operar 8 hrs sin cansarse.</p>
+    </div>
+    <div style="padding: 0 18px;">
+      <div class="prev-d">
+        <div class="kpi-row">
+          <div class="kpi"><div class="kpi-label">PEND</div><div class="kpi-val">247</div></div>
+          <div class="kpi"><div class="kpi-label">CONF</div><div class="kpi-val">89</div></div>
+          <div class="kpi"><div class="kpi-label">NOV</div><div class="kpi-val">14</div></div>
+          <div class="kpi"><div class="kpi-label">EFEC</div><div class="kpi-val">87%</div></div>
+          <div class="kpi"><div class="kpi-label">RESC</div><div class="kpi-val">3</div></div>
+          <div class="kpi"><div class="kpi-label">HOY</div><div class="kpi-val">42</div></div>
+        </div>
+        <div class="order-row">
+          <div class="order-name">#0001</div>
+          <div>
+            <div>Cliente Ejemplo A · Producto demo</div>
+            <div class="order-meta">300-000-0000 · Bogotá</div>
+          </div>
+          <div>$89.000</div>
+          <div class="order-meta">hace 2h</div>
+          <span class="badge-d">PEND</span>
+        </div>
+        <div class="order-row">
+          <div>#0002</div>
+          <div>
+            <div>Cliente Ejemplo B · Producto demo</div>
+            <div class="order-meta">300-000-0000 · Medellín</div>
+          </div>
+          <div>$45.000</div>
+          <div class="order-meta">hace 3h</div>
+          <span class="badge-d">PEND</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding: 12px 18px 18px;">
+      <div class="dir-tags">
+        <span class="dir-tag">Alta densidad</span>
+        <span class="dir-tag">Power users</span>
+        <span class="dir-tag">Nicho</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 24px; text-align: center;">Mi recomendación: <strong>A</strong> por default (estándar probado para CRM de alta lectura), con modo oscuro al estilo <strong>B</strong>. Si preferís otra combinación o un estilo que no está, escribilo en el chat.</p>

@@ -3,11 +3,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu } from 'lucide-react';
+import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
+import OpeningReportGate from '@/components/OpeningReportGate';
 import type { LucideIcon } from 'lucide-react';
+
+function InlineRouteLoader() {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 gap-3" role="status" aria-live="polite">
+      <RefreshCw size={24} className="text-accent animate-spin" aria-hidden="true" />
+      <p className="text-xs text-muted-foreground">Cargando...</p>
+    </div>
+  );
+}
 
 interface NavItem { path: string; icon: LucideIcon; label: string; adminOnly?: boolean }
 
@@ -15,9 +25,23 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
   { path: '/confirmar', icon: Phone, label: 'Confirmar' },
   { path: '/seguimiento', icon: Package, label: 'Seguimiento' },
+  { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
   { path: '/rescate', icon: LifeBuoy, label: 'Rescate' },
   { path: '/admin', icon: Settings, label: 'Admin', adminOnly: true },
 ];
+
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="font-mono text-xs text-muted-foreground tabular-nums hidden sm:block">
+      {now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+    </span>
+  );
+}
 
 export default function ProtectedLayout() {
   const { user, profile, isAdmin, loading, signOut } = useAuth();
@@ -31,10 +55,10 @@ export default function ProtectedLayout() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-3 animate-pulse">
-            <Package size={20} className="text-primary" />
+          <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Package size={22} className="text-accent" />
           </div>
-          <p className="text-sm text-muted-foreground font-semibold">Cargando Panel Operadora...</p>
+          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Cargando Panel Operadora...</p>
         </div>
       </div>
     );
@@ -48,29 +72,56 @@ export default function ProtectedLayout() {
     || (activePath.startsWith('/pedido') ? 'Detalle Pedido' : 'Panel');
 
   const isConfirmar = activePath === '/confirmar';
+  const userInitial = (profile?.display_name || 'U')[0].toUpperCase();
 
   return (
     <OrderProvider>
       <div className="flex h-screen overflow-hidden bg-background">
+        {/* Mobile overlay */}
         {isMobile && sidebarOpen && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setSidebarOpen(false)} />
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-200"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
         )}
-        <aside className={`
-          ${isMobile ? 'fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-out' : 'relative w-60 flex-shrink-0'}
-          ${isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0'}
-          bg-card border-r border-border flex flex-col
-        `}>
-          <div className="px-5 h-16 flex items-center gap-3 border-b border-border">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-primary-foreground text-sm font-bold shadow-lg shadow-primary/20">
-              P
+
+        {/* ── Sidebar ── */}
+        <aside
+          aria-label="Navegación principal"
+          className={[
+            'flex flex-col flex-shrink-0 z-50',
+            'bg-surface border-r border-border',
+            isMobile
+              ? 'fixed inset-y-0 left-0 w-64 transition-transform duration-300 ease-out'
+              : 'relative w-56',
+            isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0',
+          ].join(' ')}
+        >
+          {/* Logo / brand */}
+          <div className="h-14 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/25">
+                <Package size={16} className="text-accent-foreground" aria-hidden="true" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-foreground leading-tight">Guardian CRM</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Panel COD</div>
+              </div>
             </div>
-            <div>
-              <div className="text-sm font-bold text-foreground leading-tight">Panel COD</div>
-              <div className="text-[10px] text-muted-foreground">Operadora</div>
-            </div>
+            {isMobile && (
+              <button
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Cerrar menú"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
 
-          <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {/* Nav items */}
+          <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto" aria-label="Secciones del CRM">
             {visibleTabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activePath.startsWith(tab.path);
@@ -78,61 +129,92 @@ export default function ProtectedLayout() {
                 <button
                   key={tab.path}
                   onClick={() => { navigate(tab.path); if (isMobile) setSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  aria-current={isActive ? 'page' : undefined}
+                  className={[
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium',
+                    'transition-colors duration-200 cursor-pointer',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                     isActive
-                      ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/15'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/80'
-                  }`}
+                      ? 'bg-accent text-accent-foreground shadow-sm shadow-accent/20'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-card',
+                  ].join(' ')}
                 >
-                  <Icon size={18} />
-                  {tab.label}
+                  <Icon size={17} aria-hidden="true" />
+                  <span>{tab.label}</span>
                 </button>
               );
             })}
           </nav>
 
-          <div className="p-3 border-t border-border">
-            <div className="flex items-center gap-3 px-2 py-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-xs font-bold text-white shadow-md">
-                {(profile?.display_name || 'U')[0].toUpperCase()}
+          {/* User footer */}
+          <div className="p-3 border-t border-border flex-shrink-0">
+            <div className="flex items-center gap-2.5 px-2 py-2">
+              <div
+                className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent flex-shrink-0"
+                aria-hidden="true"
+              >
+                {userInitial}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-foreground truncate">{profile?.display_name || 'Usuario'}</div>
+                <div className="text-xs font-semibold text-foreground truncate">{profile?.display_name || 'Usuario'}</div>
                 <div className="text-[10px] text-muted-foreground">{isAdmin ? 'Administrador' : 'Operadora'}</div>
               </div>
-              <button onClick={signOut} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors" title="Cerrar sesión">
+              <button
+                onClick={signOut}
+                aria-label="Cerrar sesión"
+                title="Cerrar sesión"
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
                 <LogOut size={14} />
               </button>
             </div>
           </div>
         </aside>
 
+        {/* ── Main area ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <header className="h-14 bg-card/80 backdrop-blur-md border-b border-border flex items-center justify-between px-5 flex-shrink-0">
-            <div className="flex items-center gap-3">
+          {/* Topbar */}
+          <header className="h-12 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-4 flex-shrink-0 gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               {isMobile && (
-                <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground hover:text-foreground p-1">
-                  <Menu size={20} />
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Abrir menú"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                >
+                  <Menu size={18} />
                 </button>
               )}
-              <h1 className="text-base font-bold text-foreground">{activeLabel}</h1>
+              <h1 className="text-sm font-semibold text-foreground truncate">{activeLabel}</h1>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <LiveClock />
               <button
                 onClick={toggleTheme}
-                className="w-8 h-8 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-all hover:bg-secondary/80"
+                aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
-                {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+                {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
               </button>
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center text-primary-foreground text-xs font-bold">
-                {(profile?.display_name || 'U')[0].toUpperCase()}
+              <div
+                className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent"
+                aria-label={`Usuario: ${profile?.display_name || 'Usuario'}`}
+                title={profile?.display_name || 'Usuario'}
+              >
+                {userInitial}
               </div>
             </div>
           </header>
 
+          {/* Page content */}
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
-            {isConfirmar && <CounterBar />}
-            <Outlet />
+            <OpeningReportGate>
+              {isConfirmar && <CounterBar />}
+              <Suspense fallback={<InlineRouteLoader />}>
+                <Outlet />
+              </Suspense>
+            </OpeningReportGate>
           </main>
         </div>
       </div>

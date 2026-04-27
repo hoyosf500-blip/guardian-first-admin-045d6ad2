@@ -30,13 +30,15 @@ export default function ReportsTable() {
 
   async function loadReports() {
     setLoading(true);
-    const { data: profiles } = await supabase.from('profiles').select('user_id, display_name');
-    const { data: reports } = await supabase
+    const { data: profiles, error: profErr } = await supabase.from('profiles').select('user_id, display_name');
+    if (profErr) console.error('Error loading profiles:', profErr.message);
+    const { data: reports, error: repErr } = await supabase
       .from('daily_reports')
       .select('operator_id, report_date, report_type, data, created_at')
       .order('report_date', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(100);
+    if (repErr) console.error('Error loading reports:', repErr.message);
 
     if (!reports || !profiles) { setLoading(false); return; }
 

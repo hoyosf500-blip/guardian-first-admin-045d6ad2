@@ -10,43 +10,57 @@ export default function CounterBar() {
 
   if (workQueue.length === 0) return null;
 
-  const barGradient = tasa >= 80
-    ? 'from-emerald-500 to-green-400'
-    : tasa >= 60
-    ? 'from-amber-500 to-orange-400'
-    : 'from-red-500 to-rose-400';
+  const barTone =
+    tasa >= 80 ? 'bg-gradient-to-r from-success to-success/75'
+    : tasa >= 60 ? 'bg-gradient-to-r from-warning to-warning/75'
+    : 'bg-gradient-to-r from-danger to-danger/75';
+
+  const pctBadge =
+    pct >= 80 ? 'bg-success/12 text-success border-success/25'
+    : pct >= 50 ? 'bg-warning/12 text-warning border-warning/25'
+    : 'bg-muted/60 text-muted-foreground border-border';
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4">
+    <div className="bg-card border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 shadow-ds-xs">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-            <CheckCircle2 size={13} className="text-emerald-500" />
+        <div className="flex items-center gap-1.5 text-sm" aria-label={`Confirmados: ${counter.conf}`}>
+          <div className="w-6 h-6 rounded-lg bg-success/12 border border-success/25 flex items-center justify-center">
+            <CheckCircle2 size={13} className="text-success" aria-hidden="true" />
           </div>
-          <span className="font-mono text-sm font-bold text-foreground">{counter.conf}</span>
+          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{counter.conf}</span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-red-500/10 flex items-center justify-center">
-            <XCircle size={13} className="text-red-500" />
+        <div className="flex items-center gap-1.5 text-sm" aria-label={`Cancelados: ${counter.canc}`}>
+          <div className="w-6 h-6 rounded-lg bg-danger/12 border border-danger/25 flex items-center justify-center">
+            <XCircle size={13} className="text-danger" aria-hidden="true" />
           </div>
-          <span className="font-mono text-sm font-bold text-foreground">{counter.canc}</span>
+          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{counter.canc}</span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-secondary flex items-center justify-center">
-            <PhoneOff size={13} className="text-muted-foreground" />
+        <div className="flex items-center gap-1.5 text-sm" aria-label={`No respondió: ${counter.noresp}`}>
+          <div className="w-6 h-6 rounded-lg bg-muted/60 border border-border flex items-center justify-center">
+            <PhoneOff size={13} className="text-muted-foreground" aria-hidden="true" />
           </div>
-          <span className="font-mono text-sm font-bold text-foreground">{counter.noresp}</span>
+          <span className="font-mono text-sm font-bold text-foreground tabular-nums">{counter.noresp}</span>
         </div>
       </div>
-      <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-        <div className={`h-full rounded-full bg-gradient-to-r ${barGradient} transition-all duration-700 ease-out`} style={{ width: `${pct}%` }} />
+      <div
+        className="flex-1 h-2 bg-muted/60 rounded-full overflow-hidden"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Progreso: ${pct}%`}
+      >
+        <div
+          className={`h-full rounded-full ${barTone} transition-all duration-500 ease-out`}
+          style={{ width: `${pct}%` }}
+        />
       </div>
       <div className="flex items-center gap-1.5 text-sm">
-        <span className="font-mono font-bold text-foreground">{total}</span>
-        <span className="text-muted-foreground text-xs">/{goal}</span>
-        <span className={`text-xs font-semibold ml-1 px-1.5 py-0.5 rounded-md ${
-          pct >= 80 ? 'bg-emerald-500/10 text-emerald-500' : pct >= 50 ? 'bg-amber-500/10 text-amber-500' : 'bg-secondary text-muted-foreground'
-        }`}>{pct}%</span>
+        <span className="font-mono font-bold text-foreground tabular-nums">{total}</span>
+        <span className="text-muted-foreground text-xs tabular-nums">/{goal}</span>
+        <span className={`text-[11px] font-semibold ml-1 px-1.5 py-0.5 rounded-md border tabular-nums ${pctBadge}`}>
+          {pct}%
+        </span>
       </div>
     </div>
   );

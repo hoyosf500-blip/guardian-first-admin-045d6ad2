@@ -1,0 +1,162 @@
+<h2>¿Qué color de acento para la app?</h2>
+<p class="subtitle">Este color aparece en: botón primario "Confirmar pedido", header activo del menú, íconos de acción, foco de inputs, progress bars. El resto del UI es neutro (gris oscuro) y los colores semánticos (verde/rojo/naranja) se mantienen igual en todos los casos — esto solo decide la "personalidad".</p>
+
+<style>
+  .ac-card { background: #0a0a0a; border: 1px solid #27272a; border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.18s ease; overflow: hidden; position: relative; }
+  .ac-card:hover { border-color: #3f3f46; transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,0.5); }
+  .ac-card.selected-card { box-shadow: 0 0 0 2px var(--ac); }
+  .ac-letter { position: absolute; top: 14px; right: 16px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: #27272a; color: #fafafa; font-weight: 700; font-size: 13px; z-index: 2; }
+  .ac-title { font-size: 14px; font-weight: 700; color: #fafafa; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .ac-sub { font-size: 11px; color: #a1a1aa; margin: 0 0 16px; }
+
+  .swatch-row { display: flex; gap: 6px; margin-bottom: 16px; }
+  .swatch { flex: 1; height: 36px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-family: ui-monospace, monospace; }
+
+  /* KPI preview */
+  .kpi-prev { background: linear-gradient(180deg, #18181b 0%, #0f0f11 100%); border: 1px solid #27272a; border-radius: 8px; padding: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
+  .kpi-icon { width: 36px; height: 36px; border-radius: 8px; background: rgba(var(--ac-rgb), 0.15); border: 1px solid rgba(var(--ac-rgb), 0.3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .kpi-icon svg { width: 18px; height: 18px; color: var(--ac); }
+  .kpi-label { font-size: 10px; color: #71717a; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .kpi-val { font-size: 20px; font-weight: 700; color: #fafafa; letter-spacing: -0.02em; line-height: 1.1; margin-top: 2px; }
+  .kpi-delta { font-size: 10px; color: var(--ac); font-weight: 600; font-family: ui-monospace, monospace; }
+
+  /* Button + input preview */
+  .button-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .btn-primary { background: var(--ac); color: var(--ac-fg); border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .btn-secondary { background: transparent; color: #d4d4d8; border: 1px solid #3f3f46; padding: 8px 14px; border-radius: 6px; font-weight: 500; font-size: 12px; font-family: inherit; }
+
+  .menu-prev { background: #0f0f11; border: 1px solid #27272a; border-radius: 8px; padding: 6px; }
+  .menu-item { padding: 7px 10px; font-size: 12px; color: #a1a1aa; border-radius: 4px; display: flex; align-items: center; gap: 8px; }
+  .menu-item.active { background: rgba(var(--ac-rgb), 0.12); color: var(--ac); font-weight: 600; }
+  .menu-item .dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+</style>
+
+<div class="options" style="grid-template-columns: 1fr 1fr;">
+
+  <!-- ===== AMBER ===== -->
+  <div class="option ac-card" data-choice="amber" onclick="toggleSelect(this)" style="--ac:#fbbf24; --ac-fg:#000; --ac-rgb:251,191,36;">
+    <div class="ac-letter">A</div>
+    <p class="ac-title">Amber <span style="color:#fbbf24;font-size:10px;margin-left:4px;">recomendada</span></p>
+    <p class="ac-sub">Naranja cálido, urgencia sana. Mejor para "confirmar/actuar ahora".</p>
+    <div class="swatch-row">
+      <div class="swatch" style="background:#fef3c7;color:#78350f;">50</div>
+      <div class="swatch" style="background:#fcd34d;color:#78350f;">300</div>
+      <div class="swatch" style="background:#fbbf24;color:#000;">400</div>
+      <div class="swatch" style="background:#d97706;color:#fff;">600</div>
+      <div class="swatch" style="background:#78350f;color:#fff;">900</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-icon">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <div class="kpi-label">Pendientes</div>
+        <div class="kpi-val">247 <span class="kpi-delta">+12</span></div>
+      </div>
+    </div>
+    <div class="button-row">
+      <button class="btn-primary">Confirmar pedido</button>
+      <button class="btn-secondary">Cancelar</button>
+    </div>
+    <div class="menu-prev">
+      <div class="menu-item active"><span class="dot"></span>Confirmar</div>
+      <div class="menu-item"><span class="dot"></span>Seguimiento</div>
+    </div>
+  </div>
+
+  <!-- ===== CYAN ===== -->
+  <div class="option ac-card" data-choice="cyan" onclick="toggleSelect(this)" style="--ac:#22d3ee; --ac-fg:#000; --ac-rgb:34,211,238;">
+    <div class="ac-letter">B</div>
+    <p class="ac-title">Cyan</p>
+    <p class="ac-sub">Frío, tecno, estilo Linear. Más "herramienta" que "urgencia".</p>
+    <div class="swatch-row">
+      <div class="swatch" style="background:#cffafe;color:#164e63;">50</div>
+      <div class="swatch" style="background:#67e8f9;color:#164e63;">300</div>
+      <div class="swatch" style="background:#22d3ee;color:#000;">400</div>
+      <div class="swatch" style="background:#0891b2;color:#fff;">600</div>
+      <div class="swatch" style="background:#164e63;color:#fff;">900</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-icon">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <div class="kpi-label">Pendientes</div>
+        <div class="kpi-val">247 <span class="kpi-delta">+12</span></div>
+      </div>
+    </div>
+    <div class="button-row">
+      <button class="btn-primary">Confirmar pedido</button>
+      <button class="btn-secondary">Cancelar</button>
+    </div>
+    <div class="menu-prev">
+      <div class="menu-item active"><span class="dot"></span>Confirmar</div>
+      <div class="menu-item"><span class="dot"></span>Seguimiento</div>
+    </div>
+  </div>
+
+  <!-- ===== VIOLET ===== -->
+  <div class="option ac-card" data-choice="violet" onclick="toggleSelect(this)" style="--ac:#a78bfa; --ac-fg:#0a0a0a; --ac-rgb:167,139,250;">
+    <div class="ac-letter">C</div>
+    <p class="ac-title">Violeta</p>
+    <p class="ac-sub">Elegante, premium, estilo Stripe/Vercel. Menos "enterprise".</p>
+    <div class="swatch-row">
+      <div class="swatch" style="background:#ede9fe;color:#3730a3;">50</div>
+      <div class="swatch" style="background:#c4b5fd;color:#3730a3;">300</div>
+      <div class="swatch" style="background:#a78bfa;color:#1e1b4b;">400</div>
+      <div class="swatch" style="background:#7c3aed;color:#fff;">600</div>
+      <div class="swatch" style="background:#3730a3;color:#fff;">900</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-icon">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <div class="kpi-label">Pendientes</div>
+        <div class="kpi-val">247 <span class="kpi-delta">+12</span></div>
+      </div>
+    </div>
+    <div class="button-row">
+      <button class="btn-primary">Confirmar pedido</button>
+      <button class="btn-secondary">Cancelar</button>
+    </div>
+    <div class="menu-prev">
+      <div class="menu-item active"><span class="dot"></span>Confirmar</div>
+      <div class="menu-item"><span class="dot"></span>Seguimiento</div>
+    </div>
+  </div>
+
+  <!-- ===== EMERALD ===== -->
+  <div class="option ac-card" data-choice="emerald" onclick="toggleSelect(this)" style="--ac:#34d399; --ac-fg:#052e2b; --ac-rgb:52,211,153;">
+    <div class="ac-letter">D</div>
+    <p class="ac-title">Esmeralda</p>
+    <p class="ac-sub">Verde, "success-first", estilo dinero. Ojo: se confunde con el verde semántico de éxito.</p>
+    <div class="swatch-row">
+      <div class="swatch" style="background:#d1fae5;color:#064e3b;">50</div>
+      <div class="swatch" style="background:#6ee7b7;color:#064e3b;">300</div>
+      <div class="swatch" style="background:#34d399;color:#052e2b;">400</div>
+      <div class="swatch" style="background:#059669;color:#fff;">600</div>
+      <div class="swatch" style="background:#064e3b;color:#fff;">900</div>
+    </div>
+    <div class="kpi-prev">
+      <div class="kpi-icon">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <div>
+        <div class="kpi-label">Pendientes</div>
+        <div class="kpi-val">247 <span class="kpi-delta">+12</span></div>
+      </div>
+    </div>
+    <div class="button-row">
+      <button class="btn-primary">Confirmar pedido</button>
+      <button class="btn-secondary">Cancelar</button>
+    </div>
+    <div class="menu-prev">
+      <div class="menu-item active"><span class="dot"></span>Confirmar</div>
+      <div class="menu-item"><span class="dot"></span>Seguimiento</div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 24px; text-align: center;">Recomiendo <strong>A (Amber)</strong> — ya es el token CTA actual de la app y encaja con la psicología del CRM ("actuá rápido sobre este pedido"). Si tenés alguna preferencia de marca (logo, color corporativo), decímelo en el chat.</p>

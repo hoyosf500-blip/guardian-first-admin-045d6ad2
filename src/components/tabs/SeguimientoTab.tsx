@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { OrderData, dbToOrderData, calcBusinessDays } from '@/lib/orderUtils';
+import { useEffect, useMemo } from 'react';
+import { useOrders } from '@/contexts/OrderContext';
+import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
+import { useSessionState } from '@/hooks/useSessionState';
 import { SEG_ACTIONS } from '@/lib/constants';
 import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -45,38 +45,23 @@ function isActiveOrder(estado: string): boolean {
 }
 
 export default function SeguimientoTab() {
-  const { user } = useAuth();
-  const [segData, setSegData] = useState<OrderData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [initialDelayed, setInitialDelayed] = useState(false);
-  const [stalledCategoryFilter, setStalledCategoryFilter] = useState<string | null>(null);
+  // Cached in OrderContext so the data survives route unmounts when the
+  // operator navigates between CRM tabs. Without the cache they'd see
+  // "Cargando seguimiento..." and lose all filter/selection state every
+  // time they switched tabs.
+  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData } = useOrders();
 
-  const loadOrders = useCallback(async (isRefresh = false) => {
-    if (!user) return;
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+  // Filter state persisted to sessionStorage so it also survives tab
+  // discards (Chrome Memory Saver) and internal route navigation.
+  const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom', '');
+  const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo', '');
+  const [initialDelayed, setInitialDelayed] = useSessionState<boolean>('seg:initialDelayed', false);
+  const [stalledCategoryFilter, setStalledCategoryFilter] = useSessionState<string | null>('seg:stalledCategoryFilter', null);
+  // Owns the status filter so the stat cards ABOVE the table act as the single
+  // source of truth (no duplicate pill row below).
+  const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
 
-    const { data: dbOrders, error } = await supabase
-      .from('orders')
-      .select('*')
-      .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
-      .order('created_at', { ascending: false })
-      .limit(5000);
-
-    if (error) {
-      console.error('Error loading seg orders:', error);
-    } else if (dbOrders && dbOrders.length > 0) {
-      setSegData(dbOrders.map((o, idx) => dbToOrderData(o, idx)));
-    }
-    setLastUpdate(new Date());
-    setLoading(false);
-    setRefreshing(false);
-  }, [user]);
-
-  useEffect(() => { loadOrders(); }, [loadOrders]);
+  useEffect(() => { loadSegData(); }, [loadSegData]);
 
   // Filter by date range
   const filteredByDate = useMemo(() => {
@@ -110,7 +95,7 @@ export default function SeguimientoTab() {
     };
     filteredByDate.forEach(o => {
       const cat = classifyEstado(o.estado);
-      if (cat in s) (s as any)[cat]++;
+      if (cat in s) (s as Record<string, number>)[cat]++;
     });
     return s;
   }, [filteredByDate]);
@@ -124,12 +109,12 @@ export default function SeguimientoTab() {
 
     const byCategory: { label: string; icon: React.ReactNode; count: number; color: string; days5: number }[] = [];
     const categories = [
-      { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-cyan-500' },
-      { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-blue-500' },
-      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-purple-500' },
-      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-red-500' },
-      { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-orange-500' },
-      { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-amber-500' },
+      { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-muted-foreground' },
+      { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-muted-foreground' },
+      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-orange-500' },
+      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-orange-500' },
+      { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-muted-foreground' },
+      { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-accent' },
     ];
 
     categories.forEach(cat => {
@@ -143,28 +128,99 @@ export default function SeguimientoTab() {
     return { total: stalled.length, categories: byCategory };
   }, [filteredByDate]);
 
-  const statCards = [
-    { label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, gradient: 'from-blue-500 to-blue-600' },
-    { label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, gradient: 'from-cyan-500 to-teal-500' },
-    { label: 'Bodega Transp.', value: stats.bodega_trans, icon: <Package size={15} />, gradient: 'from-indigo-500 to-indigo-600' },
-    { label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, gradient: 'from-orange-500 to-amber-500' },
-    { label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, gradient: 'from-amber-500 to-yellow-500' },
-    { label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, gradient: 'from-red-500 to-rose-500' },
-    { label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, gradient: 'from-teal-500 to-emerald-500' },
-    { label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, gradient: 'from-fuchsia-500 to-purple-600' },
-    { label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, gradient: 'from-yellow-600 to-orange-600' },
-    { label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, gradient: 'from-pink-500 to-rose-500' },
-    { label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, gradient: 'from-rose-600 to-red-600' },
-    { label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, gradient: 'from-violet-500 to-purple-600' },
-    { label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, gradient: 'from-emerald-500 to-green-500' },
-    { label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, gradient: 'from-slate-500 to-slate-600' },
+  /**
+   * Unified stat tone system — same 5 tones as CrmTable so the app reads as one
+   * palette. Amber is reserved for the hot path ("En Reparto"); semantic tones
+   * only apply where they carry real meaning (success/warning/danger).
+   */
+  type StatTone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
+  /**
+   * Each tone carries: the icon bg, icon color, the number accent, an ambient
+   * glow for the card (subtle — only visible as a faint halo) and the ring
+   * used when a card is selected as the active filter.
+   */
+  const STAT_TONE: Record<StatTone, {
+    iconBg: string; iconText: string;
+    numberColor: string; cardHover: string;
+    activeRing: string; activeBg: string; activeShadow: string;
+  }> = {
+    neutral: {
+      iconBg: 'bg-zinc-800', iconText: 'text-zinc-300',
+      numberColor: 'text-foreground',
+      cardHover: 'hover:border-zinc-600 hover:bg-zinc-900/80',
+      activeRing: 'ring-2 ring-accent/60 border-accent/60',
+      activeBg: 'bg-accent/5',
+      activeShadow: 'shadow-lg shadow-accent/10',
+    },
+    accent: {
+      iconBg: 'bg-accent/20', iconText: 'text-accent',
+      numberColor: 'text-accent',
+      cardHover: 'hover:border-accent/50 hover:bg-accent/10 hover:shadow-lg hover:shadow-accent/20',
+      activeRing: 'ring-2 ring-accent border-accent',
+      activeBg: 'bg-accent/15',
+      activeShadow: 'shadow-lg shadow-accent/25',
+    },
+    warning: {
+      iconBg: 'bg-orange-500/15', iconText: 'text-orange-500',
+      numberColor: 'text-orange-500',
+      cardHover: 'hover:border-orange-500/40 hover:bg-orange-500/5',
+      activeRing: 'ring-2 ring-orange-500/70 border-orange-500/70',
+      activeBg: 'bg-orange-500/10',
+      activeShadow: 'shadow-lg shadow-orange-500/20',
+    },
+    danger: {
+      iconBg: 'bg-red-500/15', iconText: 'text-red-500',
+      numberColor: 'text-red-500',
+      cardHover: 'hover:border-red-500/40 hover:bg-red-500/5',
+      activeRing: 'ring-2 ring-red-500/70 border-red-500/70',
+      activeBg: 'bg-red-500/10',
+      activeShadow: 'shadow-lg shadow-red-500/20',
+    },
+    success: {
+      iconBg: 'bg-emerald-500/15', iconText: 'text-emerald-500',
+      numberColor: 'text-emerald-500',
+      cardHover: 'hover:border-emerald-500/40 hover:bg-emerald-500/5',
+      activeRing: 'ring-2 ring-emerald-500/70 border-emerald-500/70',
+      activeBg: 'bg-emerald-500/10',
+      activeShadow: 'shadow-lg shadow-emerald-500/20',
+    },
+    muted: {
+      iconBg: 'bg-zinc-800/60', iconText: 'text-muted-foreground',
+      numberColor: 'text-muted-foreground',
+      cardHover: 'hover:border-zinc-600 hover:text-foreground',
+      activeRing: 'ring-2 ring-zinc-500 border-zinc-500',
+      activeBg: 'bg-zinc-800/50',
+      activeShadow: 'shadow-lg',
+    },
+  };
+
+  // `key` matches CrmTable.STATUS_COLUMNS[*].key so clicking a card drives the
+  // table filter without translation.
+  const statCards: { key: string; label: string; value: number; icon: React.ReactNode; tone: StatTone }[] = [
+    { key: 'procesamiento', label: 'En Procesamiento', value: stats.procesamiento, icon: <Package size={15} />, tone: 'neutral' },
+    { key: 'guia', label: 'Guía Generada', value: stats.guia, icon: <Tag size={15} />, tone: 'neutral' },
+    { key: 'bodega_trans', label: 'Bodega Transp.', value: stats.bodega_trans, icon: <Package size={15} />, tone: 'neutral' },
+    { key: 'transito', label: 'En Tránsito', value: stats.transito, icon: <Truck size={15} />, tone: 'neutral' },
+    { key: 'reparto', label: 'En Reparto', value: stats.reparto, icon: <Truck size={15} />, tone: 'accent' },
+    { key: 'novedad', label: 'Novedad', value: stats.novedad, icon: <AlertTriangle size={15} />, tone: 'warning' },
+    { key: 'novedad_sol', label: 'Nov. Solucionada', value: stats.novedad_sol, icon: <CheckCircle size={15} />, tone: 'success' },
+    { key: 'oficina', label: 'En Oficina', value: stats.oficina, icon: <MapPin size={15} />, tone: 'warning' },
+    { key: 'rechazado', label: 'Rechazado', value: stats.rechazado, icon: <AlertTriangle size={15} />, tone: 'danger' },
+    { key: 'devolucion_transito', label: 'Dev. en Tránsito', value: stats.devolucion_transito, icon: <RotateCcw size={15} />, tone: 'danger' },
+    { key: 'devolucion', label: 'Devolución', value: stats.devolucion, icon: <RotateCcw size={15} />, tone: 'danger' },
+    { key: 'indemnizada', label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, tone: 'muted' },
+    { key: 'entregado', label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, tone: 'success' },
+    { key: 'cancelado', label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, tone: 'muted' },
   ];
 
-  if (loading) {
+  // Fullscreen loading only on the very first fetch. On subsequent refreshes
+  // the existing data stays on screen and the Actualizar button shows the
+  // spinner instead — no flash, no lost state.
+  if (!segLoaded && segLoading) {
     return (
       <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col items-center justify-center py-16 gap-4">
-          <RefreshCw size={32} className="text-primary animate-spin" />
+        <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
+          <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
           <div className="text-center">
             <p className="text-sm font-semibold text-foreground">Cargando seguimiento...</p>
             <p className="text-xs text-muted-foreground mt-1">Recuperando pedidos desde la base de datos</p>
@@ -184,9 +240,8 @@ export default function SeguimientoTab() {
       >
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-lg"
-              style={{ background: 'linear-gradient(135deg, #f97316, #f59e0b)' }}>
-              <Truck size={20} />
+            <div className="w-10 h-10 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center">
+              <Truck size={20} className="text-accent" aria-hidden="true" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-foreground">Seguimiento</h2>
@@ -250,25 +305,25 @@ export default function SeguimientoTab() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2">
-              <Package size={14} className="text-muted-foreground" />
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+              <Package size={13} className="text-muted-foreground" aria-hidden="true" />
               <span className="text-xs text-muted-foreground">Total</span>
-              <span className="text-sm font-bold text-foreground">{stats.total}</span>
+              <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
               {(dateFrom || dateTo) && stats.total !== segData.length && (
-                <span className="text-[10px] text-muted-foreground font-mono">/ {segData.length}</span>
+                <span className="text-[10px] text-subtle font-mono">/ {segData.length}</span>
               )}
             </div>
             <button
-              onClick={() => loadOrders(true)}
-              disabled={refreshing}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+              onClick={() => loadSegData(true)}
+              disabled={segLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-foreground hover:bg-card hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">{refreshing ? 'Actualizando...' : 'Actualizar'}</span>
+              <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} aria-hidden="true" />
+              <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
-            {lastUpdate && (
+            {segLastUpdate && (
               <span className="text-[10px] text-muted-foreground hidden md:block">
-                {lastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </div>
@@ -352,23 +407,44 @@ export default function SeguimientoTab() {
           </motion.div>
         )}
 
-        {/* Stat cards row */}
+        {/* Stat cards — clickable filters. Click a card to filter the table
+            below; click again to clear. This replaces the old pills row so
+            there's one single source of truth for the active status. */}
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
-          {statCards.filter(c => c.value > 0).map((card, i) => (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
-              className="bg-card border border-border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5"
-            >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white bg-gradient-to-br ${card.gradient}`}>
-                {card.icon}
-              </div>
-              <span className="text-lg font-black text-foreground leading-none">{card.value}</span>
-              <span className="text-[8px] text-muted-foreground font-medium text-center leading-tight">{card.label}</span>
-            </motion.div>
-          ))}
+          {statCards.filter(c => c.value > 0).map((card, i) => {
+            const t = STAT_TONE[card.tone];
+            const isActive = statusFilter === card.key;
+            return (
+              <motion.button
+                key={card.key}
+                type="button"
+                aria-pressed={isActive}
+                aria-label={`Filtrar por ${card.label}: ${card.value} pedidos`}
+                onClick={() => setStatusFilter(isActive ? null : card.key)}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
+                whileTap={{ scale: 0.97 }}
+                className={`group relative bg-surface border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 transition-all duration-200 cursor-pointer focus-visible:outline-none text-center ${
+                  isActive
+                    ? `${t.activeRing} ${t.activeBg} ${t.activeShadow}`
+                    : `border-border ${t.cardHover}`
+                }`}
+              >
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText}`}>
+                  {card.icon}
+                </div>
+                <span className={`text-xl font-bold leading-none tabular-nums ${isActive ? t.numberColor : 'text-foreground'}`}>
+                  {card.value}
+                </span>
+                <span className={`text-[9px] font-semibold text-center leading-tight uppercase tracking-wider ${
+                  isActive ? t.numberColor : 'text-muted-foreground'
+                }`}>
+                  {card.label}
+                </span>
+              </motion.button>
+            );
+          })}
         </div>
       </motion.div>
 
@@ -381,6 +457,8 @@ export default function SeguimientoTab() {
         emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
         initialDelayed={initialDelayed}
         stalledCategoryFilter={stalledCategoryFilter}
+        controlledStatusFilter={statusFilter}
+        onControlledStatusFilterChange={setStatusFilter}
       />
     </div>
   );

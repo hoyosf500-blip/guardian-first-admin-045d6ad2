@@ -2,15 +2,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
- * Syncs orders from the last 7 days to capture status changes.
- * No user auth required — uses service role key.
+ * Syncs orders from the last 90 days to capture status changes.
+ * Auth: pg_cron sends x-cron-secret; admins send Authorization Bearer JWT.
+ * v2 — force redeploy to apply shared-secret auth branch.
  */
 
 const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
-const SYNC_DAYS_BACK = 90;
+const SYNC_DAYS_BACK = 14;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -172,20 +173,69 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   };
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req: Request) => {
+  console.log("dropi-cron v3 — secret branch active");
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-      },
-    });
+    return new Response("ok", { headers: CORS_HEADERS });
   }
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ---- Auth path 1: shared secret for pg_cron ----
+    // The pg_cron job sends x-cron-secret matching app_settings.cron_shared_secret.
+    // Needed because we can't embed the service_role key in a SQL cron command.
+    const cronSecretHeader = req.headers.get("x-cron-secret");
+    if (cronSecretHeader) {
+      const { data: secretRow } = await sb
+        .from("app_settings")
+        .select("value")
+        .eq("key", "cron_shared_secret")
+        .maybeSingle();
+      if (!secretRow?.value || secretRow.value !== cronSecretHeader) {
+        return new Response(JSON.stringify({ error: "Cron secret invalido" }), {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        });
+      }
+      console.log("dropi-cron: authenticated via cron shared secret");
+    } else {
+    // ---- Auth path 2: require admin role for authenticated callers ----
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader && authHeader !== `Bearer ${supabaseServiceKey}`) {
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+      const anonClient = createClient(supabaseUrl, anonKey);
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(
+        authHeader.replace("Bearer ", ""),
+      );
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Token inválido" }), {
+          status: 401,
+          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+        });
+      }
+      const { data: roleData } = await sb
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!roleData) {
+        return new Response(
+          JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
+          { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+        );
+      }
+      console.log(`dropi-cron: triggered by admin ${user.id}`);
+    }
+    }
 
     // Get Dropi API key from app_settings or env
     const { data: keySetting } = await sb
@@ -262,8 +312,11 @@ Deno.serve(async (req: Request) => {
       await sleep(RATE_LIMIT_MS);
     }
 
-    // Restore estado for orders confirmed locally today (so sync doesn't overwrite local confirmations)
-    const todayDate = new Date().toISOString().split("T")[0];
+    // Restore estado for orders confirmed locally today. Usa fecha de Bogotá
+    // para calzar con result_date que se escribe desde el cliente (el cron
+    // corre en UTC y a partir de las 19:00 COL devolvía la fecha siguiente
+    // dejando fuera las confirmaciones de la tarde).
+    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
     const { data: confirmedToday } = await sb
       .from("order_results")
       .select("order_id")
@@ -284,12 +337,71 @@ Deno.serve(async (req: Request) => {
       console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders`);
     }
 
+    // Retry order_results that failed to sync to Dropi (BUG A fix).
+    // We don't call dropi-update-order from here (no JWT context); instead
+    // we surface them via marking — the next time the operator opens the
+    // Confirmar tab, the local result is preserved and the cron sync above
+    // will eventually overwrite the Dropi-side estado on the bulk pull.
+    let retried = 0;
+    try {
+      // BUG fix: dropi-update-order espera { externalId }, no { dbId }.
+      // Hacemos JOIN implícito con orders para traer external_id junto al id.
+      const { data: pendingRows } = await sb
+        .from("order_results")
+        .select("id, order_id, orders:order_id(external_id)")
+        .in("dropi_sync_status", ["pending", "failed"])
+        .eq("result", "conf")
+        .gte(
+          "result_date",
+          new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" })
+            .format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+        )
+        .limit(200);
+
+      for (const row of (pendingRows || []) as unknown as Array<{ id: string; order_id: string; orders: { external_id: string | null } | { external_id: string | null }[] | null }>) {
+        const ordersField = row.orders;
+        const externalId = Array.isArray(ordersField)
+          ? ordersField[0]?.external_id
+          : ordersField?.external_id;
+        if (!externalId) {
+          await sb
+            .from("order_results")
+            .update({
+              dropi_sync_status: "failed",
+              result_notes: "Reintento cron omitido: pedido sin external_id",
+            })
+            .eq("id", row.id);
+          continue;
+        }
+        try {
+          const { data: invokeData, error: invokeErr } = await sb.functions.invoke(
+            "dropi-update-order",
+            { body: { externalId } },
+          );
+          const ok = !invokeErr && (invokeData as { ok?: boolean } | null)?.ok !== false;
+          await sb
+            .from("order_results")
+            .update({
+              dropi_sync_status: ok ? "synced" : "failed",
+              result_notes: ok ? null : `Reintento cron falló: ${invokeErr?.message || "error"}`,
+            })
+            .eq("id", row.id);
+          if (ok) retried++;
+        } catch (e) {
+          console.error("dropi-cron retry error:", e);
+        }
+      }
+      if (retried > 0) console.log(`dropi-cron: retried ${retried} pending sync rows`);
+    } catch (e) {
+      console.error("dropi-cron retry block error:", e);
+    }
+
     // Log the sync
     await sb.from("sync_logs").insert({
       source: "dropi-cron",
       status: "success",
       synced_count: totalSynced,
-      duplicates_count: 0,
+      duplicates_count: retried,
       total_count: totalFromDropi,
       triggered_by: uploadedBy,
     });

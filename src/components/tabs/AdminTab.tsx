@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, XCircle, PhoneOff, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw, Sparkles, Fingerprint } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
@@ -9,6 +9,9 @@ import SyncPanel from '@/components/admin/SyncPanel';
 import ReportsTable from '@/components/admin/ReportsTable';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
+import DailyReportsView from '@/components/admin/DailyReportsView';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -32,10 +35,28 @@ export default function AdminTab() {
   const [testingKey, setTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
+  // AI key state
+  const [aiKey, setAiKey] = useState('');
+  const [aiKeySaved, setAiKeySaved] = useState('');
+  const [showAiKey, setShowAiKey] = useState(false);
+  const [savingAiKey, setSavingAiKey] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
+
+  // Dropi session token state (for buyer fingerprint)
+  const [dropiSession, setDropiSession] = useState('');
+  const [dropiSessionSaved, setDropiSessionSaved] = useState('');
+  const [showSession, setShowSession] = useState(false);
+  const [savingSession, setSavingSession] = useState(false);
+  const [testingSession, setTestingSession] = useState(false);
+  const [sessionTestResult, setSessionTestResult] = useState<'ok' | 'fail' | null>(null);
+
   useEffect(() => {
     if (!isAdmin) return;
     loadData();
     loadDropiKey();
+    loadAiKey();
+    loadDropiSession();
     loadFailedSyncs();
   }, [isAdmin]);
 
@@ -84,8 +105,8 @@ export default function AdminTab() {
       }
       setDropiKeySaved(dropiKey.trim());
       toast.success('Clave API de Dropi guardada');
-    } catch (err: any) {
-      toast.error(err.message || 'Error al guardar');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar');
     } finally {
       setSavingKey(false);
     }
@@ -111,11 +132,137 @@ export default function AdminTab() {
         setTestResult('ok');
         toast.success(`Conexión exitosa — ${res.data.message || 'API respondió correctamente'}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTestResult('fail');
-      toast.error(err.message || 'Error de conexión');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
     } finally {
       setTestingKey(false);
+    }
+  }
+
+  async function loadAiKey() {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'dashscope_api_key')
+      .maybeSingle();
+    if (data) {
+      setAiKey(data.value);
+      setAiKeySaved(data.value);
+    }
+  }
+
+  async function saveAiKey() {
+    if (!aiKey.trim()) { toast.error('La clave no puede estar vacía'); return; }
+    setSavingAiKey(true);
+    try {
+      if (aiKeySaved) {
+        const { error } = await supabase.from('app_settings').update({ value: aiKey.trim() }).eq('key', 'dashscope_api_key');
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('app_settings').insert({ key: 'dashscope_api_key', value: aiKey.trim() });
+        if (error) throw error;
+      }
+      setAiKeySaved(aiKey.trim());
+      toast.success('Clave AI guardada');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar');
+    } finally {
+      setSavingAiKey(false);
+    }
+  }
+
+  async function testAiConnection() {
+    setTestingAi(true);
+    setAiTestResult(null);
+    try {
+      const key = aiKeySaved || aiKey.trim();
+      if (!key) { toast.error('Guarda la clave primero'); setAiTestResult('fail'); return; }
+      const res = await fetch('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'qwen-turbo',
+          messages: [
+            { role: 'system', content: 'Responde con "OK" si recibes este mensaje.' },
+            { role: 'user', content: 'Prueba de conexión' },
+          ],
+          temperature: 0, max_tokens: 10,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        setAiTestResult('fail');
+        toast.error(`Error ${res.status}: ${errText.slice(0, 100)}`);
+      } else {
+        setAiTestResult('ok');
+        toast.success('IA conectada correctamente');
+      }
+    } catch (err: unknown) {
+      setAiTestResult('fail');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+    } finally {
+      setTestingAi(false);
+    }
+  }
+
+  async function loadDropiSession() {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'dropi_session_token')
+      .maybeSingle();
+    if (data) {
+      setDropiSession(data.value);
+      setDropiSessionSaved(data.value);
+    }
+  }
+
+  async function saveDropiSession() {
+    if (!dropiSession.trim()) { toast.error('El token no puede estar vacío'); return; }
+    setSavingSession(true);
+    try {
+      if (dropiSessionSaved) {
+        const { error } = await supabase.from('app_settings').update({ value: dropiSession.trim() }).eq('key', 'dropi_session_token');
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('app_settings').insert({ key: 'dropi_session_token', value: dropiSession.trim() });
+        if (error) throw error;
+      }
+      setDropiSessionSaved(dropiSession.trim());
+      toast.success('Token de sesión Dropi guardado');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al guardar');
+    } finally {
+      setSavingSession(false);
+    }
+  }
+
+  async function testDropiFingerprint() {
+    setTestingSession(true);
+    setSessionTestResult(null);
+    try {
+      const { data: raw, error } = await supabase.rpc('dropi_fingerprint', {
+        p_phone: '3001234567',
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = raw as Record<string, any> | null;
+      if (error) {
+        setSessionTestResult('fail');
+        toast.error(`Error: ${error.message}`);
+      } else if (d?.ok === false) {
+        setSessionTestResult('fail');
+        toast.error(d.error || 'Error desconocido');
+      } else {
+        setSessionTestResult('ok');
+        const fp = d?.fingerprint;
+        toast.success(fp?.found ? `Huella OK — ${fp.global_profile?.lifetime_totals?.orders || 0} pedidos encontrados` : 'Conexión OK — cliente no encontrado');
+      }
+    } catch (err: unknown) {
+      setSessionTestResult('fail');
+      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+    } finally {
+      setTestingSession(false);
     }
   }
 
@@ -143,6 +290,24 @@ export default function AdminTab() {
   return (
     <div className="max-w-5xl mx-auto">
       <p className="text-sm text-muted-foreground mb-5">Panel de administración</p>
+
+      <Tabs defaultValue="config" className="w-full">
+        <TabsList className="mb-5">
+          <TabsTrigger value="config">Configuración</TabsTrigger>
+          <TabsTrigger value="productividad">Productividad</TabsTrigger>
+          <TabsTrigger value="reportes">Reportes diarios</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="productividad" className="mt-0">
+          <ProductivityDashboard />
+        </TabsContent>
+
+        <TabsContent value="reportes" className="mt-0">
+          <DailyReportsView />
+        </TabsContent>
+
+        <TabsContent value="config" className="mt-0 space-y-0">
+          <div>
 
       {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
         <motion.div {...fadeUp} className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
@@ -236,6 +401,106 @@ export default function AdminTab() {
             )}
           </motion.div>
 
+          {/* AI API Key */}
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Sparkles size={16} className="text-violet-500" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Clave API de IA (DashScope)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Habilita guiones de llamada, sugerencias y perfiles de cliente con IA</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex gap-3 items-center">
+              <div className="relative flex-1">
+                <input
+                  type={showAiKey ? 'text' : 'password'}
+                  value={aiKey}
+                  onChange={e => setAiKey(e.target.value)}
+                  placeholder="Pega aquí tu clave de DashScope (sk-...)"
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                />
+                <button type="button" onClick={() => setShowAiKey(!showAiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showAiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button onClick={saveAiKey} disabled={savingAiKey || aiKey === aiKeySaved}
+                className="h-10 px-4 rounded-lg bg-violet-600 text-white text-sm font-medium flex items-center gap-2 hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingAiKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Guardar
+              </button>
+            </div>
+            {aiKeySaved && (
+              <div className="px-5 pb-4 flex items-center justify-between">
+                <span className="text-xs text-green flex items-center gap-1">
+                  <CheckCircle2 size={12} /> Clave IA configurada
+                </span>
+                <button onClick={testAiConnection} disabled={testingAi}
+                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-violet-500" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Sparkles size={12} />}
+                  {testingAi ? 'Probando…' : aiTestResult === 'ok' ? 'IA OK' : aiTestResult === 'fail' ? 'Falló' : 'Probar IA'}
+                </button>
+              </div>
+            )}
+          </motion.div>
+
+          {/* Dropi Session Token (buyer fingerprint) */}
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.03 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Fingerprint size={16} className="text-cyan-500" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Huella del comprador (Dropi)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Token de sesión para consultar historial del cliente en todas las tiendas Dropi</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 flex gap-3 items-center">
+              <div className="relative flex-1">
+                <input
+                  type={showSession ? 'text' : 'password'}
+                  value={dropiSession}
+                  onChange={e => setDropiSession(e.target.value)}
+                  placeholder="Pega aquí el token de sesión de Dropi"
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                />
+                <button type="button" onClick={() => setShowSession(!showSession)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showSession ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button onClick={saveDropiSession} disabled={savingSession || dropiSession === dropiSessionSaved}
+                className="h-10 px-4 rounded-lg bg-cyan-600 text-white text-sm font-medium flex items-center gap-2 hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingSession ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Guardar
+              </button>
+            </div>
+            <div className="px-5 pb-4">
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground transition-colors">Como obtener el token</summary>
+                <ol className="mt-2 ml-4 list-decimal space-y-1 leading-relaxed">
+                  <li>Abre <strong>app.dropi.co</strong> y asegurate de estar logueado</li>
+                  <li>Presiona <strong>F12</strong> para abrir las herramientas del navegador</li>
+                  <li>Ve a la pestana <strong>Console</strong> (Consola)</li>
+                  <li>Escribe: <code className="bg-muted px-1 rounded">JSON.parse(localStorage.getItem('DROPI_token'))</code></li>
+                  <li>Copia el texto que aparece (empieza con <code className="bg-muted px-1 rounded">eyJ...</code>)</li>
+                  <li>Pegalo aqui y dale <strong>Guardar</strong></li>
+                </ol>
+                <p className="mt-2 text-yellow-600 dark:text-yellow-400">Este token expira cada dia. Si la huella deja de funcionar, repite estos pasos.</p>
+              </details>
+            </div>
+            {dropiSessionSaved && (
+              <div className="px-5 pb-4 flex items-center justify-between border-t border-border pt-3">
+                <span className="text-xs text-green flex items-center gap-1">
+                  <CheckCircle2 size={12} /> Token configurado
+                </span>
+                <button onClick={testDropiFingerprint} disabled={testingSession}
+                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  {testingSession ? <Loader2 size={12} className="animate-spin" /> : sessionTestResult === 'ok' ? <Fingerprint size={12} className="text-cyan-500" /> : sessionTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Fingerprint size={12} />}
+                  {testingSession ? 'Probando…' : sessionTestResult === 'ok' ? 'Huella OK' : sessionTestResult === 'fail' ? 'Fallo' : 'Probar huella'}
+                </button>
+              </div>
+            )}
+          </motion.div>
+
           <SyncPanel onSyncComplete={() => { setSyncKey(k => k + 1); loadFailedSyncs(); }} />
 
           <SyncHistory key={syncKey} />
@@ -272,6 +537,10 @@ export default function AdminTab() {
           <ReportsTable />
         </div>
       )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
+

@@ -21,7 +21,8 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
       .select('value')
       .eq('key', 'dropi_store_url')
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) console.error('Error loading store URL:', error.message);
         if (data?.value) {
           setStoreUrl(data.value);
           setStoreUrlSaved(true);
@@ -63,8 +64,8 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
         toast.success(r.message || `${r.synced} pedidos sincronizados`);
         onSyncComplete?.();
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Error de sincronización');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error de sincronización');
     } finally {
       setSyncing(false);
     }

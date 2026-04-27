@@ -38,6 +38,42 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log: {
+        Row: {
+          changed_fields: string[] | null
+          created_at: string
+          id: string
+          new_data: Json | null
+          old_data: Json | null
+          operation: string
+          row_id: string
+          table_name: string
+          user_id: string | null
+        }
+        Insert: {
+          changed_fields?: string[] | null
+          created_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation: string
+          row_id: string
+          table_name: string
+          user_id?: string | null
+        }
+        Update: {
+          changed_fields?: string[] | null
+          created_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation?: string
+          row_id?: string
+          table_name?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       daily_reports: {
         Row: {
           created_at: string
@@ -100,9 +136,85 @@ export type Database = {
           },
         ]
       }
+      operator_daily_reports: {
+        Row: {
+          closing_at: string | null
+          closing_cancelados: number | null
+          closing_confirmados: number | null
+          closing_noresp: number | null
+          closing_notes: string | null
+          closing_pending_tomorrow: number | null
+          created_at: string
+          id: string
+          opening_at: string | null
+          opening_guides_yesterday: number | null
+          opening_new_orders: number | null
+          opening_notes: string | null
+          opening_pending_yesterday: number | null
+          report_date: string
+          user_id: string
+        }
+        Insert: {
+          closing_at?: string | null
+          closing_cancelados?: number | null
+          closing_confirmados?: number | null
+          closing_noresp?: number | null
+          closing_notes?: string | null
+          closing_pending_tomorrow?: number | null
+          created_at?: string
+          id?: string
+          opening_at?: string | null
+          opening_guides_yesterday?: number | null
+          opening_new_orders?: number | null
+          opening_notes?: string | null
+          opening_pending_yesterday?: number | null
+          report_date: string
+          user_id: string
+        }
+        Update: {
+          closing_at?: string | null
+          closing_cancelados?: number | null
+          closing_confirmados?: number | null
+          closing_noresp?: number | null
+          closing_notes?: string | null
+          closing_pending_tomorrow?: number | null
+          created_at?: string
+          id?: string
+          opening_at?: string | null
+          opening_guides_yesterday?: number | null
+          opening_new_orders?: number | null
+          opening_notes?: string | null
+          opening_pending_yesterday?: number | null
+          report_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      operator_pool: {
+        Row: {
+          active: boolean
+          created_at: string
+          slot: number
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          slot: number
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          slot?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       order_results: {
         Row: {
           created_at: string
+          dropi_sync_status: string
           id: string
           module: string
           operator_id: string
@@ -111,10 +223,12 @@ export type Database = {
           reason: string | null
           result: string
           result_date: string
+          result_notes: string | null
           result_time: string | null
         }
         Insert: {
           created_at?: string
+          dropi_sync_status?: string
           id?: string
           module?: string
           operator_id: string
@@ -123,10 +237,12 @@ export type Database = {
           reason?: string | null
           result: string
           result_date?: string
+          result_notes?: string | null
           result_time?: string | null
         }
         Update: {
           created_at?: string
+          dropi_sync_status?: string
           id?: string
           module?: string
           operator_id?: string
@@ -135,6 +251,7 @@ export type Database = {
           reason?: string | null
           result?: string
           result_date?: string
+          result_notes?: string | null
           result_time?: string | null
         }
         Relationships: [
@@ -159,6 +276,7 @@ export type Database = {
           dias: number | null
           dias_conf: number | null
           direccion: string | null
+          email: string | null
           estado: string | null
           external_id: string | null
           fecha: string | null
@@ -166,6 +284,10 @@ export type Database = {
           flete: number | null
           guia: string | null
           id: string
+          last_edit_sync_at: string | null
+          last_edited_by: string | null
+          locked_at: string | null
+          locked_by: string | null
           nombre: string
           novedad: string | null
           novedad_sol: boolean | null
@@ -189,6 +311,7 @@ export type Database = {
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
+          email?: string | null
           estado?: string | null
           external_id?: string | null
           fecha?: string | null
@@ -196,6 +319,10 @@ export type Database = {
           flete?: number | null
           guia?: string | null
           id?: string
+          last_edit_sync_at?: string | null
+          last_edited_by?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
           nombre: string
           novedad?: string | null
           novedad_sol?: boolean | null
@@ -219,6 +346,7 @@ export type Database = {
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
+          email?: string | null
           estado?: string | null
           external_id?: string | null
           fecha?: string | null
@@ -226,6 +354,10 @@ export type Database = {
           flete?: number | null
           guia?: string | null
           id?: string
+          last_edit_sync_at?: string | null
+          last_edited_by?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
           nombre?: string
           novedad?: string | null
           novedad_sol?: boolean | null
@@ -353,12 +485,169 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_daily_reports: {
+        Args: { p_date: string }
+        Returns: {
+          cancelados: number
+          closing_at: string
+          closing_notes: string
+          confirmados: number
+          display_name: string
+          noresp: number
+          opening_at: string
+          opening_guides_yesterday: number
+          opening_new_orders: number
+          opening_notes: string
+          opening_pending_yesterday: number
+          status: string
+          tasa_confirmacion: number
+          user_id: string
+        }[]
+      }
+      admin_daily_reports_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          cancelados: number
+          confirmados: number
+          fecha: string
+          guias_apertura: number
+          hora: string
+          noresp: number
+          notas: string
+          operadora: string
+          pct_cancelados: number
+          pct_confirmacion: number
+          pedidos_nuevos: number
+          pendientes_ayer: number
+          pendientes_manana: number
+          tipo: string
+          total_gestionados: number
+        }[]
+      }
+      claim_order: {
+        Args: { p_order_id: string }
+        Returns: {
+          assigned_to: string | null
+          cantidad: number | null
+          ciudad: string | null
+          costo_dev: number | null
+          costo_prod: number | null
+          created_at: string
+          departamento: string | null
+          dias: number | null
+          dias_conf: number | null
+          direccion: string | null
+          email: string | null
+          estado: string | null
+          external_id: string | null
+          fecha: string | null
+          fecha_conf: string | null
+          flete: number | null
+          guia: string | null
+          id: string
+          last_edit_sync_at: string | null
+          last_edited_by: string | null
+          locked_at: string | null
+          locked_by: string | null
+          nombre: string
+          novedad: string | null
+          novedad_sol: boolean | null
+          phone: string
+          producto: string | null
+          tags: string | null
+          tienda: string | null
+          transportadora: string | null
+          upload_date: string
+          uploaded_by: string
+          valor: number | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "orders"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
+      get_daily_operator_stats: {
+        Args: { p_date: string }
+        Returns: {
+          canc: number
+          conf: number
+          display_name: string
+          noresp: number
+          operator_id: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      opening_report_status: {
+        Args: never
+        Returns: {
+          has_closing: boolean
+          has_opening: boolean
+        }[]
+      }
+      operator_productivity_stats: {
+        Args: { p_range?: string }
+        Returns: {
+          cancelados: number
+          confirmados: number
+          display_name: string
+          noresp: number
+          novedades_resueltas: number
+          operator_id: string
+          tasa_confirmacion: number
+          tasa_contacto: number
+          total_atendidos: number
+        }[]
+      }
+      operator_today_tasa: {
+        Args: never
+        Returns: {
+          cancelados: number
+          confirmados: number
+          noresp: number
+          tasa_confirmacion: number
+          total: number
+        }[]
+      }
+      pending_retry_list: {
+        Args: never
+        Returns: {
+          attempts: number
+          external_id: string
+          nombre: string
+          phone: string
+        }[]
+      }
+      pending_tomorrow_count: { Args: never; Returns: number }
+      release_order: { Args: { p_order_id: string }; Returns: undefined }
+      submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
+      submit_opening_report: {
+        Args: {
+          p_guides_yesterday: number
+          p_new_orders: number
+          p_notes?: string
+          p_pending_yesterday: number
+        }
+        Returns: undefined
+      }
+      today_call_stats: {
+        Args: never
+        Returns: {
+          cancelados: number
+          confirmados: number
+          noresp: number
+          pending_tomorrow: number
+          tasa_conf: number
+          total: number
+        }[]
       }
     }
     Enums: {

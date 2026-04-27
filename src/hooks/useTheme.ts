@@ -6,8 +6,9 @@ export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'dark';
     const stored = localStorage.getItem('theme') as Theme;
-    if (stored) return stored;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    // Default to dark — operators work in dark mode all day
+    if (stored === 'light' || stored === 'dark') return stored;
+    return 'dark';
   });
 
   useEffect(() => {
