@@ -574,7 +574,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           `Ciudades: ${[...new Set(orders.map(o => o.ciudad).filter(Boolean))].join(', ') || 'N/A'}`,
           `Transportadoras usadas: ${[...new Set(orders.map(o => o.transportadora).filter(Boolean))].join(', ')}`,
           `Pedidos con novedad: ${novedades}`,
-          `Valor promedio: $${Math.round(orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length).toLocaleString()}`,
+          `Valor promedio: ${formatCOP(Math.round(orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length))}`,
         ].join('\n');
         return (
           <div className="px-5 py-3 border-b border-border">
