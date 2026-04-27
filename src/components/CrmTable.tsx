@@ -320,31 +320,31 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   // ──────────────────────────────────────────────────────────────────
   // Anti-parpadeo / anti scroll-jump.
   // El padre (OrderProvider) refresca `dataProp` cuando llegan eventos
-  // de realtime o termina el cron de Dropi (cada 1 min). Si la
+  // de realtime o termina el cron de Dropi (cada 5 min). Si la
   // operadora está scrolleando o leyendo, ese refresh reordena cards
   // bajo su scroll y le hace perder el sitio.
   //
-  // `data` (state local) se desincroniza temporalmente de `dataProp`
-  // si la operadora estuvo activa en los últimos 4 s. Mientras tanto
-  // bufferizamos en `pendingDataRef` y mostramos un banner discreto
-  // con el conteo de cambios. Cuando deja de moverse 4 s, aplicamos
-  // automáticamente; también puede aplicar manual con el banner.
+  // Modelo:
+  //  - Mientras la operadora está activa (mouse, teclado, scroll en
+  //    los últimos 30 s), bufferizamos cambios en `pendingDataRef` y
+  //    mostramos banner con el conteo.
+  //  - Cuando lleva 30 s quieta (pausa real, ya soltó la cola), un
+  //    setInterval chequea y aplica el buffer automáticamente — la
+  //    lista vuelve a estar al día sin que ella tenga que clicar.
+  //  - Click manual en el banner aplica al instante.
+  //
+  // 30 s es el balance: suficiente para una pausa de pensar / leer un
+  // nombre / atender un mensaje breve sin que la lista salte bajo el
+  // cursor; corto suficiente para que tras una pausa real (atender
+  // llamada externa, tomar agua) los datos no queden congelados.
   // ──────────────────────────────────────────────────────────────────
-  // 5 minutos: tan grande que la operadora puede tomar pausas largas
-  // (atender una llamada externa, tomar agua) sin que la lista se
-  // reordene bajo su cursor. Sin auto-apply (más abajo) este número
-  // es un piso defensivo — los datos solo se aplican con click manual.
-  const QUIET_WINDOW_MS = 5 * 60 * 1000;
+  const QUIET_WINDOW_MS = 30 * 1000;
   const [data, setData] = useState<OrderData[]>(dataProp);
   const [pendingChanges, setPendingChanges] = useState(0);
-  // CRÍTICO: inicializar en Date.now(), NO en 0. Si arrancara en 0,
-  // `Date.now() - 0 ≈ 1.7e12 ms` siempre es mayor que QUIET_WINDOW_MS,
-  // lo que hacía `isQuiet=true` desde el primer render → la lista se
-  // aplicaba al toque cada vez que llegaba un realtime push, antes
-  // de que la operadora hiciera scroll y disparara bumpActivity.
-  // Resultado: parpadeo constante reportado como "no deja hacer nada".
-  // Con Date.now() la operadora entra "activa" y la lista queda
-  // congelada hasta que pulse el banner.
+  // CRÍTICO: inicializar en Date.now() (no en 0). Si arranca en 0,
+  // `Date.now() - 0` siempre es mayor que QUIET_WINDOW_MS, lo que
+  // hacía `isQuiet=true` desde el primer render y la lista aplicaba
+  // al toque cada realtime push antes de que disparara bumpActivity.
   const lastActivityRef = useRef<number>(Date.now());
   const pendingDataRef = useRef<OrderData[] | null>(null);
   const dataRef = useRef<OrderData[]>(data);
@@ -391,15 +391,48 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     setPendingChanges(diffCount);
   }, [dataProp]);
 
-  // Auto-apply REMOVIDO. Antes había un setInterval que aplicaba el
-  // buffer cuando la operadora pasaba >4s sin actividad — pero cualquier
-  // pausa breve para leer un nombre o pensar la siguiente acción
-  // disparaba el reorder, y la lista "saltaba" bajo el cursor justo
-  // cuando ella iba a hacer click. La operadora reportó que "se
-  // pierde el trabajo".
+  // Listener global de actividad: cualquier mouse, teclado o touch en
+  // toda la página resetea el contador. Sin esto solo escuchábamos
+  // scroll dentro de las columnas, así que tipear en otro input o mover
+  // el mouse no contaba como "activa" y la lista podía aplicar mientras
+  // la operadora estaba a punto de hacer click.
   //
-  // Ahora: el banner aparece y se queda hasta que ella decida aplicar
-  // con click. Cero auto-apply. Cero parpadeo durante el trabajo.
+  // mousemove se throttlea a 250ms para no flood-ear el ref en cada
+  // frame; los demás eventos son discretos así que disparan directo.
+  useEffect(() => {
+    let lastMouseMove = 0;
+    const onActivity = () => bumpActivity();
+    const onMouseMove = () => {
+      const now = Date.now();
+      if (now - lastMouseMove < 250) return;
+      lastMouseMove = now;
+      lastActivityRef.current = now;
+    };
+    window.addEventListener('keydown', onActivity);
+    window.addEventListener('mousedown', onActivity);
+    window.addEventListener('touchstart', onActivity);
+    window.addEventListener('mousemove', onMouseMove);
+    return () => {
+      window.removeEventListener('keydown', onActivity);
+      window.removeEventListener('mousedown', onActivity);
+      window.removeEventListener('touchstart', onActivity);
+      window.removeEventListener('mousemove', onMouseMove);
+    };
+  }, [bumpActivity]);
+
+  // Auto-apply: cuando la operadora deja de moverse durante
+  // QUIET_WINDOW_MS y hay cambios pendientes, los aplicamos. Chequeo
+  // cada 2s para que el reorder llegue rápido tras la pausa pero sin
+  // CPU extra.
+  useEffect(() => {
+    if (pendingChanges === 0) return;
+    const t = setInterval(() => {
+      if (Date.now() - lastActivityRef.current >= QUIET_WINDOW_MS) {
+        applyPendingNow();
+      }
+    }, 2000);
+    return () => clearInterval(t);
+  }, [pendingChanges, applyPendingNow]);
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
