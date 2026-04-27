@@ -334,7 +334,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       if (order.externalId) {
         const toastId = `dropi-${order.externalId}`;
         const insertedResultId = insertedResult?.id;
-        toast.loading('Dropi: actualizando…', { id: toastId });
+        // H9: toast unificado. CallView ya no muestra `toast.success("Confirmado")`
+        // para conf — aquí mostramos el flujo entero (loading → ok/error)
+        // con el mismo toastId, evitando toasts contradictorios.
+        toast.loading(`Confirmando — ${order.nombre.split(' ')[0]}…`, { id: toastId });
 
         const markDropiFailure = async (errMsg: string) => {
           if (revertedRef.current) return;
@@ -364,7 +367,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               const msg = res?.error?.message || data?.error || 'Error desconocido';
               markDropiFailure(msg);
             } else {
-              toast.success('Dropi OK', { id: toastId, duration: 2500 });
+              toast.success(`Confirmado — ${order.nombre.split(' ')[0]}`, { id: toastId, duration: 2500 });
             }
           })
           .catch((err: unknown) => {

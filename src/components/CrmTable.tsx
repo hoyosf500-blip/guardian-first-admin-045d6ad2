@@ -385,29 +385,36 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     const phones = [...new Set(data.map(o => o.phone))];
     const prefix = module === 'SEG' ? 'SEG' : 'RESCUE';
 
+    // H10: cancelled flag — el effect re-corre cada vez que `data` cambia
+    // (cada minuto del cron Dropi). Sin cancelación, llamadas viejas en
+    // vuelo hacen setState sobre data que el componente ya descartó, o
+    // peor sobre el componente desmontado. Cada batch siguiente chequea.
+    let cancelled = false;
+
     const fetchAllTouchpoints = async () => {
       const allTp: Touchpoint[] = [];
       for (let i = 0; i < phones.length; i += 100) {
+        if (cancelled) return allTp;
         const batch = phones.slice(i, i + 100);
-        // Fix 20: limitar columnas + cap por batch para evitar N+1 explosivo
         const { data: tp } = await supabase.from('touchpoints')
           .select('id, phone, action, action_date, action_time, operator_id, created_at')
           .in('phone', batch)
           .order('created_at', { ascending: false })
           .limit(20 * batch.length);
+        if (cancelled) return allTp;
         if (tp) allTp.push(...(tp as Touchpoint[]));
       }
       return allTp;
     };
 
     fetchAllTouchpoints().then(allTp => {
+      if (cancelled) return;
       setAllTouchpoints(allTp);
       const moduleTp = allTp.filter(t =>
         t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`)
       );
       setTouchpoints(moduleTp);
 
-      // Último touchpoint por teléfono
       const latestByPhone: Record<string, { action: string; when: number }> = {};
       moduleTp.forEach(t => {
         const when = new Date(t.created_at).getTime();
@@ -417,7 +424,6 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
         }
       });
 
-      // Snooze vivo por pedido: según SLA de la acción usada
       const nowMs = Date.now();
       const snoozed: Record<string, string> = {};
       data.forEach(o => {
@@ -436,9 +442,12 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     });
 
     supabase.from('profiles').select('user_id, display_name').then(({ data: p, error }) => {
+      if (cancelled) return;
       if (error) console.error('Error loading profiles:', error.message);
       if (p) setProfiles(p);
     });
+
+    return () => { cancelled = true; };
   }, [data, module]);
 
   // C3: lista de admins. Pedidos con assigned_to apuntando a admin se

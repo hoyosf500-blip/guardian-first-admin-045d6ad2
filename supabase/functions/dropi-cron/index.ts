@@ -131,7 +131,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   const movements = (o.servientrega_movements as Array<Record<string, unknown>>) || [];
   const lastMovement = movements.length > 0 ? String(movements[movements.length - 1]?.description || movements[movements.length - 1]?.status || "") : "";
   const novedad = novedadServ || lastMovement;
-  const notes = o.notes ? String(o.notes) : "";
+  // H6: notes ya no se mete en `novedad` (confundía operadoras).
 
   const tags = Array.isArray(o.tags)
     ? (o.tags as Array<Record<string, unknown>>).map((t) => String(t.name || t)).filter(Boolean).join(", ")
@@ -164,7 +164,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
     costo_dev: parseFloat(String(o.discounted_amount || "0")) || 0,
     cantidad: Math.round(cantidad),
     direccion: String(o.dir || ""),
-    novedad: novedad || notes,
+    novedad,
     guia,
     transportadora,
     tags,

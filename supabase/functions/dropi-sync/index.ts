@@ -133,8 +133,12 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   const lastMovement = movements.length > 0 ? String(movements[movements.length - 1]?.description || movements[movements.length - 1]?.status || "") : "";
   const novedad = novedadServ || lastMovement;
 
-  // Notes
-  const notes = o.notes ? String(o.notes) : "";
+  // H6: Antes el campo `novedad` recibía `notes` cuando no había
+  // novedad real de transportadora — eso metía comentarios internos
+  // ("cliente VIP, llamar después") en el campo que la operadora
+  // interpreta como incidencia y abría flujos equivocados de Rescate.
+  // Ahora `novedad` solo lleva la novedad real; los notes se descartan
+  // del mapeo (no hay campo dedicado en orders).
 
   // Tags
   const tags = Array.isArray(o.tags) 
@@ -175,7 +179,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
     costo_dev: parseFloat(String(o.discounted_amount || "0")) || 0,
     cantidad: Math.round(cantidad),
     direccion: String(o.dir || ""),
-    novedad: novedad || notes,
+    novedad,
     guia,
     transportadora,
     tags,

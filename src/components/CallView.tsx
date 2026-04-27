@@ -150,11 +150,16 @@ export default function CallView({ items }: Props) {
     // markResult ya libera el lock vía release_order RPC.
     // Llamarlo dos veces causaba un PATCH redundante a /orders.
     setShowCancelModal(false);
-    toast.success(
-      result === 'conf' ? `Confirmado — ${o.nombre.split(' ')[0]}` :
-      result === 'canc' ? `Cancelado — ${o.nombre.split(' ')[0]}` :
-      `No respondió — ${o.nombre.split(' ')[0]}`,
-    );
+    // H9: Para `result === 'conf'` el toast lo maneja `markResult` con
+    // el flujo unificado de Dropi sync (loading → success/error con
+    // mismo toastId), evitando ver simultáneamente "Confirmado ✅" y
+    // "Dropi falló ⚠️" cuando la sincronización con Dropi falla.
+    if (result !== 'conf') {
+      toast.success(
+        result === 'canc' ? `Cancelado — ${o.nombre.split(' ')[0]}` :
+        `No respondió — ${o.nombre.split(' ')[0]}`,
+      );
+    }
     setTimeout(() => {
       const next = items.find((item, i) => i > callIdx && !item.result);
       const k = orderKey(next);
