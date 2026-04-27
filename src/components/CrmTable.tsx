@@ -722,6 +722,7 @@ interface OrderCardProps {
   onToggle: () => void;
   onAction: (action: string) => void;
   currentUserId: string | undefined;
+  adminIds: string[];
   actions: string[];
   touchpoints: Touchpoint[];
   /** Todos los touchpoints del teléfono (cross-modular) — para el badge de contactos */
