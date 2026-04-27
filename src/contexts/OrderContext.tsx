@@ -329,6 +329,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       result_date: today,
       result_time: now,
       dropi_sync_status: 'synced',
+      // Sin esto, `operator_productivity_stats` no contaba las
+      // confirmaciones (filtra por r.module='confirmar') y el panel
+      // de admin → Productividad mostraba "Sin actividad en este rango"
+      // aunque las operadoras hubieran confirmado pedidos todo el día.
+      module: 'confirmar',
     }).select('id').single();
 
     if (!error && result === 'conf' && order.dbId) {
