@@ -4,6 +4,7 @@ import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { toast } from 'sonner';
+import { copyToClipboard } from '@/lib/clipboard';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -82,7 +83,7 @@ export default function NovedadView({ items }: Props) {
   const isResolving = o.result === 'resolving';
 
   const copyPhone = () => {
-    navigator.clipboard.writeText(o.phone).then(() => toast.success(`${o.phone} copiado`));
+    void copyToClipboard(o.phone, `${o.phone} copiado`);
   };
 
   const navCall = (dir: number) => {

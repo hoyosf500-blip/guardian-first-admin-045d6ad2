@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
 import { toast } from 'sonner';
+import { copyToClipboard } from '@/lib/clipboard';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
   Package, Clock, Calendar, DollarSign, FileText, AlertTriangle, RefreshCw,
@@ -336,7 +337,7 @@ export default function OrderDetailPage() {
           <h2 className="text-lg font-bold text-foreground truncate">{order.nombre}</h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-mono">ID: {order.external_id}</span>
-            <button onClick={() => { navigator.clipboard.writeText(order.external_id || ''); toast.success('ID copiado'); }} aria-label="Copiar ID del pedido">
+            <button onClick={() => { void copyToClipboard(order.external_id || '', 'ID copiado'); }} aria-label="Copiar ID del pedido">
               <Copy size={10} />
             </button>
           </div>
@@ -621,7 +622,7 @@ function InfoRow({ icon, label, value, copyable, highlight }: { icon: React.Reac
         <div className={`text-xs truncate ${highlight ? 'font-bold text-success' : 'text-foreground'}`}>{value}</div>
       </div>
       {copyable && (
-        <button onClick={() => { navigator.clipboard.writeText(value); toast.success('Copiado'); }}
+        <button onClick={() => { void copyToClipboard(value, 'Copiado'); }}
           className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors">
           <Copy size={10} />
         </button>

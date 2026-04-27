@@ -11,8 +11,29 @@ interface FpData {
   buyerType: string;
 }
 
-/** In-memory cache — avoids re-fetching the same phone across navigations. */
-const fpCache = new Map<string, FpData | null>();
+/**
+ * In-memory cache con TTL de 10 min — evita re-fetch del mismo teléfono
+ * dentro de una misma navegación, pero permite refrescar la huella si el
+ * cliente compra/devuelve algo durante la sesión (operadora trabajando 8h
+ * sin recargar la página).
+ */
+const FP_CACHE_TTL_MS = 10 * 60 * 1000;
+type FpCacheEntry = { value: FpData | null; expires: number };
+const fpCache = new Map<string, FpCacheEntry>();
+
+function getCachedFp(phone: string): FpData | null | undefined {
+  const entry = fpCache.get(phone);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expires) {
+    fpCache.delete(phone);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function setCachedFp(phone: string, value: FpData | null): void {
+  fpCache.set(phone, { value, expires: Date.now() + FP_CACHE_TTL_MS });
+}
 
 /**
  * Unified risk config — uses only 3 tones (success / warning / danger) aligned
@@ -69,14 +90,15 @@ function devolutionColor(): { text: string; fill: string } {
 
 export default function FingerprintBadge({ phone }: { phone: string }) {
   const [data, setData] = useState<FpData | null | undefined>(
-    fpCache.has(phone) ? fpCache.get(phone) : undefined,
+    () => getCachedFp(phone),
   );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!phone) return;
-    if (fpCache.has(phone)) {
-      setData(fpCache.get(phone) ?? null);
+    const cached = getCachedFp(phone);
+    if (cached !== undefined) {
+      setData(cached);
       return;
     }
     let cancelled = false;
@@ -105,10 +127,10 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             returned: gp.lifetime_totals.returned,
             buyerType: gp.buyer_type,
           };
-          fpCache.set(phone, result);
+          setCachedFp(phone, result);
           setData(result);
         } else {
-          fpCache.set(phone, null);
+          setCachedFp(phone, null);
           setData(null);
         }
       } catch {

@@ -5,7 +5,6 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
 import ExcelUploader from '@/components/ExcelUploader';
 import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
@@ -89,6 +88,7 @@ export default function ConfirmarTab({ profile }: Props) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
+        const XLSX = await import('xlsx');
         const wb = XLSX.read(e.target?.result, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[];

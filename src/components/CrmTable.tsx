@@ -6,6 +6,7 @@ import { OrderData, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
+import { copyToClipboard } from '@/lib/clipboard';
 import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
@@ -197,11 +198,15 @@ function classifyOrder(estado: string): string {
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
-  const fechaConf = (order.fechaConf || '').trim();
-  if (fechaConf && fechaConf !== 'undefined') {
-    return calcBusinessDays(fechaConf);
+  // Días hábiles desde el último cambio de estado relevante. Cuando el
+  // pedido todavía no se ha confirmado (fechaConf vacío) caemos a la
+  // fecha de creación para mantener consistencia con CrmCallView, que
+  // ordena pedidos en la misma vista compartida.
+  const baseDate = (order.fechaConf || order.fecha || '').trim();
+  if (baseDate && baseDate !== 'undefined') {
+    return calcBusinessDays(baseDate);
   }
-  return order.diasConf || 0;
+  return order.diasConf || order.dias || 0;
 }
 
 function isExcludedFromDelay(estado: string): boolean {
@@ -863,7 +868,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
             <PhoneIcon size={11} className="flex-shrink-0 text-muted-foreground/70" />
             <span className="truncate font-mono">{o.phone}</span>
           </div>
-          <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.phone); toast.success('Tel copiado'); }}
+          <button onClick={e => { e.stopPropagation(); void copyToClipboard(o.phone, 'Tel copiado'); }}
             className="p-2 rounded-lg bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <Copy size={11} />
           </button>
@@ -935,7 +940,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
               <Tag size={10} className="text-muted-foreground/70 flex-shrink-0" />
               <span className="truncate">{o.guia}</span>
               <button
-                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                onClick={e => { e.stopPropagation(); void copyToClipboard(o.guia, 'Guía copiada'); }}
                 aria-label="Copiar guía"
                 className="flex-shrink-0 rounded p-0.5 transition-colors hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
@@ -947,7 +952,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
                 href={trackUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(o.guia); toast.success('Guía copiada'); }}
+                onClick={e => { e.stopPropagation(); void copyToClipboard(o.guia, 'Guía copiada'); }}
                 aria-label="Abrir rastreo de la transportadora"
                 className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-[11px] font-semibold text-accent shadow-sm transition-colors duration-200 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
               >

@@ -8,6 +8,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 // AI script generator removed — operadoras no lo usaban
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
@@ -168,7 +169,7 @@ export default function CallView({ items }: Props) {
   };
 
   const copyPhone = () => {
-    navigator.clipboard.writeText(o.phone).then(() => toast.success(`${o.phone} copiado`));
+    void copyToClipboard(o.phone, `${o.phone} copiado`);
   };
 
   return (

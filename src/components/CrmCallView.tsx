@@ -6,7 +6,8 @@ import {
   CheckCircle, ExternalLink, User, Clock, Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
+import { copyToClipboard } from '@/lib/clipboard';
+import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, calcBusinessDays } from '@/lib/orderUtils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import { TruncatedText } from '@/components/TruncatedText';
@@ -38,19 +39,14 @@ interface Props {
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
-  // Keep in sync with CrmTable.getOrderStatusAgeDays
+  // Keep in sync with CrmTable.getOrderStatusAgeDays — usa calcBusinessDays
+  // (excluye sábados, domingos y festivos colombianos) en vez de aproximación
+  // *5/7 sobre días calendario, que sub-contaba en semanas con festivos.
   const baseDate = (order.fechaConf || order.fecha || '').trim();
   if (baseDate && baseDate !== 'undefined') {
-    // We don't re-import calcBusinessDays here; use calendar days as fallback.
-    // The caller (CrmTable) already sorts by this, so ordering is consistent.
-    const parts = baseDate.includes('/') ? baseDate.split('/') : null;
-    if (parts && parts.length === 3) {
-      const d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}T00:00:00`);
-      const diff = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-      return Math.max(0, Math.round(diff * 5 / 7));
-    }
+    return calcBusinessDays(baseDate);
   }
-  return Math.round((order.diasConf || order.dias || 0) * 5 / 7);
+  return order.diasConf || order.dias || 0;
 }
 
 function isExcludedFromDelay(estado: string): boolean {
@@ -149,11 +145,11 @@ export default function CrmCallView({
   };
 
   const copyPhone = () => {
-    navigator.clipboard.writeText(o.phone).then(() => toast.success(`${o.phone} copiado`));
+    void copyToClipboard(o.phone, `${o.phone} copiado`);
   };
   const copyGuia = () => {
     if (!o.guia) return;
-    navigator.clipboard.writeText(o.guia).then(() => toast.success('Guía copiada'));
+    void copyToClipboard(o.guia, 'Guía copiada');
   };
 
   const pColor = diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : diasEnEstatus >= 2 ? 'text-orange-400' : 'text-green-500';

@@ -6,6 +6,7 @@ import { bogotaToday } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
+import { copyToClipboard } from '@/lib/clipboard';
 import {
   CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare,
   Download, TrendingUp, TrendingDown, Minus, Package, ChevronDown,
@@ -302,8 +303,10 @@ export default function DashboardTab() {
     else toast.success('Cierre enviado correctamente');
   };
   const copiarResumen = () => {
-    navigator.clipboard.writeText(`Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTasa: ${tasa}%\nPendientes: ${pendLeft}\nTotal: ${total}`)
-      .then(() => toast.success('Copiado al portapapeles'));
+    void copyToClipboard(
+      `Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTasa: ${tasa}%\nPendientes: ${pendLeft}\nTotal: ${total}`,
+      'Copiado al portapapeles',
+    );
   };
   const enviarWA = () => {
     window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal: ${total} | Tasa: ${tasa}%\nPendientes: ${pendLeft}`)}`, '_blank');
