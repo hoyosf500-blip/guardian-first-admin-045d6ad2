@@ -405,6 +405,21 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       await supabase.from('touchpoints').delete().eq('id', touchpointId);
     }
 
+    // Fix 6: si revertimos una confirmación, también devolvemos el estado
+    // del pedido a PENDIENTE CONFIRMACION para que vuelva a aparecer en la
+    // cola. Antes el order_results se borraba pero estado quedaba en
+    // 'PENDIENTE' y la operadora veía el pedido marcado como ya gestionado.
+    if (result === 'conf' && order.dbId) {
+      await supabase.from('orders')
+        .update({ estado: 'PENDIENTE CONFIRMACION' })
+        .eq('id', order.dbId);
+      setWorkQueue(prev => prev.map(o =>
+        o.dbId === order.dbId
+          ? { ...o, estado: 'PENDIENTE CONFIRMACION' }
+          : o
+      ));
+    }
+
     setLastMark(null);
     toast.success('Deshecho');
   }, [lastMark, user]);
