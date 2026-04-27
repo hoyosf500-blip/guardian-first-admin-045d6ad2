@@ -52,7 +52,6 @@ export interface ProductFailure {
 export interface LogisticsFilters {
   fromDate: string;     // YYYY-MM-DD
   toDate: string;       // YYYY-MM-DD
-  minOrders: number;    // default 5
 }
 
 // Type guard runtime — defensivo contra payloads malformados de Supabase.

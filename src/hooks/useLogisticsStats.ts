@@ -1,4 +1,5 @@
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type {
   LogisticsSummary,
@@ -8,7 +9,10 @@ import type {
   LogisticsFilters,
 } from '@/lib/logistics.types';
 
-const STALE_5MIN = 5 * 60 * 1000;
+// Cache corto: las RPCs son agregaciones, queremos data fresca.
+// El realtime subscription (postgres_changes en `orders`) invalida el
+// cache cuando hay cambios reales, así que `staleTime: 60s` es solo un piso.
+const STALE_60S = 60 * 1000;
 
 interface RpcResult<T> {
   data: T[] | null;
@@ -33,8 +37,9 @@ export interface UseLogisticsStatsResult {
 }
 
 export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsResult {
-  const { fromDate, toDate, minOrders } = filters;
-  const baseKey = ['logistics', fromDate, toDate, minOrders] as const;
+  const { fromDate, toDate } = filters;
+  const baseKey = ['logistics', fromDate, toDate] as const;
+  const queryClient = useQueryClient();
 
   const summary = useQuery<LogisticsSummary | null>({
     queryKey: [...baseKey, 'summary'],
@@ -45,7 +50,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       });
       return rows[0] ?? null;
     },
-    staleTime: STALE_5MIN,
+    staleTime: STALE_60S,
   });
 
   const carriers = useQuery<CarrierStats[]>({
@@ -53,9 +58,8 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
     queryFn: () => callRpc<CarrierStats>('logistics_by_carrier', {
       p_from_date: fromDate,
       p_to_date: toDate,
-      p_min_orders: minOrders,
     }),
-    staleTime: STALE_5MIN,
+    staleTime: STALE_60S,
   });
 
   const cities = useQuery<CityReturns[]>({
@@ -63,10 +67,9 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
     queryFn: () => callRpc<CityReturns>('logistics_by_city', {
       p_from_date: fromDate,
       p_to_date: toDate,
-      p_min_orders: minOrders,
       p_limit: 50,
     }),
-    staleTime: STALE_5MIN,
+    staleTime: STALE_60S,
   });
 
   const products = useQuery<ProductFailure[]>({
@@ -74,11 +77,35 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
     queryFn: () => callRpc<ProductFailure>('logistics_by_product', {
       p_from_date: fromDate,
       p_to_date: toDate,
-      p_min_orders: minOrders,
       p_limit: 50,
     }),
-    staleTime: STALE_5MIN,
+    staleTime: STALE_60S,
   });
+
+  // Realtime: cualquier cambio en `orders` invalida los 4 queries
+  // de logística. Debounce de 1.5s para coalescer ráfagas (ej. el
+  // cron de Dropi sincronizando 100 filas en 2 segundos).
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const channel = supabase
+      .channel(`logistics-rt-${fromDate}-${toDate}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ['logistics'] });
+            debounceRef.current = null;
+          }, 1500);
+        },
+      )
+      .subscribe();
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [queryClient, fromDate, toDate]);
 
   return {
     summary, carriers, cities, products,

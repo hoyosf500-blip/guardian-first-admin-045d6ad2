@@ -11,10 +11,17 @@ interface Props {
   onChange: (next: Range) => void;
 }
 
-const PRESETS: { label: string; days: number }[] = [
+// `days = null` significa "Histórico" (desde el inicio de los registros
+// hasta hoy). Usamos 2020-01-01 como ancla — Dropi Colombia empezó a
+// operar bastante después, así que cubre todo el histórico real.
+const HISTORICO_FROM = '2020-01-01';
+
+const PRESETS: { label: string; days: number | null }[] = [
   { label: '7d', days: 7 },
   { label: '30d', days: 30 },
   { label: '90d', days: 90 },
+  { label: '365d', days: 365 },
+  { label: 'Histórico', days: null },
 ];
 
 function isoDate(d: Date): string {
@@ -22,19 +29,26 @@ function isoDate(d: Date): string {
 }
 
 export default memo(function DateRangeFilter({ value, onChange }: Props) {
-  const applyPreset = useCallback((days: number) => {
+  const applyPreset = useCallback((days: number | null) => {
     const to = new Date();
+    if (days == null) {
+      onChange({ fromDate: HISTORICO_FROM, toDate: isoDate(to) });
+      return;
+    }
     const from = new Date(to);
     from.setDate(from.getDate() - days);
     onChange({ fromDate: isoDate(from), toDate: isoDate(to) });
   }, [onChange]);
 
   // Detecta cuál preset coincide para resaltar.
+  const today = isoDate(new Date());
   const activePreset = PRESETS.find(p => {
+    if (p.days == null) {
+      return value.fromDate === HISTORICO_FROM && value.toDate === today;
+    }
     const expectedFrom = new Date();
     expectedFrom.setDate(expectedFrom.getDate() - p.days);
-    return isoDate(expectedFrom) === value.fromDate
-        && isoDate(new Date()) === value.toDate;
+    return isoDate(expectedFrom) === value.fromDate && today === value.toDate;
   })?.label;
 
   return (

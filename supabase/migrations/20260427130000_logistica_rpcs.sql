@@ -19,6 +19,18 @@
 --
 -- Aplicar con `supabase db push`. Idempotente (CREATE OR REPLACE +
 -- CREATE INDEX IF NOT EXISTS).
+--
+-- v2 (post Lovable Cloud testing): se removieron los parámetros
+-- `p_min_orders` y los `HAVING COUNT(*) >= ...` — el usuario quiere ver
+-- TODA la data sin filtrar por ruido. Si el plan original ya se aplicó
+-- en algún entorno, los DROP FUNCTION de abajo limpian las versiones
+-- viejas. CREATE OR REPLACE FUNCTION no puede cambiar parámetros, por
+-- eso DROP+CREATE.
+
+-- Limpieza de versiones previas (v1) si existen.
+DROP FUNCTION IF EXISTS public.logistics_by_carrier(DATE, DATE, INTEGER);
+DROP FUNCTION IF EXISTS public.logistics_by_city(DATE, DATE, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS public.logistics_by_product(DATE, DATE, INTEGER, INTEGER);
 
 -- ─────────────────────────────────────────────────────────────────
 -- Índices parciales para soportar GROUP BY de las RPCs
@@ -111,8 +123,7 @@ GRANT EXECUTE ON FUNCTION public.logistics_summary(DATE, DATE) TO authenticated;
 -- ─────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.logistics_by_carrier(
   p_from_date    DATE,
-  p_to_date      DATE,
-  p_min_orders   INTEGER DEFAULT 5
+  p_to_date      DATE
 )
 RETURNS TABLE (
   transportadora   TEXT,
@@ -173,12 +184,11 @@ BEGIN
     AND o.transportadora <> ''
     AND UPPER(o.estado) <> 'CANCELADO'
   GROUP BY o.transportadora
-  HAVING COUNT(*) >= p_min_orders
   ORDER BY entregados DESC;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.logistics_by_carrier(DATE, DATE, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.logistics_by_carrier(DATE, DATE) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────
 -- logistics_by_city — devoluciones por ciudad (Top N)
@@ -186,7 +196,6 @@ GRANT EXECUTE ON FUNCTION public.logistics_by_carrier(DATE, DATE, INTEGER) TO au
 CREATE OR REPLACE FUNCTION public.logistics_by_city(
   p_from_date    DATE,
   p_to_date      DATE,
-  p_min_orders   INTEGER DEFAULT 5,
   p_limit        INTEGER DEFAULT 50
 )
 RETURNS TABLE (
@@ -237,13 +246,12 @@ BEGIN
     AND o.ciudad <> ''
     AND UPPER(o.estado) <> 'CANCELADO'
   GROUP BY o.ciudad, COALESCE(o.departamento, '')
-  HAVING COUNT(*) >= p_min_orders
   ORDER BY tasa_devolucion DESC, total_pedidos DESC
   LIMIT p_limit;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.logistics_by_city(DATE, DATE, INTEGER, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.logistics_by_city(DATE, DATE, INTEGER) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────
 -- logistics_by_product — productos con peor entrega (Top N)
@@ -251,7 +259,6 @@ GRANT EXECUTE ON FUNCTION public.logistics_by_city(DATE, DATE, INTEGER, INTEGER)
 CREATE OR REPLACE FUNCTION public.logistics_by_product(
   p_from_date    DATE,
   p_to_date      DATE,
-  p_min_orders   INTEGER DEFAULT 5,
   p_limit        INTEGER DEFAULT 50
 )
 RETURNS TABLE (
@@ -302,10 +309,9 @@ BEGIN
     AND o.producto <> ''
     AND UPPER(o.estado) <> 'CANCELADO'
   GROUP BY o.producto
-  HAVING COUNT(*) >= p_min_orders
   ORDER BY tasa_entrega ASC, total_pedidos DESC
   LIMIT p_limit;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.logistics_by_product(DATE, DATE, INTEGER, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.logistics_by_product(DATE, DATE, INTEGER) TO authenticated;

@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
-import MinOrdersFilter from '@/components/logistics/MinOrdersFilter';
 import SummaryCards from '@/components/logistics/SummaryCards';
 import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
 import CityReturnsTable from '@/components/logistics/CityReturnsTable';
@@ -12,7 +11,7 @@ import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { Truck, MapPin, Package } from 'lucide-react';
 
-function defaultRange(): { fromDate: string; toDate: string } {
+function defaultRange(): LogisticsFilters {
   const to = new Date();
   const from = new Date(to);
   from.setDate(from.getDate() - 30);
@@ -23,10 +22,7 @@ function defaultRange(): { fromDate: string; toDate: string } {
 }
 
 export default function LogisticaTab() {
-  const [filters, setFilters] = useState<LogisticsFilters>(() => ({
-    ...defaultRange(),
-    minOrders: 5,
-  }));
+  const [filters, setFilters] = useState<LogisticsFilters>(defaultRange);
 
   const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters);
 
@@ -44,16 +40,12 @@ export default function LogisticaTab() {
 
   return (
     <div className="space-y-5">
-      {/* Filtros */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border border-border bg-card rounded-xl p-3.5">
-        <DateRangeFilter
-          value={{ fromDate: filters.fromDate, toDate: filters.toDate }}
-          onChange={r => setFilters(f => ({ ...f, ...r }))}
-        />
-        <MinOrdersFilter
-          value={filters.minOrders}
-          onChange={n => setFilters(f => ({ ...f, minOrders: n }))}
-        />
+      {/* Filtros — solo rango temporal. El "mínimo de pedidos" se removió
+          a pedido del usuario: queremos ver TODA la data sin filtrar por
+          ruido. Real-time subscription en useLogisticsStats invalida el
+          cache cuando hay cambios en `orders`. */}
+      <div className="border border-border bg-card rounded-xl p-3.5">
+        <DateRangeFilter value={filters} onChange={setFilters} />
       </div>
 
       {/* Estados globales */}

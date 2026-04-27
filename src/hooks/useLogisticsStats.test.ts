@@ -19,6 +19,13 @@ vi.mock('@/integrations/supabase/client', () => ({
       }
       return Promise.resolve({ data: [], error: null });
     }),
+    // Mock de la subscripción realtime — el hook llama .channel().on().subscribe()
+    // y al unmount llama removeChannel(). Devolvemos un chain sintético.
+    channel: vi.fn(() => {
+      const ch = { on: vi.fn(() => ch), subscribe: vi.fn(() => ch) };
+      return ch;
+    }),
+    removeChannel: vi.fn(),
   },
 }));
 
@@ -30,7 +37,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => {
 describe('useLogisticsStats', () => {
   it('devuelve summary tras la query', async () => {
     const { result } = renderHook(
-      () => useLogisticsStats({ fromDate: '2026-04-01', toDate: '2026-04-27', minOrders: 5 }),
+      () => useLogisticsStats({ fromDate: '2026-04-01', toDate: '2026-04-27' }),
       { wrapper },
     );
     await waitFor(() => expect(result.current.summary.isSuccess).toBe(true));
@@ -39,7 +46,7 @@ describe('useLogisticsStats', () => {
 
   it('expone loading mientras espera', () => {
     const { result } = renderHook(
-      () => useLogisticsStats({ fromDate: '2026-04-01', toDate: '2026-04-27', minOrders: 5 }),
+      () => useLogisticsStats({ fromDate: '2026-04-01', toDate: '2026-04-27' }),
       { wrapper },
     );
     expect(result.current.summary.isLoading).toBe(true);
