@@ -118,73 +118,209 @@ export default function ProductivityDashboard() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm">Tabla detallada</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-primary" size={20} /></div>
-          ) : rows.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="flex justify-center py-10">
+            <Loader2 className="animate-spin text-primary" size={20} />
+          </CardContent>
+        </Card>
+      ) : rows.length === 0 ? (
+        <Card>
+          <CardContent>
             <p className="text-sm text-muted-foreground text-center py-8">Sin actividad en este rango</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Operadora</TableHead>
-                    <TableHead className="text-right">Confirmados</TableHead>
-                    <TableHead className="text-right">Cancelados</TableHead>
-                    <TableHead className="text-right">No resp.</TableHead>
-                    <TableHead className="text-right">Nov. resueltas</TableHead>
-                    <TableHead className="text-right" title="Acciones / Resueltos en Seguimiento">Seg (acc / res)</TableHead>
-                    <TableHead className="text-right" title="Acciones / Resueltos en Rescate">Resc (acc / res)</TableHead>
-                    <TableHead className="text-right">Atendidos</TableHead>
-                    <TableHead className="text-right">Tasa contacto</TableHead>
-                    <TableHead className="text-right">Tasa confirmación</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map(r => (
-                    <TableRow key={r.operator_id}>
-                      <TableCell className="font-medium">{r.display_name}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/10">
-                          {r.confirmados}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="secondary" className="bg-destructive/10 text-destructive hover:bg-destructive/10">
-                          {r.cancelados}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">{r.noresp}</TableCell>
-                      <TableCell className="text-right">{r.novedades_resueltas}</TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        <span className="text-foreground">{r.seg_acciones}</span>
-                        <span className="text-muted-foreground"> / </span>
-                        <span className="text-emerald-600 dark:text-emerald-400">{r.seg_resueltos}</span>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        <span className="text-foreground">{r.rescate_acciones}</span>
-                        <span className="text-muted-foreground"> / </span>
-                        <span className="text-emerald-600 dark:text-emerald-400">{r.rescate_resueltos}</span>
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">{r.total_atendidos}</TableCell>
-                      <TableCell className="text-right font-mono text-xs">{r.tasa_contacto}%</TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="secondary" className={`${confColor(r.tasa_confirmacion)} hover:${confColor(r.tasa_confirmacion)} font-mono text-xs`}>
-                          {r.tasa_confirmacion}%
-                        </Badge>
-                      </TableCell>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Confirmar — métricas del flujo de confirmación de pedidos */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-green-500" aria-hidden="true" />
+                Confirmar
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Operadora</TableHead>
+                      <TableHead className="text-right">Confirmados</TableHead>
+                      <TableHead className="text-right">Cancelados</TableHead>
+                      <TableHead className="text-right">No resp.</TableHead>
+                      <TableHead className="text-right">Atendidos</TableHead>
+                      <TableHead className="text-right">Tasa contacto</TableHead>
+                      <TableHead className="text-right">Tasa confirmación</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map(r => (
+                      <TableRow key={r.operator_id}>
+                        <TableCell className="font-medium">{r.display_name}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/10">
+                            {r.confirmados}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary" className="bg-destructive/10 text-destructive hover:bg-destructive/10">
+                            {r.cancelados}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{r.noresp}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{r.total_atendidos}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">{r.tasa_contacto}%</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary" className={`${confColor(r.tasa_confirmacion)} hover:${confColor(r.tasa_confirmacion)} font-mono text-xs`}>
+                            {r.tasa_confirmacion}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Seguimiento — touchpoints SEG: agrupados por operadora */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-500" aria-hidden="true" />
+                Seguimiento
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Operadora</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                      <TableHead className="text-right">Resueltos</TableHead>
+                      <TableHead className="text-right">Pendientes</TableHead>
+                      <TableHead className="text-right">Tasa de resolución</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map(r => {
+                      const pendientes = Math.max(0, r.seg_acciones - r.seg_resueltos);
+                      const tasa = r.seg_acciones > 0
+                        ? Math.round((r.seg_resueltos / r.seg_acciones) * 100)
+                        : 0;
+                      return (
+                        <TableRow key={r.operator_id}>
+                          <TableCell className="font-medium">{r.display_name}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
+                              {r.seg_acciones}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10">
+                              {r.seg_resueltos}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">{pendientes}</TableCell>
+                          <TableCell className="text-right font-mono text-xs">{tasa}%</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Rescate — touchpoints RESCUE: agrupados por operadora */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true" />
+                Rescate
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Operadora</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                      <TableHead className="text-right">Resueltos</TableHead>
+                      <TableHead className="text-right">Pendientes</TableHead>
+                      <TableHead className="text-right">Tasa de resolución</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map(r => {
+                      const pendientes = Math.max(0, r.rescate_acciones - r.rescate_resueltos);
+                      const tasa = r.rescate_acciones > 0
+                        ? Math.round((r.rescate_resueltos / r.rescate_acciones) * 100)
+                        : 0;
+                      return (
+                        <TableRow key={r.operator_id}>
+                          <TableCell className="font-medium">{r.display_name}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary" className="bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/10">
+                              {r.rescate_acciones}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10">
+                              {r.rescate_resueltos}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">{pendientes}</TableCell>
+                          <TableCell className="text-right font-mono text-xs">{tasa}%</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Novedades — solo si hay alguna en el rango */}
+          {rows.some(r => r.novedades_resueltas > 0) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" />
+                  Novedades
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Operadora</TableHead>
+                        <TableHead className="text-right">Resueltas</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.filter(r => r.novedades_resueltas > 0).map(r => (
+                        <TableRow key={r.operator_id}>
+                          <TableCell className="font-medium">{r.display_name}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10">
+                              {r.novedades_resueltas}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </>
+      )}
 
       {!loading && rows.length > 0 && (
         <Card>
