@@ -152,12 +152,11 @@ function classifyOrder(estado: string): string {
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
-  const baseDate = (order.fechaConf || order.fecha || '').trim();
-  if (baseDate && baseDate !== 'undefined') {
-    return calcBusinessDays(baseDate);
+  const fechaConf = (order.fechaConf || '').trim();
+  if (fechaConf && fechaConf !== 'undefined') {
+    return calcBusinessDays(fechaConf);
   }
-  const calendarDays = order.diasConf || order.dias || 0;
-  return Math.round(calendarDays * 5 / 7);
+  return order.diasConf || 0;
 }
 
 function isExcludedFromDelay(estado: string): boolean {

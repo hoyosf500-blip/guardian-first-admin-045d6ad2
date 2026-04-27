@@ -34,9 +34,9 @@ function classifyEstado(estado: string) {
 }
 
 function getOrderAgeDays(order: OrderData): number {
-  const baseDate = (order.fechaConf || order.fecha || '').trim();
-  if (baseDate && baseDate !== 'undefined') return calcBusinessDays(baseDate);
-  return Math.round((order.diasConf || order.dias || 0) * 5 / 7);
+  const fechaConf = (order.fechaConf || '').trim();
+  if (fechaConf && fechaConf !== 'undefined') return calcBusinessDays(fechaConf);
+  return order.diasConf || 0;
 }
 
 function isActiveOrder(estado: string): boolean {

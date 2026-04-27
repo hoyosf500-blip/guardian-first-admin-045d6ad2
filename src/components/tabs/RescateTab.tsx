@@ -10,8 +10,7 @@ import CrmTable from '@/components/CrmTable';
 
 function isRescueOrder(o: OrderData): boolean {
   const e = o.estado.toUpperCase();
-  const diasT = o.diasConf || o.dias;
-  return (isDespachado(e) && diasT >= 5) ||
+  return (isDespachado(e) && o.diasConf >= 5) ||
     (e.includes('NOVEDAD') && !o.novedadSol) ||
     e.includes('OFICINA') || e.includes('RECLAME') ||
     e.includes('DEVOL');
