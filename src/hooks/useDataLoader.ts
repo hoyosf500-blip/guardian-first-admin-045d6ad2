@@ -12,27 +12,39 @@ import { toast } from 'sonner';
  */
 export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
   if (prev.length === 0) return next;
-  const prevById = new Map(prev.map(o => [o.dbId || `${o.phone}-${o.idx}`, o]));
-  return next.map(n => {
-    const id = n.dbId || `${n.phone}-${n.idx}`;
+  const prevById = new Map(prev.map(o => [o.dbId || `${o.phone}|${o.idx}`, o]));
+  let anyChanged = false;
+  const merged = next.map(n => {
+    const id = n.dbId || `${n.phone}|${n.idx}`;
     const old = prevById.get(id);
-    if (!old) return n;
-    if (
-      old.estado === n.estado &&
-      old.assignedTo === n.assignedTo &&
-      old.lockedBy === n.lockedBy &&
-      old.lockedAt === n.lockedAt &&
-      old.diasConf === n.diasConf &&
-      old.dias === n.dias &&
-      old.novedad === n.novedad &&
-      old.novedadSol === n.novedadSol &&
-      old.guia === n.guia &&
-      old.transportadora === n.transportadora
-    ) {
-      return old;
+    if (!old) {
+      anyChanged = true;
+      return n;
     }
-    return n;
+    const fieldsChanged = (
+      old.estado !== n.estado ||
+      old.assignedTo !== n.assignedTo ||
+      old.lockedBy !== n.lockedBy ||
+      old.lockedAt !== n.lockedAt ||
+      old.diasConf !== n.diasConf ||
+      old.dias !== n.dias ||
+      old.novedad !== n.novedad ||
+      old.novedadSol !== n.novedadSol ||
+      old.guia !== n.guia ||
+      old.transportadora !== n.transportadora
+    );
+    if (fieldsChanged) {
+      anyChanged = true;
+      return n;
+    }
+    return old;
   });
+  // Si nada cambió y la cantidad coincide, devolver prev intacto para que
+  // React no re-renderice (preserva scroll).
+  if (!anyChanged && prev.length === next.length) {
+    return prev;
+  }
+  return merged;
 }
 
 interface DataLoaderState {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -218,6 +218,41 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
   'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
 };
 
+/**
+ * Wrapper que preserva scrollTop por columna entre re-renders.
+ * Si React remonta el contenedor (p. ej. tras smartMerge que cambió el array),
+ * useLayoutEffect restaura la posición ANTES del paint, evitando el "salto al tope".
+ */
+function ColumnBody({
+  columnKey,
+  scrollPositionsRef,
+  children,
+}: {
+  columnKey: string;
+  scrollPositionsRef: React.MutableRefObject<Map<string, number>>;
+  children: ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!scrollRef.current) return;
+    const saved = scrollPositionsRef.current.get(columnKey);
+    if (saved !== undefined && scrollRef.current.scrollTop !== saved) {
+      scrollRef.current.scrollTop = saved;
+    }
+  });
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={(e) => {
+        scrollPositionsRef.current.set(columnKey, (e.target as HTMLDivElement).scrollTop);
+      }}
+      className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto"
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
@@ -229,6 +264,10 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   // operadora por error) sin necesidad de tocar la DB cada vez.
   const [adminIds, setAdminIds] = useState<string[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
+  // Preservar scrollTop por columna durante refreshes (cron Dropi cada 1 min).
+  // Si React remonta el contenedor, useLayoutEffect restaura antes del paint
+  // para que la operadora no pierda su posición de scroll.
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map());
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
   const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
   const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
@@ -681,7 +720,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   </div>
 
                   {/* Column body */}
-                  <div className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
+                  <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef}>
                     {items.map((o, i) => (
                       <OrderCard
                         key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
@@ -702,7 +741,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         statusColor={col.tone}
                       />
                     ))}
-                  </div>
+                  </ColumnBody>
                 </motion.div>
               );
             })}
