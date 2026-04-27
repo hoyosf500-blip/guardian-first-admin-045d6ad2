@@ -7,13 +7,17 @@ function escapeCell(v: unknown): string {
   return s;
 }
 
-export function rowsToCsv<T extends Record<string, unknown>>(
+export function rowsToCsv<T extends object>(
   headers: (keyof T & string)[],
   rows: T[],
 ): string {
   const lines = [headers.join(',')];
   for (const row of rows) {
-    lines.push(headers.map(h => escapeCell(row[h])).join(','));
+    lines.push(
+      headers
+        .map(h => escapeCell((row as Record<string, unknown>)[h]))
+        .join(','),
+    );
   }
   return lines.join('\n');
 }
