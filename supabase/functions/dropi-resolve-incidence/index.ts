@@ -252,6 +252,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // H11: role check. Antes cualquier usuario autenticado (incluso
+    // cuentas recién creadas sin rol asignado, o cuentas deprovisioneadas
+    // pero todavía con sesión activa) podía empujar incidencias a Dropi.
+    const { data: roles } = await sb
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+    const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
+    if (!allowed) {
+      return new Response(
+        JSON.stringify({ error: "No tienes permiso para resolver novedades en Dropi" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // ---- Parse body ----
     let body: Record<string, unknown> = {};
     try {
