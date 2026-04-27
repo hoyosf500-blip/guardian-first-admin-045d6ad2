@@ -32,7 +32,7 @@ const DROPI_HOSTS: Record<string, string> = {
   ES: "https://dropipro.com",
 };
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -53,6 +53,7 @@ function decodeJwtClaims(token: string): Record<string, unknown> | null {
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
