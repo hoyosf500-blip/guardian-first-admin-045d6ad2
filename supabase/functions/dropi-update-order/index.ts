@@ -35,11 +35,7 @@
 // CONFIRMACION → PENDIENTE the moment the operator confirms the call).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_NEW_STATUS = "PENDIENTE";
@@ -152,6 +148,8 @@ async function dropiSanityCheck(
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -170,34 +168,42 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseServiceKey);
 
-    const anonKey =
-      Deno.env.get("SUPABASE_ANON_KEY") ||
-      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-    const anonClient = createClient(supabaseUrl, anonKey);
-    const {
-      data: { user },
-      error: authError,
-    } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Token inválido" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Fix 9: si la llamada viene con el service role token (ej: dropi-cron
+    // reintentando syncs fallidos), saltamos la validación de JWT y la
+    // verificación de roles. Antes el cron retry fallaba con 401 porque
+    // no tiene un user JWT.
+    const isInternal = authHeader === `Bearer ${supabaseServiceKey}`;
+    let user: { id: string } | null = null;
 
-    // ---- Role check: solo admin u operator pueden tocar Dropi ----
-    // Antes cualquier usuario autenticado podía PUT a cualquier pedido.
-    // Limitamos a los roles que realmente operan el CRM.
-    const { data: roles } = await sb
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id);
-    const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
-    if (!allowed) {
-      return new Response(JSON.stringify({ error: "No tienes permiso para actualizar pedidos en Dropi" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (!isInternal) {
+      const anonKey =
+        Deno.env.get("SUPABASE_ANON_KEY") ||
+        Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+      const anonClient = createClient(supabaseUrl, anonKey);
+      const {
+        data: { user: authUser },
+        error: authError,
+      } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
+      if (authError || !authUser) {
+        return new Response(JSON.stringify({ error: "Token inválido" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      user = authUser;
+
+      // ---- Role check: solo admin u operator pueden tocar Dropi ----
+      const { data: roles } = await sb
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", authUser.id);
+      const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
+      if (!allowed) {
+        return new Response(JSON.stringify({ error: "No tienes permiso para actualizar pedidos en Dropi" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // ---- Parse body ----
@@ -304,8 +310,7 @@ Deno.serve(async (req: Request) => {
         synced_count: 0,
         duplicates_count: 0,
         total_count: 1,
-        triggered_by: user.id,
-        error_message: errorMsg,
+        triggered_by: user?.id ?? null,
       });
 
       return new Response(
@@ -329,7 +334,7 @@ Deno.serve(async (req: Request) => {
       synced_count: 1,
       duplicates_count: 0,
       total_count: 1,
-      triggered_by: user.id,
+      triggered_by: user?.id ?? null,
     });
 
     return new Response(

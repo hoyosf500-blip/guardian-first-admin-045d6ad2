@@ -10,11 +10,8 @@
 //   GET  /egress-ip   → IP pública de salida (vista por Dropi)
 //   POST /            → Proxy a Dropi (requiere x-relay-secret)
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-relay-secret",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
+
 
 const DROPI_HOSTS: Record<string, string> = {
   CO: "https://api.dropi.co",
@@ -32,7 +29,7 @@ const DROPI_HOSTS: Record<string, string> = {
   ES: "https://dropipro.com",
 };
 
-function json(body: unknown, status = 200) {
+function json(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -53,6 +50,7 @@ function decodeJwtClaims(token: string): Record<string, unknown> | null {
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -63,7 +61,7 @@ Deno.serve(async (req: Request) => {
 
   // ---- GET /health ----
   if (req.method === "GET" && subpath === "/health") {
-    return json({ ok: true, ts: new Date().toISOString() });
+    return json({ ok: true, ts: new Date().toISOString() }, 200, corsHeaders);
   }
 
   // ---- GET /egress-ip ----
@@ -71,25 +69,25 @@ Deno.serve(async (req: Request) => {
     try {
       const r = await fetch("https://api.ipify.org?format=json");
       const data = await r.json();
-      return json({ ok: true, ...data, ts: new Date().toISOString() });
+      return json({ ok: true, ...data, ts: new Date().toISOString() }, 200, corsHeaders);
     } catch (err) {
-      return json({ ok: false, error: err instanceof Error ? err.message : "ipify failed" }, 500);
+      return json({ ok: false, error: err instanceof Error ? err.message : "ipify failed" }, 500, corsHeaders);
     }
   }
 
   // ---- POST / (proxy a Dropi) ----
   if (req.method !== "POST") {
-    return json({ ok: false, error: "Method not allowed. Use POST or GET /health|/egress-ip" }, 405);
+    return json({ ok: false, error: "Method not allowed. Use POST or GET /health|/egress-ip" }, 405, corsHeaders);
   }
 
   // 1) Validar shared secret
   const expected = Deno.env.get("RELAY_SHARED_SECRET");
   if (!expected) {
-    return json({ ok: false, error: "Relay no configurado: falta RELAY_SHARED_SECRET" }, 500);
+    return json({ ok: false, error: "Relay no configurado: falta RELAY_SHARED_SECRET" }, 500, corsHeaders);
   }
   const provided = req.headers.get("x-relay-secret");
   if (!provided || provided !== expected) {
-    return json({ ok: false, error: "Unauthorized: x-relay-secret invalido o ausente" }, 401);
+    return json({ ok: false, error: "Unauthorized: x-relay-secret invalido o ausente" }, 401, corsHeaders);
   }
 
   // 2) Parse body
@@ -97,7 +95,7 @@ Deno.serve(async (req: Request) => {
   try {
     body = await req.json();
   } catch {
-    return json({ ok: false, error: "Body JSON invalido" }, 400);
+    return json({ ok: false, error: "Body JSON invalido" }, 400, corsHeaders);
   }
 
   const dropiToken = String(body.dropi_token || "").trim();
@@ -109,12 +107,12 @@ Deno.serve(async (req: Request) => {
   const dateTo = body.date_to ? String(body.date_to) : "";
 
   if (!dropiToken) {
-    return json({ ok: false, error: "Falta dropi_token" }, 400);
+    return json({ ok: false, error: "Falta dropi_token" }, 400, corsHeaders);
   }
 
   const base = DROPI_HOSTS[country];
   if (!base) {
-    return json({ ok: false, error: `Pais no soportado: ${country}. Validos: ${Object.keys(DROPI_HOSTS).join(", ")}` }, 400);
+    return json({ ok: false, error: `Pais no soportado: ${country}. Validos: ${Object.keys(DROPI_HOSTS).join(", ")}` }, 400, corsHeaders);
   }
 
   // 3) Diagnostics: parse JWT claims (NO log del token completo)
@@ -204,7 +202,7 @@ Deno.serve(async (req: Request) => {
         duration_ms: duration,
         jwt: { iss, aud, integration_type: integrationType, integration_url: integrationUrl, ip_url: ipUrl },
       },
-    }, ok ? 200 : 502);
+    }, ok ? 200 : 502, corsHeaders);
   } catch (err) {
     const duration = Date.now() - t0;
     console.error("[dropi-relay] ERR", err);
@@ -213,6 +211,6 @@ Deno.serve(async (req: Request) => {
       status: 0,
       error: err instanceof Error ? err.message : "fetch failed",
       diagnostics: { egress_ip: egressIp, requested_url: requestedUrl, country, duration_ms: duration },
-    }, 502);
+    }, 502, corsHeaders);
   }
 });

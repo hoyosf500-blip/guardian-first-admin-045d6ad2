@@ -173,12 +173,11 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   };
 }
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req: Request) => {
+  const CORS_HEADERS = getCorsHeaders(req);
+
   console.log("dropi-cron v3 — secret branch active");
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });

@@ -1,9 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
@@ -189,6 +185,8 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
 }
 
 Deno.serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -290,8 +288,9 @@ Deno.serve(async (req: Request) => {
       await sleep(RATE_LIMIT_MS);
     }
 
-    // Restore estado for orders confirmed locally today (so sync doesn't overwrite local confirmations)
-    const todayDate = new Date().toISOString().split("T")[0];
+    // Fix 8: usar fecha de Bogotá. Antes UTC dejaba fuera las confirmaciones
+    // hechas después de las 19:00 COL.
+    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
     const { data: confirmedToday } = await sb
       .from("order_results")
       .select("order_id")
