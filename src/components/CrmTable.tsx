@@ -440,7 +440,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user, adminIds]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
