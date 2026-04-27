@@ -118,7 +118,7 @@ export default function CrmCallView({
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora, o.novedad);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
-  const currentManaged = managed[o.phone];
+  const currentManaged = o.dbId ? managed[o.dbId] : undefined;
   const tps = phoneTouchpoints[o.phone] || [];
   const isDelayed = diasEnEstatus >= 2 && !isExcludedFromDelay(o.estado);
 
