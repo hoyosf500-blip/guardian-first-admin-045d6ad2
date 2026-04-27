@@ -206,42 +206,40 @@ Deno.serve(async (req: Request) => {
       }
       console.log("dropi-cron: authenticated via cron shared secret");
     } else {
-    // ---- Auth path 2: require admin role for authenticated callers ----
-    const authHeader = req.headers.get("Authorization");
-    // C2 fix: si no hay ni secret ni Authorization, rechazar. Antes se ejecutaba
-    // sin validación cuando authHeader era null (cualquiera podía disparar el cron).
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No autorizado" }), {
-        status: 401,
-        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-      });
-    }
-    if (authHeader !== `Bearer ${supabaseServiceKey}`) {
-      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-      const anonClient = createClient(supabaseUrl, anonKey);
-      const { data: { user }, error: authError } = await anonClient.auth.getUser(
-        authHeader.replace("Bearer ", ""),
-      );
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: "Token inválido" }), {
+      // ---- Auth path 2: require admin role for authenticated callers ----
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "No autorizado" }), {
           status: 401,
           headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
         });
       }
-      const { data: roleData } = await sb
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      if (!roleData) {
-        return new Response(
-          JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
-          { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+      if (authHeader !== `Bearer ${supabaseServiceKey}`) {
+        const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+        const anonClient = createClient(supabaseUrl, anonKey);
+        const { data: { user }, error: authError } = await anonClient.auth.getUser(
+          authHeader.replace("Bearer ", ""),
         );
+        if (authError || !user) {
+          return new Response(JSON.stringify({ error: "Token inválido" }), {
+            status: 401,
+            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          });
+        }
+        const { data: roleData } = await sb
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .maybeSingle();
+        if (!roleData) {
+          return new Response(
+            JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
+            { status: 403, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
+          );
+        }
+        console.log(`dropi-cron: triggered by admin ${user.id}`);
       }
-      console.log(`dropi-cron: triggered by admin ${user.id}`);
-    }
     }
 
     // Get Dropi API key from app_settings or env
