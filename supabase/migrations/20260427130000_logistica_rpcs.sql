@@ -6,6 +6,17 @@
 -- 'CANCELADO' del numerador/denominador del análisis de carrier (porque
 -- es responsabilidad de la operadora, no del transportista).
 --
+-- Hardening del cast (Task 1 review): `fecha` es TEXT y puede tener
+-- valores malformados ('garbage', '2026-13-01'). Antes de hacer
+-- `fecha::date` validamos el formato con regex `^\d{4}-\d{2}-\d{2}$`.
+-- Filas que NO matchean se descartan — no rompemos la query entera por
+-- un dato sucio en una sola fila.
+--
+-- Lock note: `CREATE INDEX IF NOT EXISTS` (sin CONCURRENTLY) toma
+-- ShareLock breve. A escala actual (~10k pedidos) son <100ms.
+-- Si crece a 100k+ migrar índices a un archivo separado con
+-- `supabase db push --no-transaction` y CONCURRENTLY.
+--
 -- Aplicar con `supabase db push`. Idempotente (CREATE OR REPLACE +
 -- CREATE INDEX IF NOT EXISTS).
 
