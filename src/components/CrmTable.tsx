@@ -190,10 +190,21 @@ const STATUS_COLUMNS: StatusColumn[] = [
     match: () => true },
 ];
 
+// M7: alerta cuando aparece un estado nuevo de Dropi que no calza con
+// ninguna columna conocida. Sin alerting infrastructure, solo un
+// console.warn una vez por estado nuevo (Set evita spam). Dropi puede
+// agregar variantes ("EN REPARTO ESPECIAL") sin avisar y los pedidos
+// caen invisibles en la columna "otros".
+const _unclassifiedStatusesSeen = new Set<string>();
+
 function classifyOrder(estado: string): string {
   const e = estado.toUpperCase();
   for (const col of STATUS_COLUMNS) {
     if (col.key !== 'otros' && col.match(e)) return col.key;
+  }
+  if (e && !_unclassifiedStatusesSeen.has(e)) {
+    _unclassifiedStatusesSeen.add(e);
+    console.warn(`[CrmTable] Estado sin clasificar: "${e}" → cae en columna "otros". Si Dropi agregó esta variante, agregarla a STATUS_COLUMNS.`);
   }
   return 'otros';
 }

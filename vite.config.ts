@@ -21,7 +21,11 @@ export default defineConfig(({ mode }) => ({
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-charts': ['recharts'],
           'vendor-xlsx': ['xlsx'],
-          'vendor-ui': ['framer-motion', 'sonner', 'date-fns'],
+          // L2: framer-motion (~100 KB) en su propio chunk para que el
+          // profiler de bundle pueda aislarlo y para que rutas que no lo
+          // usan no paguen el costo eager via vendor-ui.
+          'vendor-motion': ['framer-motion'],
+          'vendor-ui': ['sonner', 'date-fns'],
         },
       },
     },
