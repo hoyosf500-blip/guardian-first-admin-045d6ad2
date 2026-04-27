@@ -282,7 +282,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           }
         });
     }
-  }, [user, dataLoader.setSegData, dataLoader.setResData]);
+  }, [user, dataLoader.setSegData]);
 
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
@@ -457,20 +457,30 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue([]);
     dataLoader.setSegData([]);
     dataLoader.setSegLoaded(false);
-    dataLoader.setResData([]);
-    dataLoader.setResLoaded(false);
     novedades.setNovedadesQueue([]);
     setExcelLoaded(false);
     resetCelebrations();
-  }, [resetCelebrations, dataLoader.setSegData, dataLoader.setSegLoaded, dataLoader.setResData, dataLoader.setResLoaded, novedades.setNovedadesQueue]);
+  }, [resetCelebrations, dataLoader.setSegData, dataLoader.setSegLoaded, novedades.setNovedadesQueue]);
+
+  // Fix 21: resData se deriva de segData. Evita doble fetch+merge.
+  // Mismo filtro que tenía loadResData/buildWorkQueue.
+  const resData = useMemo(() => {
+    return dataLoader.segData.filter(o => {
+      const e = o.estado.toUpperCase();
+      return (isDespachado(e) && o.diasConf >= 5) ||
+        (e.includes('NOVEDAD') && !o.novedadSol) ||
+        e.includes('OFICINA') || e.includes('RECLAME') ||
+        e.includes('DEVOL');
+    });
+  }, [dataLoader.segData]);
 
   return (
     <OrderContext.Provider value={{
       allOrders, workQueue,
       segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
       segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
-      resData: dataLoader.resData, resLoaded: dataLoader.resLoaded, resLoading: dataLoader.resLoading,
-      loadResData: dataLoader.loadResData,
+      resData, resLoaded: dataLoader.segLoaded, resLoading: dataLoader.segLoading,
+      loadResData: dataLoader.loadSegData,
       novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
       counter, timerStart,
       loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
