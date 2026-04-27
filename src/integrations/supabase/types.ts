@@ -524,6 +524,7 @@ export type Database = {
           total_gestionados: number
         }[]
       }
+      cancel_orphan_pending_orders: { Args: never; Returns: number }
       claim_order: {
         Args: { p_order_id: string }
         Returns: {
