@@ -1,10 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DASHSCOPE_URL =
   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions";
@@ -61,8 +56,32 @@ Responde SOLO con la frase, sin explicaciones.`,
 // ─── Handler ──────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Fix 2: requerir JWT válido para no exponer la edge function públicamente
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "No autorizado" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const supabaseUrlAuth = Deno.env.get("SUPABASE_URL")!;
+  const anonKeyAuth =
+    Deno.env.get("SUPABASE_ANON_KEY") ||
+    Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+  const anonClient = createClient(supabaseUrlAuth, anonKeyAuth);
+  const { data: { user: authUser }, error: authErr } =
+    await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
+  if (authErr || !authUser) {
+    return new Response(JSON.stringify({ error: "Token inválido" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
