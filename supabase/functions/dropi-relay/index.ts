@@ -11,6 +11,7 @@
 //   POST /            → Proxy a Dropi (requiere x-relay-secret)
 
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 
 const DROPI_HOSTS: Record<string, string> = {
