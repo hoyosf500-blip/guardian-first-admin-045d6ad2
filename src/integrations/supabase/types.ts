@@ -589,6 +589,61 @@ export type Database = {
         }
         Returns: boolean
       }
+      logistics_by_carrier: {
+        Args: { p_from_date: string; p_to_date: string }
+        Returns: {
+          avg_dias_entrega: number
+          devueltos: number
+          en_transito: number
+          entregados: number
+          novedades: number
+          tasa_devolucion: number
+          tasa_entrega: number
+          total_pedidos: number
+          transportadora: string
+          valor_entregado: number
+          valor_perdido: number
+        }[]
+      }
+      logistics_by_city: {
+        Args: { p_from_date: string; p_limit?: number; p_to_date: string }
+        Returns: {
+          ciudad: string
+          departamento: string
+          devueltos: number
+          entregados: number
+          tasa_devolucion: number
+          tasa_entrega: number
+          total_pedidos: number
+          valor_perdido: number
+        }[]
+      }
+      logistics_by_product: {
+        Args: { p_from_date: string; p_limit?: number; p_to_date: string }
+        Returns: {
+          devueltos: number
+          entregados: number
+          producto: string
+          tasa_devolucion: number
+          tasa_entrega: number
+          total_pedidos: number
+          valor_entregado: number
+          valor_perdido: number
+        }[]
+      }
+      logistics_summary: {
+        Args: { p_from_date: string; p_to_date: string }
+        Returns: {
+          devueltos: number
+          en_transito: number
+          entregados: number
+          tasa_devolucion: number
+          tasa_entrega: number
+          total_pedidos: number
+          valor_entregado: number
+          valor_perdido: number
+        }[]
+      }
       opening_report_status: {
         Args: never
         Returns: {
