@@ -12,6 +12,9 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 
+const isManaged = (it: OrderData, managed: Record<string, string>): boolean =>
+  !!(it.dbId && managed[it.dbId]);
+
 interface Touchpoint {
   id: string;
   phone: string;
@@ -74,15 +77,11 @@ export default function CrmCallView({
   );
 
   const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
-  // C3 fix: CrmTable indexa `managed` por dbId, no por phone. Antes leíamos
-  // managed[phone] y nunca matcheaba — el call view nunca avanzaba al pedido
-  // siguiente al marcar uno.
-  const isManaged = (it: OrderData) => !!(it.dbId && managed[it.dbId]);
 
   // Derive the index from the stored id every render.
   let derivedIdx = callOrderId ? items.findIndex((it) => keyOf(it) === callOrderId) : -1;
   if (derivedIdx < 0) {
-    const firstUnmanaged = items.findIndex((it) => !isManaged(it));
+    const firstUnmanaged = items.findIndex((it) => !isManaged(it, managed));
     derivedIdx = firstUnmanaged >= 0 ? firstUnmanaged : 0;
   }
 
@@ -91,7 +90,7 @@ export default function CrmCallView({
     if (!items.length) return;
     const exists = callOrderId && items.some((it) => keyOf(it) === callOrderId);
     if (!exists) {
-      const firstUnmanaged = items.findIndex((it) => !isManaged(it));
+      const firstUnmanaged = items.findIndex((it) => !isManaged(it, managed));
       const target = items[firstUnmanaged >= 0 ? firstUnmanaged : 0];
       const k = target ? keyOf(target) : null;
       if (k && k !== callOrderId) setCallOrderId(k);
