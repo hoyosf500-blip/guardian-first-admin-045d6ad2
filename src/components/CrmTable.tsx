@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -316,6 +316,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     });
   }, [data, module]);
 
+  // C3: lista de admins. Pedidos con assigned_to apuntando a admin se
+  // tratan como pool libre / sin asignar.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('user_roles').select('user_id').eq('role', 'admin').then(({ data: rows }) => {
+      if (cancelled || !rows) return;
+      setAdminIds(rows.map(r => r.user_id));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const getOperatorName = (opId: string) => profiles.find(pr => pr.user_id === opId)?.display_name || 'Operador';
 
   const phoneTouchpoints = useMemo(() => {
@@ -345,48 +356,50 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   }, [phoneTouchpoints]);
 
   const markAction = async (order: OrderData, action: string) => {
-    // Bloquea la acción si el pedido ya pertenece a otra operadora.
-    if (user && order.assignedTo && order.assignedTo !== user.id) {
-      const owner = getOperatorName(order.assignedTo);
-      toast.error(`Pedido en atención por ${owner}`);
-      return;
-    }
-    // Auto-claim al primer toque: si está sin asignar, lo reclama el caller.
-    // Si claim_seg_order devuelve false significa que otra operadora lo tomó
-    // entre el render y el click (race con realtime). Aborta la acción.
-    if (user && order.dbId && !order.assignedTo) {
-      const claimed = await claimSegOrder(order.dbId);
-      if (!claimed) {
-        toast.error('Otra operadora tomó este pedido');
+    // D6: doble-click guard.
+    if (!order.dbId || markingInFlightRef.current.has(order.dbId)) return;
+    markingInFlightRef.current.add(order.dbId);
+    try {
+      // C4: si el "owner" actual es admin, lo tratamos como sin asignar.
+      const ownerIsAdmin = order.assignedTo ? adminIds.includes(order.assignedTo) : false;
+      // Bloquea la acción si el pedido pertenece a otra operadora real (no admin).
+      if (!isAdmin && user && order.assignedTo && order.assignedTo !== user.id && !ownerIsAdmin) {
+        const owner = getOperatorName(order.assignedTo);
+        toast.error(`Pedido en atención por ${owner}`);
         return;
       }
-    }
-    const slaMs = getActionSLA(action) * 3600000;
-    const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
-    const label = `${action} · vuelve en ${hoursLeft}h`;
-    if (order.dbId) {
+      // C2: admin NUNCA hace claim/release. Solo registra el touchpoint
+      // y aplica el efecto visual optimista.
+      if (!isAdmin && user && order.dbId && (!order.assignedTo || ownerIsAdmin)) {
+        const claimed = await claimSegOrder(order.dbId);
+        if (!claimed) {
+          toast.error('Otra operadora tomó este pedido');
+          return;
+        }
+      }
+      const slaMs = getActionSLA(action) * 3600000;
+      const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
+      const label = `${action} · vuelve en ${hoursLeft}h`;
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
+      if (user) {
+        const now = new Date();
+        const tp = {
+          phone: order.phone,
+          action: `${module}: ${action}`,
+          operator_id: user.id,
+          action_date: bogotaToday(),
+          action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+        };
+        const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
+        if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
+      }
+      if (!isAdmin && order.dbId && RESOLVING_ACTIONS.has(action)) {
+        await releaseSegOrder(order.dbId);
+      }
+      toast.success(action);
+    } finally {
+      markingInFlightRef.current.delete(order.dbId);
     }
-    if (user) {
-      const now = new Date();
-      const tp = {
-        phone: order.phone,
-        action: `${module}: ${action}`,
-        operator_id: user.id,
-        action_date: bogotaToday(),
-        action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
-      };
-      const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
-      if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
-    }
-    // Liberación condicional: solo las acciones resolutivas (Resuelto,
-    // Devolucion solicitada, Solicite devolucion) sueltan la asignación.
-    // El resto mantiene al pedido en la cartera de la operadora para
-    // continuidad al día siguiente.
-    if (order.dbId && RESOLVING_ACTIONS.has(action)) {
-      await releaseSegOrder(order.dbId);
-    }
-    toast.success(action);
   };
 
 
