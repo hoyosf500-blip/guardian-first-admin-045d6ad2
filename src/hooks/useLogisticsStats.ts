@@ -50,7 +50,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       });
       return rows[0] ?? null;
     },
-    staleTime: STALE_60S,
+    staleTime: STALE_5MIN,
   });
 
   const carriers = useQuery<CarrierStats[]>({
@@ -59,7 +59,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       p_from_date: fromDate,
       p_to_date: toDate,
     }),
-    staleTime: STALE_60S,
+    staleTime: STALE_5MIN,
   });
 
   const cities = useQuery<CityReturns[]>({
@@ -69,7 +69,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       p_to_date: toDate,
       p_limit: 50,
     }),
-    staleTime: STALE_60S,
+    staleTime: STALE_5MIN,
   });
 
   const products = useQuery<ProductFailure[]>({
@@ -79,12 +79,13 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       p_to_date: toDate,
       p_limit: 50,
     }),
-    staleTime: STALE_60S,
+    staleTime: STALE_5MIN,
   });
 
   // Realtime: cualquier cambio en `orders` invalida los 4 queries
-  // de logística. Debounce de 1.5s para coalescer ráfagas (ej. el
-  // cron de Dropi sincronizando 100 filas en 2 segundos).
+  // de logística. Debounce de 5s para coalescer ráfagas (ej. el
+  // cron de Dropi sincronizando 100 filas en 2 segundos) y evitar
+  // que el panel parpadee mientras el admin lo está mirando.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const channel = supabase
@@ -97,7 +98,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
           debounceRef.current = setTimeout(() => {
             queryClient.invalidateQueries({ queryKey: ['logistics'] });
             debounceRef.current = null;
-          }, 1500);
+          }, 5000);
         },
       )
       .subscribe();

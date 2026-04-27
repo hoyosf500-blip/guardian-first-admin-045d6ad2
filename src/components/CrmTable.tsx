@@ -330,7 +330,11 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   // con el conteo de cambios. Cuando deja de moverse 4 s, aplicamos
   // automáticamente; también puede aplicar manual con el banner.
   // ──────────────────────────────────────────────────────────────────
-  const QUIET_WINDOW_MS = 4000;
+  // 5 minutos: tan grande que la operadora puede tomar pausas largas
+  // (atender una llamada externa, tomar agua) sin que la lista se
+  // reordene bajo su cursor. Sin auto-apply (más abajo) este número
+  // es un piso defensivo — los datos solo se aplican con click manual.
+  const QUIET_WINDOW_MS = 5 * 60 * 1000;
   const [data, setData] = useState<OrderData[]>(dataProp);
   const [pendingChanges, setPendingChanges] = useState(0);
   const lastActivityRef = useRef<number>(0);
@@ -379,16 +383,15 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     setPendingChanges(diffCount);
   }, [dataProp]);
 
-  // Auto-apply cuando la operadora deje de moverse durante QUIET_WINDOW_MS.
-  useEffect(() => {
-    if (pendingChanges === 0) return;
-    const t = setInterval(() => {
-      if (Date.now() - lastActivityRef.current >= QUIET_WINDOW_MS) {
-        applyPendingNow();
-      }
-    }, 1500);
-    return () => clearInterval(t);
-  }, [pendingChanges, applyPendingNow]);
+  // Auto-apply REMOVIDO. Antes había un setInterval que aplicaba el
+  // buffer cuando la operadora pasaba >4s sin actividad — pero cualquier
+  // pausa breve para leer un nombre o pensar la siguiente acción
+  // disparaba el reorder, y la lista "saltaba" bajo el cursor justo
+  // cuando ella iba a hacer click. La operadora reportó que "se
+  // pierde el trabajo".
+  //
+  // Ahora: el banner aparece y se queda hasta que ella decida aplicar
+  // con click. Cero auto-apply. Cero parpadeo durante el trabajo.
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
