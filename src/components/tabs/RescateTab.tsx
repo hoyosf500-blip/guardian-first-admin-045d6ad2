@@ -4,6 +4,7 @@ import { RES_ACTIONS } from '@/lib/constants';
 import { LifeBuoy, RefreshCw, AlertTriangle, MapPin, RotateCcw, ShieldAlert } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
+import SegRescueCounterBar from '@/components/SegRescueCounterBar';
 
 /** Tono semántico → clases tokenizadas. Sin hex inline. */
 const TONE = {
@@ -57,6 +58,7 @@ export default function RescateTab() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      <SegRescueCounterBar module="RESCUE" />
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}

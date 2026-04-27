@@ -6,6 +6,7 @@ import { SEG_ACTIONS } from '@/lib/constants';
 import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
+import SegRescueCounterBar from '@/components/SegRescueCounterBar';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -232,6 +233,7 @@ export default function SeguimientoTab() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      <SegRescueCounterBar module="SEG" />
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
