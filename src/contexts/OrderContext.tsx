@@ -166,18 +166,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       return true;
     });
 
-    setWorkQueue(dedupPendientes);
-    dataLoader.setSegData(orders.filter(o => {
+    setWorkQueue(prev => smartMerge(prev, dedupPendientes));
+    const segNext = orders.filter(o => {
       const e = o.estado.toUpperCase();
       return isConfirmado(e) || isDespachado(e) || isNovedad(e) || isOficina(e) || isDevolucion(e);
-    }));
-    dataLoader.setResData(orders.filter(o => {
+    });
+    dataLoader.setSegData(prev => smartMerge(prev, segNext));
+    const resNext = orders.filter(o => {
       const e = o.estado.toUpperCase();
       return (isDespachado(e) && o.diasConf >= 5) ||
         (e.includes('NOVEDAD') && !o.novedadSol) ||
         e.includes('OFICINA') || e.includes('RECLAME') ||
         e.includes('DEVOL');
-    }));
+    });
+    dataLoader.setResData(prev => smartMerge(prev, resNext));
 
     if (user) {
       // BUG A fix: pull last 7 days so confirmations done late yesterday
