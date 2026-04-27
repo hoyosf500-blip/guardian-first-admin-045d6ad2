@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { OrderData, formatPhone } from '@/lib/orderUtils';
+import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
@@ -99,7 +100,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
             <div className="flex items-center gap-2 flex-shrink-0">
               {o.valor > 0 && (
                 <span className="font-mono font-semibold text-xs text-foreground tabular-nums hidden sm:block">
-                  ${o.valor.toLocaleString()}
+                  {formatCOP(o.valor)}
                 </span>
               )}
               {/* Edit order button — visible to anyone; trigger enforces ownership. */}

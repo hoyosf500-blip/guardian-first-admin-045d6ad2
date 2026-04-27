@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
+import { formatCOP } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { toast } from 'sonner';
@@ -197,7 +198,7 @@ export default function NovedadView({ items }: Props) {
             <span className="flex-1">{o.producto || '—'}{o.cantidad > 1 ? ` × ${o.cantidad}` : ''}</span>
             {o.valor > 0 && (
               <span className="inline-flex items-center gap-1 text-foreground">
-                <DollarSign size={12} />${o.valor.toLocaleString()}
+                <DollarSign size={12} />{formatCOP(o.valor)}
               </span>
             )}
           </div>

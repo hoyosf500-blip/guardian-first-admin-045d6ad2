@@ -14,8 +14,8 @@ interface RealtimeCallbacks {
  * Subscribes to live changes on the `orders` and `order_results` tables.
  *
  * - One channel per user; closed on unmount or when the user signs out.
- * - Pass stable callbacks (wrap in useCallback) — the channel is rebuilt
- *   whenever a callback identity changes.
+ * - Las callbacks se leen vía useRef en cada evento, por lo que su
+ *   identidad NO reconstruye el canal. Solo cambios en `user` lo hacen.
  *
  * M6: el debounce interno de 500ms se eliminó. El callback de
  * `OrderContext.debouncedRefreshAll` ya tiene su propio debounce de

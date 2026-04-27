@@ -11,3 +11,15 @@ export function cn(...inputs: ClassValue[]) {
 export function bogotaToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
 }
+
+// OLD-4: formatea un número como peso colombiano. Usar siempre este helper
+// en vez de `valor.toLocaleString()` solo — el segundo respeta el locale
+// del navegador (en-US imprime "1,500,000" en vez de "$1.500.000" para COP).
+export function formatCOP(n: number | null | undefined): string {
+  if (n == null || !isFinite(n)) return '$0';
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(n);
+}

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { POLL_INTERVAL_MS } from '@/lib/constants';
 
-const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const SYNC_INTERVAL_MS = POLL_INTERVAL_MS;
 const SYNC_DAYS_BACK = 14;
 
 export function useAutoDropiSync(

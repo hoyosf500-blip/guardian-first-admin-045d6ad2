@@ -27,6 +27,10 @@ export const CANCEL_REASONS = [
   'Cambió de opinión', 'Precio', 'Ya compré', 'Después', 'Otro'
 ];
 
+// OLD-9: intervalo de polling fallback (cuando realtime falla o se cae el
+// canal). Usado por useDataLoader, useAutoDropiSync, useNovedades.
+export const POLL_INTERVAL_MS = 5 * 60 * 1000;
+
 export const CARRIER_TRACK: Record<string, string> = {
   'INTERRAPIDISIMO': 'https://www.interrapidisimo.com/sigue-tu-envio/',
   'INTER RAPIDISIMO': 'https://www.interrapidisimo.com/sigue-tu-envio/',

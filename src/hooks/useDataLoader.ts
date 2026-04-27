@@ -3,6 +3,7 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
+import { POLL_INTERVAL_MS } from '@/lib/constants';
 import { toast } from 'sonner';
 
 /**

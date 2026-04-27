@@ -45,20 +45,23 @@ curl https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-relay/egress-ip
 
 ### `GET /dropi-relay/health`
 
-Healthcheck. Sin auth.
+Healthcheck. Requiere header `x-relay-secret` (Tanda 4 / M1).
 
 ```bash
-curl https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-relay/health
+curl -H "x-relay-secret: <RELAY_SHARED_SECRET>" \
+  https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-relay/health
 # → { "ok": true, "ts": "2026-04-17T..." }
 ```
 
 ### `GET /dropi-relay/egress-ip`
 
 Devuelve la IP pública desde la cual el relay hace requests salientes
-(la que Dropi va a ver). Sin auth.
+(la que Dropi va a ver). Requiere `x-relay-secret` (la IP es información
+sensible que ayuda a mapear infraestructura).
 
 ```bash
-curl https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-relay/egress-ip
+curl -H "x-relay-secret: <RELAY_SHARED_SECRET>" \
+  https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-relay/egress-ip
 # → { "ok": true, "ip": "63.177.86.18", "ts": "..." }
 ```
 

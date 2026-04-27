@@ -332,7 +332,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }).select('id').single();
 
     if (!error && result === 'conf' && order.dbId) {
-      await supabase.from('orders').update({ estado: 'PENDIENTE' }).eq('id', order.dbId);
+      // REG-3: usar RPC confirm_order_locally en vez de UPDATE directo.
+      // Con la nueva RLS de Tanda 2, el UPDATE directo silenciosamente
+      // devolvía 0 filas si el lock había expirado (operadora habló
+      // mucho con el cliente). La RPC SECURITY DEFINER no depende del
+      // lock — solo del rol — y el counter local queda consistente.
+      await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<unknown>)('confirm_order_locally', { p_order_id: order.dbId });
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
 
       if (order.externalId) {
@@ -381,7 +388,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       }
     }
     if (error) {
-      toast.error('Error guardando resultado');
+      // OLD-6: incluir el mensaje del error para que la operadora pueda
+      // diferenciar entre red, RLS, validación, etc.
+      toast.error(`Error guardando resultado: ${error.message || 'desconocido'}`);
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
       setCounter(prev => ({
         conf: prev.conf - (result === 'conf' ? 1 : 0),

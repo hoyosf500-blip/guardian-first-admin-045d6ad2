@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
+import { formatCOP } from '@/lib/utils';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import {
@@ -544,9 +545,9 @@ export default function OrderDetailPage() {
             <DollarSign size={13} aria-hidden="true" /> Financiero
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={`$${valor.toLocaleString()}`} />
-            <InfoRow icon={<Truck size={13} />} label="Flete" value={`$${flete.toLocaleString()}`} />
-            <InfoRow icon={<Package size={13} />} label="Costo producto" value={`$${costoProd.toLocaleString()}`} />
+            <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={formatCOP(valor)} />
+            <InfoRow icon={<Truck size={13} />} label="Flete" value={formatCOP(flete)} />
+            <InfoRow icon={<Package size={13} />} label="Costo producto" value={formatCOP(costoProd)} />
             <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={`$${(valor - flete - costoProd).toLocaleString()}`} highlight />
           </div>
         </motion.div>

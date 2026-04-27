@@ -8,6 +8,7 @@ import {
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, calcBusinessDays } from '@/lib/orderUtils';
+import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import { TruncatedText } from '@/components/TruncatedText';
@@ -279,7 +280,7 @@ export default function CrmCallView({
               </span>
               {o.valor > 0 && (
                 <span className="inline-flex items-center gap-1 text-foreground font-semibold">
-                  <DollarSign size={12} />${o.valor.toLocaleString()}
+                  <DollarSign size={12} />{formatCOP(o.valor)}
                 </span>
               )}
             </div>

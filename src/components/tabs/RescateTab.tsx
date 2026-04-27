@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { RES_ACTIONS } from '@/lib/constants';
+import { formatCOP } from '@/lib/utils';
 import { LifeBuoy, RefreshCw, AlertTriangle, MapPin, RotateCcw, ShieldAlert } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';

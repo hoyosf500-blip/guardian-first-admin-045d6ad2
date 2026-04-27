@@ -5,12 +5,34 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
+// OLD-3: Wrapper safe alrededor de localStorage. Safari iOS en private
+// browsing y navegadores con quota llena hacen `localStorage.setItem`
+// throw, lo que rompe el persistSession y deja a la operadora en un
+// login loop silencioso. Caemos a un Map en memoria (la sesión sigue
+// viva en este tab pero no se persiste entre recargas — degradación
+// graceful).
+const memoryFallback = new Map<string, string>();
+const safeStorage = {
+  getItem(key: string): string | null {
+    try { return globalThis.localStorage?.getItem(key) ?? memoryFallback.get(key) ?? null; }
+    catch { return memoryFallback.get(key) ?? null; }
+  },
+  setItem(key: string, value: string): void {
+    try { globalThis.localStorage?.setItem(key, value); }
+    catch { memoryFallback.set(key, value); }
+  },
+  removeItem(key: string): void {
+    try { globalThis.localStorage?.removeItem(key); } catch { /* ignore */ }
+    memoryFallback.delete(key);
+  },
+};
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    storage: safeStorage,
     persistSession: true,
     autoRefreshToken: true,
   }

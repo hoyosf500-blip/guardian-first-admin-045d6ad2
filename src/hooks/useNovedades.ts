@@ -3,6 +3,7 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
+import { POLL_INTERVAL_MS } from '@/lib/constants';
 import { toast } from 'sonner';
 
 interface NovedadesState {
@@ -157,7 +158,7 @@ export function useNovedades(user: User | null): NovedadesState {
     if (!user) return;
     const interval = setInterval(() => {
       if (novedadesLoaded) loadNovedades(true);
-    }, 5 * 60 * 1000);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [user, novedadesLoaded, loadNovedades]);
 

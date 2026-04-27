@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
 import { toast } from 'sonner';
@@ -280,6 +281,11 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   // para que la operadora no pierda su posición de scroll.
   const scrollPositionsRef = useRef<Map<string, number>>(new Map());
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
+  // REG-2: callback estable para que React.memo en OrderCard skipee renders
+  // cuando solo cambia un card distinto al expandido.
+  const handleToggleExpanded = useCallback((phone: string) => {
+    setExpandedPhone(prev => prev === phone ? null : phone);
+  }, []);
   const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
   const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
   const [internalActiveFilter, setInternalActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
@@ -855,13 +861,13 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
                         order={o}
                         managed={o.dbId ? results[o.dbId] : undefined}
                         expanded={expandedPhone === o.phone}
-                        onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
-                        onAction={(action) => markAction(o, action)}
+                        onToggle={handleToggleExpanded}
+                        onAction={markAction}
                         currentUserId={user?.id}
                         adminIds={adminIds}
                         actions={actions}
-                        touchpoints={phoneTouchpoints[o.phone] || []}
-                        allTouchpoints={allPhoneTouchpoints[o.phone] || []}
+                        touchpoints={phoneTouchpoints[o.phone] ?? EMPTY_TPS}
+                        allTouchpoints={allPhoneTouchpoints[o.phone] ?? EMPTY_TPS}
                         getOperatorName={getOperatorName}
                         getLastTouchTime={getLastTouchTime}
                         module={module}
@@ -881,13 +887,22 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
   );
 }
 
+// REG-2: arrays vacíos estables a nivel módulo. Antes el JSX usaba
+// `phoneTouchpoints[o.phone] || []` que generaba un array nuevo en
+// cada render, defeating React.memo en OrderCard.
+const EMPTY_TPS: Touchpoint[] = [];
+
 /* ── Order Card ── */
 interface OrderCardProps {
   order: OrderData;
   managed: string | undefined;
   expanded: boolean;
-  onToggle: () => void;
-  onAction: (action: string) => void;
+  // REG-2: callbacks estables — el padre pasa la función directa
+  // (markAction useCallback / handleToggleExpanded useCallback) y aquí
+  // las invocamos con los datos del card. Antes eran funciones inline
+  // que cambiaban de identidad cada render y rompían el memo.
+  onToggle: (phone: string) => void;
+  onAction: (order: OrderData, action: string) => void;
   currentUserId: string | undefined;
   adminIds: string[];
   actions: string[];
@@ -932,8 +947,21 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
     <div
       className={`group bg-card rounded-xl border border-border/50 overflow-hidden transition-all duration-200 hover:border-border hover:shadow-md ${managed ? 'opacity-40' : ''}`}
     >
-      {/* Card body */}
-      <div className="px-3.5 pt-3.5 pb-3 cursor-pointer" onClick={onToggle}>
+      {/* Card body — OLD-8: keyboard-navegable. Antes era <div onClick>
+          sin role/tabIndex; operadora con teclado no podía expandir. */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        className="px-3.5 pt-3.5 pb-3 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+        onClick={() => onToggle(o.phone)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle(o.phone);
+          }
+        }}
+      >
         {/* Name + ID + days */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -1129,7 +1157,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               <div className="grid grid-cols-2 gap-2">
                 {([
                   { label: 'Producto', value: o.producto || '—', maxChars: 30 },
-                  { label: 'Valor', value: `$${o.valor.toLocaleString()}`, maxChars: null },
+                  { label: 'Valor', value: formatCOP(o.valor), maxChars: null },
                   { label: 'Dirección', value: o.direccion || '—', maxChars: 35 },
                   { label: 'Departamento', value: o.departamento || '—', maxChars: null },
                 ] as const).map(d => (
@@ -1207,7 +1235,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                 ) : (
                   <>
                     <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
-                      onClick={() => onAction('WhatsApp enviado')}
+                      onClick={() => onAction(o, 'WhatsApp enviado')}
                       className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
                       <Send size={12} /> WhatsApp
                     </a>
@@ -1223,7 +1251,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {!managed && !isOtherOwner && (
                 <div className="flex flex-wrap gap-1.5">
                   {actions.map(a => (
-                    <button key={a} onClick={() => onAction(a)}
+                    <button key={a} onClick={() => onAction(o, a)}
                       className="text-[10px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary font-semibold hover:bg-primary/20 border border-primary/15 whitespace-nowrap transition-colors">
                       {a}
                     </button>

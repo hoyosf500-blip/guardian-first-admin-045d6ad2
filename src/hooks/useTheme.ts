@@ -2,11 +2,19 @@ import { useState, useEffect, useCallback } from 'react';
 
 type Theme = 'light' | 'dark';
 
+// OLD-5: Safari iOS private browsing y quota lleno hacen `localStorage`
+// throw. El theme se degrada a la sesión actual sin persistencia.
+function safeGetItem(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function safeSetItem(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* ignore */ }
+}
+
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'dark';
-    const stored = localStorage.getItem('theme') as Theme;
-    // Default to dark — operators work in dark mode all day
+    const stored = safeGetItem('theme') as Theme | null;
     if (stored === 'light' || stored === 'dark') return stored;
     return 'dark';
   });
@@ -15,7 +23,7 @@ export function useTheme() {
     const root = document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
-    localStorage.setItem('theme', theme);
+    safeSetItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => {

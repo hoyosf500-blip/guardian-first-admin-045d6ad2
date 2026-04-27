@@ -3,6 +3,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
 import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData } from '@/lib/orderUtils';
+import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
 // AI script generator removed — operadoras no lo usaban
@@ -150,11 +151,16 @@ export default function CallView({ items }: Props) {
     // markResult ya libera el lock vía release_order RPC.
     // Llamarlo dos veces causaba un PATCH redundante a /orders.
     setShowCancelModal(false);
-    // H9: Para `result === 'conf'` el toast lo maneja `markResult` con
-    // el flujo unificado de Dropi sync (loading → success/error con
-    // mismo toastId), evitando ver simultáneamente "Confirmado ✅" y
-    // "Dropi falló ⚠️" cuando la sincronización con Dropi falla.
-    if (result !== 'conf') {
+    // REG-1 / H9: Para `result === 'conf'` con externalId, el toast lo
+    // maneja `markResult` (flujo unificado de Dropi sync: loading →
+    // success/error con mismo toastId). Pero si el pedido NO tiene
+    // externalId (ej. cargado vía Excel manual sin Dropi), markResult
+    // no muestra ningún toast — restauramos el success local.
+    if (result === 'conf') {
+      if (!o.externalId) {
+        toast.success(`Confirmado — ${o.nombre.split(' ')[0]}`);
+      }
+    } else {
       toast.success(
         result === 'canc' ? `Cancelado — ${o.nombre.split(' ')[0]}` :
         `No respondió — ${o.nombre.split(' ')[0]}`,
@@ -239,7 +245,7 @@ export default function CallView({ items }: Props) {
           </div>
           <div className="flex items-center gap-1.5">
             <Package size={12} /> {o.producto || '—'}
-            {o.valor > 0 && <><span className="mx-2" /><DollarSign size={12} /> ${o.valor.toLocaleString()}</>}
+            {o.valor > 0 && <><span className="mx-2" /><DollarSign size={12} /> {formatCOP(o.valor)}</>}
           </div>
         </div>
 

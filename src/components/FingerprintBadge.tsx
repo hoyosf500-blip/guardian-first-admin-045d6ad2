@@ -110,12 +110,16 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
         });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const d = raw as Record<string, any> | null;
+        // OLD-2: NO loguear el phone completo. Si mañana enchufamos
+        // Sentry/LogFlare, los teléfonos vuelan al SaaS sin redacción.
+        // Mostramos solo los últimos 4 dígitos como tag de debug.
+        const phoneTag = phone ? `***${phone.slice(-4)}` : '<empty>';
         if (error) {
-          console.error('[FingerprintBadge] RPC error', { phone, error });
+          console.error('[FingerprintBadge] RPC error', { phoneTag, error });
         } else if (d && d.ok === false) {
-          console.error('[FingerprintBadge] RPC returned ok=false', { phone, payload: d });
+          console.error('[FingerprintBadge] RPC returned ok=false', { phoneTag, payload: d });
         } else if (d?.ok && !d.fingerprint?.found) {
-          console.warn('[FingerprintBadge] No fingerprint found for phone', { phone });
+          console.warn('[FingerprintBadge] No fingerprint found for phone', { phoneTag });
         }
         if (!cancelled && !error && d?.ok && d.fingerprint?.found) {
           const gp = d.fingerprint.global_profile;

@@ -32,6 +32,14 @@ function PageLoader() {
   );
 }
 
+// OLD-1: ErrorBoundary granular por ruta. Antes había uno solo a nivel
+// raíz: un crash en OrderCard tiraba la app entera (sidebar incluido)
+// y bloqueaba a las 2-3 operadoras en simultáneo. Ahora un crash en
+// /confirmar no afecta a /seguimiento ni al sidebar.
+const route = (Element: React.ReactElement) => (
+  <ErrorBoundary>{Element}</ErrorBoundary>
+);
+
 const App = () => (
   <MotionConfig reducedMotion="user">
   <QueryClientProvider client={queryClient}>
@@ -42,16 +50,16 @@ const App = () => (
           <BrowserRouter>
             <Suspense fallback={<PageLoader />}>
               <Routes>
-                <Route path="/auth" element={<AuthPage />} />
+                <Route path="/auth" element={route(<AuthPage />)} />
                 <Route element={<ProtectedLayout />}>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/confirmar" element={<ConfirmarPage />} />
-                  <Route path="/seguimiento" element={<SeguimientoPage />} />
-                  <Route path="/novedades" element={<NovedadesPage />} />
-                  <Route path="/rescate" element={<RescatePage />} />
-                  <Route path="/admin" element={<AdminPage />} />
-                  <Route path="/pedido/:externalId" element={<OrderDetailPage />} />
+                  <Route path="/dashboard" element={route(<DashboardPage />)} />
+                  <Route path="/confirmar" element={route(<ConfirmarPage />)} />
+                  <Route path="/seguimiento" element={route(<SeguimientoPage />)} />
+                  <Route path="/novedades" element={route(<NovedadesPage />)} />
+                  <Route path="/rescate" element={route(<RescatePage />)} />
+                  <Route path="/admin" element={route(<AdminPage />)} />
+                  <Route path="/pedido/:externalId" element={route(<OrderDetailPage />)} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
               </Routes>
