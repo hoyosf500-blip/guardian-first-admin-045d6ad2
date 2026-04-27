@@ -1096,6 +1096,6 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
