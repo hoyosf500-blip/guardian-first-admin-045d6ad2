@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -219,19 +219,17 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
 };
 
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
-  // Touchpoints cross-modulares — TODOS los del cliente sin filtro de prefijo.
-  // Sirve para el badge de contactos: si Mayra llamó al cliente desde
-  // Confirmar (touchpoint sin prefijo) y la operadora abre Seguimiento,
-  // queremos que vea ese contacto histórico, no "Sin contactar".
   const [allTouchpoints, setAllTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  // Lista de admins. Pedidos con assigned_to apuntando a un admin se
+  // tratan como pool libre — un admin nunca debería estar reservando
+  // pedidos operativos. Esto cubre histórico (Fabian trabajando como
+  // operadora por error) sin necesidad de tocar la DB cada vez.
+  const [adminIds, setAdminIds] = useState<string[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
-  // Filter state persisted per module so it survives both tab discards AND
-  // internal route navigations (previously every tab switch reset the
-  // operator's filter chip / search / toggle state).
   const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
   const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
   const [internalActiveFilter, setInternalActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
@@ -246,14 +244,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     }
   };
   const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
-  // Asignación: 'available' = míos + sin asignar (default operativo).
-  // 'all' = todos, para auditar quién está atendiendo qué.
   const [assignmentFilter, setAssignmentFilter] = useSessionState<'available' | 'all'>(`crmtable:${module}:assignmentFilter`, 'available');
   const { claimSegOrder, releaseSegOrder } = useSegAssignment();
-  // Lista / Llamar toggle — persisted per module so it survives tab
-  // discards (common on mobile when the operator goes out to the
-  // transportadora's tracking page).
   const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
+  // Guard contra doble-click: trackea dbIds en vuelo en markAction.
+  const markingInFlightRef = useRef<Set<string>>(new Set());
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
@@ -321,6 +316,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     });
   }, [data, module]);
 
+  // C3: lista de admins. Pedidos con assigned_to apuntando a admin se
+  // tratan como pool libre / sin asignar.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.from('user_roles').select('user_id').eq('role', 'admin').then(({ data: rows }) => {
+      if (cancelled || !rows) return;
+      setAdminIds(rows.map(r => r.user_id));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const getOperatorName = (opId: string) => profiles.find(pr => pr.user_id === opId)?.display_name || 'Operador';
 
   const phoneTouchpoints = useMemo(() => {
@@ -350,48 +356,50 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
   }, [phoneTouchpoints]);
 
   const markAction = async (order: OrderData, action: string) => {
-    // Bloquea la acción si el pedido ya pertenece a otra operadora.
-    if (user && order.assignedTo && order.assignedTo !== user.id) {
-      const owner = getOperatorName(order.assignedTo);
-      toast.error(`Pedido en atención por ${owner}`);
-      return;
-    }
-    // Auto-claim al primer toque: si está sin asignar, lo reclama el caller.
-    // Si claim_seg_order devuelve false significa que otra operadora lo tomó
-    // entre el render y el click (race con realtime). Aborta la acción.
-    if (user && order.dbId && !order.assignedTo) {
-      const claimed = await claimSegOrder(order.dbId);
-      if (!claimed) {
-        toast.error('Otra operadora tomó este pedido');
+    // D6: doble-click guard.
+    if (!order.dbId || markingInFlightRef.current.has(order.dbId)) return;
+    markingInFlightRef.current.add(order.dbId);
+    try {
+      // C4: si el "owner" actual es admin, lo tratamos como sin asignar.
+      const ownerIsAdmin = order.assignedTo ? adminIds.includes(order.assignedTo) : false;
+      // Bloquea la acción si el pedido pertenece a otra operadora real (no admin).
+      if (!isAdmin && user && order.assignedTo && order.assignedTo !== user.id && !ownerIsAdmin) {
+        const owner = getOperatorName(order.assignedTo);
+        toast.error(`Pedido en atención por ${owner}`);
         return;
       }
-    }
-    const slaMs = getActionSLA(action) * 3600000;
-    const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
-    const label = `${action} · vuelve en ${hoursLeft}h`;
-    if (order.dbId) {
+      // C2: admin NUNCA hace claim/release. Solo registra el touchpoint
+      // y aplica el efecto visual optimista.
+      if (!isAdmin && user && order.dbId && (!order.assignedTo || ownerIsAdmin)) {
+        const claimed = await claimSegOrder(order.dbId);
+        if (!claimed) {
+          toast.error('Otra operadora tomó este pedido');
+          return;
+        }
+      }
+      const slaMs = getActionSLA(action) * 3600000;
+      const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
+      const label = `${action} · vuelve en ${hoursLeft}h`;
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
+      if (user) {
+        const now = new Date();
+        const tp = {
+          phone: order.phone,
+          action: `${module}: ${action}`,
+          operator_id: user.id,
+          action_date: bogotaToday(),
+          action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+        };
+        const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
+        if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
+      }
+      if (!isAdmin && order.dbId && RESOLVING_ACTIONS.has(action)) {
+        await releaseSegOrder(order.dbId);
+      }
+      toast.success(action);
+    } finally {
+      markingInFlightRef.current.delete(order.dbId);
     }
-    if (user) {
-      const now = new Date();
-      const tp = {
-        phone: order.phone,
-        action: `${module}: ${action}`,
-        operator_id: user.id,
-        action_date: bogotaToday(),
-        action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
-      };
-      const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
-      if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
-    }
-    // Liberación condicional: solo las acciones resolutivas (Resuelto,
-    // Devolucion solicitada, Solicite devolucion) sueltan la asignación.
-    // El resto mantiene al pedido en la cartera de la operadora para
-    // continuidad al día siguiente.
-    if (order.dbId && RESOLVING_ACTIONS.has(action)) {
-      await releaseSegOrder(order.dbId);
-    }
-    toast.success(action);
   };
 
 

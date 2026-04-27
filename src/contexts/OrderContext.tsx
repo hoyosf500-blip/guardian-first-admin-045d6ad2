@@ -87,17 +87,37 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // Antes había 2 callbacks (onOrderChange + onResultChange), cada uno
   // disparaba 3-4 fetches; al confirmar un pedido se generaban 7-8
   // requests en 500ms. Con este wrapper el burst se aplana a 4 fetches.
+  //
+  // Fix D3: usamos un ref que se actualiza en cada render con las funciones
+  // más recientes. El useCallback queda con deps [] y nunca se recrea, así
+  // que useRealtimeOrders/useAutoDropiSync no se re-suscriben en cada render
+  // — pero adentro siempre llama a la versión más fresca de cada función,
+  // evitando el stale-closure que dejaba refrescos disparándose contra
+  // estados ya obsoletos.
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshFnsRef = useRef({
+    loadNovedades: novedades.loadNovedades,
+    loadSegData: dataLoader.loadSegData,
+    loadResData: dataLoader.loadResData,
+    loadWorkQueue,
+  });
+  useEffect(() => {
+    refreshFnsRef.current = {
+      loadNovedades: novedades.loadNovedades,
+      loadSegData: dataLoader.loadSegData,
+      loadResData: dataLoader.loadResData,
+      loadWorkQueue,
+    };
+  });
   const debouncedRefreshAll = useCallback(() => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
-      void novedades.loadNovedades(true);
-      void dataLoader.loadSegData(true);
-      void dataLoader.loadResData(true);
-      void loadWorkQueue();
+      void refreshFnsRef.current.loadNovedades(true);
+      void refreshFnsRef.current.loadSegData(true);
+      void refreshFnsRef.current.loadResData(true);
+      void refreshFnsRef.current.loadWorkQueue();
       refreshTimerRef.current = null;
     }, 800);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-sync con Dropi cada 5 min mientras un admin esté con la app abierta.
@@ -116,6 +136,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const markingInFlight = useRef(new Set<string>());
   // Coordination flag so undoLast and rollbackDropiFailure don't both decrement the counter.
   const revertedRef = useRef(false);
+  // Fix D4: cada llamada a buildWorkQueue incrementa este id. El fetch
+  // async de order_results valida que el id siga siendo el suyo antes de
+  // hacer setWorkQueue/setCounter — si llegó un build más nuevo (p. ej.
+  // realtime trajo un cambio mientras la operadora hacía scroll), descarta
+  // el resultado para no pisar estado fresco con datos viejos.
+  const lastBuildIdRef = useRef(0);
 
   useEffect(() => {
     requestNotificationPermission();
@@ -126,6 +152,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const buildWorkQueue = useCallback((orders: OrderData[]) => {
+    const buildId = ++lastBuildIdRef.current;
     const pendientes = orders.filter(o => isPendiente(o.estado));
     pendientes.sort((a, b) => calcPriority(b) - calcPriority(a) || b.dias - a.dias);
 
@@ -162,6 +189,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         .eq('operator_id', user.id)
         .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
+          // Si llegó un buildWorkQueue más nuevo mientras el fetch corría,
+          // descarta este resultado — el estado ya fue reemplazado por
+          // datos más frescos.
+          if (buildId !== lastBuildIdRef.current) return;
           if (data) {
             const now = Date.now();
             // BUG 1/2 fix: only consider real call outcomes. Audit rows like

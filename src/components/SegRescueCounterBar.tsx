@@ -36,7 +36,7 @@ interface Props {
 }
 
 export default function SegRescueCounterBar({ module }: Props) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [stats, setStats] = useState<Stats>({
     myActions: 0,
     myResolved: 0,
@@ -96,6 +96,11 @@ export default function SegRescueCounterBar({ module }: Props) {
   }, [user, module, refetch]);
 
   if (!user) return null;
+  // Admins no aparecen en stats operativas: si está logueado un admin
+  // no mostramos esta barra (no contamina su vista con métricas que no
+  // son suyas, y refuerza visualmente que no debe estar trabajando como
+  // operadora).
+  if (isAdmin) return null;
 
   const pendientes = Math.max(0, stats.myActions - stats.myResolved);
   const tasa = stats.myActions > 0

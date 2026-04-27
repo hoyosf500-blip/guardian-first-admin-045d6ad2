@@ -146,7 +146,8 @@ export default function CallView({ items }: Props) {
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
-    if (o.dbId) void releaseOrder(o.dbId);
+    // markResult ya libera el lock vía release_order RPC.
+    // Llamarlo dos veces causaba un PATCH redundante a /orders.
     setShowCancelModal(false);
     toast.success(
       result === 'conf' ? `Confirmado — ${o.nombre.split(' ')[0]}` :

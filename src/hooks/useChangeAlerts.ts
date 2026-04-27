@@ -49,7 +49,7 @@ export function useChangeAlerts(userId: string | undefined) {
     // Count active novedades (unresolved)
     const [novRes, devRes, ofiRes] = await Promise.all([
       supabase.from('orders').select('id', { count: 'exact', head: true })
-        .eq('estado', 'NOVEDAD').eq('novedad_sol', false),
+        .or('estado.eq.NOVEDAD,estado.ilike.%INTENTO DE ENTREGA%').eq('novedad_sol', false),
       supabase.from('orders').select('id', { count: 'exact', head: true })
         .ilike('estado', '%DEVOL%'),
       supabase.from('orders').select('id', { count: 'exact', head: true })
