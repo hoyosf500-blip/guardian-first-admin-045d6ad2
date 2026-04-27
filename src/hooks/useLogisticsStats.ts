@@ -12,7 +12,7 @@ import type {
 // Cache corto: las RPCs son agregaciones, queremos data fresca.
 // El realtime subscription (postgres_changes en `orders`) invalida el
 // cache cuando hay cambios reales, así que `staleTime: 60s` es solo un piso.
-const STALE_60S = 60 * 1000;
+const STALE_5MIN = 5 * 60 * 1000;
 
 interface RpcResult<T> {
   data: T[] | null;
