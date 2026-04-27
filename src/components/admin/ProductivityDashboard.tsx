@@ -43,15 +43,25 @@ export default function ProductivityDashboard() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Antes solo console.error → la UI mostraba "Sin actividad" indistinguible
+  // de un error silenciado vs cero filas reales. Ahora capturamos el mensaje
+  // y lo renderizamos como banner visible para diagnóstico inmediato.
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
-    const { data, error } = await supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never);
-    if (error) {
-      console.error('[productivity] rpc error', error);
+    const { data, error: rpcErr } = await supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never);
+    if (rpcErr) {
+      console.error('[productivity] rpc error', rpcErr);
+      const e = rpcErr as { code?: string; message?: string; hint?: string; details?: string };
+      setError(`${e.code || 'ERR'}: ${e.message || 'Error desconocido'}${e.hint ? ` — ${e.hint}` : ''}${e.details ? ` (${e.details})` : ''}`);
+      setRows([]);
     } else {
-      setRows((data as Row[]) ?? []);
+      const arr = (data as Row[] | null) ?? [];
+      console.log('[productivity] rows received', arr.length);
+      setRows(arr);
+      setError(null);
     }
     setLoading(false);
     setRefreshing(false);
@@ -119,19 +129,36 @@ export default function ProductivityDashboard() {
         </div>
       </div>
 
+      {error && (
+        <Card className="border-red-500/30 bg-red-500/5">
+          <CardContent className="py-3">
+            <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-1">
+              Error cargando productividad
+            </p>
+            <p className="text-xs text-foreground/80 font-mono break-all">{error}</p>
+            <p className="text-[10px] text-muted-foreground mt-2">
+              Si dice <code>function ... does not exist</code>: la migration de la RPC
+              no se aplicó. Si dice <code>42501</code> o <code>Solo administradores</code>:
+              tu usuario no tiene rol admin en <code>user_roles</code>. Cualquier otro
+              error: copialo y mandámelo.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {loading ? (
         <Card>
           <CardContent className="flex justify-center py-10">
             <Loader2 className="animate-spin text-primary" size={20} />
           </CardContent>
         </Card>
-      ) : rows.length === 0 ? (
+      ) : !error && rows.length === 0 ? (
         <Card>
           <CardContent>
             <p className="text-sm text-muted-foreground text-center py-8">Sin actividad en este rango</p>
           </CardContent>
         </Card>
-      ) : (
+      ) : !error ? (
         <>
           {/* Confirmar — métricas del flujo de confirmación de pedidos */}
           <Card>
@@ -351,7 +378,7 @@ export default function ProductivityDashboard() {
             </div>
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }
