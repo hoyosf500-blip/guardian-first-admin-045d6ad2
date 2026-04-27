@@ -208,7 +208,15 @@ Deno.serve(async (req: Request) => {
     } else {
     // ---- Auth path 2: require admin role for authenticated callers ----
     const authHeader = req.headers.get("Authorization");
-    if (authHeader && authHeader !== `Bearer ${supabaseServiceKey}`) {
+    // C2 fix: si no hay ni secret ni Authorization, rechazar. Antes se ejecutaba
+    // sin validación cuando authHeader era null (cualquiera podía disparar el cron).
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 401,
+        headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
+    }
+    if (authHeader !== `Bearer ${supabaseServiceKey}`) {
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
       const anonClient = createClient(supabaseUrl, anonKey);
       const { data: { user }, error: authError } = await anonClient.auth.getUser(
