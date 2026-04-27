@@ -411,7 +411,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     // Filtro de asignación: por defecto cada operadora ve "Disponibles"
     // (sin asignar + suyos). Toggle "Todos" lo deshabilita para auditoría.
     if (assignmentFilter === 'available' && user) {
-      list = list.filter(o => !o.assignedTo || o.assignedTo === user.id);
+      list = list.filter(o =>
+        !o.assignedTo
+        || o.assignedTo === user.id
+        || adminIds.includes(o.assignedTo)
+      );
     }
     // Hide managed orders unless showManaged is on
     if (!showManaged) {
@@ -436,7 +440,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user, adminIds]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -687,6 +691,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
                         onAction={(action) => markAction(o, action)}
                         currentUserId={user?.id}
+                        adminIds={adminIds}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
                         allTouchpoints={allPhoneTouchpoints[o.phone] || []}
@@ -717,6 +722,7 @@ interface OrderCardProps {
   onToggle: () => void;
   onAction: (action: string) => void;
   currentUserId: string | undefined;
+  adminIds: string[];
   actions: string[];
   touchpoints: Touchpoint[];
   /** Todos los touchpoints del teléfono (cross-modular) — para el badge de contactos */
@@ -728,9 +734,17 @@ interface OrderCardProps {
   statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
-  const isMine = !!(o.assignedTo && currentUserId && o.assignedTo === currentUserId);
-  const isOtherOwner = !!(o.assignedTo && currentUserId && o.assignedTo !== currentUserId);
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
+  const isMine = !!(
+    o.assignedTo && currentUserId
+    && o.assignedTo === currentUserId
+    && !adminIds.includes(o.assignedTo)
+  );
+  const isOtherOwner = !!(
+    o.assignedTo && currentUserId
+    && o.assignedTo !== currentUserId
+    && !adminIds.includes(o.assignedTo)
+  );
   const ownerName = isOtherOwner && o.assignedTo ? getOperatorName(o.assignedTo) : '';
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);

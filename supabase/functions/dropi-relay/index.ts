@@ -11,6 +11,7 @@
 //   POST /            → Proxy a Dropi (requiere x-relay-secret)
 
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 
 const DROPI_HOSTS: Record<string, string> = {
@@ -113,6 +114,25 @@ Deno.serve(async (req: Request) => {
   const base = DROPI_HOSTS[country];
   if (!base) {
     return json({ ok: false, error: `Pais no soportado: ${country}. Validos: ${Object.keys(DROPI_HOSTS).join(", ")}` }, 400, corsHeaders);
+  }
+
+  // 2.5) Validar que el dropi_token corresponda al token autorizado en app_settings
+  try {
+    const sb = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
+    const { data: keySetting } = await sb
+      .from("app_settings")
+      .select("value")
+      .eq("key", "dropi_api_key")
+      .maybeSingle();
+    if (!keySetting || keySetting.value !== dropiToken) {
+      return json({ ok: false, error: "Token Dropi no autorizado" }, 403, corsHeaders);
+    }
+  } catch (err) {
+    console.error("[dropi-relay] token validation failed", err);
+    return json({ ok: false, error: "No se pudo validar el token" }, 500, corsHeaders);
   }
 
   // 3) Diagnostics: parse JWT claims (NO log del token completo)
