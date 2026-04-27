@@ -514,7 +514,10 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     return new Date(tps[0].created_at).getTime();
   }, [phoneTouchpoints]);
 
-  const markAction = async (order: OrderData, action: string) => {
+  // HIGH-1: useCallback estable para no romper React.memo de OrderCard.
+  // Antes era función plana → cambiaba identidad cada render → cada
+  // re-render del padre re-renderizaba TODAS las cards.
+  const markAction = useCallback(async (order: OrderData, action: string) => {
     // D6: doble-click guard.
     if (!order.dbId || markingInFlightRef.current.has(order.dbId)) return;
     markingInFlightRef.current.add(order.dbId);
@@ -559,7 +562,7 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     } finally {
       markingInFlightRef.current.delete(order.dbId);
     }
-  };
+  }, [user, isAdmin, adminIds, claimSegOrder, releaseSegOrder, module, getOperatorName]);
 
 
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
