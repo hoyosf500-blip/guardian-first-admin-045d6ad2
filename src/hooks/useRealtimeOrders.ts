@@ -14,11 +14,13 @@ interface RealtimeCallbacks {
  * Subscribes to live changes on the `orders` and `order_results` tables.
  *
  * - One channel per user; closed on unmount or when the user signs out.
- * - Bursts of events are coalesced via a 500ms trailing debounce so a
- *   sync of 1000 rows doesn't fire 1000 refetches.
+ * - Pass stable callbacks (wrap in useCallback) — the channel is rebuilt
+ *   whenever a callback identity changes.
  *
- * Pass stable callbacks (wrap in useCallback) — the channel is rebuilt
- * whenever a callback identity changes.
+ * M6: el debounce interno de 500ms se eliminó. El callback de
+ * `OrderContext.debouncedRefreshAll` ya tiene su propio debounce de
+ * 800ms; teniendo dos en cadena se sumaban a ~1.3 s de latencia mínima
+ * sin agregar protección real.
  */
 export function useRealtimeOrders(user: User | null, { onOrderChange, onResultChange }: RealtimeCallbacks) {
   // Keep latest callback refs so we don't tear down the channel every
@@ -31,25 +33,15 @@ export function useRealtimeOrders(user: User | null, { onOrderChange, onResultCh
   useEffect(() => {
     if (!user) return;
 
-    let orderTimer: ReturnType<typeof setTimeout> | null = null;
-    let resultTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const fireOrder = () => {
-      if (orderTimer) clearTimeout(orderTimer);
-      orderTimer = setTimeout(() => {
-        orderCb.current?.();
-        orderTimer = null;
-      }, 500);
+      orderCb.current?.();
     };
 
     const fireResult = () => {
-      if (resultTimer) clearTimeout(resultTimer);
-      resultTimer = setTimeout(() => {
-        resultCb.current?.();
-        resultTimer = null;
-      }, 500);
+      resultCb.current?.();
     };
 
     (async () => {
@@ -87,8 +79,6 @@ export function useRealtimeOrders(user: User | null, { onOrderChange, onResultCh
 
     return () => {
       cancelled = true;
-      if (orderTimer) clearTimeout(orderTimer);
-      if (resultTimer) clearTimeout(resultTimer);
       if (channel) void supabase.removeChannel(channel);
     };
   }, [user]);

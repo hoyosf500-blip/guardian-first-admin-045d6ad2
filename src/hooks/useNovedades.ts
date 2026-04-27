@@ -27,9 +27,13 @@ export function useNovedades(user: User | null): NovedadesState {
       // Match any estado que contenga NOVEDAD o INTENTO DE ENTREGA — Dropi usa
       // variantes ('NOVEDAD PENDIENTE', 'NOVEDAD EN RUTA', etc.) y un .in()
       // estricto dejaba pedidos fuera de la cola.
+      // M5: columnas explícitas en vez de `select('*')` para ser
+      // consistente con useDataLoader (Fix 22) y evitar traer columnas
+      // futuras innecesarias automáticamente.
+      const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
       const { data, error } = await supabase
         .from('orders')
-        .select('*')
+        .select(ORDER_COLUMNS)
         .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
         .eq('novedad_sol', false);
       if (error) {

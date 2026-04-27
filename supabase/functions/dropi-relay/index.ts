@@ -60,13 +60,27 @@ Deno.serve(async (req: Request) => {
   // Path puede venir como /dropi-relay, /dropi-relay/health, /dropi-relay/egress-ip
   const subpath = url.pathname.replace(/^.*\/dropi-relay/, "") || "/";
 
+  // M1: /health y /egress-ip ahora exigen el mismo x-relay-secret que
+  // el POST de proxy. Antes /egress-ip exponía la IP de salida del
+  // function (la que Dropi tiene whitelisted) sin auth, lo que ayudaba
+  // a un atacante a mapear infraestructura.
+  const expectedSecret = Deno.env.get("RELAY_SHARED_SECRET");
+  const providedSecret = req.headers.get("x-relay-secret");
+  const secretOk = !!expectedSecret && providedSecret === expectedSecret;
+
   // ---- GET /health ----
   if (req.method === "GET" && subpath === "/health") {
+    if (!secretOk) {
+      return json({ ok: false, error: "Unauthorized" }, 401, corsHeaders);
+    }
     return json({ ok: true, ts: new Date().toISOString() }, 200, corsHeaders);
   }
 
   // ---- GET /egress-ip ----
   if (req.method === "GET" && subpath === "/egress-ip") {
+    if (!secretOk) {
+      return json({ ok: false, error: "Unauthorized" }, 401, corsHeaders);
+    }
     try {
       const r = await fetch("https://api.ipify.org?format=json");
       const data = await r.json();

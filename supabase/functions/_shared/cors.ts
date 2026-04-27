@@ -2,10 +2,15 @@
 // Allowlist preserves Lovable preview, sandbox, production y localhost dev.
 // Si el Origin no matchea, devolvemos production como default (no un comodín).
 
+// M2: Antes había wildcards `*.lovable.app` y `*.lovableproject.com`
+// que confiaban en CUALQUIER proyecto de la plataforma Lovable. Una
+// app maliciosa en otro subdominio podía hacer requests cross-origin
+// con credenciales del usuario. Ahora solo el dominio prod específico
+// + localhost para dev local. Si necesitas previews, agrega su URL
+// exacta aquí.
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/guardian-first-admin\.lovable\.app$/,
-  /^https:\/\/[a-z0-9-]+\.lovable\.app$/,        // preview Lovable
-  /^https:\/\/[a-z0-9-]+\.lovableproject\.com$/, // sandbox Lovable
+  /^https:\/\/guardian-first-admin\.lovableproject\.com$/,
   /^http:\/\/localhost:\d+$/,                     // dev local
 ];
 

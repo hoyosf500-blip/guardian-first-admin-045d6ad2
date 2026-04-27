@@ -311,7 +311,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     });
     setLastMark({ order, result, reason });
 
-    if (!timerStart) setTimerStart(Date.now());
+    // M4: setter funcional para evitar stale closure. El `markResult`
+    // dentro de useCallback capturaba `timerStart=0` en el primer render;
+    // si la operadora marcaba el primer pedido y luego el segundo antes
+    // del re-render, el timer se reseteaba.
+    setTimerStart(prev => prev || Date.now());
 
     const today = bogotaToday();
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
