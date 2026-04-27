@@ -5,7 +5,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X } from 'lucide-react';
+import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import OpeningReportGate from '@/components/OpeningReportGate';
 import type { LucideIcon } from 'lucide-react';
@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
   { path: '/rescate', icon: LifeBuoy, label: 'Rescate' },
   { path: '/admin', icon: Settings, label: 'Admin', adminOnly: true },
+  { path: '/logistica', icon: Truck, label: 'Logística', adminOnly: true },
 ];
 
 function LiveClock() {

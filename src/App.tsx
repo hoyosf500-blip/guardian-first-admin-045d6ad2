@@ -19,6 +19,7 @@ const NovedadesPage = lazy(() => import("@/pages/NovedadesPage"));
 const RescatePage = lazy(() => import("@/pages/RescatePage"));
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
+const LogisticsPage = lazy(() => import("@/pages/LogisticsPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -59,6 +60,7 @@ const App = () => (
                   <Route path="/novedades" element={route(<NovedadesPage />)} />
                   <Route path="/rescate" element={route(<RescatePage />)} />
                   <Route path="/admin" element={route(<AdminPage />)} />
+                  <Route path="/logistica" element={route(<LogisticsPage />)} />
                   <Route path="/pedido/:externalId" element={route(<OrderDetailPage />)} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
