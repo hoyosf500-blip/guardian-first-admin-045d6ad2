@@ -10,11 +10,8 @@
 //   GET  /egress-ip   → IP pública de salida (vista por Dropi)
 //   POST /            → Proxy a Dropi (requiere x-relay-secret)
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-relay-secret",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
+
 
 const DROPI_HOSTS: Record<string, string> = {
   CO: "https://api.dropi.co",
