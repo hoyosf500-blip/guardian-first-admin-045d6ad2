@@ -2,9 +2,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
- * Syncs orders from the last 90 days to capture status changes.
+ * Syncs orders from the last 14 days to capture status changes.
  * Auth: pg_cron sends x-cron-secret; admins send Authorization Bearer JWT.
- * v2 — force redeploy to apply shared-secret auth branch.
+ * v3 — usa RPC upsert_orders_from_dropi para evitar realtime spam.
+ *      Antes: upsert directo escribía cada fila aunque no cambiara →
+ *      Postgres disparaba 500-2000 eventos UPDATE cada 5 min →
+ *      frontend re-renderizaba en cascada (parpadeo en operadoras).
+ *      Ahora: RPC con ON CONFLICT DO UPDATE WHERE IS DISTINCT FROM →
+ *      solo cambios reales escriben → eventos bajan ~95%.
  */
 
 const DROPI_API = "https://api.dropi.co";
@@ -300,17 +305,27 @@ Deno.serve(async (req: Request) => {
 
       const dbOrders = dropiOrders.map((o) => mapOrder(o, uploadedBy, todayStr));
 
+      // Antes: sb.from("orders").upsert(batch, {ignoreDuplicates: false})
+      // hacía UPDATE de cada fila aunque el contenido fuera idéntico →
+      // realtime broadcast por todas → frontend recibía 500-2000
+      // eventos cada 5 min → re-render en cascada aunque la lista no
+      // cambiara visualmente (parpadeo reportado por operadoras).
+      //
+      // Ahora: RPC `upsert_orders_from_dropi` corre INSERT...ON CONFLICT
+      // DO UPDATE WHERE <campos IS DISTINCT FROM>, así filas idénticas
+      // NO se escriben → cero realtime espurio. Devuelve la cantidad
+      // real de filas tocadas para logging.
       for (let i = 0; i < dbOrders.length; i += 50) {
         const batch = dbOrders.slice(i, i + 50);
-        const { error: upsertError, data: upsertedData } = await sb
-          .from("orders")
-          .upsert(batch, { onConflict: "external_id", ignoreDuplicates: false })
-          .select("id");
+        const { data: changedCount, error: upsertError } = await sb.rpc(
+          "upsert_orders_from_dropi",
+          { p_orders: batch },
+        );
 
         if (upsertError) {
-          console.error("Upsert error:", upsertError);
+          console.error("upsert_orders_from_dropi error:", upsertError);
         } else {
-          totalSynced += upsertedData?.length || 0;
+          totalSynced += (changedCount as number) || 0;
         }
       }
 

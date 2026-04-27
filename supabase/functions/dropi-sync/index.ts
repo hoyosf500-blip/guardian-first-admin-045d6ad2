@@ -271,21 +271,21 @@ Deno.serve(async (req: Request) => {
 
       const dbOrders = dropiOrders.map((o) => mapOrder(o, user.id, today));
 
-      // UPSERT in batches of 50
+      // RPC upsert_orders_from_dropi: ON CONFLICT DO UPDATE WHERE
+      // IS DISTINCT FROM. Filas idénticas no se reescriben → no se
+      // dispara realtime espurio que hacía parpadear la UI de
+      // operadoras. Mismo patrón que dropi-cron.
       for (let i = 0; i < dbOrders.length; i += 50) {
         const batch = dbOrders.slice(i, i + 50);
-        const { error: upsertError, data: upsertedData } = await sb
-          .from("orders")
-          .upsert(batch, {
-            onConflict: "external_id",
-            ignoreDuplicates: false,
-          })
-          .select("id");
+        const { data: changedCount, error: upsertError } = await sb.rpc(
+          "upsert_orders_from_dropi",
+          { p_orders: batch },
+        );
 
         if (upsertError) {
-          console.error("Upsert error:", upsertError);
+          console.error("upsert_orders_from_dropi error:", upsertError);
         } else {
-          totalSynced += upsertedData?.length || 0;
+          totalSynced += (changedCount as number) || 0;
         }
       }
 
