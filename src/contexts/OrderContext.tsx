@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
@@ -10,6 +10,9 @@ import { useDataLoader, smartMerge } from '@/hooks/useDataLoader';
 import { useNovedades } from '@/hooks/useNovedades';
 import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
+
+// Fix 22: lista explícita de columnas para queries de orders.
+const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -68,9 +71,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const loadWorkQueue = useCallback(async () => {
     if (!user) return;
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // Fix 22: select de columnas explícitas en lugar de '*'.
     const { data: dbOrders, error } = await supabase
       .from('orders')
-      .select('*')
+      .select(ORDER_COLUMNS)
       .ilike('estado', 'PENDIENTE CONFIRMACION')
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
     if (error || !dbOrders) return;
@@ -98,14 +102,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const refreshFnsRef = useRef({
     loadNovedades: novedades.loadNovedades,
     loadSegData: dataLoader.loadSegData,
-    loadResData: dataLoader.loadResData,
     loadWorkQueue,
   });
   useEffect(() => {
     refreshFnsRef.current = {
       loadNovedades: novedades.loadNovedades,
       loadSegData: dataLoader.loadSegData,
-      loadResData: dataLoader.loadResData,
       loadWorkQueue,
     };
   });
@@ -114,7 +116,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     refreshTimerRef.current = setTimeout(() => {
       void refreshFnsRef.current.loadNovedades(true);
       void refreshFnsRef.current.loadSegData(true);
-      void refreshFnsRef.current.loadResData(true);
       void refreshFnsRef.current.loadWorkQueue();
       refreshTimerRef.current = null;
     }, 800);
@@ -172,14 +173,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       return isConfirmado(e) || isDespachado(e) || isNovedad(e) || isOficina(e) || isDevolucion(e);
     });
     dataLoader.setSegData(prev => smartMerge(prev, segNext));
-    const resNext = orders.filter(o => {
-      const e = o.estado.toUpperCase();
-      return (isDespachado(e) && o.diasConf >= 5) ||
-        (e.includes('NOVEDAD') && !o.novedadSol) ||
-        e.includes('OFICINA') || e.includes('RECLAME') ||
-        e.includes('DEVOL');
-    });
-    dataLoader.setResData(prev => smartMerge(prev, resNext));
+    // Fix 21: resData se deriva de segData con useMemo más abajo, no se
+    // vuelve a setear acá. Evita doble fuente de verdad.
 
     if (user) {
       // BUG A fix: pull last 7 days so confirmations done late yesterday
@@ -287,7 +282,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           }
         });
     }
-  }, [user, dataLoader.setSegData, dataLoader.setResData]);
+  }, [user, dataLoader.setSegData]);
 
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;
@@ -462,20 +457,30 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue([]);
     dataLoader.setSegData([]);
     dataLoader.setSegLoaded(false);
-    dataLoader.setResData([]);
-    dataLoader.setResLoaded(false);
     novedades.setNovedadesQueue([]);
     setExcelLoaded(false);
     resetCelebrations();
-  }, [resetCelebrations, dataLoader.setSegData, dataLoader.setSegLoaded, dataLoader.setResData, dataLoader.setResLoaded, novedades.setNovedadesQueue]);
+  }, [resetCelebrations, dataLoader.setSegData, dataLoader.setSegLoaded, novedades.setNovedadesQueue]);
+
+  // Fix 21: resData se deriva de segData. Evita doble fetch+merge.
+  // Mismo filtro que tenía loadResData/buildWorkQueue.
+  const resData = useMemo(() => {
+    return dataLoader.segData.filter(o => {
+      const e = o.estado.toUpperCase();
+      return (isDespachado(e) && o.diasConf >= 5) ||
+        (e.includes('NOVEDAD') && !o.novedadSol) ||
+        e.includes('OFICINA') || e.includes('RECLAME') ||
+        e.includes('DEVOL');
+    });
+  }, [dataLoader.segData]);
 
   return (
     <OrderContext.Provider value={{
       allOrders, workQueue,
       segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
       segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
-      resData: dataLoader.resData, resLoaded: dataLoader.resLoaded, resLoading: dataLoader.resLoading,
-      loadResData: dataLoader.loadResData,
+      resData, resLoaded: dataLoader.segLoaded, resLoading: dataLoader.segLoading,
+      loadResData: dataLoader.loadSegData,
       novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
       counter, timerStart,
       loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
