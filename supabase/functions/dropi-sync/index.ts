@@ -309,6 +309,25 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Detectar y cancelar pedidos huérfanos: cuando Dropi edita un pedido,
+    // crea uno nuevo y deja el viejo en PENDIENTE CONFIRMACION. Esta RPC
+    // busca pedidos viejos con un duplicado más nuevo en estado terminal
+    // (mismo phone+producto) y los marca como CANCELADO.
+    let orphansCancelled = 0;
+    try {
+      const { data, error: cancelOrphanError } = await sb.rpc('cancel_orphan_pending_orders');
+      if (cancelOrphanError) {
+        console.warn('cancel_orphan_pending_orders error:', cancelOrphanError.message);
+      } else {
+        orphansCancelled = (data as number) || 0;
+        if (orphansCancelled > 0) {
+          console.log(`Cancelados ${orphansCancelled} pedidos viejos huérfanos`);
+        }
+      }
+    } catch (err) {
+      console.warn('cancel_orphan_pending_orders exception:', err);
+    }
+
     // Log
     await sb.from("sync_logs").insert({
       source: "dropi",
