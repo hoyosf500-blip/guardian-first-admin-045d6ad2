@@ -173,27 +173,21 @@ export default function AdminTab() {
   }
 
   async function testAiConnection() {
+    // Fix 3: en vez de pegarle directo a aliyuncs con la key del browser,
+    // probamos la conexión vía edge function (auth + key server-side).
     setTestingAi(true);
     setAiTestResult(null);
     try {
-      const key = aiKeySaved || aiKey.trim();
-      if (!key) { toast.error('Guarda la clave primero'); setAiTestResult('fail'); return; }
-      const res = await fetch('https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'qwen-turbo',
-          messages: [
-            { role: 'system', content: 'Responde con "OK" si recibes este mensaje.' },
-            { role: 'user', content: 'Prueba de conexión' },
-          ],
-          temperature: 0, max_tokens: 10,
-        }),
+      const { data, error } = await supabase.functions.invoke('ai-order-assistant', {
+        body: {
+          action: 'priority_reason',
+          context: 'Pedido de prueba: cliente nuevo, valor 50000, 2 dias sin movimiento.',
+        },
       });
-      if (!res.ok) {
-        const errText = await res.text();
+      const payload = data as { ok?: boolean; error?: string } | null;
+      if (error || !payload?.ok) {
         setAiTestResult('fail');
-        toast.error(`Error ${res.status}: ${errText.slice(0, 100)}`);
+        toast.error(error?.message || payload?.error || 'Error IA');
       } else {
         setAiTestResult('ok');
         toast.success('IA conectada correctamente');
