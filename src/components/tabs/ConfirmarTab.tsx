@@ -81,7 +81,7 @@ export default function ConfirmarTab({ profile }: Props) {
         toast.error('Error de red: ' + msg);
         setAutoLoading(false);
       });
-  }, [user, excelLoaded, today]);
+  }, [user, excelLoaded, today, autoLoading]);
 
   const handleFile = useCallback(async (file: File) => {
     toast.info('Procesando Excel...');

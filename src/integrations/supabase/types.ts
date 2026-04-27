@@ -570,6 +570,7 @@ export type Database = {
         }
       }
       claim_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       get_daily_operator_stats: {
         Args: { p_date: string }

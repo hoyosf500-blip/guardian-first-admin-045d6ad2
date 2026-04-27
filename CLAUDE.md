@@ -79,12 +79,15 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-cron` — scheduled sync trigger
 - `ai-order-assistant` — Claude-powered order assistant
 
-The Dropi bearer token is stored in the `settings` table (key: `dropi_bearer_token`) and read at runtime — not hardcoded.
+The Dropi token is stored in the `app_settings` table (key: `dropi_token`) and read at runtime — not hardcoded.
 
 ### Key RPCs (Supabase DB Functions)
 
-- `operator_daily_stats(operator_id, date)` — returns per-operator KPI counts for the dashboard; defined in `20260416230000_operator_daily_stats_rpc.sql`
-- `get_dropi_fingerprint(phone)` — repeat-buyer detection; defined in `20260416060000_dropi_fingerprint_rpc.sql`
+- `get_daily_operator_stats(p_date)` — returns per-operator KPI counts for the dashboard (admin-only)
+- `dropi_fingerprint(phone)` — repeat-buyer detection
+- `confirm_order_locally(p_order_id)` — atomic local confirmation that bypasses lock-expiry RLS issues
+- `cancel_orphan_pending_orders()` — cancels stale `PENDIENTE CONFIRMACION` rows superseded by a new Dropi-synced order within 48h
+- `claim_seg_order(p_order_id)` / `release_seg_order(p_order_id)` — claim/release helpers used by the Seguimiento queue
 
 ### Test Files
 

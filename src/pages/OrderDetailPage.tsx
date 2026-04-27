@@ -493,7 +493,7 @@ export default function OrderDetailPage() {
                   `Estado: ${order.estado}`,
                   `Días sin movimiento: ${order.dias_conf || order.dias || 0}`,
                   `Transportadora: ${order.transportadora || 'N/A'}`,
-                  `Valor: $${(Number(order.valor) || 0).toLocaleString()}`,
+                  `Valor: ${formatCOP(Number(order.valor) || 0)}`,
                   `Ciudad: ${order.ciudad || 'N/A'}`,
                   `Dirección: ${order.direccion || 'N/A'}`,
                 ].join('\n');
@@ -548,7 +548,7 @@ export default function OrderDetailPage() {
             <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={formatCOP(valor)} />
             <InfoRow icon={<Truck size={13} />} label="Flete" value={formatCOP(flete)} />
             <InfoRow icon={<Package size={13} />} label="Costo producto" value={formatCOP(costoProd)} />
-            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={`$${(valor - flete - costoProd).toLocaleString()}`} highlight />
+            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={formatCOP(valor - flete - costoProd)} highlight />
           </div>
         </motion.div>
       </div>

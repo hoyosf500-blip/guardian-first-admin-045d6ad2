@@ -85,7 +85,7 @@ export default function RescateTab() {
               <div className="hidden sm:flex items-center gap-2 rounded-xl border border-danger/20 bg-danger/5 px-4 py-2">
                 <span className="text-xs text-muted-foreground">Valor en riesgo</span>
                 <span className="text-sm font-bold text-danger tabular-nums">
-                  ${stats.valorEnRiesgo.toLocaleString('es-CO')}
+                  {formatCOP(stats.valorEnRiesgo)}
                 </span>
               </div>
             )}

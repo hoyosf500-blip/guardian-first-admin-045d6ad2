@@ -333,13 +333,21 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     if (!error && result === 'conf' && order.dbId) {
       // REG-3: usar RPC confirm_order_locally en vez de UPDATE directo.
-      // Con la nueva RLS de Tanda 2, el UPDATE directo silenciosamente
-      // devolvía 0 filas si el lock había expirado (operadora habló
-      // mucho con el cliente). La RPC SECURITY DEFINER no depende del
-      // lock — solo del rol — y el counter local queda consistente.
-      await (supabase.rpc as unknown as (
+      // MED-2: capturar error del RPC. Antes se ignoraba — si la RPC fallaba
+      // (no autorizado, network), la operadora veía "Confirmado" pero el
+      // pedido seguía como PENDIENTE CONFIRMACION en DB y reaparecía.
+      const { data: rpcOk, error: rpcErr } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>
-      ) => Promise<unknown>)('confirm_order_locally', { p_order_id: order.dbId });
+      ) => Promise<{ data: boolean | null; error: { message: string } | null }>)(
+        'confirm_order_locally', { p_order_id: order.dbId }
+      );
+      if (rpcErr || rpcOk === false) {
+        toast.error('Confirmación local falló: ' + (rpcErr?.message || 'pedido no encontrado'));
+        // Revertir estado optimista del workQueue + counter
+        setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
+        setCounter(prev => ({ ...prev, conf: Math.max(0, prev.conf - 1) }));
+        return;
+      }
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
 
       if (order.externalId) {
@@ -423,7 +431,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       }
     }
     markingInFlight.current.delete(order.dbId);
-  }, [user, timerStart, checkMilestone]);
+  // MED-1: timerStart NO se lee dentro del callback (solo se setea con
+  // setter funcional). Tenerlo en deps invalidaba ctxValue cada confirmación
+  // y disparaba re-render en cascada en todos los consumers.
+  }, [user, checkMilestone]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;

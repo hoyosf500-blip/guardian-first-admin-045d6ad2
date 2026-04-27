@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { calcBadge, estadoColor } from '@/lib/customerUtils';
+import { formatCOP } from '@/lib/utils';
 
 interface Props {
   currentPhone: string;
@@ -143,9 +144,9 @@ function generateInsights(
   if (orders.length > 0) {
     const avgValue = orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length;
     if (avgValue >= 150000) {
-      insights.push(`Ticket promedio alto: $${Math.round(avgValue).toLocaleString()}`);
+      insights.push(`Ticket promedio alto: ${formatCOP(Math.round(avgValue))}`);
     } else if (total >= 3) {
-      insights.push(`Ticket promedio: $${Math.round(avgValue).toLocaleString()}`);
+      insights.push(`Ticket promedio: ${formatCOP(Math.round(avgValue))}`);
     }
   }
 
@@ -573,7 +574,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           `Ciudades: ${[...new Set(orders.map(o => o.ciudad).filter(Boolean))].join(', ') || 'N/A'}`,
           `Transportadoras usadas: ${[...new Set(orders.map(o => o.transportadora).filter(Boolean))].join(', ')}`,
           `Pedidos con novedad: ${novedades}`,
-          `Valor promedio: $${Math.round(orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length).toLocaleString()}`,
+          `Valor promedio: ${formatCOP(Math.round(orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length))}`,
         ].join('\n');
         return (
           <div className="px-5 py-3 border-b border-border">
@@ -657,7 +658,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             key={o.id}
             onClick={() => o.external_id && navigate(`/pedido/${o.external_id}`)}
             disabled={!o.external_id}
-            aria-label={`Pedido #${o.external_id || 'sin ID'} — ${o.estado || 'sin estado'} — $${(Number(o.valor) || 0).toLocaleString()}`}
+            aria-label={`Pedido #${o.external_id || 'sin ID'} — ${o.estado || 'sin estado'} — ${formatCOP(Number(o.valor) || 0)}`}
             className="w-full text-left px-5 py-3 hover:bg-secondary/40 transition-colors disabled:cursor-not-allowed"
           >
             <div className="flex items-start justify-between gap-3">
@@ -683,7 +684,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                 )}
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <span className="text-xs font-bold text-foreground">${(Number(o.valor) || 0).toLocaleString()}</span>
+                <span className="text-xs font-bold text-foreground">{formatCOP(Number(o.valor) || 0)}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${estadoColor(o.estado)}`}>
                   {o.estado || '—'}
                 </span>
