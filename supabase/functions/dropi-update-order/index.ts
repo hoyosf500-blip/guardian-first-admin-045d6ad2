@@ -310,8 +310,7 @@ Deno.serve(async (req: Request) => {
         synced_count: 0,
         duplicates_count: 0,
         total_count: 1,
-        triggered_by: user.id,
-        error_message: errorMsg,
+        triggered_by: user?.id ?? null,
       });
 
       return new Response(
@@ -335,7 +334,7 @@ Deno.serve(async (req: Request) => {
       synced_count: 1,
       duplicates_count: 0,
       total_count: 1,
-      triggered_by: user.id,
+      triggered_by: user?.id ?? null,
     });
 
     return new Response(
