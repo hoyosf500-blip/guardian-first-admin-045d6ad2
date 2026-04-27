@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_producto_partial
 
 CREATE INDEX IF NOT EXISTS idx_orders_fecha_date
   ON public.orders ((fecha::date))
-  WHERE fecha IS NOT NULL AND fecha <> '';
+  WHERE fecha ~ '^\d{4}-\d{2}-\d{2}$';
 
 -- ─────────────────────────────────────────────────────────────────
 -- logistics_summary — KPIs globales (4 cards en el header del tab)
@@ -59,8 +59,7 @@ BEGIN
   WITH base AS (
     SELECT estado, valor
     FROM public.orders
-    WHERE fecha IS NOT NULL
-      AND fecha <> ''
+    WHERE fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND fecha::date BETWEEN p_from_date AND p_to_date
       AND UPPER(estado) <> 'CANCELADO'
   )
@@ -157,8 +156,7 @@ BEGIN
       ('DEVOLUCION', 'DEVOLUCION EN TRANSITO', 'RECHAZADO')), 0) AS valor_perdido,
     ROUND(AVG(o.dias_conf) FILTER (WHERE UPPER(o.estado) = 'ENTREGADO'), 1) AS avg_dias_entrega
   FROM public.orders o
-  WHERE o.fecha IS NOT NULL
-    AND o.fecha <> ''
+  WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
     AND o.fecha::date BETWEEN p_from_date AND p_to_date
     AND o.transportadora IS NOT NULL
     AND o.transportadora <> ''
@@ -222,8 +220,7 @@ BEGIN
     COALESCE(SUM(o.valor) FILTER (WHERE UPPER(o.estado) IN
       ('DEVOLUCION', 'DEVOLUCION EN TRANSITO', 'RECHAZADO')), 0) AS valor_perdido
   FROM public.orders o
-  WHERE o.fecha IS NOT NULL
-    AND o.fecha <> ''
+  WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
     AND o.fecha::date BETWEEN p_from_date AND p_to_date
     AND o.ciudad IS NOT NULL
     AND o.ciudad <> ''
@@ -288,8 +285,7 @@ BEGIN
     COALESCE(SUM(o.valor) FILTER (WHERE UPPER(o.estado) IN
       ('DEVOLUCION', 'DEVOLUCION EN TRANSITO', 'RECHAZADO')), 0) AS valor_perdido
   FROM public.orders o
-  WHERE o.fecha IS NOT NULL
-    AND o.fecha <> ''
+  WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
     AND o.fecha::date BETWEEN p_from_date AND p_to_date
     AND o.producto IS NOT NULL
     AND o.producto <> ''
