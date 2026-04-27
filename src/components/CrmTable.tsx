@@ -691,6 +691,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
                         onAction={(action) => markAction(o, action)}
                         currentUserId={user?.id}
+                        adminIds={adminIds}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
                         allTouchpoints={allPhoneTouchpoints[o.phone] || []}
