@@ -548,7 +548,7 @@ export default function OrderDetailPage() {
             <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={formatCOP(valor)} />
             <InfoRow icon={<Truck size={13} />} label="Flete" value={formatCOP(flete)} />
             <InfoRow icon={<Package size={13} />} label="Costo producto" value={formatCOP(costoProd)} />
-            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={`$${(valor - flete - costoProd).toLocaleString()}`} highlight />
+            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={formatCOP(valor - flete - costoProd)} highlight />
           </div>
         </motion.div>
       </div>
