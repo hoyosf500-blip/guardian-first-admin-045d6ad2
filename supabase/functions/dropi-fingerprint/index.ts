@@ -13,6 +13,32 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // C4 fix: requerir JWT válido. Antes la función estaba abierta y filtraba
+  // datos de fingerprint a cualquiera con la URL.
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "No autorizado" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const anonKey =
+      Deno.env.get("SUPABASE_ANON_KEY") ||
+      Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+    const anonClient = createClient(supabaseUrl, anonKey);
+    const { data: { user }, error: authError } = await anonClient.auth.getUser(
+      authHeader.replace("Bearer ", ""),
+    );
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Token inválido" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
   try {
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
