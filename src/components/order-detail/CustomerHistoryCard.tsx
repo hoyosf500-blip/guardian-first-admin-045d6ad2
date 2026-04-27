@@ -144,9 +144,9 @@ function generateInsights(
   if (orders.length > 0) {
     const avgValue = orders.reduce((s, o) => s + (Number(o.valor) || 0), 0) / orders.length;
     if (avgValue >= 150000) {
-      insights.push(`Ticket promedio alto: $${Math.round(avgValue).toLocaleString()}`);
+      insights.push(`Ticket promedio alto: ${formatCOP(Math.round(avgValue))}`);
     } else if (total >= 3) {
-      insights.push(`Ticket promedio: $${Math.round(avgValue).toLocaleString()}`);
+      insights.push(`Ticket promedio: ${formatCOP(Math.round(avgValue))}`);
     }
   }
 
