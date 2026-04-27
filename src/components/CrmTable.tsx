@@ -377,15 +377,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     toast.success(action);
   };
 
-  const handleReleaseOrder = async (order: OrderData) => {
-    if (!order.dbId) return;
-    const ok = await releaseSegOrder(order.dbId);
-    if (ok) {
-      toast.success('Pedido liberado');
-    } else {
-      toast.error('No se pudo liberar — verifica que sea tuyo');
-    }
-  };
 
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
   const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
@@ -670,7 +661,6 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         expanded={expandedPhone === o.phone}
                         onToggle={() => setExpandedPhone(expandedPhone === o.phone ? null : o.phone)}
                         onAction={(action) => markAction(o, action)}
-                        onRelease={() => handleReleaseOrder(o)}
                         currentUserId={user?.id}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
@@ -700,7 +690,6 @@ interface OrderCardProps {
   expanded: boolean;
   onToggle: () => void;
   onAction: (action: string) => void;
-  onRelease: () => void;
   currentUserId: string | undefined;
   actions: string[];
   touchpoints: Touchpoint[];
@@ -711,7 +700,7 @@ interface OrderCardProps {
   statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, onRelease, currentUserId, actions, touchpoints: tps, getOperatorName, index, statusColor }: OrderCardProps) {
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, actions, touchpoints: tps, getOperatorName, index, statusColor }: OrderCardProps) {
   const isMine = !!(o.assignedTo && currentUserId && o.assignedTo === currentUserId);
   const isOtherOwner = !!(o.assignedTo && currentUserId && o.assignedTo !== currentUserId);
   const ownerName = isOtherOwner && o.assignedTo ? getOperatorName(o.assignedTo) : '';
@@ -986,16 +975,6 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, onRelease,
                 </div>
               )}
 
-              {/* Liberar — solo visible si el pedido está asignado a la operadora actual */}
-              {isMine && (
-                <button
-                  onClick={onRelease}
-                  className="w-full text-[10px] px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold hover:bg-amber-500/20 border border-amber-500/25 inline-flex items-center justify-center gap-1.5 transition-colors"
-                  title="Liberar este pedido para que otra operadora pueda tomarlo"
-                >
-                  <RotateCcw size={11} /> Liberar pedido
-                </button>
-              )}
             </div>
           </motion.div>
         )}
