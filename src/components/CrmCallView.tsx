@@ -74,11 +74,15 @@ export default function CrmCallView({
   );
 
   const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
+  // C3 fix: CrmTable indexa `managed` por dbId, no por phone. Antes leíamos
+  // managed[phone] y nunca matcheaba — el call view nunca avanzaba al pedido
+  // siguiente al marcar uno.
+  const isManaged = (it: OrderData) => !!(it.dbId && managed[it.dbId]);
 
   // Derive the index from the stored id every render.
   let derivedIdx = callOrderId ? items.findIndex((it) => keyOf(it) === callOrderId) : -1;
   if (derivedIdx < 0) {
-    const firstUnmanaged = items.findIndex((it) => !managed[it.phone]);
+    const firstUnmanaged = items.findIndex((it) => !isManaged(it));
     derivedIdx = firstUnmanaged >= 0 ? firstUnmanaged : 0;
   }
 
@@ -87,7 +91,7 @@ export default function CrmCallView({
     if (!items.length) return;
     const exists = callOrderId && items.some((it) => keyOf(it) === callOrderId);
     if (!exists) {
-      const firstUnmanaged = items.findIndex((it) => !managed[it.phone]);
+      const firstUnmanaged = items.findIndex((it) => !isManaged(it));
       const target = items[firstUnmanaged >= 0 ? firstUnmanaged : 0];
       const k = target ? keyOf(target) : null;
       if (k && k !== callOrderId) setCallOrderId(k);
@@ -114,7 +118,7 @@ export default function CrmCallView({
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora, o.novedad);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
-  const currentManaged = managed[o.phone];
+  const currentManaged = o.dbId ? managed[o.dbId] : undefined;
   const tps = phoneTouchpoints[o.phone] || [];
   const isDelayed = diasEnEstatus >= 2 && !isExcludedFromDelay(o.estado);
 
@@ -131,10 +135,10 @@ export default function CrmCallView({
 
   const jumpToFirstUnmanaged = () => {
     // Busca primero después de la posición actual.
-    let next = items.findIndex((it, i) => i > idx && !managed[it.phone]);
+    let next = items.findIndex((it, i) => i > idx && !isManaged(it));
     // Si no hay, fallback desde el inicio: cubre el caso de pedidos
     // nuevos que llegaron por realtime y se ordenaron antes (más urgentes).
-    if (next < 0) next = items.findIndex((it) => !managed[it.phone]);
+    if (next < 0) next = items.findIndex((it) => !isManaged(it));
     if (next >= 0 && next !== idx) goTo(next);
     else toast.success('Todos los pedidos de la lista están gestionados');
   };
