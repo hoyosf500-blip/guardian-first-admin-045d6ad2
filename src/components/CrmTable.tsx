@@ -305,10 +305,12 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
       const allTp: Touchpoint[] = [];
       for (let i = 0; i < phones.length; i += 100) {
         const batch = phones.slice(i, i + 100);
+        // Fix 20: limitar columnas + cap por batch para evitar N+1 explosivo
         const { data: tp } = await supabase.from('touchpoints')
-          .select('*')
+          .select('id, phone, action, action_date, action_time, operator_id, created_at')
           .in('phone', batch)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(20 * batch.length);
         if (tp) allTp.push(...(tp as Touchpoint[]));
       }
       return allTp;
@@ -366,7 +368,15 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     return () => { cancelled = true; };
   }, []);
 
-  const getOperatorName = (opId: string) => profiles.find(pr => pr.user_id === opId)?.display_name || 'Operador';
+  // Fix 26: Map en lugar de find lineal por cada llamada.
+  const profileMap = useMemo(
+    () => new Map(profiles.map(p => [p.user_id, p.display_name])),
+    [profiles],
+  );
+  const getOperatorName = useCallback(
+    (id: string) => profileMap.get(id) ?? 'Operador',
+    [profileMap],
+  );
 
   const phoneTouchpoints = useMemo(() => {
     const map: Record<string, Touchpoint[]> = {};
