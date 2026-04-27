@@ -720,7 +720,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                   </div>
 
                   {/* Column body */}
-                  <div className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto">
+                  <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef}>
                     {items.map((o, i) => (
                       <OrderCard
                         key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
@@ -741,7 +741,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         statusColor={col.tone}
                       />
                     ))}
-                  </div>
+                  </ColumnBody>
                 </motion.div>
               );
             })}
