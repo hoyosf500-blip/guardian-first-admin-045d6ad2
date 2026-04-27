@@ -51,6 +51,7 @@ supabase db push
 | `/rescate` | RescateTab | Recovery queue (entregas fallidas) |
 | `/admin` | AdminTab | Config, gated por `isAdmin` |
 | `/dashboard` | DashboardTab | KPIs |
+| `/logistica` | LogisticaTab | Análisis logístico (admin) — transportadoras, ciudades, productos |
 | `/pedido/:id` | OrderDetailPage | Detalle de un pedido |
 
 Para detalles internos (data flow, RLS, RPCs, tipos), ver [CLAUDE.md](./CLAUDE.md).

@@ -49,6 +49,7 @@ supabase db push
 | `/rescate` | RescatePage | RescateTab | Recovery queue for failed deliveries |
 | `/admin` | AdminPage | AdminTab | Admin-only config (isAdmin gate) |
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
+| `/logistica` | LogisticsPage | LogisticaTab | Análisis admin: rendimiento por transportadora, devoluciones por ciudad, productos con peor entrega |
 | `/pedido/:id` | OrderDetailPage | order-detail/* | Single-order drill-down |
 
 All authenticated routes share `ProtectedLayout` which:
@@ -88,6 +89,11 @@ The Dropi token is stored in the `app_settings` table (key: `dropi_token`) and r
 - `confirm_order_locally(p_order_id)` — atomic local confirmation that bypasses lock-expiry RLS issues
 - `cancel_orphan_pending_orders()` — cancels stale `PENDIENTE CONFIRMACION` rows superseded by a new Dropi-synced order within 48h
 - `claim_seg_order(p_order_id)` / `release_seg_order(p_order_id)` — claim/release helpers used by the Seguimiento queue
+- `logistics_summary(from_date, to_date)` — KPIs globales (total/entregados/devueltos/valor)
+- `logistics_by_carrier(from_date, to_date, min_orders)` — métricas por transportadora
+- `logistics_by_city(from_date, to_date, min_orders, limit)` — top ciudades por tasa de devolución
+- `logistics_by_product(from_date, to_date, min_orders, limit)` — top productos con peor tasa de entrega
+- Todas SECURITY DEFINER + admin-only. Ver migration 20260427130000.
 
 ### Test Files
 
