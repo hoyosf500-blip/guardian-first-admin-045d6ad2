@@ -493,7 +493,7 @@ export default function OrderDetailPage() {
                   `Estado: ${order.estado}`,
                   `Días sin movimiento: ${order.dias_conf || order.dias || 0}`,
                   `Transportadora: ${order.transportadora || 'N/A'}`,
-                  `Valor: $${(Number(order.valor) || 0).toLocaleString()}`,
+                  `Valor: ${formatCOP(Number(order.valor) || 0)}`,
                   `Ciudad: ${order.ciudad || 'N/A'}`,
                   `Dirección: ${order.direccion || 'N/A'}`,
                 ].join('\n');
