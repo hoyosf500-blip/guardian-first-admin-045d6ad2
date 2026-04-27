@@ -5,6 +5,36 @@ import { OrderData, dbToOrderData, isDespachado } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
 import { toast } from 'sonner';
 
+/**
+ * Smart merge: preserva la referencia de objetos que no cambiaron en campos
+ * relevantes para que React no re-renderice las cards intactas durante
+ * refreshes periódicos (cron Dropi cada 1 min). Esto elimina el "parpadeo".
+ */
+export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
+  if (prev.length === 0) return next;
+  const prevById = new Map(prev.map(o => [o.dbId || `${o.phone}-${o.idx}`, o]));
+  return next.map(n => {
+    const id = n.dbId || `${n.phone}-${n.idx}`;
+    const old = prevById.get(id);
+    if (!old) return n;
+    if (
+      old.estado === n.estado &&
+      old.assignedTo === n.assignedTo &&
+      old.lockedBy === n.lockedBy &&
+      old.lockedAt === n.lockedAt &&
+      old.diasConf === n.diasConf &&
+      old.dias === n.dias &&
+      old.novedad === n.novedad &&
+      old.novedadSol === n.novedadSol &&
+      old.guia === n.guia &&
+      old.transportadora === n.transportadora
+    ) {
+      return old;
+    }
+    return n;
+  });
+}
+
 interface DataLoaderState {
   segData: OrderData[];
   setSegData: React.Dispatch<React.SetStateAction<OrderData[]>>;
