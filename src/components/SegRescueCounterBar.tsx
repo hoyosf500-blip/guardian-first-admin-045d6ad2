@@ -102,9 +102,9 @@ export default function SegRescueCounterBar({ module }: Props) {
     ? Math.round((stats.myResolved / stats.myActions) * 100)
     : 0;
 
-  // No mostrar la barra si nadie ha hecho nada hoy — evita ruido visual
-  // en una pestaña recién abierta o al inicio del día.
-  if (stats.teamActions === 0) return null;
+  // La barra se muestra siempre (incluso al inicio del día con ceros)
+  // para que la operadora sepa que la herramienta está ahí desde el
+  // primer minuto.
 
   const tasaTone =
     tasa >= 50 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'

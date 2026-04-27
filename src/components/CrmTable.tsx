@@ -221,6 +221,11 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
+  // Touchpoints cross-modulares — TODOS los del cliente sin filtro de prefijo.
+  // Sirve para el badge de contactos: si Mayra llamó al cliente desde
+  // Confirmar (touchpoint sin prefijo) y la operadora abre Seguimiento,
+  // queremos que vea ese contacto histórico, no "Sin contactar".
+  const [allTouchpoints, setAllTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
@@ -276,6 +281,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     };
 
     fetchAllTouchpoints().then(allTp => {
+      setAllTouchpoints(allTp);
       const moduleTp = allTp.filter(t =>
         t.action.startsWith(`${prefix}:`) || t.action.startsWith(`${module}:`)
       );
@@ -325,6 +331,17 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     });
     return map;
   }, [touchpoints]);
+
+  // Mapa cross-modular: incluye touchpoints de Confirmar, Novedades, etc.
+  // Solo se usa para el badge de contactos en la card colapsada.
+  const allPhoneTouchpoints = useMemo(() => {
+    const map: Record<string, Touchpoint[]> = {};
+    allTouchpoints.forEach(tp => {
+      if (!map[tp.phone]) map[tp.phone] = [];
+      map[tp.phone].push(tp);
+    });
+    return map;
+  }, [allTouchpoints]);
 
   const getLastTouchTime = useCallback((phone: string): number | null => {
     const tps = phoneTouchpoints[phone];
@@ -664,6 +681,7 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
                         currentUserId={user?.id}
                         actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] || []}
+                        allTouchpoints={allPhoneTouchpoints[o.phone] || []}
                         getOperatorName={getOperatorName}
                         getLastTouchTime={getLastTouchTime}
                         module={module}
@@ -693,6 +711,8 @@ interface OrderCardProps {
   currentUserId: string | undefined;
   actions: string[];
   touchpoints: Touchpoint[];
+  /** Todos los touchpoints del teléfono (cross-modular) — para el badge de contactos */
+  allTouchpoints: Touchpoint[];
   getOperatorName: (id: string) => string;
   getLastTouchTime: (phone: string) => number | null;
   module: string;
@@ -700,7 +720,7 @@ interface OrderCardProps {
   statusColor: string;
 }
 
-function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, actions, touchpoints: tps, getOperatorName, index, statusColor }: OrderCardProps) {
+function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
   const isMine = !!(o.assignedTo && currentUserId && o.assignedTo === currentUserId);
   const isOtherOwner = !!(o.assignedTo && currentUserId && o.assignedTo !== currentUserId);
   const ownerName = isOtherOwner && o.assignedTo ? getOperatorName(o.assignedTo) : '';
@@ -795,18 +815,21 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
           )}
         </div>
 
-        {/* Contact history badge — visibilidad cruzada entre operadoras de
-            cuántas veces y quién ha contactado a este cliente.
-            Resuelve: "no sé si la otra ya llamó o cuántas veces" */}
+        {/* Contact history badge — visibilidad cruzada entre operadoras y
+            ENTRE módulos. Cuenta todos los touchpoints del teléfono
+            (Confirmar, Seguimiento, Rescate, Novedades). Resuelve:
+            "no sé si la otra ya llamó o cuántas veces, en cualquier
+            sección de la app". */}
         {(() => {
-          if (tps.length === 0) {
+          if (allTps.length === 0) {
             return (
               <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25">
                 <PhoneIcon size={9} /> Sin contactar
               </div>
             );
           }
-          const last = tps[0];
+          // allTps llega ordenado desc por created_at (la query lo trae así).
+          const last = allTps[0];
           const lastMs = new Date(last.created_at).getTime();
           const hoursAgo = (Date.now() - lastMs) / 3600000;
           const opName = getOperatorName(last.operator_id);
@@ -828,7 +851,7 @@ function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUse
           return (
             <div className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md border ${cls}`}>
               <PhoneIcon size={9} />
-              <span>{tps.length} {tps.length === 1 ? 'contacto' : 'contactos'}</span>
+              <span>{allTps.length} {allTps.length === 1 ? 'contacto' : 'contactos'}</span>
               <span className="opacity-60">·</span>
               <span>{opName}</span>
               <span className="opacity-60">·</span>

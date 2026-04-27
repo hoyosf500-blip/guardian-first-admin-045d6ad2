@@ -71,7 +71,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const { data: dbOrders, error } = await supabase
       .from('orders')
       .select('*')
-      .eq('estado', 'PENDIENTE CONFIRMACION')
+      .ilike('estado', 'PENDIENTE CONFIRMACION')
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
     if (error || !dbOrders) return;
     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));

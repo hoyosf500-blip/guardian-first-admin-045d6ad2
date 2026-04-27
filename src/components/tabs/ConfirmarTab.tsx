@@ -56,7 +56,7 @@ export default function ConfirmarTab({ profile }: Props) {
     if (excelLoaded || !user || autoLoading) return;
     setAutoLoading(true);
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    supabase.from('orders').select('*').eq('estado', 'PENDIENTE CONFIRMACION')
+    supabase.from('orders').select('*').ilike('estado', 'PENDIENTE CONFIRMACION')
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
       .then(({ data: dbOrders, error }) => {
         if (error) {

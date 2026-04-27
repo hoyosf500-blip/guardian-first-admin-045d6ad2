@@ -109,7 +109,10 @@ export function needsAction(estado: string, diasConf: number, dias: number, isRe
   const stage = getSegStage(estado);
   if (stage === 'bodega' || stage === 'guia') return false;
   const e = estado.toUpperCase();
-  const fresh = getFreshness(lastTouchTime, diasConf || dias);
+  // Solo usa diasConf (días desde fecha de confirmación). Antes caía a
+  // `dias` (días desde creación) cuando diasConf=0, lo que genera
+  // falsos positivos en pedidos recién confirmados de órdenes viejas.
+  const fresh = getFreshness(lastTouchTime, diasConf);
 
   if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' || e.includes('OFICINA') || e.includes('RECLAME')) {
     return fresh.hoursAgo >= 12;

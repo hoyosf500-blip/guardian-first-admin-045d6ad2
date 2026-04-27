@@ -59,7 +59,10 @@ export default function ProductivityDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh on orders changes (debounced 1s) + interval fallback every 60s
+  // Auto-refresh con realtime (debounced 1s). El polling de 60s previo
+  // era redundante — realtime ya dispara en cualquier cambio de orders
+  // o INSERT en order_results. Suscribimos también a touchpoints para
+  // refrescar cuando alguien marca acción en SEG/RESCUE.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const debounced = () => {
@@ -71,13 +74,11 @@ export default function ProductivityDashboard() {
       .channel('admin-productivity')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results' }, debounced)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints' }, debounced)
       .subscribe();
-
-    const interval = setInterval(() => load(true), 60_000);
 
     return () => {
       if (timer) clearTimeout(timer);
-      clearInterval(interval);
       void supabase.removeChannel(channel);
     };
   }, [load]);
