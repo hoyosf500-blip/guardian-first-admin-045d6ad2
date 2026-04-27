@@ -9,7 +9,7 @@ import ProductFailuresTable from '@/components/logistics/ProductFailuresTable';
 import LogisticsSkeleton from '@/components/logistics/LogisticsSkeleton';
 import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
-import { Truck, MapPin, Package } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw } from 'lucide-react';
 
 function defaultRange(): LogisticsFilters {
   const to = new Date();
@@ -19,6 +19,13 @@ function defaultRange(): LogisticsFilters {
     fromDate: from.toISOString().split('T')[0],
     toDate: to.toISOString().split('T')[0],
   };
+}
+
+function formatRange(filters: LogisticsFilters): string {
+  const f = new Date(filters.fromDate);
+  const t = new Date(filters.toDate);
+  const fmt = (d: Date) => d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+  return `${fmt(f)} → ${fmt(t)}`;
 }
 
 export default function LogisticaTab() {
@@ -38,13 +45,58 @@ export default function LogisticaTab() {
     summary.refetch(); carriers.refetch(); cities.refetch(); products.refetch();
   };
 
+  // dataUpdatedAt expone el timestamp del último fetch exitoso en
+  // TanStack Query — sirve para que el admin sepa qué tan fresca
+  // es la métrica que está leyendo.
+  const lastUpdated = summary.dataUpdatedAt
+    ? new Date(summary.dataUpdatedAt).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+    : null;
+
   return (
-    <div className="space-y-5">
-      {/* Filtros — solo rango temporal. El "mínimo de pedidos" se removió
-          a pedido del usuario: queremos ver TODA la data sin filtrar por
-          ruido. Real-time subscription en useLogisticsStats invalida el
-          cache cuando hay cambios en `orders`. */}
-      <div className="border border-border bg-card rounded-xl p-3.5">
+    <div className="space-y-6">
+      {/* Page header — patrón dashboard profesional. Eyebrow
+          uppercase tracking-wide, título tight, range pill +
+          refresh con timestamp en una sola línea derecha. */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-1.5">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+            Análisis · Admin
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none">
+            Logística
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Rendimiento por transportadora, devoluciones por ciudad y productos con peor entrega.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {!isLoading && !isError && summary.data && (
+            <span className="pill pill-neutral whitespace-nowrap">
+              {formatRange(filters)}
+            </span>
+          )}
+          {lastUpdated && (
+            <span className="text-[11px] text-muted-foreground tabular-nums hidden md:inline">
+              Actualizado {lastUpdated}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={refetchAll}
+            disabled={isLoading}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:border-border-strong hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            aria-label="Refrescar datos"
+            title="Refrescar"
+          >
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
+
+      {/* Filtros — date range. Border suave para no competir con
+          los datos. */}
+      <div className="rounded-lg border border-border bg-card p-3">
         <DateRangeFilter value={filters} onChange={setFilters} />
       </div>
 
@@ -55,10 +107,8 @@ export default function LogisticaTab() {
 
       {!isError && !isLoading && (
         <>
-          {/* KPIs */}
           <SummaryCards data={summary.data ?? null} />
 
-          {/* Sub-tabs */}
           <Tabs defaultValue="carriers" className="w-full">
             <TabsList>
               <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>

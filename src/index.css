@@ -287,6 +287,122 @@
     border: 1px solid hsl(var(--accent) / 0.25);
     border-radius: var(--radius);
   }
+
+  /* ─────────────────────────────────────────────────────────
+     DATA VIZ utilities — usadas por la sección Logística y
+     cualquier dashboard analítico. Siguen tokens semánticos
+     (success/danger/warning/info) para que dark/light mode
+     sean coherentes sin tocar el componente.
+     ───────────────────────────────────────────────────────── */
+
+  /* Inline data bar — barra horizontal proporcional con valor
+     numérico superpuesto. Patrón Stripe/Linear para tablas
+     analíticas: la celda comunica magnitud (ancho) + valor
+     exacto (texto) en el mismo espacio. */
+  .data-bar {
+    position: relative;
+    display: inline-flex;
+    height: 1.75rem;
+    min-width: 6rem;
+    align-items: center;
+    justify-content: flex-end;
+    overflow: hidden;
+    border-radius: 6px;
+    padding: 0 0.5rem;
+    background: hsl(var(--muted) / 0.35);
+    font-variant-numeric: tabular-nums;
+  }
+  .data-bar > .data-bar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 6px;
+    transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+  }
+  .data-bar > .data-bar-value {
+    position: relative;
+    z-index: 1;
+    font-weight: 700;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+
+  /* Variantes tonales — tokens del DS, no colores raw */
+  .data-bar.tone-success > .data-bar-fill { background: hsl(var(--success) / 0.32); }
+  .data-bar.tone-success > .data-bar-value { color: hsl(var(--success)); }
+
+  .data-bar.tone-danger  > .data-bar-fill { background: hsl(var(--danger) / 0.30); }
+  .data-bar.tone-danger  > .data-bar-value { color: hsl(var(--danger)); }
+
+  .data-bar.tone-warning > .data-bar-fill { background: hsl(var(--warning) / 0.30); }
+  .data-bar.tone-warning > .data-bar-value { color: hsl(var(--warning)); }
+
+  .data-bar.tone-info    > .data-bar-fill { background: hsl(var(--info) / 0.30); }
+  .data-bar.tone-info    > .data-bar-value { color: hsl(var(--info)); }
+
+  .data-bar.tone-neutral > .data-bar-fill { background: hsl(var(--foreground) / 0.18); }
+  .data-bar.tone-neutral > .data-bar-value { color: hsl(var(--foreground)); }
+
+  /* Bullet chart — barra fina con marcador de objetivo (target
+     line). Patrón Stephen Few. Comunica "performance vs target"
+     en muy poco espacio — ideal para KPIs en grid. */
+  .bullet {
+    position: relative;
+    height: 8px;
+    width: 100%;
+    border-radius: 999px;
+    background: hsl(var(--muted) / 0.5);
+    overflow: hidden;
+  }
+  .bullet > .bullet-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 999px;
+    transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .bullet > .bullet-target {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background: hsl(var(--foreground) / 0.65);
+    border-radius: 1px;
+  }
+
+  /* Section header — patrón "title + meta" arriba de cada bloque
+     de datos en dashboards profesionales (Stripe, Linear). */
+  .section-header {
+    @apply flex items-end justify-between gap-3 pb-3 border-b border-border/60;
+  }
+  .section-header h2 {
+    @apply text-base font-bold text-foreground tracking-tight;
+  }
+  .section-header .section-meta {
+    @apply text-xs text-muted-foreground tabular-nums;
+  }
+
+  /* Table refinements — sticky thead, mono nums, hover row */
+  .data-table {
+    @apply w-full text-sm border-separate;
+    border-spacing: 0;
+  }
+  .data-table thead th {
+    @apply sticky top-0 z-10 bg-card/95 backdrop-blur-sm
+           text-left text-[10.5px] uppercase tracking-[0.08em] font-semibold
+           text-muted-foreground py-2.5 px-3 border-b border-border;
+  }
+  .data-table tbody td {
+    @apply py-2.5 px-3 border-b border-border/40;
+  }
+  .data-table tbody tr {
+    transition: background-color 120ms ease;
+  }
+  .data-table tbody tr:hover {
+    background: hsl(var(--muted) / 0.3);
+  }
+  .data-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────

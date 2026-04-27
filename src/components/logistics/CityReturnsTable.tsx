@@ -9,18 +9,15 @@ interface Props { rows: CityReturns[]; }
 
 type Key = keyof CityReturns;
 
-// Data bar: ancho proporcional al valor, color según severidad
-// (≥30% rojo intenso, ≥15% ámbar, <15% rojo apagado).
+/** Heat-map data bar para tasa de devolución. Tono escala según
+ *  severidad: <15% neutral, 15-30% warning, ≥30% danger. */
 function ReturnRateBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value));
-  const tone =
-    pct >= 30 ? 'bg-rose-500/15 [&>div]:bg-gradient-to-r [&>div]:from-rose-600/60 [&>div]:to-rose-400/80 text-rose-300'
-    : pct >= 15 ? 'bg-amber-500/10 [&>div]:bg-gradient-to-r [&>div]:from-amber-500/40 [&>div]:to-amber-400/60 text-amber-300'
-    : 'bg-rose-500/8 [&>div]:bg-gradient-to-r [&>div]:from-rose-500/25 [&>div]:to-rose-400/40 text-rose-300';
+  const tone = pct >= 30 ? 'danger' : pct >= 15 ? 'warning' : 'neutral';
   return (
-    <div className={`relative inline-flex h-7 w-28 items-center justify-end overflow-hidden rounded-md ${tone}`}>
-      <div className="absolute inset-y-0 left-0 rounded-md transition-all" style={{ width: `${pct}%` }} aria-hidden="true" />
-      <span className="relative px-2 text-xs font-bold tabular-nums">{value.toFixed(1)}%</span>
+    <div className={`data-bar tone-${tone}`}>
+      <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
+      <span className="data-bar-value">{value.toFixed(1)}%</span>
     </div>
   );
 }
@@ -66,7 +63,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/40">
           <MapPin size={20} className="text-muted-foreground" aria-hidden="true" />
         </div>
         <p className="text-sm font-semibold text-foreground mb-1">Sin datos de ciudades</p>
@@ -79,74 +76,73 @@ export default memo(function CityReturnsTable({ rows }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Stat banner: valor total perdido en todas las ciudades */}
+      {/* Stat banner: valor total perdido */}
       {totalLost > 0 && (
-        <div className="rounded-xl border border-rose-500/25 bg-gradient-to-r from-rose-500/[0.08] to-card p-3.5 flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/15 ring-1 ring-rose-500/30">
-            <AlertTriangle size={16} className="text-rose-400" aria-hidden="true" />
+        <div className="rounded-xl border border-[hsl(var(--danger)/0.30)] bg-card p-4 flex items-center gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--danger)/0.12)]">
+            <AlertTriangle size={16} className="text-[hsl(var(--danger))]" aria-hidden="true" strokeWidth={2.25} />
           </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
-              Valor perdido total — top {sorted.length} ciudades
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+              Valor perdido total · top {sorted.length} ciudades
             </div>
-            <div className="text-xl font-bold text-rose-400 tabular-nums leading-tight">
+            <div className="font-mono text-2xl font-bold text-[hsl(var(--danger))] tabular-nums leading-tight">
               {formatCOP(totalLost)}
             </div>
           </div>
         </div>
       )}
 
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between p-3.5 border-b border-border bg-gradient-to-r from-card to-card/50">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
-              <MapPin size={13} className="text-rose-400" aria-hidden="true" />
-            </div>
-            <h3 className="text-sm font-bold text-foreground">
+      <section className="rounded-xl border border-border bg-card overflow-hidden">
+        <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-foreground tracking-tight">
               Ciudades con más devoluciones
-            </h3>
-            <span className="text-[11px] text-muted-foreground tabular-nums">· {sorted.length}</span>
+            </h2>
+            <span className="pill pill-neutral">{sorted.length}</span>
           </div>
           <button
             type="button"
             onClick={exportCsv}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold transition-colors hover:border-border-strong hover:bg-surface"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold transition-colors hover:border-border-strong hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             <Download size={12} aria-hidden="true" /> CSV
           </button>
-        </div>
+        </header>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface/40 border-b border-border/60">
-              <tr className="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th className="px-3 py-2.5 w-12">#</th>
-                <th className="px-3 py-2.5"><SortableHeader<Key> label="Ciudad" sortKey="ciudad" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5"><SortableHeader<Key> label="Depto" sortKey="departamento" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Envíos" sortKey="total_pedidos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Devueltos" sortKey="devueltos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Devol %" sortKey="tasa_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="px-3 py-2.5 text-right"><SortableHeader<Key> label="Valor perdido" sortKey="valor_perdido" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="w-10">#</th>
+                <th><SortableHeader<Key> label="Ciudad" sortKey="ciudad" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th><SortableHeader<Key> label="Depto" sortKey="departamento" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="text-right"><SortableHeader<Key> label="Envíos" sortKey="total_pedidos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="text-right"><SortableHeader<Key> label="Devueltos" sortKey="devueltos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="text-right"><SortableHeader<Key> label="Devol %" sortKey="tasa_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="text-right"><SortableHeader<Key> label="Valor perdido" sortKey="valor_perdido" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((r, idx) => (
-                <tr
-                  key={`${r.ciudad}|${r.departamento}`}
-                  className="border-t border-border/40 transition-colors hover:bg-surface/40"
-                >
-                  <td className="px-3 py-3 text-muted-foreground tabular-nums text-xs font-bold">#{idx + 1}</td>
-                  <td className="px-3 py-3 font-semibold text-foreground">{r.ciudad}</td>
-                  <td className="px-3 py-3 text-muted-foreground text-xs">{r.departamento || '—'}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{r.total_pedidos.toLocaleString('es-CO')}</td>
-                  <td className="px-3 py-3 text-right tabular-nums text-rose-400 font-semibold">{r.devueltos.toLocaleString('es-CO')}</td>
-                  <td className="px-3 py-3 text-right"><ReturnRateBar value={r.tasa_devolucion} /></td>
-                  <td className="px-3 py-3 text-right tabular-nums font-mono text-xs text-rose-400">{formatCOP(r.valor_perdido)}</td>
+                <tr key={`${r.ciudad}|${r.departamento}`}>
+                  <td>
+                    <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                  </td>
+                  <td className="font-semibold text-foreground">{r.ciudad}</td>
+                  <td className="text-muted-foreground text-xs">{r.departamento || '—'}</td>
+                  <td className="text-right font-mono tabular-nums">{r.total_pedidos.toLocaleString('es-CO')}</td>
+                  <td className="text-right font-mono tabular-nums text-[hsl(var(--danger))] font-semibold">{r.devueltos.toLocaleString('es-CO')}</td>
+                  <td className="text-right"><ReturnRateBar value={r.tasa_devolucion} /></td>
+                  <td className="text-right font-mono tabular-nums text-xs text-[hsl(var(--danger))]">{formatCOP(r.valor_perdido)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 });
