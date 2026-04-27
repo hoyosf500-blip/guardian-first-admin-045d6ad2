@@ -219,19 +219,17 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
 };
 
 export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
-  // Touchpoints cross-modulares — TODOS los del cliente sin filtro de prefijo.
-  // Sirve para el badge de contactos: si Mayra llamó al cliente desde
-  // Confirmar (touchpoint sin prefijo) y la operadora abre Seguimiento,
-  // queremos que vea ese contacto histórico, no "Sin contactar".
   const [allTouchpoints, setAllTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  // Lista de admins. Pedidos con assigned_to apuntando a un admin se
+  // tratan como pool libre — un admin nunca debería estar reservando
+  // pedidos operativos. Esto cubre histórico (Fabian trabajando como
+  // operadora por error) sin necesidad de tocar la DB cada vez.
+  const [adminIds, setAdminIds] = useState<string[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
-  // Filter state persisted per module so it survives both tab discards AND
-  // internal route navigations (previously every tab switch reset the
-  // operator's filter chip / search / toggle state).
   const [search, setSearch] = useSessionState<string>(`crmtable:${module}:search`, '');
   const [onlyDelayed, setOnlyDelayed] = useSessionState<boolean>(`crmtable:${module}:onlyDelayed`, false);
   const [internalActiveFilter, setInternalActiveFilter] = useSessionState<string | null>(`crmtable:${module}:activeFilter`, null);
@@ -246,14 +244,11 @@ export default function CrmTable({ data, actions, module, emptyIcon, emptyTitle,
     }
   };
   const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
-  // Asignación: 'available' = míos + sin asignar (default operativo).
-  // 'all' = todos, para auditar quién está atendiendo qué.
   const [assignmentFilter, setAssignmentFilter] = useSessionState<'available' | 'all'>(`crmtable:${module}:assignmentFilter`, 'available');
   const { claimSegOrder, releaseSegOrder } = useSegAssignment();
-  // Lista / Llamar toggle — persisted per module so it survives tab
-  // discards (common on mobile when the operator goes out to the
-  // transportadora's tracking page).
   const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
+  // Guard contra doble-click: trackea dbIds en vuelo en markAction.
+  const markingInFlightRef = useRef<Set<string>>(new Set());
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
