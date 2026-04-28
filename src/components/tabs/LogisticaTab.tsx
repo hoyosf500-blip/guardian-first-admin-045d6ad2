@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
-import SummaryCards from '@/components/logistics/SummaryCards';
+import CompactKpiGrid from '@/components/logistics/CompactKpiGrid';
+import LogisticsHeroChart from '@/components/logistics/LogisticsHeroChart';
+import GeoDistribution from '@/components/logistics/GeoDistribution';
 import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
 import CityReturnsTable from '@/components/logistics/CityReturnsTable';
 import ProductFailuresTable from '@/components/logistics/ProductFailuresTable';
@@ -107,25 +109,44 @@ export default function LogisticaTab() {
 
       {!isError && !isLoading && (
         <>
-          <SummaryCards data={summary.data ?? null} />
+          {/* HERO ROW — chart de volumen (col-span-7) + KPIs 2×2 (col-span-5).
+              En mobile colapsan a stacked. Patrón referencia: dashboard
+              logístico profesional (chart dominante + KPIs side panel). */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-7">
+              <LogisticsHeroChart rows={carriers.data ?? []} />
+            </div>
+            <div className="lg:col-span-5">
+              <CompactKpiGrid data={summary.data ?? null} />
+            </div>
+          </div>
 
-          <Tabs defaultValue="carriers" className="w-full">
-            <TabsList>
-              <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
-              <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
-              <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
-            </TabsList>
+          {/* DETAIL ROW — tabs con detalle (col-span-7) + geo distribution
+              lateral (col-span-5). Mobile: stacked. */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-7">
+              <Tabs defaultValue="carriers" className="w-full">
+                <TabsList>
+                  <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
+                  <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
+                  <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+                </TabsList>
 
-            <TabsContent value="carriers" className="mt-4">
-              <CarrierStatsTable rows={carriers.data ?? []} />
-            </TabsContent>
-            <TabsContent value="cities" className="mt-4">
-              <CityReturnsTable rows={cities.data ?? []} />
-            </TabsContent>
-            <TabsContent value="products" className="mt-4">
-              <ProductFailuresTable rows={products.data ?? []} />
-            </TabsContent>
-          </Tabs>
+                <TabsContent value="carriers" className="mt-4">
+                  <CarrierStatsTable rows={carriers.data ?? []} />
+                </TabsContent>
+                <TabsContent value="cities" className="mt-4">
+                  <CityReturnsTable rows={cities.data ?? []} />
+                </TabsContent>
+                <TabsContent value="products" className="mt-4">
+                  <ProductFailuresTable rows={products.data ?? []} />
+                </TabsContent>
+              </Tabs>
+            </div>
+            <div className="lg:col-span-5">
+              <GeoDistribution rows={cities.data ?? []} />
+            </div>
+          </div>
         </>
       )}
     </div>
