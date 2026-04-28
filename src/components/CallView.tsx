@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
+import AddressValidationBadge from '@/components/AddressValidationBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
 
 interface VipInfo {
@@ -264,8 +265,17 @@ export default function CallView({ items }: Props) {
         )}
 
         {o.direccion && (
-          <div className="text-xs text-muted-foreground mb-3 inline-flex items-center gap-1.5">
-            <Mail size={12} /> {o.direccion}
+          <div className="text-xs text-muted-foreground mb-3 inline-flex items-center gap-1.5 flex-wrap">
+            <Mail size={12} />
+            <span>{o.direccion}</span>
+            {/* Validación de dirección — heurística + geocoding (Nominatim/OSM).
+                Click en el badge abre popover con detalles. Ayuda a la
+                operadora a detectar direcciones mal escritas antes de despachar. */}
+            <AddressValidationBadge
+              direccion={o.direccion}
+              ciudad={o.ciudad}
+              departamento={o.departamento}
+            />
           </div>
         )}
 
