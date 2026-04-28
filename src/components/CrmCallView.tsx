@@ -11,6 +11,7 @@ import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, calcBusinessD
 import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
+import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 
@@ -289,6 +290,15 @@ export default function CrmCallView({
               <div className="flex items-start gap-1.5 text-xs">
                 <MapPin size={12} className="mt-0.5 text-muted-foreground/60" />
                 <span className="flex-1 text-muted-foreground">{o.direccion}</span>
+                {/* Validación de dirección — heurística + geocoding (Nominatim/OSM).
+                    Click en el badge abre popover con detalles y posible
+                    ubicación en mapa. Ayuda a la operadora a detectar
+                    direcciones mal escritas antes de despachar. */}
+                <AddressValidationBadge
+                  direccion={o.direccion}
+                  ciudad={o.ciudad}
+                  departamento={o.departamento}
+                />
               </div>
             )}
 
