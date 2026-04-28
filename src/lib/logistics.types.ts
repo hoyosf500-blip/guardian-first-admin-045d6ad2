@@ -11,6 +11,38 @@ export interface LogisticsSummary {
   tasa_devolucion: number;   // 0-100
   valor_entregado: number;   // COP
   valor_perdido: number;     // COP
+  // v2: trazabilidad — añadidos en migration 20260428000000.
+  // Quedan opcionales (?) porque las RPCs viejas (cache de TanStack
+  // pre-deploy) podrían devolver el shape v1.
+  valor_en_transito?: number;
+  pendientes_sin_despachar?: number;
+  pendientes_por_confirmar?: number;
+  valor_pendientes?: number;
+  cancelados?: number;
+  valor_cancelado?: number;
+}
+
+/** Una fila del timeline de guías (RPC `logistics_timeline`). */
+export interface TimelineEntry {
+  id: string;
+  fecha: string;            // YYYY-MM-DD
+  guia: string;
+  external_id: string;
+  estado: string;
+  transportadora: string;
+  ciudad: string;
+  producto: string;
+  valor: number;
+  total_count: number;      // total de filas que matchean los filtros (para paginación)
+}
+
+/** Filtros para `logistics_timeline`. */
+export interface TimelineFilters {
+  estados?: string[];        // ej: ['ENTREGADO', 'EN TRANSPORTE']
+  transportadora?: string;
+  search?: string;           // matchea guia o external_id (ILIKE)
+  page?: number;             // 0-based
+  pageSize?: number;
 }
 
 export interface CarrierStats {

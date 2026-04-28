@@ -8,10 +8,11 @@ import GeoDistribution from '@/components/logistics/GeoDistribution';
 import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
 import CityReturnsTable from '@/components/logistics/CityReturnsTable';
 import ProductFailuresTable from '@/components/logistics/ProductFailuresTable';
+import TrazabilidadView from '@/components/logistics/TrazabilidadView';
 import LogisticsSkeleton from '@/components/logistics/LogisticsSkeleton';
 import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
-import { Truck, MapPin, Package, RefreshCw } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity } from 'lucide-react';
 
 function defaultRange(): LogisticsFilters {
   const to = new Date();
@@ -130,6 +131,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
               <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
               <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+              <TabsTrigger value="trazabilidad"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
             </TabsList>
 
             <TabsContent value="carriers" className="mt-4">
@@ -141,6 +143,13 @@ export default function LogisticaTab() {
             </TabsContent>
             <TabsContent value="products" className="mt-4">
               <ProductFailuresTable rows={products.data ?? []} />
+            </TabsContent>
+            <TabsContent value="trazabilidad" className="mt-4">
+              <TrazabilidadView
+                summary={summary.data ?? null}
+                range={filters}
+                carriers={carriers.data ?? []}
+              />
             </TabsContent>
           </Tabs>
         </>
