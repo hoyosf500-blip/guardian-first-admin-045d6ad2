@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, MapPin } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Loader2, MapPin, WifiOff } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAddressValidation, type AddressValidationStatus } from '@/hooks/useAddressValidation';
 
@@ -61,6 +61,7 @@ export default memo(function AddressValidationBadge({
 
   if (!direccion?.trim()) return null;
 
+  // Loading state
   if (validation.isLoading && !validation.data) {
     return (
       <span
@@ -73,6 +74,7 @@ export default memo(function AddressValidationBadge({
     );
   }
 
+  // Fallback fatal (no debería pasar — el hook tiene fallback local).
   if (validation.isError || !validation.data) {
     return (
       <span
@@ -80,12 +82,12 @@ export default memo(function AddressValidationBadge({
         aria-label="No se pudo validar"
         title="No se pudo validar la dirección"
       >
-        <AlertTriangle size={size - 2} className="text-muted-foreground" aria-hidden="true" />
+        <WifiOff size={size - 2} className="text-muted-foreground" aria-hidden="true" />
       </span>
     );
   }
 
-  const { status, score, issues, geocoded } = validation.data;
+  const { status, score, issues, geocoded, localOnly } = validation.data;
   const tone = STATUS_TONE[status];
   const Icon = tone.icon;
 
@@ -96,7 +98,7 @@ export default memo(function AddressValidationBadge({
           type="button"
           className={`inline-flex items-center justify-center h-5 w-5 rounded-full ring-1 transition-colors ${tone.bgClass} ${tone.ringClass} hover:ring-2 focus-visible:ring-2 focus-visible:outline-none`}
           aria-label={tone.label}
-          title={`${tone.label} — click para detalles`}
+          title={`${tone.label}${localOnly ? ' (solo formato)' : ''} — click para detalles`}
         >
           <Icon size={size - 2} className={tone.textClass} aria-hidden="true" strokeWidth={2.25} />
         </button>
@@ -110,6 +112,11 @@ export default memo(function AddressValidationBadge({
               {score}/100
             </span>
           </div>
+          {localOnly && (
+            <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+              ⚡ Solo formato verificado · Geocoding no disponible
+            </p>
+          )}
         </div>
 
         <div className="px-4 py-3 space-y-3 text-xs">
@@ -161,9 +168,16 @@ export default memo(function AddressValidationBadge({
             </div>
           )}
 
-          {status === 'suspicious' && !geocoded && (
+          {status === 'suspicious' && !geocoded && !localOnly && (
             <p className="text-[11px] text-muted-foreground italic">
               El formato es razonable pero el mapa no la ubica. Confirme con el cliente si es correcta.
+            </p>
+          )}
+
+          {status === 'suspicious' && localOnly && (
+            <p className="text-[11px] text-muted-foreground italic">
+              Formato OK pero no pude verificar si existe en el mapa (servicio de geocoding no disponible).
+              Confirme con el cliente si es correcta.
             </p>
           )}
 

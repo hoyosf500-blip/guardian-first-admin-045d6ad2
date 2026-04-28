@@ -11,6 +11,11 @@
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/guardian-first-admin\.lovable\.app$/,
   /^https:\/\/guardian-first-admin\.lovableproject\.com$/,
+  // Lovable preview URLs: `preview--<project>.lovable.app` y
+  // `id-preview--<project>.lovable.app`. Solo permitimos previews
+  // del MISMO proyecto (no `*.lovable.app` general).
+  /^https:\/\/(id-)?preview--guardian-first-admin\.lovable\.app$/,
+  /^https:\/\/[a-z0-9-]+--guardian-first-admin\.lovable\.app$/,
   /^http:\/\/localhost:\d+$/,                     // dev local
 ];
 
