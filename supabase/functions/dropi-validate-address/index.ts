@@ -104,7 +104,71 @@ function heuristicValidate(direccion: string): { score: number; issues: string[]
   return { score: Math.min(100, score), issues };
 }
 
-// ── Geocoding via Nominatim ────────────────────────────────────
+// ── Google Maps Address Validation API ────────────────────────
+interface GoogleValidationResult {
+  status: "valid" | "suspicious";
+  score: number;
+  geocoded: { lat: number; lng: number; display: string } | null;
+}
+
+async function googleValidateAddress(
+  direccion: string,
+  ciudad: string,
+  departamento: string,
+): Promise<GoogleValidationResult | null> {
+  const apiKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  if (!apiKey) return null;
+
+  const url = `https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`;
+  const cityRegion = [ciudad, departamento].filter(Boolean).join(", ");
+  const addressLines = [direccion];
+  if (cityRegion) addressLines.push(cityRegion);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        address: { regionCode: "CO", addressLines },
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const result = data?.result;
+    if (!result) return null;
+
+    const verdict = result.verdict ?? {};
+    const addressComplete = verdict.addressComplete === true;
+    const hasUnconfirmed = verdict.hasUnconfirmedComponents === true;
+    const hasInferred = verdict.hasInferredComponents === true;
+    const hasReplaced = verdict.hasReplacedComponents === true;
+
+    const loc = result.geocode?.location;
+    const formatted = result.address?.formattedAddress ?? "";
+    const geocoded = (loc && typeof loc.latitude === "number" && typeof loc.longitude === "number")
+      ? { lat: loc.latitude, lng: loc.longitude, display: formatted }
+      : null;
+
+    if (hasUnconfirmed) {
+      return { status: "suspicious", score: 60, geocoded };
+    }
+    if (addressComplete) {
+      return { status: "valid", score: 100, geocoded };
+    }
+    if (hasInferred || hasReplaced) {
+      return { status: "valid", score: 85, geocoded };
+    }
+    // Sin verdict claro: tratamos como sospechosa si hay geocoded, sino null para fallback
+    if (geocoded) {
+      return { status: "suspicious", score: 55, geocoded };
+    }
+    return null;
+  } catch (_e) {
+    return null;
+  }
+}
+
+// ── Geocoding via Nominatim (fallback) ─────────────────────────
 async function nominatimGeocode(
   direccion: string,
   ciudad: string,
