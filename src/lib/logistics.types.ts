@@ -12,7 +12,7 @@ export interface LogisticsSummary {
   valor_entregado: number;   // COP
   valor_perdido: number;     // COP
   // v2: trazabilidad — añadidos en migration 20260428000000.
-  // Quedan opcionales (?) porque las RPCs viejas (cache de TanStack
+  // Opcionales (?) porque las RPCs viejas (cache de TanStack
   // pre-deploy) podrían devolver el shape v1.
   valor_en_transito?: number;
   pendientes_sin_despachar?: number;
@@ -20,6 +20,10 @@ export interface LogisticsSummary {
   valor_pendientes?: number;
   cancelados?: number;
   valor_cancelado?: number;
+  // v3: novedades — añadidos en migration 20260428100000.
+  // Sin esto, ~20% de los pedidos quedaban sin asignar a ningún bucket.
+  novedades?: number;
+  valor_novedades?: number;
 }
 
 /** Una fila del timeline de guías (RPC `logistics_timeline`). */

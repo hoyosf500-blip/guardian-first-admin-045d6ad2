@@ -1,7 +1,10 @@
 import { memo, useMemo, useState } from 'react';
 import { useLogisticsTimeline } from '@/hooks/useLogisticsTimeline';
 import { formatCOP } from '@/lib/utils';
-import { Search, ChevronLeft, ChevronRight, ListChecks, Truck, MapPin, X } from 'lucide-react';
+import {
+  Search, ChevronLeft, ChevronRight, ListChecks, Truck, MapPin, X,
+  PackageCheck, PackageX, Inbox, AlertTriangle,
+} from 'lucide-react';
 import type {
   LogisticsSummary,
   LogisticsFilters,
@@ -19,7 +22,7 @@ function stateTone(estado: string): 'success' | 'info' | 'warning' | 'danger' | 
   if (e === 'ENTREGADO') return 'success';
   if (e === 'CANCELADO') return 'neutral';
   if (e.includes('DEVOLUCION') || e === 'RECHAZADO') return 'danger';
-  if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA') return 'warning';
+  if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' || e === 'NOVEDAD SOLUCIONADA') return 'warning';
   if (e === 'PENDIENTE' || e === 'PENDIENTE CONFIRMACION') return 'warning';
   return 'info';
 }
@@ -35,6 +38,7 @@ const STATE_PRESETS: { label: string; estados: string[] | null; tone: ReturnType
     'EN BODEGA TRANSPORTADORA', 'ADMITIDA',
     'EN BODEGA DROPI', 'RECOGIDO POR DROPI',
   ], tone: 'info' },
+  { label: 'Novedades',     estados: ['NOVEDAD', 'INTENTO DE ENTREGA', 'NOVEDAD SOLUCIONADA'], tone: 'warning' },
   { label: 'Devolución',    estados: ['DEVOLUCION', 'DEVOLUCION EN TRANSITO', 'RECHAZADO'], tone: 'danger' },
   { label: 'Pendiente',     estados: ['PENDIENTE', 'PENDIENTE CONFIRMACION'], tone: 'warning' },
   { label: 'Cancelado',     estados: ['CANCELADO'], tone: 'neutral' },
@@ -74,48 +78,107 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
     );
   }
 
+  // ── Detección de migration desactualizada ────────────────────
+  // Si los campos v2/v3 vienen undefined, la RPC en DB es vieja.
+  // Mostramos warning para que el admin sepa que los números son
+  // parciales (no por bug del frontend).
+  const migrationStale =
+    summary.cancelados === undefined ||
+    summary.novedades === undefined;
+
+  // ── Buckets ──────────────────────────────────────────────────
   const entregados   = summary.entregados ?? 0;
   const enTransito   = summary.en_transito ?? 0;
   const devueltos    = summary.devueltos ?? 0;
-  const totalDespachadas = entregados + enTransito + devueltos;
+  const novedades    = summary.novedades ?? 0;
 
   const pendSinDespachar = summary.pendientes_sin_despachar ?? 0;
   const pendPorConfirmar = summary.pendientes_por_confirmar ?? 0;
   const totalPendientes  = pendSinDespachar + pendPorConfirmar;
 
-  const valorEntregado    = summary.valor_entregado ?? 0;
-  const valorEnTransito   = summary.valor_en_transito ?? 0;
-  const valorPerdido      = summary.valor_perdido ?? 0;
-  const valorDespachadas  = valorEntregado + valorEnTransito + valorPerdido;
+  const cancelados = summary.cancelados ?? 0;
 
-  const valorPendientes   = summary.valor_pendientes ?? 0;
-  const cancelados        = summary.cancelados ?? 0;
-  const valorCancelado    = summary.valor_cancelado ?? 0;
+  // Despachadas reales = todo lo que ya salió de la operadora hacia el carrier.
+  // Incluye novedades porque son guías ya en manos del transportador.
+  const despachadasReales = entregados + enTransito + devueltos + novedades;
 
-  // Total absoluto = activos + cancelados (denominador para "tasas reales")
-  const totalConCancelados = (summary.total_pedidos ?? 0) + cancelados;
-  const despachadasMasPendientes = totalDespachadas + totalPendientes;
+  // Total entrados al sistema = activos (no cancelados) + cancelados.
+  const totalActivos = summary.total_pedidos ?? 0;
+  const totalEntrados = totalActivos + cancelados;
 
-  const tasaDespacho = totalConCancelados > 0
-    ? (totalDespachadas / totalConCancelados) * 100
+  // Sanity check: si cuadra, despachadas + pendientes ≈ activos.
+  // Diferencia probable = estados raros no clasificados.
+  const sinClasificar = Math.max(0, totalActivos - despachadasReales - totalPendientes);
+
+  // ── Valores ─────────────────────────────────────────────────
+  const valorEntregado    = summary.valor_entregado    ?? 0;
+  const valorEnTransito   = summary.valor_en_transito  ?? 0;
+  const valorPerdido      = summary.valor_perdido      ?? 0;
+  const valorNovedades    = summary.valor_novedades    ?? 0;
+  const valorDespachadas  = valorEntregado + valorEnTransito + valorPerdido + valorNovedades;
+  const valorPendientes   = summary.valor_pendientes   ?? 0;
+  const valorCancelado    = summary.valor_cancelado    ?? 0;
+  const valorTotal        = valorDespachadas + valorPendientes + valorCancelado;
+
+  // ── Tasas ───────────────────────────────────────────────────
+  const tasaDespacho = totalEntrados > 0
+    ? (despachadasReales / totalEntrados) * 100
     : 0;
-  const tasaCancelacion = totalConCancelados > 0
-    ? (cancelados / totalConCancelados) * 100
-    : 0;
-  const tasaDespachoReal = despachadasMasPendientes > 0
-    ? (totalDespachadas / despachadasMasPendientes) * 100
+  const tasaCancelacion = totalEntrados > 0
+    ? (cancelados / totalEntrados) * 100
     : 0;
 
-  const pct = (n: number) => totalDespachadas > 0 ? (n / totalDespachadas) * 100 : 0;
+  // % por fila (sobre total despachadas)
+  const pct = (n: number) => despachadasReales > 0 ? (n / despachadasReales) * 100 : 0;
   const pctPend = (n: number) => totalPendientes > 0 ? (n / totalPendientes) * 100 : 0;
-  // Distribución del valor pendiente proporcional al # de pedidos de cada bucket
-  // (no tenemos breakdown de valor por sub-tipo en el RPC).
+  // Distribución de valor pendiente proporcional (no tenemos breakdown por sub-tipo).
   const valorPendDistr = (n: number) => totalPendientes > 0
     ? valorPendientes * (n / totalPendientes)
     : 0;
 
   return (
     <div className="space-y-6">
+
+      {migrationStale && (
+        <div className="rounded-xl border border-warning/40 bg-warning/8 p-4 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-warning shrink-0 mt-0.5" aria-hidden="true" strokeWidth={2.25} />
+          <div className="text-sm">
+            <p className="font-semibold text-foreground">Datos parciales — falta aplicar migration</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              La DB todavía corre la versión vieja del RPC <code className="font-mono text-[11px]">logistics_summary</code>.
+              Cancelados, pendientes y novedades no se están contando.
+              {' '}Aplicá <code className="font-mono text-[11px]">supabase db push</code> en el repo
+              o esperá a que Lovable Cloud reanude el deploy.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* HERO — los 3 números que pidió el user, grandes y claros */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <HeroKpi
+          label="Total entrados"
+          value={totalEntrados.toLocaleString('es-CO')}
+          subline={formatCOP(valorTotal)}
+          tone="info"
+          icon={Inbox}
+        />
+        <HeroKpi
+          label="Despachados reales"
+          value={despachadasReales.toLocaleString('es-CO')}
+          subline={`${tasaDespacho.toFixed(1)}% del total`}
+          tone="success"
+          icon={PackageCheck}
+        />
+        <HeroKpi
+          label="Cancelados"
+          value={cancelados.toLocaleString('es-CO')}
+          subline={`${tasaCancelacion.toFixed(1)}% del total · ${formatCOP(valorCancelado)}`}
+          tone="danger"
+          icon={PackageX}
+        />
+      </div>
+
       {/* SECCIÓN 1: Estado de guías despachadas */}
       <section className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border/60">
@@ -124,6 +187,9 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
             <h2 className="text-sm font-bold text-foreground uppercase tracking-[0.08em]">
               Estado de guías despachadas
             </h2>
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              · {despachadasReales.toLocaleString('es-CO')} guías en ruta
+            </span>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -137,13 +203,14 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
               </tr>
             </thead>
             <tbody>
-              <Row tone="success" label="Entregado"     ventas={valorEntregado}  guias={entregados}    pct={pct(entregados)} />
-              <Row tone="info"    label="En Tránsito"   ventas={valorEnTransito} guias={enTransito}    pct={pct(enTransito)} />
-              <Row tone="danger"  label="Devoluciones"  ventas={valorPerdido}    guias={devueltos}     pct={pct(devueltos)} />
+              <Row tone="success" label="Entregado"     ventas={valorEntregado}  guias={entregados} pct={pct(entregados)} />
+              <Row tone="info"    label="En Tránsito"   ventas={valorEnTransito} guias={enTransito} pct={pct(enTransito)} />
+              <Row tone="warning" label="Novedades"     ventas={valorNovedades}  guias={novedades}  pct={pct(novedades)} />
+              <Row tone="danger"  label="Devoluciones"  ventas={valorPerdido}    guias={devueltos}  pct={pct(devueltos)} />
               <tr className="border-t border-border/60 bg-muted/20">
                 <td className="px-5 py-2.5 text-foreground font-bold text-sm">Total despachadas</td>
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorDespachadas)}</td>
-                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{totalDespachadas.toLocaleString('es-CO')}</td>
+                <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{despachadasReales.toLocaleString('es-CO')}</td>
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">100.0%</td>
               </tr>
             </tbody>
@@ -151,18 +218,18 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         </div>
       </section>
 
-      {/* SECCIÓN 2: Tasa Despacho + Cancelación */}
+      {/* SECCIÓN 2: Tasa Despacho + Cancelación (cards grandes) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <RateCard
           label="Tasa de Despacho"
           pct={tasaDespacho}
-          subline={`${totalDespachadas.toLocaleString('es-CO')} de ${totalConCancelados.toLocaleString('es-CO')} pedidos`}
+          subline={`${despachadasReales.toLocaleString('es-CO')} de ${totalEntrados.toLocaleString('es-CO')} pedidos`}
           tone="success"
         />
         <RateCard
           label="Tasa de Cancelación"
           pct={tasaCancelacion}
-          subline={`${cancelados.toLocaleString('es-CO')} de ${totalConCancelados.toLocaleString('es-CO')} pedidos`}
+          subline={`${cancelados.toLocaleString('es-CO')} de ${totalEntrados.toLocaleString('es-CO')} pedidos`}
           tone="danger"
         />
       </div>
@@ -175,6 +242,9 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
             <h2 className="text-sm font-bold text-foreground uppercase tracking-[0.08em]">
               Pedidos pendientes
             </h2>
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              · {totalPendientes.toLocaleString('es-CO')} sin salir todavía
+            </span>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -207,7 +277,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorPendientes)}</td>
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{totalPendientes.toLocaleString('es-CO')}</td>
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">
-                  {totalConCancelados > 0 ? ((totalPendientes / totalConCancelados) * 100).toFixed(1) : '0.0'}%
+                  {totalEntrados > 0 ? ((totalPendientes / totalEntrados) * 100).toFixed(1) : '0.0'}%
                 </td>
               </tr>
             </tbody>
@@ -215,35 +285,14 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         </div>
       </section>
 
-      {/* SECCIÓN 4: 4 KPIs operativos */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MiniKpi
-          label="Despachado + Pendientes"
-          value={despachadasMasPendientes.toLocaleString('es-CO')}
-          subline={formatCOP(valorDespachadas + valorPendientes)}
-          tone="info"
-        />
-        <MiniKpi
-          label="Tasa despacho real"
-          value={`${tasaDespachoReal.toFixed(1)}%`}
-          subline="(despachadas / activas)"
-          tone="success"
-        />
-        <MiniKpi
-          label="Tasa cancelación real"
-          value={`${tasaCancelacion.toFixed(1)}%`}
-          subline={`${cancelados.toLocaleString('es-CO')} cancelados`}
-          tone="danger"
-        />
-        <MiniKpi
-          label="Pedidos cancelados"
-          value={cancelados.toLocaleString('es-CO')}
-          subline={formatCOP(valorCancelado)}
-          tone="neutral"
-        />
-      </div>
+      {sinClasificar > 0 && (
+        <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-2.5 text-xs text-muted-foreground">
+          <span className="font-mono tabular-nums text-foreground">{sinClasificar.toLocaleString('es-CO')}</span>
+          {' '}pedidos activos no caen en ninguna categoría conocida (estados sin clasificar). Verificá la migration esté actualizada.
+        </div>
+      )}
 
-      {/* SECCIÓN 5: Timeline de guías */}
+      {/* SECCIÓN 4: Timeline de guías */}
       <section className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-4 border-b border-border/60 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -280,7 +329,6 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
             })}
           </div>
 
-          {/* Filtros: transportadora + search */}
           <div className="flex items-center gap-2 flex-wrap">
             <select
               value={transportadora}
@@ -326,7 +374,6 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
           </div>
         </div>
 
-        {/* Tabla del timeline */}
         <div className="overflow-x-auto">
           {timeline.isError ? (
             <div className="px-5 py-10 text-center">
@@ -385,7 +432,6 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
           )}
         </div>
 
-        {/* Paginación */}
         {timeline.data && timeline.data.totalCount > PAGE_SIZE && (
           <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-border/60 bg-muted/10">
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -424,6 +470,39 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
     </div>
   );
 });
+
+interface HeroKpiProps {
+  label: string;
+  value: string;
+  subline: string;
+  tone: 'info' | 'success' | 'danger';
+  icon: typeof Inbox;
+}
+function HeroKpi({ label, value, subline, tone, icon: Icon }: HeroKpiProps) {
+  const styles = {
+    info:    { bg: 'bg-info/8',    border: 'border-info/30',    text: 'text-info',    iconBg: 'bg-info/15',    iconRing: 'ring-info/30' },
+    success: { bg: 'bg-success/8', border: 'border-success/30', text: 'text-success', iconBg: 'bg-success/15', iconRing: 'ring-success/30' },
+    danger:  { bg: 'bg-danger/8',  border: 'border-danger/30',  text: 'text-danger',  iconBg: 'bg-danger/15',  iconRing: 'ring-danger/30' },
+  }[tone];
+  return (
+    <article className={`rounded-xl border ${styles.border} ${styles.bg} p-5 flex items-start gap-4`}>
+      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${styles.iconBg} ring-1 ${styles.iconRing}`}>
+        <Icon size={20} className={styles.text} aria-hidden="true" strokeWidth={2.25} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+          {label}
+        </div>
+        <div className={`font-mono font-bold tabular-nums leading-none mt-1.5 text-3xl ${styles.text}`}>
+          {value}
+        </div>
+        <div className="text-xs text-muted-foreground mt-2 tabular-nums truncate">
+          {subline}
+        </div>
+      </div>
+    </article>
+  );
+}
 
 interface RowProps {
   tone: 'success' | 'info' | 'warning' | 'danger';
@@ -469,34 +548,6 @@ function RateCard({ label, pct, subline, tone }: RateCardProps) {
         {pct.toFixed(1)}%
       </div>
       <div className="text-xs text-muted-foreground mt-2 tabular-nums">
-        {subline}
-      </div>
-    </article>
-  );
-}
-
-interface MiniKpiProps {
-  label: string;
-  value: string;
-  subline: string;
-  tone: 'info' | 'success' | 'danger' | 'neutral';
-}
-function MiniKpi({ label, value, subline, tone }: MiniKpiProps) {
-  const valueColor = {
-    info:    'text-info',
-    success: 'text-success',
-    danger:  'text-danger',
-    neutral: 'text-foreground',
-  }[tone];
-  return (
-    <article className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border-strong">
-      <div className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground truncate">
-        {label}
-      </div>
-      <div className={`font-mono font-bold tabular-nums leading-none mt-1.5 text-2xl ${valueColor}`}>
-        {value}
-      </div>
-      <div className="text-[11px] text-muted-foreground mt-1.5 tabular-nums truncate">
         {subline}
       </div>
     </article>
