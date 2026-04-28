@@ -309,16 +309,50 @@ Deno.serve(async (req) => {
   }
 
   // ── Validación nueva ─────────────────────────────────────────
+  // PASO A: Heurística regex local
   const { score: heuristicScore, issues } = heuristicValidate(direccion);
 
-  // Solo geocoding si la heurística pasó el threshold mínimo.
-  let geocoded: { lat: number; lng: number; display: string } | null = null;
-  if (heuristicScore >= 40) {
-    geocoded = await nominatimGeocode(direccion, ciudad, departamento);
+  // Si la heurística falla rotundamente, no llamamos APIs externas
+  if (heuristicScore < 40) {
+    const invalidStatus: "invalid" = "invalid";
+    await sb
+      .from("address_validations")
+      .upsert({
+        cache_key: cacheKey,
+        direccion,
+        ciudad: ciudad || null,
+        departamento: departamento || null,
+        status: invalidStatus,
+        score: heuristicScore,
+        issues,
+        geocoded_lat: null,
+        geocoded_lng: null,
+        geocoded_display: null,
+        validated_at: new Date().toISOString(),
+      }, { onConflict: "cache_key" });
+    return new Response(
+      JSON.stringify({ status: invalidStatus, score: heuristicScore, issues, cached: false } as ValidationResult),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
-  const status = decideStatus(heuristicScore, geocoded);
-  const finalScore = combineScore(heuristicScore, geocoded);
+  // PASO B: Google Maps Address Validation
+  let geocoded: { lat: number; lng: number; display: string } | null = null;
+  let status: "valid" | "suspicious" | "invalid";
+  let finalScore: number;
+
+  const googleResult = await googleValidateAddress(direccion, ciudad, departamento);
+
+  if (googleResult) {
+    status = googleResult.status;
+    finalScore = googleResult.score;
+    geocoded = googleResult.geocoded;
+  } else {
+    // PASO C: Fallback a Nominatim/OSM
+    geocoded = await nominatimGeocode(direccion, ciudad, departamento);
+    status = decideStatus(heuristicScore, geocoded);
+    finalScore = combineScore(heuristicScore, geocoded);
+  }
 
   await sb
     .from("address_validations")
