@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      address_validations: {
+        Row: {
+          cache_key: string
+          ciudad: string | null
+          departamento: string | null
+          direccion: string
+          geocoded_display: string | null
+          geocoded_lat: number | null
+          geocoded_lng: number | null
+          id: string
+          issues: string[]
+          score: number
+          status: string
+          validated_at: string
+        }
+        Insert: {
+          cache_key: string
+          ciudad?: string | null
+          departamento?: string | null
+          direccion: string
+          geocoded_display?: string | null
+          geocoded_lat?: number | null
+          geocoded_lng?: number | null
+          id?: string
+          issues?: string[]
+          score: number
+          status: string
+          validated_at?: string
+        }
+        Update: {
+          cache_key?: string
+          ciudad?: string | null
+          departamento?: string | null
+          direccion?: string
+          geocoded_display?: string | null
+          geocoded_lat?: number | null
+          geocoded_lng?: number | null
+          id?: string
+          issues?: string[]
+          score?: number
+          status?: string
+          validated_at?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           created_at: string
@@ -634,14 +679,45 @@ export type Database = {
       logistics_summary: {
         Args: { p_from_date: string; p_to_date: string }
         Returns: {
+          cancelados: number
           devueltos: number
           en_transito: number
           entregados: number
+          novedades: number
+          pendientes_por_confirmar: number
+          pendientes_sin_despachar: number
           tasa_devolucion: number
           tasa_entrega: number
           total_pedidos: number
+          valor_cancelado: number
+          valor_en_transito: number
           valor_entregado: number
+          valor_novedades: number
+          valor_pendientes: number
           valor_perdido: number
+        }[]
+      }
+      logistics_timeline: {
+        Args: {
+          p_estados?: string[]
+          p_from_date: string
+          p_limit?: number
+          p_offset?: number
+          p_search?: string
+          p_to_date: string
+          p_transportadora?: string
+        }
+        Returns: {
+          ciudad: string
+          estado: string
+          external_id: string
+          fecha: string
+          guia: string
+          id: string
+          producto: string
+          total_count: number
+          transportadora: string
+          valor: number
         }[]
       }
       opening_report_status: {
@@ -712,6 +788,7 @@ export type Database = {
           total: number
         }[]
       }
+      upsert_orders_from_dropi: { Args: { p_orders: Json }; Returns: number }
     }
     Enums: {
       app_role: "admin" | "operator"
