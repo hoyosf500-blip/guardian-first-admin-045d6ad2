@@ -121,32 +121,28 @@ export default function LogisticaTab() {
             </div>
           </div>
 
-          {/* DETAIL ROW — tabs con detalle (col-span-7) + geo distribution
-              lateral (col-span-5). Mobile: stacked. */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-7">
-              <Tabs defaultValue="carriers" className="w-full">
-                <TabsList>
-                  <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
-                  <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
-                  <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
-                </TabsList>
+          {/* Tabs full-width — vuelve a la organización por carpetas
+              (Transportadoras / Ciudades / Productos) que el usuario
+              prefería. El geo distribution se muestra adentro de
+              "Ciudades" como panel sobre la tabla. */}
+          <Tabs defaultValue="carriers" className="w-full">
+            <TabsList>
+              <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
+              <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
+              <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+            </TabsList>
 
-                <TabsContent value="carriers" className="mt-4">
-                  <CarrierStatsTable rows={carriers.data ?? []} />
-                </TabsContent>
-                <TabsContent value="cities" className="mt-4">
-                  <CityReturnsTable rows={cities.data ?? []} />
-                </TabsContent>
-                <TabsContent value="products" className="mt-4">
-                  <ProductFailuresTable rows={products.data ?? []} />
-                </TabsContent>
-              </Tabs>
-            </div>
-            <div className="lg:col-span-5">
+            <TabsContent value="carriers" className="mt-4">
+              <CarrierStatsTable rows={carriers.data ?? []} />
+            </TabsContent>
+            <TabsContent value="cities" className="mt-4 space-y-4">
               <GeoDistribution rows={cities.data ?? []} />
-            </div>
-          </div>
+              <CityReturnsTable rows={cities.data ?? []} />
+            </TabsContent>
+            <TabsContent value="products" className="mt-4">
+              <ProductFailuresTable rows={products.data ?? []} />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>
