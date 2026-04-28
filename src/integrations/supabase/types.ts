@@ -676,6 +676,7 @@ export type Database = {
           valor_perdido: number
         }[]
       }
+      logistics_dashboard: { Args: { p_range?: string }; Returns: Json }
       logistics_summary: {
         Args: { p_from_date: string; p_to_date: string }
         Returns: {
