@@ -112,8 +112,8 @@ export default function SeguimientoTab() {
     const categories = [
       { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-muted-foreground' },
       { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-muted-foreground' },
-      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-orange-500' },
-      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-orange-500' },
+      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-warning' },
+      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-warning' },
       { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-muted-foreground' },
       { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-accent' },
     ];
@@ -136,62 +136,56 @@ export default function SeguimientoTab() {
    */
   type StatTone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
   /**
-   * Each tone carries: the icon bg, icon color, the number accent, an ambient
-   * glow for the card (subtle — only visible as a faint halo) and the ring
-   * used when a card is selected as the active filter.
+   * Cada tono usa tokens semánticos del DS (success/danger/warning/
+   * accent) — coherentes con dark/light mode automático. El active
+   * state suma ring + bg tonal sin sombras pesadas (look más limpio).
    */
   const STAT_TONE: Record<StatTone, {
     iconBg: string; iconText: string;
     numberColor: string; cardHover: string;
-    activeRing: string; activeBg: string; activeShadow: string;
+    activeRing: string; activeBg: string;
   }> = {
     neutral: {
-      iconBg: 'bg-zinc-800', iconText: 'text-zinc-300',
+      iconBg: 'bg-muted/40', iconText: 'text-muted-foreground',
       numberColor: 'text-foreground',
-      cardHover: 'hover:border-zinc-600 hover:bg-zinc-900/80',
+      cardHover: 'hover:border-border-strong hover:bg-muted/20',
       activeRing: 'ring-2 ring-accent/60 border-accent/60',
       activeBg: 'bg-accent/5',
-      activeShadow: 'shadow-lg shadow-accent/10',
     },
     accent: {
-      iconBg: 'bg-accent/20', iconText: 'text-accent',
+      iconBg: 'bg-accent/15', iconText: 'text-accent',
       numberColor: 'text-accent',
-      cardHover: 'hover:border-accent/50 hover:bg-accent/10 hover:shadow-lg hover:shadow-accent/20',
+      cardHover: 'hover:border-accent/40 hover:bg-accent/8',
       activeRing: 'ring-2 ring-accent border-accent',
-      activeBg: 'bg-accent/15',
-      activeShadow: 'shadow-lg shadow-accent/25',
+      activeBg: 'bg-accent/12',
     },
     warning: {
-      iconBg: 'bg-orange-500/15', iconText: 'text-orange-500',
-      numberColor: 'text-orange-500',
-      cardHover: 'hover:border-orange-500/40 hover:bg-orange-500/5',
-      activeRing: 'ring-2 ring-orange-500/70 border-orange-500/70',
-      activeBg: 'bg-orange-500/10',
-      activeShadow: 'shadow-lg shadow-orange-500/20',
+      iconBg: 'bg-warning/12', iconText: 'text-warning',
+      numberColor: 'text-warning',
+      cardHover: 'hover:border-warning/40 hover:bg-warning/5',
+      activeRing: 'ring-2 ring-warning/70 border-warning/70',
+      activeBg: 'bg-warning/10',
     },
     danger: {
-      iconBg: 'bg-red-500/15', iconText: 'text-red-500',
-      numberColor: 'text-red-500',
-      cardHover: 'hover:border-red-500/40 hover:bg-red-500/5',
-      activeRing: 'ring-2 ring-red-500/70 border-red-500/70',
-      activeBg: 'bg-red-500/10',
-      activeShadow: 'shadow-lg shadow-red-500/20',
+      iconBg: 'bg-danger/12', iconText: 'text-danger',
+      numberColor: 'text-danger',
+      cardHover: 'hover:border-danger/40 hover:bg-danger/5',
+      activeRing: 'ring-2 ring-danger/70 border-danger/70',
+      activeBg: 'bg-danger/10',
     },
     success: {
-      iconBg: 'bg-emerald-500/15', iconText: 'text-emerald-500',
-      numberColor: 'text-emerald-500',
-      cardHover: 'hover:border-emerald-500/40 hover:bg-emerald-500/5',
-      activeRing: 'ring-2 ring-emerald-500/70 border-emerald-500/70',
-      activeBg: 'bg-emerald-500/10',
-      activeShadow: 'shadow-lg shadow-emerald-500/20',
+      iconBg: 'bg-success/12', iconText: 'text-success',
+      numberColor: 'text-success',
+      cardHover: 'hover:border-success/40 hover:bg-success/5',
+      activeRing: 'ring-2 ring-success/70 border-success/70',
+      activeBg: 'bg-success/10',
     },
     muted: {
-      iconBg: 'bg-zinc-800/60', iconText: 'text-muted-foreground',
+      iconBg: 'bg-muted/40', iconText: 'text-muted-foreground',
       numberColor: 'text-muted-foreground',
-      cardHover: 'hover:border-zinc-600 hover:text-foreground',
-      activeRing: 'ring-2 ring-zinc-500 border-zinc-500',
-      activeBg: 'bg-zinc-800/50',
-      activeShadow: 'shadow-lg',
+      cardHover: 'hover:border-border-strong hover:text-foreground',
+      activeRing: 'ring-2 ring-border-strong border-border-strong',
+      activeBg: 'bg-muted/30',
     },
   };
 
@@ -240,17 +234,20 @@ export default function SeguimientoTab() {
         transition={{ duration: 0.35 }}
         className="mb-6 space-y-4"
       >
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center">
-              <Truck size={20} className="text-accent" aria-hidden="true" />
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+              CRM · Operadora
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-foreground">Seguimiento</h2>
-              <p className="text-xs text-muted-foreground">CRM de pedidos — todos los estados de Dropi</p>
-            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
+              <Truck size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+              Seguimiento
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Pedidos en ruta — todos los estados de Dropi sincronizados.
+            </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
             {/* Date range filter */}
             <div className={cn(
               "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
@@ -324,12 +321,12 @@ export default function SeguimientoTab() {
               <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
             {segLastUpdate && (
-              <span className="text-[10px] text-muted-foreground hidden md:block">
+              <span className="text-[11px] text-muted-foreground tabular-nums hidden md:inline">
                 {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
           </div>
-        </div>
+        </header>
 
         {/* Stalled Orders Alert Banner */}
         {stalledStats.total > 0 && (
@@ -338,10 +335,10 @@ export default function SeguimientoTab() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.3 }}
             className={cn(
-              "rounded-xl border overflow-hidden transition-all cursor-pointer",
+              "rounded-xl border overflow-hidden transition-colors cursor-pointer",
               initialDelayed
-                ? "border-orange-500 bg-orange-500/10 ring-1 ring-orange-500/30"
-                : "border-orange-500/30 bg-gradient-to-r from-orange-500/5 to-red-500/5 hover:border-orange-500/50"
+                ? "border-warning bg-warning/10"
+                : "border-warning/30 bg-warning/5 hover:border-warning/50"
             )}
             onClick={() => {
               setInitialDelayed(!initialDelayed);
@@ -349,30 +346,28 @@ export default function SeguimientoTab() {
             }}
           >
             <div className="px-4 py-3 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/25">
-                  <Clock size={20} />
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-md bg-warning/15 ring-1 ring-warning/30 flex items-center justify-center shrink-0">
+                  <Clock size={18} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-foreground">Sin Movimiento</span>
-                    <span className="rounded-full bg-orange-500 text-white text-xs font-bold px-2.5 py-0.5">
-                      {stalledStats.total}
-                    </span>
+                    <span className="text-sm font-bold text-foreground">Sin movimiento</span>
+                    <span className="pill pill-warning">{stalledStats.total}</span>
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
                     Pedidos con 2+ días hábiles sin escaneo — incluye guías generadas y pendientes
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-orange-500">
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold text-warning">
                   {initialDelayed ? 'Mostrando' : 'Ver todos'}
                 </span>
                 <ChevronRight size={16} className={cn(
-                  "text-orange-500 transition-transform",
+                  "text-warning transition-transform",
                   initialDelayed && "rotate-90"
-                )} />
+                )} aria-hidden="true" />
               </div>
             </div>
 
@@ -389,17 +384,17 @@ export default function SeguimientoTab() {
                     if (!initialDelayed) setInitialDelayed(true);
                   }}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all",
+                    "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors",
                     stalledCategoryFilter === cat.label
-                      ? "bg-orange-500/20 border-orange-500/60 ring-1 ring-orange-500/30"
-                      : "bg-card/80 border-border/50 hover:border-orange-400/40"
+                      ? "bg-warning/15 border-warning/60 ring-1 ring-warning/30"
+                      : "bg-card border-border hover:border-warning/40"
                   )}
                 >
                   <span className={cat.color}>{cat.icon}</span>
                   <span className="text-[11px] font-medium text-foreground">{cat.label}</span>
-                  <span className="text-[11px] font-bold text-foreground">{cat.count}</span>
+                  <span className="font-mono text-[11px] font-bold tabular-nums text-foreground">{cat.count}</span>
                   {cat.days5 > 0 && (
-                    <span className="text-[9px] font-bold text-red-500 bg-red-500/10 rounded px-1 py-0.5">
+                    <span className="font-mono text-[9px] font-bold text-danger bg-danger/10 rounded px-1 py-0.5 tabular-nums">
                       {cat.days5} crit
                     </span>
                   )}
@@ -429,14 +424,14 @@ export default function SeguimientoTab() {
                 whileTap={{ scale: 0.97 }}
                 className={`group relative bg-surface border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 transition-all duration-200 cursor-pointer focus-visible:outline-none text-center ${
                   isActive
-                    ? `${t.activeRing} ${t.activeBg} ${t.activeShadow}`
+                    ? `${t.activeRing} ${t.activeBg}`
                     : `border-border ${t.cardHover}`
                 }`}
               >
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText}`}>
                   {card.icon}
                 </div>
-                <span className={`text-xl font-bold leading-none tabular-nums ${isActive ? t.numberColor : 'text-foreground'}`}>
+                <span className={`font-mono text-xl font-bold leading-none tabular-nums ${isActive ? t.numberColor : 'text-foreground'}`}>
                   {card.value}
                 </span>
                 <span className={`text-[9px] font-semibold text-center leading-tight uppercase tracking-wider ${

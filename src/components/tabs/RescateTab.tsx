@@ -66,25 +66,26 @@ export default function RescateTab() {
         transition={{ duration: 0.35 }}
         className="mb-6 space-y-4"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-danger to-danger/70 text-danger-foreground shadow-ds-md"
-              aria-hidden="true"
-            >
-              <LifeBuoy size={18} />
+        {/* Page header — patrón pro coherente con Logística */}
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+              CRM · Operadora
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-foreground tracking-tight">Rescate</h2>
-              <p className="text-xs text-muted-foreground">Pedidos en riesgo que necesitan acción inmediata</p>
-            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
+              <LifeBuoy size={22} className="text-danger" aria-hidden="true" strokeWidth={2.25} />
+              Rescate
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Pedidos en riesgo (D5+, novedades, oficina, devoluciones) que necesitan acción inmediata.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 shrink-0">
             {resData.length > 0 && (
-              <div className="hidden sm:flex items-center gap-2 rounded-xl border border-danger/20 bg-danger/5 px-4 py-2">
-                <span className="text-xs text-muted-foreground">Valor en riesgo</span>
-                <span className="text-sm font-bold text-danger tabular-nums">
+              <div className="hidden sm:flex flex-col gap-0.5 rounded-lg border border-danger/25 bg-danger/5 px-3 py-1.5">
+                <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">Valor en riesgo</span>
+                <span className="font-mono text-sm font-bold text-danger tabular-nums leading-none">
                   {formatCOP(stats.valorEnRiesgo)}
                 </span>
               </div>
@@ -92,12 +93,14 @@ export default function RescateTab() {
             <button
               onClick={() => loadResData(true)}
               disabled={resLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-surface text-muted-foreground text-xs font-semibold hover:text-foreground hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer"
+              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg border border-border bg-card text-xs font-semibold transition-colors hover:border-border-strong hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              aria-label="Refrescar datos"
             >
-              <RefreshCw size={13} className={resLoading ? 'animate-spin' : ''} /> Actualizar
+              <RefreshCw size={13} className={resLoading ? 'animate-spin' : ''} aria-hidden="true" />
+              <span className="hidden sm:inline">{resLoading ? 'Actualizando…' : 'Actualizar'}</span>
             </button>
           </div>
-        </div>
+        </header>
 
         {/* Stats row */}
         {resData.length > 0 && (

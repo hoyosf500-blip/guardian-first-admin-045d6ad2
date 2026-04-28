@@ -360,11 +360,19 @@ export default function DashboardTab() {
 
   return (
     <div className="max-w-6xl mx-auto">
-      {/* Toolbar */}
-      <motion.div {...fadeUp(0)} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">{greeting}</h2>
-          <p className="text-xs text-muted-foreground">{formatDateES(new Date().toISOString().split('T')[0])}</p>
+      {/* Page header — patrón pro coherente con Logística/Rescate */}
+      <motion.header {...fadeUp(0)} className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
+        <div className="min-w-0 space-y-1.5">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+            Resumen · Operadora
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
+            <BarChart3 size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+            {greeting}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {formatDateES(new Date().toISOString().split('T')[0])} · Tu progreso del día y tendencia reciente.
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Period tabs */}
@@ -410,7 +418,7 @@ export default function DashboardTab() {
             )}
           </div>
         </div>
-      </motion.div>
+      </motion.header>
 
       {/* Sync health — only renders when we have at least one sync_logs row
           (i.e. the user is admin and the table is readable). Turns red if

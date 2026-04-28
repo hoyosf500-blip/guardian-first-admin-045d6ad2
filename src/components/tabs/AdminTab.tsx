@@ -282,8 +282,20 @@ export default function AdminTab() {
   if (!isAdmin) return <div className="text-center py-10 text-muted-foreground">Acceso denegado</div>;
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <p className="text-sm text-muted-foreground mb-5">Panel de administración</p>
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* Page header — patrón pro coherente con Logística/Rescate */}
+      <header className="space-y-1.5">
+        <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+          Panel · Admin
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
+          <Key size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+          Administración
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Configuración de integraciones (Dropi, IA, huella), gestión de operadoras y reportes.
+        </p>
+      </header>
 
       <Tabs defaultValue="config" className="w-full">
         <TabsList className="mb-5">
@@ -380,7 +392,7 @@ export default function AdminTab() {
             </div>
             {dropiKeySaved && (
               <div className="px-5 pb-4 flex items-center justify-between">
-                <span className="text-xs text-green flex items-center gap-1">
+                <span className="text-xs text-success flex items-center gap-1">
                   <CheckCircle2 size={12} /> Clave configurada
                 </span>
                 <button
@@ -388,7 +400,7 @@ export default function AdminTab() {
                   disabled={testingKey}
                   className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {testingKey ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-green" /> : testResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Wifi size={12} />}
+                  {testingKey ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-success" /> : testResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Wifi size={12} />}
                   {testingKey ? 'Probando…' : testResult === 'ok' ? 'Conexión OK' : testResult === 'fail' ? 'Falló' : 'Probar conexión'}
                 </button>
               </div>
@@ -398,7 +410,7 @@ export default function AdminTab() {
           {/* AI API Key */}
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <Sparkles size={16} className="text-violet-500" />
+              <Sparkles size={16} className="text-ai" />
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Clave API de IA (DashScope)</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Habilita guiones de llamada, sugerencias y perfiles de cliente con IA</p>
@@ -419,19 +431,19 @@ export default function AdminTab() {
                 </button>
               </div>
               <button onClick={saveAiKey} disabled={savingAiKey || aiKey === aiKeySaved}
-                className="h-10 px-4 rounded-lg bg-violet-600 text-white text-sm font-medium flex items-center gap-2 hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                className="h-10 px-4 rounded-lg bg-ai text-ai-foreground text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingAiKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Guardar
               </button>
             </div>
             {aiKeySaved && (
               <div className="px-5 pb-4 flex items-center justify-between">
-                <span className="text-xs text-green flex items-center gap-1">
+                <span className="text-xs text-success flex items-center gap-1">
                   <CheckCircle2 size={12} /> Clave IA configurada
                 </span>
                 <button onClick={testAiConnection} disabled={testingAi}
                   className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-violet-500" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Sparkles size={12} />}
+                  {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-ai" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Sparkles size={12} />}
                   {testingAi ? 'Probando…' : aiTestResult === 'ok' ? 'IA OK' : aiTestResult === 'fail' ? 'Falló' : 'Probar IA'}
                 </button>
               </div>
@@ -441,7 +453,7 @@ export default function AdminTab() {
           {/* Dropi Session Token (buyer fingerprint) */}
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.03 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <Fingerprint size={16} className="text-cyan-500" />
+              <Fingerprint size={16} className="text-info" />
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Huella del comprador (Dropi)</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Token de sesión para consultar historial del cliente en todas las tiendas Dropi</p>
@@ -462,7 +474,7 @@ export default function AdminTab() {
                 </button>
               </div>
               <button onClick={saveDropiSession} disabled={savingSession || dropiSession === dropiSessionSaved}
-                className="h-10 px-4 rounded-lg bg-cyan-600 text-white text-sm font-medium flex items-center gap-2 hover:bg-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                className="h-10 px-4 rounded-lg bg-info text-info-foreground text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingSession ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Guardar
               </button>
@@ -483,12 +495,12 @@ export default function AdminTab() {
             </div>
             {dropiSessionSaved && (
               <div className="px-5 pb-4 flex items-center justify-between border-t border-border pt-3">
-                <span className="text-xs text-green flex items-center gap-1">
+                <span className="text-xs text-success flex items-center gap-1">
                   <CheckCircle2 size={12} /> Token configurado
                 </span>
                 <button onClick={testDropiFingerprint} disabled={testingSession}
                   className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  {testingSession ? <Loader2 size={12} className="animate-spin" /> : sessionTestResult === 'ok' ? <Fingerprint size={12} className="text-cyan-500" /> : sessionTestResult === 'fail' ? <WifiOff size={12} className="text-red" /> : <Fingerprint size={12} />}
+                  {testingSession ? <Loader2 size={12} className="animate-spin" /> : sessionTestResult === 'ok' ? <Fingerprint size={12} className="text-info" /> : sessionTestResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Fingerprint size={12} />}
                   {testingSession ? 'Probando…' : sessionTestResult === 'ok' ? 'Huella OK' : sessionTestResult === 'fail' ? 'Fallo' : 'Probar huella'}
                 </button>
               </div>
@@ -518,9 +530,7 @@ export default function AdminTab() {
                   </div>
                   <div className="flex gap-1.5">
                     {op.roles.map(r => (
-                      <span key={r} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                        r === 'admin' ? 'bg-orange/10 text-orange' : 'bg-blue/10 text-blue'
-                      }`}>{r}</span>
+                      <span key={r} className={`pill ${r === 'admin' ? 'pill-warning' : 'pill-info'}`}>{r}</span>
                     ))}
                   </div>
                 </div>

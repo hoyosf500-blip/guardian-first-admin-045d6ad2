@@ -1,10 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, TrendingUp } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
 type Range = 'today' | '24h' | '7d' | '30d';
@@ -32,10 +28,17 @@ const RANGE_LABELS: Record<Range, string> = {
   '30d': 'Últimos 30 días',
 };
 
-function confColor(v: number): string {
-  if (v >= 70) return 'bg-green-500/10 text-green-600 dark:text-green-400';
-  if (v >= 65) return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400';
-  return 'bg-destructive/10 text-destructive';
+/** Bullet-style data bar para tasas. Tono semántico vs benchmark
+ *  (70% target estándar COD Colombia). */
+function RateBar({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  const tone = pct >= 70 ? 'success' : pct >= 60 ? 'warning' : 'danger';
+  return (
+    <div className={`data-bar tone-${tone}`}>
+      <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
+      <span className="data-bar-value">{pct.toFixed(0)}%</span>
+    </div>
+  );
 }
 
 export default function ProductivityDashboard() {
@@ -59,7 +62,6 @@ export default function ProductivityDashboard() {
       setRows([]);
     } else {
       const arr = (data as Row[] | null) ?? [];
-      console.log('[productivity] rows received', arr.length);
       setRows(arr);
       setError(null);
     }
@@ -69,24 +71,20 @@ export default function ProductivityDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-refresh con realtime (debounced 1s). El polling de 60s previo
-  // era redundante — realtime ya dispara en cualquier cambio de orders
-  // o INSERT en order_results. Suscribimos también a touchpoints para
-  // refrescar cuando alguien marca acción en SEG/RESCUE.
+  // Realtime debounced 1s: cualquier cambio en orders/order_results/touchpoints
+  // dispara un refetch silencioso. Sin polling.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const debounced = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => load(true), 1000);
     };
-
     const channel = supabase
       .channel('admin-productivity')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results' }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints' }, debounced)
       .subscribe();
-
     return () => {
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
@@ -99,269 +97,210 @@ export default function ProductivityDashboard() {
     Cancelados: r.cancelados,
   }));
 
+  // Líder del día — para el callout de "Top operadora"
+  const leader = rows.length > 0
+    ? [...rows].sort((a, b) => b.confirmados - a.confirmados)[0]
+    : null;
+
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <TrendingUp size={18} className="text-primary" />
-            Productividad por operadora
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">{RANGE_LABELS[range]} · auto-refresh activo</p>
+      {/* Page sub-header — eyebrow + título + meta + actions */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-1.5">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+            Productividad · Equipo
+          </div>
+          <h2 className="text-xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2">
+            <TrendingUp size={18} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+            Por operadora
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {RANGE_LABELS[range]} · auto-refresh activo
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 shrink-0">
           <div className="flex rounded-lg border border-border bg-card p-0.5">
             {(['today', '24h', '7d', '30d'] as Range[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  range === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  range === r ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {r}
               </button>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={() => load(true)} disabled={refreshing}>
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          </Button>
+          <button
+            onClick={() => load(true)}
+            disabled={refreshing}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:border-border-strong hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            aria-label="Refrescar"
+          >
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
+          </button>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <Card className="border-red-500/30 bg-red-500/5">
-          <CardContent className="py-3">
-            <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-1">
-              Error cargando productividad
-            </p>
-            <p className="text-xs text-foreground/80 font-mono break-all">{error}</p>
-            <p className="text-[10px] text-muted-foreground mt-2">
-              Si dice <code>function ... does not exist</code>: la migration de la RPC
-              no se aplicó. Si dice <code>42501</code> o <code>Solo administradores</code>:
-              tu usuario no tiene rol admin en <code>user_roles</code>. Cualquier otro
-              error: copialo y mandámelo.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-danger/30 bg-danger/5 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" aria-hidden="true" strokeWidth={2.25} />
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-bold text-danger">Error cargando productividad</p>
+              <p className="text-xs text-foreground/80 font-mono break-all">{error}</p>
+              <p className="text-[11px] text-muted-foreground">
+                Si dice <code className="px-1 rounded bg-muted/40">function … does not exist</code>: la migration de la RPC no se aplicó.
+                Si dice <code className="px-1 rounded bg-muted/40">42501</code> o <code className="px-1 rounded bg-muted/40">Solo administradores</code>: tu usuario no tiene rol admin en <code className="px-1 rounded bg-muted/40">user_roles</code>.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {loading ? (
-        <Card>
-          <CardContent className="flex justify-center py-10">
-            <Loader2 className="animate-spin text-primary" size={20} />
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-border bg-card p-10 flex items-center justify-center">
+          <Loader2 className="animate-spin text-accent" size={20} aria-hidden="true" />
+        </div>
       ) : !error && rows.length === 0 ? (
-        <Card>
-          <CardContent>
-            <p className="text-sm text-muted-foreground text-center py-8">Sin actividad en este rango</p>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+          <p className="text-sm font-semibold text-foreground mb-1">Sin actividad</p>
+          <p className="text-xs text-muted-foreground">Nadie ha registrado acciones en {RANGE_LABELS[range].toLowerCase()}.</p>
+        </div>
       ) : !error ? (
         <>
-          {/* Confirmar — métricas del flujo de confirmación de pedidos */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500" aria-hidden="true" />
-                Confirmar
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Operadora</TableHead>
-                      <TableHead className="text-right">Confirmados</TableHead>
-                      <TableHead className="text-right">Cancelados</TableHead>
-                      <TableHead className="text-right">No resp.</TableHead>
-                      <TableHead className="text-right">Atendidos</TableHead>
-                      <TableHead className="text-right">Tasa contacto</TableHead>
-                      <TableHead className="text-right">Tasa confirmación</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map(r => (
-                      <TableRow key={r.operator_id}>
-                        <TableCell className="font-medium">{r.display_name}</TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/10">
-                            {r.confirmados}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="secondary" className="bg-destructive/10 text-destructive hover:bg-destructive/10">
-                            {r.cancelados}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">{r.noresp}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">{r.total_atendidos}</TableCell>
-                        <TableCell className="text-right font-mono text-xs">{r.tasa_contacto}%</TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="secondary" className={`${confColor(r.tasa_confirmacion)} hover:${confColor(r.tasa_confirmacion)} font-mono text-xs`}>
-                            {r.tasa_confirmacion}%
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+          {/* Top performer callout */}
+          {leader && leader.confirmados > 0 && (
+            <div className="rounded-xl border border-accent/25 bg-card p-3.5 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent/12">
+                <Trophy size={16} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Seguimiento — touchpoints SEG: agrupados por operadora */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-500" aria-hidden="true" />
-                Seguimiento
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Operadora</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                      <TableHead className="text-right">Resueltos</TableHead>
-                      <TableHead className="text-right">Pendientes</TableHead>
-                      <TableHead className="text-right">Tasa de resolución</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map(r => {
-                      const pendientes = Math.max(0, r.seg_acciones - r.seg_resueltos);
-                      const tasa = r.seg_acciones > 0
-                        ? Math.round((r.seg_resueltos / r.seg_acciones) * 100)
-                        : 0;
-                      return (
-                        <TableRow key={r.operator_id}>
-                          <TableCell className="font-medium">{r.display_name}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10">
-                              {r.seg_acciones}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10">
-                              {r.seg_resueltos}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">{pendientes}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{tasa}%</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Rescate — touchpoints RESCUE: agrupados por operadora */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-red-500" aria-hidden="true" />
-                Rescate
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Operadora</TableHead>
-                      <TableHead className="text-right">Acciones</TableHead>
-                      <TableHead className="text-right">Resueltos</TableHead>
-                      <TableHead className="text-right">Pendientes</TableHead>
-                      <TableHead className="text-right">Tasa de resolución</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map(r => {
-                      const pendientes = Math.max(0, r.rescate_acciones - r.rescate_resueltos);
-                      const tasa = r.rescate_acciones > 0
-                        ? Math.round((r.rescate_resueltos / r.rescate_acciones) * 100)
-                        : 0;
-                      return (
-                        <TableRow key={r.operator_id}>
-                          <TableCell className="font-medium">{r.display_name}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary" className="bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/10">
-                              {r.rescate_acciones}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10">
-                              {r.rescate_resueltos}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">{pendientes}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{tasa}%</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Novedades — solo si hay alguna en el rango */}
-          {rows.some(r => r.novedades_resueltas > 0) && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" />
-                  Novedades
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Operadora</TableHead>
-                        <TableHead className="text-right">Resueltas</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rows.filter(r => r.novedades_resueltas > 0).map(r => (
-                        <TableRow key={r.operator_id}>
-                          <TableCell className="font-medium">{r.display_name}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant="secondary" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10">
-                              {r.novedades_resueltas}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                  Top operadora — {RANGE_LABELS[range].toLowerCase()}
                 </div>
-              </CardContent>
-            </Card>
+                <div className="text-sm font-bold text-foreground truncate">{leader.display_name}</div>
+                <div className="text-xs text-accent font-mono font-semibold tabular-nums">
+                  {leader.confirmados} confirmados · {leader.tasa_confirmacion}% tasa
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Confirmar */}
+          <Section title="Confirmar" dotClass="bg-success" note="Resultados del flujo de confirmación de pedidos">
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="w-10">#</th>
+                    <th>Operadora</th>
+                    <th className="text-right">Conf.</th>
+                    <th className="text-right">Canc.</th>
+                    <th className="text-right">N/R</th>
+                    <th className="text-right">Atendidos</th>
+                    <th className="text-right">Tasa contacto</th>
+                    <th className="text-right">Tasa confirmación</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, idx) => (
+                    <tr key={r.operator_id}>
+                      <td>
+                        <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                      </td>
+                      <td className="font-semibold text-foreground">{r.display_name}</td>
+                      <td className="text-right font-mono tabular-nums text-success font-semibold">{r.confirmados}</td>
+                      <td className="text-right font-mono tabular-nums text-danger font-semibold">{r.cancelados}</td>
+                      <td className="text-right font-mono tabular-nums text-muted-foreground">{r.noresp}</td>
+                      <td className="text-right font-mono tabular-nums">{r.total_atendidos}</td>
+                      <td className="text-right">
+                        <span className="font-mono tabular-nums text-xs text-muted-foreground">{r.tasa_contacto}%</span>
+                      </td>
+                      <td className="text-right"><RateBar value={r.tasa_confirmacion} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Section>
+
+          {/* Seguimiento */}
+          <Section title="Seguimiento" dotClass="bg-info" note="Touchpoints marcados sobre pedidos en seguimiento">
+            <ResolutionTable
+              rows={rows}
+              acciones={r => r.seg_acciones}
+              resueltos={r => r.seg_resueltos}
+              actionTone="info"
+            />
+          </Section>
+
+          {/* Rescate */}
+          <Section title="Rescate" dotClass="bg-danger" note="Touchpoints marcados sobre pedidos en rescate">
+            <ResolutionTable
+              rows={rows}
+              acciones={r => r.rescate_acciones}
+              resueltos={r => r.rescate_resueltos}
+              actionTone="danger"
+            />
+          </Section>
+
+          {/* Novedades */}
+          {rows.some(r => r.novedades_resueltas > 0) && (
+            <Section title="Novedades" dotClass="bg-warning" note="Novedades de transportadora resueltas">
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="w-10">#</th>
+                      <th>Operadora</th>
+                      <th className="text-right">Resueltas</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.filter(r => r.novedades_resueltas > 0).map((r, idx) => (
+                      <tr key={r.operator_id}>
+                        <td>
+                          <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                            {String(idx + 1).padStart(2, '0')}
+                          </span>
+                        </td>
+                        <td className="font-semibold text-foreground">{r.display_name}</td>
+                        <td className="text-right font-mono tabular-nums text-warning font-semibold">{r.novedades_resueltas}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
           )}
         </>
       ) : null}
 
+      {/* Bar chart comparativo — recharts con HSL vars del DS */}
       {!loading && rows.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">Comparativo Confirmados vs Cancelados</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <Section title="Comparativo Confirmados vs Cancelados" dotClass="bg-accent">
+          <div className="p-4">
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />
-                  <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} allowDecimals={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                    allowDecimals={false}
+                    tickLine={false}
+                    axisLine={false}
+                  />
                   <Tooltip
                     contentStyle={{
                       background: 'hsl(var(--popover))',
@@ -370,15 +309,84 @@ export default function ProductivityDashboard() {
                       fontSize: 12,
                     }}
                   />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Confirmados" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Cancelados" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" iconSize={9} />
+                  <Bar dataKey="Confirmados" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Cancelados" fill="hsl(var(--danger))" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </Section>
       )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Sub-components
+// ──────────────────────────────────────────────────────────────
+
+function Section({ title, dotClass, note, children }: { title: string; dotClass: string; note?: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} aria-hidden="true" />
+          <h3 className="text-sm font-bold text-foreground tracking-tight">{title}</h3>
+          {note && <span className="text-[11px] text-muted-foreground hidden md:inline truncate">· {note}</span>}
+        </div>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function ResolutionTable({
+  rows, acciones, resueltos, actionTone,
+}: {
+  rows: Row[];
+  acciones: (r: Row) => number;
+  resueltos: (r: Row) => number;
+  actionTone: 'info' | 'danger';
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th className="w-10">#</th>
+            <th>Operadora</th>
+            <th className="text-right">Acciones</th>
+            <th className="text-right">Resueltos</th>
+            <th className="text-right">Pendientes</th>
+            <th className="text-right">Tasa de resolución</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, idx) => {
+            const acc = acciones(r);
+            const res = resueltos(r);
+            const pendientes = Math.max(0, acc - res);
+            const tasa = acc > 0 ? Math.round((res / acc) * 100) : 0;
+            return (
+              <tr key={r.operator_id}>
+                <td>
+                  <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                    {String(idx + 1).padStart(2, '0')}
+                  </span>
+                </td>
+                <td className="font-semibold text-foreground">{r.display_name}</td>
+                <td className={`text-right font-mono tabular-nums font-semibold ${actionTone === 'info' ? 'text-info' : 'text-danger'}`}>
+                  {acc}
+                </td>
+                <td className="text-right font-mono tabular-nums text-success font-semibold">{res}</td>
+                <td className="text-right font-mono tabular-nums text-muted-foreground">{pendientes}</td>
+                <td className="text-right"><RateBar value={tasa} /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

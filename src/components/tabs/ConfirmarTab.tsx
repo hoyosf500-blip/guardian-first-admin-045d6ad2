@@ -146,36 +146,52 @@ export default function ConfirmarTab({ profile }: Props) {
   const pending = workQueue.filter(o => !o.result).length;
 
   return (
-    <div className="max-w-5xl mx-auto">
-      <div className="mb-4 flex items-start gap-2">
-        <div className="flex-1"><TasaMetaBanner /></div>
-        <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5">
-          <Moon size={14} /> Cerrar turno
-        </Button>
-      </div>
+    <div className="max-w-5xl mx-auto space-y-5">
+      {/* Page header — patrón pro coherente con Logística/Rescate */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-1.5">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+            Cola · Operadora
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
+            <Phone size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+            Confirmar
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {formatDateES(today)} · Cola de pedidos pendientes de confirmación.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5 h-9">
+            <Moon size={14} /> Cerrar turno
+          </Button>
+          {excelLoaded && (
+            <button
+              onClick={() => {
+                resetOrders();
+                setExcelLoaded(false);
+                try {
+                  sessionStorage.removeItem('confirmar:view');
+                  sessionStorage.removeItem('confirmar:filter');
+                  sessionStorage.removeItem('confirmar:search');
+                  sessionStorage.removeItem('confirmar:dateFrom');
+                  sessionStorage.removeItem('confirmar:dateTo');
+                  sessionStorage.removeItem('confirmar:callIdx');
+                  sessionStorage.removeItem('confirmar:callOrderId');
+                } catch { /* storage disabled */ }
+              }}
+              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg bg-card border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              Cambiar archivo
+            </button>
+          )}
+        </div>
+      </header>
+
+      <TasaMetaBanner />
+
       <ClosingReportDialog open={closing} onClose={() => setClosing(false)} />
-      <div className="flex items-center justify-between mb-6">
-        <p className="text-sm text-muted-foreground">{formatDateES(today)}</p>
-        {excelLoaded && (
-          <button onClick={() => {
-            resetOrders();
-            setExcelLoaded(false);
-            // Also wipe persisted nav state so a fresh upload starts clean.
-            try {
-              sessionStorage.removeItem('confirmar:view');
-              sessionStorage.removeItem('confirmar:filter');
-              sessionStorage.removeItem('confirmar:search');
-              sessionStorage.removeItem('confirmar:dateFrom');
-              sessionStorage.removeItem('confirmar:dateTo');
-              sessionStorage.removeItem('confirmar:callIdx');
-              sessionStorage.removeItem('confirmar:callOrderId');
-            } catch { /* storage disabled */ }
-          }}
-            className="text-xs px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-            Cambiar archivo
-          </button>
-        )}
-      </div>
 
       {autoLoading && (
         <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
@@ -274,14 +290,14 @@ export default function ConfirmarTab({ profile }: Props) {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
             {[
-              { label: 'Por confirmar', value: pending, color: 'text-accent' },
-              { label: 'Confirmados', value: counter.conf, color: 'text-green' },
-              { label: 'Cancelados', value: counter.canc, color: 'text-red' },
-              { label: 'Gestionados', value: total, color: 'text-foreground' },
+              { label: 'Por confirmar', value: pending,      color: 'text-accent' },
+              { label: 'Confirmados',   value: counter.conf, color: 'text-success' },
+              { label: 'Cancelados',    value: counter.canc, color: 'text-danger' },
+              { label: 'Gestionados',   value: total,        color: 'text-foreground' },
             ].map(kpi => (
-              <div key={kpi.label} className="bg-surface border border-border rounded-xl p-4 hover:border-border-strong transition-colors duration-200">
-                <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-2">{kpi.label}</div>
-                <div className={`font-mono text-3xl font-semibold tabular-nums ${kpi.color}`}>{kpi.value}</div>
+              <div key={kpi.label} className="bg-card border border-border rounded-xl p-4 hover:border-border-strong transition-colors">
+                <div className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em] mb-2">{kpi.label}</div>
+                <div className={`font-mono text-3xl font-bold tabular-nums leading-none ${kpi.color}`}>{kpi.value}</div>
               </div>
             ))}
           </div>
@@ -293,13 +309,13 @@ export default function ConfirmarTab({ profile }: Props) {
             return (
               <div className="flex gap-2 mb-4 flex-wrap">
                 {d7 > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red/10 text-red border border-red/15">
-                    <span className="w-2 h-2 rounded-full bg-red" /> {d7} cancelar (D7+)
+                  <span className="pill pill-danger">
+                    <span className="w-1.5 h-1.5 rounded-full bg-danger" aria-hidden="true" /> {d7} cancelar (D7+)
                   </span>
                 )}
                 {d46 > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-yellow/10 text-yellow border border-yellow/15">
-                    <span className="w-2 h-2 rounded-full bg-yellow" /> {d46} urgente (D4-6)
+                  <span className="pill pill-warning">
+                    <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" /> {d46} urgente (D4-6)
                   </span>
                 )}
               </div>
@@ -310,13 +326,13 @@ export default function ConfirmarTab({ profile }: Props) {
             const retryOrders = workQueue.filter(o => o.retryCount && !o.result);
             if (!retryOrders.length) return null;
             return (
-              <div className="flex items-center gap-2 mb-4 rounded-xl bg-orange-500/10 border border-orange-500/20 px-4 py-3">
-                <RotateCcw size={16} className="text-orange-500 flex-shrink-0" />
-                <div>
-                  <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+              <div className="flex items-center gap-3 mb-4 rounded-xl bg-warning/10 border border-warning/25 px-4 py-3">
+                <RotateCcw size={16} className="text-warning shrink-0" aria-hidden="true" strokeWidth={2.25} />
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-warning">
                     {retryOrders.length} pedido{retryOrders.length > 1 ? 's' : ''} para reintentar
                   </span>
-                  <span className="text-[10px] text-muted-foreground ml-2">
+                  <span className="text-[11px] text-muted-foreground ml-2">
                     No contestaron antes — volver a llamar
                   </span>
                 </div>
