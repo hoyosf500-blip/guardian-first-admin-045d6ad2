@@ -8,6 +8,7 @@ import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
 // AI script generator removed — operadoras no lo usaban
 import { supabase } from '@/integrations/supabase/client';
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';

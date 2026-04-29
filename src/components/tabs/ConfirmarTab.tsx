@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import ExcelUploader from '@/components/ExcelUploader';
 import AperturaWizard from '@/components/AperturaWizard';
