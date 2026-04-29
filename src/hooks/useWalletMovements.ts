@@ -36,17 +36,20 @@ export interface WalletMovementsResult {
   categorias: string[];
 }
 
+// COST-2 (2026-04-29): los agregados se calculan server-side vía RPC
+// `wallet_summary` en vez de traer hasta 10.000 filas al navegador.
+// staleTime alto: los movimientos solo cambian al pulsar "Sincronizar".
+
 export function useWalletMovements(params: UseWalletMovementsParams) {
   const { fromDate, toDate, tipo = 'ALL', categoria = 'ALL', page = 1, pageSize = 20 } = params;
 
   return useQuery<WalletMovementsResult>({
     queryKey: ['wallet_movements', fromDate, toDate, tipo, categoria, page, pageSize],
     queryFn: async () => {
-      // Rango UTC inclusivo del día completo
       const fromTs = `${fromDate}T00:00:00Z`;
       const toTs = `${toDate}T23:59:59Z`;
 
-      // 1. Página filtrada (con count exacto)
+      // 1. Página filtrada (con count exacto) — solo trae las N filas visibles
       let q = supabase
         .from('dropi_wallet_movements')
         .select('*', { count: 'exact' })
@@ -64,70 +67,52 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
       const { data, error, count } = await q;
       if (error) throw error;
 
-      // 2. Agregados del rango completo (sin paginar, sin filtros tipo/categoria)
-      const { data: aggData, error: aggError } = await supabase
-        .from('dropi_wallet_movements')
-        .select('tipo, monto, categoria, fecha, saldo_despues')
-        .gte('fecha', fromTs)
-        .lte('fecha', toTs)
-        .order('fecha', { ascending: false })
-        .limit(10000);
+      // 2. Agregados via RPC (Postgres devuelve 1 fila, no 10.000)
+      const { data: aggData, error: aggError } = await supabase.rpc('wallet_summary', {
+        p_from: fromTs,
+        p_to: toTs,
+      });
       if (aggError) throw aggError;
-
-      let totalEntradas = 0;
-      let totalSalidas = 0;
-      const cats = new Set<string>();
-      let ultimoSaldo: number | null = null;
-      for (const r of aggData ?? []) {
-        const m = Number(r.monto) || 0;
-        if (r.tipo === 'ENTRADA') totalEntradas += m;
-        else if (r.tipo === 'SALIDA') totalSalidas += m;
-        if (r.categoria) cats.add(r.categoria);
-        if (ultimoSaldo === null && r.saldo_despues !== null) {
-          ultimoSaldo = Number(r.saldo_despues);
-        }
-      }
+      const agg = (aggData?.[0] ?? {}) as {
+        total_entradas?: number; total_salidas?: number; count_total?: number;
+        ultimo_saldo?: number | null; categorias?: string[] | null;
+      };
 
       return {
         rows: (data as WalletMovement[]) ?? [],
         total: count ?? 0,
-        ultimoSaldo,
-        totalEntradas,
-        totalSalidas,
-        countTotal: aggData?.length ?? 0,
-        categorias: Array.from(cats).sort(),
+        ultimoSaldo: agg.ultimo_saldo ?? null,
+        totalEntradas: Number(agg.total_entradas ?? 0),
+        totalSalidas: Number(agg.total_salidas ?? 0),
+        countTotal: Number(agg.count_total ?? 0),
+        categorias: (agg.categorias ?? []).slice().sort(),
       };
     },
-    staleTime: 30_000,
+    staleTime: 5 * 60 * 1000,       // 5 min — datos solo cambian al sincronizar
+    refetchOnWindowFocus: false,    // no re-fetchear al volver a la pestaña
   });
 }
 
-/** Series por día para la gráfica de barras apiladas. */
+/** Series por día para la gráfica de barras apiladas — agregada server-side. */
 export function useWalletDailySeries(fromDate: string, toDate: string) {
   return useQuery({
     queryKey: ['wallet_daily_series', fromDate, toDate],
     queryFn: async () => {
       const fromTs = `${fromDate}T00:00:00Z`;
       const toTs = `${toDate}T23:59:59Z`;
-      const { data, error } = await supabase
-        .from('dropi_wallet_movements')
-        .select('fecha, tipo, monto')
-        .gte('fecha', fromTs)
-        .lte('fecha', toTs)
-        .limit(10000);
+      const { data, error } = await supabase.rpc('wallet_daily_series', {
+        p_from: fromTs,
+        p_to: toTs,
+      });
       if (error) throw error;
-
-      const map = new Map<string, { fecha: string; ENTRADA: number; SALIDA: number }>();
-      for (const r of data ?? []) {
-        const day = String(r.fecha).slice(0, 10);
-        const cur = map.get(day) ?? { fecha: day, ENTRADA: 0, SALIDA: 0 };
-        const m = Number(r.monto) || 0;
-        if (r.tipo === 'ENTRADA') cur.ENTRADA += m;
-        else if (r.tipo === 'SALIDA') cur.SALIDA += m;
-        map.set(day, cur);
-      }
-      return Array.from(map.values()).sort((a, b) => a.fecha.localeCompare(b.fecha));
+      return ((data ?? []) as Array<{ fecha: string; entrada: number; salida: number }>)
+        .map((r) => ({
+          fecha: r.fecha,
+          ENTRADA: Number(r.entrada) || 0,
+          SALIDA: Number(r.salida) || 0,
+        }));
     },
-    staleTime: 30_000,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
