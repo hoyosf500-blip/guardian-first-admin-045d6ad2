@@ -83,7 +83,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .ilike('estado', 'PENDIENTE CONFIRMACION')
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
     if (error || !dbOrders) return;
-    const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
+    const orders = (dbOrders as unknown as import('@/lib/orderUtils').DbOrderRow[]).map((o, idx) => dbToOrderData(o, idx));
     setAllOrdersState(orders);
     buildWorkQueue(orders);
     // Marca la sesión como cargada para que ConfirmarTab no dispare su
