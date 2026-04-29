@@ -8,7 +8,11 @@ import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
 import { useDataLoader, smartMerge } from '@/hooks/useDataLoader';
 import { useNovedades } from '@/hooks/useNovedades';
-import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
+// COST-2 (2026-04-29): useAutoDropiSync removido — el sync automático
+// cada hora consumía Cloud sin necesidad. Ahora el admin sincroniza
+// manualmente con el botón "Sincronizar ahora" en Dashboard/Admin, y el
+// cron server-side (`dropi-cron`) sigue corriendo independiente.
+// import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 
 // Fix 22: lista explícita de columnas para queries de orders.
@@ -49,7 +53,7 @@ interface OrderState {
 const OrderContext = createContext<OrderState | undefined>(undefined);
 
 export function OrderProvider({ children }: { children: ReactNode }) {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
@@ -121,9 +125,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     }, 800);
   }, []);
 
-  // Auto-sync con Dropi cada 5 min mientras un admin esté con la app abierta.
-  // Al terminar refresca todas las colas vía debouncedRefreshAll.
-  useAutoDropiSync(isAdmin, user?.id, debouncedRefreshAll);
+  // COST-2: auto-sync deshabilitado. Admin usa botón manual o cron server-side.
+  // useAutoDropiSync(isAdmin, user?.id, debouncedRefreshAll);
 
   // Realtime: cuando cualquier operadora cambia orders o inserta un
   // order_result, todos los caches se refrescan vía el mismo timer
