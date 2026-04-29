@@ -82,7 +82,9 @@ BEGIN
     UPDATE app_settings SET value = v_today  WHERE key = 'google_api_used_today_date';
   END IF;
 
-  SELECT value::NUMERIC INTO v_used   FROM app_settings WHERE key = 'google_api_used_today_usd';
+  -- FOR UPDATE locks the row so concurrent quota consumers serialize and avoid
+  -- lost updates that would let total spend exceed the cap.
+  SELECT value::NUMERIC INTO v_used   FROM app_settings WHERE key = 'google_api_used_today_usd' FOR UPDATE;
   SELECT value::NUMERIC INTO v_budget FROM app_settings WHERE key = 'google_api_daily_budget_usd';
 
   IF v_used + p_amount_usd > v_budget THEN
