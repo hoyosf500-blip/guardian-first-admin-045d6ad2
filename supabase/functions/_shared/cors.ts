@@ -16,6 +16,10 @@ const ALLOWED_ORIGIN_PATTERNS = [
   // del MISMO proyecto (no `*.lovable.app` general).
   /^https:\/\/(id-)?preview--guardian-first-admin\.lovable\.app$/,
   /^https:\/\/[a-z0-9-]+--guardian-first-admin\.lovable\.app$/,
+  // Lovable también sirve previews en `<project-uuid>.lovableproject.com`.
+  // Whitelist solo el UUID exacto de ESTE proyecto para no abrir CORS a
+  // proyectos ajenos (ver M2 history-comment arriba).
+  /^https:\/\/a6f5ee0b-c8a7-494d-9ea3-ac5c6c414faa\.lovableproject\.com$/,
   /^http:\/\/localhost:\d+$/,                     // dev local
 ];
 
