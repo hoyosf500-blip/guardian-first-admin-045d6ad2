@@ -41,6 +41,17 @@ export interface OrderData {
   retryCount?: number; // How many previous noresp attempts today
   lockedBy?: string | null;
   lockedAt?: string | null;
+  barrio: string;
+  complemento: string;
+  documentoDestinatario: string;
+  googlePlaceId: string;
+  lat: number | null;
+  lng: number | null;
+  validationDecision: 'green' | 'yellow' | 'red' | 'pickup_office' | null;
+  addressKind: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
+  missingFields: string[];
+  suggestedCustomerMessage: string;
+  addressParsed: Record<string, unknown> | null;
 }
 
 /** Shape of a raw DB row from the orders table (all fields nullable) */
@@ -73,6 +84,18 @@ export interface DbOrderRow {
   novedad_sol?: boolean | null;
   locked_by?: string | null;
   locked_at?: string | null;
+  // Validador de direcciones — agregado por migración 20260501000000
+  barrio?: string | null;
+  complemento?: string | null;
+  documento_destinatario?: string | null;
+  google_place_id?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  validation_decision?: 'green' | 'yellow' | 'red' | 'pickup_office' | null;
+  address_kind?: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
+  missing_fields?: string[] | null;
+  suggested_customer_message?: string | null;
+  address_parsed?: Record<string, unknown> | null;
 }
 
 /** Convert a raw DB row into an OrderData object */
@@ -92,6 +115,17 @@ export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
     novedadSol: o.novedad_sol || false,
     lockedBy: o.locked_by ?? null,
     lockedAt: o.locked_at ?? null,
+    barrio: o.barrio || '',
+    complemento: o.complemento || '',
+    documentoDestinatario: o.documento_destinatario || '',
+    googlePlaceId: o.google_place_id || '',
+    lat: typeof o.lat === 'number' ? o.lat : null,
+    lng: typeof o.lng === 'number' ? o.lng : null,
+    validationDecision: o.validation_decision ?? null,
+    addressKind: o.address_kind ?? null,
+    missingFields: Array.isArray(o.missing_fields) ? o.missing_fields : [],
+    suggestedCustomerMessage: o.suggested_customer_message || '',
+    addressParsed: (o.address_parsed as Record<string, unknown>) ?? null,
   };
 }
 
@@ -373,6 +407,17 @@ export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[]
       tienda: String(r[map.TIENDA] || ''),
       email: '',
       novedadSol: novedadSolVal === 'si' || novedadSolVal === 'sí',
+      barrio: '',
+      complemento: '',
+      documentoDestinatario: '',
+      googlePlaceId: '',
+      lat: null,
+      lng: null,
+      validationDecision: null,
+      addressKind: null,
+      missingFields: [],
+      suggestedCustomerMessage: '',
+      addressParsed: null,
     };
   });
 }
