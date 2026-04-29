@@ -672,6 +672,7 @@ export type Database = {
         }
       }
       claim_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       get_daily_operator_stats: {

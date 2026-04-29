@@ -8,6 +8,7 @@ import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
 // AI script generator removed — operadoras no lo usaban
 import { supabase } from '@/integrations/supabase/client';
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';
@@ -339,9 +340,9 @@ export default function CallView({ items }: Props) {
           onSuccess={async () => {
             // BUG 4 fix: re-fetch del pedido editado para refrescar pantalla.
             if (!editingOrder?.dbId) return;
-            const { data } = await supabase.from('orders').select('*').eq('id', editingOrder.dbId).maybeSingle();
+            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', editingOrder.dbId).maybeSingle();
             if (data) {
-              const updated = dbToOrderData(data, 0);
+              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
               const merged = allOrders.map(ord => ord.dbId === updated.dbId
                 ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
                 : ord);

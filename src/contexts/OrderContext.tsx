@@ -15,8 +15,9 @@ import { useNovedades } from '@/hooks/useNovedades';
 // import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 
-// Fix 22: lista explícita de columnas para queries de orders.
-const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
+// COST-3: ORDER_COLUMNS extraído a src/lib/orderColumns.ts para reutilizarse
+// en ConfirmarTab y CallView (antes hacían select('*')).
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -82,7 +83,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .ilike('estado', 'PENDIENTE CONFIRMACION')
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
     if (error || !dbOrders) return;
-    const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
+    const orders = (dbOrders as unknown as import('@/lib/orderUtils').DbOrderRow[]).map((o, idx) => dbToOrderData(o, idx));
     setAllOrdersState(orders);
     buildWorkQueue(orders);
     // Marca la sesión como cargada para que ConfirmarTab no dispare su
