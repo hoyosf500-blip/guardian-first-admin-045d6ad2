@@ -161,13 +161,25 @@ async function fetchPage(
     wallet_id: "0",
   });
 
+  // Headers calcados del request real del browser (capturados con Playwright).
+  // Sin User-Agent realista Dropi devuelve 403 Access denied — su anti-bot
+  // detecta el UA por defecto de Deno/edge runtime. NO mandamos `Origin`:
+  // es header browser-only, en server-to-server algunos APIs lo rechazan
+  // como inconsistente con el resto de signals.
   const res = await fetch(`${DROPI_API}${WALLET_PATH}?${params.toString()}`, {
     method: "GET",
     headers: {
       "Accept": "application/json, text/plain, */*",
+      "Accept-Language": "es-CO,es;q=0.9,en;q=0.8",
       "x-authorization": `Bearer ${sessionToken}`,
-      "Origin": "https://app.dropi.co",
       "Referer": "https://app.dropi.co/",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+      "sec-ch-ua":
+        '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
     },
   });
 
