@@ -135,21 +135,14 @@ export default function DashboardTab() {
     if (data) setLastSync(data);
   }, []);
 
+  // COST-1: sync log cada 2 min (antes 30s), tick visual cada 30s (antes 15s).
+  // Ambos se pausan cuando la pestaña está oculta.
   useEffect(() => {
     if (!user) return;
     loadSyncLog();
-    const poll = setInterval(loadSyncLog, 30 * 1000);
-    const tick = setInterval(() => setNowTick(Date.now()), 15 * 1000);
-    // Refresh immediately when tab becomes visible (Chrome Memory Saver / mobile
-    // throttle intervals, so the age label can be stale when the operator returns).
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        setNowTick(Date.now());
-        loadSyncLog();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { clearInterval(poll); clearInterval(tick); document.removeEventListener('visibilitychange', onVisible); };
+    const stopPoll = pollWhenVisible(loadSyncLog, 2 * 60 * 1000, { runOnVisible: false });
+    const stopTick = pollWhenVisible(() => setNowTick(Date.now()), 30 * 1000, { runOnVisible: false });
+    return () => { stopPoll(); stopTick(); };
   }, [user, loadSyncLog]);
 
   const resyncNow = async () => {

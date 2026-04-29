@@ -90,11 +90,11 @@ export function useChangeAlerts(userId: string | undefined) {
     }
   }, [userId]);
 
+  // COST-1: subido de 2 min → 10 min, y se pausa con pestaña oculta.
   useEffect(() => {
     if (!userId) return;
     poll();
-    const interval = setInterval(poll, 2 * 60 * 1000); // every 2 min
-    return () => clearInterval(interval);
+    return pollWhenVisible(poll, 10 * 60 * 1000, { runOnVisible: false });
   }, [userId, poll]);
 
   /** Call when the user opens a tab to reset its badge. */

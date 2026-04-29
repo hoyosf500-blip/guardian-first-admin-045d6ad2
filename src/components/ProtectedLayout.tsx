@@ -32,14 +32,15 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 function LiveClock() {
+  // COST-1: tick cada 30s en vez de 1s (re-render constante innecesario).
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
+    const id = setInterval(() => setNow(new Date()), 30 * 1000);
     return () => clearInterval(id);
   }, []);
   return (
     <span className="font-mono text-xs text-muted-foreground tabular-nums hidden sm:block">
-      {now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      {now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
     </span>
   );
 }

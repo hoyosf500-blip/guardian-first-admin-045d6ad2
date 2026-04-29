@@ -26,9 +26,9 @@ export default function TasaMetaBanner() {
     load();
   }, [load, counter.conf, counter.canc, counter.noresp]);
 
+  // COST-1: subido de 2 min → 15 min y pausado cuando la pestaña está oculta.
   useEffect(() => {
-    const id = setInterval(load, 2 * 60 * 1000);
-    return () => clearInterval(id);
+    return pollWhenVisible(load, 15 * 60 * 1000, { runOnVisible: false });
   }, [load]);
 
   if (!data) return null;

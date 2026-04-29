@@ -154,12 +154,12 @@ export function useNovedades(user: User | null): NovedadesState {
     }
   }, [user]);
 
+  // COST-1: pausa polling cuando la pestaña está oculta.
   useEffect(() => {
     if (!user) return;
-    const interval = setInterval(() => {
+    return pollWhenVisible(() => {
       if (novedadesLoaded) loadNovedades(true);
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    }, POLL_INTERVAL_MS, { runOnVisible: false });
   }, [user, novedadesLoaded, loadNovedades]);
 
   return {
