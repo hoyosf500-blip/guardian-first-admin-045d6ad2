@@ -892,6 +892,24 @@ export type Database = {
       }
       upsert_orders_from_dropi: { Args: { p_orders: Json }; Returns: number }
       upsert_wallet_movements: { Args: { p_movements: Json }; Returns: number }
+      wallet_daily_series: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          entrada: number
+          fecha: string
+          salida: number
+        }[]
+      }
+      wallet_summary: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          categorias: string[]
+          count_total: number
+          total_entradas: number
+          total_salidas: number
+          ultimo_saldo: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "operator"
