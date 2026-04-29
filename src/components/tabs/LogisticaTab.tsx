@@ -23,7 +23,8 @@ import ComparisonView from '@/components/logistics/ComparisonView';
 import LogisticsSkeleton from '@/components/logistics/LogisticsSkeleton';
 import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare } from 'lucide-react';
+import BilleteraTab from '@/components/logistics/BilleteraTab';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -336,6 +337,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
               <TabsTrigger value="decisiones"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
+              <TabsTrigger value="billetera"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
             </TabsList>
 
             <TabsContent value="carriers" className="mt-4 space-y-4">
@@ -384,6 +386,10 @@ export default function LogisticaTab() {
                 range={filters}
                 carriers={carriers.data ?? []}
               />
+            </TabsContent>
+
+            <TabsContent value="billetera" className="mt-4">
+              <BilleteraTab filters={filters} />
             </TabsContent>
           </Tabs>
         </>
