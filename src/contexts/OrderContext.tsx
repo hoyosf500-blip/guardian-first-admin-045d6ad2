@@ -53,7 +53,7 @@ interface OrderState {
 const OrderContext = createContext<OrderState | undefined>(undefined);
 
 export function OrderProvider({ children }: { children: ReactNode }) {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
