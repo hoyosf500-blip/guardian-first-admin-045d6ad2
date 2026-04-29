@@ -15,15 +15,16 @@ export interface WalletSyncResult {
 export function useWalletSync() {
   const qc = useQueryClient();
 
-  return useMutation<WalletSyncResult, Error, { from?: string; untill?: string; limit?: number } | void>({
+  return useMutation<WalletSyncResult, Error, { from?: string; untill?: string; limit?: number } | undefined>({
     mutationFn: async (body) => {
       const today = new Date();
       const past = new Date();
       past.setDate(past.getDate() - 30);
+      const b = body ?? {};
       const payload = {
-        from: body?.from ?? past.toISOString().split('T')[0],
-        untill: body?.untill ?? today.toISOString().split('T')[0],
-        ...(body?.limit ? { limit: body.limit } : {}),
+        from: b.from ?? past.toISOString().split('T')[0],
+        untill: b.untill ?? today.toISOString().split('T')[0],
+        ...(b.limit ? { limit: b.limit } : {}),
       };
 
       const { data, error } = await supabase.functions.invoke('dropi-wallet-sync', {
