@@ -339,7 +339,7 @@ export default function CallView({ items }: Props) {
           onSuccess={async () => {
             // BUG 4 fix: re-fetch del pedido editado para refrescar pantalla.
             if (!editingOrder?.dbId) return;
-            const { data } = await supabase.from('orders').select('*').eq('id', editingOrder.dbId).maybeSingle();
+            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', editingOrder.dbId).maybeSingle();
             if (data) {
               const updated = dbToOrderData(data, 0);
               const merged = allOrders.map(ord => ord.dbId === updated.dbId

@@ -15,8 +15,9 @@ import { useNovedades } from '@/hooks/useNovedades';
 // import { useAutoDropiSync } from '@/hooks/useAutoDropiSync';
 import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 
-// Fix 22: lista explícita de columnas para queries de orders.
-const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
+// COST-3: ORDER_COLUMNS extraído a src/lib/orderColumns.ts para reutilizarse
+// en ConfirmarTab y CallView (antes hacían select('*')).
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
