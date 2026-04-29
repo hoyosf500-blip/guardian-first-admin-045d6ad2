@@ -1,63 +1,35 @@
 // dropi-wallet-sync — sincroniza el Historial de Cartera de Dropi.
 //
-// Endpoint Dropi: GET https://api.dropi.co/api/historywallet
-// Auth Dropi:     header `x-authorization: Bearer <dropi_session_token>`
-//                 (NO la integration-key. Confirmado en discovery 2026-04-29:
-//                  /integrations/wallet* devuelve 404. La billetera vive en
-//                  el namespace /api/* con JWT de sesión de usuario.)
+// Estrategia: en vez de paginar /api/historywallet (que tiene IP block en
+// data centers — devuelve 403 Access denied), usamos
+// /api/wallet/exportexcel que retorna un XLSX con TODOS los movimientos
+// del rango y NO tiene IP block (verificado 2026-04-29 con curl + JWT real).
 //
-// Patrón calcado de dropi-sync:
-//   - Auth Supabase del caller (Authorization Bearer)
-//   - Lee `dropi_session_token` de app_settings, decodifica `sub` (user_id Dropi)
-//   - Pagina con start/result_number=100, rate limit 500ms
-//   - Chunkea fechas de a 30 días (la billetera puede tener mucho más volumen
-//     que orders, chunks chicos para no timeoutear)
-//   - RPC idempotente upsert_wallet_movements (evita realtime spam)
-//   - Log a sync_logs con source='dropi-wallet-sync'
+// Flujo:
+//   1. Auth Supabase del caller
+//   2. Lee dropi_session_token de app_settings
+//   3. Decodifica JWT → user_id, exp
+//   4. GET /api/wallet/exportexcel?from=X&until=Y&user_id=N&wallet_id=0
+//   5. Parsea XLSX server-side con SheetJS
+//   6. Mapea filas → shape de upsert_wallet_movements
+//   7. Upsert idempotente vía RPC
+//   8. Log a sync_logs
 //
-// Body (todos opcionales):
-//   { from: "YYYY-MM-DD",  // default: hoy - 30 días
+// Body opcional:
+//   { from: "YYYY-MM-DD",  // default: hoy - 30d
 //     untill: "YYYY-MM-DD", // default: hoy
-//     dryRun: boolean,      // si true, NO escribe; solo trae y devuelve count
-//     limit: number }       // si > 0, corta tras N movimientos (test)
+//     dryRun: boolean,
+//     limit: number }       // si > 0, corta tras N movimientos
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DROPI_API = "https://api.dropi.co";
-const WALLET_PATH = "/api/historywallet";
-const MAX_CHUNK_DAYS = 30;
-const PAGE_SIZE = 100;
-const RATE_LIMIT_MS = 500;
+const EXPORT_PATH = "/api/wallet/exportexcel";
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function chunkDateRange(from: string, to: string, maxDays: number) {
-  const chunks: { from: string; to: string }[] = [];
-  let start = new Date(from + "T00:00:00Z");
-  const end = new Date(to + "T00:00:00Z");
-  while (start <= end) {
-    const chunkEnd = new Date(start);
-    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + maxDays - 1);
-    const actualEnd = chunkEnd > end ? end : chunkEnd;
-    chunks.push({
-      from: start.toISOString().split("T")[0],
-      to: actualEnd.toISOString().split("T")[0],
-    });
-    start = new Date(actualEnd);
-    start.setUTCDate(start.getUTCDate() + 1);
-  }
-  return chunks;
-}
-
-/**
- * Mapea el `código` textual de Dropi a una categoría interna estable.
- * Las categorías son las que la UI agrupa para los KPIs (entró/salió/neto).
- */
-function mapCategoria(codigo: string | undefined | null): string {
-  const c = (codigo || "").toUpperCase().trim();
+function mapCategoria(codigo: string | null | undefined): string {
+  const c = (codigo || "").toUpperCase();
   if (!c) return "otro";
   if (c.includes("FLETE INICIAL"))                                 return "flete_inicial";
   if (c.includes("NUEVA ORDEN"))                                   return "orden_sin_recaudo";
@@ -72,139 +44,87 @@ function mapCategoria(codigo: string | undefined | null): string {
   return "otro";
 }
 
-/** Extrae el id de orden del final de la descripción ("...: 71014957"). */
-function extractOrderId(desc: string | undefined | null): string | null {
-  if (!desc) return null;
-  const match = String(desc).match(/(\d{6,})\s*$/);
-  return match ? match[1] : null;
+/** Convierte "29-04-2026 01:16" a ISO 8601 con TZ (asume horario de Bogotá -05:00). */
+function fechaToISO(s: string | undefined): string {
+  if (!s) return new Date().toISOString();
+  const m = String(s).trim().match(/^(\d{2})-(\d{2})-(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if (!m) {
+    // Fallback: dejar que Date intente
+    const d = new Date(s);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : new Date().toISOString();
+  }
+  const [, dd, mm, yyyy, hh, mi] = m;
+  // Construimos como horario Bogotá (UTC-5) y devolvemos ISO en UTC
+  // 01:16 hora Bogotá = 06:16 UTC
+  const utcMs = Date.UTC(
+    Number(yyyy), Number(mm) - 1, Number(dd),
+    Number(hh) + 5, Number(mi), 0,
+  );
+  return new Date(utcMs).toISOString();
 }
 
-/**
- * Mapea un movimiento de Dropi al shape que espera la RPC upsert_wallet_movements.
- * Defensivo con nombres de campos: probamos varios alias en español/inglés
- * porque el shape exacto del JSON aún no está confirmado (lo veremos cuando
- * ejecutemos el primer dryRun y el sample del raw venga de vuelta).
- */
-function mapMovement(m: Record<string, unknown>, syncedBy: string) {
-  const id = Number(m.id ?? m.transaction_id ?? m.transactionId);
+interface XlsxRow {
+  ID?: number | string;
+  FECHA?: string;
+  TIPO?: string;
+  MONTO?: number | string;
+  "MONTO PREVIO"?: number | string;
+  "ORDEN ID"?: number | string;
+  "NUMERO DE GUIA"?: string | number;
+  "DESCRIPCIÓN"?: string;
+  CUENTA?: string;
+  "CONCEPTO DE RETIRO"?: string;
+}
 
-  const fechaRaw = String(
-    m.created_at ?? m.fecha ?? m.date ?? m.created ?? new Date().toISOString(),
-  );
+function num(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 
-  const tipo = String(m.type ?? m.tipo ?? "").toUpperCase().trim() || "SALIDA";
+function str(v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  return String(v).trim() || null;
+}
 
-  const codigo = String(
-    m.identification_code ?? m.code ?? m.tipo_codigo ?? m.code_name ?? "",
-  ).trim();
+function mapRow(row: XlsxRow, syncedBy: string) {
+  const id = num(row.ID);
+  if (!id || id <= 0) return null;
 
-  const monto = Number(m.amount ?? m.monto ?? m.value ?? 0);
-  const montoAbs = Math.abs(monto);
-
-  const montoPrevio = m.previous_amount !== undefined
-    ? Number(m.previous_amount)
-    : (m.monto_previo !== undefined ? Number(m.monto_previo) : null);
-
+  const tipo = (str(row.TIPO) || "SALIDA").toUpperCase();
+  const monto = Math.abs(num(row.MONTO) ?? 0);
+  const montoPrevio = num(row["MONTO PREVIO"]);
   const saldoDespues = montoPrevio !== null
-    ? (tipo === "ENTRADA" ? montoPrevio + montoAbs : montoPrevio - montoAbs)
+    ? (tipo === "ENTRADA" ? montoPrevio + monto : montoPrevio - monto)
     : null;
 
-  const descripcion = String(m.description ?? m.descripcion ?? "");
+  const descripcion = str(row["DESCRIPCIÓN"]);
+  // Codigo: lo derivamos de la primera oración de la descripción (hasta los ":")
+  const codigo = descripcion
+    ? descripcion.split(":")[0]?.trim() || null
+    : null;
 
-  const cuenta = m.account !== undefined
-    ? String(m.account)
-    : (m.cuenta !== undefined ? String(m.cuenta) : null);
-
-  const conceptoRetiro = m.withdrawal_concept !== undefined
-    ? String(m.withdrawal_concept)
-    : (m.concepto_retiro !== undefined ? String(m.concepto_retiro) : null);
+  // Order ID: preferimos columna F si tiene valor, si no parseamos de descripción
+  const orderFromCol = str(row["ORDEN ID"]);
+  const orderFromDesc = descripcion?.match(/:\s*(\d{6,})/)?.[1] || null;
+  const relatedOrderId = orderFromCol || orderFromDesc;
 
   return {
     dropi_transaction_id: id,
-    fecha: fechaRaw,
+    fecha: fechaToISO(str(row.FECHA) ?? undefined),
     tipo,
-    codigo: codigo || null,
+    codigo,
     categoria: mapCategoria(codigo),
-    monto: montoAbs,
+    monto,
     monto_previo: montoPrevio,
     saldo_despues: saldoDespues,
-    descripcion: descripcion || null,
-    cuenta,
-    concepto_retiro: conceptoRetiro,
-    related_order_id: extractOrderId(descripcion),
-    raw: m,
+    descripcion,
+    cuenta: str(row.CUENTA),
+    concepto_retiro: str(row["CONCEPTO DE RETIRO"]),
+    related_order_id: relatedOrderId,
+    raw: row,
     synced_by: syncedBy,
   };
-}
-
-/** Trae una página de movimientos. */
-async function fetchPage(
-  sessionToken: string,
-  dropiUserId: number,
-  from: string,
-  to: string,
-  start: number,
-  pageSize: number,
-): Promise<{ items: Record<string, unknown>[]; raw: unknown }> {
-  const params = new URLSearchParams({
-    orderBy: "id",
-    orderDirection: "desc",
-    result_number: String(pageSize),
-    start: String(start),
-    textToSearch: "",
-    type: "null",
-    id: "null",
-    identification_code: "null",
-    user_id: String(dropiUserId),
-    from,
-    until: to,
-    wallet_id: "0",
-  });
-
-  // Headers calcados del request real del browser (capturados con Playwright).
-  // Sin User-Agent realista Dropi devuelve 403 Access denied — su anti-bot
-  // detecta el UA por defecto de Deno/edge runtime. NO mandamos `Origin`:
-  // es header browser-only, en server-to-server algunos APIs lo rechazan
-  // como inconsistente con el resto de signals.
-  const res = await fetch(`${DROPI_API}${WALLET_PATH}?${params.toString()}`, {
-    method: "GET",
-    headers: {
-      "Accept": "application/json, text/plain, */*",
-      "Accept-Language": "es-CO,es;q=0.9,en;q=0.8",
-      "x-authorization": `Bearer ${sessionToken}`,
-      "Referer": "https://app.dropi.co/",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-      "sec-ch-ua":
-        '"Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-    },
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Dropi historywallet [${res.status}]: ${txt.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  // Defensivo con shape de respuesta — Dropi suele usar { isSuccess, objects }
-  // pero también vimos { data, items, transactions } en otros endpoints. Si
-  // ninguno matchea, asumimos que la respuesta ES un array directo.
-  const items = Array.isArray(data)
-    ? data
-    : Array.isArray((data as Record<string, unknown>).objects)
-      ? (data as { objects: Record<string, unknown>[] }).objects
-      : Array.isArray((data as Record<string, unknown>).data)
-        ? (data as { data: Record<string, unknown>[] }).data
-        : Array.isArray((data as Record<string, unknown>).items)
-          ? (data as { items: Record<string, unknown>[] }).items
-          : Array.isArray((data as Record<string, unknown>).transactions)
-            ? (data as { transactions: Record<string, unknown>[] }).transactions
-            : [];
-
-  return { items, raw: data };
 }
 
 Deno.serve(async (req: Request) => {
@@ -237,7 +157,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. Leer dropi_session_token de app_settings
+    // 2. Leer JWT de Dropi
     const { data: tokenRow } = await sb
       .from("app_settings")
       .select("value")
@@ -254,7 +174,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Decodificar JWT — extraer sub (user_id Dropi) y exp
+    // 3. Decodificar JWT
     let dropiUserId: number;
     let exp = 0;
     try {
@@ -265,17 +185,15 @@ Deno.serve(async (req: Request) => {
       if (!dropiUserId) throw new Error("sin sub");
     } catch {
       return new Response(
-        JSON.stringify({ ok: false, error: "Token de sesión Dropi inválido — no se pudo decodificar." }),
+        JSON.stringify({ ok: false, error: "Token Dropi inválido — no se pudo decodificar." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-
-    // Aviso temprano si está expirado (sin gastar la llamada)
     if (exp > 0 && exp * 1000 < Date.now()) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "Token de sesión Dropi expirado. Refrescá Admin → Token sesión Dropi.",
+          error: "Token Dropi expirado. Refrescá en Admin → Token sesión Dropi.",
           expired: true,
         }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -294,68 +212,80 @@ Deno.serve(async (req: Request) => {
     const dryRun = Boolean(body.dryRun);
     const limit = Number(body.limit || 0);
 
-    const chunks = chunkDateRange(fromDate, toDate, MAX_CHUNK_DAYS);
+    // 5. Fetch XLSX desde Dropi (server-side, no IP block en este endpoint)
+    const params = new URLSearchParams({
+      from: fromDate,
+      until: toDate,
+      user_id: String(dropiUserId),
+      wallet_id: "0",
+    });
+    const xlsxRes = await fetch(`${DROPI_API}${EXPORT_PATH}?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "x-authorization": `Bearer ${sessionToken}`,
+      },
+    });
 
-    let totalFromDropi = 0;
-    let totalSynced = 0;
-    let firstSampleKeys: string[] | null = null;
-    let firstSampleRecord: Record<string, unknown> | null = null;
-
-    // 5. Paginar y upsert
-    outer: for (const chunk of chunks) {
-      let start = 0;
-      while (true) {
-        const { items, raw } = await fetchPage(
-          sessionToken, dropiUserId, chunk.from, chunk.to, start, PAGE_SIZE,
-        );
-
-        // Capturar shape de respuesta para diagnostico (solo primera vez)
-        if (firstSampleKeys === null && raw && typeof raw === "object" && !Array.isArray(raw)) {
-          firstSampleKeys = Object.keys(raw as Record<string, unknown>).slice(0, 12);
-        }
-        if (firstSampleRecord === null && items.length > 0) {
-          firstSampleRecord = items[0];
-        }
-
-        if (items.length === 0) break;
-
-        const mapped = items
-          .map((m) => mapMovement(m, user.id))
-          .filter((m) => Number.isFinite(m.dropi_transaction_id) && m.dropi_transaction_id > 0);
-
-        totalFromDropi += mapped.length;
-
-        if (!dryRun && mapped.length > 0) {
-          for (let i = 0; i < mapped.length; i += 50) {
-            const batch = mapped.slice(i, i + 50);
-            const { data: changedCount, error: upsertError } = await sb.rpc(
-              "upsert_wallet_movements",
-              { p_movements: batch },
-            );
-            if (upsertError) {
-              console.error("upsert_wallet_movements error:", upsertError);
-            } else {
-              totalSynced += (changedCount as number) || 0;
-            }
-          }
-        }
-
-        if (limit > 0 && totalFromDropi >= limit) break outer;
-        if (items.length < PAGE_SIZE) break;
-        start += PAGE_SIZE;
-        await sleep(RATE_LIMIT_MS);
-      }
-      await sleep(RATE_LIMIT_MS);
+    if (!xlsxRes.ok) {
+      const txt = await xlsxRes.text();
+      const expired = xlsxRes.status === 401;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          expired,
+          error: `Dropi exportexcel [${xlsxRes.status}]: ${txt.slice(0, 300)}`,
+        }),
+        { status: xlsxRes.status === 401 ? 401 : 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    // 6. Log a sync_logs (mismo patrón que dropi-sync)
-    if (!dryRun) {
+    const arrayBuffer = await xlsxRes.arrayBuffer();
+    const fileSize = arrayBuffer.byteLength;
+
+    // 6. Parsear XLSX
+    const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+    const firstSheetName = wb.SheetNames[0];
+    if (!firstSheetName) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "XLSX sin sheets" }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const sheet = wb.Sheets[firstSheetName];
+    // sheet_to_json con headers leídos de la primera fila
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as XlsxRow[];
+    type Mapped = ReturnType<typeof mapRow>;
+
+    // 7. Mapear y upsertear (capear si limit)
+    const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
+    const mapped = slice
+      .map((r: XlsxRow): Mapped => mapRow(r, user.id))
+      .filter((r): r is NonNullable<Mapped> => r !== null);
+
+    let totalSynced = 0;
+    if (!dryRun && mapped.length > 0) {
+      for (let i = 0; i < mapped.length; i += 50) {
+        const batch = mapped.slice(i, i + 50);
+        const { data: changedCount, error: upsertError } = await sb.rpc(
+          "upsert_wallet_movements",
+          { p_movements: batch },
+        );
+        if (upsertError) {
+          console.error("upsert_wallet_movements error:", upsertError);
+        } else {
+          totalSynced += (changedCount as number) || 0;
+        }
+      }
+
+      // 8. Log
       await sb.from("sync_logs").insert({
         source: "dropi-wallet-sync",
         status: "success",
         synced_count: totalSynced,
         duplicates_count: 0,
-        total_count: totalFromDropi,
+        total_count: mapped.length,
         triggered_by: user.id,
       });
     }
@@ -364,37 +294,26 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         ok: true,
         synced: totalSynced,
-        total: totalFromDropi,
-        chunks: chunks.length,
+        total: mapped.length,
+        rows_in_excel: rows.length,
+        file_size_bytes: fileSize,
         from: fromDate,
         until: toDate,
         dropi_user_id: dropiUserId,
-        // Diagnóstico para confirmar shape en primer dryRun
-        sample_response_keys: firstSampleKeys,
-        sample_movement_keys: firstSampleRecord ? Object.keys(firstSampleRecord).slice(0, 30) : null,
+        sample_first_row: mapped[0] || null,
         dry_run: dryRun,
         message: dryRun
-          ? `DRY RUN — ${totalFromDropi} movimientos encontrados. Revisar sample_movement_keys antes de sync real.`
-          : `${totalSynced} movimientos sincronizados de ${totalFromDropi} traídos en ${chunks.length} chunk${chunks.length > 1 ? "s" : ""}`,
+          ? `DRY RUN — ${mapped.length} movimientos parseados del XLSX (${fileSize} bytes)`
+          : `${totalSynced} sincronizados de ${mapped.length} traídos del XLSX (${fileSize} bytes)`,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("dropi-wallet-sync error:", msg);
-
-    const expired = msg.includes("[401]");
     return new Response(
-      JSON.stringify({
-        ok: false,
-        error: msg,
-        expired,
-        ...(expired ? { hint: "Refrescá dropi_session_token en Admin → Token sesión Dropi." } : {}),
-      }),
-      {
-        status: expired ? 401 : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+      JSON.stringify({ ok: false, error: msg }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
