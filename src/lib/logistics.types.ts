@@ -88,6 +88,44 @@ export interface ProductFailure {
 export interface LogisticsFilters {
   fromDate: string;     // YYYY-MM-DD
   toDate: string;       // YYYY-MM-DD
+  /** Ciudad opcional. Si está, todas las RPCs filtran por ciudad = this. */
+  ciudad?: string;
+}
+
+/** Una fila de la matriz transportadora × ciudad (heatmap). */
+export interface CityCarrierMatrix {
+  ciudad: string;
+  departamento: string;
+  transportadora: string;
+  total_pedidos: number;
+  entregados: number;
+  devueltos: number;
+  tasa_entrega: number;
+  tasa_devolucion: number;
+  ciudad_total: number;
+}
+
+/** Recomendación de transportadora por ciudad. */
+export interface CarrierRecommendation {
+  ciudad: string;
+  departamento: string;
+  ciudad_total: number;
+  mejor_transportadora: string;
+  mejor_tasa_entrega: number;
+  mejor_pedidos: number;
+  peor_transportadora: string;
+  peor_tasa_entrega: number;
+  peor_pedidos: number;
+  delta_puntos: number;
+  carrier_actual_top: string;
+  recomendacion: string;       // "Mantener X" | "Cambiar a X"
+}
+
+/** Una ciudad disponible para el dropdown de filtro. */
+export interface CityOption {
+  ciudad: string;
+  departamento: string;
+  total_pedidos: number;
 }
 
 // Type guard runtime — defensivo contra payloads malformados de Supabase.

@@ -16,10 +16,14 @@ import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
 import CityReturnsTable from '@/components/logistics/CityReturnsTable';
 import ProductFailuresTable from '@/components/logistics/ProductFailuresTable';
 import TrazabilidadView from '@/components/logistics/TrazabilidadView';
+import CityFilter from '@/components/logistics/CityFilter';
+import CarrierCityMatrix from '@/components/logistics/CarrierCityMatrix';
+import CarrierRecommendations from '@/components/logistics/CarrierRecommendations';
+import ComparisonView from '@/components/logistics/ComparisonView';
 import LogisticsSkeleton from '@/components/logistics/LogisticsSkeleton';
 import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -148,11 +152,36 @@ function formatRange(filters: LogisticsFilters): string {
   return `${fmt(f)} → ${fmt(t)}`;
 }
 
+/**
+ * Genera el período inmediatamente anterior al dado, con la misma duración.
+ * Ej: si A = [01/04, 30/04], devuelve B = [02/03, 31/03].
+ * Útil como default razonable cuando el admin activa el modo comparación.
+ */
+function prevPeriod(filters: LogisticsFilters): LogisticsFilters {
+  const from = new Date(filters.fromDate);
+  const to = new Date(filters.toDate);
+  const days = Math.round((to.getTime() - from.getTime()) / (24 * 3600 * 1000));
+  const newTo = new Date(from);
+  newTo.setDate(newTo.getDate() - 1);
+  const newFrom = new Date(newTo);
+  newFrom.setDate(newFrom.getDate() - days);
+  return {
+    fromDate: newFrom.toISOString().split('T')[0],
+    toDate: newTo.toISOString().split('T')[0],
+  };
+}
+
 // ════════════════════════════════════════════════════════════════
 // LogisticaTab — root
 // ════════════════════════════════════════════════════════════════
 export default function LogisticaTab() {
   const [filters, setFilters] = useState<LogisticsFilters>(defaultRange);
+
+  // Modo comparación A vs B. Cuando está activo se reemplaza el body por la
+  // vista lado-a-lado. Period A = filters principales, Period B se inicializa
+  // con el período inmediatamente anterior (mismo número de días).
+  const [compareMode, setCompareMode] = useState(false);
+  const [periodB, setPeriodB] = useState<LogisticsFilters>(() => prevPeriod(defaultRange()));
 
   const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters);
 
@@ -209,12 +238,41 @@ export default function LogisticaTab() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {!isLoading && !isError && summary.data && (
             <span className="pill pill-neutral whitespace-nowrap">
               {formatRange(filters)}
             </span>
           )}
+          {/* Filtro por ciudad — Combobox con búsqueda. Si está seleccionado,
+              todas las RPCs filtran por esa ciudad (usa p_ciudad). */}
+          <CityFilter
+            value={filters.ciudad}
+            onChange={(ciudad) => setFilters((f) => ({ ...f, ciudad }))}
+          />
+
+          {/* Toggle modo comparación A vs B */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!compareMode) {
+                // Al activar, inicializa periodB como el período inmediatamente
+                // anterior con la misma duración.
+                setPeriodB(prevPeriod(filters));
+              }
+              setCompareMode(v => !v);
+            }}
+            className={`inline-flex items-center gap-1.5 h-9 rounded-lg border px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+              compareMode
+                ? 'border-accent/40 bg-accent/12 text-accent ring-1 ring-accent/30'
+                : 'border-border bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+            }`}
+            aria-pressed={compareMode}
+            title="Comparar dos períodos lado a lado"
+          >
+            <GitCompare size={13} aria-hidden="true" />
+            Comparar
+          </button>
           {lastUpdated && (
             <span className="text-[11px] text-muted-foreground tabular-nums hidden md:inline">
               Actualizado {lastUpdated}
@@ -233,15 +291,33 @@ export default function LogisticaTab() {
         </div>
       </header>
 
-      <div className="rounded-lg border border-border bg-card p-3">
-        <DateRangeFilter value={filters} onChange={setFilters} />
-      </div>
+      {/* Date range — solo visible cuando NO estamos en modo comparación
+          (en modo comparación cada período tiene su propio picker dentro
+          del ComparisonView). */}
+      {!compareMode && (
+        <div className="rounded-lg border border-border bg-card p-3">
+          <DateRangeFilter
+            value={filters}
+            onChange={(next) => setFilters((f) => ({ ...next, ciudad: f.ciudad }))}
+          />
+        </div>
+      )}
 
-      {isError && <LogisticsErrorState message={errorMsg} onRetry={refetchAll} />}
+      {/* Modo comparación — vista alternativa que reemplaza hero+tabs */}
+      {compareMode && (
+        <ComparisonView
+          periodA={filters}
+          periodB={periodB}
+          onPeriodAChange={(next) => setFilters((f) => ({ ...next, ciudad: f.ciudad }))}
+          onPeriodBChange={setPeriodB}
+        />
+      )}
 
-      {!isError && isLoading && <LogisticsSkeleton />}
+      {!compareMode && isError && <LogisticsErrorState message={errorMsg} onRetry={refetchAll} />}
 
-      {!isError && !isLoading && (
+      {!compareMode && !isError && isLoading && <LogisticsSkeleton />}
+
+      {!compareMode && !isError && !isLoading && (
         <>
           {/* HERO ROW — chart de volumen (col-span-7) + KPIs 2×2 (col-span-5). */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -258,6 +334,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
               <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
               <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+              <TabsTrigger value="decisiones"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
             </TabsList>
 
@@ -283,6 +360,16 @@ export default function LogisticaTab() {
 
             <TabsContent value="products" className="mt-4">
               <ProductFailuresTable rows={products.data ?? []} />
+            </TabsContent>
+
+            {/* TAB: Decisiones — heatmap matriz + tabla recomendador.
+                Las dos secciones leen de RPCs nuevas (logistics_by_city_carrier
+                y logistics_recommendations). NO se filtran por ciudad porque
+                es un análisis comparativo entre ciudades — el filtro ciudad
+                no aplica acá. */}
+            <TabsContent value="decisiones" className="mt-4 space-y-4">
+              <CarrierRecommendations filters={filters} />
+              <CarrierCityMatrix filters={filters} />
             </TabsContent>
 
             <TabsContent value="trazabilidad" className="mt-4 space-y-4">

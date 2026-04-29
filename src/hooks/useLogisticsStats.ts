@@ -37,8 +37,9 @@ export interface UseLogisticsStatsResult {
 }
 
 export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsResult {
-  const { fromDate, toDate } = filters;
-  const baseKey = ['logistics', fromDate, toDate] as const;
+  const { fromDate, toDate, ciudad } = filters;
+  const ciudadKey = ciudad?.trim() || null;
+  const baseKey = ['logistics', fromDate, toDate, ciudadKey] as const;
   const queryClient = useQueryClient();
 
   const summary = useQuery<LogisticsSummary | null>({
@@ -47,6 +48,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       const rows = await callRpc<LogisticsSummary>('logistics_summary', {
         p_from_date: fromDate,
         p_to_date: toDate,
+        p_ciudad: ciudadKey,
       });
       return rows[0] ?? null;
     },
@@ -58,6 +60,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
     queryFn: () => callRpc<CarrierStats>('logistics_by_carrier', {
       p_from_date: fromDate,
       p_to_date: toDate,
+      p_ciudad: ciudadKey,
     }),
     staleTime: STALE_5MIN,
   });
@@ -70,6 +73,9 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       p_limit: 50,
     }),
     staleTime: STALE_5MIN,
+    // Cuando hay filtro de ciudad, esta query no aporta (sería 1 sola fila).
+    // La deshabilitamos para ahorrar round-trip.
+    enabled: !ciudadKey,
   });
 
   const products = useQuery<ProductFailure[]>({
