@@ -66,7 +66,7 @@ export default function ConfirmarTab({ profile }: Props) {
           return;
         }
         if (dbOrders && dbOrders.length > 0) {
-          const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
+          const orders = (dbOrders as unknown as Parameters<typeof dbToOrderData>[0][]).map((o, idx) => dbToOrderData(o, idx));
           setAllOrders(orders);
           buildWorkQueue(orders);
         }

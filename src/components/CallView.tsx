@@ -342,7 +342,7 @@ export default function CallView({ items }: Props) {
             if (!editingOrder?.dbId) return;
             const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', editingOrder.dbId).maybeSingle();
             if (data) {
-              const updated = dbToOrderData(data, 0);
+              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
               const merged = allOrders.map(ord => ord.dbId === updated.dbId
                 ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
                 : ord);
