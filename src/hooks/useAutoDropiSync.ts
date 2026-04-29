@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { POLL_INTERVAL_MS } from '@/lib/constants';
+import { AUTO_SYNC_INTERVAL_MS } from '@/lib/constants';
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 
-const SYNC_INTERVAL_MS = POLL_INTERVAL_MS;
 const SYNC_DAYS_BACK = 14;
 
 export function useAutoDropiSync(
@@ -44,8 +44,9 @@ export function useAutoDropiSync(
       }
     };
 
+    // COST-1: corre 1x al montar + cada hora, y solo si la pestaña está visible.
     runSync();
-    const interval = setInterval(runSync, SYNC_INTERVAL_MS);
-    return () => clearInterval(interval);
+    return pollWhenVisible(runSync, AUTO_SYNC_INTERVAL_MS, { runOnVisible: false });
   }, [isAdmin, userId]);
 }
+

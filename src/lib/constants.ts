@@ -28,8 +28,12 @@ export const CANCEL_REASONS = [
 ];
 
 // OLD-9: intervalo de polling fallback (cuando realtime falla o se cae el
-// canal). Usado por useDataLoader, useAutoDropiSync, useNovedades.
-export const POLL_INTERVAL_MS = 5 * 60 * 1000;
+// canal). Usado por useDataLoader, useNovedades.
+// COST-1 (2026-04-29): subido de 5 → 15 min para reducir consumo Cloud.
+// El polling además se pausa cuando la pestaña está oculta (pollWhenVisible).
+export const POLL_INTERVAL_MS = 15 * 60 * 1000;
+// Auto-sync de Dropi (admin) — corre 1 vez por hora en vez de cada 5 min.
+export const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 
 export const CARRIER_TRACK: Record<string, string> = {
   'INTERRAPIDISIMO': 'https://www.interrapidisimo.com/sigue-tu-envio/',

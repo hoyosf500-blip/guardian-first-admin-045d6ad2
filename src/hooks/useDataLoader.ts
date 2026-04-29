@@ -1,3 +1,4 @@
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useState, useCallback, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -120,13 +121,12 @@ export function useDataLoader(user: User | null): DataLoaderState {
     }
   }, [user, segLoaded]);
 
-  // Auto-refresh every 5 min after initial load
+  // COST-1: auto-refresh cada 15 min y solo cuando la pestaña está visible.
   useEffect(() => {
     if (!user) return;
-    const interval = setInterval(() => {
+    return pollWhenVisible(() => {
       if (segLoaded) loadSegData(true);
-    }, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    }, 15 * 60 * 1000, { runOnVisible: false });
   }, [user, segLoaded, loadSegData]);
 
   return {
