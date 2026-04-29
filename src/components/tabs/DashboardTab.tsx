@@ -1,3 +1,4 @@
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';

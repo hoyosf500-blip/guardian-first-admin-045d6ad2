@@ -1,3 +1,4 @@
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrders } from '@/contexts/OrderContext';
