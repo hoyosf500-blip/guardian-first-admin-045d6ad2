@@ -146,6 +146,63 @@ export type Database = {
         }
         Relationships: []
       }
+      dropi_wallet_movements: {
+        Row: {
+          categoria: string | null
+          codigo: string | null
+          concepto_retiro: string | null
+          cuenta: string | null
+          descripcion: string | null
+          dropi_transaction_id: number
+          fecha: string
+          id: number
+          monto: number
+          monto_previo: number | null
+          raw: Json
+          related_order_id: string | null
+          saldo_despues: number | null
+          synced_at: string
+          synced_by: string | null
+          tipo: string
+        }
+        Insert: {
+          categoria?: string | null
+          codigo?: string | null
+          concepto_retiro?: string | null
+          cuenta?: string | null
+          descripcion?: string | null
+          dropi_transaction_id: number
+          fecha: string
+          id?: number
+          monto: number
+          monto_previo?: number | null
+          raw: Json
+          related_order_id?: string | null
+          saldo_despues?: number | null
+          synced_at?: string
+          synced_by?: string | null
+          tipo: string
+        }
+        Update: {
+          categoria?: string | null
+          codigo?: string | null
+          concepto_retiro?: string | null
+          cuenta?: string | null
+          descripcion?: string | null
+          dropi_transaction_id?: number
+          fecha?: string
+          id?: number
+          monto?: number
+          monto_previo?: number | null
+          raw?: Json
+          related_order_id?: string | null
+          saldo_despues?: number | null
+          synced_at?: string
+          synced_by?: string | null
+          tipo?: string
+        }
+        Relationships: []
+      }
       notes: {
         Row: {
           created_at: string
@@ -627,6 +684,14 @@ export type Database = {
           operator_id: string
         }[]
       }
+      get_top_cities: {
+        Args: { p_limit?: number }
+        Returns: {
+          ciudad: string
+          departamento: string
+          total_pedidos: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -635,7 +700,7 @@ export type Database = {
         Returns: boolean
       }
       logistics_by_carrier: {
-        Args: { p_from_date: string; p_to_date: string }
+        Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
         Returns: {
           avg_dias_entrega: number
           devueltos: number
@@ -663,6 +728,25 @@ export type Database = {
           valor_perdido: number
         }[]
       }
+      logistics_by_city_carrier: {
+        Args: {
+          p_from_date: string
+          p_min_orders?: number
+          p_to_date: string
+          p_top_cities?: number
+        }
+        Returns: {
+          ciudad: string
+          ciudad_total: number
+          departamento: string
+          devueltos: number
+          entregados: number
+          tasa_devolucion: number
+          tasa_entrega: number
+          total_pedidos: number
+          transportadora: string
+        }[]
+      }
       logistics_by_product: {
         Args: { p_from_date: string; p_limit?: number; p_to_date: string }
         Returns: {
@@ -677,8 +761,25 @@ export type Database = {
         }[]
       }
       logistics_dashboard: { Args: { p_range?: string }; Returns: Json }
+      logistics_recommendations: {
+        Args: { p_from_date: string; p_min_orders?: number; p_to_date: string }
+        Returns: {
+          carrier_actual_top: string
+          ciudad: string
+          ciudad_total: number
+          delta_puntos: number
+          departamento: string
+          mejor_pedidos: number
+          mejor_tasa_entrega: number
+          mejor_transportadora: string
+          peor_pedidos: number
+          peor_tasa_entrega: number
+          peor_transportadora: string
+          recomendacion: string
+        }[]
+      }
       logistics_summary: {
-        Args: { p_from_date: string; p_to_date: string }
+        Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
         Returns: {
           cancelados: number
           devueltos: number
@@ -790,6 +891,7 @@ export type Database = {
         }[]
       }
       upsert_orders_from_dropi: { Args: { p_orders: Json }; Returns: number }
+      upsert_wallet_movements: { Args: { p_movements: Json }; Returns: number }
     }
     Enums: {
       app_role: "admin" | "operator"
