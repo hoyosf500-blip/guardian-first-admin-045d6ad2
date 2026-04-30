@@ -8,9 +8,23 @@
 // IMPORTANTE: si cambia la heurística aquí, cambiarla también en la
 // edge function — son la misma lógica intencionalmente duplicada.
 
+import { mapAddressKind } from './mapAddressKind';
+
+export type AddressKind = 'urban' | 'rural' | 'pickup_office' | 'unknown';
+
 export interface HeuristicResult {
   score: number;       // 0-100
   issues: string[];    // códigos como 'no_via_type', 'no_numbers', etc.
+  /** Tipo de dirección detectado por mapAddressKind. */
+  address_kind?: AddressKind;
+  /** Decisión semáforo cuando la heurística es concluyente (pickup/rural). */
+  decision?: 'green' | 'yellow' | 'red';
+  /** Campos faltantes detectados por la heurística (e.g. 'complemento'). */
+  missing_fields?: string[];
+  /** Mensaje sugerido para el cliente cuando la dirección es ambigua. */
+  suggested_customer_message?: string;
+  /** Marca que el resultado se decidió solo con heurística local. */
+  localOnly?: boolean;
 }
 
 const VIA_TYPE_REGEX = new RegExp(
@@ -25,12 +39,40 @@ export function heuristicValidate(direccion: string): HeuristicResult {
   let score = 0;
   const dir = (direccion || '').trim();
 
+  // Detección rural-aware + pickup-office: cuando el tipo es concluyente,
+  // resolvemos sin pasar por la lógica regex urbana.
+  const kind = mapAddressKind(direccion);
+
+  if (kind === 'pickup_office') {
+    return {
+      score: 100,
+      issues: [],
+      decision: 'green' as const,
+      address_kind: 'pickup_office' as const,
+      missing_fields: [],
+      suggested_customer_message: '',
+      localOnly: true,
+    };
+  }
+
+  if (kind === 'rural') {
+    return {
+      score: 60,
+      issues: ['rural_address'],
+      decision: 'yellow' as const,
+      address_kind: 'rural' as const,
+      missing_fields: ['complemento'],
+      suggested_customer_message: '',
+      localOnly: true,
+    };
+  }
+
   if (!dir) {
-    return { score: 0, issues: ['empty'] };
+    return { score: 0, issues: ['empty'], address_kind: kind };
   }
   if (dir.length < 8) {
     issues.push('too_short');
-    return { score: 10, issues };
+    return { score: 10, issues, address_kind: kind };
   }
 
   if (VIA_TYPE_REGEX.test(dir)) {
@@ -66,7 +108,7 @@ export function heuristicValidate(direccion: string): HeuristicResult {
     issues.push('no_letters');
   }
 
-  return { score: Math.min(100, score), issues };
+  return { score: Math.min(100, score), issues, address_kind: kind };
 }
 
 /**
