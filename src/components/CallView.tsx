@@ -15,6 +15,15 @@ import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Ta
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
+import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
+import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
+import { DespachoGateButton } from '@/components/address/DespachoGateButton';
+
+// Validador-direcciones: helper local para gate de confirmación.
+function validarTelefono(phone: string): boolean {
+  const clean = (phone || '').replace(/\D/g, '');
+  return clean.length === 10 && clean.startsWith('3');
+}
 
 interface VipInfo {
   isVip: boolean;
@@ -29,7 +38,7 @@ interface Props {
 
 export default function CallView({ items }: Props) {
   const { markResult, undoLast, allOrders, setAllOrders, buildWorkQueue } = useOrders();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { claimOrder, releaseOrder } = useOrderLock();
   // BUG B fix: persist the customer's stable identifier (externalId or dbId),
   // not the array index. Indexes break when items reorder due to refresh/sync.
@@ -69,6 +78,9 @@ export default function CallView({ items }: Props) {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
+  // Validador-direcciones: override admin-only para destrabar el gate cuando
+  // la dirección quedó en yellow/red pero el admin decidió despachar igual.
+  const [addressOverride, setAddressOverride] = useState(false);
 
   const o = items[Math.min(callIdx, items.length - 1)];
 
@@ -265,19 +277,58 @@ export default function CallView({ items }: Props) {
           </div>
         )}
 
-        {o.direccion && (
-          <div className="text-xs text-muted-foreground mb-3 inline-flex items-center gap-1.5 flex-wrap">
-            <Mail size={12} />
-            <span>{o.direccion}</span>
-            {/* Validación de dirección — heurística + geocoding (Nominatim/OSM).
-                Click en el badge abre popover con detalles. Ayuda a la
-                operadora a detectar direcciones mal escritas antes de despachar. */}
-            <AddressValidationBadge
-              direccion={o.direccion}
+        {/* Validador-direcciones v2: en modo EDIT (pedido pendiente) usamos
+            AddressAutocomplete + AddressFeedbackCard. En modo VIEW (ya
+            gestionado) seguimos con el badge legacy para no alterar la
+            historia visual del pedido. */}
+        {!o.result ? (
+          <div className="mb-3 space-y-2">
+            <div className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Mail size={12} /> Dirección
+            </div>
+            <AddressAutocomplete
+              value={o.direccion}
               ciudad={o.ciudad}
               departamento={o.departamento}
+              customerPhone={o.phone}
+              onChange={(update) => {
+                if (!o.dbId) return;
+                const patch: Record<string, unknown> = { direccion: update.direccion };
+                if (update.barrio !== undefined) patch.barrio = update.barrio;
+                if (update.place_id !== undefined) patch.google_place_id = update.place_id;
+                if (update.lat !== undefined) patch.lat = update.lat;
+                if (update.lng !== undefined) patch.lng = update.lng;
+                patch.address_kind = update.address_kind;
+                if (update.source === 'autocomplete' || update.source === 'recurrent_customer') {
+                  patch.validation_decision = 'green';
+                  patch.missing_fields = [];
+                  patch.suggested_customer_message = '';
+                }
+                void supabase.from('orders').update(patch).eq('id', o.dbId);
+              }}
+            />
+            <AddressFeedbackCard
+              decision={o.validationDecision}
+              missingFields={o.missingFields ?? []}
+              suggestedMessage={o.suggestedCustomerMessage}
+              isAdmin={isAdmin}
+              carrier={o.transportadora}
+              onOverrideChange={setAddressOverride}
             />
           </div>
+        ) : (
+          o.direccion && (
+            <div className="text-xs text-muted-foreground mb-3 inline-flex items-center gap-1.5 flex-wrap">
+              <Mail size={12} />
+              <span>{o.direccion}</span>
+              {/* Modo VIEW (pedido ya gestionado): mantener badge legacy. */}
+              <AddressValidationBadge
+                direccion={o.direccion}
+                ciudad={o.ciudad}
+                departamento={o.departamento}
+              />
+            </div>
+          )
         )}
 
         {/* Edit order button (AI script generator removed — unused) */}
@@ -297,9 +348,26 @@ export default function CallView({ items }: Props) {
 
         {!o.result ? (
           <div className="grid grid-cols-3 gap-2 mt-4">
-            <button onClick={() => handleMark('conf')} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-green/15 text-green border border-green/25 font-bold text-sm active:scale-[0.97] transition-transform">
-              <CheckCircle2 size={16} /> Confirmó
-            </button>
+            {/* Validador-direcciones: el botón Confirmar pasa por el gate
+                (validación dirección + teléfono + documento Coordinadora +
+                override admin). Si el gate bloquea, el Button queda
+                deshabilitado y el tooltip explica la razón. */}
+            <DespachoGateButton
+              gate={{
+                validation_decision: o.validationDecision,
+                telefonoValido: validarTelefono(o.phone),
+                documentoSiCoordinadora:
+                  (o.transportadora || '').toLowerCase() !== 'coordinadora' ||
+                  Boolean(o.documentoDestinatario),
+                isAdmin,
+                overrideChecked: addressOverride,
+              }}
+              onConfirm={() => handleMark('conf')}
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <CheckCircle2 size={16} /> Confirmó
+              </span>
+            </DespachoGateButton>
             <button onClick={() => setShowCancelModal(true)} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform">
               <XCircle size={16} /> Canceló
             </button>
