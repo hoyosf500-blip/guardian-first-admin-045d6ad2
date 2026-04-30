@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      address_autocomplete_cache: {
+        Row: {
+          ciudad_filter: string | null
+          created_at: string
+          expires_at: string
+          hit_count: number
+          id: number
+          query_normalized: string
+          suggestions: Json
+        }
+        Insert: {
+          ciudad_filter?: string | null
+          created_at?: string
+          expires_at: string
+          hit_count?: number
+          id?: number
+          query_normalized: string
+          suggestions: Json
+        }
+        Update: {
+          ciudad_filter?: string | null
+          created_at?: string
+          expires_at?: string
+          hit_count?: number
+          id?: number
+          query_normalized?: string
+          suggestions?: Json
+        }
+        Relationships: []
+      }
       address_validations: {
         Row: {
           cache_key: string
@@ -368,9 +398,13 @@ export type Database = {
       }
       orders: {
         Row: {
+          address_kind: string | null
+          address_parsed: Json | null
           assigned_to: string | null
+          barrio: string | null
           cantidad: number | null
           ciudad: string | null
+          complemento: string | null
           costo_dev: number | null
           costo_prod: number | null
           created_at: string
@@ -378,34 +412,45 @@ export type Database = {
           dias: number | null
           dias_conf: number | null
           direccion: string | null
+          documento_destinatario: string | null
           email: string | null
           estado: string | null
           external_id: string | null
           fecha: string | null
           fecha_conf: string | null
           flete: number | null
+          google_place_id: string | null
           guia: string | null
           id: string
           last_edit_sync_at: string | null
           last_edited_by: string | null
+          lat: number | null
+          lng: number | null
           locked_at: string | null
           locked_by: string | null
+          missing_fields: Json | null
           nombre: string
           novedad: string | null
           novedad_sol: boolean | null
           phone: string
           producto: string | null
+          suggested_customer_message: string | null
           tags: string | null
           tienda: string | null
           transportadora: string | null
           upload_date: string
           uploaded_by: string
+          validation_decision: string | null
           valor: number | null
         }
         Insert: {
+          address_kind?: string | null
+          address_parsed?: Json | null
           assigned_to?: string | null
+          barrio?: string | null
           cantidad?: number | null
           ciudad?: string | null
+          complemento?: string | null
           costo_dev?: number | null
           costo_prod?: number | null
           created_at?: string
@@ -413,34 +458,45 @@ export type Database = {
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
+          documento_destinatario?: string | null
           email?: string | null
           estado?: string | null
           external_id?: string | null
           fecha?: string | null
           fecha_conf?: string | null
           flete?: number | null
+          google_place_id?: string | null
           guia?: string | null
           id?: string
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
+          lat?: number | null
+          lng?: number | null
           locked_at?: string | null
           locked_by?: string | null
+          missing_fields?: Json | null
           nombre: string
           novedad?: string | null
           novedad_sol?: boolean | null
           phone: string
           producto?: string | null
+          suggested_customer_message?: string | null
           tags?: string | null
           tienda?: string | null
           transportadora?: string | null
           upload_date?: string
           uploaded_by: string
+          validation_decision?: string | null
           valor?: number | null
         }
         Update: {
+          address_kind?: string | null
+          address_parsed?: Json | null
           assigned_to?: string | null
+          barrio?: string | null
           cantidad?: number | null
           ciudad?: string | null
+          complemento?: string | null
           costo_dev?: number | null
           costo_prod?: number | null
           created_at?: string
@@ -448,28 +504,35 @@ export type Database = {
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
+          documento_destinatario?: string | null
           email?: string | null
           estado?: string | null
           external_id?: string | null
           fecha?: string | null
           fecha_conf?: string | null
           flete?: number | null
+          google_place_id?: string | null
           guia?: string | null
           id?: string
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
+          lat?: number | null
+          lng?: number | null
           locked_at?: string | null
           locked_by?: string | null
+          missing_fields?: Json | null
           nombre?: string
           novedad?: string | null
           novedad_sol?: boolean | null
           phone?: string
           producto?: string | null
+          suggested_customer_message?: string | null
           tags?: string | null
           tienda?: string | null
           transportadora?: string | null
           upload_date?: string
           uploaded_by?: string
+          validation_decision?: string | null
           valor?: number | null
         }
         Relationships: []
@@ -630,9 +693,13 @@ export type Database = {
       claim_order: {
         Args: { p_order_id: string }
         Returns: {
+          address_kind: string | null
+          address_parsed: Json | null
           assigned_to: string | null
+          barrio: string | null
           cantidad: number | null
           ciudad: string | null
+          complemento: string | null
           costo_dev: number | null
           costo_prod: number | null
           created_at: string
@@ -640,28 +707,35 @@ export type Database = {
           dias: number | null
           dias_conf: number | null
           direccion: string | null
+          documento_destinatario: string | null
           email: string | null
           estado: string | null
           external_id: string | null
           fecha: string | null
           fecha_conf: string | null
           flete: number | null
+          google_place_id: string | null
           guia: string | null
           id: string
           last_edit_sync_at: string | null
           last_edited_by: string | null
+          lat: number | null
+          lng: number | null
           locked_at: string | null
           locked_by: string | null
+          missing_fields: Json | null
           nombre: string
           novedad: string | null
           novedad_sol: boolean | null
           phone: string
           producto: string | null
+          suggested_customer_message: string | null
           tags: string | null
           tienda: string | null
           transportadora: string | null
           upload_date: string
           uploaded_by: string
+          validation_decision: string | null
           valor: number | null
         }[]
         SetofOptions: {
@@ -672,8 +746,10 @@ export type Database = {
         }
       }
       claim_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      cleanup_expired_autocomplete_cache: { Args: never; Returns: number }
       cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
+      consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       get_daily_operator_stats: {
         Args: { p_date: string }
