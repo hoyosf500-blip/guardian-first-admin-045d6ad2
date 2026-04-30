@@ -1,7 +1,15 @@
 // src/hooks/useGooglePlaces.ts
-import { useEffect, useRef, useState } from 'react';
+//
+// Cliente de Google Places que llama a la edge function `google-places-proxy`
+// en vez de cargar el script de Google Maps en el browser.
+//
+// Ventajas:
+//   - GOOGLE_MAPS_API_KEY nunca se expone al cliente (solo runtime en edge).
+//   - No requiere build secret VITE_GOOGLE_MAPS_API_KEY.
+//   - Quota gating server-side via consume_google_quota.
 
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+import { useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AutocompletePrediction {
   description: string;
@@ -22,109 +30,97 @@ interface GoogleApi {
   available: boolean;
 }
 
-let scriptLoadPromise: Promise<void> | null = null;
-
-function loadScript(): Promise<void> {
-  if (scriptLoadPromise) return scriptLoadPromise;
-  if (!GOOGLE_MAPS_KEY) {
-    scriptLoadPromise = Promise.reject(new Error('VITE_GOOGLE_MAPS_API_KEY missing'));
-    return scriptLoadPromise;
-  }
-  if (typeof window !== 'undefined' && (window as unknown as { google?: unknown }).google) {
-    scriptLoadPromise = Promise.resolve();
-    return scriptLoadPromise;
-  }
-  scriptLoadPromise = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_KEY}&libraries=places&v=weekly`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Maps script'));
-    document.head.appendChild(script);
-  });
-  return scriptLoadPromise;
-}
-
+// Cache en memoria para evitar requests repetidas durante una sesión.
 const memoryCache = new Map<string, AutocompletePrediction[]>();
 
 function memoryKey(query: string, ciudad?: string): string {
   return `${query.trim().toLowerCase()}|${(ciudad || '').toLowerCase()}`;
 }
 
-export function useGooglePlaces(): GoogleApi {
-  const [available, setAvailable] = useState(false);
-  const sessionTokenRef = useRef<unknown>(null);
+function newSessionToken(): string {
+  // UUID v4 simple — sólo para agrupar autocomplete+details en la misma sesión de billing.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
-  useEffect(() => {
-    loadScript().then(() => setAvailable(true)).catch(() => setAvailable(false));
-  }, []);
+export function useGooglePlaces(): GoogleApi {
+  const sessionTokenRef = useRef<string | null>(null);
 
   return {
-    available,
+    // Siempre disponible: el gating real es server-side (cap diario + auth).
+    available: true,
 
     autocomplete: async (query: string, ciudadBias?: string) => {
-      if (!available || !query.trim()) return [];
-      const key = memoryKey(query, ciudadBias);
+      const q = query.trim();
+      if (q.length < 3) return [];
+      const key = memoryKey(q, ciudadBias);
       const cached = memoryCache.get(key);
       if (cached) return cached;
 
-      const google = (window as unknown as { google: { maps: { places: { AutocompleteService: new () => unknown; AutocompleteSessionToken: new () => unknown } } } }).google;
-      if (!google) return [];
-
       if (!sessionTokenRef.current) {
-        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+        sessionTokenRef.current = newSessionToken();
       }
 
-      const service = new google.maps.places.AutocompleteService() as unknown as {
-        getPlacePredictions: (
-          req: Record<string, unknown>,
-          cb: (preds: AutocompletePrediction[] | null, status: string) => void,
-        ) => void;
-      };
-
-      return new Promise<AutocompletePrediction[]>((resolve) => {
-        service.getPlacePredictions(
+      try {
+        const { data, error } = await supabase.functions.invoke<{ predictions: AutocompletePrediction[] }>(
+          'google-places-proxy',
           {
-            input: query,
-            componentRestrictions: { country: 'co' },
-            sessionToken: sessionTokenRef.current,
-          },
-          (predictions, status) => {
-            const result = (status === 'OK' && Array.isArray(predictions)) ? predictions! : [];
-            memoryCache.set(key, result);
-            resolve(result);
+            body: {
+              op: 'autocomplete',
+              input: q,
+              ciudad: ciudadBias,
+              sessionToken: sessionTokenRef.current,
+            },
           },
         );
-      });
+        if (error || !data) return [];
+        const result = Array.isArray(data.predictions) ? data.predictions : [];
+        memoryCache.set(key, result);
+        return result;
+      } catch {
+        return [];
+      }
     },
 
     getDetails: async (place_id: string) => {
-      if (!available) return null;
-      const google = (window as unknown as { google: { maps: { places: { PlacesService: new (attr: HTMLDivElement) => unknown } } } }).google;
-      if (!google) return null;
-
-      const div = document.createElement('div');
-      const service = new google.maps.places.PlacesService(div) as unknown as {
-        getDetails: (
-          req: Record<string, unknown>,
-          cb: (place: PlaceDetailsResult | null, status: string) => void,
-        ) => void;
-      };
-
-      return new Promise<PlaceDetailsResult | null>((resolve) => {
-        service.getDetails(
+      try {
+        const { data, error } = await supabase.functions.invoke<{ result: {
+          place_id: string;
+          formatted_address: string;
+          geometry?: { location?: { lat: number; lng: number } };
+          address_components?: Array<{ long_name: string; short_name: string; types: string[] }>;
+        } | null }>(
+          'google-places-proxy',
           {
-            placeId: place_id,
-            fields: ['place_id', 'formatted_address', 'geometry', 'address_components'],
-            sessionToken: sessionTokenRef.current,
-          },
-          (place, status) => {
-            sessionTokenRef.current = null;
-            resolve(status === 'OK' ? place : null);
+            body: {
+              op: 'details',
+              place_id,
+              sessionToken: sessionTokenRef.current,
+            },
           },
         );
-      });
+        // Cerramos la sesión después del details (cobro consolidado).
+        sessionTokenRef.current = null;
+        if (error || !data?.result) return null;
+        const r = data.result;
+        // Adaptamos location {lat, lng} → {lat: ()=>n, lng: ()=>n} para mantener
+        // compatibilidad con parseGooglePlace (que espera el shape clásico de google.maps).
+        const loc = r.geometry?.location;
+        return {
+          place_id: r.place_id,
+          formatted_address: r.formatted_address,
+          geometry: loc
+            ? { location: { lat: () => loc.lat, lng: () => loc.lng } }
+            : undefined,
+          address_components: r.address_components,
+        };
+      } catch {
+        sessionTokenRef.current = null;
+        return null;
+      }
     },
   };
 }
