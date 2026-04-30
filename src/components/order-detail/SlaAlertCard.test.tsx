@@ -18,11 +18,11 @@ function makeOrder(overrides: Partial<OrderData> = {}): OrderData {
     producto: 'Crema', estado: 'EN REPARTO', fecha: '2026-04-10',
     fechaConf: '2026-04-11', dias: 5, diasConf: 4,
     valor: 50000, flete: 8000, costoProd: 15000, costoDev: 5000,
-    cantidad: 1, direccion: 'Calle 1', novedad: '', guia: 'G123',
+    cantidad: 1, direccion: 'Calle 1', barrio: '', novedad: '', guia: 'G123',
     transportadora: 'TCC', tags: '', departamento: 'Cundinamarca',
     tienda: 'Mi tienda', email: '', novedadSol: false,
     ...overrides,
-  };
+  } as OrderData;
 }
 
 describe('SlaAlertCard', () => {

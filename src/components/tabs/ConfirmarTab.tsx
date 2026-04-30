@@ -227,7 +227,7 @@ export default function ConfirmarTab({ profile }: Props) {
                     .select('*')
                     .eq('estado', 'PENDIENTE CONFIRMACION');
                   if (dbOrders && dbOrders.length > 0) {
-                    const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
+                    const orders = dbOrders.map((o, idx) => dbToOrderData(o as never, idx));
                     setAllOrders(orders);
                     buildWorkQueue(orders);
                     setExcelLoaded(true);

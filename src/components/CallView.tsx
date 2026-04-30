@@ -304,7 +304,7 @@ export default function CallView({ items }: Props) {
                   patch.missing_fields = [];
                   patch.suggested_customer_message = '';
                 }
-                void supabase.from('orders').update(patch).eq('id', o.dbId);
+                void supabase.from('orders').update(patch as never).eq('id', o.dbId);
               }}
             />
             <AddressFeedbackCard
