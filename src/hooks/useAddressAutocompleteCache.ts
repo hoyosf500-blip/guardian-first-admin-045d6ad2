@@ -33,7 +33,7 @@ export async function lookupAutocompleteCache(
     .gt('expires_at', new Date().toISOString())
     .maybeSingle();
 
-  return data ? (data.suggestions as Suggestion[]) : null;
+  return data ? (data.suggestions as unknown as Suggestion[]) : null;
 }
 
 export async function storeAutocompleteCache(
