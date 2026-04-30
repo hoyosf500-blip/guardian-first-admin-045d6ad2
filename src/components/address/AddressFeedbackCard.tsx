@@ -25,7 +25,18 @@ export function AddressFeedbackCard({
   const [copied, setCopied] = useState(false);
   const [overrideChecked, setOverrideChecked] = useState(false);
 
-  if (decision === null) return null;
+  if (decision === null) {
+    // Validador-direcciones: pedidos pre-feature (sync legacy de Dropi/Excel)
+    // entran con decision=null. CallView dispara auto-validación al abrirlos
+    // — mientras tanto mostramos placeholder pulsante para que la operadora
+    // sepa que el sistema está trabajando, en vez de no ver nada.
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden />
+        <span>Validando dirección...</span>
+      </div>
+    );
+  }
 
   if (decision === 'green') {
     return (

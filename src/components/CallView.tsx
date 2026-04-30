@@ -25,6 +25,12 @@ function validarTelefono(phone: string): boolean {
   return clean.length === 10 && clean.startsWith('3');
 }
 
+// Validador-direcciones: guard fire-once-per-order-per-session para evitar
+// que el efecto se dispare en loop si la fila no se actualiza por realtime
+// inmediatamente. Vive a nivel de módulo — sobrevive remounts de CallView
+// (cambios de pestaña), reset solo en refresh de página.
+const autoValidatedOrderIds = new Set<string>();
+
 interface VipInfo {
   isVip: boolean;
   total: number;
@@ -147,6 +153,68 @@ export default function CallView({ items }: Props) {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [o?.dbId, releaseOrder]);
+
+  // Validador-direcciones: auto-validar pedidos pre-feature.
+  // Pedidos sincronizados desde Dropi/Excel ANTES de que el feature shippeara
+  // entran con validation_decision=null. La operadora abre uno y NO ve nada
+  // (la card retornaba null). Aquí disparamos la edge function en background:
+  //   - Solo si decision es null y la dirección tiene largo razonable.
+  //   - Solo una vez por order id por sesión (autoValidatedOrderIds).
+  //   - Con timeout de 10s: si no responde, marcamos el guard igual para
+  //     no mostrar "Validando..." infinito y no reintentar.
+  //   - El UPDATE persiste el resultado; realtime refresca la card.
+  useEffect(() => {
+    if (!o?.dbId) return;
+    if (o.validationDecision !== null) return;
+    if (!o.direccion || o.direccion.trim().length < 5) return;
+    if (o.result) return; // ya gestionado, no quemamos cuota
+    if (autoValidatedOrderIds.has(o.dbId)) return;
+
+    const orderId = o.dbId;
+    autoValidatedOrderIds.add(orderId);
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      // 10s sin respuesta: dejamos el guard puesto y nos rendimos sin
+      // bloquear la UI. Próxima sesión podrá reintentar.
+      cancelled = true;
+    }, 10_000);
+
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke<{
+          decision: 'green' | 'yellow' | 'red' | null;
+          address_kind: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
+          missing_fields: string[];
+          suggested_customer_message: string;
+        }>('dropi-validate-address', {
+          body: {
+            direccion: o.direccion,
+            ciudad: o.ciudad,
+            departamento: o.departamento,
+          },
+        });
+        if (cancelled) return;
+        if (error || !data || !data.decision) return; // sin decisión → no persistimos
+
+        await supabase
+          .from('orders')
+          .update({
+            validation_decision: data.decision,
+            address_kind: data.address_kind ?? null,
+            missing_fields: data.missing_fields ?? [],
+            suggested_customer_message: data.suggested_customer_message ?? '',
+          })
+          .eq('id', orderId);
+      } catch {
+        // silencioso — el guard ya está puesto, no reintentamos en bucle.
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    })();
+
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [o?.dbId, o?.validationDecision, o?.direccion, o?.ciudad, o?.departamento, o?.result]);
 
   if (!items.length || !o) {
     return (

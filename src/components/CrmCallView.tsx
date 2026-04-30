@@ -16,6 +16,12 @@ import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+
+// Validador-direcciones: guard fire-once-per-order-per-session — mismo
+// patrón que en CallView para que la auto-validación no entre en loop si
+// realtime no actualiza la fila inmediatamente.
+const autoValidatedOrderIdsCrm = new Set<string>();
 
 const isManaged = (it: OrderData, managed: Record<string, string>): boolean =>
   !!(it.dbId && managed[it.dbId]);
@@ -98,6 +104,71 @@ export default function CrmCallView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callOrderId, items]);
+
+  // Validador-direcciones: auto-validar pedido pre-feature al verlo.
+  // Mismo patrón que en CallView — pedidos con validation_decision=null
+  // que tienen dirección razonable se validan en background una vez por
+  // sesión; el resultado se persiste y realtime refresca la card.
+  // Hook colocado ANTES del early-return para no violar reglas de hooks.
+  const previewIdx = items.length
+    ? Math.max(0, Math.min(derivedIdx, items.length - 1))
+    : -1;
+  const previewOrder = previewIdx >= 0 ? items[previewIdx] : undefined;
+  const previewDbId = previewOrder?.dbId;
+  const previewDecision = previewOrder?.validationDecision ?? null;
+  const previewDireccion = previewOrder?.direccion ?? '';
+  const previewCiudad = previewOrder?.ciudad ?? '';
+  const previewDept = previewOrder?.departamento ?? '';
+  const previewManaged = previewOrder?.dbId ? Boolean(managed[previewOrder.dbId]) : false;
+
+  useEffect(() => {
+    if (!previewDbId) return;
+    if (previewDecision !== null) return;
+    if (!previewDireccion || previewDireccion.trim().length < 5) return;
+    if (previewManaged) return;
+    if (autoValidatedOrderIdsCrm.has(previewDbId)) return;
+
+    const orderId = previewDbId;
+    autoValidatedOrderIdsCrm.add(orderId);
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => { cancelled = true; }, 10_000);
+
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke<{
+          decision: 'green' | 'yellow' | 'red' | null;
+          address_kind: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
+          missing_fields: string[];
+          suggested_customer_message: string;
+        }>('dropi-validate-address', {
+          body: {
+            direccion: previewDireccion,
+            ciudad: previewCiudad,
+            departamento: previewDept,
+          },
+        });
+        if (cancelled) return;
+        if (error || !data || !data.decision) return;
+
+        await supabase
+          .from('orders')
+          .update({
+            validation_decision: data.decision,
+            address_kind: data.address_kind ?? null,
+            missing_fields: data.missing_fields ?? [],
+            suggested_customer_message: data.suggested_customer_message ?? '',
+          })
+          .eq('id', orderId);
+      } catch {
+        // silencioso — guard ya puesto, no reintenta en bucle.
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    })();
+
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [previewDbId, previewDecision, previewDireccion, previewCiudad, previewDept, previewManaged]);
 
   if (!items.length) {
     return (
