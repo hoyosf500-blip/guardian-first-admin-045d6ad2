@@ -12,8 +12,10 @@ import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
+import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
+import { useAuth } from '@/contexts/AuthContext';
 
 const isManaged = (it: OrderData, managed: Record<string, string>): boolean =>
   !!(it.dbId && managed[it.dbId]);
@@ -66,6 +68,7 @@ function isExcludedFromDelay(estado: string): boolean {
 export default function CrmCallView({
   items, actions, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
 }: Props) {
+  const { isAdmin } = useAuth();
   // BUG B fix: persist the *order id* of the customer being attended, not
   // the array index. When `items` reorders (refresh, sync, filter change)
   // the index points to a different customer; the id stays stable.
@@ -287,17 +290,30 @@ export default function CrmCallView({
             </div>
 
             {o.direccion && (
-              <div className="flex items-start gap-1.5 text-xs">
-                <MapPin size={12} className="mt-0.5 text-muted-foreground/60" />
-                <span className="flex-1 text-muted-foreground">{o.direccion}</span>
-                {/* Validación de dirección — heurística + geocoding (Nominatim/OSM).
-                    Click en el badge abre popover con detalles y posible
-                    ubicación en mapa. Ayuda a la operadora a detectar
-                    direcciones mal escritas antes de despachar. */}
-                <AddressValidationBadge
-                  direccion={o.direccion}
-                  ciudad={o.ciudad}
-                  departamento={o.departamento}
+              <div className="flex flex-col gap-1.5 text-xs">
+                <div className="flex items-start gap-1.5">
+                  <MapPin size={12} className="mt-0.5 text-muted-foreground/60" />
+                  <span className="flex-1 text-muted-foreground">{o.direccion}</span>
+                  {/* Validación de dirección — heurística + geocoding (Nominatim/OSM).
+                      Click en el badge abre popover con detalles y posible
+                      ubicación en mapa. Ayuda a la operadora a detectar
+                      direcciones mal escritas antes de despachar. */}
+                  <AddressValidationBadge
+                    direccion={o.direccion}
+                    ciudad={o.ciudad}
+                    departamento={o.departamento}
+                  />
+                </div>
+                {/* Validador-direcciones v2 (legacy view): solo lectura del
+                    feedback estructurado de la edge function — sin autocomplete
+                    ni override aplicable, esta vista no maneja la confirmación. */}
+                <AddressFeedbackCard
+                  decision={o.validationDecision}
+                  missingFields={o.missingFields ?? []}
+                  suggestedMessage={o.suggestedCustomerMessage}
+                  isAdmin={isAdmin}
+                  carrier={o.transportadora}
+                  onOverrideChange={() => { /* legacy, sin gate */ }}
                 />
               </div>
             )}
