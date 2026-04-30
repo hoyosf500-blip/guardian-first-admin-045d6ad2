@@ -12,6 +12,7 @@ import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
 import DailyReportsView from '@/components/admin/DailyReportsView';
+import { GoogleQuotaWidget } from '@/components/admin/GoogleQuotaWidget';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -506,6 +507,10 @@ export default function AdminTab() {
               </div>
             )}
           </motion.div>
+
+          <div className="my-4 md:col-span-2">
+            <GoogleQuotaWidget />
+          </div>
 
           <SyncPanel onSyncComplete={() => { setSyncKey(k => k + 1); loadFailedSyncs(); }} />
 
