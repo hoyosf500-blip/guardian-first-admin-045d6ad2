@@ -45,10 +45,8 @@ describe('canConfirmOrder', () => {
     expect(r.reason).toMatch(/admin/i);
   });
 
-  it('null decision -> blocked', () => {
-    const r = canConfirmOrder({ ...baseInput, validation_decision: null });
-    expect(r.canConfirm).toBe(false);
-    expect(r.reason).toMatch(/pendiente/i);
+  it('null decision -> can confirm (backwards-compat con pedidos pre-feature)', () => {
+    expect(canConfirmOrder({ ...baseInput, validation_decision: null })).toEqual({ canConfirm: true });
   });
 
   it('phone invalid -> blocked even with override', () => {

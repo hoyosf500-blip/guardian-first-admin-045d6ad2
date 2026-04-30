@@ -37,5 +37,10 @@ export function canConfirmOrder(input: CanConfirmInput): CanConfirmResult {
     return { canConfirm: false, reason: 'Dirección incompleta — falta datos del cliente' };
   }
 
-  return { canConfirm: false, reason: 'Validación pendiente' };
+  // null/undefined: el validador todavía no opinó sobre esta dirección.
+  // Backwards-compat: pedidos viejos que llegaron antes del feature
+  // tienen validation_decision = null. NO los bloqueamos. El validador
+  // solo bloquea cuando tiene evidencia explícita (red) o requiere
+  // confirmación (yellow). null = "sin objeción, dejá pasar".
+  return { canConfirm: true };
 }
