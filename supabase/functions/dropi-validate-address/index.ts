@@ -12,6 +12,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { mapAddressKind } from "./_addressKind.ts";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const NOMINATIM_USER_AGENT = "guardian-first-admin/1.0 (admin@guardianfirst.app)";
@@ -277,6 +278,25 @@ Deno.serve(async (req) => {
   const sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const sb = createClient(sbUrl, sbServiceKey);
 
+  // ── Address kind detection (pickup / rural / urban / unknown) ──
+  const kind = mapAddressKind(direccion);
+
+  // Pickup-office: no requiere validación Google ni dirección detallada.
+  if (kind === "pickup_office") {
+    return new Response(JSON.stringify({
+      ok: true,
+      decision: "green",
+      address_kind: "pickup_office",
+      missing_fields: [],
+      suggested_customer_message: "",
+      // Mantener compatibilidad con el shape ValidationResult original
+      status: "valid",
+      score: 100,
+      issues: [],
+      cached: false,
+    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+
   // ── Lookup de cache ──────────────────────────────────────────
   const { data: cached } = await sb
     .from("address_validations")
@@ -340,6 +360,28 @@ Deno.serve(async (req) => {
   let geocoded: { lat: number; lng: number; display: string } | null = null;
   let status: "valid" | "suspicious" | "invalid";
   let finalScore: number;
+  let decision: "green" | "yellow" | "red" | null = null;
+  let missing_fields: string[] = [];
+  let suggested_customer_message = "";
+
+  // Cap diario server-side: gate antes del fetch a Google.
+  const { data: quotaOK } = await sb.rpc("consume_google_quota", { p_amount_usd: 0.005 });
+  if (!quotaOK) {
+    return new Response(JSON.stringify({
+      ok: true,
+      decision: "yellow",
+      address_kind: kind,
+      missing_fields: [],
+      suggested_customer_message: "",
+      localOnly: true,
+      fallback_reason: "cap_exceeded",
+      // Compatibilidad con shape ValidationResult original
+      status: "suspicious",
+      score: heuristicScore,
+      issues,
+      cached: false,
+    }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
 
   const googleResult = await googleValidateAddress(direccion, ciudad, departamento);
 
@@ -352,6 +394,51 @@ Deno.serve(async (req) => {
     geocoded = await nominatimGeocode(direccion, ciudad, departamento);
     status = decideStatus(heuristicScore, geocoded);
     finalScore = combineScore(heuristicScore, geocoded);
+  }
+
+  // PASO D: Capa Haiku 4.5 sólo para casos ambiguos.
+  // Aproxima `googleResult.suspicious || hasUnconfirmedComponents` con status==="suspicious".
+  if (googleResult && googleResult.status === "suspicious") {
+    const haikuQuotaRes = await sb.rpc("consume_google_quota", { p_amount_usd: 0.0005 });
+    const haikuQuotaOK = haikuQuotaRes?.data === true;
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+
+    if (haikuQuotaOK && anthropicKey) {
+      try {
+        const haikuRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 200,
+            messages: [{
+              role: "user",
+              content: `Eres un analista de logística COD en Colombia. Analiza esta dirección y decide si es entregable.\n\nDirección: ${direccion}\nCiudad: ${ciudad}\nDepartamento: ${departamento}\n\nResponde SOLO con JSON:\n{\n  "decision": "green" | "yellow" | "red",\n  "address_kind": "urban" | "rural" | "pickup_office" | "unknown",\n  "missing_fields": [...],\n  "suggested_customer_message": "Hola, ..."\n}`,
+            }],
+          }),
+        });
+
+        if (haikuRes.ok) {
+          const haikuData = await haikuRes.json();
+          const text = haikuData?.content?.[0]?.text || "";
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            decision = (parsed.decision ?? null) as typeof decision;
+            missing_fields = Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [];
+            suggested_customer_message = typeof parsed.suggested_customer_message === "string"
+              ? parsed.suggested_customer_message
+              : "";
+          }
+        }
+      } catch (_e) {
+        // Si Haiku falla por cualquier razón, no rompemos: seguimos con el resultado de Google.
+      }
+    }
   }
 
   await sb
@@ -378,7 +465,17 @@ Deno.serve(async (req) => {
     cached: false,
   };
 
-  return new Response(JSON.stringify(result), {
+  // Anexar campos del nuevo contrato (decision/address_kind/...) sin romper el shape original.
+  const responseBody = {
+    ...result,
+    ok: true,
+    decision,
+    address_kind: kind,
+    missing_fields,
+    suggested_customer_message,
+  };
+
+  return new Response(JSON.stringify(responseBody), {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
