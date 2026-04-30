@@ -7,6 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
+import { useAuth } from '@/contexts/AuthContext';
+import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
+import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { toast } from 'sonner';
 import { Loader2, User, MapPin, Pencil } from 'lucide-react';
 
@@ -26,8 +29,14 @@ function splitName(full: string): { nombre: string; apellido: string } {
 }
 
 export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }: Props) {
+  const { isAdmin } = useAuth();
   // Pre-populate every field from the current order. Email now lives on
   // OrderData so it survives the hop through dbToOrderData.
+  // Validador-direcciones: el form también arrastra los campos de dirección
+  // estructurada (barrio/lat/lng/place_id/addressKind) y la decisión de
+  // validación. Los inputs de Dropi siguen mandando solo direccion+ciudad,
+  // pero AddressAutocomplete los actualiza para reflejar el nuevo estado en
+  // AddressFeedbackCard sin esperar el round-trip a la edge function.
   const initial = useMemo(() => {
     const { nombre, apellido } = splitName(order.nombre);
     return {
@@ -38,6 +47,15 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
       ciudad: order.ciudad || '',
       direccion: order.direccion || '',
       email: order.email || '',
+      barrio: '' as string | undefined,
+      googlePlaceId: order.googlePlaceId || ('' as string | undefined),
+      lat: undefined as number | null | undefined,
+      lng: undefined as number | null | undefined,
+      addressKind: order.addressKind ?? null,
+      validationDecision: order.validationDecision,
+      missingFields: order.missingFields ?? [],
+      suggestedCustomerMessage: order.suggestedCustomerMessage ?? '',
+      transportadora: order.transportadora || '',
     };
   }, [order]);
 
@@ -278,13 +296,40 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
                 </Select>
               </div>
 
-              <div className="md:col-span-2 space-y-1.5">
+              <div className="md:col-span-2 space-y-2">
                 <Label htmlFor="edit-direccion" className="text-xs">Dirección *</Label>
-                <Input
-                  id="edit-direccion"
+                {/* Validador-direcciones v2: autocomplete de Google Places +
+                    cache de cliente recurrente. Si el operador escribe libre,
+                    queda en source=free_write y la edge function de validación
+                    seguirá generando feedback. */}
+                <AddressAutocomplete
                   value={form.direccion}
-                  onChange={e => setForm(f => ({ ...f, direccion: e.target.value }))}
-                  placeholder="Calle 123 # 45-67, Apto 101"
+                  ciudad={form.ciudad}
+                  customerPhone={form.phone}
+                  onChange={(update) => {
+                    setForm(prev => ({
+                      ...prev,
+                      direccion: update.direccion,
+                      ...(update.barrio !== undefined ? { barrio: update.barrio } : {}),
+                      ...(update.place_id !== undefined ? { googlePlaceId: update.place_id } : {}),
+                      ...(update.lat !== undefined ? { lat: update.lat } : {}),
+                      ...(update.lng !== undefined ? { lng: update.lng } : {}),
+                      addressKind: update.address_kind,
+                      ...(update.source === 'autocomplete' || update.source === 'recurrent_customer' ? {
+                        validationDecision: 'green' as const,
+                        missingFields: [] as string[],
+                        suggestedCustomerMessage: '',
+                      } : {}),
+                    }));
+                  }}
+                />
+                <AddressFeedbackCard
+                  decision={form.validationDecision}
+                  missingFields={form.missingFields ?? []}
+                  suggestedMessage={form.suggestedCustomerMessage ?? ''}
+                  isAdmin={isAdmin}
+                  carrier={form.transportadora}
+                  onOverrideChange={() => { /* EditOrderDialog no aplica gate */ }}
                 />
               </div>
             </div>
