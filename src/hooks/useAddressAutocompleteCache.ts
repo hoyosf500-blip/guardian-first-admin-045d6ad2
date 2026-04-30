@@ -49,7 +49,7 @@ export async function storeAutocompleteCache(
   await supabase
     .from('address_autocomplete_cache')
     .upsert(
-      { query_normalized: norm, ciudad_filter: ciudad ?? '', suggestions, hit_count: 0, expires_at },
+      { query_normalized: norm, ciudad_filter: ciudad ?? '', suggestions: suggestions as never, hit_count: 0, expires_at },
       { onConflict: 'query_normalized,ciudad_filter' },
     );
 }
