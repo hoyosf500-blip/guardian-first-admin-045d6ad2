@@ -17,23 +17,42 @@ export interface AddressFeedbackCardProps {
   isAdmin: boolean;
   onOverrideChange: (overrideChecked: boolean) => void;
   carrier?: string;
+  /**
+   * True mientras la auto-validación está en vuelo. Si decision === null y
+   * loading === true → placeholder pulsante "Validando...". Si decision ===
+   * null y loading === false → estado terminal "Sin validar — escribir libre"
+   * (la card no se queda pulsando para siempre cuando la edge function
+   * devuelve decision:null o el fallback heurístico tampoco resuelve).
+   */
+  loading?: boolean;
 }
 
 export function AddressFeedbackCard({
-  decision, missingFields, suggestedMessage, isAdmin, onOverrideChange, carrier,
+  decision, missingFields, suggestedMessage, isAdmin, onOverrideChange, carrier, loading = false,
 }: AddressFeedbackCardProps) {
   const [copied, setCopied] = useState(false);
   const [overrideChecked, setOverrideChecked] = useState(false);
 
   if (decision === null) {
-    // Validador-direcciones: pedidos pre-feature (sync legacy de Dropi/Excel)
-    // entran con decision=null. CallView dispara auto-validación al abrirlos
-    // — mientras tanto mostramos placeholder pulsante para que la operadora
-    // sepa que el sistema está trabajando, en vez de no ver nada.
+    if (loading) {
+      // Validador-direcciones: pedidos pre-feature (sync legacy de Dropi/Excel)
+      // entran con decision=null. CallView dispara auto-validación al abrirlos
+      // — mientras tanto mostramos placeholder pulsante para que la operadora
+      // sepa que el sistema está trabajando, en vez de no ver nada.
+      return (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden />
+          <span>Validando dirección...</span>
+        </div>
+      );
+    }
+    // Estado terminal: la auto-validación corrió y nadie pudo decidir
+    // (edge function devolvió decision:null o el fallback heurístico tampoco
+    // resolvió). Card estática para que la operadora siga trabajando.
     return (
       <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden />
-        <span>Validando dirección...</span>
+        <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden />
+        <span>Sin validar — escribir libre</span>
       </div>
     );
   }

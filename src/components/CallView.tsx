@@ -18,6 +18,7 @@ import EditOrderDialog from '@/components/EditOrderDialog';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
+import { heuristicValidate } from '@/lib/addressHeuristic';
 
 // Validador-direcciones: helper local para gate de confirmación.
 function validarTelefono(phone: string): boolean {
@@ -87,6 +88,11 @@ export default function CallView({ items }: Props) {
   // Validador-direcciones: override admin-only para destrabar el gate cuando
   // la dirección quedó en yellow/red pero el admin decidió despachar igual.
   const [addressOverride, setAddressOverride] = useState(false);
+  // Validador-direcciones: set de orderIds con auto-validación EN VUELO.
+  // Se usa para alimentar `loading` en AddressFeedbackCard — cuando el
+  // efecto termina (con éxito, error, o timeout), removemos el id y la
+  // card pasa a estado terminal ("Sin validar") en vez de quedarse pulsando.
+  const [validatingOrderIds, setValidatingOrderIds] = useState<Set<string>>(() => new Set());
 
   const o = items[Math.min(callIdx, items.length - 1)];
 
@@ -160,9 +166,13 @@ export default function CallView({ items }: Props) {
   // (la card retornaba null). Aquí disparamos la edge function en background:
   //   - Solo si decision es null y la dirección tiene largo razonable.
   //   - Solo una vez por order id por sesión (autoValidatedOrderIds).
-  //   - Con timeout de 10s: si no responde, marcamos el guard igual para
-  //     no mostrar "Validando..." infinito y no reintentar.
-  //   - El UPDATE persiste el resultado; realtime refresca la card.
+  //   - Mapeamos AMBAS shapes de respuesta (decision || status legacy).
+  //   - Si la edge function no resuelve (timeout, error, decision=null sin
+  //     status), caemos a `heuristicValidate` local — sin Google ni Haiku —
+  //     para que el badge SIEMPRE termine en green/yellow/red en vez de
+  //     trabarse en "Validando...".
+  //   - El UPDATE persiste el resultado (best-effort); realtime refresca la
+  //     card. Si el UPDATE falla, igual sacamos al order del set de loading.
   useEffect(() => {
     if (!o?.dbId) return;
     if (o.validationDecision !== null) return;
@@ -171,49 +181,131 @@ export default function CallView({ items }: Props) {
     if (autoValidatedOrderIds.has(o.dbId)) return;
 
     const orderId = o.dbId;
+    const direccion = o.direccion;
+    const ciudad = o.ciudad;
+    const departamento = o.departamento;
     autoValidatedOrderIds.add(orderId);
 
+    setValidatingOrderIds((prev) => {
+      if (prev.has(orderId)) return prev;
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+    const stopLoading = () => {
+      setValidatingOrderIds((prev) => {
+        if (!prev.has(orderId)) return prev;
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    };
+
     let cancelled = false;
-    const timeoutId = setTimeout(() => {
-      // 10s sin respuesta: dejamos el guard puesto y nos rendimos sin
-      // bloquear la UI. Próxima sesión podrá reintentar.
+    let edgeReturned = false;
+    // Fallback heurístico tras 3s sin respuesta de la edge function.
+    // No cancelamos la edge function (puede llegar tarde y persistir un
+    // resultado mejor) — solo nos aseguramos de que la card se desbloquee.
+    const fallbackTimerId = setTimeout(() => {
+      if (cancelled || edgeReturned) return;
+      void runHeuristicFallback();
+    }, 3_000);
+    // Hard stop a los 10s para liberar el loading aunque todo haya fallado.
+    const hardStopTimerId = setTimeout(() => {
       cancelled = true;
+      stopLoading();
     }, 10_000);
+
+    const decisionFromHeuristic = (score: number): 'green' | 'yellow' | 'red' => {
+      if (score >= 80) return 'green';
+      if (score >= 50) return 'yellow';
+      return 'red';
+    };
+
+    const runHeuristicFallback = async () => {
+      if (cancelled) return;
+      const result = heuristicValidate(direccion);
+      const decision = result.decision ?? decisionFromHeuristic(result.score);
+      const address_kind = result.address_kind ?? null;
+      const missing_fields = result.missing_fields ?? [];
+      const suggested_customer_message = result.suggested_customer_message ?? '';
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            validation_decision: decision,
+            address_kind,
+            missing_fields,
+            suggested_customer_message,
+          })
+          .eq('id', orderId);
+      } catch {
+        // best-effort — si falla, al menos liberamos el loading
+      } finally {
+        if (!cancelled) stopLoading();
+      }
+    };
 
     (async () => {
       try {
         const { data, error } = await supabase.functions.invoke<{
-          decision: 'green' | 'yellow' | 'red' | null;
-          address_kind: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
-          missing_fields: string[];
-          suggested_customer_message: string;
+          // Shape nueva (post Group C):
+          decision?: 'green' | 'yellow' | 'red' | 'pickup_office' | null;
+          address_kind?: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
+          missing_fields?: string[];
+          suggested_customer_message?: string;
+          // Shape legacy (coexiste):
+          status?: 'valid' | 'suspicious' | 'invalid';
         }>('dropi-validate-address', {
-          body: {
-            direccion: o.direccion,
-            ciudad: o.ciudad,
-            departamento: o.departamento,
-          },
+          body: { direccion, ciudad, departamento },
         });
+        edgeReturned = true;
         if (cancelled) return;
-        if (error || !data || !data.decision) return; // sin decisión → no persistimos
-
-        await supabase
-          .from('orders')
-          .update({
-            validation_decision: data.decision,
-            address_kind: data.address_kind ?? null,
-            missing_fields: data.missing_fields ?? [],
-            suggested_customer_message: data.suggested_customer_message ?? '',
-          })
-          .eq('id', orderId);
+        if (error || !data) {
+          await runHeuristicFallback();
+          return;
+        }
+        // Mapear ambas shapes: decision tiene prioridad; si null, derivar de status.
+        const decision: 'green' | 'yellow' | 'red' | 'pickup_office' | null =
+          data.decision ?? (
+            data.status === 'valid' ? 'green' :
+            data.status === 'suspicious' ? 'yellow' :
+            data.status === 'invalid' ? 'red' :
+            null
+          );
+        if (!decision) {
+          await runHeuristicFallback();
+          return;
+        }
+        try {
+          await supabase
+            .from('orders')
+            .update({
+              validation_decision: decision,
+              address_kind: data.address_kind ?? null,
+              missing_fields: data.missing_fields ?? [],
+              suggested_customer_message: data.suggested_customer_message ?? '',
+            })
+            .eq('id', orderId);
+        } catch {
+          // best-effort
+        }
       } catch {
-        // silencioso — el guard ya está puesto, no reintentamos en bucle.
+        edgeReturned = true;
+        if (!cancelled) await runHeuristicFallback();
       } finally {
-        clearTimeout(timeoutId);
+        clearTimeout(fallbackTimerId);
+        clearTimeout(hardStopTimerId);
+        if (!cancelled) stopLoading();
       }
     })();
 
-    return () => { cancelled = true; clearTimeout(timeoutId); };
+    return () => {
+      cancelled = true;
+      clearTimeout(fallbackTimerId);
+      clearTimeout(hardStopTimerId);
+      stopLoading();
+    };
   }, [o?.dbId, o?.validationDecision, o?.direccion, o?.ciudad, o?.departamento, o?.result]);
 
   if (!items.length || !o) {
@@ -382,6 +474,7 @@ export default function CallView({ items }: Props) {
               isAdmin={isAdmin}
               carrier={o.transportadora}
               onOverrideChange={setAddressOverride}
+              loading={Boolean(o.dbId && validatingOrderIds.has(o.dbId))}
             />
           </div>
         ) : (

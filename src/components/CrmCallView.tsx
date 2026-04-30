@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Phone as PhoneIcon, MessageSquare,
@@ -13,6 +13,7 @@ import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
+import { heuristicValidate } from '@/lib/addressHeuristic';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -105,6 +106,11 @@ export default function CrmCallView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callOrderId, items]);
 
+  // Validador-direcciones: orderIds con auto-validación EN VUELO. Alimenta el
+  // prop `loading` de AddressFeedbackCard para evitar que se quede pulsando
+  // "Validando..." cuando la edge function no resuelve.
+  const [validatingOrderIds, setValidatingOrderIds] = useState<Set<string>>(() => new Set());
+
   // Validador-direcciones: auto-validar pedido pre-feature al verlo.
   // Mismo patrón que en CallView — pedidos con validation_decision=null
   // que tienen dirección razonable se validan en background una vez por
@@ -129,45 +135,126 @@ export default function CrmCallView({
     if (autoValidatedOrderIdsCrm.has(previewDbId)) return;
 
     const orderId = previewDbId;
+    const direccion = previewDireccion;
+    const ciudad = previewCiudad;
+    const departamento = previewDept;
     autoValidatedOrderIdsCrm.add(orderId);
 
+    setValidatingOrderIds((prev) => {
+      if (prev.has(orderId)) return prev;
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+    const stopLoading = () => {
+      setValidatingOrderIds((prev) => {
+        if (!prev.has(orderId)) return prev;
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    };
+
     let cancelled = false;
-    const timeoutId = setTimeout(() => { cancelled = true; }, 10_000);
+    let edgeReturned = false;
+    // Fallback heurístico tras 3s. El badge SIEMPRE termina en green/yellow/red
+    // — sin Google ni Haiku, lógica 100% local.
+    const fallbackTimerId = setTimeout(() => {
+      if (cancelled || edgeReturned) return;
+      void runHeuristicFallback();
+    }, 3_000);
+    const hardStopTimerId = setTimeout(() => {
+      cancelled = true;
+      stopLoading();
+    }, 10_000);
+
+    const decisionFromHeuristic = (score: number): 'green' | 'yellow' | 'red' => {
+      if (score >= 80) return 'green';
+      if (score >= 50) return 'yellow';
+      return 'red';
+    };
+
+    const runHeuristicFallback = async () => {
+      if (cancelled) return;
+      const result = heuristicValidate(direccion);
+      const decision = result.decision ?? decisionFromHeuristic(result.score);
+      const address_kind = result.address_kind ?? null;
+      const missing_fields = result.missing_fields ?? [];
+      const suggested_customer_message = result.suggested_customer_message ?? '';
+      try {
+        await supabase
+          .from('orders')
+          .update({
+            validation_decision: decision,
+            address_kind,
+            missing_fields,
+            suggested_customer_message,
+          })
+          .eq('id', orderId);
+      } catch {
+        // best-effort
+      } finally {
+        if (!cancelled) stopLoading();
+      }
+    };
 
     (async () => {
       try {
         const { data, error } = await supabase.functions.invoke<{
-          decision: 'green' | 'yellow' | 'red' | null;
-          address_kind: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
-          missing_fields: string[];
-          suggested_customer_message: string;
+          decision?: 'green' | 'yellow' | 'red' | 'pickup_office' | null;
+          address_kind?: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
+          missing_fields?: string[];
+          suggested_customer_message?: string;
+          status?: 'valid' | 'suspicious' | 'invalid';
         }>('dropi-validate-address', {
-          body: {
-            direccion: previewDireccion,
-            ciudad: previewCiudad,
-            departamento: previewDept,
-          },
+          body: { direccion, ciudad, departamento },
         });
+        edgeReturned = true;
         if (cancelled) return;
-        if (error || !data || !data.decision) return;
-
-        await supabase
-          .from('orders')
-          .update({
-            validation_decision: data.decision,
-            address_kind: data.address_kind ?? null,
-            missing_fields: data.missing_fields ?? [],
-            suggested_customer_message: data.suggested_customer_message ?? '',
-          })
-          .eq('id', orderId);
+        if (error || !data) {
+          await runHeuristicFallback();
+          return;
+        }
+        const decision: 'green' | 'yellow' | 'red' | 'pickup_office' | null =
+          data.decision ?? (
+            data.status === 'valid' ? 'green' :
+            data.status === 'suspicious' ? 'yellow' :
+            data.status === 'invalid' ? 'red' :
+            null
+          );
+        if (!decision) {
+          await runHeuristicFallback();
+          return;
+        }
+        try {
+          await supabase
+            .from('orders')
+            .update({
+              validation_decision: decision,
+              address_kind: data.address_kind ?? null,
+              missing_fields: data.missing_fields ?? [],
+              suggested_customer_message: data.suggested_customer_message ?? '',
+            })
+            .eq('id', orderId);
+        } catch {
+          // best-effort
+        }
       } catch {
-        // silencioso — guard ya puesto, no reintenta en bucle.
+        edgeReturned = true;
+        if (!cancelled) await runHeuristicFallback();
       } finally {
-        clearTimeout(timeoutId);
+        clearTimeout(fallbackTimerId);
+        clearTimeout(hardStopTimerId);
+        if (!cancelled) stopLoading();
       }
     })();
 
-    return () => { cancelled = true; clearTimeout(timeoutId); };
+    return () => {
+      cancelled = true;
+      clearTimeout(fallbackTimerId);
+      clearTimeout(hardStopTimerId);
+      stopLoading();
+    };
   }, [previewDbId, previewDecision, previewDireccion, previewCiudad, previewDept, previewManaged]);
 
   if (!items.length) {
@@ -385,6 +472,7 @@ export default function CrmCallView({
                   isAdmin={isAdmin}
                   carrier={o.transportadora}
                   onOverrideChange={() => { /* legacy, sin gate */ }}
+                  loading={Boolean(o.dbId && validatingOrderIds.has(o.dbId))}
                 />
               </div>
             )}
