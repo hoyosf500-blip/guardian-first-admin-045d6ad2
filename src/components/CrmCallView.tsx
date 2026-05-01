@@ -182,6 +182,16 @@ export default function CrmCallView({
     ) {
       autoValidatedOrderIdsCrm.delete(previewDbId);
     }
+    // Retry stale-null: si el ID está marcado como ya-validado pero la decision
+    // quedó null (effect anterior se disparó pero falló silenciosamente),
+    // permitir un nuevo intento.
+    if (
+      previewDbId &&
+      autoValidatedOrderIdsCrm.has(previewDbId) &&
+      previewDecision === null
+    ) {
+      autoValidatedOrderIdsCrm.delete(previewDbId);
+    }
     if (autoValidatedOrderIdsCrm.has(previewDbId)) return;
 
     const orderId = previewDbId;
@@ -210,15 +220,26 @@ export default function CrmCallView({
 
     let cancelled = false;
     let edgeReturned = false;
+    let dbWritten = false;
     // Fallback heurístico tras 3s. El badge SIEMPRE termina en green/yellow/red
     // — sin Google ni Haiku, lógica 100% local.
     const fallbackTimerId = setTimeout(() => {
       if (cancelled || edgeReturned) return;
       void runHeuristicFallback();
     }, 3_000);
+    // Hard stop a los 10s: si NADIE escribió DB, forzar heurística como
+    // último recurso para que la card NUNCA termine en "Sin validar".
     const hardStopTimerId = setTimeout(() => {
-      cancelled = true;
-      stopLoading();
+      if (cancelled) return;
+      if (!dbWritten) {
+        void runHeuristicFallback().finally(() => {
+          cancelled = true;
+          stopLoading();
+        });
+      } else {
+        cancelled = true;
+        stopLoading();
+      }
     }, 10_000);
 
     const decisionFromHeuristic = (score: number): 'green' | 'yellow' | 'red' => {
@@ -254,6 +275,7 @@ export default function CrmCallView({
             suggested_customer_message,
           })
           .eq('id', orderId);
+        dbWritten = true;
       } catch {
         // best-effort
       } finally {
@@ -343,6 +365,7 @@ export default function CrmCallView({
               // suggested_address: data.suggested_address ?? null,
             })
             .eq('id', orderId);
+          dbWritten = true;
         } catch {
           // best-effort
         }

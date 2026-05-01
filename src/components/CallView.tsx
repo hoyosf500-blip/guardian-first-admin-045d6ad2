@@ -230,6 +230,18 @@ export default function CallView({ items }: Props) {
     ) {
       autoValidatedOrderIds.delete(o.dbId);
     }
+    // Retry stale-null: si el ID está marcado como ya-validado pero la
+    // decision quedó null (effect anterior se disparó pero falló silenciosamente
+    // — RLS, red caída, edge function no respondió, etc.), removerlo del Set
+    // para permitir un nuevo intento. Cubre el caso "Sin validar — escribir libre"
+    // que el usuario reportó en pedidos como Gustavo Zambrano (Pasto).
+    if (
+      o.dbId &&
+      autoValidatedOrderIds.has(o.dbId) &&
+      o.validationDecision === null
+    ) {
+      autoValidatedOrderIds.delete(o.dbId);
+    }
     if (autoValidatedOrderIds.has(o.dbId)) return;
 
     const orderId = o.dbId;
@@ -259,6 +271,7 @@ export default function CallView({ items }: Props) {
 
     let cancelled = false;
     let edgeReturned = false;
+    let dbWritten = false;
     // Fallback heurístico tras 3s sin respuesta de la edge function.
     // No cancelamos la edge function (puede llegar tarde y persistir un
     // resultado mejor) — solo nos aseguramos de que la card se desbloquee.
@@ -266,10 +279,21 @@ export default function CallView({ items }: Props) {
       if (cancelled || edgeReturned) return;
       void runHeuristicFallback();
     }, 3_000);
-    // Hard stop a los 10s para liberar el loading aunque todo haya fallado.
+    // Hard stop a los 10s: si NADIE escribió DB todavía (edge function no
+    // respondió, fallback no corrió, todo falló silenciosamente), forzar
+    // la heurística como último recurso para que la card NUNCA termine en
+    // "Sin validar". Solo después liberamos el loading.
     const hardStopTimerId = setTimeout(() => {
-      cancelled = true;
-      stopLoading();
+      if (cancelled) return;
+      if (!dbWritten) {
+        void runHeuristicFallback().finally(() => {
+          cancelled = true;
+          stopLoading();
+        });
+      } else {
+        cancelled = true;
+        stopLoading();
+      }
     }, 10_000);
 
     const decisionFromHeuristic = (score: number): 'green' | 'yellow' | 'red' => {
@@ -305,6 +329,7 @@ export default function CallView({ items }: Props) {
             suggested_customer_message,
           })
           .eq('id', orderId);
+        dbWritten = true;
       } catch {
         // best-effort — si falla, al menos liberamos el loading
       } finally {
@@ -400,6 +425,7 @@ export default function CallView({ items }: Props) {
               // suggested_address: data.suggested_address ?? null,
             })
             .eq('id', orderId);
+          dbWritten = true;
         } catch {
           // best-effort
         }
