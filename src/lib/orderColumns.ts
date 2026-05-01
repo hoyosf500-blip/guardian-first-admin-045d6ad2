@@ -7,4 +7,4 @@ export const ORDER_COLUMNS =
   'cantidad, direccion, novedad, guia, transportadora, tags, tienda, ' +
   'novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by, ' +
   'validation_decision, address_kind, missing_fields, suggested_customer_message, ' +
-  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed';
+  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed, suggested_address';

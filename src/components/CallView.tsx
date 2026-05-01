@@ -294,6 +294,7 @@ export default function CallView({ items }: Props) {
           address_kind?: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
           missing_fields?: string[];
           suggested_customer_message?: string;
+          suggested_address?: string | null;
           // Shape legacy (coexiste):
           status?: 'valid' | 'suspicious' | 'invalid';
         }>('dropi-validate-address', {
@@ -350,6 +351,7 @@ export default function CallView({ items }: Props) {
               address_kind: data.address_kind ?? null,
               missing_fields: final_missing_fields,
               suggested_customer_message: final_suggested_message,
+              suggested_address: data.suggested_address ?? null,
             })
             .eq('id', orderId);
         } catch {
@@ -535,6 +537,14 @@ export default function CallView({ items }: Props) {
             <AddressFeedbackCard
               decision={o.validationDecision}
               missingFields={o.missingFields ?? []}
+              suggestedAddress={o.suggestedAddress}
+              onApplySuggestion={o.suggestedAddress ? () => {
+                if (!o.dbId) return;
+                void supabase.from('orders').update({
+                  direccion: o.suggestedAddress,
+                  validation_decision: null, // re-validar con la dirección nueva
+                }).eq('id', o.dbId);
+              } : undefined}
               isAdmin={isAdmin}
               carrier={o.transportadora}
               onOverrideChange={setAddressOverride}

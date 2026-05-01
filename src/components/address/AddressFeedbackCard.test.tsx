@@ -37,4 +37,16 @@ describe('AddressFeedbackCard', () => {
     render(<AddressFeedbackCard {...baseProps} decision="red" missingFields={['placa']} isAdmin={false} />);
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
+
+  it('muestra sugerencia cuando suggestedAddress está poblado y decision es red', () => {
+    render(<AddressFeedbackCard
+      decision="red"
+      missingFields={['numero_casa']}
+      suggestedAddress="Calle 50 # 23-45, Barrio Laureles, Medellín"
+      isAdmin={false}
+      onOverrideChange={() => {}}
+    />);
+    expect(screen.getByText('¿Quisiste decir?')).toBeInTheDocument();
+    expect(screen.getByText(/Calle 50 # 23-45/)).toBeInTheDocument();
+  });
 });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, AlertTriangle, AlertCircle, Store } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 
 const FIELD_LABEL_ES: Record<string, string> = {
@@ -21,6 +22,11 @@ export interface AddressFeedbackCardProps {
   /** @deprecated Mensaje WhatsApp eliminado del UI; la operadora improvisa.
    *  Mantenemos el prop opcional para no romper consumidores que aún lo pasan. */
   suggestedMessage?: string;
+  /** Dirección sugerida (Google formattedAddress o Haiku) — render como
+   *  "¿Quisiste decir: <suggestedAddress>?" en badges yellow/red. */
+  suggestedAddress?: string | null;
+  /** Callback al hacer click en "Aplicar" sobre la sugerencia. */
+  onApplySuggestion?: () => void;
   isAdmin: boolean;
   onOverrideChange: (overrideChecked: boolean) => void;
   carrier?: string;
@@ -35,7 +41,7 @@ export interface AddressFeedbackCardProps {
 }
 
 export function AddressFeedbackCard({
-  decision, missingFields, isAdmin, onOverrideChange, carrier, loading = false,
+  decision, missingFields, suggestedAddress, onApplySuggestion, isAdmin, onOverrideChange, carrier, loading = false,
 }: AddressFeedbackCardProps) {
   const [overrideChecked, setOverrideChecked] = useState(false);
 
@@ -83,16 +89,29 @@ export function AddressFeedbackCard({
 
   if (decision === 'yellow') {
     return (
-      <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-        <div className="mb-1 flex items-center gap-2 text-warning font-medium">
-          <AlertTriangle size={14} />
-          <span>Confirmar con cliente:</span>
+      <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm space-y-3">
+        <div>
+          <div className="mb-1 flex items-center gap-2 text-warning font-medium">
+            <AlertTriangle size={14} />
+            <span>Confirmar con cliente:</span>
+          </div>
+          <ul className="ml-6 list-disc text-foreground">
+            {missingFields.length > 0
+              ? missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)
+              : <li>Verifica datos clave antes de despachar</li>}
+          </ul>
         </div>
-        <ul className="ml-6 list-disc text-foreground">
-          {missingFields.length > 0
-            ? missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)
-            : <li>Verifica datos clave antes de despachar</li>}
-        </ul>
+        {suggestedAddress && (
+          <div className="rounded bg-card/50 border border-border p-2 text-xs space-y-1.5">
+            <div className="font-medium text-foreground">¿Quisiste decir?</div>
+            <div className="text-muted-foreground">{suggestedAddress}</div>
+            {onApplySuggestion && (
+              <Button size="sm" variant="outline" onClick={onApplySuggestion}>
+                Aplicar
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -113,6 +132,18 @@ export function AddressFeedbackCard({
           {missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)}
         </ul>
       </div>
+
+      {suggestedAddress && (
+        <div className="rounded bg-card/50 border border-border p-2 text-xs space-y-1.5">
+          <div className="font-medium text-foreground">¿Quisiste decir?</div>
+          <div className="text-muted-foreground">{suggestedAddress}</div>
+          {onApplySuggestion && (
+            <Button size="sm" variant="outline" onClick={onApplySuggestion}>
+              Aplicar
+            </Button>
+          )}
+        </div>
+      )}
 
       {isAdmin && (
         <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">

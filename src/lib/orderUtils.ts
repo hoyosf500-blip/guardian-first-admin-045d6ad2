@@ -51,6 +51,7 @@ export interface OrderData {
   addressKind: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
   missingFields: string[];
   suggestedCustomerMessage: string;
+  suggestedAddress: string | null;
   addressParsed: Record<string, unknown> | null;
 }
 
@@ -95,6 +96,7 @@ export interface DbOrderRow {
   address_kind?: 'urban' | 'rural' | 'pickup_office' | 'unknown' | null;
   missing_fields?: string[] | null;
   suggested_customer_message?: string | null;
+  suggested_address?: string | null;
   address_parsed?: Record<string, unknown> | null;
 }
 
@@ -125,6 +127,7 @@ export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
     addressKind: o.address_kind ?? null,
     missingFields: Array.isArray(o.missing_fields) ? o.missing_fields : [],
     suggestedCustomerMessage: o.suggested_customer_message || '',
+    suggestedAddress: o.suggested_address ?? null,
     addressParsed: (o.address_parsed as Record<string, unknown>) ?? null,
   };
 }
@@ -417,6 +420,7 @@ export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[]
       addressKind: null,
       missingFields: [],
       suggestedCustomerMessage: '',
+      suggestedAddress: null,
       addressParsed: null,
     };
   });

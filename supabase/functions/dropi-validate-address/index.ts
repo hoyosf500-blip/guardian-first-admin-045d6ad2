@@ -289,6 +289,7 @@ Deno.serve(async (req) => {
       address_kind: "pickup_office",
       missing_fields: [],
       suggested_customer_message: "",
+      suggested_address: null,
       // Mantener compatibilidad con el shape ValidationResult original
       status: "valid",
       score: 100,
@@ -363,6 +364,7 @@ Deno.serve(async (req) => {
   let decision: "green" | "yellow" | "red" | null = null;
   let missing_fields: string[] = [];
   let suggested_customer_message = "";
+  let suggested_address: string | null = null;
 
   // Cap diario server-side: gate antes del fetch a Google.
   const { data: quotaOK } = await sb.rpc("consume_google_quota", { p_amount_usd: 0.005 });
@@ -373,6 +375,7 @@ Deno.serve(async (req) => {
       address_kind: kind,
       missing_fields: [],
       suggested_customer_message: "",
+      suggested_address: null,
       localOnly: true,
       fallback_reason: "cap_exceeded",
       // Compatibilidad con shape ValidationResult original
@@ -389,6 +392,9 @@ Deno.serve(async (req) => {
     status = googleResult.status;
     finalScore = googleResult.score;
     geocoded = googleResult.geocoded;
+    // Cuando Google devuelve un formattedAddress (geocoded.display), lo
+    // usamos como sugerencia para el badge "¿Quisiste decir?".
+    suggested_address = googleResult.geocoded?.display ?? null;
   } else {
     // PASO C: Fallback a Nominatim/OSM
     geocoded = await nominatimGeocode(direccion, ciudad, departamento);
@@ -417,7 +423,7 @@ Deno.serve(async (req) => {
             max_tokens: 200,
             messages: [{
               role: "user",
-              content: `Eres un analista de logística COD en Colombia. Analiza esta dirección y decide si es entregable.\n\nDirección: ${direccion}\nCiudad: ${ciudad}\nDepartamento: ${departamento}\n\nResponde SOLO con JSON:\n{\n  "decision": "green" | "yellow" | "red",\n  "address_kind": "urban" | "rural" | "pickup_office" | "unknown",\n  "missing_fields": [...],\n  "suggested_customer_message": "Hola, ..."\n}`,
+              content: `Eres un analista de logística COD en Colombia. Analiza esta dirección y decide si es entregable.\n\nDirección: ${direccion}\nCiudad: ${ciudad}\nDepartamento: ${departamento}\n\nResponde SOLO con JSON:\n{\n  "decision": "green" | "yellow" | "red",\n  "address_kind": "urban" | "rural" | "pickup_office" | "unknown",\n  "missing_fields": [...],\n  "suggested_customer_message": "Hola, ...",\n  "suggested_address": "<dirección corregida si podés sugerirla, en formato 'Calle X # Y-Z, Barrio, Ciudad' — null si no podés sugerir>"\n}`,
             }],
           }),
         });
@@ -433,6 +439,12 @@ Deno.serve(async (req) => {
             suggested_customer_message = typeof parsed.suggested_customer_message === "string"
               ? parsed.suggested_customer_message
               : "";
+            // Haiku puede sobreescribir la sugerencia de Google si tiene una
+            // mejor (formato más limpio). Si Haiku no devuelve nada, mantenemos
+            // la de Google (suggested_address ya fue seteado arriba).
+            if (typeof parsed.suggested_address === "string" && parsed.suggested_address.trim()) {
+              suggested_address = parsed.suggested_address.trim();
+            }
           }
         }
       } catch (_e) {
@@ -473,6 +485,7 @@ Deno.serve(async (req) => {
     address_kind: kind,
     missing_fields,
     suggested_customer_message,
+    suggested_address,
   };
 
   return new Response(JSON.stringify(responseBody), {
