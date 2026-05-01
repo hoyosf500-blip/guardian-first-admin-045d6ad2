@@ -533,7 +533,6 @@ export default function CrmCallView({
                 <AddressFeedbackCard
                   decision={o.validationDecision}
                   missingFields={o.missingFields ?? []}
-                  suggestedMessage={o.suggestedCustomerMessage}
                   isAdmin={isAdmin}
                   carrier={o.transportadora}
                   onOverrideChange={() => { /* legacy, sin gate */ }}

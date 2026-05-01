@@ -535,7 +535,6 @@ export default function CallView({ items }: Props) {
             <AddressFeedbackCard
               decision={o.validationDecision}
               missingFields={o.missingFields ?? []}
-              suggestedMessage={o.suggestedCustomerMessage}
               isAdmin={isAdmin}
               carrier={o.transportadora}
               onOverrideChange={setAddressOverride}

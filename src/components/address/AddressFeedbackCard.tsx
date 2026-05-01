@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Check, AlertTriangle, AlertCircle, Store, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Check, AlertTriangle, AlertCircle, Store } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 const FIELD_LABEL_ES: Record<string, string> = {
@@ -19,7 +18,9 @@ const FIELD_LABEL_ES: Record<string, string> = {
 export interface AddressFeedbackCardProps {
   decision: 'green' | 'yellow' | 'red' | 'pickup_office' | null;
   missingFields: string[];
-  suggestedMessage: string;
+  /** @deprecated Mensaje WhatsApp eliminado del UI; la operadora improvisa.
+   *  Mantenemos el prop opcional para no romper consumidores que aún lo pasan. */
+  suggestedMessage?: string;
   isAdmin: boolean;
   onOverrideChange: (overrideChecked: boolean) => void;
   carrier?: string;
@@ -34,9 +35,8 @@ export interface AddressFeedbackCardProps {
 }
 
 export function AddressFeedbackCard({
-  decision, missingFields, suggestedMessage, isAdmin, onOverrideChange, carrier, loading = false,
+  decision, missingFields, isAdmin, onOverrideChange, carrier, loading = false,
 }: AddressFeedbackCardProps) {
-  const [copied, setCopied] = useState(false);
   const [overrideChecked, setOverrideChecked] = useState(false);
 
   if (decision === null) {
@@ -97,14 +97,6 @@ export function AddressFeedbackCard({
     );
   }
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(suggestedMessage);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* ignore */ }
-  };
-
   const handleOverride = (checked: boolean) => {
     setOverrideChecked(checked);
     onOverrideChange(checked);
@@ -121,19 +113,6 @@ export function AddressFeedbackCard({
           {missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)}
         </ul>
       </div>
-
-      {suggestedMessage && (
-        <div>
-          <div className="mb-1 font-medium text-foreground">Mensaje WhatsApp sugerido:</div>
-          <div className="rounded bg-card border border-border p-2 text-xs text-muted-foreground whitespace-pre-wrap">
-            {suggestedMessage}
-          </div>
-          <Button size="sm" variant="outline" className="mt-2" onClick={handleCopy}>
-            <Copy size={12} className="mr-1" />
-            {copied ? 'Copiado' : 'Copiar'}
-          </Button>
-        </div>
-      )}
 
       {isAdmin && (
         <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
