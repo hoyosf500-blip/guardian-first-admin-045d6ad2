@@ -40,6 +40,15 @@ const autoValidatedOrderIds = new Set<string>();
 // Evita re-disparar el UPDATE en cada render si realtime tarda en refrescar.
 const pickupOverrideAppliedIds = new Set<string>();
 
+// Validador-direcciones: ids con stale-green override ya aplicado en sesión.
+// Pedidos que tienen validation_decision='green' persistido en DB de un run
+// viejo, pero la heurística client-side actual los marcaría yellow/red (ej. el
+// fix de placa canónica de b4ccf19 capó el score a 65 cuando NO hay placa
+// con guion explícito). El auto-validate effect skipea pedidos green, así que
+// se quedan stale. Este override re-evalúa con la heurística local (sin red,
+// sin Google) y corrige DB si difiere. Idempotente vía Set módulo-level.
+const staleGreenOverrideIds = new Set<string>();
+
 interface VipInfo {
   isVip: boolean;
   total: number;
@@ -424,6 +433,45 @@ export default function CallView({ items }: Props) {
       .eq('id', o.dbId);
   }, [o?.dbId, o?.direccion, o?.validationDecision]);
 
+  // Validador-direcciones: stale-green override client-side.
+  // Caso real Brayan Uni — dirección "Cll4 13 38 Apartamento." tiene
+  // validation_decision='green' en DB (run viejo) pero la heurística stricter
+  // actual (post b4ccf19 — capeo a 65 sin placa canónica con guion) la
+  // marcaría yellow. El auto-validate effect skipea pedidos green y nunca se
+  // corrigen. Este efecto re-evalúa con `heuristicValidate` local; si la
+  // heurística NO dice green, hacemos UPDATE corrigiendo a la decision
+  // client-side. NO llama edge function — solo heurística local.
+  useEffect(() => {
+    if (!o?.dbId || !o?.direccion) return;
+    if (o.validationDecision !== 'green') return; // solo green
+    if (staleGreenOverrideIds.has(o.dbId)) return;
+
+    // Si la heurística client-side da pickup_office, ya lo maneja el pickup
+    // override; no pisar.
+    const detectedKind = mapAddressKind(o.direccion);
+    if (detectedKind === 'pickup_office') return;
+
+    // Re-correr heurística stricter. Si dice green, OK — quedamos en green.
+    // Si no, override.
+    const heur = heuristicValidate(o.direccion);
+    if (heur.decision === 'green') return;
+
+    staleGreenOverrideIds.add(o.dbId);
+    const decision = heur.decision ?? 'yellow';
+    const missing_fields = heur.missing_fields ?? issuesToMissingFields(heur.issues ?? []);
+    void supabase
+      .from('orders')
+      .update({
+        validation_decision: decision,
+        address_kind: heur.address_kind ?? null,
+        missing_fields,
+        // suggested_customer_message: ya no se renderiza en UI pero la columna
+        // existe; lo limpiamos para no exponer texto stale.
+        suggested_customer_message: '',
+      })
+      .eq('id', o.dbId);
+  }, [o?.dbId, o?.direccion, o?.validationDecision]);
+
   if (!items.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -436,14 +484,20 @@ export default function CallView({ items }: Props) {
   const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
   const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
 
-  // Validador-direcciones: pickup override visual inmediato. Mientras el
-  // effect de override hace el UPDATE + realtime refresca, mostramos
-  // pickup_office localmente para no exponer a la operadora 1-2s a un
-  // green stale que sabemos que es incorrecto.
+  // Validador-direcciones: pickup + stale-green override visual inmediato.
+  // Mientras el effect de override hace el UPDATE + realtime refresca,
+  // mostramos la decision corregida localmente para no exponer a la operadora
+  // 1-2s a un valor stale que sabemos que es incorrecto.
   const visualDecision = (() => {
     if (!o?.direccion) return o?.validationDecision ?? null;
     const detected = mapAddressKind(o.direccion);
     if (detected === 'pickup_office') return 'pickup_office' as const;
+    // Stale green: la heurística stricter actual capó a yellow/red, mostrar
+    // la corrección YA en vez de esperar al realtime tras el UPDATE.
+    if (o.validationDecision === 'green') {
+      const heur = heuristicValidate(o.direccion);
+      if (heur.decision && heur.decision !== 'green') return heur.decision;
+    }
     return o.validationDecision;
   })();
 

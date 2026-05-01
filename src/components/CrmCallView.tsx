@@ -33,6 +33,12 @@ const autoValidatedOrderIdsCrm = new Set<string>();
 // si realtime tarda en refrescar.
 const pickupOverrideAppliedIdsCrm = new Set<string>();
 
+// Validador-direcciones: ids con stale-green override aplicado en sesión.
+// Pedidos con validation_decision='green' persistido pero la heurística
+// stricter actual los marcaría yellow/red. Mismo patrón que pickup override
+// pero para detectar stale green tras el fix de placa canónica de b4ccf19.
+const staleGreenOverrideIdsCrm = new Set<string>();
+
 const isManaged = (it: OrderData, managed: Record<string, string>): boolean =>
   !!(it.dbId && managed[it.dbId]);
 
@@ -372,6 +378,37 @@ export default function CrmCallView({
       .eq('id', previewDbId);
   }, [previewDbId, previewDireccion, previewDecision]);
 
+  // Validador-direcciones: stale-green override client-side.
+  // Espejo del de CallView. Si DB tiene green pero la heurística stricter
+  // actual marcaría yellow/red (caso real Brayan Uni — "Cll4 13 38
+  // Apartamento." sin placa canónica con guion), corregir DB con UPDATE
+  // directo. NO llama edge function. Idempotente vía Set módulo-level.
+  useEffect(() => {
+    if (!previewDbId || !previewDireccion) return;
+    if (previewDecision !== 'green') return; // solo green
+    if (staleGreenOverrideIdsCrm.has(previewDbId)) return;
+
+    // Pickup override tiene precedencia.
+    const detectedKind = mapAddressKind(previewDireccion);
+    if (detectedKind === 'pickup_office') return;
+
+    const heur = heuristicValidate(previewDireccion);
+    if (heur.decision === 'green') return;
+
+    staleGreenOverrideIdsCrm.add(previewDbId);
+    const decision = heur.decision ?? 'yellow';
+    const missing_fields = heur.missing_fields ?? issuesToMissingFields(heur.issues ?? []);
+    void supabase
+      .from('orders')
+      .update({
+        validation_decision: decision,
+        address_kind: heur.address_kind ?? null,
+        missing_fields,
+        suggested_customer_message: '',
+      })
+      .eq('id', previewDbId);
+  }, [previewDbId, previewDireccion, previewDecision]);
+
   if (!items.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
@@ -433,13 +470,18 @@ export default function CrmCallView({
   const pColor = diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : diasEnEstatus >= 2 ? 'text-orange-400' : 'text-green-500';
   const pDot = diasEnEstatus >= 5 ? 'bg-red-500' : diasEnEstatus >= 3 ? 'bg-amber-500' : diasEnEstatus >= 2 ? 'bg-orange-400' : 'bg-green-500';
 
-  // Validador-direcciones: pickup override visual inmediato. Mientras el
-  // effect de override hace el UPDATE + realtime refresca, mostramos
-  // pickup_office localmente para no exponer 1-2s a un green stale.
+  // Validador-direcciones: pickup + stale-green override visual inmediato.
+  // Mientras el effect de override hace el UPDATE + realtime refresca,
+  // mostramos la decision corregida localmente para no exponer 1-2s a un
+  // valor stale.
   const visualDecisionCrm = (() => {
     if (!o?.direccion) return o?.validationDecision ?? null;
     const detected = mapAddressKind(o.direccion);
     if (detected === 'pickup_office') return 'pickup_office' as const;
+    if (o.validationDecision === 'green') {
+      const heur = heuristicValidate(o.direccion);
+      if (heur.decision && heur.decision !== 'green') return heur.decision;
+    }
     return o.validationDecision;
   })();
 
