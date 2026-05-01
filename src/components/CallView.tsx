@@ -19,6 +19,8 @@ import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
 import { heuristicValidate } from '@/lib/addressHeuristic';
+import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
+import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 
 // Validador-direcciones: helper local para gate de confirmación.
 function validarTelefono(phone: string): boolean {
@@ -184,6 +186,10 @@ export default function CallView({ items }: Props) {
     const direccion = o.direccion;
     const ciudad = o.ciudad;
     const departamento = o.departamento;
+    // Snapshot nombre/producto para el WhatsApp builder — se leen dentro
+    // de async closures, no queremos depender del prop `o` fresco.
+    const nombre = o.nombre || '';
+    const producto = o.producto || '';
     autoValidatedOrderIds.add(orderId);
 
     setValidatingOrderIds((prev) => {
@@ -227,8 +233,18 @@ export default function CallView({ items }: Props) {
       const result = heuristicValidate(direccion);
       const decision = result.decision ?? decisionFromHeuristic(result.score);
       const address_kind = result.address_kind ?? null;
-      const missing_fields = result.missing_fields ?? [];
-      const suggested_customer_message = result.suggested_customer_message ?? '';
+      // Para pickup_office la heurística devuelve missing_fields=[] explícito
+      // — respetar y NO derivar de issues. Para el resto, traducir issues[] a
+      // campos concretos (placa/barrio/complemento) para que la operadora vea
+      // QUÉ falta exactamente, y generar el mensaje de WhatsApp listo.
+      const missing_fields = result.missing_fields
+        ?? issuesToMissingFields(result.issues ?? []);
+      const suggested_customer_message = result.suggested_customer_message
+        ?? buildWhatsAppMessage({
+          missing_fields,
+          nombre,
+          producto,
+        });
       try {
         await supabase
           .from('orders')
@@ -277,14 +293,39 @@ export default function CallView({ items }: Props) {
           await runHeuristicFallback();
           return;
         }
+        // Si Haiku/edge function ya devolvió missing_fields y mensaje, los
+        // preservamos. Si NO los devolvió (shape legacy / Haiku no resolvió
+        // los detalles), derivamos localmente de la heurística para que la
+        // operadora SIEMPRE vea qué falta + un mensaje WhatsApp listo.
+        let final_missing_fields = data.missing_fields;
+        let final_suggested_message = data.suggested_customer_message;
+        if (final_missing_fields === undefined || final_suggested_message === undefined) {
+          const heur = heuristicValidate(direccion);
+          // pickup_office y green: missing_fields legítimamente vacío.
+          if (decision === 'green' || decision === 'pickup_office') {
+            final_missing_fields = final_missing_fields ?? [];
+            final_suggested_message = final_suggested_message ?? '';
+          } else {
+            final_missing_fields = final_missing_fields
+              ?? heur.missing_fields
+              ?? issuesToMissingFields(heur.issues ?? []);
+            final_suggested_message = final_suggested_message
+              ?? heur.suggested_customer_message
+              ?? buildWhatsAppMessage({
+                missing_fields: final_missing_fields,
+                nombre,
+                producto,
+              });
+          }
+        }
         try {
           await supabase
             .from('orders')
             .update({
               validation_decision: decision,
               address_kind: data.address_kind ?? null,
-              missing_fields: data.missing_fields ?? [],
-              suggested_customer_message: data.suggested_customer_message ?? '',
+              missing_fields: final_missing_fields,
+              suggested_customer_message: final_suggested_message,
             })
             .eq('id', orderId);
         } catch {
@@ -306,7 +347,7 @@ export default function CallView({ items }: Props) {
       clearTimeout(hardStopTimerId);
       stopLoading();
     };
-  }, [o?.dbId, o?.validationDecision, o?.direccion, o?.ciudad, o?.departamento, o?.result]);
+  }, [o?.dbId, o?.validationDecision, o?.direccion, o?.ciudad, o?.departamento, o?.nombre, o?.producto, o?.result]);
 
   if (!items.length || !o) {
     return (

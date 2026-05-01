@@ -14,6 +14,8 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { heuristicValidate } from '@/lib/addressHeuristic';
+import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
+import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -125,6 +127,8 @@ export default function CrmCallView({
   const previewDireccion = previewOrder?.direccion ?? '';
   const previewCiudad = previewOrder?.ciudad ?? '';
   const previewDept = previewOrder?.departamento ?? '';
+  const previewNombre = previewOrder?.nombre ?? '';
+  const previewProducto = previewOrder?.producto ?? '';
   const previewManaged = previewOrder?.dbId ? Boolean(managed[previewOrder.dbId]) : false;
 
   useEffect(() => {
@@ -138,6 +142,9 @@ export default function CrmCallView({
     const direccion = previewDireccion;
     const ciudad = previewCiudad;
     const departamento = previewDept;
+    // Snapshot nombre/producto para el WhatsApp builder dentro de async closures.
+    const nombre = previewNombre;
+    const producto = previewProducto;
     autoValidatedOrderIdsCrm.add(orderId);
 
     setValidatingOrderIds((prev) => {
@@ -179,8 +186,18 @@ export default function CrmCallView({
       const result = heuristicValidate(direccion);
       const decision = result.decision ?? decisionFromHeuristic(result.score);
       const address_kind = result.address_kind ?? null;
-      const missing_fields = result.missing_fields ?? [];
-      const suggested_customer_message = result.suggested_customer_message ?? '';
+      // Para pickup_office la heurística devuelve missing_fields=[] explícito
+      // — respetar y NO derivar de issues. Para el resto, traducir issues[] a
+      // campos concretos (placa/barrio/complemento) y generar el mensaje
+      // WhatsApp listo para copiar.
+      const missing_fields = result.missing_fields
+        ?? issuesToMissingFields(result.issues ?? []);
+      const suggested_customer_message = result.suggested_customer_message
+        ?? buildWhatsAppMessage({
+          missing_fields,
+          nombre,
+          producto,
+        });
       try {
         await supabase
           .from('orders')
@@ -226,14 +243,37 @@ export default function CrmCallView({
           await runHeuristicFallback();
           return;
         }
+        // Si Haiku/edge function ya devolvió missing_fields y mensaje, los
+        // preservamos. Si NO los devolvió, derivamos localmente para que la
+        // operadora SIEMPRE vea qué falta + un mensaje WhatsApp listo.
+        let final_missing_fields = data.missing_fields;
+        let final_suggested_message = data.suggested_customer_message;
+        if (final_missing_fields === undefined || final_suggested_message === undefined) {
+          const heur = heuristicValidate(direccion);
+          if (decision === 'green' || decision === 'pickup_office') {
+            final_missing_fields = final_missing_fields ?? [];
+            final_suggested_message = final_suggested_message ?? '';
+          } else {
+            final_missing_fields = final_missing_fields
+              ?? heur.missing_fields
+              ?? issuesToMissingFields(heur.issues ?? []);
+            final_suggested_message = final_suggested_message
+              ?? heur.suggested_customer_message
+              ?? buildWhatsAppMessage({
+                missing_fields: final_missing_fields,
+                nombre,
+                producto,
+              });
+          }
+        }
         try {
           await supabase
             .from('orders')
             .update({
               validation_decision: decision,
               address_kind: data.address_kind ?? null,
-              missing_fields: data.missing_fields ?? [],
-              suggested_customer_message: data.suggested_customer_message ?? '',
+              missing_fields: final_missing_fields,
+              suggested_customer_message: final_suggested_message,
             })
             .eq('id', orderId);
         } catch {
@@ -255,7 +295,7 @@ export default function CrmCallView({
       clearTimeout(hardStopTimerId);
       stopLoading();
     };
-  }, [previewDbId, previewDecision, previewDireccion, previewCiudad, previewDept, previewManaged]);
+  }, [previewDbId, previewDecision, previewDireccion, previewCiudad, previewDept, previewNombre, previewProducto, previewManaged]);
 
   if (!items.length) {
     return (
