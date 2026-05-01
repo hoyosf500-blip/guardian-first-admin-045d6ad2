@@ -23,6 +23,7 @@ import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 import { mapAddressKind } from '@/lib/mapAddressKind';
+import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
 
 // Validador-direcciones: helper local para gate de confirmación.
 function validarTelefono(phone: string): boolean {
@@ -472,22 +473,13 @@ export default function CallView({ items }: Props) {
       .eq('id', o.dbId);
   }, [o?.dbId, o?.direccion, o?.validationDecision]);
 
-  if (!items.length || !o) {
-    return (
-      <div className="text-center py-10 text-muted-foreground">
-        <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
-        <p className="text-sm">¡Todos gestionados!</p>
-      </div>
-    );
-  }
-
-  const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
-  const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
-
   // Validador-direcciones: pickup + stale-green override visual inmediato.
   // Mientras el effect de override hace el UPDATE + realtime refresca,
   // mostramos la decision corregida localmente para no exponer a la operadora
   // 1-2s a un valor stale que sabemos que es incorrecto.
+  // NOTA: este cálculo vive ARRIBA del early-return para que el hook
+  // useGoogleAddressLookup (más abajo) pueda gatear sobre `visualDecision`
+  // sin violar las reglas de hooks (no condicionales antes de hooks).
   const visualDecision = (() => {
     if (!o?.direccion) return o?.validationDecision ?? null;
     const detected = mapAddressKind(o.direccion);
@@ -500,6 +492,33 @@ export default function CallView({ items }: Props) {
     }
     return o.validationDecision;
   })();
+
+  // Validador-direcciones: Google Places lookup automático.
+  // Cuando el pedido está yellow/red, llamamos a la edge function
+  // google-places-proxy con la dirección que escribió el cliente y tomamos
+  // la primera predicción como sugerencia REAL en el badge — prioritaria
+  // sobre la heurística client-side. Cache en memoria por orderId vía
+  // `cacheKey`. El hook es idempotente: 2 renders con misma key NO disparan
+  // 2 fetches (cache + inflight ref).
+  const lookupEnabled = (visualDecision === 'yellow' || visualDecision === 'red') && Boolean(o?.dbId);
+  const { result: googleLookup, loading: lookupLoading } = useGoogleAddressLookup({
+    direccion: o?.direccion ?? '',
+    ciudad: o?.ciudad,
+    enabled: lookupEnabled,
+    cacheKey: o?.dbId ?? 'noid',
+  });
+
+  if (!items.length || !o) {
+    return (
+      <div className="text-center py-10 text-muted-foreground">
+        <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
+        <p className="text-sm">¡Todos gestionados!</p>
+      </div>
+    );
+  }
+
+  const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
+  const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
@@ -660,15 +679,25 @@ export default function CallView({ items }: Props) {
                 }).eq('id', o.dbId);
               } : undefined}
               addressSuggestion={(() => {
-                // Priorizar la sugerencia de Google Places (cuando la edge
-                // function la devolvió) sobre la heurística local. Google
-                // resuelve formattedAddress con barrio + ciudad real, mientras
-                // que la heurística solo arma un template a partir del texto
-                // crudo. Cuando no hay Google, caemos al armado local.
+                // Prioridad 1: Google Places real (lookup async via
+                // useGoogleAddressLookup → edge function google-places-proxy).
+                // Devuelve `description` con la dirección formateada por
+                // Google — incluye números reales, barrio, ciudad, depto.
+                if (googleLookup) {
+                  return {
+                    suggested: googleLookup.description,
+                    missingNote: null,
+                    hasEnoughInfo: true,
+                  };
+                }
+                // Prioridad 2: cache local de la edge function dropi-validate-address
+                // (si llegó a devolver suggested_address en este sesión).
                 const googleSuggestion = o.dbId ? googleSuggestions[o.dbId] : undefined;
                 if (googleSuggestion) {
                   return { suggested: googleSuggestion, hasEnoughInfo: true };
                 }
+                // Prioridad 3: heurística client-side (fallback) — arma un
+                // template a partir del texto crudo, sin números reales.
                 if (!o.direccion) return null;
                 return buildAddressSuggestion({
                   direccion: o.direccion,
@@ -681,6 +710,7 @@ export default function CallView({ items }: Props) {
               carrier={o.transportadora}
               onOverrideChange={setAddressOverride}
               loading={Boolean(o.dbId && validatingOrderIds.has(o.dbId))}
+              lookupLoading={lookupLoading}
             />
           </div>
         ) : (

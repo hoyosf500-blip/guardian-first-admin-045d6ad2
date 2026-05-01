@@ -18,6 +18,7 @@ import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 import { mapAddressKind } from '@/lib/mapAddressKind';
+import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -409,6 +410,38 @@ export default function CrmCallView({
       .eq('id', previewDbId);
   }, [previewDbId, previewDireccion, previewDecision]);
 
+  // Validador-direcciones: Google Places lookup automático.
+  // Mismo patrón que en CallView — cuando el pedido está yellow/red,
+  // llamamos a la edge function google-places-proxy con la dirección que
+  // escribió el cliente y tomamos la primera predicción como sugerencia
+  // REAL en el badge, prioritaria sobre la heurística client-side. Cache
+  // en memoria por orderId. NOTA: para gatear con visualDecisionCrm
+  // (cómputo que vive abajo del early-return) usamos el `previewDecision`
+  // crudo + un re-cómputo inline de pickup_office/stale-green — porque
+  // el hook DEBE correr antes del early-return para no violar reglas de
+  // hooks. La diferencia entre `previewDecision` y `visualDecisionCrm`
+  // solo afecta a transiciones (pickup_office detectado client-side antes
+  // del UPDATE persista, o stale-green corregido), que se resuelven en
+  // 1-2s vía realtime y luego coincidirán.
+  const lookupVisualDecision = (() => {
+    if (!previewDireccion) return previewDecision;
+    const detected = mapAddressKind(previewDireccion);
+    if (detected === 'pickup_office') return 'pickup_office' as const;
+    if (previewDecision === 'green') {
+      const heur = heuristicValidate(previewDireccion);
+      if (heur.decision && heur.decision !== 'green') return heur.decision;
+    }
+    return previewDecision;
+  })();
+  const lookupEnabledCrm =
+    (lookupVisualDecision === 'yellow' || lookupVisualDecision === 'red') && Boolean(previewDbId);
+  const { result: googleLookup, loading: lookupLoading } = useGoogleAddressLookup({
+    direccion: previewDireccion,
+    ciudad: previewCiudad,
+    enabled: lookupEnabledCrm,
+    cacheKey: previewDbId ?? 'noid',
+  });
+
   if (!items.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
@@ -644,13 +677,22 @@ export default function CrmCallView({
                     }).eq('id', o.dbId);
                   } : undefined}
                   addressSuggestion={(() => {
-                    // Priorizar sugerencia de Google Places (de la edge
-                    // function) sobre la heurística local — ver comentario
-                    // en CallView. Cache de sesión, no DB.
+                    // Prioridad 1: Google Places real (lookup async via
+                    // useGoogleAddressLookup → edge function google-places-proxy).
+                    if (googleLookup) {
+                      return {
+                        suggested: googleLookup.description,
+                        missingNote: null,
+                        hasEnoughInfo: true,
+                      };
+                    }
+                    // Prioridad 2: cache local de la edge function
+                    // dropi-validate-address (cuando devolvió suggested_address).
                     const googleSuggestion = o.dbId ? googleSuggestions[o.dbId] : undefined;
                     if (googleSuggestion) {
                       return { suggested: googleSuggestion, hasEnoughInfo: true };
                     }
+                    // Prioridad 3: heurística client-side (fallback).
                     if (!o.direccion) return null;
                     return buildAddressSuggestion({
                       direccion: o.direccion,
@@ -663,6 +705,7 @@ export default function CrmCallView({
                   carrier={o.transportadora}
                   onOverrideChange={() => { /* legacy, sin gate */ }}
                   loading={Boolean(o.dbId && validatingOrderIds.has(o.dbId))}
+                  lookupLoading={lookupLoading}
                 />
               </div>
             )}

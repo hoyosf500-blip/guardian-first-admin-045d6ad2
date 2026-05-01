@@ -53,10 +53,18 @@ export interface AddressFeedbackCardProps {
    * devuelve decision:null o el fallback heurístico tampoco resuelve).
    */
   loading?: boolean;
+  /**
+   * True mientras useGoogleAddressLookup está buscando la dirección real
+   * en Google Places. Mostramos un indicador sutil debajo del bloque "Cómo
+   * debería verse" para que la operadora sepa que la sugerencia puede
+   * mejorar en breve. Si Google devuelve, addressSuggestion se actualiza
+   * y este flag desaparece. NO bloquea el render.
+   */
+  lookupLoading?: boolean;
 }
 
 export function AddressFeedbackCard({
-  decision, missingFields, suggestedAddress, onApplySuggestion, addressSuggestion, isAdmin, onOverrideChange, carrier, loading = false,
+  decision, missingFields, suggestedAddress, onApplySuggestion, addressSuggestion, isAdmin, onOverrideChange, carrier, loading = false, lookupLoading = false,
 }: AddressFeedbackCardProps) {
   const [overrideChecked, setOverrideChecked] = useState(false);
 
@@ -136,6 +144,11 @@ export function AddressFeedbackCard({
             )}
           </div>
         )}
+        {lookupLoading && !addressSuggestion?.hasEnoughInfo && (
+          <div className="text-muted-foreground text-[10px] pl-4 mt-1 animate-pulse">
+            Buscando dirección en Google Maps...
+          </div>
+        )}
         {suggestedAddress && (
           <div className="rounded bg-card/50 border border-border p-2 text-xs space-y-1.5">
             <div className="font-medium text-foreground">¿Quisiste decir?</div>
@@ -186,6 +199,12 @@ export function AddressFeedbackCard({
               Confirma con el cliente que sea correcta.
             </div>
           )}
+        </div>
+      )}
+
+      {lookupLoading && !addressSuggestion?.hasEnoughInfo && (
+        <div className="text-muted-foreground text-[10px] pl-4 mt-1 animate-pulse">
+          Buscando dirección en Google Maps...
         </div>
       )}
 
