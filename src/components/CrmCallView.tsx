@@ -114,6 +114,12 @@ export default function CrmCallView({
   // "Validando..." cuando la edge function no resuelve.
   const [validatingOrderIds, setValidatingOrderIds] = useState<Set<string>>(() => new Set());
 
+  // Validador-direcciones: cache en-memoria de sugerencias de Google Places
+  // por orderId. Mismo patrón que CallView — la columna DB suggested_address
+  // está pendiente (HOTFIX 2026-04-30), así que la guardamos en estado para
+  // priorizarla sobre la heurística local cuando renderizamos la card.
+  const [googleSuggestions, setGoogleSuggestions] = useState<Record<string, string>>({});
+
   // Validador-direcciones: auto-validar pedido pre-feature al verlo.
   // Mismo patrón que en CallView — pedidos con validation_decision=null
   // que tienen dirección razonable se validan en background una vez por
@@ -269,6 +275,13 @@ export default function CrmCallView({
         if (!decision) {
           await runHeuristicFallback();
           return;
+        }
+        // Cache en-memoria de la sugerencia de Google. La columna DB está
+        // pendiente de migration (hotfix 7aa41fd la comentó). Sin esto la
+        // sugerencia se perdería al re-render. Tiene mejor calidad que la
+        // heurística local porque viene de la base real de Google.
+        if (data.suggested_address) {
+          setGoogleSuggestions((prev) => ({ ...prev, [orderId]: data.suggested_address! }));
         }
         // Si Haiku/edge function ya devolvió missing_fields y mensaje, los
         // preservamos. Si NO los devolvió, derivamos localmente para que la
@@ -547,16 +560,22 @@ export default function CrmCallView({
                       validation_decision: null, // re-validar con la dirección nueva
                     }).eq('id', o.dbId);
                   } : undefined}
-                  addressSuggestion={
-                    o.direccion
-                      ? buildAddressSuggestion({
-                          direccion: o.direccion,
-                          ciudad: o.ciudad,
-                          departamento: o.departamento,
-                          barrio: o.barrio,
-                        })
-                      : null
-                  }
+                  addressSuggestion={(() => {
+                    // Priorizar sugerencia de Google Places (de la edge
+                    // function) sobre la heurística local — ver comentario
+                    // en CallView. Cache de sesión, no DB.
+                    const googleSuggestion = o.dbId ? googleSuggestions[o.dbId] : undefined;
+                    if (googleSuggestion) {
+                      return { suggested: googleSuggestion, hasEnoughInfo: true };
+                    }
+                    if (!o.direccion) return null;
+                    return buildAddressSuggestion({
+                      direccion: o.direccion,
+                      ciudad: o.ciudad,
+                      departamento: o.departamento,
+                      barrio: o.barrio,
+                    });
+                  })()}
                   isAdmin={isAdmin}
                   carrier={o.transportadora}
                   onOverrideChange={() => { /* legacy, sin gate */ }}
