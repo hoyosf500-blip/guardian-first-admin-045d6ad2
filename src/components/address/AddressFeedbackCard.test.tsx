@@ -49,4 +49,27 @@ describe('AddressFeedbackCard', () => {
     expect(screen.getByText('¿Quisiste decir?')).toBeInTheDocument();
     expect(screen.getByText(/Calle 50 # 23-45/)).toBeInTheDocument();
   });
+
+  it('muestra sugerencia cuando addressSuggestion.hasEnoughInfo es true en yellow', () => {
+    render(<AddressFeedbackCard
+      decision="yellow"
+      missingFields={['tipo_via']}
+      addressSuggestion={{ suggested: 'Calle 21 # 10-78, Barrio el 12, Fonseca', hasEnoughInfo: true }}
+      isAdmin={false}
+      onOverrideChange={() => {}}
+    />);
+    expect(screen.getByText(/Cómo debería verse/i)).toBeInTheDocument();
+    expect(screen.getByText(/Calle 21 # 10-78/)).toBeInTheDocument();
+  });
+
+  it('NO muestra sugerencia si hasEnoughInfo es false', () => {
+    render(<AddressFeedbackCard
+      decision="red"
+      missingFields={['numero_casa']}
+      addressSuggestion={{ suggested: '___', hasEnoughInfo: false }}
+      isAdmin={false}
+      onOverrideChange={() => {}}
+    />);
+    expect(screen.queryByText(/Cómo debería verse/i)).not.toBeInTheDocument();
+  });
 });

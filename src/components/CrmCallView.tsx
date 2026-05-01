@@ -16,6 +16,7 @@ import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
+import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -546,6 +547,16 @@ export default function CrmCallView({
                       validation_decision: null, // re-validar con la dirección nueva
                     }).eq('id', o.dbId);
                   } : undefined}
+                  addressSuggestion={
+                    o.direccion
+                      ? buildAddressSuggestion({
+                          direccion: o.direccion,
+                          ciudad: o.ciudad,
+                          departamento: o.departamento,
+                          barrio: o.barrio,
+                        })
+                      : null
+                  }
                   isAdmin={isAdmin}
                   carrier={o.transportadora}
                   onOverrideChange={() => { /* legacy, sin gate */ }}

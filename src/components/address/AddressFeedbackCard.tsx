@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, AlertTriangle, AlertCircle, Store } from 'lucide-react';
+import { Check, AlertTriangle, AlertCircle, Store, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -27,6 +27,14 @@ export interface AddressFeedbackCardProps {
   suggestedAddress?: string | null;
   /** Callback al hacer click en "Aplicar" sobre la sugerencia. */
   onApplySuggestion?: () => void;
+  /**
+   * Sugerencia client-side calculada por buildAddressSuggestion — formato
+   * "Calle 21 # 10-78, Barrio el 12, Fonseca, La Guajira" o template con
+   * placeholders ___ cuando falta info. Se renderiza en yellow/red bajo el
+   * label "Cómo debería verse esta dirección" sólo si hasEnoughInfo es true,
+   * para que la operadora tenga un molde concreto que confirmar al cliente.
+   */
+  addressSuggestion?: { suggested: string; hasEnoughInfo: boolean } | null;
   isAdmin: boolean;
   onOverrideChange: (overrideChecked: boolean) => void;
   carrier?: string;
@@ -41,7 +49,7 @@ export interface AddressFeedbackCardProps {
 }
 
 export function AddressFeedbackCard({
-  decision, missingFields, suggestedAddress, onApplySuggestion, isAdmin, onOverrideChange, carrier, loading = false,
+  decision, missingFields, suggestedAddress, onApplySuggestion, addressSuggestion, isAdmin, onOverrideChange, carrier, loading = false,
 }: AddressFeedbackCardProps) {
   const [overrideChecked, setOverrideChecked] = useState(false);
 
@@ -101,6 +109,20 @@ export function AddressFeedbackCard({
               : <li>Verifica datos clave antes de despachar</li>}
           </ul>
         </div>
+        {addressSuggestion?.hasEnoughInfo && (
+          <div className="mt-3 rounded bg-card/40 border border-border/60 p-2 text-xs space-y-1">
+            <div className="font-medium text-foreground inline-flex items-center gap-1.5">
+              <Lightbulb size={12} className="text-warning" />
+              <span>Cómo debería verse esta dirección:</span>
+            </div>
+            <div className="text-foreground font-mono text-[11px] leading-relaxed pl-4">
+              {addressSuggestion.suggested}
+            </div>
+            <div className="text-muted-foreground text-[10px] pl-4">
+              Confirma con el cliente que sea correcta.
+            </div>
+          </div>
+        )}
         {suggestedAddress && (
           <div className="rounded bg-card/50 border border-border p-2 text-xs space-y-1.5">
             <div className="font-medium text-foreground">¿Quisiste decir?</div>
@@ -132,6 +154,21 @@ export function AddressFeedbackCard({
           {missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)}
         </ul>
       </div>
+
+      {addressSuggestion?.hasEnoughInfo && (
+        <div className="mt-3 rounded bg-card/40 border border-border/60 p-2 text-xs space-y-1">
+          <div className="font-medium text-foreground inline-flex items-center gap-1.5">
+            <Lightbulb size={12} className="text-warning" />
+            <span>Cómo debería verse esta dirección:</span>
+          </div>
+          <div className="text-foreground font-mono text-[11px] leading-relaxed pl-4">
+            {addressSuggestion.suggested}
+          </div>
+          <div className="text-muted-foreground text-[10px] pl-4">
+            Confirma con el cliente que sea correcta.
+          </div>
+        </div>
+      )}
 
       {suggestedAddress && (
         <div className="rounded bg-card/50 border border-border p-2 text-xs space-y-1.5">

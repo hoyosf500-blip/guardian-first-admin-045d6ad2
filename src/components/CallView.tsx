@@ -21,6 +21,7 @@ import { DespachoGateButton } from '@/components/address/DespachoGateButton';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
+import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 
 // Validador-direcciones: helper local para gate de confirmación.
 function validarTelefono(phone: string): boolean {
@@ -548,6 +549,16 @@ export default function CallView({ items }: Props) {
                   validation_decision: null, // re-validar con la dirección nueva
                 }).eq('id', o.dbId);
               } : undefined}
+              addressSuggestion={
+                o.direccion
+                  ? buildAddressSuggestion({
+                      direccion: o.direccion,
+                      ciudad: o.ciudad,
+                      departamento: o.departamento,
+                      barrio: o.barrio,
+                    })
+                  : null
+              }
               isAdmin={isAdmin}
               carrier={o.transportadora}
               onOverrideChange={setAddressOverride}
