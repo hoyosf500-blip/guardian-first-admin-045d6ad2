@@ -751,7 +751,11 @@ export default function CallView({ items }: Props) {
                 deshabilitado y el tooltip explica la razón. */}
             <DespachoGateButton
               gate={{
-                validation_decision: o.validationDecision,
+                // Validador-direcciones: usar visualDecision (que aplica los
+                // overrides client-side de pickup_office y stale-green ANTES
+                // de que el UPDATE+realtime corrija la fila en DB) — así el
+                // botón coincide con lo que ve la operadora en la card.
+                validation_decision: visualDecision,
                 telefonoValido: validarTelefono(o.phone),
                 documentoSiCoordinadora:
                   (o.transportadora || '').toLowerCase() !== 'coordinadora' ||

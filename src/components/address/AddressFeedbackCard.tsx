@@ -67,6 +67,10 @@ export function AddressFeedbackCard({
   decision, missingFields, suggestedAddress, onApplySuggestion, addressSuggestion, isAdmin, onOverrideChange, carrier, loading = false, lookupLoading = false,
 }: AddressFeedbackCardProps) {
   const [overrideChecked, setOverrideChecked] = useState(false);
+  const handleOverrideChange = (checked: boolean) => {
+    setOverrideChecked(checked);
+    onOverrideChange(checked);
+  };
 
   if (decision === null) {
     if (loading) {
@@ -160,14 +164,18 @@ export function AddressFeedbackCard({
             )}
           </div>
         )}
+        {/* Validador-direcciones: checkbox de override para destrabar el gate
+            de Confirmar. En yellow CUALQUIER usuario puede marcarlo (no
+            requiere isAdmin) — la regla del spec es que el admin solo es
+            necesario para red. La operadora marca este check después de
+            hablar con el cliente y confirmar los datos. */}
+        <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
+          <Checkbox checked={overrideChecked} onCheckedChange={(v) => handleOverrideChange(v === true)} />
+          <span>Confirmé con el cliente — proceder a despachar</span>
+        </label>
       </div>
     );
   }
-
-  const handleOverride = (checked: boolean) => {
-    setOverrideChecked(checked);
-    onOverrideChange(checked);
-  };
 
   return (
     <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm space-y-3">
@@ -222,7 +230,7 @@ export function AddressFeedbackCard({
 
       {isAdmin && (
         <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
-          <Checkbox checked={overrideChecked} onCheckedChange={(v) => handleOverride(v === true)} />
+          <Checkbox checked={overrideChecked} onCheckedChange={(v) => handleOverrideChange(v === true)} />
           <span>Confirmé manualmente con el cliente — proceder</span>
         </label>
       )}
