@@ -26,11 +26,19 @@ describe('locationMatches (contrato)', () => {
     )).toBe(true);
   });
 
-  it('sólo departamento coincide: acepta', () => {
+  it('sólo departamento coincide y NO hay ciudad: acepta', () => {
     expect(locationMatches(
       'Vereda El Carmen, La Guajira, Colombia',
       null,
       'La Guajira',
     )).toBe(true);
+  });
+
+  it('regla estricta: con ciudad, match por solo departamento NO basta', () => {
+    expect(locationMatches(
+      'Calle 1 #1-1, Neiva, Huila',
+      'Pitalito',
+      'Huila',
+    )).toBe(false);
   });
 });

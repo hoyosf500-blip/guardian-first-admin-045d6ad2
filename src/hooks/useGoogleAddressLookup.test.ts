@@ -23,10 +23,28 @@ describe('predictionMatchesLocation (guard anti-alucinación)', () => {
     )).toBe(true);
   });
 
-  it('acepta predicción que contiene SOLO el departamento', () => {
+  it('caso real Brayan v2: rechaza "Neiva, Huila" cuando ciudad es Pitalito (mismo depto, ciudad distinta)', () => {
+    // Neiva y Pitalito están ambas en Huila pero a 200 km. Despachar a Neiva
+    // cuando el cliente está en Pitalito entrega al cliente equivocado.
+    expect(predictionMatchesLocation(
+      'Carrera 5 #13-38, Neiva, Huila',
+      'PITALITO',
+      'HUILA',
+    )).toBe(false);
+  });
+
+  it('rechaza match solo por departamento cuando hay ciudad', () => {
     expect(predictionMatchesLocation(
       'Vereda La Esperanza, Huila, Colombia',
       'pitalito',
+      'huila',
+    )).toBe(false);
+  });
+
+  it('acepta match por departamento cuando NO hay ciudad', () => {
+    expect(predictionMatchesLocation(
+      'Vereda La Esperanza, Huila, Colombia',
+      null,
       'huila',
     )).toBe(true);
   });
