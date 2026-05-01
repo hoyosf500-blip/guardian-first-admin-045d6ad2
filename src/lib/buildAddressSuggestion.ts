@@ -14,10 +14,13 @@ export interface AddressSuggestionInput {
 }
 
 export interface AddressSuggestionOutput {
-  /** "Calle 21 # 10-78, Barrio el 12, Fonseca, La Guajira" o template con ___ */
+  /** Solo partes confirmadas (sin placeholders ___). Ej:
+   *  "Calle 21 # 10-78, Barrio el 12, Fonseca, La Guajira"
+   *  "Calle 7A en Tumaco, Nariño" (cuando falta placa) */
   suggested: string;
-  /** Lista de partes que faltan o están ambiguas, en lenguaje natural */
-  missingParts: string[];
+  /** Nota legible para la operadora describiendo qué falta confirmar.
+   *  Null si la sugerencia está completa (no falta nada). */
+  missingNote: string | null;
   /** True si la sugerencia tiene suficiente info útil para mostrar al usuario */
   hasEnoughInfo: boolean;
 }
@@ -120,48 +123,63 @@ export function buildAddressSuggestion(
   input: AddressSuggestionInput,
 ): AddressSuggestionOutput {
   const dirNorm = norm(input.direccion || '');
-  const parts: string[] = [];
-  const missing: string[] = [];
+  const confirmedParts: string[] = [];
+  const missingNotes: string[] = [];
 
   // 1. Tipo de vía + número
   const viaMatch = dirNorm.match(VIA_REGEX);
+  let viaPart: string | null = null;
   if (viaMatch) {
     const tipo = VIA_MAP[viaMatch[1].toLowerCase()] ?? capitalizar(viaMatch[1]);
-    parts.push(`${tipo} ${viaMatch[2]}`);
+    viaPart = `${tipo} ${viaMatch[2]}`;
+    confirmedParts.push(viaPart);
   } else {
-    parts.push('[Calle/Carrera ___]');
-    missing.push('tipo y número de vía (ej. Calle 21 o Carrera 50)');
+    missingNotes.push('confirma si la vía es Calle, Carrera o Avenida');
   }
 
   // 2. Placa # X-Y — usa detectPlaca con múltiples regex priorizadas:
   //    canónico (10-78), compacto (18a19), espaciado (52 D 336).
   const placa = detectPlaca(input.direccion || '');
   if (placa) {
-    parts.push(`# ${placa.left.toUpperCase()}-${placa.right.toUpperCase()}`);
+    confirmedParts.push(`# ${placa.left.toUpperCase()}-${placa.right.toUpperCase()}`);
   } else {
-    parts.push('# ___-___');
-    missing.push('número de la casa con guion (ej. # 10-78)');
+    missingNotes.push('pídele al cliente el número exacto de la casa con guion (ej. 23-45)');
   }
 
   // 3. Complementos (apto, torre, manzana, etc.) — van DESPUÉS de la placa.
   const complementos = detectComplementos(input.direccion || '');
   for (const c of complementos) {
-    parts.push(`${c.tipo} ${c.numero}`);
+    confirmedParts.push(`${c.tipo} ${c.numero}`);
   }
 
   // 4. Barrio (param tiene prioridad sobre extraído del texto)
   const barrioFromText = input.direccion?.match(BARRIO_REGEX)?.[1]?.trim();
   const barrioFinal = (input.barrio && input.barrio.trim()) || barrioFromText;
-  if (barrioFinal) parts.push(`Barrio ${capitalizar(barrioFinal)}`);
+  if (barrioFinal) confirmedParts.push(`Barrio ${capitalizar(barrioFinal)}`);
   // Barrio es opcional cuando ya hay calle+placa completas — no lo agregamos
   // a missing aquí.
 
   // 5. Ciudad y departamento
-  if (input.ciudad && input.ciudad.trim()) parts.push(capitalizar(input.ciudad));
-  if (input.departamento && input.departamento.trim()) parts.push(capitalizar(input.departamento));
+  if (input.ciudad && input.ciudad.trim()) confirmedParts.push(capitalizar(input.ciudad));
+  if (input.departamento && input.departamento.trim()) confirmedParts.push(capitalizar(input.departamento));
 
-  const suggested = parts.join(', ');
-  const hasEnoughInfo = Boolean(viaMatch || placa || barrioFinal);
+  // Construir suggested SIN placeholders ___.
+  // Caso especial: si tenemos vía pero NO placa, usar preposición "en" entre
+  // la vía y el resto de partes confirmadas (más natural):
+  //   "Calle 7A en Tumaco, Nariño" en lugar de "Calle 7A, Tumaco, Nariño".
+  let suggested: string;
+  if (viaPart && !placa) {
+    const restoSinVia = confirmedParts.slice(1).join(', ');
+    suggested = restoSinVia ? `${viaPart} en ${restoSinVia}` : viaPart;
+  } else {
+    suggested = confirmedParts.join(', ');
+  }
 
-  return { suggested, missingParts: missing, hasEnoughInfo };
+  const missingNote = missingNotes.length > 0
+    ? `Falta confirmar: ${missingNotes.join('; ')}.`
+    : null;
+
+  const hasEnoughInfo = confirmedParts.length > 0;
+
+  return { suggested, missingNote, hasEnoughInfo };
 }

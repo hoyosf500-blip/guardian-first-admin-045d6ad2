@@ -66,10 +66,26 @@ describe('AddressFeedbackCard', () => {
     render(<AddressFeedbackCard
       decision="red"
       missingFields={['numero_casa']}
-      addressSuggestion={{ suggested: '___', hasEnoughInfo: false }}
+      addressSuggestion={{ suggested: '', hasEnoughInfo: false }}
       isAdmin={false}
       onOverrideChange={() => {}}
     />);
     expect(screen.queryByText(/Cómo debería verse/i)).not.toBeInTheDocument();
+  });
+
+  it('Bug 2: muestra missingNote cuando hay info parcial', () => {
+    render(<AddressFeedbackCard
+      decision="yellow"
+      missingFields={['numero_casa']}
+      addressSuggestion={{
+        suggested: 'Calle 7A en Tumaco, Nariño',
+        missingNote: 'Falta confirmar: pídele al cliente el número exacto de la casa con guion (ej. 23-45).',
+        hasEnoughInfo: true,
+      }}
+      isAdmin={false}
+      onOverrideChange={() => {}}
+    />);
+    expect(screen.getByText('Calle 7A en Tumaco, Nariño')).toBeInTheDocument();
+    expect(screen.getByText(/Falta confirmar/)).toBeInTheDocument();
   });
 });

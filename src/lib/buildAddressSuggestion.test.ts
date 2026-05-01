@@ -23,31 +23,33 @@ describe('buildAddressSuggestion', () => {
     expect(r.suggested).toContain('Barrio Laureles');
   });
 
-  it('sin tipo de vía → marca placeholder y missingParts', () => {
+  it('sin tipo de vía → NO usa placeholder, missingNote menciona vía', () => {
     const r = buildAddressSuggestion({
       direccion: '21 # 10-78',
       ciudad: 'Fonseca',
     });
-    expect(r.suggested).toContain('[Calle/Carrera ___]');
-    expect(r.missingParts).toContainEqual(expect.stringMatching(/calle|carrera/i));
+    expect(r.suggested).not.toContain('___');
+    expect(r.suggested).not.toContain('[Calle/Carrera');
+    expect(r.missingNote).toMatch(/calle|carrera|avenida|v[ií]a/i);
   });
 
-  it('sin placa → marca placeholder', () => {
+  it('sin placa → NO usa placeholder, missingNote menciona número de casa', () => {
     const r = buildAddressSuggestion({
       direccion: 'Calle 21 barrio centro',
       ciudad: 'Fonseca',
     });
-    expect(r.suggested).toContain('# ___-___');
-    expect(r.missingParts).toContainEqual(expect.stringMatching(/numero|guion|10-78|número/i));
+    expect(r.suggested).not.toContain('___');
+    expect(r.suggested).not.toContain('# ___');
+    expect(r.missingNote).toMatch(/n[uú]mero|guion|placa|casa/i);
   });
 
-  it('todo bien escrito → sugerencia limpia sin missing', () => {
+  it('todo bien escrito → sugerencia limpia sin missingNote', () => {
     const r = buildAddressSuggestion({
       direccion: 'Calle 50 # 23-45 Barrio Laureles',
       ciudad: 'Medellín',
       departamento: 'Antioquia',
     });
-    expect(r.missingParts).toHaveLength(0);
+    expect(r.missingNote).toBeNull();
     expect(r.suggested).toBe('Calle 50, # 23-45, Barrio Laureles, Medellín, Antioquia');
   });
 
@@ -67,13 +69,17 @@ describe('buildAddressSuggestion', () => {
     expect(r.suggested.toLowerCase()).toContain('avenida 50b');
   });
 
-  it('dirección vacía → no enough info, sugerencia con todos los placeholders', () => {
+  it('dirección vacía → no enough info, suggested vacío o solo ciudad', () => {
     const r = buildAddressSuggestion({
       direccion: '',
       ciudad: 'Bogotá',
     });
-    expect(r.hasEnoughInfo).toBe(false);
-    expect(r.suggested).toContain('___');
+    // Sin dirección + sin departamento + sin barrio: solo ciudad.
+    // hasEnoughInfo se queda en true porque tenemos al menos una parte
+    // confirmada (la ciudad). El test legacy esperaba `___` pero ya no
+    // los emitimos. Lo importante: sin placeholders.
+    expect(r.suggested).not.toContain('___');
+    expect(r.missingNote).toMatch(/calle|carrera|n[uú]mero/i);
   });
 
   it('barrio param tiene prioridad sobre barrio en texto', () => {
@@ -114,9 +120,12 @@ describe('buildAddressSuggestion', () => {
   });
 
   it('NO confunde "Calle 21 22" con placa', () => {
-    // 21 22 son números sin letra entre ellos, no es una placa
+    // 21 22 son números sin letra entre ellos, no es una placa.
+    // Antes esperábamos `# ___-___`; ahora la placa simplemente no aparece
+    // y missingNote lo menciona.
     const r = buildAddressSuggestion({ direccion: 'Calle 21 22', ciudad: 'Bogotá' });
-    expect(r.suggested).toContain('# ___-___');
+    expect(r.suggested).not.toContain('___');
+    expect(r.missingNote).toMatch(/n[uú]mero|guion|casa/i);
   });
 
   // ─── Detección de complementos ───────────────────────────────────────
@@ -144,5 +153,37 @@ describe('buildAddressSuggestion', () => {
     });
     expect(r.suggested).toContain('Manzana A');
     expect(r.suggested).toContain('Lote 12');
+  });
+
+  // ─── Bug 2: sugerencias sin placeholders ___ ─────────────────────────
+  it('Bug 2: dirección sin placa NO muestra ___ — usa preposición "en"', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'Barracón atrás del temple Calle 7a b -',
+      ciudad: 'TUMACO',
+      departamento: 'NARIÑO',
+    });
+    expect(r.suggested).not.toContain('___');
+    expect(r.suggested.toLowerCase()).toContain('calle 7a');
+    expect(r.suggested.toLowerCase()).toContain('en');
+    expect(r.suggested).toContain('Tumaco');
+    expect(r.missingNote).toMatch(/n[uú]mero|guion|placa/i);
+  });
+
+  it('Bug 2: dirección completa NO tiene missingNote', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'Calle 50 # 23-45 Barrio Laureles',
+      ciudad: 'Medellín',
+    });
+    expect(r.missingNote).toBeNull();
+  });
+
+  it('Bug 2: sin via pero con placa → missingNote sobre vía', () => {
+    const r = buildAddressSuggestion({
+      direccion: '# 23-45 Barrio Centro',
+      ciudad: 'Bogotá',
+    });
+    expect(r.suggested).not.toContain('[Calle/Carrera ___]');
+    expect(r.suggested).not.toContain('___');
+    expect(r.missingNote).toMatch(/calle|carrera|avenida/i);
   });
 });

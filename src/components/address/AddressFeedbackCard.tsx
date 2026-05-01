@@ -29,12 +29,19 @@ export interface AddressFeedbackCardProps {
   onApplySuggestion?: () => void;
   /**
    * Sugerencia client-side calculada por buildAddressSuggestion — formato
-   * "Calle 21 # 10-78, Barrio el 12, Fonseca, La Guajira" o template con
-   * placeholders ___ cuando falta info. Se renderiza en yellow/red bajo el
-   * label "Cómo debería verse esta dirección" sólo si hasEnoughInfo es true,
-   * para que la operadora tenga un molde concreto que confirmar al cliente.
+   * "Calle 21 # 10-78, Barrio el 12, Fonseca, La Guajira" cuando está completa,
+   * o "Calle 7A en Tumaco, Nariño" cuando faltan partes (sin placeholders).
+   * Cuando faltan datos, `missingNote` describe en lenguaje natural qué
+   * confirmar con el cliente (ej. "Falta confirmar: pídele al cliente el
+   * número exacto de la casa con guion (ej. 23-45)."). Se renderiza en
+   * yellow/red bajo el label "Cómo debería verse esta dirección" sólo si
+   * hasEnoughInfo es true.
    */
-  addressSuggestion?: { suggested: string; hasEnoughInfo: boolean } | null;
+  addressSuggestion?: {
+    suggested: string;
+    missingNote?: string | null;
+    hasEnoughInfo: boolean;
+  } | null;
   isAdmin: boolean;
   onOverrideChange: (overrideChecked: boolean) => void;
   carrier?: string;
@@ -118,9 +125,15 @@ export function AddressFeedbackCard({
             <div className="text-foreground font-mono text-[11px] leading-relaxed pl-4">
               {addressSuggestion.suggested}
             </div>
-            <div className="text-muted-foreground text-[10px] pl-4">
-              Confirma con el cliente que sea correcta.
-            </div>
+            {addressSuggestion.missingNote ? (
+              <div className="text-warning text-[11px] pl-4 mt-1">
+                {addressSuggestion.missingNote}
+              </div>
+            ) : (
+              <div className="text-muted-foreground text-[10px] pl-4">
+                Confirma con el cliente que sea correcta.
+              </div>
+            )}
           </div>
         )}
         {suggestedAddress && (
@@ -164,9 +177,15 @@ export function AddressFeedbackCard({
           <div className="text-foreground font-mono text-[11px] leading-relaxed pl-4">
             {addressSuggestion.suggested}
           </div>
-          <div className="text-muted-foreground text-[10px] pl-4">
-            Confirma con el cliente que sea correcta.
-          </div>
+          {addressSuggestion.missingNote ? (
+            <div className="text-warning text-[11px] pl-4 mt-1">
+              {addressSuggestion.missingNote}
+            </div>
+          ) : (
+            <div className="text-muted-foreground text-[10px] pl-4">
+              Confirma con el cliente que sea correcta.
+            </div>
+          )}
         </div>
       )}
 
