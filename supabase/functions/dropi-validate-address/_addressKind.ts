@@ -13,6 +13,15 @@ const PICKUP_PATTERNS = [
   /lo[\s_-]+(recojo|recoge)[\s_-]+(yo|en)/i,
   /yo[\s_-]+lo[\s_-]+recojo/i,
   /paso[\s_-]+a[\s_-]+recogerlo/i,
+  // Bug B: "of <transportadora>" abreviado (of interrapidismo, of servientrega).
+  /\bof\s+(inter[\s-]?rapid|servientrega|envia|coordinadora|tcc|domina|veloces)/i,
+  // "local NN" + transportadora cerca o "comercial" → punto de retiro comercial.
+  /\blocal\s+\d+.*\b(inter|servientrega|envia|coordinadora|tcc|domina|comercial)/i,
+  // Pasaje comercial / centro comercial (referencia comercial, no domicilio).
+  /\bpasaje\s+comercial\b/i,
+  /\bcentro\s+comercial\b/i,
+  // "hotel <nombre>" + "of <transportadora>" → casi siempre punto de retiro.
+  /hotel\s+\w+\s+of\s+\w+/i,
 ];
 
 const RURAL_PATTERNS = [

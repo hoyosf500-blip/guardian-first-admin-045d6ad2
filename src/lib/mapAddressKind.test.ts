@@ -46,4 +46,15 @@ describe('mapAddressKind', () => {
   it('"Cárrera 50 # 23-45" → urban (acento normalizado)', () => {
     expect(mapAddressKind('Cárrera 50 # 23-45')).toBe('urban');
   });
+
+  // Bug B: detección expandida de pickup_office.
+  it('Bug B: "of interrapidismo" detecta pickup_office', () => {
+    expect(mapAddressKind('cll 51 #50-20 local 110 pasaje comercial del hotel silver of interrapidismo')).toBe('pickup_office');
+  });
+  it('"of servientrega" detecta pickup_office', () => {
+    expect(mapAddressKind('Cll 30 # 15-20 of servientrega')).toBe('pickup_office');
+  });
+  it('"pasaje comercial" detecta pickup_office', () => {
+    expect(mapAddressKind('pasaje comercial centro de Bogotá local 5')).toBe('pickup_office');
+  });
 });
