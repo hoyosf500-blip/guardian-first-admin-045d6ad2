@@ -22,6 +22,7 @@ import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
+import { mapAddressKind } from '@/lib/mapAddressKind';
 
 // Validador-direcciones: helper local para gate de confirmación.
 function validarTelefono(phone: string): boolean {
@@ -34,6 +35,10 @@ function validarTelefono(phone: string): boolean {
 // inmediatamente. Vive a nivel de módulo — sobrevive remounts de CallView
 // (cambios de pestaña), reset solo en refresh de página.
 const autoValidatedOrderIds = new Set<string>();
+
+// Validador-direcciones: ids con pickup_office override ya aplicado en sesión.
+// Evita re-disparar el UPDATE en cada render si realtime tarda en refrescar.
+const pickupOverrideAppliedIds = new Set<string>();
 
 interface VipInfo {
   isVip: boolean;
@@ -395,6 +400,30 @@ export default function CallView({ items }: Props) {
     };
   }, [o?.dbId, o?.validationDecision, o?.missingFields, o?.direccion, o?.ciudad, o?.departamento, o?.nombre, o?.producto, o?.result]);
 
+  // Validador-direcciones: pickup override client-side.
+  // Si mapAddressKind detecta pickup_office pero la DB tiene otro decision
+  // (ej. green stale persistido por la edge function vieja antes del fix
+  // de regex pickup), corregir DB con UPDATE directo — sin llamar a la
+  // edge function porque la decisión es 100% client-side basada en regex
+  // de keywords y no quema cuota Google. Idempotente vía Set módulo-level.
+  useEffect(() => {
+    if (!o?.dbId || !o?.direccion) return;
+    if (o.validationDecision === 'pickup_office') return; // ya correcto
+    const detected = mapAddressKind(o.direccion);
+    if (detected !== 'pickup_office') return;
+    if (pickupOverrideAppliedIds.has(o.dbId)) return;
+    pickupOverrideAppliedIds.add(o.dbId);
+    void supabase
+      .from('orders')
+      .update({
+        validation_decision: 'pickup_office',
+        address_kind: 'pickup_office',
+        missing_fields: [],
+        suggested_customer_message: '',
+      })
+      .eq('id', o.dbId);
+  }, [o?.dbId, o?.direccion, o?.validationDecision]);
+
   if (!items.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -406,6 +435,17 @@ export default function CallView({ items }: Props) {
 
   const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
   const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
+
+  // Validador-direcciones: pickup override visual inmediato. Mientras el
+  // effect de override hace el UPDATE + realtime refresca, mostramos
+  // pickup_office localmente para no exponer a la operadora 1-2s a un
+  // green stale que sabemos que es incorrecto.
+  const visualDecision = (() => {
+    if (!o?.direccion) return o?.validationDecision ?? null;
+    const detected = mapAddressKind(o.direccion);
+    if (detected === 'pickup_office') return 'pickup_office' as const;
+    return o.validationDecision;
+  })();
 
   const handleMark = async (result: string, reason?: string) => {
     await markResult(o, result, reason);
@@ -555,7 +595,7 @@ export default function CallView({ items }: Props) {
               }}
             />
             <AddressFeedbackCard
-              decision={o.validationDecision}
+              decision={visualDecision}
               missingFields={o.missingFields ?? []}
               suggestedAddress={o.suggestedAddress}
               onApplySuggestion={o.suggestedAddress ? () => {

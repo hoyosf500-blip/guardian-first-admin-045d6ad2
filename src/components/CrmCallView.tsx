@@ -17,6 +17,7 @@ import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
+import { mapAddressKind } from '@/lib/mapAddressKind';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,6 +27,11 @@ import { supabase } from '@/integrations/supabase/client';
 // patrón que en CallView para que la auto-validación no entre en loop si
 // realtime no actualiza la fila inmediatamente.
 const autoValidatedOrderIdsCrm = new Set<string>();
+
+// Validador-direcciones: ids con pickup_office override ya aplicado en sesión.
+// Mismo patrón que en CallView — evita re-disparar el UPDATE en cada render
+// si realtime tarda en refrescar.
+const pickupOverrideAppliedIdsCrm = new Set<string>();
 
 const isManaged = (it: OrderData, managed: Record<string, string>): boolean =>
   !!(it.dbId && managed[it.dbId]);
@@ -341,6 +347,31 @@ export default function CrmCallView({
     };
   }, [previewDbId, previewDecision, previewMissingFields, previewDireccion, previewCiudad, previewDept, previewNombre, previewProducto, previewManaged]);
 
+  // Validador-direcciones: pickup override client-side.
+  // Mismo patrón que en CallView — si mapAddressKind detecta pickup_office
+  // pero la DB tiene otro decision (ej. green stale persistido por la edge
+  // function vieja antes del fix de regex pickup), corregir DB con UPDATE
+  // directo sin llamar a la edge function. La decisión es 100% client-side
+  // basada en regex de keywords; no quema cuota Google. Idempotente vía Set
+  // módulo-level.
+  useEffect(() => {
+    if (!previewDbId || !previewDireccion) return;
+    if (previewDecision === 'pickup_office') return; // ya correcto
+    const detected = mapAddressKind(previewDireccion);
+    if (detected !== 'pickup_office') return;
+    if (pickupOverrideAppliedIdsCrm.has(previewDbId)) return;
+    pickupOverrideAppliedIdsCrm.add(previewDbId);
+    void supabase
+      .from('orders')
+      .update({
+        validation_decision: 'pickup_office',
+        address_kind: 'pickup_office',
+        missing_fields: [],
+        suggested_customer_message: '',
+      })
+      .eq('id', previewDbId);
+  }, [previewDbId, previewDireccion, previewDecision]);
+
   if (!items.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
@@ -401,6 +432,16 @@ export default function CrmCallView({
 
   const pColor = diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : diasEnEstatus >= 2 ? 'text-orange-400' : 'text-green-500';
   const pDot = diasEnEstatus >= 5 ? 'bg-red-500' : diasEnEstatus >= 3 ? 'bg-amber-500' : diasEnEstatus >= 2 ? 'bg-orange-400' : 'bg-green-500';
+
+  // Validador-direcciones: pickup override visual inmediato. Mientras el
+  // effect de override hace el UPDATE + realtime refresca, mostramos
+  // pickup_office localmente para no exponer 1-2s a un green stale.
+  const visualDecisionCrm = (() => {
+    if (!o?.direccion) return o?.validationDecision ?? null;
+    const detected = mapAddressKind(o.direccion);
+    if (detected === 'pickup_office') return 'pickup_office' as const;
+    return o.validationDecision;
+  })();
 
   return (
     <div>
@@ -550,7 +591,7 @@ export default function CrmCallView({
                     feedback estructurado de la edge function — sin autocomplete
                     ni override aplicable, esta vista no maneja la confirmación. */}
                 <AddressFeedbackCard
-                  decision={o.validationDecision}
+                  decision={visualDecisionCrm}
                   missingFields={o.missingFields ?? []}
                   suggestedAddress={o.suggestedAddress}
                   onApplySuggestion={o.suggestedAddress ? () => {
