@@ -24,6 +24,7 @@ import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 import { mapAddressKind } from '@/lib/mapAddressKind';
 import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
+import { locationMatches } from '@/lib/locationGuard';
 
 // Validador-direcciones: helper local para gate de confirmación.
 function validarTelefono(phone: string): boolean {
@@ -347,8 +348,18 @@ export default function CallView({ items }: Props) {
         // pendiente de migration (hotfix 7aa41fd la comentó), así que sin
         // esto la sugerencia se perdería al re-render. Tiene mejor calidad
         // que la heurística local porque viene de la base real de Google.
-        if (data.suggested_address) {
+        // Anti-alucinación: si la edge function nos manda una dirección de
+        // otra ciudad/depto (Soacha cuando el pedido es Pitalito, etc.), la
+        // descartamos antes de cachearla — exponerla pondría al cliente en
+        // riesgo de despacho equivocado.
+        if (data.suggested_address && locationMatches(data.suggested_address, ciudad, departamento)) {
           setGoogleSuggestions((prev) => ({ ...prev, [orderId]: data.suggested_address! }));
+        } else if (data.suggested_address) {
+          console.warn('[validador] Descartando suggested_address que no coincide con ciudad/depto:', {
+            suggested: data.suggested_address,
+            ciudad,
+            departamento,
+          });
         }
         // Si Haiku/edge function ya devolvió missing_fields y mensaje, los
         // preservamos. Si NO los devolvió (shape legacy / Haiku no resolvió
@@ -673,14 +684,25 @@ export default function CallView({ items }: Props) {
             <AddressFeedbackCard
               decision={visualDecision}
               missingFields={o.missingFields ?? []}
-              suggestedAddress={o.suggestedAddress}
-              onApplySuggestion={o.suggestedAddress ? () => {
-                if (!o.dbId) return;
-                void supabase.from('orders').update({
-                  direccion: o.suggestedAddress,
-                  validation_decision: null, // re-validar con la dirección nueva
-                }).eq('id', o.dbId);
-              } : undefined}
+              suggestedAddress={
+                // Anti-alucinación: si la columna DB tiene una sugerencia
+                // stale persistida por una edge function vieja que no coincide
+                // con la ciudad/depto del pedido, NO la mostramos.
+                o.suggestedAddress && locationMatches(o.suggestedAddress, o.ciudad, o.departamento)
+                  ? o.suggestedAddress
+                  : null
+              }
+              onApplySuggestion={
+                o.suggestedAddress && locationMatches(o.suggestedAddress, o.ciudad, o.departamento)
+                  ? () => {
+                    if (!o.dbId) return;
+                    void supabase.from('orders').update({
+                      direccion: o.suggestedAddress,
+                      validation_decision: null, // re-validar con la dirección nueva
+                    }).eq('id', o.dbId);
+                  }
+                  : undefined
+              }
               addressSuggestion={(() => {
                 // Prioridad 1: Google Places real (lookup async via
                 // useGoogleAddressLookup → edge function google-places-proxy).
