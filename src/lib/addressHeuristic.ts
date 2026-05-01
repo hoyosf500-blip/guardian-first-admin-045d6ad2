@@ -36,6 +36,10 @@ const NUMBERS_REGEX = /\d+[\s\-#]+\d+/;
 // Placa canónica colombiana: `# X-Y` o `X-Y` con guion (o em-dash) explícito.
 // Bug A: una dirección sin esto no puede llegar a green; "Cll4 13 38" no es válido.
 const CANONICAL_PLACA_REGEX = /#?\s*\d+[a-z]?\s*[-–]\s*\d+[a-z]?/i;
+// Bug C: complemento mencionado pero SIN número subsecuente
+// (ej. "Apartamento." con punto y nada). El lookahead negativo `(?!\s*\d)`
+// asegura que "Apto 302" SÍ pasa (porque va seguido de un número).
+const COMPLEMENT_NO_NUMBER = /\b(?:apto|apartamento|apt|ap|torre|tor|manzana|mz|casa|cs|lote|lt|interior|int|bloque|bl)\b\.?\s*(?!\s*\d)/i;
 
 export function heuristicValidate(direccion: string): HeuristicResult {
   const issues: string[] = [];
@@ -126,6 +130,15 @@ export function heuristicValidate(direccion: string): HeuristicResult {
     if (!issues.includes('no_canonical_placa')) {
       issues.push('no_canonical_placa');
     }
+  }
+
+  // Bug C: complemento mencionado pero sin número subsecuente
+  // (ej. "Apartamento." con punto y nada). Forzamos yellow al menos.
+  if (COMPLEMENT_NO_NUMBER.test(dir)) {
+    if (!issues.includes('complemento_sin_numero')) {
+      issues.push('complemento_sin_numero');
+    }
+    score = Math.min(score, 65);
   }
 
   return { score: Math.min(100, score), issues, address_kind: kind };

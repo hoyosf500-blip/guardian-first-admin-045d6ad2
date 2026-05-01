@@ -38,3 +38,16 @@ describe('heuristicValidate — placa canónica (Bug A)', () => {
     expect(r.score).toBeGreaterThanOrEqual(80);
   });
 });
+
+describe('heuristicValidate — complemento sin número (Bug C)', () => {
+  it('Bug C: "Apartamento." sin número agrega issue complemento_sin_numero', () => {
+    const r = heuristicValidate('Cll 50 # 23-45 Apartamento.');
+    expect(r.issues).toContain('complemento_sin_numero');
+    expect(r.score).toBeLessThanOrEqual(65);
+  });
+
+  it('"Apto 302" con número NO marca complemento_sin_numero', () => {
+    const r = heuristicValidate('Cll 50 # 23-45 Apto 302');
+    expect(r.issues).not.toContain('complemento_sin_numero');
+  });
+});
