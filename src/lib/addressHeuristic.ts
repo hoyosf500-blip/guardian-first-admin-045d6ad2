@@ -33,6 +33,9 @@ const VIA_TYPE_REGEX = new RegExp(
   'i',
 );
 const NUMBERS_REGEX = /\d+[\s\-#]+\d+/;
+// Placa canónica colombiana: `# X-Y` o `X-Y` con guion (o em-dash) explícito.
+// Bug A: una dirección sin esto no puede llegar a green; "Cll4 13 38" no es válido.
+const CANONICAL_PLACA_REGEX = /#?\s*\d+[a-z]?\s*[-–]\s*\d+[a-z]?/i;
 
 export function heuristicValidate(direccion: string): HeuristicResult {
   const issues: string[] = [];
@@ -112,6 +115,17 @@ export function heuristicValidate(direccion: string): HeuristicResult {
   if (/^[\d\s\-#]+$/.test(dir)) {
     score = Math.max(0, score - 30);
     issues.push('no_letters');
+  }
+
+  // Bug A: capear score si NO hay placa canónica `# X-Y` con guion explícito.
+  // Sin guion no podemos confirmar que es una dirección urbana real (puede ser
+  // "Cll4 13 38 Apartamento." que parece dirección pero le falta la placa).
+  // Score máx 65 → cae en yellow ("Confirmar con cliente").
+  if (!CANONICAL_PLACA_REGEX.test(dir) && score > 65) {
+    score = 65;
+    if (!issues.includes('no_canonical_placa')) {
+      issues.push('no_canonical_placa');
+    }
   }
 
   return { score: Math.min(100, score), issues, address_kind: kind };

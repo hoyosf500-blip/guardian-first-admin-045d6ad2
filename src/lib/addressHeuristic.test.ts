@@ -25,3 +25,16 @@ describe('heuristicValidate — normalización de acentos', () => {
     expect(r.issues).toContain('no_via_type');
   });
 });
+
+describe('heuristicValidate — placa canónica (Bug A)', () => {
+  it('Bug A: "Cll4 13 38 Apartamento." NO llega a green sin placa canónica', () => {
+    const r = heuristicValidate('Cll4 13 38 Apartamento.');
+    expect(r.score).toBeLessThanOrEqual(65);
+    expect(r.issues).toContain('no_canonical_placa');
+  });
+
+  it('placa canónica con guion permite score >= 80', () => {
+    const r = heuristicValidate('Cll 50 # 23-45 Barrio Centro');
+    expect(r.score).toBeGreaterThanOrEqual(80);
+  });
+});

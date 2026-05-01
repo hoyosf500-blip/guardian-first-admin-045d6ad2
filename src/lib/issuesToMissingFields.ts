@@ -11,6 +11,7 @@
  *   - 'repeated_chars' — penalización por chars repetidos
  *   - 'no_letters'     — solo dígitos/símbolos
  *   - 'empty'          — string vacío (nunca se mapea, no llega aquí)
+ *   - 'no_canonical_placa' — falta patrón `# X-Y` con guion (Bug A)
  */
 const ISSUE_TO_FIELD_MAP: Record<string, string> = {
   no_via_type: 'tipo_via',
@@ -20,6 +21,7 @@ const ISSUE_TO_FIELD_MAP: Record<string, string> = {
   rural_address: 'referencia',
   repeated_chars: 'numero_casa',
   no_letters: 'tipo_via',
+  no_canonical_placa: 'numero_casa',
 };
 
 export function issuesToMissingFields(issues: string[]): string[] {
