@@ -37,8 +37,39 @@ const VIA_MAP: Record<string, string> = {
 // cubre nomenclatura tipo "Calle 23 bis".
 const VIA_REGEX = /\b(calle|cl|cra|cr|carrera|kr|kar|av|avenida|dg|diagonal|tv|transversal|cq|circular|au|autopista)\s*(\d+[a-z]?(?:\s*bis)?)\b/i;
 
-// Captura "# 10-78", "#10 78", "10-78", "no 10-78", "n.10-78"
-const PLACA_REGEX = /#?\s*(\d+[a-z]?)\s*-\s*(\d+[a-z]?)/i;
+// Detector de placa más flexible. Cubre 4 formatos comunes:
+//   1. Canónico:   "# 10-78", "#10 78", "10-78"   (con guion explícito)
+//   2. Compacto:   "18a19", "52D336"               (letra entre dígitos, sin guion)
+//   3. Espaciado:  "52 D 336"                      (letra rodeada de espacios)
+//   4. Tras vía:   "Calle 75 A B Sur 52 D 336"     (placa después de sufijos de vía)
+//
+// El "compacto" exige LETRA en el primer número para no confundirse con casos
+// como "Calle 21 22" donde son simplemente dos números pegados sin placa real.
+function detectPlaca(direccion: string): { left: string; right: string } | null {
+  // Normalizar: comprimir espacios.
+  const norm = (direccion || '').replace(/\s+/g, ' ').trim();
+  if (!norm) return null;
+
+  // Prioridad 1: formato canónico con guion (acepta tanto - como – em-dash).
+  // "# X-Y", "#X-Y", "X-Y" donde X y Y son N+letra opcional.
+  const canonical = norm.match(/#?\s*(\d{1,3}[a-z]?)\s*[-–]\s*(\d{1,3}[a-z]?)/i);
+  if (canonical) return { left: canonical[1], right: canonical[2] };
+
+  // Prioridad 2: compacto "X-letra-Y" donde el primer número TIENE letra glued.
+  // Ejemplos válidos: "18a19", "52D336", "# 23A45".
+  // Ejemplos INválidos: "Calle 21 22" (números pegados sin letra).
+  const compact = norm.match(/(?:^|\s|#)(\d{1,3}[a-z])\s*(\d{1,3})(?=\s|$|,|-|\.)/i);
+  if (compact) return { left: compact[1], right: compact[2] };
+
+  // Prioridad 3: espaciado "X letra Y" — letra única rodeada de espacios.
+  // Ejemplos válidos: "52 D 336", "100 A 25". El boundary y la letra aislada
+  // son señal fuerte de placa (no se confunde con "Calle 21 22" donde no hay
+  // letra entre los dígitos).
+  const spaced = norm.match(/(?:^|\s|#)(\d{1,3})\s+([a-z])\s+(\d{1,3})(?=\s|$|,|-|\.)/i);
+  if (spaced) return { left: `${spaced[1]}${spaced[2]}`, right: spaced[3] };
+
+  return null;
+}
 
 // "barrio X" — continúa hasta puntuación, próxima vía, o fin.
 const BARRIO_REGEX = /\bbarrio\s+([\w\s]+?)(?:[,.]|\s+(?:cra|cl|calle|carrera|av|#|fonseca|\d+#)|$)/i;
@@ -70,10 +101,11 @@ export function buildAddressSuggestion(
     missing.push('tipo y número de vía (ej. Calle 21 o Carrera 50)');
   }
 
-  // 2. Placa # X-Y
-  const placaMatch = (input.direccion || '').match(PLACA_REGEX);
-  if (placaMatch) {
-    parts.push(`# ${placaMatch[1]}-${placaMatch[2]}`);
+  // 2. Placa # X-Y — usa detectPlaca con múltiples regex priorizadas:
+  //    canónico (10-78), compacto (18a19), espaciado (52 D 336).
+  const placa = detectPlaca(input.direccion || '');
+  if (placa) {
+    parts.push(`# ${placa.left.toUpperCase()}-${placa.right.toUpperCase()}`);
   } else {
     parts.push('# ___-___');
     missing.push('número de la casa con guion (ej. # 10-78)');
@@ -91,7 +123,7 @@ export function buildAddressSuggestion(
   if (input.departamento && input.departamento.trim()) parts.push(capitalizar(input.departamento));
 
   const suggested = parts.join(', ');
-  const hasEnoughInfo = Boolean(viaMatch || placaMatch || barrioFinal);
+  const hasEnoughInfo = Boolean(viaMatch || placa || barrioFinal);
 
   return { suggested, missingParts: missing, hasEnoughInfo };
 }

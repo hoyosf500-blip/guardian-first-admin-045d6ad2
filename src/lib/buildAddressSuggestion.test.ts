@@ -85,4 +85,37 @@ describe('buildAddressSuggestion', () => {
     expect(r.suggested).toContain('Barrio Laureles');
     expect(r.suggested).not.toContain('Barrio Viejo');
   });
+
+  // ─── Detección de placa flexible ─────────────────────────────────────
+  it('caso real San Pedro: detecta 18a19 como placa 18A-19', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'San Pedro Calle 22# 18a19 -',
+      ciudad: 'La Unión',
+      departamento: 'Valle',
+    });
+    expect(r.suggested).toContain('Calle 22');
+    expect(r.suggested.toLowerCase()).toContain('18a-19');
+    expect(r.hasEnoughInfo).toBe(true);
+  });
+
+  it('caso real Albeiro: detecta Calle 75 + 52D-336', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'Suramérica. Verde Vivo Arizá apto 1706. Torre 2 Calle 75 A B Sur 52 D 336 -',
+      ciudad: 'Itagüí',
+      departamento: 'Antioquia',
+    });
+    expect(r.suggested).toContain('Calle 75');
+    expect(r.suggested.toLowerCase()).toContain('52d-336');
+  });
+
+  it('placa con guion canónico sigue funcionando', () => {
+    const r = buildAddressSuggestion({ direccion: 'Calle 50 # 23-45', ciudad: 'Medellín' });
+    expect(r.suggested).toContain('# 23-45');
+  });
+
+  it('NO confunde "Calle 21 22" con placa', () => {
+    // 21 22 son números sin letra entre ellos, no es una placa
+    const r = buildAddressSuggestion({ direccion: 'Calle 21 22', ciudad: 'Bogotá' });
+    expect(r.suggested).toContain('# ___-___');
+  });
 });
