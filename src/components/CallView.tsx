@@ -724,12 +724,23 @@ export default function CallView({ items }: Props) {
                 // Prioridad 3: heurística client-side (fallback) — arma un
                 // template a partir del texto crudo, sin números reales.
                 if (!o.direccion) return null;
-                return buildAddressSuggestion({
+                const heuristicSuggestion = buildAddressSuggestion({
                   direccion: o.direccion,
                   ciudad: o.ciudad,
                   departamento: o.departamento,
                   barrio: o.barrio,
                 });
+                // Sanity check: la heurística sólo usa datos del pedido y NO
+                // debería poder alucinar. Aún así, si por algún bug futuro la
+                // sugerencia generada pierde la ciudad/depto, la descartamos
+                // para no exponer al cliente a un despacho equivocado.
+                if (
+                  heuristicSuggestion.hasEnoughInfo &&
+                  !locationMatches(heuristicSuggestion.suggested, o.ciudad, o.departamento)
+                ) {
+                  return { suggested: '', missingNote: null, hasEnoughInfo: false };
+                }
+                return heuristicSuggestion;
               })()}
               isAdmin={isAdmin}
               carrier={o.transportadora}
