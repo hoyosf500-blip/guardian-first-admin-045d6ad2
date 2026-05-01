@@ -4,9 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 
 const FIELD_LABEL_ES: Record<string, string> = {
-  placa: 'placa de la casa',
+  numero_casa: 'número de la casa (ej. 23-45)',
+  tipo_via: 'tipo de vía (Calle, Carrera o Avenida)',
+  numero_via: 'número de la calle o carrera',
   barrio: 'barrio',
-  complemento: 'punto de referencia',
+  referencia: 'cerca de qué queda (referencia)',
+  apto_torre: 'apartamento o torre',
+  // legacy keys mantenidos por compat:
+  placa: 'número de la casa (ej. 23-45)',
+  complemento: 'cerca de qué queda (referencia)',
   telefono: 'teléfono alternativo',
 };
 

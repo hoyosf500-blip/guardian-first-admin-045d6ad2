@@ -13,13 +13,13 @@
  *   - 'empty'          — string vacío (nunca se mapea, no llega aquí)
  */
 const ISSUE_TO_FIELD_MAP: Record<string, string> = {
-  no_via_type: 'placa',         // sin Calle/Carrera no hay placa concreta
-  no_numbers: 'placa',          // sin #X-Y no hay placa
-  too_short: 'placa',           // típicamente faltan placa+barrio
-  short_length: 'placa',        // dirección corta — falta info de placa
-  rural_address: 'complemento', // rural: pedir punto de referencia
-  repeated_chars: 'placa',      // basura — pedir placa de nuevo
-  no_letters: 'placa',          // solo números — falta tipo de vía + barrio
+  no_via_type: 'tipo_via',
+  no_numbers: 'numero_casa',
+  too_short: 'numero_casa',
+  short_length: 'numero_casa',
+  rural_address: 'referencia',
+  repeated_chars: 'numero_casa',
+  no_letters: 'tipo_via',
 };
 
 export function issuesToMissingFields(issues: string[]): string[] {
@@ -28,7 +28,7 @@ export function issuesToMissingFields(issues: string[]): string[] {
     const field = ISSUE_TO_FIELD_MAP[issue];
     if (field) fields.add(field);
   }
-  // Fallback: si hay issues pero ninguno se mapeó, agregar 'placa' como fallback genérico
-  if (fields.size === 0 && issues.length > 0) fields.add('placa');
+  // Fallback: si hay issues pero ninguno se mapeó, agregar 'numero_casa' como fallback genérico
+  if (fields.size === 0 && issues.length > 0) fields.add('numero_casa');
   return Array.from(fields);
 }
