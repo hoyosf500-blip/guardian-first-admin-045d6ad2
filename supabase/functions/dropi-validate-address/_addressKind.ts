@@ -16,9 +16,12 @@ const RURAL_PATTERNS = [
 ];
 
 const URBAN_PATTERNS = [
-  /\bcalle\b/i, /\bcl\b/i, /\bcll\b/i, /\bcarrera\b/i, /\bcra\b/i,
-  /\bkr\b/i, /\bavenida\b/i, /\bav\b/i, /\bdiagonal\b/i, /\bdg\b/i,
-  /\btransversal\b/i, /\btv\b/i, /\bcdla\b/i,
+  /\b(?:cll?|calle|cl)\d*\b/i,
+  /\b(?:cra|carrera|kr|kar)\d*\b/i,
+  /\b(?:av|avenida)\d*\b/i,
+  /\b(?:dg|diagonal)\d*\b/i,
+  /\b(?:tv|transversal)\d*\b/i,
+  /\b(?:cdla|ciudadela)\d*\b/i,
 ];
 
 function normalize(input: string): string {

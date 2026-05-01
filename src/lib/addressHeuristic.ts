@@ -28,8 +28,8 @@ export interface HeuristicResult {
 }
 
 const VIA_TYPE_REGEX = new RegExp(
-  '\\b(calle|cl|cll|carrera|cr|kr|cra|avenida|av|avda|diagonal|dg|diag|' +
-  'transversal|tv|trv|manzana|mz|mza|circular|circ|autopista|autop)\\b',
+  '\\b(?:calle|cl|cll|carrera|cr|kr|cra|avenida|av|avda|diagonal|dg|diag|' +
+  'transversal|tv|trv|manzana|mz|mza|circular|circ|autopista|autop)\\d*\\b',
   'i',
 );
 const NUMBERS_REGEX = /\d+[\s\-#]+\d+/;

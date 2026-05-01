@@ -27,4 +27,8 @@ describe('mapAddressKind', () => {
   it('pickup tiene prioridad sobre urbano', () => {
     expect(mapAddressKind('Calle 8 oficina Interrapidísimo')).toBe('pickup_office');
   });
+  it('detecta urbano por Cll4 (sin espacio)', () => expect(mapAddressKind('Cll4 13 38 Apartamento')).toBe('urban'));
+  it('detecta urbano por Cra5 (sin espacio)', () => expect(mapAddressKind('Cra5 #12-34')).toBe('urban'));
+  it('detecta urbano por Av7 (sin espacio)', () => expect(mapAddressKind('Av7 #45 Sur')).toBe('urban'));
+  it('detecta urbano por Dg45 (sin espacio)', () => expect(mapAddressKind('Dg45 #78-90')).toBe('urban'));
 });

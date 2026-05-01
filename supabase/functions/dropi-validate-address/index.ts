@@ -50,8 +50,8 @@ function buildCacheKey(direccion: string, ciudad: string, departamento: string):
 // DIAGONAL/DG, TRANSVERSAL/TV, MANZANA/MZ, CIRCULAR, AUTOPISTA.
 // Números: #X-XX, X-XX, "MZ X CASA Y", "MANZANA X LOTE Y".
 const VIA_TYPE_REGEX = new RegExp(
-  "\\b(calle|cl|cll|carrera|cr|kr|cra|avenida|av|avda|diagonal|dg|diag|" +
-  "transversal|tv|trv|manzana|mz|mza|circular|circ|autopista|autop)\\b",
+  "\\b(?:calle|cl|cll|carrera|cr|kr|cra|avenida|av|avda|diagonal|dg|diag|" +
+  "transversal|tv|trv|manzana|mz|mza|circular|circ|autopista|autop)\\d*\\b",
   "i"
 );
 const NUMBERS_REGEX = /\d+[\s\-#]+\d+/;

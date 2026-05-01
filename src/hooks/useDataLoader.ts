@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
 import { POLL_INTERVAL_MS } from '@/lib/constants';
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 
 /**
@@ -50,8 +51,9 @@ export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
 }
 
 // Fix 22: lista explícita de columnas para queries de orders. Evita SELECT *
-// que trae columnas innecesarias en cada fetch.
-const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
+// que trae columnas innecesarias en cada fetch. Ahora se importa desde
+// `@/lib/orderColumns` para mantener un único source of truth (incluye las
+// columnas del validador: validation_decision, address_kind, etc.).
 
 interface DataLoaderState {
   segData: OrderData[];
