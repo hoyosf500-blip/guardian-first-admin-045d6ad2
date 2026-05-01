@@ -74,6 +74,38 @@ function detectPlaca(direccion: string): { left: string; right: string } | null 
 // "barrio X" — continúa hasta puntuación, próxima vía, o fin.
 const BARRIO_REGEX = /\bbarrio\s+([\w\s]+?)(?:[,.]|\s+(?:cra|cl|calle|carrera|av|#|fonseca|\d+#)|$)/i;
 
+// Detección de complementos colombianos comunes (apto, torre, manzana, etc.).
+// Captura el TIPO + NÚMERO. Se aplica después de placa, antes de barrio.
+export interface DetectedComplemento {
+  tipo: 'Apto' | 'Torre' | 'Bloque' | 'Manzana' | 'Casa' | 'Interior' | 'Lote';
+  numero: string;
+}
+
+const COMPLEMENTO_PATTERNS: Array<[RegExp, DetectedComplemento['tipo']]> = [
+  [/\b(?:apto|apartamento|apt|ap)\.?\s*(\d+[a-z]?)/i, 'Apto'],
+  [/\b(?:torre|tor)\.?\s*(\d+[a-z]?)/i, 'Torre'],
+  [/\b(?:bloque|bl)\.?\s*(\d+[a-z]?)/i, 'Bloque'],
+  [/\b(?:manzana|mzana|mz)\.?\s*(\d+[a-z]?|[a-z])\b/i, 'Manzana'],
+  [/\b(?:casa|cs)\.?\s*(\d+[a-z]?)/i, 'Casa'],
+  [/\b(?:interior|int)\.?\s*(\d+[a-z]?)/i, 'Interior'],
+  [/\b(?:lote|lt)\.?\s*(\d+[a-z]?)/i, 'Lote'],
+];
+
+function detectComplementos(direccion: string): DetectedComplemento[] {
+  if (!direccion) return [];
+  const found: DetectedComplemento[] = [];
+  const seen = new Set<DetectedComplemento['tipo']>();
+  for (const [pattern, tipo] of COMPLEMENTO_PATTERNS) {
+    if (seen.has(tipo)) continue;
+    const m = direccion.match(pattern);
+    if (m && m[1]) {
+      found.push({ tipo, numero: m[1].toUpperCase() });
+      seen.add(tipo);
+    }
+  }
+  return found;
+}
+
 const norm = (s: string): string =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -111,14 +143,20 @@ export function buildAddressSuggestion(
     missing.push('número de la casa con guion (ej. # 10-78)');
   }
 
-  // 3. Barrio (param tiene prioridad sobre extraído del texto)
+  // 3. Complementos (apto, torre, manzana, etc.) — van DESPUÉS de la placa.
+  const complementos = detectComplementos(input.direccion || '');
+  for (const c of complementos) {
+    parts.push(`${c.tipo} ${c.numero}`);
+  }
+
+  // 4. Barrio (param tiene prioridad sobre extraído del texto)
   const barrioFromText = input.direccion?.match(BARRIO_REGEX)?.[1]?.trim();
   const barrioFinal = (input.barrio && input.barrio.trim()) || barrioFromText;
   if (barrioFinal) parts.push(`Barrio ${capitalizar(barrioFinal)}`);
   // Barrio es opcional cuando ya hay calle+placa completas — no lo agregamos
   // a missing aquí.
 
-  // 4. Ciudad y departamento
+  // 5. Ciudad y departamento
   if (input.ciudad && input.ciudad.trim()) parts.push(capitalizar(input.ciudad));
   if (input.departamento && input.departamento.trim()) parts.push(capitalizar(input.departamento));
 

@@ -118,4 +118,31 @@ describe('buildAddressSuggestion', () => {
     const r = buildAddressSuggestion({ direccion: 'Calle 21 22', ciudad: 'Bogotá' });
     expect(r.suggested).toContain('# ___-___');
   });
+
+  // ─── Detección de complementos ───────────────────────────────────────
+  it('detecta complemento apto', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'Calle 50 # 23-45 apto 302',
+      ciudad: 'Medellín',
+    });
+    expect(r.suggested).toContain('Apto 302');
+  });
+
+  it('detecta múltiples complementos: torre + apto', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'Calle 75 # 52-336 Torre 2 apto 1706',
+      ciudad: 'Itagüí',
+    });
+    expect(r.suggested).toContain('Torre 2');
+    expect(r.suggested).toContain('Apto 1706');
+  });
+
+  it('detecta manzana con letra', () => {
+    const r = buildAddressSuggestion({
+      direccion: 'Manzana A Lote 12 Barrio Los Mangos',
+      ciudad: 'Cartagena',
+    });
+    expect(r.suggested).toContain('Manzana A');
+    expect(r.suggested).toContain('Lote 12');
+  });
 });
