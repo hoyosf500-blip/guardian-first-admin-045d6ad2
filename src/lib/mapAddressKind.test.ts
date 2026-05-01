@@ -40,4 +40,10 @@ describe('mapAddressKind', () => {
   it('pickup por "Yo lo recojo en oficina"', () => {
     expect(mapAddressKind('Yo lo recojo en oficina')).toBe('pickup_office');
   });
+  it('"Callé 21 # 10-78" → urban (acento normalizado)', () => {
+    expect(mapAddressKind('Callé 21 # 10-78')).toBe('urban');
+  });
+  it('"Cárrera 50 # 23-45" → urban (acento normalizado)', () => {
+    expect(mapAddressKind('Cárrera 50 # 23-45')).toBe('urban');
+  });
 });

@@ -75,7 +75,13 @@ export function heuristicValidate(direccion: string): HeuristicResult {
     return { score: 10, issues, address_kind: kind };
   }
 
-  if (VIA_TYPE_REGEX.test(dir)) {
+  // Normalizamos antes de aplicar regex de tipo de vía / referencias para que
+  // typos comunes con tildes ("Callé", "Cárrera", "Avénida") matcheen igual.
+  // Ver caso real: "Callé 21 # 10-78" — sin normalizar, el regex de tipo
+  // de vía no matcheaba y la heurística marcaba `no_via_type` falso positivo.
+  const normalized = dir.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+  if (VIA_TYPE_REGEX.test(normalized)) {
     score += 40;
   } else {
     issues.push('no_via_type');
@@ -94,7 +100,7 @@ export function heuristicValidate(direccion: string): HeuristicResult {
   }
 
   // Bonus: referencias adicionales (barrio, casa, apto, local)
-  if (/\b(barrio|brrio|brr|casa|cs|apto|apartamento|edificio|edif|torre|piso|interior|int|local|loc)\b/i.test(dir)) {
+  if (/\b(barrio|brrio|brr|casa|cs|apto|apartamento|edificio|edif|torre|piso|interior|int|local|loc)\b/i.test(normalized)) {
     score += 10;
   }
 
