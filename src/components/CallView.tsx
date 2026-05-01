@@ -177,9 +177,33 @@ export default function CallView({ items }: Props) {
   //     card. Si el UPDATE falla, igual sacamos al order del set de loading.
   useEffect(() => {
     if (!o?.dbId) return;
-    if (o.validationDecision !== null) return;
+    // Skip si decision terminal y completa:
+    //   - green/pickup_office: no necesitan missing_fields
+    //   - red/yellow con missing_fields ya poblados (caso normal post-fix)
+    // Re-disparar si:
+    //   - decision === null (pedido pre-feature, sin validar)
+    //   - decision red/yellow PERO missing_fields vacío (pedidos validados
+    //     ANTES del fix de issuesToMissingFields que tienen missing_fields=[])
+    const isGreenOrPickup = o.validationDecision === 'green' || o.validationDecision === 'pickup_office';
+    const isRedOrYellowMissingFields =
+      (o.validationDecision === 'red' || o.validationDecision === 'yellow') &&
+      (!o.missingFields || o.missingFields.length === 0);
+    const shouldValidate = o.validationDecision === null || isRedOrYellowMissingFields;
+    if (isGreenOrPickup || !shouldValidate) return;
     if (!o.direccion || o.direccion.trim().length < 5) return;
     if (o.result) return; // ya gestionado, no quemamos cuota
+    // Backfill retry: si el id está marcado como ya-validado en sesión PERO
+    // missing_fields quedó vacío con decision red/yellow, removerlo del Set
+    // para permitir un retry. Esto cubre pedidos que se persistieron con
+    // decision pero sin missing_fields antes del fix de issuesToMissingFields.
+    if (
+      o.dbId &&
+      autoValidatedOrderIds.has(o.dbId) &&
+      (o.validationDecision === 'red' || o.validationDecision === 'yellow') &&
+      (!o.missingFields || o.missingFields.length === 0)
+    ) {
+      autoValidatedOrderIds.delete(o.dbId);
+    }
     if (autoValidatedOrderIds.has(o.dbId)) return;
 
     const orderId = o.dbId;
@@ -347,7 +371,7 @@ export default function CallView({ items }: Props) {
       clearTimeout(hardStopTimerId);
       stopLoading();
     };
-  }, [o?.dbId, o?.validationDecision, o?.direccion, o?.ciudad, o?.departamento, o?.nombre, o?.producto, o?.result]);
+  }, [o?.dbId, o?.validationDecision, o?.missingFields, o?.direccion, o?.ciudad, o?.departamento, o?.nombre, o?.producto, o?.result]);
 
   if (!items.length || !o) {
     return (

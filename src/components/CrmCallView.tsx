@@ -124,6 +124,7 @@ export default function CrmCallView({
   const previewOrder = previewIdx >= 0 ? items[previewIdx] : undefined;
   const previewDbId = previewOrder?.dbId;
   const previewDecision = previewOrder?.validationDecision ?? null;
+  const previewMissingFields = previewOrder?.missingFields;
   const previewDireccion = previewOrder?.direccion ?? '';
   const previewCiudad = previewOrder?.ciudad ?? '';
   const previewDept = previewOrder?.departamento ?? '';
@@ -133,9 +134,33 @@ export default function CrmCallView({
 
   useEffect(() => {
     if (!previewDbId) return;
-    if (previewDecision !== null) return;
+    // Skip si decision terminal y completa:
+    //   - green/pickup_office: no necesitan missing_fields
+    //   - red/yellow con missing_fields ya poblados (caso normal post-fix)
+    // Re-disparar si:
+    //   - decision === null (pedido pre-feature, sin validar)
+    //   - decision red/yellow PERO missing_fields vacío (pedidos validados
+    //     ANTES del fix de issuesToMissingFields que tienen missing_fields=[])
+    const isGreenOrPickup = previewDecision === 'green' || previewDecision === 'pickup_office';
+    const isRedOrYellowMissingFields =
+      (previewDecision === 'red' || previewDecision === 'yellow') &&
+      (!previewMissingFields || previewMissingFields.length === 0);
+    const shouldValidate = previewDecision === null || isRedOrYellowMissingFields;
+    if (isGreenOrPickup || !shouldValidate) return;
     if (!previewDireccion || previewDireccion.trim().length < 5) return;
     if (previewManaged) return;
+    // Backfill retry: si el id está marcado como ya-validado en sesión PERO
+    // missing_fields quedó vacío con decision red/yellow, removerlo del Set
+    // para permitir un retry. Esto cubre pedidos que se persistieron con
+    // decision pero sin missing_fields antes del fix de issuesToMissingFields.
+    if (
+      previewDbId &&
+      autoValidatedOrderIdsCrm.has(previewDbId) &&
+      (previewDecision === 'red' || previewDecision === 'yellow') &&
+      (!previewMissingFields || previewMissingFields.length === 0)
+    ) {
+      autoValidatedOrderIdsCrm.delete(previewDbId);
+    }
     if (autoValidatedOrderIdsCrm.has(previewDbId)) return;
 
     const orderId = previewDbId;
@@ -295,7 +320,7 @@ export default function CrmCallView({
       clearTimeout(hardStopTimerId);
       stopLoading();
     };
-  }, [previewDbId, previewDecision, previewDireccion, previewCiudad, previewDept, previewNombre, previewProducto, previewManaged]);
+  }, [previewDbId, previewDecision, previewMissingFields, previewDireccion, previewCiudad, previewDept, previewNombre, previewProducto, previewManaged]);
 
   if (!items.length) {
     return (
