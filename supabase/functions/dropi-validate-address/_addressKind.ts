@@ -7,6 +7,12 @@ const PICKUP_PATTERNS = [
   /cliente[\s_-]*retira/i,
   /\bpunto[\s_-]*(dropi|drop)\b/i,
   /retiro[\s_-]*en[\s_-]*oficina/i,
+  /recl(?:amo|ama|amar|amará)[\s_-]+en[\s_-]+oficina/i,
+  /recl(?:amo|ama|amar)[\s_-]+oficina/i,
+  /oficina[\s_-]+(servientrega|envia|coordinadora|inter[\s-]?rapid|tcc|domina)/i,
+  /lo[\s_-]+(recojo|recoge)[\s_-]+(yo|en)/i,
+  /yo[\s_-]+lo[\s_-]+recojo/i,
+  /paso[\s_-]+a[\s_-]+recogerlo/i,
 ];
 
 const RURAL_PATTERNS = [
