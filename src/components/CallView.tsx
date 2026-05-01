@@ -504,6 +504,9 @@ export default function CallView({ items }: Props) {
   const { result: googleLookup, loading: lookupLoading } = useGoogleAddressLookup({
     direccion: o?.direccion ?? '',
     ciudad: o?.ciudad,
+    // CRÍTICO: pasar departamento para que el hook descarte resultados que
+    // no coincidan con la región del pedido (anti-alucinación de Google).
+    departamento: o?.departamento,
     enabled: lookupEnabled,
     cacheKey: o?.dbId ?? 'noid',
   });

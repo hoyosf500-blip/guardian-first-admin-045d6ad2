@@ -1,8 +1,12 @@
 // Hook que busca una dirección en Google Places y devuelve la primera
-// predicción como sugerencia REAL (no heurística).
+// predicción que coincida con la ciudad/departamento del pedido.
 //
-// Diseñado para ser barato: cache por orderId+dirección (solo memoria),
-// llamada disparada por el componente cuando el pedido está yellow/red.
+// CRÍTICO: Google a veces sesga las predicciones hacia ciudades populares
+// (ej. devuelve "Soacha, Cundinamarca" cuando el pedido es Pitalito, Huila).
+// Eso es alucinación que puede causar despachos a la ciudad equivocada. Por
+// eso filtramos: si ninguna predicción contiene la ciudad O el departamento
+// del pedido, devolvemos null y caemos al fallback heurístico (que SÍ usa
+// los datos del pedido sin inventar).
 //
 // La edge function google-places-proxy ya hace gating de cuota server-side
 // vía consume_google_quota — no necesitamos doble check aquí.
@@ -19,8 +23,10 @@ interface LookupResult {
 interface Args {
   /** Dirección actual del pedido (lo que escribió el cliente) */
   direccion: string;
-  /** Ciudad para sesgar la búsqueda */
+  /** Ciudad del pedido — usada para sesgar Y para filtrar resultados */
   ciudad?: string | null;
+  /** Departamento del pedido — usado para validar que el resultado coincida */
+  departamento?: string | null;
   /** Solo dispara si decision es 'yellow' o 'red' (no green/pickup/null) */
   enabled: boolean;
   /** Key estable para cachear por pedido (ej. orderId). Si cambia, se re-busca. */
@@ -29,7 +35,39 @@ interface Args {
 
 const sessionCache = new Map<string, LookupResult | null>();
 
-export function useGoogleAddressLookup({ direccion, ciudad, enabled, cacheKey }: Args): {
+/** Normaliza string para comparación case+accent-insensitive. */
+function normalize(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Verifica que la prediction de Google contenga la ciudad O el departamento
+ * del pedido. Si NO contiene ninguno, es probable alucinación de Google y
+ * debemos descartarla.
+ */
+export function predictionMatchesLocation(
+  description: string,
+  ciudad?: string | null,
+  departamento?: string | null,
+): boolean {
+  if (!ciudad && !departamento) return true; // sin info, no podemos validar — aceptar
+  const desc = normalize(description);
+  if (ciudad) {
+    const c = normalize(ciudad);
+    if (c.length >= 3 && desc.includes(c)) return true;
+  }
+  if (departamento) {
+    const d = normalize(departamento);
+    if (d.length >= 3 && desc.includes(d)) return true;
+  }
+  return false;
+}
+
+export function useGoogleAddressLookup({ direccion, ciudad, departamento, enabled, cacheKey }: Args): {
   result: LookupResult | null;
   loading: boolean;
 } {
@@ -54,9 +92,14 @@ export function useGoogleAddressLookup({ direccion, ciudad, enabled, cacheKey }:
       .autocomplete(direccion, ciudad ?? undefined)
       .then((predictions) => {
         if (cancelled) return;
-        const first = predictions[0];
-        const lookup: LookupResult | null = first
-          ? { description: first.description, place_id: first.place_id }
+        // Buscar la PRIMERA predicción que pase el guard de ciudad/depto.
+        // Si ninguna pasa, devolver null y dejar que el fallback heurístico
+        // (que sí usa ciudad+depto del pedido sin inventar) tome el control.
+        const safe = predictions.find((p) =>
+          predictionMatchesLocation(p.description, ciudad, departamento),
+        );
+        const lookup: LookupResult | null = safe
+          ? { description: safe.description, place_id: safe.place_id }
           : null;
         sessionCache.set(cacheKey, lookup);
         setResult(lookup);
@@ -74,7 +117,7 @@ export function useGoogleAddressLookup({ direccion, ciudad, enabled, cacheKey }:
     return () => {
       cancelled = true;
     };
-  }, [enabled, direccion, ciudad, cacheKey, google]);
+  }, [enabled, direccion, ciudad, departamento, cacheKey, google]);
 
   return { result, loading };
 }
