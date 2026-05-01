@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useGooglePlaces } from './useGooglePlaces';
+import { locationMatches } from '@/lib/locationGuard';
 
 interface LookupResult {
   /** Dirección como Google la devuelve (ej. "Calle 15 #4-30, Pitalito, Huila, Colombia") */
@@ -35,37 +36,10 @@ interface Args {
 
 const sessionCache = new Map<string, LookupResult | null>();
 
-/** Normaliza string para comparación case+accent-insensitive. */
-function normalize(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .trim();
-}
-
-/**
- * Verifica que la prediction de Google contenga la ciudad O el departamento
- * del pedido. Si NO contiene ninguno, es probable alucinación de Google y
- * debemos descartarla.
- */
-export function predictionMatchesLocation(
-  description: string,
-  ciudad?: string | null,
-  departamento?: string | null,
-): boolean {
-  if (!ciudad && !departamento) return true; // sin info, no podemos validar — aceptar
-  const desc = normalize(description);
-  if (ciudad) {
-    const c = normalize(ciudad);
-    if (c.length >= 3 && desc.includes(c)) return true;
-  }
-  if (departamento) {
-    const d = normalize(departamento);
-    if (d.length >= 3 && desc.includes(d)) return true;
-  }
-  return false;
-}
+// Wrapper legacy: el guard se movió a `@/lib/locationGuard` para poder
+// usarlo desde CallView/CrmCallView. Mantenemos este re-export con la
+// firma original para no romper consumidores ni tests existentes.
+export const predictionMatchesLocation = locationMatches;
 
 export function useGoogleAddressLookup({ direccion, ciudad, departamento, enabled, cacheKey }: Args): {
   result: LookupResult | null;
@@ -96,7 +70,7 @@ export function useGoogleAddressLookup({ direccion, ciudad, departamento, enable
         // Si ninguna pasa, devolver null y dejar que el fallback heurístico
         // (que sí usa ciudad+depto del pedido sin inventar) tome el control.
         const safe = predictions.find((p) =>
-          predictionMatchesLocation(p.description, ciudad, departamento),
+          locationMatches(p.description, ciudad, departamento),
         );
         const lookup: LookupResult | null = safe
           ? { description: safe.description, place_id: safe.place_id }
