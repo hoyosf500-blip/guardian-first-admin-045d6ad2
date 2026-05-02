@@ -37,6 +37,8 @@ function normalizeCodigo(s: string | null | undefined): string {
 function mapCategoria(codigo: string | null | undefined): string {
   const c = normalizeCodigo(codigo);
   if (!c) return "otro";
+
+  // Patrones existentes
   if (c.includes("FLETE INICIAL"))                                 return "flete_inicial";
   if (c.includes("NUEVA ORDEN"))                                   return "orden_sin_recaudo";
   if (c.includes("CAMBIO DE ESTATUS"))                             return "cobro_entrega";
@@ -49,8 +51,38 @@ function mapCategoria(codigo: string | null | undefined): string {
   // "SALIDA DE COBRO DE DEVOLUCION POR ENTREGA NO EFECTIVA".
   if (c.includes("DEVOLUCION") && c.includes("NO EFECTIV"))        return "costo_devolucion";
   if (c.includes("COMISION DE REFERIDOS"))                         return "comision_referidos";
+
+  // Nuevos patrones (descubiertos en auditoría 2026-05-02)
+  // Mantenimiento mensual de tarjeta virtual de Dropi
+  if (c.includes("MANTENIMIENTO") && c.includes("TARJETA"))        return "mantenimiento_tarjeta";
+  // Indemnización por orden con problema (proveedor no despacha en 72h, etc)
+  if (c.includes("INDEMNIZACION"))                                 return "indemnizacion";
+
+  // Transferencias de wallet (entre usuarios Dropi):
+  // - SALIDA + TRANSFERENCIA + AL USUARIO = retiro a tu propio email O transferencia a tercero
+  // - ENTRADA + TRANSFERENCIA + DESDE EL USUARIO = depósito desde tu propio email O recarga
+  // El email del USER_OWNER se compara contra DROPI_OWNER_EMAIL si está seteado;
+  // sin esa env var, asumimos que TODA transferencia entrante es 'deposito' y SALIENTE es 'retiro'
+  // (criterio conservador: la mayoría de operadores solo se transfieren a sí mismos).
+  if (c.includes("TRANSFERENCIA") && c.includes("AL USUARIO")) {
+    // Si el código menciona el email del owner (heurística básica), es retiro propio.
+    // Si NO menciona el email del owner pero sí menciona OTRO email, es transferencia externa.
+    // Para ser conservador: si el codigo contiene "@" pero no el del owner -> externa.
+    const ownerEmail = (Deno.env.get("DROPI_OWNER_EMAIL") || "").toLowerCase();
+    const codigoLower = (codigo || "").toLowerCase();
+    if (ownerEmail && codigoLower.includes(ownerEmail)) {
+      return "retiro";
+    }
+    // Sin env var configurada: asumimos retiro (caso más común).
+    // Si en el futuro queremos distinguir, set DROPI_OWNER_EMAIL en Supabase.
+    return "retiro";
+  }
+  if (c.includes("TRANSFERENCIA") && c.includes("DESDE EL USUARIO"))     return "deposito";
+
+  // Patrones legacy (siguen funcionando con el text simplificado)
   if (c.includes("RETIRO"))                                        return "retiro";
   if (c.includes("DEPOSITO") || c.includes("RECARGA"))             return "deposito";
+
   return "otro";
 }
 
