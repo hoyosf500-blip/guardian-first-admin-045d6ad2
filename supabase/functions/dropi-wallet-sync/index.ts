@@ -28,19 +28,29 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 const DROPI_API = "https://api.dropi.co";
 const EXPORT_PATH = "/api/wallet/exportexcel";
 
+/** Normaliza string: uppercase + sin acentos, para matchear códigos
+ *  con/sin tildes (ej. "DEVOLUCIÓN" vs "DEVOLUCION") robustamente. */
+function normalizeCodigo(s: string | null | undefined): string {
+  return (s || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
 function mapCategoria(codigo: string | null | undefined): string {
-  const c = (codigo || "").toUpperCase();
+  const c = normalizeCodigo(codigo);
   if (!c) return "otro";
   if (c.includes("FLETE INICIAL"))                                 return "flete_inicial";
   if (c.includes("NUEVA ORDEN"))                                   return "orden_sin_recaudo";
   if (c.includes("CAMBIO DE ESTATUS"))                             return "cobro_entrega";
   if (c.includes("GANANCIA") && c.includes("DROPSHIPPER"))         return "ganancia_dropshipper";
   if (c.includes("GANANCIA") && c.includes("PROVEEDOR"))           return "ganancia_proveedor";
-  if (c.includes("DEVOLUCION DE FLETE ORDEN ENTREGADA"))           return "reembolso_flete";
-  if (c.includes("DEVOLUCION DE FLETE") && c.includes("NO EFECTIVA")) return "costo_devolucion";
+  // Reembolso de flete cuando la orden SÍ se entregó (entrada de plata).
+  if (c.includes("DEVOLUCION") && c.includes("ORDEN ENTREGADA"))   return "reembolso_flete";
+  // Costo de devolución cuando la orden NO se entregó. Matchea tanto el
+  // texto viejo "DEVOLUCION DE FLETE NO EFECTIVA" como el actual
+  // "SALIDA DE COBRO DE DEVOLUCION POR ENTREGA NO EFECTIVA".
+  if (c.includes("DEVOLUCION") && c.includes("NO EFECTIV"))        return "costo_devolucion";
   if (c.includes("COMISION DE REFERIDOS"))                         return "comision_referidos";
   if (c.includes("RETIRO"))                                        return "retiro";
-  if (c.includes("DEPOSITO") || c.includes("DEPÓSITO") || c.includes("RECARGA")) return "deposito";
+  if (c.includes("DEPOSITO") || c.includes("RECARGA"))             return "deposito";
   return "otro";
 }
 
