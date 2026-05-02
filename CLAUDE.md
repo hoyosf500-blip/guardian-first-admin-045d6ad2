@@ -24,10 +24,16 @@ supabase functions deploy dropi-fingerprint
 supabase functions deploy dropi-cron
 supabase functions deploy ai-order-assistant
 supabase functions deploy dropi-validate-address
+supabase functions deploy dropi-wallet-sync
 supabase functions deploy google-places-proxy
 
 # Apply DB migrations
 supabase db push
+
+# Disparar wallet sync con rango custom (default = últimos 30 días)
+curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $USER_JWT" \
+  -d '{"from":"2026-01-01","to":"2026-05-02"}'
 ```
 
 ## Operational Gotchas (Lovable)
@@ -35,6 +41,11 @@ supabase db push
 - **Lovable does NOT auto-redeploy edge functions on `git push`.** Code in `supabase/functions/` ships to GitHub but the deployed runtime stays on the OLD version until someone explicitly redeploys (Lovable prompt or `supabase functions deploy`). Always design client-side fallback for any edge-function change you ship.
 - **Lovable does NOT auto-apply migrations.** Files in `supabase/migrations/` need explicit `supabase db push` or a Lovable prompt. If `ORDER_COLUMNS` (`src/lib/orderColumns.ts`) references a column whose migration hasn't run, the SELECT explodes with `column X does not exist` and breaks every order-loading screen. Mitigation pattern: hotfix by removing the column from `orderColumns.ts` until the migration is applied.
 - The DB row mapper is **`dbToOrderData`** (not `mapDbRow`) in `src/lib/orderUtils.ts`.
+- **Two distinct Dropi tokens, NOT interchangeable:**
+  - `app_settings.dropi_token` — Bearer API key (permanent). Used by `dropi-sync`, `dropi-update-order`, `dropi-resolve-incidence`. Configured in `/admin → Clave API de Dropi`.
+  - `app_settings.dropi_session_token` — JWT from `app.dropi.co` browser session (vence cada ~12-24h). Used ONLY by `dropi-wallet-sync` (the `/api/wallet/exportexcel` endpoint requires session JWT, not API key). Configured in `/admin → Huella del comprador`. Refresh from DevTools → Network → `x-authorization` header on any `api.dropi.co` call.
+- **Wallet sync default = últimos 30 días.** `supabase/functions/dropi-wallet-sync/index.ts:218-219` setea `defaultFrom = today - 30d`. Para histórico completo pasar body `{from, to}`. Critical when migrando o queriendo backfill — sin esto la wallet pierde meses anteriores.
+- **Cliente-side calculations son más resilientes que migrations pendientes.** Patrón usado en `FinanzasTab.tsx`: cuando una migration agrega un campo nuevo al RPC pero aún no se aplica, el parser del hook coerce `undefined → 0` y el operador `??` no cae al fallback. Solución: calcular client-side desde campos que SÍ vienen (`flete_devoluciones + costo_devoluciones`), ignorar el campo del server. Funciona con cualquier versión del RPC.
 
 ## Architecture Overview
 
@@ -52,12 +63,12 @@ supabase db push
 | Route | Page | Tab Component | Purpose |
 |---|---|---|---|
 | `/confirmar` | ConfirmarPage | ConfirmarTab | Call queue — confirm/cancel orders |
-| `/seguimiento` | SeguimientoPage | SeguimientoTab | Track dispatched orders |
+| `/seguimiento` | SeguimientoPage | SeguimientoTab | Track dispatched orders + dropdown "Listas SLA" estilo Boostec (8 listas pre-clasificadas por estado + días hábiles). Config en `src/lib/segLists.ts`. Lista activa persiste en URL (`?lista=...`) + sessionStorage. |
 | `/novedades` | NovedadesPage | NovedadesTab | Resolve carrier incidences |
 | `/rescate` | RescatePage | RescateTab | Recovery queue for failed deliveries |
 | `/admin` | AdminPage | AdminTab | Admin-only config (isAdmin gate) |
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
-| `/logistica` | LogisticsPage | LogisticaTab | Análisis admin: rendimiento por transportadora, devoluciones por ciudad, productos con peor entrega |
+| `/logistica` | LogisticsPage | LogisticaTab | Análisis admin: 8 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / Billetera / Finanzas). Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas. |
 | `/pedido/:id` | OrderDetailPage | order-detail/* | Single-order drill-down |
 
 All authenticated routes share `ProtectedLayout` which:
@@ -81,14 +92,39 @@ Roles in `user_roles`: `admin` and `operator`. Operators see all tabs except Adm
 ### Supabase Edge Functions
 
 All functions are Deno (TypeScript). They live in `supabase/functions/`:
-- `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB
+- `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB. Maps `o.shipping_amount` → `costo_logistico_dropi` (lo que paga el dropshipper, NO lo cobrado al cliente). Uses Bearer API key.
 - `dropi-update-order` — updates a single order's Dropi status (bearer token from DB settings)
 - `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
-- `dropi-cron` — scheduled sync trigger
+- `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`)
+- `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`.
+- `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Requiere `dropi_session_token` (JWT, NO el API key).
+- `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. Sin esta proxy, `useGooglePlaces` no funciona.
 - `ai-order-assistant` — Claude-powered order assistant
 
-The Dropi token is stored in the `app_settings` table (key: `dropi_token`) and read at runtime — not hardcoded.
+The Dropi API key is stored in `app_settings.dropi_token` (Bearer permanente). El JWT de sesión está en `app_settings.dropi_session_token` (vence cada 12-24h). Ambos son leídos en runtime, NUNCA hardcoded.
+
+### Wallet Categorías (`mapCategoria` en `dropi-wallet-sync/index.ts`)
+
+`dropi_wallet_movements.categoria` se llena vía regex sobre `codigo` (uppercase + NFD-stripped). Categorías válidas:
+
+| Categoría | Patrón en código Dropi | Tipo típico | Significado |
+|---|---|---|---|
+| `flete_inicial` | `FLETE INICIAL` | SALIDA | Cargo al generar la guía |
+| `cobro_entrega` | `CAMBIO DE ESTATUS` | ENTRADA | (raro) Cobro neto al entregar |
+| `ganancia_dropshipper` | `GANANCIA` + `DROPSHIPPER` | ENTRADA | Markup que Dropi te paga por orden entregada |
+| `ganancia_proveedor` | `GANANCIA` + `PROVEEDOR` | ENTRADA | Markup como proveedor |
+| `reembolso_flete` | `DEVOLUCION` + `ORDEN ENTREGADA` | ENTRADA | Dropi devuelve flete inicial cuando entregó |
+| `costo_devolucion` | `DEVOLUCION` + `NO EFECTIV` | SALIDA | Cargo extra cuando NO entregó (~$22k típico) |
+| `comision_referidos` | `COMISION DE REFERIDOS` | SALIDA | Comisión a referidor |
+| `mantenimiento_tarjeta` | `MANTENIMIENTO` + `TARJETA` | SALIDA | $12.5k/mes por tarjeta virtual |
+| `indemnizacion` | `INDEMNIZACION` | ENTRADA | Compensación cuando proveedor no despacha |
+| `retiro` | `TRANSFERENCIA` + `AL USUARIO` | SALIDA | Retiro a cuenta bancaria propia |
+| `deposito` | `TRANSFERENCIA` + `DESDE EL USUARIO` | ENTRADA | Recarga manual |
+| `orden_sin_recaudo` | `NUEVA ORDEN` | SALIDA | Cargo por nueva orden sin recaudo aún |
+| `otro` | catch-all | — | Sin clasificar (revisar y agregar regex si es recurrente) |
+
+**Si Dropi cambia el texto de un código,** el regex falla y el movimiento cae en `otro`. Diagnóstico: `SELECT codigo, COUNT(*) FROM dropi_wallet_movements WHERE categoria='otro' GROUP BY codigo;`. Después agregar pattern a `mapCategoria` Y crear migration `UPDATE` para re-categorizar movimientos viejos (patrón `20260502000005_recategorize_wallet_movements.sql`).
 
 ### Key RPCs (Supabase DB Functions)
 
@@ -104,6 +140,36 @@ The Dropi token is stored in the `app_settings` table (key: `dropi_token`) and r
 - Todas SECURITY DEFINER + admin-only. Ver migration 20260427130000.
 - `consume_google_quota()` — atomic daily-cap check for Google Places calls (FOR UPDATE row lock to avoid races). Used by `dropi-validate-address` and `google-places-proxy`. Cap configured in `app_settings.google_quota_daily_cap`. See migration `20260501000000_validador_direcciones.sql`.
 - `cleanup_expired_autocomplete_cache()` — purges `address_autocomplete_cache` rows past TTL. Scheduled via pg_cron (migration `20260501010000_validador_direcciones_cron.sql`).
+- `financial_summary(p_from_date, p_to_date)` — KPIs financieros del período (utilidad bruta contable). Versión actual = v6 (migration `20260502000008_financial_summary_v6_devoluciones.sql`). Fórmula: `ingresos − cogs − flete_entregadas − pérdida_devoluciones − comisión_referidos − mantenimiento_tarjeta + indemnizaciones`. Usado por hook `useFinancialSummary`. NO incluye gasto pauta (Fase B pendiente).
+- `wallet_summary(from, to)` y `wallet_daily_series(from, to)` — KPIs y serie temporal del wallet de Dropi. Admin-only, security definer.
+- `upsert_wallet_movements(...)` — bulk INSERT idempotente sobre `dropi_wallet_movements` con `dropi_transaction_id` UNIQUE. RLS bloquea INSERT/UPDATE directo — todo va via este RPC.
+
+### Módulo Finanzas — dos hooks distintos, NO confundir
+
+`/logistica → Finanzas` muestra DOS perspectivas distintas de la misma operación:
+
+**1. Utilidad Bruta Contable** (hook `useFinancialSummary`):
+- Fórmula: `ingresos − COGS − flete − pérdida_devoluciones − comisión_referidos − mantenimiento_tarjeta + indemnizaciones`
+- Incluye **COGS** aunque el cliente NO lo paga directo (Dropi le paga al proveedor). Es la utilidad "como si pagara todo".
+- Sirve para análisis contable estándar.
+
+**2. Ganancia Neta Dropi REAL** (hook `useGananciaNetaDropi`, card hero principal):
+- Fórmula: `SUM(ENTRADAS operativas) − SUM(SALIDAS operativas)` desde wallet
+- ENTRADAS: `ganancia_dropshipper`, `ganancia_proveedor`, `reembolso_flete`, `indemnizacion`
+- SALIDAS: `flete_inicial`, `costo_devolucion`, `comision_referidos`, `mantenimiento_tarjeta`, `orden_sin_recaudo`
+- EXCLUYE `retiro`, `deposito`, `otro`, `transferencia_externa` (movimientos de tesorería, no afectan ganancia operativa)
+- Es el cash flow REAL — lo que entró/salió del wallet de Dropi.
+- Sirve para decisión "estoy ganando plata o no".
+
+**No mezclar las dos.** Si querés ver "lo que Dropi me pagó" → Ganancia Neta. Si querés perspectiva contable/comparable con Boostec → Utilidad Bruta.
+
+### Listas SLA en `/seguimiento` (`src/lib/segLists.ts`)
+
+Selector de 8 listas pre-clasificadas estilo Boostec. Cada lista tiene un predicado puro `(o: OrderData) => boolean` que combina `estado` + `días hábiles desde creación` (vía `calcBusinessDays`). Listas son **disjuntas** — una orden NO puede aparecer en 2 a la vez (ej. `pendientes_guia_2d` requiere `dias >= 2 AND < 4`, `indem_pendientes_guia_4d` requiere `dias >= 4`).
+
+Slugs: `pendientes_confirmacion_2d` (link a `/confirmar`), `pendientes_guia_2d`, `indem_pendientes_guia_4d`, `guia_generada_2d`, `indem_guia_generada_5d`, `reclamar_oficina_4d`, `en_proceso_7d`, `otros_estados`.
+
+Si `OrderData.fecha` está malformada, `diasDesdeCreacion()` cae a `o.dias` como fallback (try/catch).
 
 ### Address Validator (validador de direcciones)
 
@@ -130,6 +196,22 @@ When a pending order is rendered in `CallView` / `CrmCallView`, the system runs 
 **Client-side suggestion builder** (`src/lib/buildAddressSuggestion.ts`): pure heuristic, NEVER invents data — only re-formats what the customer already wrote (direccion + ciudad + departamento + barrio). Output `{ suggested, missingNote, hasEnoughInfo }`. Uses preposition "en" instead of `___` placeholders when info is partial. Goes through `locationMatches` sanity check before render.
 
 **Pending migration:** `supabase/migrations/20260502000000_add_suggested_address.sql` adds `orders.suggested_address` column. Until applied, `src/lib/orderColumns.ts` and the UPDATEs in `CallView.tsx`/`CrmCallView.tsx` reference it via commented `HOTFIX 2026-04-30` lines. Re-enable when migration runs.
+
+### Verificación de datos en Supabase desde el navegador
+
+Cuando necesites diagnosticar un problema de datos sin esperar a Lovable o sin SQL Editor, podés correr queries directas a la API REST de Supabase desde DevTools del browser (con sesión admin activa):
+
+```js
+const ANON = '<anon_key_del_bundle>';
+const TOKEN = JSON.parse(localStorage.getItem('sb-bokhlpfmttoizjaakntc-auth-token')).access_token;
+const r = await fetch(
+  'https://bokhlpfmttoizjaakntc.supabase.co/rest/v1/dropi_wallet_movements?categoria=eq.costo_devolucion&select=monto,codigo,fecha&order=fecha.desc',
+  { headers: { apikey: ANON, Authorization: `Bearer ${TOKEN}` } }
+);
+console.log(await r.json());
+```
+
+El `anon_key` se extrae del bundle JS (`fetch('/assets/index-*.js').then(r=>r.text()).then(t=>t.match(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g))`). RLS aplica igual — vas a ver SOLO los datos que tu user puede ver. Patrón usado para diagnosticar bugs de wallet en sesión 2026-05-02.
 
 ### Test Files
 
