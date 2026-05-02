@@ -1,18 +1,34 @@
 import { useEffect, useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
 import { SEG_ACTIONS } from '@/lib/constants';
-import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight } from 'lucide-react';
+import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight, Filter, ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import SegRescueCounterBar from '@/components/SegRescueCounterBar';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import {
+  SEG_LISTS,
+  type SegListSlug,
+  findSegList,
+  isValidSegListSlug,
+} from '@/lib/segLists';
 
 
 function classifyEstado(estado: string) {
@@ -62,6 +78,30 @@ export default function SeguimientoTab() {
   // source of truth (no duplicate pill row below).
   const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
 
+  // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
+  // y la sessionStorage se mantienen sincronizadas: ?lista=<slug> permite
+  // deep-link, sessionStorage sobrevive remounts/discards.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlLista = searchParams.get('lista');
+  const [listaSlug, setListaSlugInternal] = useSessionState<SegListSlug | null>(
+    'seg:listaSlug',
+    isValidSegListSlug(urlLista) ? urlLista : null,
+  );
+  // Sync URL → state al montar (deep-link) y state → URL al cambiar
+  useEffect(() => {
+    if (isValidSegListSlug(urlLista) && urlLista !== listaSlug) {
+      setListaSlugInternal(urlLista);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlLista]);
+  const setListaSlug = (slug: SegListSlug | null) => {
+    setListaSlugInternal(slug);
+    const next = new URLSearchParams(searchParams);
+    if (slug) next.set('lista', slug);
+    else next.delete('lista');
+    setSearchParams(next, { replace: true });
+  };
+
   useEffect(() => { loadSegData(); }, [loadSegData]);
 
   // Filter by date range
@@ -85,6 +125,15 @@ export default function SeguimientoTab() {
       return true;
     });
   }, [segData, dateFrom, dateTo]);
+
+  // Lista SLA filter — se aplica DESPUÉS del filtro de fecha. Si la lista
+  // seleccionada tiene externalRoute (ej. /confirmar), no filtramos acá:
+  // mostramos un banner-link en lugar de la tabla.
+  const listaActiva = listaSlug ? findSegList(listaSlug) : undefined;
+  const filteredByList = useMemo(() => {
+    if (!listaActiva || listaActiva.externalRoute) return filteredByDate;
+    return filteredByDate.filter((o) => listaActiva.matches(o));
+  }, [filteredByDate, listaActiva]);
 
   const stats = useMemo(() => {
     const s = {
@@ -248,6 +297,57 @@ export default function SeguimientoTab() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {/* Listas SLA — selector de listas pre-clasificadas estilo Boostec.
+                Vive arriba a la derecha, igual que la UX de referencia. */}
+            <div className={cn(
+              "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
+              listaSlug
+                ? "bg-accent/10 border border-accent/30 ring-1 ring-accent/20"
+                : "bg-card border border-border"
+            )}>
+              <Filter size={12} className={cn(
+                "ml-1",
+                listaSlug ? "text-accent" : "text-muted-foreground"
+              )} aria-hidden="true" />
+              <Select
+                value={listaSlug ?? '__all__'}
+                onValueChange={(v) => setListaSlug(v === '__all__' ? null : (v as SegListSlug))}
+              >
+                <SelectTrigger
+                  className={cn(
+                    "h-7 w-[15rem] sm:w-[18rem] border-0 bg-transparent px-1 text-[11px] font-medium",
+                    "focus:ring-0 focus:ring-offset-0 shadow-none",
+                    !listaSlug && "text-muted-foreground"
+                  )}
+                  aria-label="Filtrar por lista SLA"
+                >
+                  <SelectValue placeholder="Todas las listas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Listas SLA</SelectLabel>
+                    <SelectItem value="__all__">Todas las listas</SelectItem>
+                    {SEG_LISTS.map((l) => (
+                      <SelectItem key={l.slug} value={l.slug}>
+                        {l.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {listaSlug && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setListaSlug(null)}
+                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                  aria-label="Limpiar filtro de lista"
+                >
+                  <X size={13} />
+                </Button>
+              )}
+            </div>
+
             {/* Date range filter */}
             <div className={cn(
               "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
@@ -445,8 +545,63 @@ export default function SeguimientoTab() {
         </div>
       </motion.div>
 
+      {/* Banner de lista SLA activa — contador o link externo. */}
+      {listaActiva && (
+        listaActiva.externalRoute ? (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-md bg-accent/15 ring-1 ring-accent/30 flex items-center justify-center shrink-0">
+                <ExternalLink size={18} className="text-accent" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-foreground">{listaActiva.label}</div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Esta lista vive en {listaActiva.externalRoute} — los pedidos pendientes de confirmación se gestionan desde la cola de llamadas.
+                </p>
+              </div>
+            </div>
+            <Link
+              to={listaActiva.externalRoute}
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors shrink-0"
+            >
+              Ir a {listaActiva.externalRoute}
+              <ChevronRight size={14} aria-hidden="true" />
+            </Link>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Filter size={14} className="text-accent shrink-0" aria-hidden="true" />
+              <span className="text-sm font-semibold text-foreground truncate">
+                {listaActiva.label}
+              </span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                · {filteredByList.length} {filteredByList.length === 1 ? 'pedido' : 'pedidos'} en esta lista
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setListaSlug(null)}
+              className="text-[11px] font-medium text-accent hover:text-accent/80 transition-colors shrink-0"
+            >
+              Limpiar lista
+            </button>
+          </motion.div>
+        )
+      )}
+
       <CrmTable
-        data={filteredByDate}
+        data={listaActiva && !listaActiva.externalRoute ? filteredByList : filteredByDate}
         actions={SEG_ACTIONS}
         module="SEG"
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
