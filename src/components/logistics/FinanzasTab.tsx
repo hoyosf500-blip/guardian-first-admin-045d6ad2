@@ -5,7 +5,7 @@ import { formatCOP } from '@/lib/utils';
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, RotateCcw,
   Target, Package, CheckCircle2, AlertTriangle, Receipt, Wallet, Info,
-  UserPlus, Sparkles,
+  Ban, Sparkles,
 } from 'lucide-react';
 
 // Fase A del módulo financiero — utilidad bruta operativa.
@@ -168,11 +168,11 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               hint="Aparte del flete de devoluciones"
             />
             <KpiCard
-              label="Comisión referidos"
-              value={formatCOP(data?.comision_referidos ?? 0)}
-              icon={UserPlus}
+              label="Cancelados"
+              value={formatCOP(data?.valor_cancelado ?? 0)}
+              icon={Ban}
               tone="danger"
-              hint="Descontado de utilidad"
+              hint={`${data?.total_cancelados ?? 0} órdenes (${(data?.tasa_cancelacion_pct ?? 0).toFixed(1)}%) — valor potencial perdido`}
             />
             <KpiCard
               label="Ganancia markup"

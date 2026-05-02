@@ -16,8 +16,11 @@ export interface FinancialSummary {
   flete_entregadas: number;
   flete_devoluciones: number;
   costo_devoluciones: number;
-  comision_referidos: number;   // RPC v3 — se resta de utilidad_bruta
+  comision_referidos: number;   // RPC v3 — se resta de utilidad_bruta (sigue en payload por compat, fuera de la UI desde v4)
   ganancia_markup: number;      // RPC v3 — informativo (no se suma hasta sanity check)
+  valor_cancelado: number;      // RPC v4 — SUM(valor) de canceladas, valor potencial perdido (no se descuenta de utilidad)
+  total_cancelados: number;     // RPC v4 — conteo de canceladas en el período
+  tasa_cancelacion_pct: number; // RPC v4 — % cancelados sobre total_ordenes
   utilidad_bruta: number;
   total_ordenes: number;
   total_entregadas: number;
@@ -49,6 +52,9 @@ function parseFinancialSummary(raw: unknown): FinancialSummary {
     costo_devoluciones: toNumber(o.costo_devoluciones),
     comision_referidos: toNumber(o.comision_referidos),
     ganancia_markup:    toNumber(o.ganancia_markup),
+    valor_cancelado:    toNumber(o.valor_cancelado),
+    total_cancelados:   toNumber(o.total_cancelados),
+    tasa_cancelacion_pct: toNumber(o.tasa_cancelacion_pct),
     utilidad_bruta:     toNumber(o.utilidad_bruta),
     total_ordenes:      toNumber(o.total_ordenes),
     total_entregadas:   toNumber(o.total_entregadas),

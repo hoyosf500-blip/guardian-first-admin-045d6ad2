@@ -27,6 +27,9 @@ const SAMPLE: FinancialSummary = {
   costo_devoluciones: 100_000,
   comision_referidos: 50_000,
   ganancia_markup: 320_000,
+  valor_cancelado: 750_000,
+  total_cancelados: 12,
+  tasa_cancelacion_pct: 12,
   utilidad_bruta: 4_850_000,
   total_ordenes: 100,
   total_entregadas: 70,
@@ -82,16 +85,31 @@ describe('FinanzasTab', () => {
     expect(screen.getByText(/\$\s?500\.000/)).toBeInTheDocument();
   });
 
-  it('muestra KPIs de comision_referidos y ganancia_markup con disclaimer informativo', () => {
+  it('muestra KPI de Cancelados con valor potencial perdido y % cancelación', () => {
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
-    expect(screen.getByText(/Comisión referidos/i)).toBeInTheDocument();
-    expect(screen.getByText(/\$\s?50\.000/)).toBeInTheDocument();
-    expect(screen.getByText(/Descontado de utilidad/i)).toBeInTheDocument();
+    // Card Cancelados reemplazó a "Comisión Referidos"
+    expect(screen.getByText(/^Cancelados$/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$\s?750\.000/)).toBeInTheDocument();
+    // Hint con conteo + % + descriptor
+    expect(
+      screen.getByText(/12 órdenes \(12\.0%\) — valor potencial perdido/i),
+    ).toBeInTheDocument();
+  });
+
+  it('NO muestra "Comisión Referidos" en la UI (sale por confirmación del cliente)', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    render(<FinanzasTab filters={FILTERS} />);
+    expect(screen.queryByText(/Comisión referidos/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Descontado de utilidad/i)).not.toBeInTheDocument();
+  });
+
+  it('muestra Ganancia markup informativo con disclaimer', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    render(<FinanzasTab filters={FILTERS} />);
     // "Ganancia markup" aparece en el label del KPI Y en el disclaimer (<strong>)
     expect(screen.getAllByText(/Ganancia markup/i).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/\$\s?320\.000/)).toBeInTheDocument();
-    // Disclaimer textual debajo del bloque KPIs
     expect(
       screen.getByText(/aparece como referencia/i),
     ).toBeInTheDocument();

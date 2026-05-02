@@ -33,6 +33,9 @@ describe('useFinancialSummary', () => {
         costo_devoluciones: 10000,
         comision_referidos: 5000,
         ganancia_markup: 30000,
+        valor_cancelado: 250000,
+        total_cancelados: 8,
+        tasa_cancelacion_pct: 8,
         utilidad_bruta: 485000,
         total_ordenes: 100,
         total_entregadas: 70,
@@ -60,6 +63,9 @@ describe('useFinancialSummary', () => {
     expect(result.current.data?.tasa_entrega_pct).toBe(70);
     expect(result.current.data?.comision_referidos).toBe(5000);
     expect(result.current.data?.ganancia_markup).toBe(30000);
+    expect(result.current.data?.valor_cancelado).toBe(250000);
+    expect(result.current.data?.total_cancelados).toBe(8);
+    expect(result.current.data?.tasa_cancelacion_pct).toBe(8);
   });
 
   it('coerce strings numéricas a number (Postgres NUMERIC puede venir como string)', async () => {
@@ -72,6 +78,9 @@ describe('useFinancialSummary', () => {
         costo_devoluciones: '0',
         comision_referidos: '12345.50',
         ganancia_markup: '7500',
+        valor_cancelado: '180000.00',
+        total_cancelados: '4',
+        tasa_cancelacion_pct: '8.00',
         utilidad_bruta: '900000',
         total_ordenes: '50',
         total_entregadas: '40',
@@ -95,6 +104,10 @@ describe('useFinancialSummary', () => {
     expect(typeof result.current.data?.comision_referidos).toBe('number');
     expect(result.current.data?.comision_referidos).toBe(12345.5);
     expect(result.current.data?.ganancia_markup).toBe(7500);
+    expect(typeof result.current.data?.valor_cancelado).toBe('number');
+    expect(result.current.data?.valor_cancelado).toBe(180000);
+    expect(result.current.data?.total_cancelados).toBe(4);
+    expect(result.current.data?.tasa_cancelacion_pct).toBe(8);
   });
 
   it('propaga error si el RPC falla', async () => {
@@ -132,5 +145,8 @@ describe('useFinancialSummary', () => {
     expect(result.current.data?.ingresos_brutos).toBe(0);
     expect(result.current.data?.comision_referidos).toBe(0);
     expect(result.current.data?.ganancia_markup).toBe(0);
+    expect(result.current.data?.valor_cancelado).toBe(0);
+    expect(result.current.data?.total_cancelados).toBe(0);
+    expect(result.current.data?.tasa_cancelacion_pct).toBe(0);
   });
 });
