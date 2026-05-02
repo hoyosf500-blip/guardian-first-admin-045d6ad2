@@ -1,6 +1,9 @@
 import { memo, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
 import type { CarrierStats } from '@/lib/logistics.types';
+import {
+  CHART_GRID_PROPS, CHART_BAR_CURSOR, SEMANTIC_COLORS,
+} from './charts/chartTokens';
 
 interface Props {
   rows: CarrierStats[];
@@ -104,7 +107,7 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
             margin={{ top: 8, right: 8, left: -16, bottom: 4 }}
             barCategoryGap="22%"
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+            <CartesianGrid {...CHART_GRID_PROPS} />
             <XAxis
               dataKey="name"
               tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
@@ -118,11 +121,11 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
               axisLine={false}
               allowDecimals={false}
             />
-            <Tooltip content={<HeroTooltip />} cursor={{ fill: 'hsl(var(--muted)/0.3)' }} />
-            <Bar dataKey="entregados"  stackId="vol" name="Entregados"  fill="hsl(var(--success))" />
-            <Bar dataKey="en_transito" stackId="vol" name="En tránsito" fill="hsl(var(--info))" />
-            <Bar dataKey="novedades"   stackId="vol" name="Novedades"   fill="hsl(var(--warning))" />
-            <Bar dataKey="devueltos"   stackId="vol" name="Devueltos"   fill="hsl(var(--danger))" radius={[6, 6, 0, 0]} />
+            <Tooltip content={<HeroTooltip />} cursor={CHART_BAR_CURSOR} />
+            <Bar dataKey="entregados"  stackId="vol" name="Entregados"  fill={SEMANTIC_COLORS.success} />
+            <Bar dataKey="en_transito" stackId="vol" name="En tránsito" fill={SEMANTIC_COLORS.info} />
+            <Bar dataKey="novedades"   stackId="vol" name="Novedades"   fill={SEMANTIC_COLORS.warning} />
+            <Bar dataKey="devueltos"   stackId="vol" name="Devueltos"   fill={SEMANTIC_COLORS.danger} radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

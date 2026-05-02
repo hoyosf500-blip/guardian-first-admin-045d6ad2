@@ -26,6 +26,11 @@ import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import BilleteraTab from '@/components/logistics/BilleteraTab';
 import FinanzasTab from '@/components/logistics/FinanzasTab';
+import {
+  CHART_TOOLTIP_STYLE,
+  CHART_GRID_PROPS,
+  CHART_BAR_CURSOR,
+} from '@/components/logistics/charts/chartTokens';
 import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet, DollarSign, LayoutDashboard } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
@@ -110,17 +115,14 @@ function useInteractiveLegend() {
   return { toggle, isVisible };
 }
 
-const TOOLTIP_STYLE = {
-  background: 'hsl(var(--card) / 0.95)',
-  border: '1px solid hsl(var(--border))',
-  borderRadius: 8,
-  color: 'hsl(var(--foreground))',
-  fontSize: 12,
-};
+// TOOLTIP_STYLE consolidado en chartTokens.ts (importado arriba como
+// CHART_TOOLTIP_STYLE). Mantenemos esta const local como alias para no
+// tener que renombrar todas las invocaciones en este archivo.
+const TOOLTIP_STYLE = CHART_TOOLTIP_STYLE;
 
 function ChartCard({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-border bg-card p-5 ${className}`}>
+    <div className={`card-elevated p-5 ${className}`}>
       <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
         {title}
       </h3>
@@ -448,7 +450,12 @@ function CarrierDonut({
           <div className="relative h-[260px]">
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={data} dataKey="total" nameKey="transportadora" innerRadius={55} outerRadius={95} paddingAngle={2}>
+                {/* innerRadius más grande (60 vs 55) + outerRadius (100 vs 95)
+                    = anillo más grueso y legible. paddingAngle 3 separa
+                    slices mejor cuando hay muchos carriers. */}
+                <Pie data={data} dataKey="total" nameKey="transportadora"
+                     innerRadius={60} outerRadius={100} paddingAngle={3}
+                     stroke="hsl(var(--card))" strokeWidth={2}>
                   {data.map((d) => (
                     <Cell key={d.transportadora} fill={colorMap.get(d.transportadora) ?? 'hsl(var(--muted-foreground))'} />
                   ))}
@@ -461,26 +468,29 @@ function CarrierDonut({
             </ResponsiveContainer>
             {top && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wide truncate max-w-[120px] text-center">
+                <div className="text-3xl font-extrabold text-foreground tabular-nums leading-none">
+                  {pct(top.total, total)}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-[0.1em] font-semibold mt-1.5 truncate max-w-[140px] text-center">
                   {top.transportadora}
                 </div>
-                <div className="text-2xl font-bold text-foreground tabular-nums">{pct(top.total, total)}</div>
               </div>
             )}
           </div>
           <ul className="space-y-2">
             {data.map((d) => (
-              <li key={d.transportadora} className="flex items-center justify-between text-xs">
+              <li key={d.transportadora} className="flex items-center justify-between text-xs gap-2">
                 <span className="flex items-center gap-2 min-w-0">
                   <span
-                    className="inline-block w-3 h-3 rounded-sm shrink-0"
-                    style={{ background: colorMap.get(d.transportadora) }}
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{ background: colorMap.get(d.transportadora), boxShadow: `0 0 0 3px ${colorMap.get(d.transportadora)}22` }}
                     aria-hidden="true"
                   />
                   <span className="font-medium text-foreground truncate">{d.transportadora}</span>
                 </span>
-                <span className="text-muted-foreground tabular-nums shrink-0 ml-2">
-                  {d.total} · {pct(d.total, total)}
+                <span className="tabular-nums shrink-0 ml-2 flex items-baseline gap-2">
+                  <span className="text-muted-foreground">{d.total}</span>
+                  <span className="font-bold text-foreground w-12 text-right">{pct(d.total, total)}</span>
                 </span>
               </li>
             ))}
@@ -520,13 +530,15 @@ function CarrierTimeline({
       {rows.length === 0 ? <EmptyChart /> : (
         <div className="h-[260px]">
           <ResponsiveContainer>
-            <LineChart data={rows} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} />
+            <LineChart data={rows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+              <CartesianGrid {...CHART_GRID_PROPS} />
+              <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
+              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={36} />
               <RTooltip contentStyle={TOOLTIP_STYLE} />
               <Legend
-                wrapperStyle={{ fontSize: 11, cursor: 'pointer' }}
+                wrapperStyle={{ fontSize: 11, cursor: 'pointer', paddingTop: 8 }}
+                iconType="circle"
+                iconSize={8}
                 onClick={(e: { value: string }) => legend.toggle(e.value)}
                 formatter={(value: string) => (
                   <span style={{ opacity: legend.isVisible(value) ? 1 : 0.4, color: 'hsl(var(--muted-foreground))' }}>
@@ -535,7 +547,7 @@ function CarrierTimeline({
                 )}
               />
               {legend.isVisible('TODAS') && (
-                <Line type="monotone" dataKey="TODAS" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                <Line type="monotone" dataKey="TODAS" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 4 }} />
               )}
               {carriers.map((c) =>
                 legend.isVisible(c) ? (
@@ -546,6 +558,7 @@ function CarrierTimeline({
                     stroke={colorMap.get(c) ?? 'hsl(var(--muted-foreground))'}
                     strokeWidth={2}
                     dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0 }}
                   />
                 ) : null,
               )}
@@ -577,7 +590,9 @@ function EstadoDonutAndDailyStack({
           <div className="relative h-[280px]">
             <ResponsiveContainer>
               <PieChart>
-                <Pie data={donut} dataKey="total" nameKey="estado_agrupado" innerRadius={55} outerRadius={95} paddingAngle={2}>
+                <Pie data={donut} dataKey="total" nameKey="estado_agrupado"
+                     innerRadius={62} outerRadius={102} paddingAngle={3}
+                     stroke="hsl(var(--card))" strokeWidth={2}>
                   {donut.map((d) => (
                     <Cell key={d.estado_agrupado} fill={ESTADO_COLORS[d.estado_agrupado] ?? 'hsl(var(--muted-foreground))'} />
                   ))}
@@ -586,15 +601,18 @@ function EstadoDonutAndDailyStack({
                   contentStyle={TOOLTIP_STYLE}
                   formatter={(v: number, n) => [`${v} (${pct(v, total)})`, n]}
                 />
-                <Legend wrapperStyle={{ fontSize: 10, color: 'hsl(var(--muted-foreground))' }} />
+                <Legend wrapperStyle={{ fontSize: 10, color: 'hsl(var(--muted-foreground))', paddingTop: 8 }}
+                        iconType="circle" iconSize={8} />
               </PieChart>
             </ResponsiveContainer>
             {top && (
               <div className="absolute inset-x-0 top-1/2 -translate-y-[60%] flex flex-col items-center pointer-events-none">
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wide max-w-[140px] text-center truncate">
+                <div className="text-3xl font-extrabold text-foreground tabular-nums leading-none">
+                  {pct(top.total, total)}
+                </div>
+                <div className="text-[10px] text-muted-foreground uppercase tracking-[0.1em] font-semibold mt-1.5 max-w-[140px] text-center truncate">
                   {top.estado_agrupado}
                 </div>
-                <div className="text-2xl font-bold text-foreground tabular-nums">{pct(top.total, total)}</div>
               </div>
             )}
           </div>
@@ -605,13 +623,15 @@ function EstadoDonutAndDailyStack({
         {stackRows.length === 0 ? <EmptyChart /> : (
           <div className="h-[280px]">
             <ResponsiveContainer>
-              <BarChart data={stackRows} margin={{ top: 5, right: 10, bottom: 5, left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <RTooltip contentStyle={TOOLTIP_STYLE} />
+              <BarChart data={stackRows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+                <CartesianGrid {...CHART_GRID_PROPS} />
+                <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={36} />
+                <RTooltip contentStyle={TOOLTIP_STYLE} cursor={CHART_BAR_CURSOR} />
                 <Legend
-                  wrapperStyle={{ fontSize: 11, cursor: 'pointer' }}
+                  wrapperStyle={{ fontSize: 11, cursor: 'pointer', paddingTop: 8 }}
+                  iconType="circle"
+                  iconSize={8}
                   onClick={(e: { value: string }) => {
                     const key = Object.entries(STACK_LABELS).find(([, v]) => v === e.value)?.[0];
                     if (key) legend.toggle(key);
@@ -625,9 +645,17 @@ function EstadoDonutAndDailyStack({
                     );
                   }}
                 />
-                {stackKeys.map((key) =>
+                {stackKeys.map((key, i) =>
                   legend.isVisible(key) ? (
-                    <Bar key={key} dataKey={key} stackId="a" fill={STACK_COLORS[key]} name={STACK_LABELS[key]} />
+                    <Bar
+                      key={key}
+                      dataKey={key}
+                      stackId="a"
+                      fill={STACK_COLORS[key]}
+                      name={STACK_LABELS[key]}
+                      // Última barra visible recibe radius arriba — efecto pill cleán.
+                      radius={i === stackKeys.length - 1 ? [4, 4, 0, 0] : 0}
+                    />
                   ) : null,
                 )}
               </BarChart>
@@ -659,12 +687,14 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
         <div style={{ height: Math.max(220, rows.length * 56) }}>
           <ResponsiveContainer>
             <BarChart data={rows} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }} stackOffset="expand">
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" horizontal={false} />
               <XAxis
                 type="number"
                 domain={[0, 100]}
                 stroke="hsl(var(--muted-foreground))"
-                fontSize={11}
+                fontSize={10}
+                tickLine={false}
+                axisLine={{ stroke: 'hsl(var(--border))' }}
                 tickFormatter={(v) => `${v}%`}
               />
               <YAxis
@@ -672,21 +702,25 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
                 dataKey="transportadora"
                 stroke="hsl(var(--foreground))"
                 fontSize={12}
+                tickLine={false}
+                axisLine={false}
                 width={130}
               />
               <RTooltip
                 contentStyle={TOOLTIP_STYLE}
+                cursor={CHART_BAR_CURSOR}
                 formatter={(v: number, n: string, props: { payload?: { total?: number } }) => {
                   const total = props?.payload?.total ?? 0;
                   return [`${v.toFixed(1)}% (${Math.round(v * total / 100)} ped)`, n];
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
+              <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', paddingTop: 8 }}
+                      iconType="circle" iconSize={8} />
               <Bar dataKey="Entregada"     stackId="b" fill="hsl(var(--success))" />
               <Bar dataKey="En tránsito"   stackId="b" fill="hsl(var(--info))" />
               <Bar dataKey="Novedad"       stackId="b" fill="hsl(var(--warning))" />
               <Bar dataKey="Devolución"    stackId="b" fill="hsl(var(--danger))" />
-              <Bar dataKey="Rechazada"     stackId="b" fill="hsl(var(--danger))" />
+              <Bar dataKey="Rechazada"     stackId="b" fill="hsl(var(--danger))" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -77,17 +77,21 @@ export default memo(function GeoDistribution({ rows }: Props) {
         </p>
       </header>
 
-      <div className="space-y-3 flex-1">
-        {top.map(c => (
-          <div key={`${c.ciudad}|${c.departamento}`} className="space-y-1">
+      <div className="space-y-4 flex-1">
+        {top.map((c, idx) => (
+          <div key={`${c.ciudad}|${c.departamento}`} className="space-y-1.5">
             <div className="flex items-center justify-between gap-2 text-xs">
-              <div className="inline-flex items-center gap-2 min-w-0">
+              <div className="inline-flex items-center gap-2.5 min-w-0">
+                {/* Ranking number — patrón leaderboard, da contexto inmediato. */}
+                <span className="font-mono text-[10px] font-bold tabular-nums text-muted-foreground/70 w-4 text-center">
+                  {String(idx + 1).padStart(2, '0')}
+                </span>
                 <span
-                  className="h-2.5 w-2.5 rounded-sm shrink-0"
-                  style={{ background: c.color }}
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ background: c.color, boxShadow: `0 0 0 3px ${c.color}22` }}
                   aria-hidden="true"
                 />
-                <span className="font-semibold text-foreground truncate" title={c.ciudad}>
+                <span className="font-semibold text-sm text-foreground truncate" title={c.ciudad}>
                   {c.ciudad}
                 </span>
                 {c.departamento && (
@@ -96,11 +100,12 @@ export default memo(function GeoDistribution({ rows }: Props) {
                   </span>
                 )}
               </div>
-              <span className="font-mono text-xs font-bold tabular-nums text-foreground shrink-0">
+              <span className="font-mono text-sm font-extrabold tabular-nums text-foreground shrink-0">
                 {c.pct.toFixed(0)}%
               </span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-muted/40 overflow-hidden">
+            {/* Barra h-2.5 (vs h-1.5 antes) — más legible, mejor jerarquía. */}
+            <div className="h-2.5 w-full rounded-full bg-muted/40 overflow-hidden">
               <div
                 className="h-full rounded-full transition-[width] duration-700 ease-out"
                 style={{ width: `${c.pct}%`, background: c.color }}
@@ -109,7 +114,11 @@ export default memo(function GeoDistribution({ rows }: Props) {
             </div>
             <div className="flex items-center justify-between text-[10px] text-muted-foreground tabular-nums">
               <span>{c.total_pedidos.toLocaleString('es-CO')} envíos</span>
-              <span className={c.tasa_devolucion >= 30 ? 'text-danger font-semibold' : c.tasa_devolucion >= 15 ? 'text-warning' : 'text-muted-foreground'}>
+              <span className={
+                c.tasa_devolucion >= 30 ? 'text-danger font-bold' :
+                c.tasa_devolucion >= 15 ? 'text-warning font-semibold' :
+                'text-success font-medium'
+              }>
                 {c.tasa_devolucion.toFixed(1)}% devol.
               </span>
             </div>

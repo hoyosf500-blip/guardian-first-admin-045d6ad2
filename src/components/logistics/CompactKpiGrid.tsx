@@ -12,7 +12,7 @@ export default memo(function CompactKpiGrid({ data }: Props) {
     return (
       <div className="grid grid-cols-2 gap-3 h-full">
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className="rounded-xl border border-border bg-card skeleton-shimmer min-h-[120px]" />
+          <div key={i} className="rounded-2xl border-2 border-border bg-card skeleton-shimmer min-h-[140px]" />
         ))}
       </div>
     );
@@ -20,8 +20,6 @@ export default memo(function CompactKpiGrid({ data }: Props) {
 
   const tasaEntrega = data.tasa_entrega ?? 0;
   const tasaDevolucion = data.tasa_devolucion ?? 0;
-  const valorTotal = (data.valor_entregado ?? 0) + (data.valor_perdido ?? 0);
-  const pctValor = valorTotal > 0 ? ((data.valor_entregado ?? 0) / valorTotal) * 100 : 0;
 
   return (
     <div className="grid grid-cols-2 gap-3 h-full">
@@ -52,95 +50,83 @@ export default memo(function CompactKpiGrid({ data }: Props) {
       <KpiCard
         label="Valor entregado"
         value={formatCOP(data.valor_entregado)}
-        valueClass="text-lg"
+        valueClass="text-base sm:text-lg"
         icon={DollarSign}
         tone="accent"
         hint={`Perdido: ${formatCOP(data.valor_perdido)}`}
         hintTone="danger"
-        trendPct={pctValor}
       />
     </div>
   );
 });
+
+type Tone = 'info' | 'success' | 'danger' | 'accent';
 
 interface KpiCardProps {
   label: string;
   value: string;
   valueClass?: string;
   icon: typeof Package;
-  tone: 'info' | 'success' | 'danger' | 'accent';
+  tone: Tone;
   hint: string;
   hintTone?: 'neutral' | 'danger';
   trendPct?: number;
   inverseTrend?: boolean;
 }
 
-function KpiCard({ label, value, valueClass, icon: Icon, tone, hint, hintTone, trendPct, inverseTrend }: KpiCardProps) {
-  // Cada tono define icon container (rounded-full según referencia) +
-  // trend pill color. Tokens semánticos del DS.
-  const toneStyles = {
-    info: {
-      iconBg: 'bg-info/12',
-      iconRing: 'ring-info/25',
-      iconColor: 'text-info',
-      trendBg: 'bg-info/12',
-      trendText: 'text-info',
-    },
-    success: {
-      iconBg: 'bg-success/12',
-      iconRing: 'ring-success/25',
-      iconColor: 'text-success',
-      trendBg: 'bg-success/12',
-      trendText: 'text-success',
-    },
-    danger: {
-      iconBg: 'bg-danger/12',
-      iconRing: 'ring-danger/25',
-      iconColor: 'text-danger',
-      trendBg: 'bg-danger/12',
-      trendText: 'text-danger',
-    },
-    accent: {
-      iconBg: 'bg-accent/12',
-      iconRing: 'ring-accent/25',
-      iconColor: 'text-accent',
-      trendBg: 'bg-accent/12',
-      trendText: 'text-accent',
-    },
-  }[tone];
+const TONE_CARD: Record<Tone, string> = {
+  info:    'border-info/30 bg-gradient-to-br from-info/8 via-info/3 to-transparent',
+  success: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent',
+  danger:  'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent',
+  accent:  'border-accent/30 bg-gradient-to-br from-accent/10 via-accent/3 to-transparent',
+};
 
-  // Indicador visual: ↑ para métricas donde más es mejor (entrega,
-  // valor entregado), ↓ para inversas (devoluciones).
+const TONE_ICON: Record<Tone, { bg: string; ring: string; color: string }> = {
+  info:    { bg: 'bg-info/15',    ring: 'border-info/40',    color: 'text-info' },
+  success: { bg: 'bg-success/15', ring: 'border-success/40', color: 'text-success' },
+  danger:  { bg: 'bg-danger/15',  ring: 'border-danger/40',  color: 'text-danger' },
+  accent:  { bg: 'bg-accent/15',  ring: 'border-accent/40',  color: 'text-accent' },
+};
+
+const TONE_VALUE: Record<Tone, string> = {
+  info:    'text-info',
+  success: 'text-success',
+  danger:  'text-danger',
+  accent:  'text-accent',
+};
+
+const TONE_TREND: Record<Tone, string> = {
+  info:    'bg-info/12 text-info',
+  success: 'bg-success/12 text-success',
+  danger:  'bg-danger/12 text-danger',
+  accent:  'bg-accent/12 text-accent',
+};
+
+function KpiCard({ label, value, valueClass, icon: Icon, tone, hint, hintTone, trendPct, inverseTrend }: KpiCardProps) {
   const showTrend = trendPct !== undefined;
-  const trendUp = !inverseTrend;
-  const arrow = trendUp ? '↑' : '↓';
+  const arrow = inverseTrend ? '↓' : '↑';
 
   return (
-    <article className="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border-strong flex flex-col justify-between min-h-[120px]">
-      <div className="flex items-start gap-3">
-        {/* Icon container redondo (estilo referencia) */}
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${toneStyles.iconBg} ring-1 ${toneStyles.iconRing}`}>
-          <Icon size={18} className={toneStyles.iconColor} aria-hidden="true" strokeWidth={2.25} />
-        </div>
-
-        {/* Label + número */}
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground truncate">
-            {label}
-          </div>
-          <div className={`font-mono font-bold text-foreground tabular-nums leading-none ${valueClass ?? 'text-2xl'}`}>
-            {value}
-          </div>
+    <article className={`rounded-2xl border-2 p-4 transition-colors flex flex-col justify-between min-h-[140px] ${TONE_CARD[tone]}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
+          {label}
+        </span>
+        <div className={`h-9 w-9 shrink-0 rounded-lg border flex items-center justify-center ${TONE_ICON[tone].bg} ${TONE_ICON[tone].ring}`}>
+          <Icon size={16} className={TONE_ICON[tone].color} aria-hidden="true" strokeWidth={2.25} />
         </div>
       </div>
 
-      {/* Trend + hint en la base */}
+      <div className={`mt-2 font-extrabold tabular-nums leading-none ${TONE_VALUE[tone]} ${valueClass ?? 'text-2xl sm:text-3xl'}`}>
+        {value}
+      </div>
+
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className={`text-[11px] tabular-nums truncate ${hintTone === 'danger' ? 'text-danger' : 'text-muted-foreground'}`}>
           {hint}
         </span>
         {showTrend && (
-          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${toneStyles.trendBg} ${toneStyles.trendText} shrink-0`}>
+          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums shrink-0 ${TONE_TREND[tone]}`}>
             <span aria-hidden="true">{arrow}</span>
             {trendPct.toFixed(0)}%
           </span>
