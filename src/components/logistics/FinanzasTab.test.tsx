@@ -56,6 +56,21 @@ vi.mock('@/hooks/useGananciaNetaDropi', () => ({
   useGananciaNetaDropi: () => gananciaHookMock(),
 }));
 
+// Mock useWalletDailySeries — el rediseño usa este hook para alimentar
+// el CashFlowChart. Sin mock, React Query falla por falta de QueryClient
+// en jsdom. Los tests no validan el chart en sí, solo necesitamos que
+// el componente monte sin crashear.
+vi.mock('@/hooks/useWalletMovements', () => ({
+  useWalletDailySeries: () => ({
+    data: [
+      { fecha: '2026-04-01', ENTRADA: 1_500_000, SALIDA: 200_000 },
+      { fecha: '2026-04-02', ENTRADA: 800_000, SALIDA: 150_000 },
+    ],
+    isLoading: false,
+  }),
+  useWalletMovements: () => ({ data: undefined, isLoading: false }),
+}));
+
 const FILTERS = { fromDate: '2026-04-01', toDate: '2026-04-30' };
 
 const SAMPLE: FinancialSummary = {
@@ -163,10 +178,14 @@ describe('FinanzasTab', () => {
   it('muestra los KPIs de ingresos, COGS y tasa de entrega', () => {
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
-    expect(screen.getByText(/Ingresos brutos/i)).toBeInTheDocument();
+    // "Ingresos brutos" aparece en el hero (mega-KPI) Y en el grid secundario
+    // — duplicación intencional para jerarquía visual del rediseño.
+    expect(screen.getAllByText(/Ingresos brutos/i).length).toBeGreaterThanOrEqual(1);
     // "COGS" aparece en el label del KPI y en el banner — ambos deben estar
     expect(screen.getAllByText(/COGS/i).length).toBeGreaterThan(0);
-    expect(screen.getByText('70.0%')).toBeInTheDocument();
+    // "70.0%" aparece en el KPI "Tasa de entrega" Y en el centro del donut
+    // de estado de órdenes (mismo cálculo: entregadas/total).
+    expect(screen.getAllByText('70.0%').length).toBeGreaterThanOrEqual(1);
     // Volumen de operación: contadores planos
     expect(screen.getByText('100')).toBeInTheDocument();
   });

@@ -1,74 +1,41 @@
-import { Skeleton } from '@/components/ui/skeleton';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
+import { useWalletDailySeries } from '@/hooks/useWalletMovements';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { formatCOP } from '@/lib/utils';
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, RotateCcw,
   Target, Package, CheckCircle2, AlertTriangle, Receipt, Wallet, Info,
-  Ban, Sparkles,
+  Ban, Sparkles, ArrowDownToLine, ArrowUpFromLine,
 } from 'lucide-react';
+import KpiCard from './finanzas/KpiCard';
+import FinanzasHero from './finanzas/FinanzasHero';
+import EstadoOrdenesDonut from './finanzas/EstadoOrdenesDonut';
+import CashFlowChart from './finanzas/CashFlowChart';
+import ComposicionList, { type ComposicionItem } from './finanzas/ComposicionList';
 
-// Fase A del módulo financiero — utilidad bruta operativa.
+// Fase A — Cash flow operativo Dropi.
 //
-// Diseño: 6 KPI cards principales (utilidad bruta destacada, luego ingresos,
-// COGS, flete combinado, costo devoluciones, tasa entrega), card secundaria
-// con tickets / órdenes, y card opcional con wallet neto. Mismo estilo
-// visual que BilleteraTab (rounded-xl, bg-card, tipografía tabular-nums).
+// Layout (estilo Boostec ++ con identidad propia):
+//   1. Banner Fase A
+//   2. Hero strip (3 mega-KPIs): Ganancia Neta · Ingresos · Margen
+//   3. Visualizaciones: Donut Estado órdenes + Cash Flow diario (grid 2-col)
+//   4. Composición: Ingresos operativos + Gastos operativos (grid 2-col)
+//   5. KPI grid secundario (4 cols × 2 rows)
+//   6. Volumen de operación + Wallet neto
 //
-// IMPORTANTE: el banner informativo arriba comunica explícitamente que NO
-// incluye gasto pauta. Ese es el principal disclaimer que el cliente
-// confirmó — Fase B sumará Meta/TikTok cuando se conecte el token.
-
-type Tone = 'success' | 'danger' | 'info' | 'warning' | 'neutral';
-
-function toneClasses(tone: Tone) {
-  switch (tone) {
-    case 'success': return 'text-success';
-    case 'danger':  return 'text-danger';
-    case 'info':    return 'text-info';
-    case 'warning': return 'text-warning';
-    default:        return 'text-foreground';
-  }
-}
-
-interface KpiCardProps {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  tone: Tone;
-  hint?: string;
-  big?: boolean;
-}
-
-function KpiCard({ label, value, icon: Icon, tone, hint, big = false }: KpiCardProps) {
-  const colorClass = toneClasses(tone);
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-          {label}
-        </span>
-        <Icon size={14} className={colorClass} aria-hidden="true" />
-      </div>
-      <div
-        className={`mt-2 font-bold tabular-nums ${colorClass} ${
-          big ? 'text-3xl sm:text-4xl' : 'text-xl'
-        }`}
-      >
-        {value}
-      </div>
-      {hint && (
-        <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>
-      )}
-    </div>
-  );
-}
+// Tests existentes en FinanzasTab.test.tsx imponen presencia literal de:
+// "Fase A", "Cash flow operativo Dropi", "Ganancia Neta Dropi",
+// "Utilidad bruta contable", "Ingresos brutos", "70.0%", "100",
+// "Wallet neto del período", "Cancelados", "Pérdida por devoluciones",
+// "Ganancia markup" + disclaimer. Cualquier cambio de copy debe respetar
+// esos contracts.
 
 export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) {
   const { fromDate, toDate } = filters;
   const { data, isLoading, isError, error } = useFinancialSummary(fromDate, toDate);
   const { data: gananciaNeta, isLoading: gananciaLoading } = useGananciaNetaDropi(fromDate, toDate);
+  const { data: dailySeries, isLoading: seriesLoading } = useWalletDailySeries(fromDate, toDate);
 
   if (isError) {
     return (
@@ -86,12 +53,45 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
     );
   }
 
+  const loading = isLoading || gananciaLoading;
+
   const fleteCombinado = (data?.flete_entregadas ?? 0) + (data?.flete_devoluciones ?? 0);
+  const fleteDevs = data?.flete_devoluciones ?? 0;
+  const cargoExtra = data?.costo_devoluciones ?? 0;
+  const perdidaTotalDevs = fleteDevs + cargoExtra;
+  const totalDevs = data?.total_devueltas ?? 0;
+  const promedioDev = totalDevs > 0 ? Math.round(perdidaTotalDevs / totalDevs) : 0;
   const utilidad = data?.utilidad_bruta ?? 0;
+
+  const gn = gananciaNeta?.ganancia_neta ?? 0;
+  const totalEntradas = gananciaNeta?.total_entradas ?? 0;
+  const totalSalidas = gananciaNeta?.total_salidas ?? 0;
+  const ingresosBrutos = data?.ingresos_brutos ?? 0;
+  const margenPct = ingresosBrutos > 0 ? (gn / ingresosBrutos) * 100 : 0;
+
+  const desglose = gananciaNeta?.desglose;
+  const ingresosItems: ComposicionItem[] = [
+    { label: 'Markup dropshipper', value: desglose?.ganancia_dropshipper ?? 0, color: 'hsl(var(--success))' },
+    { label: 'Markup proveedor',   value: desglose?.ganancia_proveedor ?? 0,   color: 'hsl(var(--success))' },
+    { label: 'Reembolso flete',    value: desglose?.reembolso_flete ?? 0,      color: 'hsl(var(--info))' },
+    { label: 'Indemnizaciones',    value: desglose?.indemnizacion ?? 0,        color: 'hsl(var(--accent))' },
+  ];
+
+  // Nota: 'Comisión referidos' fue removida de la UI por decisión del cliente
+  // (no es relevante para el operador). 'Cargo extra Dropi' representa el
+  // costo_devolucion del wallet (~$22k típico cuando NO entrega) — se nombra
+  // así para evitar confusión con la KPI "Pérdida por devoluciones" que
+  // suma flete_devs + cargo_extra.
+  const gastosItems: ComposicionItem[] = [
+    { label: 'Flete inicial',          value: desglose?.flete_inicial ?? 0,         color: 'hsl(var(--warning))' },
+    { label: 'Cargo extra Dropi',      value: desglose?.costo_devolucion ?? 0,      color: 'hsl(var(--danger))', sublabel: 'Por entregas fallidas' },
+    { label: 'Mantenimiento tarjeta',  value: desglose?.mantenimiento_tarjeta ?? 0, color: 'hsl(var(--muted-foreground))' },
+    { label: 'Orden sin recaudo',      value: desglose?.orden_sin_recaudo ?? 0,     color: 'hsl(var(--danger))' },
+  ];
 
   return (
     <div className="space-y-4">
-      {/* Banner informativo — fase A: cash flow operativo Dropi */}
+      {/* Banner Fase A */}
       <div className="rounded-xl border border-info/30 bg-info/5 p-4">
         <div className="flex items-start gap-3">
           <Info size={16} className="text-info shrink-0 mt-0.5" aria-hidden="true" />
@@ -107,46 +107,82 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
         </div>
       </div>
 
-      {isLoading || gananciaLoading ? (
+      {loading ? (
         <>
-          <div className="grid grid-cols-1">
-            <Skeleton className="h-[120px] rounded-xl" />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="rounded-2xl border border-border bg-card animate-pulse h-[148px]" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />
+            <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-[100px] rounded-xl" />
+              <div key={i} className="rounded-xl border border-border bg-card animate-pulse h-[110px]" />
             ))}
           </div>
         </>
       ) : (
         <>
-          {/* Ganancia Neta Dropi destacada (full-width) — cash flow REAL del wallet.
-              Reemplaza a la card vieja "Utilidad bruta del período" que incluía
-              COGS (que Dropi paga directo al proveedor, no sale del wallet).
-              La utilidad bruta contable sigue visible más abajo como referencia. */}
-          {(() => {
-            const gn = gananciaNeta?.ganancia_neta ?? 0;
-            const tone: Tone = gn >= 0 ? 'success' : 'danger';
-            const icon = gn >= 0 ? TrendingUp : TrendingDown;
-            return (
-              <div className="grid grid-cols-1">
-                <KpiCard
-                  label="Ganancia Neta Dropi (real)"
-                  value={formatCOP(gn)}
-                  icon={icon}
-                  tone={tone}
-                  big
-                  hint={`Lo que Dropi te abonó realmente: entró ${formatCOP(gananciaNeta?.total_entradas ?? 0)} − te debitó ${formatCOP(gananciaNeta?.total_salidas ?? 0)}`}
-                />
-              </div>
-            );
-          })()}
+          {/* 1. Hero strip */}
+          <FinanzasHero
+            gananciaNeta={gn}
+            totalEntradas={totalEntradas}
+            totalSalidas={totalSalidas}
+            ingresosBrutos={ingresosBrutos}
+            totalEntregadas={data?.total_entregadas ?? 0}
+            margenPct={margenPct}
+          />
 
-          {/* KPIs principales — 8 cards (2x4 en lg) */}
+          {/* 2. Donut + Cash flow */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <EstadoOrdenesDonut
+              totalOrdenes={data?.total_ordenes ?? 0}
+              entregadas={data?.total_entregadas ?? 0}
+              devueltas={data?.total_devueltas ?? 0}
+              canceladas={data?.total_cancelados ?? 0}
+            />
+            <CashFlowChart
+              series={dailySeries ?? []}
+              isLoading={seriesLoading}
+            />
+          </div>
+
+          {/* 3. Composición ingresos + gastos */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <ComposicionList
+              title="Composición de ingresos"
+              total={totalEntradas}
+              totalLabel="Entradas"
+              totalTone="success"
+              icon={ArrowDownToLine}
+              items={ingresosItems}
+              emptyMessage="Sin ingresos en el período"
+            />
+            <ComposicionList
+              title="Composición de gastos"
+              total={totalSalidas}
+              totalLabel="Salidas"
+              totalTone="danger"
+              icon={ArrowUpFromLine}
+              items={gastosItems}
+              emptyMessage="Sin gastos en el período"
+            />
+          </div>
+
+          {/* 4. KPI grid secundario */}
+          <div className="flex items-end justify-between gap-3 pt-2">
+            <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em]">
+              Métricas detalladas
+            </h3>
+            <span className="text-[11px] text-muted-foreground">Vista contable + operativa</span>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KpiCard
               label="Ingresos brutos"
-              value={formatCOP(data?.ingresos_brutos ?? 0)}
+              value={formatCOP(ingresosBrutos)}
               icon={DollarSign}
               tone="info"
               hint="Solo pedidos entregados"
@@ -163,39 +199,15 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               value={formatCOP(fleteCombinado)}
               icon={Truck}
               tone="warning"
-              hint={`Entregadas: ${formatCOP(data?.flete_entregadas ?? 0)} · Devs: ${formatCOP(data?.flete_devoluciones ?? 0)}`}
+              hint={`Entregadas: ${formatCOP(data?.flete_entregadas ?? 0)} · Devs: ${formatCOP(fleteDevs)}`}
             />
-            {/* Card: Pérdida total por devoluciones (flete ida + cargo extra Dropi).
-                Reemplazó a "Costo devoluciones" — la card vieja solo mostraba
-                el cargo extra Dropi (~$65k) sin el flete de ida perdido (~$4.5M).
-                Cálculo client-side como fallback: si la migration v8 todavía
-                no se aplicó, perdida_total_devoluciones llega undefined y
-                la card mostraba $0 aunque flete_devoluciones y
-                costo_devoluciones sí estuvieran. Computar acá garantiza que
-                la card siempre cuadre con el desglose visible debajo. */}
-            {(() => {
-              // SIEMPRE calculamos client-side: el parser del hook coerce
-              // undefined → 0, así que el operador `??` con el campo del server
-              // (perdida_total_devoluciones de v6) NUNCA cae al fallback aunque
-              // la migration v8 no esté aplicada — quedaba en 0. Calcular
-              // directamente desde flete_devoluciones + costo_devoluciones (que
-              // SÍ vienen del RPC v5+) garantiza el valor correcto en todos
-              // los escenarios (v5/v6/futuro).
-              const fleteDevs = data?.flete_devoluciones ?? 0;
-              const cargoExtra = data?.costo_devoluciones ?? 0;
-              const perdidaTotal = fleteDevs + cargoExtra;
-              const totalDevs = data?.total_devueltas ?? 0;
-              const promedio = totalDevs > 0 ? Math.round(perdidaTotal / totalDevs) : 0;
-              return (
-                <KpiCard
-                  label="Pérdida por devoluciones"
-                  value={formatCOP(perdidaTotal)}
-                  icon={RotateCcw}
-                  tone="danger"
-                  hint={`${totalDevs} devs — promedio ${formatCOP(promedio)} c/u`}
-                />
-              );
-            })()}
+            <KpiCard
+              label="Pérdida por devoluciones"
+              value={formatCOP(perdidaTotalDevs)}
+              icon={RotateCcw}
+              tone="danger"
+              hint={`${totalDevs} devs — promedio ${formatCOP(promedioDev)} c/u`}
+            />
             <KpiCard
               label="Cancelados"
               value={formatCOP(data?.valor_cancelado ?? 0)}
@@ -224,6 +236,55 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               tone={(data?.tasa_entrega_pct ?? 0) >= 60 ? 'success' : 'warning'}
               hint={`${data?.total_entregadas ?? 0} de ${data?.total_ordenes ?? 0} órdenes`}
             />
+          </div>
+
+          {/* Mini-info: desglose pérdida devoluciones */}
+          <div className="text-xs text-muted-foreground italic">
+            Pérdida devoluciones = Flete de ida ({formatCOP(fleteDevs)}) + Cargo extra Dropi ({formatCOP(cargoExtra)})
+          </div>
+
+          {/* Disclaimer ganancia markup */}
+          <div className="text-xs text-muted-foreground italic">
+            Nota: <strong>Ganancia Markup</strong> aparece como referencia. Aún no se suma a la utilidad bruta hasta confirmar (con sanity check) que no genera doble conteo con `cobro_entrega`. Una vez confirmado, lo sumamos.
+          </div>
+
+          {/* 5. Volumen + ticket promedio */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
+              <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
+                Volumen de operación
+              </h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                    <Package size={12} aria-hidden="true" />
+                    Órdenes totales
+                  </div>
+                  <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                    {data?.total_ordenes ?? 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                    <CheckCircle2 size={12} className="text-success" aria-hidden="true" />
+                    Entregadas
+                  </div>
+                  <div className="mt-1 text-2xl font-bold tabular-nums text-success">
+                    {data?.total_entregadas ?? 0}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                    <RotateCcw size={12} className="text-danger" aria-hidden="true" />
+                    Devueltas
+                  </div>
+                  <div className="mt-1 text-2xl font-bold tabular-nums text-danger">
+                    {data?.total_devueltas ?? 0}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <KpiCard
               label="Ticket promedio"
               value={formatCOP(data?.ticket_promedio ?? 0)}
@@ -233,55 +294,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             />
           </div>
 
-          {/* Mini-info: desglose flete de ida vs cargo extra Dropi.
-              Justo debajo del grid principal — explica de qué se compone la card
-              "Pérdida por devoluciones". */}
-          <div className="text-xs text-muted-foreground italic">
-            Pérdida devoluciones = Flete de ida ({formatCOP(data?.flete_devoluciones ?? 0)}) + Cargo extra Dropi ({formatCOP(data?.costo_devoluciones ?? 0)})
-          </div>
-
-          {/* Disclaimer ganancia_markup — todavía NO suma a utilidad bruta */}
-          <div className="text-xs text-muted-foreground italic">
-            Nota: <strong>Ganancia Markup</strong> aparece como referencia. Aún no se suma a la utilidad bruta hasta confirmar (con sanity check) que no genera doble conteo con `cobro_entrega`. Una vez confirmado, lo sumamos.
-          </div>
-
-          {/* Card secundaria — conteo de tickets */}
-          <div className="rounded-xl border border-border bg-card p-5">
-            <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
-              Volumen de operación
-            </h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <Package size={12} aria-hidden="true" />
-                  Órdenes totales
-                </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                  {data?.total_ordenes ?? 0}
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <CheckCircle2 size={12} className="text-success" aria-hidden="true" />
-                  Entregadas
-                </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-success">
-                  {data?.total_entregadas ?? 0}
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                  <RotateCcw size={12} className="text-danger" aria-hidden="true" />
-                  Devueltas
-                </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-danger">
-                  {data?.total_devueltas ?? 0}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Wallet neto informativo */}
+          {/* 6. Wallet neto */}
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
