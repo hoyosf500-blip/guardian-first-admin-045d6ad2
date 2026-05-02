@@ -16,6 +16,10 @@ export interface FinancialSummary {
   flete_entregadas: number;
   flete_devoluciones: number;
   costo_devoluciones: number;
+  perdida_total_devoluciones: number;  // RPC v6 — flete_devs + costo_devs (cargo extra Dropi)
+  costo_promedio_devolucion: number;   // RPC v6 — perdida_total / total_devueltas
+  mantenimiento_tarjeta: number;       // RPC v6 — gasto mensual tarjeta virtual Dropi
+  indemnizaciones: number;             // RPC v6 — ingreso ocasional de Dropi (proveedor no despacha, etc)
   comision_referidos: number;   // RPC v3 — se resta de utilidad_bruta (sigue en payload por compat, fuera de la UI desde v4)
   ganancia_markup: number;      // RPC v3 — informativo (no se suma hasta sanity check)
   valor_cancelado: number;      // RPC v4 — SUM(valor) de canceladas, valor potencial perdido (no se descuenta de utilidad)
@@ -50,6 +54,10 @@ function parseFinancialSummary(raw: unknown): FinancialSummary {
     flete_entregadas:   toNumber(o.flete_entregadas),
     flete_devoluciones: toNumber(o.flete_devoluciones),
     costo_devoluciones: toNumber(o.costo_devoluciones),
+    perdida_total_devoluciones: toNumber(o.perdida_total_devoluciones),
+    costo_promedio_devolucion:  toNumber(o.costo_promedio_devolucion),
+    mantenimiento_tarjeta:      toNumber(o.mantenimiento_tarjeta),
+    indemnizaciones:            toNumber(o.indemnizaciones),
     comision_referidos: toNumber(o.comision_referidos),
     ganancia_markup:    toNumber(o.ganancia_markup),
     valor_cancelado:    toNumber(o.valor_cancelado),

@@ -160,12 +160,16 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               tone="warning"
               hint={`Entregadas: ${formatCOP(data?.flete_entregadas ?? 0)} · Devs: ${formatCOP(data?.flete_devoluciones ?? 0)}`}
             />
+            {/* Card: Pérdida total por devoluciones (flete ida + cargo extra Dropi).
+                Reemplazó a "Costo devoluciones" — la card vieja solo mostraba
+                el cargo extra Dropi (~$65k) sin el flete de ida perdido (~$4.5M).
+                Total real = flete_devoluciones + costo_devoluciones. */}
             <KpiCard
-              label="Costo devoluciones"
-              value={formatCOP(data?.costo_devoluciones ?? 0)}
+              label="Pérdida por devoluciones"
+              value={formatCOP(data?.perdida_total_devoluciones ?? 0)}
               icon={RotateCcw}
               tone="danger"
-              hint="Aparte del flete de devoluciones"
+              hint={`${data?.total_devueltas ?? 0} devs — promedio ${formatCOP(data?.costo_promedio_devolucion ?? 0)} c/u`}
             />
             <KpiCard
               label="Cancelados"
@@ -195,6 +199,13 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               tone="info"
               hint="Promedio por pedido entregado"
             />
+          </div>
+
+          {/* Mini-info: desglose flete de ida vs cargo extra Dropi.
+              Justo debajo del grid principal — explica de qué se compone la card
+              "Pérdida por devoluciones". */}
+          <div className="text-xs text-muted-foreground italic">
+            Pérdida devoluciones = Flete de ida ({formatCOP(data?.flete_devoluciones ?? 0)}) + Cargo extra Dropi ({formatCOP(data?.costo_devoluciones ?? 0)})
           </div>
 
           {/* Disclaimer ganancia_markup — todavía NO suma a utilidad bruta */}

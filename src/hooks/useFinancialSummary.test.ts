@@ -31,6 +31,10 @@ describe('useFinancialSummary', () => {
         flete_entregadas: 80000,
         flete_devoluciones: 20000,
         costo_devoluciones: 10000,
+        perdida_total_devoluciones: 30000,
+        costo_promedio_devolucion: 3000,
+        mantenimiento_tarjeta: 12500,
+        indemnizaciones: 21980,
         comision_referidos: 5000,
         ganancia_markup: 30000,
         valor_cancelado: 250000,
@@ -66,6 +70,11 @@ describe('useFinancialSummary', () => {
     expect(result.current.data?.valor_cancelado).toBe(250000);
     expect(result.current.data?.total_cancelados).toBe(8);
     expect(result.current.data?.tasa_cancelacion_pct).toBe(8);
+    // RPC v6 fields
+    expect(result.current.data?.perdida_total_devoluciones).toBe(30000);
+    expect(result.current.data?.costo_promedio_devolucion).toBe(3000);
+    expect(result.current.data?.mantenimiento_tarjeta).toBe(12500);
+    expect(result.current.data?.indemnizaciones).toBe(21980);
   });
 
   it('coerce strings numéricas a number (Postgres NUMERIC puede venir como string)', async () => {
@@ -76,6 +85,10 @@ describe('useFinancialSummary', () => {
         flete_entregadas: '0',
         flete_devoluciones: '0',
         costo_devoluciones: '0',
+        perdida_total_devoluciones: '4500000.00',
+        costo_promedio_devolucion: '22500',
+        mantenimiento_tarjeta: '25000.00',
+        indemnizaciones: '21980',
         comision_referidos: '12345.50',
         ganancia_markup: '7500',
         valor_cancelado: '180000.00',
@@ -108,6 +121,12 @@ describe('useFinancialSummary', () => {
     expect(result.current.data?.valor_cancelado).toBe(180000);
     expect(result.current.data?.total_cancelados).toBe(4);
     expect(result.current.data?.tasa_cancelacion_pct).toBe(8);
+    // RPC v6 fields coercion
+    expect(typeof result.current.data?.perdida_total_devoluciones).toBe('number');
+    expect(result.current.data?.perdida_total_devoluciones).toBe(4500000);
+    expect(result.current.data?.costo_promedio_devolucion).toBe(22500);
+    expect(result.current.data?.mantenimiento_tarjeta).toBe(25000);
+    expect(result.current.data?.indemnizaciones).toBe(21980);
   });
 
   it('propaga error si el RPC falla', async () => {
@@ -148,5 +167,10 @@ describe('useFinancialSummary', () => {
     expect(result.current.data?.valor_cancelado).toBe(0);
     expect(result.current.data?.total_cancelados).toBe(0);
     expect(result.current.data?.tasa_cancelacion_pct).toBe(0);
+    // RPC v6 fields default to 0 when payload is empty
+    expect(result.current.data?.perdida_total_devoluciones).toBe(0);
+    expect(result.current.data?.costo_promedio_devolucion).toBe(0);
+    expect(result.current.data?.mantenimiento_tarjeta).toBe(0);
+    expect(result.current.data?.indemnizaciones).toBe(0);
   });
 });
