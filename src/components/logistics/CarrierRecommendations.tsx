@@ -49,20 +49,33 @@ export default memo(function CarrierRecommendations({
     );
   }
 
+  // Counts para el stats banner: cuántas ciudades en cada bucket de acción.
+  const urgentCount = rows.filter(r => (r.delta_puntos ?? 0) >= 20 && r.mejor_transportadora !== r.carrier_actual_top).length;
+  const cambioCount = rows.filter(r => (r.delta_puntos ?? 0) >= 10 && (r.delta_puntos ?? 0) < 20 && r.mejor_transportadora !== r.carrier_actual_top).length;
+  const mantenerCount = rows.filter(r => r.mejor_transportadora === r.carrier_actual_top).length;
+
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <header className="px-5 py-4 border-b border-border/60">
-        <div className="flex items-center gap-2">
-          <Lightbulb size={14} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
-          <h2 className="text-sm font-bold text-foreground uppercase tracking-[0.08em]">
-            Recomendaciones de transportadora por ciudad
-          </h2>
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-1">
-          {rows.length} ciudad{rows.length !== 1 ? 'es' : ''} analizada{rows.length !== 1 ? 's' : ''} ·
-          {' '}Click en "Copiar" para mandar el dato al encargado de logística por WhatsApp
-        </p>
-      </header>
+    <div className="space-y-3">
+      {/* Stats banner — resumen accionable arriba de la tabla */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Δ ≥ 20 puntos vs actual" />
+        <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="Δ entre 10 y 20 puntos" />
+        <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
+      </div>
+
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <header className="px-5 py-4 border-b border-border/60">
+          <div className="flex items-center gap-2">
+            <Lightbulb size={14} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
+            <h2 className="text-sm font-bold text-foreground uppercase tracking-[0.08em]">
+              Recomendaciones de transportadora por ciudad
+            </h2>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {rows.length} ciudad{rows.length !== 1 ? 'es' : ''} analizada{rows.length !== 1 ? 's' : ''} ·
+            {' '}Click en "Copiar" para mandar el dato al encargado de logística por WhatsApp
+          </p>
+        </header>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -84,9 +97,46 @@ export default memo(function CarrierRecommendations({
           </tbody>
         </table>
       </div>
+      </div>
     </div>
   );
 });
+
+interface StatsBannerProps {
+  tone: 'success' | 'warning' | 'danger';
+  icon: typeof CheckCircle2;
+  label: string;
+  value: number;
+  hint: string;
+}
+function StatsBanner({ tone, icon: Icon, label, value, hint }: StatsBannerProps) {
+  const styles = {
+    success: { card: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent',
+               text: 'text-success', iconBg: 'bg-success/15 border-success/40' },
+    warning: { card: 'border-warning/30 bg-gradient-to-br from-warning/8 via-warning/3 to-transparent',
+               text: 'text-warning', iconBg: 'bg-warning/15 border-warning/40' },
+    danger:  { card: 'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent',
+               text: 'text-danger', iconBg: 'bg-danger/15 border-danger/40' },
+  }[tone];
+  return (
+    <article className={`rounded-2xl border-2 ${styles.card} p-4 flex items-center gap-3`}>
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${styles.iconBg}`}>
+        <Icon size={16} className={styles.text} aria-hidden="true" strokeWidth={2.25} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
+          {label}
+        </div>
+        <div className={`font-extrabold text-2xl tabular-nums leading-none mt-0.5 ${styles.text}`}>
+          {value}
+        </div>
+        <div className="text-[10px] text-muted-foreground mt-1 truncate">
+          {hint}
+        </div>
+      </div>
+    </article>
+  );
+}
 
 interface RowProps {
   row: CarrierRecommendation;
@@ -149,7 +199,13 @@ function RecommendationRow({ row, filters }: RowProps) {
         </div>
       </td>
       <td className="px-3 py-2.5 text-center">
-        <span className="font-mono font-bold tabular-nums text-foreground text-sm">
+        <span className={`inline-flex items-center gap-0.5 font-mono font-bold tabular-nums text-sm ${
+          delta >= 20 ? 'text-danger' :
+          delta >= 10 ? 'text-warning' :
+          delta >= 5 ? 'text-foreground' :
+          'text-muted-foreground'
+        }`}>
+          {delta >= 10 && <span aria-hidden="true">↑</span>}
           {delta.toFixed(0)}
         </span>
       </td>

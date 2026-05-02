@@ -76,17 +76,17 @@ export default memo(function CityReturnsTable({ rows }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Stat banner: valor total perdido */}
+      {/* Stat banner: valor total perdido — gradient hero pattern */}
       {totalLost > 0 && (
-        <div className="rounded-xl border border-[hsl(var(--danger)/0.30)] bg-card p-4 flex items-center gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--danger)/0.12)]">
-            <AlertTriangle size={16} className="text-[hsl(var(--danger))]" aria-hidden="true" strokeWidth={2.25} />
+        <div className="rounded-2xl border-2 border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent p-5 flex items-center gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-danger/15 border-danger/40">
+            <AlertTriangle size={18} className="text-danger" aria-hidden="true" strokeWidth={2.25} />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+            <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
               Valor perdido total · top {sorted.length} ciudades
             </div>
-            <div className="font-mono text-2xl font-bold text-[hsl(var(--danger))] tabular-nums leading-tight">
+            <div className="font-extrabold text-3xl text-danger tabular-nums leading-none mt-1.5">
               {formatCOP(totalLost)}
             </div>
           </div>

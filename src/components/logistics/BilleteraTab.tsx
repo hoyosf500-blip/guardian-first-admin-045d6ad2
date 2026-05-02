@@ -20,6 +20,10 @@ import {
 import { useWalletMovements, useWalletDailySeries } from '@/hooks/useWalletMovements';
 import { useWalletSync } from '@/hooks/useWalletSync';
 import type { LogisticsFilters } from '@/lib/logistics.types';
+import {
+  CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR,
+  fmtCompact, fmtDay,
+} from './charts/chartTokens';
 
 const PAGE_SIZE = 20;
 
@@ -33,18 +37,8 @@ function fmtFecha(s: string): string {
   return `${date} ${time}`;
 }
 
-function fmtDay(s: string): string {
-  const d = new Date(s + 'T00:00:00Z');
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
-}
-
-const TOOLTIP_STYLE = {
-  background: 'hsl(var(--card) / 0.95)',
-  border: '1px solid hsl(var(--border))',
-  borderRadius: 8,
-  color: 'hsl(var(--foreground))',
-  fontSize: 12,
-};
+// fmtDay y TOOLTIP_STYLE consolidados en chartTokens.ts (importados arriba).
+// Mantenemos solo fmtFecha para timestamps con hora (lo usa la tabla).
 
 interface KpiProps {
   label: string;
@@ -53,22 +47,41 @@ interface KpiProps {
   tone: 'success' | 'danger' | 'info' | 'neutral';
 }
 
+const KPI_TONE_CARD: Record<KpiProps['tone'], string> = {
+  success: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent',
+  danger:  'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent',
+  info:    'border-info/30 bg-gradient-to-br from-info/8 via-info/3 to-transparent',
+  neutral: 'border-border bg-card',
+};
+
+const KPI_TONE_ICON: Record<KpiProps['tone'], { bg: string; color: string }> = {
+  success: { bg: 'bg-success/15 border-success/40', color: 'text-success' },
+  danger:  { bg: 'bg-danger/15 border-danger/40',   color: 'text-danger' },
+  info:    { bg: 'bg-info/15 border-info/40',       color: 'text-info' },
+  neutral: { bg: 'bg-muted/40 border-border',       color: 'text-foreground' },
+};
+
+const KPI_TONE_VALUE: Record<KpiProps['tone'], string> = {
+  success: 'text-success',
+  danger:  'text-danger',
+  info:    'text-info',
+  neutral: 'text-foreground',
+};
+
 function Kpi({ label, value, icon: Icon, tone }: KpiProps) {
-  const toneClass = {
-    success: 'text-success',
-    danger: 'text-danger',
-    info: 'text-info',
-    neutral: 'text-foreground',
-  }[tone];
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+    <div className={`rounded-2xl border-2 p-4 ${KPI_TONE_CARD[tone]}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
           {label}
         </span>
-        <Icon size={14} className={toneClass} aria-hidden="true" />
+        <div className={`h-8 w-8 shrink-0 rounded-lg border flex items-center justify-center ${KPI_TONE_ICON[tone].bg}`}>
+          <Icon size={14} className={KPI_TONE_ICON[tone].color} aria-hidden="true" />
+        </div>
       </div>
-      <div className={`mt-2 text-xl font-bold tabular-nums ${toneClass}`}>{value}</div>
+      <div className={`mt-3 text-2xl font-extrabold tabular-nums leading-none ${KPI_TONE_VALUE[tone]}`}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -157,21 +170,23 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
         ) : (
           <div className="h-[280px]">
             <ResponsiveContainer>
-              <BarChart data={series}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="fecha" tickFormatter={fmtDay} stroke="hsl(var(--muted-foreground))" fontSize={11} />
+              <BarChart data={series} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+                <CartesianGrid {...CHART_GRID_PROPS} />
+                <XAxis dataKey="fecha" tickFormatter={fmtDay} stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
                 <YAxis
-                  tickFormatter={(v) => new Intl.NumberFormat('es-CO', { notation: 'compact' }).format(v)}
-                  stroke="hsl(var(--muted-foreground))" fontSize={11}
+                  tickFormatter={fmtCompact}
+                  stroke="hsl(var(--muted-foreground))" fontSize={10}
+                  tickLine={false} axisLine={false} width={48}
                 />
                 <RTooltip
-                  contentStyle={TOOLTIP_STYLE}
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  cursor={CHART_BAR_CURSOR}
                   formatter={(v: number) => COP(v)}
                   labelFormatter={(l) => fmtDay(String(l))}
                 />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={8} />
                 <Bar dataKey="ENTRADA" stackId="a" fill="hsl(var(--success))" name="Entrada" />
-                <Bar dataKey="SALIDA"  stackId="a" fill="hsl(var(--danger))"  name="Salida" />
+                <Bar dataKey="SALIDA"  stackId="a" fill="hsl(var(--danger))"  name="Salida" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

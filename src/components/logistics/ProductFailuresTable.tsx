@@ -93,36 +93,39 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Stat banners */}
+      {/* Stat banners — gradient hero pattern (consistente con Finanzas / Resumen). */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {criticalCount > 0 && (
-          <div className="rounded-xl border border-[hsl(var(--danger)/0.30)] bg-card p-4 flex items-center gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--danger)/0.12)]">
-              <AlertOctagon size={16} className="text-[hsl(var(--danger))]" aria-hidden="true" strokeWidth={2.25} />
+          <div className="rounded-2xl border-2 border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent p-5 flex items-center gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-danger/15 border-danger/40">
+              <AlertOctagon size={18} className="text-danger" aria-hidden="true" strokeWidth={2.25} />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+              <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
                 Productos críticos
               </div>
-              <div className="font-mono text-lg font-bold text-foreground tabular-nums leading-tight">
-                {criticalCount} <span className="text-sm font-medium text-muted-foreground">{criticalCount === 1 ? 'producto' : 'productos'}</span>
+              <div className="font-extrabold text-2xl text-danger tabular-nums leading-none mt-1.5">
+                {criticalCount}
+                <span className="text-sm font-medium text-muted-foreground ml-1.5">
+                  {criticalCount === 1 ? 'producto' : 'productos'}
+                </span>
               </div>
-              <div className="text-[11px] text-[hsl(var(--danger))] font-semibold mt-0.5">
+              <div className="text-[11px] text-danger font-semibold mt-1.5">
                 Tasa de entrega &lt;30% — considerar discontinuar
               </div>
             </div>
           </div>
         )}
         {totalLost > 0 && (
-          <div className="rounded-xl border border-[hsl(var(--warning)/0.30)] bg-card p-4 flex items-center gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--warning)/0.12)]">
-              <Package size={16} className="text-[hsl(var(--warning))]" aria-hidden="true" strokeWidth={2.25} />
+          <div className="rounded-2xl border-2 border-warning/30 bg-gradient-to-br from-warning/8 via-warning/3 to-transparent p-5 flex items-center gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-warning/15 border-warning/40">
+              <Package size={18} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+              <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
                 Valor perdido · top {sorted.length} productos
               </div>
-              <div className="font-mono text-2xl font-bold text-[hsl(var(--warning))] tabular-nums leading-tight">
+              <div className="font-extrabold text-3xl text-warning tabular-nums leading-none mt-1.5">
                 {formatCOP(totalLost)}
               </div>
             </div>

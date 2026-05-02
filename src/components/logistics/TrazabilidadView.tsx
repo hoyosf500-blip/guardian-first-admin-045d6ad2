@@ -480,23 +480,26 @@ interface HeroKpiProps {
 }
 function HeroKpi({ label, value, subline, tone, icon: Icon }: HeroKpiProps) {
   const styles = {
-    info:    { bg: 'bg-info/8',    border: 'border-info/30',    text: 'text-info',    iconBg: 'bg-info/15',    iconRing: 'ring-info/30' },
-    success: { bg: 'bg-success/8', border: 'border-success/30', text: 'text-success', iconBg: 'bg-success/15', iconRing: 'ring-success/30' },
-    danger:  { bg: 'bg-danger/8',  border: 'border-danger/30',  text: 'text-danger',  iconBg: 'bg-danger/15',  iconRing: 'ring-danger/30' },
+    info:    { card: 'border-info/30 bg-gradient-to-br from-info/8 via-info/3 to-transparent',
+               text: 'text-info', iconBg: 'bg-info/15 border-info/40' },
+    success: { card: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent',
+               text: 'text-success', iconBg: 'bg-success/15 border-success/40' },
+    danger:  { card: 'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent',
+               text: 'text-danger', iconBg: 'bg-danger/15 border-danger/40' },
   }[tone];
   return (
-    <article className={`rounded-xl border ${styles.border} ${styles.bg} p-5 flex items-start gap-4`}>
-      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${styles.iconBg} ring-1 ${styles.iconRing}`}>
-        <Icon size={20} className={styles.text} aria-hidden="true" strokeWidth={2.25} />
+    <article className={`rounded-2xl border-2 ${styles.card} p-5 flex items-start gap-4`}>
+      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${styles.iconBg}`}>
+        <Icon size={18} className={styles.text} aria-hidden="true" strokeWidth={2.25} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+        <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
           {label}
         </div>
-        <div className={`font-mono font-bold tabular-nums leading-none mt-1.5 text-3xl ${styles.text}`}>
+        <div className={`font-extrabold tabular-nums leading-none mt-1.5 text-3xl ${styles.text}`}>
           {value}
         </div>
-        <div className="text-xs text-muted-foreground mt-2 tabular-nums truncate">
+        <div className="text-[11px] text-muted-foreground mt-2 tabular-nums truncate">
           {subline}
         </div>
       </div>
@@ -536,18 +539,19 @@ interface RateCardProps {
 }
 function RateCard({ label, pct, subline, tone }: RateCardProps) {
   const styles = {
-    success: { bg: 'bg-success/8',  border: 'border-success/30', text: 'text-success' },
-    danger:  { bg: 'bg-danger/8',   border: 'border-danger/30',  text: 'text-danger' },
+    success: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent text-success',
+    danger:  'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent text-danger',
   }[tone];
+  const textColor = tone === 'success' ? 'text-success' : 'text-danger';
   return (
-    <article className={`rounded-xl border ${styles.border} ${styles.bg} p-5`}>
-      <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+    <article className={`rounded-2xl border-2 ${styles} p-5`}>
+      <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
         {label}
       </div>
-      <div className={`font-mono font-bold tabular-nums leading-none mt-2 text-4xl ${styles.text}`}>
+      <div className={`font-extrabold tabular-nums leading-none mt-2 text-4xl ${textColor}`}>
         {pct.toFixed(1)}%
       </div>
-      <div className="text-xs text-muted-foreground mt-2 tabular-nums">
+      <div className="text-[11px] text-muted-foreground mt-2 tabular-nums">
         {subline}
       </div>
     </article>
