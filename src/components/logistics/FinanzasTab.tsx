@@ -169,11 +169,18 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                 costo_devoluciones sí estuvieran. Computar acá garantiza que
                 la card siempre cuadre con el desglose visible debajo. */}
             {(() => {
+              // SIEMPRE calculamos client-side: el parser del hook coerce
+              // undefined → 0, así que el operador `??` con el campo del server
+              // (perdida_total_devoluciones de v6) NUNCA cae al fallback aunque
+              // la migration v8 no esté aplicada — quedaba en 0. Calcular
+              // directamente desde flete_devoluciones + costo_devoluciones (que
+              // SÍ vienen del RPC v5+) garantiza el valor correcto en todos
+              // los escenarios (v5/v6/futuro).
               const fleteDevs = data?.flete_devoluciones ?? 0;
               const cargoExtra = data?.costo_devoluciones ?? 0;
-              const perdidaTotal = data?.perdida_total_devoluciones ?? (fleteDevs + cargoExtra);
+              const perdidaTotal = fleteDevs + cargoExtra;
               const totalDevs = data?.total_devueltas ?? 0;
-              const promedio = data?.costo_promedio_devolucion ?? (totalDevs > 0 ? Math.round(perdidaTotal / totalDevs) : 0);
+              const promedio = totalDevs > 0 ? Math.round(perdidaTotal / totalDevs) : 0;
               return (
                 <KpiCard
                   label="Pérdida por devoluciones"
