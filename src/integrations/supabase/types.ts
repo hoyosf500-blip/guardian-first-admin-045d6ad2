@@ -751,6 +751,10 @@ export type Database = {
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
+      financial_summary: {
+        Args: { p_from_date: string; p_to_date: string }
+        Returns: Json
+      }
       get_daily_operator_stats: {
         Args: { p_date: string }
         Returns: {
