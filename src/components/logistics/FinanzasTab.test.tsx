@@ -17,6 +17,45 @@ vi.mock('@/hooks/useFinancialSummary', () => ({
   useFinancialSummary: () => hookMock(),
 }));
 
+// Mock del nuevo hook useGananciaNetaDropi — devuelve datos sintéticos
+// representativos. Los tests pueden anular con gananciaHookMock.mockReturnValue
+// si quieren probar otros escenarios (negativos, loading, etc).
+interface MockGananciaReturn {
+  data?: {
+    total_entradas: number;
+    total_salidas: number;
+    ganancia_neta: number;
+    movimientos_count: number;
+    desglose: Record<string, number>;
+  };
+  isLoading: boolean;
+}
+
+const gananciaHookMock = vi.fn((): MockGananciaReturn => ({
+  data: {
+    total_entradas: 23_728_183,
+    total_salidas: 5_295_612,
+    ganancia_neta: 18_432_571,
+    movimientos_count: 484,
+    desglose: {
+      ganancia_dropshipper: 22_000_000,
+      ganancia_proveedor: 0,
+      reembolso_flete: 1_700_000,
+      indemnizacion: 28_183,
+      flete_inicial: 4_500_000,
+      costo_devolucion: 600_000,
+      comision_referidos: 50_000,
+      mantenimiento_tarjeta: 25_000,
+      orden_sin_recaudo: 120_612,
+    },
+  },
+  isLoading: false,
+}));
+
+vi.mock('@/hooks/useGananciaNetaDropi', () => ({
+  useGananciaNetaDropi: () => gananciaHookMock(),
+}));
+
 const FILTERS = { fromDate: '2026-04-01', toDate: '2026-04-30' };
 
 const SAMPLE: FinancialSummary = {
@@ -46,29 +85,79 @@ const SAMPLE: FinancialSummary = {
 describe('FinanzasTab', () => {
   beforeEach(() => {
     hookMock.mockReset();
+    // Reset el mock de ganancia neta a su valor por defecto sintético
+    gananciaHookMock.mockReturnValue({
+      data: {
+        total_entradas: 23_728_183,
+        total_salidas: 5_295_612,
+        ganancia_neta: 18_432_571,
+        movimientos_count: 484,
+        desglose: {
+          ganancia_dropshipper: 22_000_000,
+          ganancia_proveedor: 0,
+          reembolso_flete: 1_700_000,
+          indemnizacion: 28_183,
+          flete_inicial: 4_500_000,
+          costo_devolucion: 600_000,
+          comision_referidos: 50_000,
+          mantenimiento_tarjeta: 25_000,
+          orden_sin_recaudo: 120_612,
+        },
+      },
+      isLoading: false,
+    });
   });
 
-  it('renderiza utilidad bruta destacada en verde cuando es positiva', () => {
+  it('renderiza la card hero "Ganancia Neta Dropi" con el valor del hook nuevo', () => {
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
-    // Banner Fase A
+    // Banner Fase A — ahora describe cash flow operativo
     expect(screen.getByText(/Fase A/i)).toBeInTheDocument();
-    // Utilidad bruta destacada — formatCOP usa $4.850.000 (es-CO con NBSP)
-    expect(screen.getByText(/\$\s?4\.850\.000/)).toBeInTheDocument();
-    // Hint positivo
-    expect(screen.getByText(/operación rentable/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cash flow operativo Dropi/i)).toBeInTheDocument();
+    // Card hero con el label nuevo
+    expect(screen.getByText(/Ganancia Neta Dropi/i)).toBeInTheDocument();
+    // Valor formateado de 18.432.571
+    expect(screen.getByText(/\$\s?18\.432\.571/)).toBeInTheDocument();
+    // Hint con desglose entradas vs salidas
+    expect(screen.getByText(/entró.*23\.728\.183.*te debitó.*5\.295\.612/i)).toBeInTheDocument();
   });
 
-  it('renderiza utilidad bruta destacada en rojo cuando es negativa', () => {
-    hookMock.mockReturnValue({
-      data: { ...SAMPLE, utilidad_bruta: -500_000 },
+  it('renderiza la card hero en rojo cuando la ganancia neta es negativa', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    gananciaHookMock.mockReturnValue({
+      data: {
+        total_entradas: 1_000_000,
+        total_salidas: 1_500_000,
+        ganancia_neta: -500_000,
+        movimientos_count: 10,
+        desglose: {
+          ganancia_dropshipper: 1_000_000,
+          ganancia_proveedor: 0,
+          reembolso_flete: 0,
+          indemnizacion: 0,
+          flete_inicial: 1_500_000,
+          costo_devolucion: 0,
+          comision_referidos: 0,
+          mantenimiento_tarjeta: 0,
+          orden_sin_recaudo: 0,
+        },
+      },
       isLoading: false,
-      isError: false,
     });
     render(<FinanzasTab filters={FILTERS} />);
     // formatCOP de un negativo en es-CO incluye el "-"
     expect(screen.getByText(/-\$\s?500\.000/)).toBeInTheDocument();
-    expect(screen.getByText(/operación en pérdida/i)).toBeInTheDocument();
+  });
+
+  it('mantiene la "Utilidad bruta contable" como KPI secundario en el grid', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    render(<FinanzasTab filters={FILTERS} />);
+    // Card "Utilidad bruta contable" reemplaza a la hero vieja — ahora va en el grid
+    expect(screen.getByText(/Utilidad bruta contable/i)).toBeInTheDocument();
+    // El valor de utilidad_bruta (4.850.000) sigue mostrándose acá
+    expect(screen.getByText(/\$\s?4\.850\.000/)).toBeInTheDocument();
+    // Con su hint característico
+    expect(screen.getByText(/incluye COGS aunque Dropi lo pague directo/i)).toBeInTheDocument();
   });
 
   it('muestra los KPIs de ingresos, COGS y tasa de entrega', () => {

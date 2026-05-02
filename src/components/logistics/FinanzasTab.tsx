@@ -1,5 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
+import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { formatCOP } from '@/lib/utils';
 import {
@@ -67,6 +68,7 @@ function KpiCard({ label, value, icon: Icon, tone, hint, big = false }: KpiCardP
 export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) {
   const { fromDate, toDate } = filters;
   const { data, isLoading, isError, error } = useFinancialSummary(fromDate, toDate);
+  const { data: gananciaNeta, isLoading: gananciaLoading } = useGananciaNetaDropi(fromDate, toDate);
 
   if (isError) {
     return (
@@ -86,29 +88,26 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
 
   const fleteCombinado = (data?.flete_entregadas ?? 0) + (data?.flete_devoluciones ?? 0);
   const utilidad = data?.utilidad_bruta ?? 0;
-  const utilidadTone: Tone = utilidad >= 0 ? 'success' : 'danger';
-  const utilidadIcon = utilidad >= 0 ? TrendingUp : TrendingDown;
 
   return (
     <div className="space-y-4">
-      {/* Banner informativo — fase A sin gasto pauta */}
+      {/* Banner informativo — fase A: cash flow operativo Dropi */}
       <div className="rounded-xl border border-info/30 bg-info/5 p-4">
         <div className="flex items-start gap-3">
           <Info size={16} className="text-info shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1">
             <h3 className="text-sm font-semibold text-foreground">
-              Fase A — Utilidad bruta operativa
+              Fase A — Cash flow operativo Dropi
             </h3>
             <p className="text-xs text-muted-foreground">
-              Calculamos ingresos − COGS − flete (entregadas + devoluciones) − costo devoluciones.
-              <strong className="text-foreground"> NO incluye gasto de pauta</strong> (Meta / TikTok).
-              Cuando conectemos Meta Ads en Fase B, sumamos publicidad para ROAS real.
+              La <strong className="text-foreground">Ganancia Neta</strong> es lo que Dropi te abonó al wallet menos lo que te debitó (flete, devoluciones, mantenimiento). Es plata REAL en tu wallet.
+              <strong className="text-foreground"> NO incluye gasto pauta</strong> (Meta / TikTok) — eso entra en Fase B.
             </p>
           </div>
         </div>
       </div>
 
-      {isLoading ? (
+      {isLoading || gananciaLoading ? (
         <>
           <div className="grid grid-cols-1">
             <Skeleton className="h-[120px] rounded-xl" />
@@ -121,21 +120,27 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
         </>
       ) : (
         <>
-          {/* Utilidad bruta destacada (full-width) */}
-          <div className="grid grid-cols-1">
-            <KpiCard
-              label="Utilidad bruta del período"
-              value={formatCOP(utilidad)}
-              icon={utilidadIcon}
-              tone={utilidadTone}
-              big
-              hint={
-                utilidad >= 0
-                  ? 'Ingresos cubren COGS, flete y devoluciones — operación rentable (sin pauta)'
-                  : 'Operación en pérdida sin contar pauta — revisá COGS, flete o tasa de devolución'
-              }
-            />
-          </div>
+          {/* Ganancia Neta Dropi destacada (full-width) — cash flow REAL del wallet.
+              Reemplaza a la card vieja "Utilidad bruta del período" que incluía
+              COGS (que Dropi paga directo al proveedor, no sale del wallet).
+              La utilidad bruta contable sigue visible más abajo como referencia. */}
+          {(() => {
+            const gn = gananciaNeta?.ganancia_neta ?? 0;
+            const tone: Tone = gn >= 0 ? 'success' : 'danger';
+            const icon = gn >= 0 ? TrendingUp : TrendingDown;
+            return (
+              <div className="grid grid-cols-1">
+                <KpiCard
+                  label="Ganancia Neta Dropi (real)"
+                  value={formatCOP(gn)}
+                  icon={icon}
+                  tone={tone}
+                  big
+                  hint={`Lo que Dropi te abonó realmente: entró ${formatCOP(gananciaNeta?.total_entradas ?? 0)} − te debitó ${formatCOP(gananciaNeta?.total_salidas ?? 0)}`}
+                />
+              </div>
+            );
+          })()}
 
           {/* KPIs principales — 8 cards (2x4 en lg) */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -197,6 +202,13 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               icon={Ban}
               tone="danger"
               hint={`${data?.total_cancelados ?? 0} órdenes (${(data?.tasa_cancelacion_pct ?? 0).toFixed(1)}%) — valor potencial perdido`}
+            />
+            <KpiCard
+              label="Utilidad bruta contable"
+              value={formatCOP(utilidad)}
+              icon={utilidad >= 0 ? TrendingUp : TrendingDown}
+              tone="neutral"
+              hint="Ingresos − COGS − flete − devs (incluye COGS aunque Dropi lo pague directo al proveedor)"
             />
             <KpiCard
               label="Ganancia markup"
