@@ -25,7 +25,9 @@ const SAMPLE: FinancialSummary = {
   flete_entregadas: 800_000,
   flete_devoluciones: 200_000,
   costo_devoluciones: 100_000,
-  utilidad_bruta: 4_900_000,
+  comision_referidos: 50_000,
+  ganancia_markup: 320_000,
+  utilidad_bruta: 4_850_000,
   total_ordenes: 100,
   total_entregadas: 70,
   total_devueltas: 10,
@@ -44,8 +46,8 @@ describe('FinanzasTab', () => {
     render(<FinanzasTab filters={FILTERS} />);
     // Banner Fase A
     expect(screen.getByText(/Fase A/i)).toBeInTheDocument();
-    // Utilidad bruta destacada — formatCOP usa $4.900.000 (es-CO con NBSP)
-    expect(screen.getByText(/\$\s?4\.900\.000/)).toBeInTheDocument();
+    // Utilidad bruta destacada — formatCOP usa $4.850.000 (es-CO con NBSP)
+    expect(screen.getByText(/\$\s?4\.850\.000/)).toBeInTheDocument();
     // Hint positivo
     expect(screen.getByText(/operación rentable/i)).toBeInTheDocument();
   });
@@ -80,12 +82,27 @@ describe('FinanzasTab', () => {
     expect(screen.getByText(/\$\s?500\.000/)).toBeInTheDocument();
   });
 
+  it('muestra KPIs de comision_referidos y ganancia_markup con disclaimer informativo', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    render(<FinanzasTab filters={FILTERS} />);
+    expect(screen.getByText(/Comisión referidos/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$\s?50\.000/)).toBeInTheDocument();
+    expect(screen.getByText(/Descontado de utilidad/i)).toBeInTheDocument();
+    // "Ganancia markup" aparece en el label del KPI Y en el disclaimer (<strong>)
+    expect(screen.getAllByText(/Ganancia markup/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/\$\s?320\.000/)).toBeInTheDocument();
+    // Disclaimer textual debajo del bloque KPIs
+    expect(
+      screen.getByText(/aparece como referencia/i),
+    ).toBeInTheDocument();
+  });
+
   it('muestra skeletons mientras isLoading', () => {
     hookMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     const { container } = render(<FinanzasTab filters={FILTERS} />);
-    // hero skeleton + 6 KPI skeletons = al menos 6 nodos con animate-pulse
+    // hero skeleton + 8 KPI skeletons = al menos 8 nodos con animate-pulse
     const skeletons = container.querySelectorAll('.animate-pulse');
-    expect(skeletons.length).toBeGreaterThanOrEqual(6);
+    expect(skeletons.length).toBeGreaterThanOrEqual(8);
   });
 
   it('muestra estado de error si el hook falla', () => {

@@ -31,7 +31,9 @@ describe('useFinancialSummary', () => {
         flete_entregadas: 80000,
         flete_devoluciones: 20000,
         costo_devoluciones: 10000,
-        utilidad_bruta: 490000,
+        comision_referidos: 5000,
+        ganancia_markup: 30000,
+        utilidad_bruta: 485000,
         total_ordenes: 100,
         total_entregadas: 70,
         total_devueltas: 10,
@@ -53,9 +55,11 @@ describe('useFinancialSummary', () => {
       p_from_date: '2026-04-01',
       p_to_date: '2026-04-30',
     });
-    expect(result.current.data?.utilidad_bruta).toBe(490000);
+    expect(result.current.data?.utilidad_bruta).toBe(485000);
     expect(result.current.data?.ingresos_brutos).toBe(1000000);
     expect(result.current.data?.tasa_entrega_pct).toBe(70);
+    expect(result.current.data?.comision_referidos).toBe(5000);
+    expect(result.current.data?.ganancia_markup).toBe(30000);
   });
 
   it('coerce strings numéricas a number (Postgres NUMERIC puede venir como string)', async () => {
@@ -66,6 +70,8 @@ describe('useFinancialSummary', () => {
         flete_entregadas: '0',
         flete_devoluciones: '0',
         costo_devoluciones: '0',
+        comision_referidos: '12345.50',
+        ganancia_markup: '7500',
         utilidad_bruta: '900000',
         total_ordenes: '50',
         total_entregadas: '40',
@@ -86,6 +92,9 @@ describe('useFinancialSummary', () => {
     expect(result.current.data?.ingresos_brutos).toBe(1500000);
     expect(typeof result.current.data?.utilidad_bruta).toBe('number');
     expect(result.current.data?.utilidad_bruta).toBe(900000);
+    expect(typeof result.current.data?.comision_referidos).toBe('number');
+    expect(result.current.data?.comision_referidos).toBe(12345.5);
+    expect(result.current.data?.ganancia_markup).toBe(7500);
   });
 
   it('propaga error si el RPC falla', async () => {
@@ -121,5 +130,7 @@ describe('useFinancialSummary', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.utilidad_bruta).toBe(0);
     expect(result.current.data?.ingresos_brutos).toBe(0);
+    expect(result.current.data?.comision_referidos).toBe(0);
+    expect(result.current.data?.ganancia_markup).toBe(0);
   });
 });

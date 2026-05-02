@@ -16,6 +16,8 @@ export interface FinancialSummary {
   flete_entregadas: number;
   flete_devoluciones: number;
   costo_devoluciones: number;
+  comision_referidos: number;   // RPC v3 — se resta de utilidad_bruta
+  ganancia_markup: number;      // RPC v3 — informativo (no se suma hasta sanity check)
   utilidad_bruta: number;
   total_ordenes: number;
   total_entregadas: number;
@@ -45,6 +47,8 @@ function parseFinancialSummary(raw: unknown): FinancialSummary {
     flete_entregadas:   toNumber(o.flete_entregadas),
     flete_devoluciones: toNumber(o.flete_devoluciones),
     costo_devoluciones: toNumber(o.costo_devoluciones),
+    comision_referidos: toNumber(o.comision_referidos),
+    ganancia_markup:    toNumber(o.ganancia_markup),
     utilidad_bruta:     toNumber(o.utilidad_bruta),
     total_ordenes:      toNumber(o.total_ordenes),
     total_entregadas:   toNumber(o.total_entregadas),

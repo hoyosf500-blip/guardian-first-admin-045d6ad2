@@ -5,6 +5,7 @@ import { formatCOP } from '@/lib/utils';
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, RotateCcw,
   Target, Package, CheckCircle2, AlertTriangle, Receipt, Wallet, Info,
+  UserPlus, Sparkles,
 } from 'lucide-react';
 
 // Fase A del módulo financiero — utilidad bruta operativa.
@@ -112,8 +113,8 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
           <div className="grid grid-cols-1">
             <Skeleton className="h-[120px] rounded-xl" />
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} className="h-[100px] rounded-xl" />
             ))}
           </div>
@@ -136,8 +137,8 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             />
           </div>
 
-          {/* KPIs principales — 6 cards en grid 2/3 cols */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* KPIs principales — 8 cards (2x4 en lg) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KpiCard
               label="Ingresos brutos"
               value={formatCOP(data?.ingresos_brutos ?? 0)}
@@ -167,6 +168,20 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               hint="Aparte del flete de devoluciones"
             />
             <KpiCard
+              label="Comisión referidos"
+              value={formatCOP(data?.comision_referidos ?? 0)}
+              icon={UserPlus}
+              tone="danger"
+              hint="Descontado de utilidad"
+            />
+            <KpiCard
+              label="Ganancia markup"
+              value={formatCOP(data?.ganancia_markup ?? 0)}
+              icon={Sparkles}
+              tone="success"
+              hint="Informativo — pendiente sanity check para sumar a utilidad"
+            />
+            <KpiCard
               label="Tasa de entrega"
               value={`${(data?.tasa_entrega_pct ?? 0).toFixed(1)}%`}
               icon={Target}
@@ -180,6 +195,11 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               tone="info"
               hint="Promedio por pedido entregado"
             />
+          </div>
+
+          {/* Disclaimer ganancia_markup — todavía NO suma a utilidad bruta */}
+          <div className="text-xs text-muted-foreground italic">
+            Nota: <strong>Ganancia Markup</strong> aparece como referencia. Aún no se suma a la utilidad bruta hasta confirmar (con sanity check) que no genera doble conteo con `cobro_entrega`. Una vez confirmado, lo sumamos.
           </div>
 
           {/* Card secundaria — conteo de tickets */}
