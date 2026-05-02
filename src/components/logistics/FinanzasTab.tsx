@@ -163,14 +163,27 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             {/* Card: Pérdida total por devoluciones (flete ida + cargo extra Dropi).
                 Reemplazó a "Costo devoluciones" — la card vieja solo mostraba
                 el cargo extra Dropi (~$65k) sin el flete de ida perdido (~$4.5M).
-                Total real = flete_devoluciones + costo_devoluciones. */}
-            <KpiCard
-              label="Pérdida por devoluciones"
-              value={formatCOP(data?.perdida_total_devoluciones ?? 0)}
-              icon={RotateCcw}
-              tone="danger"
-              hint={`${data?.total_devueltas ?? 0} devs — promedio ${formatCOP(data?.costo_promedio_devolucion ?? 0)} c/u`}
-            />
+                Cálculo client-side como fallback: si la migration v8 todavía
+                no se aplicó, perdida_total_devoluciones llega undefined y
+                la card mostraba $0 aunque flete_devoluciones y
+                costo_devoluciones sí estuvieran. Computar acá garantiza que
+                la card siempre cuadre con el desglose visible debajo. */}
+            {(() => {
+              const fleteDevs = data?.flete_devoluciones ?? 0;
+              const cargoExtra = data?.costo_devoluciones ?? 0;
+              const perdidaTotal = data?.perdida_total_devoluciones ?? (fleteDevs + cargoExtra);
+              const totalDevs = data?.total_devueltas ?? 0;
+              const promedio = data?.costo_promedio_devolucion ?? (totalDevs > 0 ? Math.round(perdidaTotal / totalDevs) : 0);
+              return (
+                <KpiCard
+                  label="Pérdida por devoluciones"
+                  value={formatCOP(perdidaTotal)}
+                  icon={RotateCcw}
+                  tone="danger"
+                  hint={`${totalDevs} devs — promedio ${formatCOP(promedio)} c/u`}
+                />
+              );
+            })()}
             <KpiCard
               label="Cancelados"
               value={formatCOP(data?.valor_cancelado ?? 0)}
