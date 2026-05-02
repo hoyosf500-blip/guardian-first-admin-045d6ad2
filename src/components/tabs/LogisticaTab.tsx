@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { useSessionState } from '@/hooks/useSessionState';
 import {
   PieChart, Pie, Cell, Tooltip as RTooltip, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Legend,
@@ -25,7 +26,7 @@ import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import BilleteraTab from '@/components/logistics/BilleteraTab';
 import FinanzasTab from '@/components/logistics/FinanzasTab';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet, DollarSign } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet, DollarSign, LayoutDashboard } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -179,6 +180,11 @@ function prevPeriod(filters: LogisticsFilters): LogisticsFilters {
 export default function LogisticaTab() {
   const [filters, setFilters] = useState<LogisticsFilters>(defaultRange);
 
+  // Tab activa — persiste en sessionStorage para que F5 / cambio de tab del
+  // navegador no resetee al usuario al "Resumen". Default: 'resumen' (KPIs +
+  // gráfico de volumen, lo que el usuario ve al entrar por primera vez).
+  const [activeTab, setActiveTab] = useSessionState<string>('logistica:tab', 'resumen');
+
   // Modo comparación A vs B. Cuando está activo se reemplaza el body por la
   // vista lado-a-lado. Period A = filters principales, Period B se inicializa
   // con el período inmediatamente anterior (mismo número de días).
@@ -320,85 +326,100 @@ export default function LogisticaTab() {
       {!compareMode && !isError && isLoading && <LogisticsSkeleton />}
 
       {!compareMode && !isError && !isLoading && (
-        <>
-          {/* HERO ROW — chart de volumen (col-span-7) + KPIs 2×2 (col-span-5). */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div className="lg:col-span-7">
-              <LogisticsHeroChart rows={carriers.data ?? []} />
-            </div>
-            <div className="lg:col-span-5">
-              <CompactKpiGrid data={summary.data ?? null} />
-            </div>
+        // ── Tabs arriba, contenido full-width abajo ─────────────────────
+        // El header + filtros quedan ARRIBA (fuera del Tabs).
+        // El bloque hero (KPIs + bar chart de volumen) se movió a la tab
+        // "Resumen" para no desperdiciar espacio en las otras tabs.
+        // TabsList horizontalmente scrollable en mobile (overflow-x-auto +
+        // whitespace-nowrap en TabsList override + flex shrink-0 en cada
+        // trigger). En desktop hace wrap y ocupa todo el ancho disponible.
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <div className="overflow-x-auto -mx-1 px-1">
+            <TabsList
+              className="inline-flex w-full justify-start gap-0.5 h-auto p-1"
+              aria-label="Secciones de logística"
+            >
+              <TabsTrigger value="resumen" className="shrink-0"><LayoutDashboard size={13} className="mr-1.5" /> Resumen</TabsTrigger>
+              <TabsTrigger value="carriers" className="shrink-0"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
+              <TabsTrigger value="cities" className="shrink-0"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
+              <TabsTrigger value="products" className="shrink-0"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+              <TabsTrigger value="decisiones" className="shrink-0"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
+              <TabsTrigger value="trazabilidad" className="shrink-0"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
+              <TabsTrigger value="billetera" className="shrink-0"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
+              <TabsTrigger value="finanzas" className="shrink-0"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
+            </TabsList>
           </div>
 
-          <Tabs defaultValue="carriers" className="w-full">
-            <TabsList>
-              <TabsTrigger value="carriers"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
-              <TabsTrigger value="cities"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
-              <TabsTrigger value="products"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
-              <TabsTrigger value="decisiones"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
-              <TabsTrigger value="trazabilidad"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
-              <TabsTrigger value="billetera"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
-              <TabsTrigger value="finanzas"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
-            </TabsList>
+          {/* TAB: Resumen — vista por defecto. KPIs globales + volumen por
+              transportadora. Antes vivían fuera del sistema de tabs y se
+              renderizaban siempre (espacio muerto en las otras tabs). */}
+          <TabsContent value="resumen" className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div className="lg:col-span-7">
+                <LogisticsHeroChart rows={carriers.data ?? []} />
+              </div>
+              <div className="lg:col-span-5">
+                <CompactKpiGrid data={summary.data ?? null} />
+              </div>
+            </div>
+          </TabsContent>
 
-            <TabsContent value="carriers" className="mt-4 space-y-4">
-              <CarrierStatsTable rows={carriers.data ?? []} />
+          <TabsContent value="carriers" className="mt-4 space-y-4">
+            <CarrierStatsTable rows={carriers.data ?? []} />
 
-              {dashboardQuery.data && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <CarrierDonut data={dashboardQuery.data.by_transportadora} colorMap={carrierColorMap} />
-                  <CarrierTimeline data={dashboardQuery.data.by_transportadora_and_date} colorMap={carrierColorMap} />
-                </div>
-              )}
+            {dashboardQuery.data && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <CarrierDonut data={dashboardQuery.data.by_transportadora} colorMap={carrierColorMap} />
+                <CarrierTimeline data={dashboardQuery.data.by_transportadora_and_date} colorMap={carrierColorMap} />
+              </div>
+            )}
 
-              {dashboardQuery.data && (
-                <CarrierHorizontalStack data={dashboardQuery.data.by_transportadora_and_estado} />
-              )}
-            </TabsContent>
+            {dashboardQuery.data && (
+              <CarrierHorizontalStack data={dashboardQuery.data.by_transportadora_and_estado} />
+            )}
+          </TabsContent>
 
-            <TabsContent value="cities" className="mt-4 space-y-4">
-              <GeoDistribution rows={cities.data ?? []} />
-              <CityReturnsTable rows={cities.data ?? []} />
-            </TabsContent>
+          <TabsContent value="cities" className="mt-4 space-y-4">
+            <GeoDistribution rows={cities.data ?? []} />
+            <CityReturnsTable rows={cities.data ?? []} />
+          </TabsContent>
 
-            <TabsContent value="products" className="mt-4">
-              <ProductFailuresTable rows={products.data ?? []} />
-            </TabsContent>
+          <TabsContent value="products" className="mt-4">
+            <ProductFailuresTable rows={products.data ?? []} />
+          </TabsContent>
 
-            {/* TAB: Decisiones — heatmap matriz + tabla recomendador.
-                Las dos secciones leen de RPCs nuevas (logistics_by_city_carrier
-                y logistics_recommendations). NO se filtran por ciudad porque
-                es un análisis comparativo entre ciudades — el filtro ciudad
-                no aplica acá. */}
-            <TabsContent value="decisiones" className="mt-4 space-y-4">
-              <CarrierRecommendations filters={filters} />
-              <CarrierCityMatrix filters={filters} />
-            </TabsContent>
+          {/* TAB: Decisiones — heatmap matriz + tabla recomendador.
+              Las dos secciones leen de RPCs nuevas (logistics_by_city_carrier
+              y logistics_recommendations). NO se filtran por ciudad porque
+              es un análisis comparativo entre ciudades — el filtro ciudad
+              no aplica acá. */}
+          <TabsContent value="decisiones" className="mt-4 space-y-4">
+            <CarrierRecommendations filters={filters} />
+            <CarrierCityMatrix filters={filters} />
+          </TabsContent>
 
-            <TabsContent value="trazabilidad" className="mt-4 space-y-4">
-              {dashboardQuery.data && (
-                <EstadoDonutAndDailyStack
-                  donut={dashboardQuery.data.by_estado}
-                  stack={dashboardQuery.data.by_date_and_estado}
-                />
-              )}
-              <TrazabilidadView
-                summary={summary.data ?? null}
-                range={filters}
-                carriers={carriers.data ?? []}
+          <TabsContent value="trazabilidad" className="mt-4 space-y-4">
+            {dashboardQuery.data && (
+              <EstadoDonutAndDailyStack
+                donut={dashboardQuery.data.by_estado}
+                stack={dashboardQuery.data.by_date_and_estado}
               />
-            </TabsContent>
+            )}
+            <TrazabilidadView
+              summary={summary.data ?? null}
+              range={filters}
+              carriers={carriers.data ?? []}
+            />
+          </TabsContent>
 
-            <TabsContent value="billetera" className="mt-4">
-              <BilleteraTab filters={filters} />
-            </TabsContent>
+          <TabsContent value="billetera" className="mt-4">
+            <BilleteraTab filters={filters} />
+          </TabsContent>
 
-            <TabsContent value="finanzas" className="mt-4">
-              <FinanzasTab filters={filters} />
-            </TabsContent>
-          </Tabs>
-        </>
+          <TabsContent value="finanzas" className="mt-4">
+            <FinanzasTab filters={filters} />
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
