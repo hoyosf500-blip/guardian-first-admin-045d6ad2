@@ -17,7 +17,13 @@ interface Row {
   rescate_acciones: number;
   rescate_resueltos: number;
   total_atendidos: number;
+  /** Total de pedidos que entraron al período (inflow global). Mismo valor
+   *  para todas las filas — UI lo lee de rows[0]. Denominador de
+   *  tasa_confirmacion desde la migration 20260505120000. */
+  total_entrantes: number;
   tasa_contacto: number;
+  /** % confirmados sobre total_entrantes (NO sobre gestionados). Refleja
+   *  productividad real: penaliza dejar pedidos sin gestionar. */
   tasa_confirmacion: number;
 }
 
@@ -189,8 +195,21 @@ export default function ProductivityDashboard() {
             </div>
           )}
 
-          {/* Confirmar */}
-          <Section title="Confirmar" dotClass="bg-success" note="Resultados del flujo de confirmación de pedidos">
+          {/* Confirmar — el `note` ahora muestra la N de inflow del período
+              (total_entrantes) porque es el denominador de "Tasa confirmación"
+              desde la migration 20260505120000. Antes la tasa era sobre lo
+              gestionado por cada operadora; ahora es sobre el inflow global,
+              así que la operadora ve cuántos pedidos en total se ofrecieron
+              al equipo en el período. */}
+          <Section
+            title="Confirmar"
+            dotClass="bg-success"
+            note={
+              rows[0]?.total_entrantes && rows[0].total_entrantes > 0
+                ? `${rows[0].total_entrantes} pedido${rows[0].total_entrantes === 1 ? '' : 's'} entró al período · tasa = confirmados ÷ entrantes`
+                : 'Resultados del flujo de confirmación de pedidos'
+            }
+          >
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
@@ -202,7 +221,16 @@ export default function ProductivityDashboard() {
                     <th className="text-right">N/R</th>
                     <th className="text-right">Atendidos</th>
                     <th className="text-right">Tasa contacto</th>
-                    <th className="text-right">Tasa confirmación</th>
+                    <th
+                      className="text-right"
+                      title={
+                        rows[0]?.total_entrantes && rows[0].total_entrantes > 0
+                          ? `Confirmados ÷ ${rows[0].total_entrantes} pedidos entrantes (sobre el inflow del período, no sobre los que la operadora gestionó)`
+                          : 'Confirmados ÷ pedidos entrantes (sobre el inflow del período, no sobre los que la operadora gestionó)'
+                      }
+                    >
+                      Tasa confirmación
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
