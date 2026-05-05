@@ -90,11 +90,11 @@ export function useGananciaNetaDropi(from: string, to: string) {
         const monto = Math.abs(Number(m.monto) || 0);
         const cat = m.categoria as string;
         if ((ENTRADAS_OPERATIVAS as readonly string[]).includes(cat)) {
-          (desglose as Record<string, number>)[cat] += monto;
+          (desglose as unknown as Record<string, number>)[cat] += monto;
           totalEntradas += monto;
           count++;
         } else if ((SALIDAS_OPERATIVAS as readonly string[]).includes(cat)) {
-          (desglose as Record<string, number>)[cat] += monto;
+          (desglose as unknown as Record<string, number>)[cat] += monto;
           totalSalidas += monto;
           count++;
         }
