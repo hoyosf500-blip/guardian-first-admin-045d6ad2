@@ -110,7 +110,7 @@ export default function DashboardTab() {
   useEffect(() => {
     if (!user) return;
     const since = new Date(); since.setDate(since.getDate() - 30);
-    supabase.from('order_results').select('result_date, result')
+    supabase.from('order_results').select('result_date, result, order_id')
       .eq('operator_id', user.id).gte('result_date', since.toISOString().split('T')[0])
       .order('result_date', { ascending: true })
       .then(({ data, error }) => {
