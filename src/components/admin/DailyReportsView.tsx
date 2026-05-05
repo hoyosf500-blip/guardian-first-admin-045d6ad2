@@ -62,49 +62,60 @@ export default function DailyReportsView() {
       fn: string, args: Record<string, unknown>
     ) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message?: string } | null }>;
 
-    const [daysRes, shiftsRes] = await Promise.all([
-      rpc('admin_daily_reports_range', { p_from: from, p_to: to }),
-      rpc('admin_operator_shifts_range', { p_from: from, p_to: to }),
-    ]);
+    // Defensive: si una RPC throwea (red caída, función no existe en
+    // un caso que rompe la promise en vez de resolver con error), el
+    // try/finally garantiza que el spinner termina y la UI no queda
+    // colgada. Sin esto, si admin_operator_shifts_range falla con un
+    // throw (no un error response), setLoading(false) nunca corría.
+    try {
+      const [daysRes, shiftsRes] = await Promise.all([
+        rpc('admin_daily_reports_range', { p_from: from, p_to: to }).catch(
+          (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
+        ),
+        rpc('admin_operator_shifts_range', { p_from: from, p_to: to }).catch(
+          (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
+        ),
+      ]);
 
-    if (daysRes.error) {
-      console.error('admin_daily_reports_range:', daysRes.error.message);
-      setDays([]);
-    } else {
-      setDays((daysRes.data || []).map((r) => ({
-        fecha: String(r.fecha),
-        entrantes: Number(r.entrantes) || 0,
-        confirmados: Number(r.confirmados) || 0,
-        cancelados: Number(r.cancelados) || 0,
-        noresp: Number(r.noresp) || 0,
-        pendientes: Number(r.pendientes) || 0,
-        pct_confirmacion: Number(r.pct_confirmacion) || 0,
-        pct_cancelados: Number(r.pct_cancelados) || 0,
-      })));
+      if (daysRes.error) {
+        console.error('admin_daily_reports_range:', daysRes.error.message);
+        setDays([]);
+      } else {
+        setDays((daysRes.data || []).map((r) => ({
+          fecha: String(r.fecha),
+          entrantes: Number(r.entrantes) || 0,
+          confirmados: Number(r.confirmados) || 0,
+          cancelados: Number(r.cancelados) || 0,
+          noresp: Number(r.noresp) || 0,
+          pendientes: Number(r.pendientes) || 0,
+          pct_confirmacion: Number(r.pct_confirmacion) || 0,
+          pct_cancelados: Number(r.pct_cancelados) || 0,
+        })));
+      }
+
+      if (shiftsRes.error) {
+        console.error('admin_operator_shifts_range:', shiftsRes.error.message);
+        setShifts([]);
+      } else {
+        setShifts((shiftsRes.data || []).map((r) => ({
+          fecha: String(r.fecha),
+          tipo: (r.tipo as 'apertura' | 'cierre'),
+          operadora: String(r.operadora),
+          hora: r.hora ? String(r.hora) : null,
+          pedidos_nuevos: r.pedidos_nuevos as number | null,
+          guias_apertura: r.guias_apertura as number | null,
+          pendientes_ayer: r.pendientes_ayer as number | null,
+          confirmados: r.confirmados as number | null,
+          noresp: r.noresp as number | null,
+          cancelados: r.cancelados as number | null,
+          total_gestionados: r.total_gestionados as number | null,
+          pendientes_manana: r.pendientes_manana as number | null,
+          notas: r.notas as string | null,
+        })));
+      }
+    } finally {
+      setLoading(false);
     }
-
-    if (shiftsRes.error) {
-      console.error('admin_operator_shifts_range:', shiftsRes.error.message);
-      setShifts([]);
-    } else {
-      setShifts((shiftsRes.data || []).map((r) => ({
-        fecha: String(r.fecha),
-        tipo: (r.tipo as 'apertura' | 'cierre'),
-        operadora: String(r.operadora),
-        hora: r.hora ? String(r.hora) : null,
-        pedidos_nuevos: r.pedidos_nuevos as number | null,
-        guias_apertura: r.guias_apertura as number | null,
-        pendientes_ayer: r.pendientes_ayer as number | null,
-        confirmados: r.confirmados as number | null,
-        noresp: r.noresp as number | null,
-        cancelados: r.cancelados as number | null,
-        total_gestionados: r.total_gestionados as number | null,
-        pendientes_manana: r.pendientes_manana as number | null,
-        notas: r.notas as string | null,
-      })));
-    }
-
-    setLoading(false);
   }, [from, to]);
 
   useEffect(() => { void load(); }, [load]);
