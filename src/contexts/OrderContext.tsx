@@ -18,6 +18,7 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 // COST-3: ORDER_COLUMNS extraído a src/lib/orderColumns.ts para reutilizarse
 // en ConfirmarTab y CallView (antes hacían select('*')).
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
+import { computeDailyCounter } from '@/lib/computeDailyCounter';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
