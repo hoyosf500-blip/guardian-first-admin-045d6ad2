@@ -319,10 +319,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result, reason } : o));
     setCounter(prev => {
+      // noresp NO se incrementa optimísticamente: si la operadora marca
+      // "no contestó" 2 veces sobre el mismo pedido (separadas por 2h
+      // de cooldown), el +1 ingenuo lo contaba doble. Dejamos que el
+      // recompute por realtime (~100ms después del INSERT) lo refleje
+      // ya deduplicado por order_id. UX no requiere feedback instantáneo
+      // para noresp (no impacta meta).
       const next = {
         conf: prev.conf + (result === 'conf' ? 1 : 0),
         canc: prev.canc + (result === 'canc' ? 1 : 0),
-        noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
+        noresp: prev.noresp,
       };
       const newTotal = next.conf + next.canc + next.noresp;
       setTimeout(() => checkMilestone(newTotal), 300);
