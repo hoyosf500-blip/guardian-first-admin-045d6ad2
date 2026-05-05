@@ -191,6 +191,14 @@ export default function ConfirmarTab({ profile }: Props) {
         </div>
       </header>
 
+      {/* Aviso al equipo: cambio en cómo se cuenta noresp (dedup por
+          order_id, espeja RPC v20260505130000). Dismissible y persiste
+          el cierre en localStorage por id. */}
+      <MetricsUpdateBanner
+        id="dedup-noresp-2026-05-05"
+        message="Métricas actualizadas — el contador de 'no contestó' ahora dedupea reintentos del cooldown 2h. Tu rendimiento real puede ajustar ligeramente."
+      />
+
       <TasaMetaBanner />
 
       <ClosingReportDialog open={closing} onClose={() => setClosing(false)} />
