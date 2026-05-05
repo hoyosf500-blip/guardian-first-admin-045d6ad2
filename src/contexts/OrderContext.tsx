@@ -274,14 +274,29 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             }
 
             // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta diaria.
+            // Dedup: noresp se cuenta por order_id distinto y SOLO si el pedido
+            // no terminó en conf/canc el mismo día. Espeja la lógica del RPC
+            // operator_productivity_stats (migration 20260505130000) para que
+            // CounterBar de la operadora cuadre con el panel admin.
             const c = { conf: 0, canc: 0, noresp: 0 };
+            const finalizedToday = new Set<string>();
+            (data as ResultRow[]).forEach(r => {
+              if (r.result_date !== todayLocal) return;
+              if ((r.result === 'conf' || r.result === 'canc') && r.order_id) {
+                finalizedToday.add(r.order_id);
+              }
+            });
+            const norespOrders = new Set<string>();
             (data as ResultRow[]).forEach(r => {
               if (!isCallOutcome(r.result)) return;
               if (r.result_date !== todayLocal) return;
               if (r.result === 'conf') c.conf++;
               else if (r.result === 'canc') c.canc++;
-              else if (r.result === 'noresp') c.noresp++;
+              else if (r.result === 'noresp' && r.order_id && !finalizedToday.has(r.order_id)) {
+                norespOrders.add(r.order_id);
+              }
             });
+            c.noresp = norespOrders.size;
             setCounter(c);
           }
         });
