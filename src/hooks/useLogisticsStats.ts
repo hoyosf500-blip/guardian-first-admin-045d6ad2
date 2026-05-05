@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type {
@@ -92,10 +92,16 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
   // de logística. Debounce de 5s para coalescer ráfagas (ej. el
   // cron de Dropi sincronizando 100 filas en 2 segundos) y evitar
   // que el panel parpadee mientras el admin lo está mirando.
+  // El `instanceId` evita colisión cuando el mismo rango se monta
+  // dos veces en la misma pantalla (ej. /cfo llama el hook para mes
+  // actual desde useCfoSnapshot Y desde el bloque de productos).
+  // Sin sufijo único, supabase.channel devuelve la MISMA instancia
+  // y el segundo .on('postgres_changes', ...) tira "cannot add callbacks".
+  const instanceId = useId();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const channel = supabase
-      .channel(`logistics-rt-${fromDate}-${toDate}`)
+      .channel(`logistics-rt-${fromDate}-${toDate}-${instanceId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
@@ -112,7 +118,7 @@ export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsR
       if (debounceRef.current) clearTimeout(debounceRef.current);
       void supabase.removeChannel(channel);
     };
-  }, [queryClient, fromDate, toDate]);
+  }, [queryClient, fromDate, toDate, instanceId]);
 
   return {
     summary, carriers, cities, products,
