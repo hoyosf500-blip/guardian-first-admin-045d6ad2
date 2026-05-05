@@ -1,6 +1,6 @@
 // Deduplica el contador diario de la operadora.
 //
-// Espeja la lógica del RPC `operator_productivity_stats` v20260505130000:
+// Espeja la lógica del RPC `operator_productivity_stats` v20260505184140:
 //   - `conf` y `canc` se cuentan por order_id distinto.
 //   - `noresp` se cuenta por order_id distinto Y solo si ese pedido no
 //     terminó en conf/canc el mismo día. Si la operadora marca "no
@@ -52,4 +52,17 @@ export function computeDailyCounter(rows: CounterRow[], todayLocal: string): Dai
     canc: cancOrders.size,
     noresp: norespOrders.size,
   };
+}
+
+// Aplica computeDailyCounter a varias fechas en una sola pasada. Usado por
+// DashboardTab para el chart histórico. Mantiene una sola fuente de verdad
+// para la dedup — si cambia la regla, cambia en computeDailyCounter y el
+// chart la hereda automáticamente.
+export function computeDailyCounterByDay(
+  rows: CounterRow[],
+  dates: string[]
+): Record<string, DailyCounter> {
+  const out: Record<string, DailyCounter> = {};
+  for (const d of dates) out[d] = computeDailyCounter(rows, d);
+  return out;
 }

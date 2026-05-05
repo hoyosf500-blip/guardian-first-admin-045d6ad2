@@ -192,10 +192,11 @@ export default function ConfirmarTab({ profile }: Props) {
       </header>
 
       {/* Aviso al equipo: cambio en cómo se cuenta noresp (dedup por
-          order_id, espeja RPC v20260505130000). Dismissible y persiste
-          el cierre en localStorage por id. */}
+          order_id, espeja RPC v20260505184140). Dismissible y persiste
+          el cierre en localStorage por id. expiresAt evita banner zombi. */}
       <MetricsUpdateBanner
         id="dedup-noresp-2026-05-05"
+        expiresAt="2026-05-19"
         message="Métricas actualizadas — el contador de 'no contestó' ahora dedupea reintentos del cooldown 2h. Tu rendimiento real puede ajustar ligeramente."
       />
 

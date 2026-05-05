@@ -1,22 +1,31 @@
 import { useState, useEffect } from 'react';
 import { Info, X } from 'lucide-react';
+import { bogotaToday } from '@/lib/utils';
 
 // Banner one-shot para anunciar cambios en métricas. Persiste el dismiss
 // en localStorage por `id` para no molestar después del primer cierre.
+// `expiresAt` (YYYY-MM-DD, hora Bogotá) evita banners zombi: pasada esa
+// fecha el banner deja de renderizarse aunque la operadora no lo haya
+// cerrado, así no contaminamos la UI 30 días después del rollout.
 // Color info (azul) por design tokens — no hardcodea HSL.
 interface Props {
   id: string;
   message: string;
+  expiresAt?: string;
 }
 
-export function MetricsUpdateBanner({ id, message }: Props) {
+export function MetricsUpdateBanner({ id, message, expiresAt }: Props) {
   const storageKey = `metrics-banner-dismissed:${id}`;
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (expiresAt && bogotaToday() > expiresAt) {
+      setVisible(false);
+      return;
+    }
     setVisible(!localStorage.getItem(storageKey));
-  }, [storageKey]);
+  }, [storageKey, expiresAt]);
 
   if (!visible) return null;
 

@@ -276,7 +276,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
             // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta
             // diaria. Dedup por order_id (espeja RPC operator_productivity_stats
-            // v20260505130000): si la operadora marca "no contestó" 3 veces el
+            // v20260505184140): si la operadora marca "no contestó" 3 veces el
             // mismo pedido por el cooldown 2h, cuenta como 1; y si después
             // confirma, ese pedido suma a conf y NO a noresp. Lógica
             // compartida en computeDailyCounter para que CounterBar y panel

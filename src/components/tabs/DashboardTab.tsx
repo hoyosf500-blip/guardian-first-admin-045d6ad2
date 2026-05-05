@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
+import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -176,39 +177,18 @@ export default function DashboardTab() {
   }, [lastSync, nowTick]);
 
   const chartData = useMemo(() => {
-    const since = new Date(); since.setDate(since.getDate() - period);
-    const sinceStr = since.toISOString().split('T')[0];
-    const filtered = historyData.filter(r => r.result_date >= sinceStr);
-    const byDay: Record<string, { conf: number; canc: number; noresp: number }> = {};
+    // Generamos las N fechas (incluyendo hoy) y delegamos la dedup al
+    // helper compartido — misma fuente de verdad que CounterBar y el RPC
+    // operator_productivity_stats v20260505184140. Si la regla cambia, se
+    // toca un solo lugar (computeDailyCounter) y el chart la hereda.
+    const dates: string[] = [];
     for (let i = 0; i < period; i++) {
       const d = new Date(); d.setDate(d.getDate() - (period - 1 - i));
-      byDay[d.toISOString().split('T')[0]] = { conf: 0, canc: 0, noresp: 0 };
+      dates.push(d.toISOString().split('T')[0]);
     }
-    // Pre-pasada: por día, qué pedidos terminaron conf/canc — esos no
-    // deben sumar a noresp aunque tengan filas noresp en el mismo día.
-    // Espeja la lógica del RPC operator_productivity_stats v20260505130000
-    // y el counter en OrderContext, para que CounterBar y dashboard cuadren.
-    const finalizedByDay: Record<string, Set<string>> = {};
-    const norespByDay: Record<string, Set<string>> = {};
-    filtered.forEach(r => {
-      if (!r.order_id) return;
-      if ((r.result === 'conf' || r.result === 'canc')) {
-        if (!finalizedByDay[r.result_date]) finalizedByDay[r.result_date] = new Set();
-        finalizedByDay[r.result_date].add(r.order_id);
-      }
-    });
-    filtered.forEach(r => {
-      if (!byDay[r.result_date]) byDay[r.result_date] = { conf: 0, canc: 0, noresp: 0 };
-      if (r.result === 'conf') byDay[r.result_date].conf++;
-      else if (r.result === 'canc') byDay[r.result_date].canc++;
-      else if (r.result === 'noresp' && r.order_id) {
-        if (finalizedByDay[r.result_date]?.has(r.order_id)) return;
-        if (!norespByDay[r.result_date]) norespByDay[r.result_date] = new Set();
-        norespByDay[r.result_date].add(r.order_id);
-      }
-    });
-    Object.keys(byDay).forEach(d => { byDay[d].noresp = norespByDay[d]?.size || 0; });
-    return Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
+    const byDay = computeDailyCounterByDay(historyData, dates);
+    return dates.map(date => {
+      const d = byDay[date];
       const t = d.conf + d.canc + d.noresp;
       return {
         date: new Date(date + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }),
@@ -217,21 +197,12 @@ export default function DashboardTab() {
     });
   }, [historyData, period]);
 
-  // Yesterday comparison
+  // Comparativo de ayer. Usa la MISMA fn que CounterBar (computeDailyCounter)
+  // para que "ayer" en el dashboard nunca diverja del cierre real del día.
   const yesterdayData = useMemo(() => {
     const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
     const yd = yesterday.toISOString().split('T')[0];
-    const yResults = historyData.filter(r => r.result_date === yd);
-    const conf = yResults.filter(r => r.result === 'conf').length;
-    const canc = yResults.filter(r => r.result === 'canc').length;
-    // Dedup noresp por order_id, excluir pedidos que terminaron conf/canc
-    // ese día. Misma lógica que el RPC y CounterBar.
-    const finalized = new Set(yResults.filter(r => (r.result === 'conf' || r.result === 'canc') && r.order_id).map(r => r.order_id!));
-    const norespOrders = new Set<string>();
-    yResults.forEach(r => {
-      if (r.result === 'noresp' && r.order_id && !finalized.has(r.order_id)) norespOrders.add(r.order_id);
-    });
-    const noresp = norespOrders.size;
+    const { conf, canc, noresp } = computeDailyCounter(historyData, yd);
     const total = conf + canc + noresp;
     return { conf, canc, noresp, total, tasa: total > 0 ? Math.round(conf / total * 100) : 0 };
   }, [historyData]);
