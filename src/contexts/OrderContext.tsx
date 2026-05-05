@@ -18,6 +18,7 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 // COST-3: ORDER_COLUMNS extraído a src/lib/orderColumns.ts para reutilizarse
 // en ConfirmarTab y CallView (antes hacían select('*')).
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
+import { computeDailyCounter } from '@/lib/computeDailyCounter';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -273,16 +274,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               });
             }
 
-            // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta diaria.
-            const c = { conf: 0, canc: 0, noresp: 0 };
-            (data as ResultRow[]).forEach(r => {
-              if (!isCallOutcome(r.result)) return;
-              if (r.result_date !== todayLocal) return;
-              if (r.result === 'conf') c.conf++;
-              else if (r.result === 'canc') c.canc++;
-              else if (r.result === 'noresp') c.noresp++;
-            });
-            setCounter(c);
+            // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta
+            // diaria. Dedup por order_id (espeja RPC operator_productivity_stats
+            // v20260505130000): si la operadora marca "no contestó" 3 veces el
+            // mismo pedido por el cooldown 2h, cuenta como 1; y si después
+            // confirma, ese pedido suma a conf y NO a noresp. Lógica
+            // compartida en computeDailyCounter para que CounterBar y panel
+            // admin nunca diverjan.
+            setCounter(computeDailyCounter(data as Parameters<typeof computeDailyCounter>[0], todayLocal));
           }
         });
     }
@@ -304,10 +303,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result, reason } : o));
     setCounter(prev => {
+      // noresp NO se incrementa optimísticamente: si la operadora marca
+      // "no contestó" 2 veces sobre el mismo pedido (separadas por 2h
+      // de cooldown), el +1 ingenuo lo contaba doble. Dejamos que el
+      // recompute por realtime (~100ms después del INSERT) lo refleje
+      // ya deduplicado por order_id. UX no requiere feedback instantáneo
+      // para noresp (no impacta meta).
       const next = {
         conf: prev.conf + (result === 'conf' ? 1 : 0),
         canc: prev.canc + (result === 'canc' ? 1 : 0),
-        noresp: prev.noresp + (result === 'noresp' ? 1 : 0),
+        noresp: prev.noresp,
       };
       const newTotal = next.conf + next.canc + next.noresp;
       setTimeout(() => checkMilestone(newTotal), 300);

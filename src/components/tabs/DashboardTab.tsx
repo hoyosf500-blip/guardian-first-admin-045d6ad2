@@ -20,7 +20,7 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 
-interface DailyResult { result_date: string; result: string; }
+interface DailyResult { result_date: string; result: string; order_id: string | null; }
 interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }
 
 const fadeUp = (delay = 0) => ({
@@ -110,7 +110,7 @@ export default function DashboardTab() {
   useEffect(() => {
     if (!user) return;
     const since = new Date(); since.setDate(since.getDate() - 30);
-    supabase.from('order_results').select('result_date, result')
+    supabase.from('order_results').select('result_date, result, order_id')
       .eq('operator_id', user.id).gte('result_date', since.toISOString().split('T')[0])
       .order('result_date', { ascending: true })
       .then(({ data, error }) => {
@@ -184,12 +184,30 @@ export default function DashboardTab() {
       const d = new Date(); d.setDate(d.getDate() - (period - 1 - i));
       byDay[d.toISOString().split('T')[0]] = { conf: 0, canc: 0, noresp: 0 };
     }
+    // Pre-pasada: por día, qué pedidos terminaron conf/canc — esos no
+    // deben sumar a noresp aunque tengan filas noresp en el mismo día.
+    // Espeja la lógica del RPC operator_productivity_stats v20260505130000
+    // y el counter en OrderContext, para que CounterBar y dashboard cuadren.
+    const finalizedByDay: Record<string, Set<string>> = {};
+    const norespByDay: Record<string, Set<string>> = {};
+    filtered.forEach(r => {
+      if (!r.order_id) return;
+      if ((r.result === 'conf' || r.result === 'canc')) {
+        if (!finalizedByDay[r.result_date]) finalizedByDay[r.result_date] = new Set();
+        finalizedByDay[r.result_date].add(r.order_id);
+      }
+    });
     filtered.forEach(r => {
       if (!byDay[r.result_date]) byDay[r.result_date] = { conf: 0, canc: 0, noresp: 0 };
       if (r.result === 'conf') byDay[r.result_date].conf++;
       else if (r.result === 'canc') byDay[r.result_date].canc++;
-      else byDay[r.result_date].noresp++;
+      else if (r.result === 'noresp' && r.order_id) {
+        if (finalizedByDay[r.result_date]?.has(r.order_id)) return;
+        if (!norespByDay[r.result_date]) norespByDay[r.result_date] = new Set();
+        norespByDay[r.result_date].add(r.order_id);
+      }
     });
+    Object.keys(byDay).forEach(d => { byDay[d].noresp = norespByDay[d]?.size || 0; });
     return Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, d]) => {
       const t = d.conf + d.canc + d.noresp;
       return {
@@ -206,7 +224,14 @@ export default function DashboardTab() {
     const yResults = historyData.filter(r => r.result_date === yd);
     const conf = yResults.filter(r => r.result === 'conf').length;
     const canc = yResults.filter(r => r.result === 'canc').length;
-    const noresp = yResults.filter(r => r.result !== 'conf' && r.result !== 'canc').length;
+    // Dedup noresp por order_id, excluir pedidos que terminaron conf/canc
+    // ese día. Misma lógica que el RPC y CounterBar.
+    const finalized = new Set(yResults.filter(r => (r.result === 'conf' || r.result === 'canc') && r.order_id).map(r => r.order_id!));
+    const norespOrders = new Set<string>();
+    yResults.forEach(r => {
+      if (r.result === 'noresp' && r.order_id && !finalized.has(r.order_id)) norespOrders.add(r.order_id);
+    });
+    const noresp = norespOrders.size;
     const total = conf + canc + noresp;
     return { conf, canc, noresp, total, tasa: total > 0 ? Math.round(conf / total * 100) : 0 };
   }, [historyData]);
