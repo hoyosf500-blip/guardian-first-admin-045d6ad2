@@ -228,12 +228,29 @@ export function AddressFeedbackCard({
         </div>
       )}
 
-      {isAdmin && (
-        <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
-          <Checkbox checked={overrideChecked} onCheckedChange={(v) => handleOverrideChange(v === true)} />
-          <span>Confirmé manualmente con el cliente — proceder</span>
-        </label>
-      )}
+      {/* Validador-direcciones: checkbox de override para destrabar el gate
+          de Confirmar también en RED. Antes solo se renderizaba para isAdmin,
+          lo que dejaba a la operadora sin manera de confirmar pedidos válidos
+          que el heurístico/Google/Haiku marcaba mal (rural, barrios nuevos,
+          complementos ambiguos como "18a19"). Ahora cualquier usuario puede
+          destrabar tras confirmar verbalmente con el cliente — el texto es
+          enfático para que entienda que asume responsabilidad por el despacho. */}
+      <label className="flex items-start gap-2 cursor-pointer text-xs text-foreground border-t border-danger/30 pt-2 mt-1">
+        <Checkbox
+          checked={overrideChecked}
+          onCheckedChange={(v) => handleOverrideChange(v === true)}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="font-semibold text-danger">Verifiqué la dirección con el cliente al teléfono</span>{' '}
+          <span className="text-muted-foreground">— proceder a despachar bajo mi responsabilidad</span>
+          {!isAdmin && (
+            <span className="block text-[10px] text-muted-foreground/80 mt-0.5">
+              Si la dirección es incorrecta, el pedido se devuelve.
+            </span>
+          )}
+        </span>
+      </label>
     </div>
   );
 }

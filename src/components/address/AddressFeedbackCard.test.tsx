@@ -33,9 +33,14 @@ describe('AddressFeedbackCard', () => {
     expect(screen.getByRole('checkbox')).toBeInTheDocument();
   });
 
-  it('red + non-admin NO muestra checkbox', () => {
+  it('red + non-admin SÍ muestra checkbox (operadora destraba tras verificar con cliente)', () => {
+    // Cambio 2026-05-05: antes RED ocultaba el override para no-admin y dejaba
+    // pedidos válidos imposibles de confirmar cuando el heurístico/Google/Haiku
+    // marcaba mal la dirección (rural, complementos tipo "18a19", barrios
+    // nuevos). Ahora la operadora ve el checkbox con texto enfático.
     render(<AddressFeedbackCard {...baseProps} decision="red" missingFields={['placa']} isAdmin={false} />);
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox')).toBeInTheDocument();
+    expect(screen.getByText(/Verifiqué la dirección con el cliente/i)).toBeInTheDocument();
   });
 
   it('muestra sugerencia cuando suggestedAddress está poblado y decision es red', () => {

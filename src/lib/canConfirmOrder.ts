@@ -32,9 +32,17 @@ export function canConfirmOrder(input: CanConfirmInput): CanConfirmResult {
   }
 
   if (decision === 'red') {
-    if (input.isAdmin && input.overrideChecked) return { canConfirm: true };
-    if (!input.isAdmin) return { canConfirm: false, reason: 'Dirección incompleta — solo admin puede forzar' };
-    return { canConfirm: false, reason: 'Dirección incompleta — falta datos del cliente' };
+    // La operadora está al teléfono con el cliente y puede verificar la
+    // dirección verbalmente. El validador es heurística + Google/Haiku — no
+    // ground truth — y se sabe que falla en zonas rurales, barrios nuevos y
+    // direcciones con complementos ambiguos (caso reportado: cliente puso
+    // "18a19" y la IA no lo leyó). Antes solo admin podía destrabar RED, lo
+    // que dejaba pedidos válidos imposibles de confirmar. Ahora cualquier
+    // usuario puede marcar el override tras confirmar con el cliente; el
+    // texto en AddressFeedbackCard es enfático para que la operadora sepa que
+    // está asumiendo responsabilidad por el despacho.
+    if (input.overrideChecked) return { canConfirm: true };
+    return { canConfirm: false, reason: 'Dirección incompleta — verifica con el cliente y marca el checkbox' };
   }
 
   // null/undefined: el validador todavía no opinó sobre esta dirección.

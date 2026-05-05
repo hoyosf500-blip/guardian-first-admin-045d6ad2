@@ -39,10 +39,12 @@ describe('canConfirmOrder', () => {
     expect(canConfirmOrder({ ...baseInput, validation_decision: 'red', isAdmin: true, overrideChecked: true })).toEqual({ canConfirm: true });
   });
 
-  it('red + non-admin + override -> still blocked', () => {
-    const r = canConfirmOrder({ ...baseInput, validation_decision: 'red', isAdmin: false, overrideChecked: true });
-    expect(r.canConfirm).toBe(false);
-    expect(r.reason).toMatch(/admin/i);
+  it('red + non-admin + override -> can confirm (operadora verificó con cliente al teléfono)', () => {
+    // Cambio 2026-05-05: el validador es heurística, no ground truth. La
+    // operadora tiene línea directa con el cliente y debe poder destrabar
+    // RED tras confirmar verbalmente. Antes este caso quedaba bloqueado y
+    // dejaba pedidos válidos imposibles de confirmar.
+    expect(canConfirmOrder({ ...baseInput, validation_decision: 'red', isAdmin: false, overrideChecked: true })).toEqual({ canConfirm: true });
   });
 
   it('null decision -> can confirm (backwards-compat con pedidos pre-feature)', () => {
