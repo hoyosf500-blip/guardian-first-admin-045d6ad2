@@ -1,6 +1,6 @@
 // Deduplica el contador diario de la operadora.
 //
-// Espeja la lógica del RPC `operator_productivity_stats` v20260505130000:
+// Espeja la lógica del RPC `operator_productivity_stats` v20260505184140:
 //   - `conf` y `canc` se cuentan por order_id distinto.
 //   - `noresp` se cuenta por order_id distinto Y solo si ese pedido no
 //     terminó en conf/canc el mismo día. Si la operadora marca "no
