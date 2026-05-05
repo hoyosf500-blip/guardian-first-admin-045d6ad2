@@ -20,7 +20,7 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 
-interface DailyResult { result_date: string; result: string; }
+interface DailyResult { result_date: string; result: string; order_id: string | null; }
 interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }
 
 const fadeUp = (delay = 0) => ({
