@@ -13,6 +13,7 @@ import {
   useCostosFijosMensuales,
 } from '@/hooks/useCfoMonthlyInputs';
 import CfoInputsDialog from '@/components/cfo/CfoInputsDialog';
+import CfoDebtTracker from '@/components/cfo/CfoDebtTracker';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -339,6 +340,8 @@ export default function CfoTab() {
       />
 
       <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
+
+      <CfoDebtTracker />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TopProductsBlock
