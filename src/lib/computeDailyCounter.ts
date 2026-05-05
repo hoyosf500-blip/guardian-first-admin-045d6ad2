@@ -53,3 +53,16 @@ export function computeDailyCounter(rows: CounterRow[], todayLocal: string): Dai
     noresp: norespOrders.size,
   };
 }
+
+// Aplica computeDailyCounter a varias fechas en una sola pasada. Usado por
+// DashboardTab para el chart histórico. Mantiene una sola fuente de verdad
+// para la dedup — si cambia la regla, cambia en computeDailyCounter y el
+// chart la hereda automáticamente.
+export function computeDailyCounterByDay(
+  rows: CounterRow[],
+  dates: string[]
+): Record<string, DailyCounter> {
+  const out: Record<string, DailyCounter> = {};
+  for (const d of dates) out[d] = computeDailyCounter(rows, d);
+  return out;
+}
