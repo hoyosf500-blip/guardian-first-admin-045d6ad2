@@ -224,7 +224,14 @@ export default function DashboardTab() {
     const yResults = historyData.filter(r => r.result_date === yd);
     const conf = yResults.filter(r => r.result === 'conf').length;
     const canc = yResults.filter(r => r.result === 'canc').length;
-    const noresp = yResults.filter(r => r.result !== 'conf' && r.result !== 'canc').length;
+    // Dedup noresp por order_id, excluir pedidos que terminaron conf/canc
+    // ese día. Misma lógica que el RPC y CounterBar.
+    const finalized = new Set(yResults.filter(r => (r.result === 'conf' || r.result === 'canc') && r.order_id).map(r => r.order_id!));
+    const norespOrders = new Set<string>();
+    yResults.forEach(r => {
+      if (r.result === 'noresp' && r.order_id && !finalized.has(r.order_id)) norespOrders.add(r.order_id);
+    });
+    const noresp = norespOrders.size;
     const total = conf + canc + noresp;
     return { conf, canc, noresp, total, tasa: total > 0 ? Math.round(conf / total * 100) : 0 };
   }, [historyData]);
