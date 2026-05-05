@@ -12,6 +12,7 @@ import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
+import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
