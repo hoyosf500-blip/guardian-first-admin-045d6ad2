@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
-import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidColombianPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -27,9 +27,12 @@ import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
 import { locationMatches } from '@/lib/locationGuard';
 
 // Validador-direcciones: helper local para gate de confirmación.
+// Bug 2026-05-05 (cliente Cristian Mendez): el regex inline rechazaba
+// "573229372886" porque length !== 10. Ahora delega a
+// isValidColombianPhone que tolera el prefijo de país "57". Mantengo
+// este wrapper para que los demás call sites del archivo no cambien.
 function validarTelefono(phone: string): boolean {
-  const clean = (phone || '').replace(/\D/g, '');
-  return clean.length === 10 && clean.startsWith('3');
+  return isValidColombianPhone(phone);
 }
 
 // Validador-direcciones: guard fire-once-per-order-per-session para evitar

@@ -15,6 +15,8 @@ import {
   getTrackingUrl,
   truncate,
   getErrorMessage,
+  normalizeColombianPhone,
+  isValidColombianPhone,
 } from './orderUtils';
 
 describe('parseDate', () => {
@@ -297,5 +299,65 @@ describe('dbToOrderData typed', () => {
     expect(order.estado).toBe('EN REPARTO');
     expect(order.novedadSol).toBe(true);
     expect(order.idx).toBe(5);
+  });
+});
+
+describe('normalizeColombianPhone', () => {
+  it('canónico de 10 dígitos arrancando con 3 → queda igual', () => {
+    expect(normalizeColombianPhone('3229372886')).toBe('3229372886');
+  });
+
+  it('con prefijo 57 (12 dígitos) → strip 57', () => {
+    // Reportado 2026-05-05: cliente Cristian Mendez escribió "573229372886"
+    // y la confirmación quedaba bloqueada. Este test asegura que esa entrada
+    // se normaliza a la canónica 10-dígitos.
+    expect(normalizeColombianPhone('573229372886')).toBe('3229372886');
+  });
+
+  it('con +57 y espacios → strip todo', () => {
+    expect(normalizeColombianPhone('+57 322 937 2886')).toBe('3229372886');
+  });
+
+  it('con 57, paréntesis y guion → strip todo', () => {
+    expect(normalizeColombianPhone('57 (322) 937-2886')).toBe('3229372886');
+  });
+
+  it('9 dígitos → null (incompleto)', () => {
+    expect(normalizeColombianPhone('229372886')).toBeNull();
+  });
+
+  it('11 dígitos arrancando con 3 → null (no es ni canónico ni con 57)', () => {
+    expect(normalizeColombianPhone('33229372886')).toBeNull();
+  });
+
+  it('10 dígitos arrancando con 6 (fijo) → null', () => {
+    expect(normalizeColombianPhone('6012345678')).toBeNull();
+  });
+
+  it('12 dígitos arrancando con 57 pero no con 3 después → null', () => {
+    // "576012345678" — código país 57 + fijo 60... — no es móvil válido.
+    expect(normalizeColombianPhone('576012345678')).toBeNull();
+  });
+
+  it('cadena vacía → null', () => {
+    expect(normalizeColombianPhone('')).toBeNull();
+  });
+
+  it('solo letras → null', () => {
+    expect(normalizeColombianPhone('abcdefghij')).toBeNull();
+  });
+});
+
+describe('isValidColombianPhone', () => {
+  it('formas válidas devuelven true', () => {
+    expect(isValidColombianPhone('3229372886')).toBe(true);
+    expect(isValidColombianPhone('573229372886')).toBe(true);
+    expect(isValidColombianPhone('+57 322 937 2886')).toBe(true);
+  });
+
+  it('formas inválidas devuelven false', () => {
+    expect(isValidColombianPhone('229372886')).toBe(false);
+    expect(isValidColombianPhone('6012345678')).toBe(false);
+    expect(isValidColombianPhone('')).toBe(false);
   });
 });

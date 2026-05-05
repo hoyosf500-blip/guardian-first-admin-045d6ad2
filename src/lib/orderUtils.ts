@@ -292,6 +292,36 @@ export function formatPhone(p: string): string {
   return p;
 }
 
+/**
+ * Normaliza un teléfono colombiano a su forma canónica (10 dígitos arrancando
+ * con 3, sin código de país). Acepta variaciones comunes que el cliente puede
+ * tipear:
+ *   "3229372886"           → "3229372886"  (canónico)
+ *   "573229372886"         → "3229372886"  (con prefijo 57)
+ *   "+57 322 937 2886"     → "3229372886"  (espacios y +)
+ *   "57 (322) 937-2886"    → "3229372886"  (paréntesis y guion)
+ * Devuelve null si no encaja en ninguna de las dos formas válidas:
+ * 10 dígitos arrancando con 3, o 12 dígitos arrancando con "57" + 3.
+ *
+ * Reportado 2026-05-05: cliente Cristian Mendez escribió "573229372886" en
+ * Shopify y `validarTelefono` lo rechazaba (length !== 10), bloqueando la
+ * confirmación. Antes esto vivía como regex inline en CallView.tsx; ahora
+ * está acá para reuso (CallView gate + EditOrderDialog).
+ */
+export function normalizeColombianPhone(phone: string): string | null {
+  const clean = (phone || '').replace(/\D/g, '');
+  if (clean.length === 10 && clean.startsWith('3')) return clean;
+  if (clean.length === 12 && clean.startsWith('57') && clean[2] === '3') {
+    return clean.slice(2);
+  }
+  return null;
+}
+
+/** Devuelve true si el teléfono se puede normalizar a un móvil COL válido. */
+export function isValidColombianPhone(phone: string): boolean {
+  return normalizeColombianPhone(phone) !== null;
+}
+
 /** Normalize a Colombian phone for wa.me/ links (must include 57 prefix exactly once). */
 export function getWhatsAppPhone(phone: string): string {
   const digits = phone.replace(/[^0-9]/g, '');

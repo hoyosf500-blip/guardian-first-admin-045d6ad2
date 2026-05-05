@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { OrderData } from '@/lib/orderUtils';
+import { OrderData, normalizeColombianPhone } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { useAuth } from '@/contexts/AuthContext';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
@@ -131,12 +131,19 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
 
     setSubmitting(true);
     try {
+      // Normalizar teléfono COL a forma canónica (10 dígitos arrancando con
+      // 3, sin código de país). Si el cliente tipeó "573229372886", lo
+      // mandamos como "3229372886". Bug 2026-05-05: cliente Cristian Mendez
+      // escribió con "57" prefix y el gate de confirmación lo rechazaba.
+      // Si no es normalizable (formato raro o internacional defensivo),
+      // lo mandamos como está para no perder data del operador.
+      const phoneToSend = normalizeColombianPhone(form.phone) ?? form.phone;
       const { data, error } = await supabase.functions.invoke('dropi-update-order-full', {
         body: {
           externalId: order.externalId,
           nombre: form.nombre.trim(),
           apellido: form.apellido.trim(),
-          phone: form.phone,
+          phone: phoneToSend,
           ciudad: form.ciudad.trim(),
           departamento: form.departamento.trim(),
           direccion: form.direccion.trim(),
@@ -238,7 +245,7 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
                   inputMode="numeric"
                   value={form.phone}
                   onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 15) }))}
-                  placeholder="573001234567"
+                  placeholder="3001234567"
                 />
               </div>
               <div className="space-y-1.5">
