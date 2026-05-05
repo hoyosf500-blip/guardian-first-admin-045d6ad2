@@ -926,6 +926,7 @@ export type Database = {
           tasa_confirmacion: number
           tasa_contacto: number
           total_atendidos: number
+          total_entrantes: number
         }[]
       }
       operator_today_tasa: {
