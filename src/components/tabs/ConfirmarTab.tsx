@@ -12,6 +12,7 @@ import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
+import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
@@ -189,6 +190,14 @@ export default function ConfirmarTab({ profile }: Props) {
           )}
         </div>
       </header>
+
+      {/* Aviso al equipo: cambio en cómo se cuenta noresp (dedup por
+          order_id, espeja RPC v20260505130000). Dismissible y persiste
+          el cierre en localStorage por id. */}
+      <MetricsUpdateBanner
+        id="dedup-noresp-2026-05-05"
+        message="Métricas actualizadas — el contador de 'no contestó' ahora dedupea reintentos del cooldown 2h. Tu rendimiento real puede ajustar ligeramente."
+      />
 
       <TasaMetaBanner />
 
