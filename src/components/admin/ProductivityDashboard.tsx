@@ -218,9 +218,19 @@ export default function ProductivityDashboard() {
                     <th>Operadora</th>
                     <th className="text-right">Conf.</th>
                     <th className="text-right">Canc.</th>
-                    <th className="text-right">N/R</th>
+                    <th
+                      className="text-right"
+                      title="Pedidos distintos que no contestaron al final del período (un pedido reintentado 3 veces cuenta como 1)"
+                    >
+                      N/R
+                    </th>
                     <th className="text-right">Atendidos</th>
-                    <th className="text-right">Tasa contacto</th>
+                    <th
+                      className="text-right"
+                      title="Pedidos contactados (confirmados + cancelados) sobre total atendidos. Los reintentos del mismo pedido NO inflan el denominador."
+                    >
+                      Tasa contacto
+                    </th>
                     <th
                       className="text-right"
                       title={
