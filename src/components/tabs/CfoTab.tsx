@@ -61,6 +61,23 @@ function lastNMonths(n: number): string[] {
   return out;
 }
 
+/**
+ * Meses desde enero del año actual hasta el mes actual, en orden
+ * descendente (más reciente primero). Evita mostrar meses del año pasado
+ * cuando el negocio arrancó este año — Fabian se confundía viendo opciones
+ * de 2024/2023 en el dropdown.
+ */
+function monthsFromJanuaryThisYear(): string[] {
+  const now = new Date();
+  const year = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-11
+  const out: string[] = [];
+  for (let m = currentMonth; m >= 0; m--) {
+    out.push(toYearMonth(new Date(year, m, 1)));
+  }
+  return out;
+}
+
 function monthLabel(yearMonth: string): string {
   const [y, m] = yearMonth.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString('es-CO', {
@@ -201,7 +218,10 @@ export default function CfoTab() {
   const [yearMonth, setYearMonth] = useState<string>(() => toYearMonth(new Date()));
   const [editOpen, setEditOpen] = useState(false);
 
-  const months = useMemo(() => lastNMonths(12), []);
+  // Solo meses del año en curso (enero → mes actual). El negocio arrancó
+  // este año; mostrar 12 meses para atrás incluía opciones del año pasado
+  // sin datos que confundían al usuario.
+  const months = useMemo(() => monthsFromJanuaryThisYear(), []);
   const prevYearMonth = useMemo(() => previousMonth(yearMonth), [yearMonth]);
 
   const curr = useCfoSnapshot(yearMonth);
