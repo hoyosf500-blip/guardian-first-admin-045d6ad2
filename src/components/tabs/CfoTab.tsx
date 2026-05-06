@@ -19,6 +19,7 @@ import CfoAdSpendTracker from '@/components/cfo/CfoAdSpendTracker';
 import CfoPersonalCardUploader from '@/components/cfo/CfoPersonalCardUploader';
 import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTracker';
 import CfoPaymentsVsDebt from '@/components/cfo/CfoPaymentsVsDebt';
+import CfoPagosHistorico from '@/components/cfo/CfoPagosHistorico';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -391,6 +392,7 @@ export default function CfoTab() {
           </span>
         </header>
         <CfoPersonalCardUploader />
+        <CfoPagosHistorico />
         <CfoPaymentsVsDebt />
         <CfoPersonalSpendingTracker />
       </section>

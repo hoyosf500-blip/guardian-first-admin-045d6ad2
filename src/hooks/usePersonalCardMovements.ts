@@ -194,6 +194,58 @@ export interface ResidualDebtRow {
   num_compras: number;
 }
 
+export interface PaymentRow {
+  id: string;
+  fecha: string;               // ISO YYYY-MM-DD
+  descripcion: string;
+  tarjeta: string;
+  marca: 'mastercard' | 'amex' | 'otro';
+  monto: number;               // valor absoluto (los abonos vienen negativos en BD)
+  moneda: 'COP' | 'USD';
+}
+
+/**
+ * Lista cronológica de pagos individuales (movimientos tipo='abono').
+ * Devuelve cada abono con monto en valor absoluto para mostrarlo positivo.
+ */
+export function usePersonalPaymentsList() {
+  return useQuery<PaymentRow[]>({
+    queryKey: ['personal-payments-list'],
+    queryFn: async () => {
+      // Bypass del tipado: la tabla personal_card_movements no está en
+      // el types.ts auto-generado todavía (mismo motivo que las RPCs).
+      const sb = supabase as unknown as {
+        from: (t: string) => {
+          select: (cols: string) => {
+            eq: (col: string, val: string) => {
+              order: (col: string, opts: { ascending: boolean }) => Promise<{
+                data: unknown; error: { message?: string } | null;
+              }>;
+            };
+          };
+        };
+      };
+      const { data, error } = await sb
+        .from('personal_card_movements')
+        .select('id,fecha,descripcion,tarjeta,marca,monto,moneda')
+        .eq('tipo', 'abono')
+        .order('fecha', { ascending: false });
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      return rows.map((r: Record<string, unknown>) => ({
+        id:          String(r.id ?? ''),
+        fecha:       String(r.fecha ?? ''),
+        descripcion: String(r.descripcion ?? ''),
+        tarjeta:     String(r.tarjeta ?? ''),
+        marca:       String(r.marca ?? 'otro') as 'mastercard' | 'amex' | 'otro',
+        monto:       Math.abs(toNumber(r.monto)),
+        moneda:      String(r.moneda ?? 'COP') as 'COP' | 'USD',
+      }));
+    },
+    staleTime: 60_000,
+  });
+}
+
 /**
  * Resumen mensual de flujo de TC: compras nuevas vs pagos hechos vs
  * intereses vs avances. COP y USD separados (no convertimos en server,
