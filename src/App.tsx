@@ -12,6 +12,7 @@ import { RefreshCw } from 'lucide-react';
 // Lazy-load page components so the initial bundle only contains the auth page
 // and shared layout. Each route chunk loads on first navigation (~2-5 KB each).
 const AuthPage = lazy(() => import("@/pages/AuthPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const ConfirmarPage = lazy(() => import("@/pages/ConfirmarPage"));
 const SeguimientoPage = lazy(() => import("@/pages/SeguimientoPage"));
@@ -53,6 +54,7 @@ const App = () => (
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/auth" element={route(<AuthPage />)} />
+                <Route path="/reset-password" element={route(<ResetPasswordPage />)} />
                 <Route element={<ProtectedLayout />}>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={route(<DashboardPage />)} />

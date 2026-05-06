@@ -7,12 +7,16 @@ import { Sun, Moon, Package, Phone, BarChart3, ShieldCheck } from 'lucide-react'
 
 export default function AuthPage() {
   // Fix 4: signup público deshabilitado en la UI. Las cuentas se crean
-  // desde el panel de admin. Solo el formulario de login es visible.
-  const { signIn, user } = useAuth();
+  // desde el panel de admin. Solo el formulario de login + recuperación
+  // de contraseña son visibles.
+  const { signIn, resetPassword, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  // Vista 'login' = formulario normal. Vista 'forgot' = pedir email para
+  // recuperación. Toggle inline (sin route nueva).
+  const [view, setView] = useState<'login' | 'forgot'>('login');
 
   if (user) return <Navigate to="/dashboard" replace />;
 
@@ -22,6 +26,23 @@ export default function AuthPage() {
     const { error } = await signIn(email, password);
     if (error) toast.error(error);
     setLoading(false);
+  };
+
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      toast.error('Ingresa tu correo');
+      return;
+    }
+    setLoading(true);
+    const { error } = await resetPassword(email.trim());
+    setLoading(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    toast.success('Te enviamos un correo con el link para resetear la contraseña. Revisa tu bandeja (y spam).');
+    setView('login');
   };
 
   const features = [
@@ -80,48 +101,93 @@ export default function AuthPage() {
           </div>
 
           <h1 className="text-2xl font-extrabold text-foreground tracking-tight mb-1">
-            Bienvenido de nuevo
+            {view === 'login' ? 'Bienvenido de nuevo' : 'Recuperar contraseña'}
           </h1>
           <p className="text-sm text-muted-foreground mb-8">
-            Ingresa tus datos para continuar
+            {view === 'login'
+              ? 'Ingresa tus datos para continuar'
+              : 'Ingresa tu correo y te enviamos el link para resetearla'}
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            <div>
-              <label htmlFor="auth-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
-              <input
-                id="auth-email"
-                type="email"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-                className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-              />
-            </div>
-            <div>
-              <label htmlFor="auth-password" className="block text-xs font-semibold text-foreground mb-1.5">Contraseña</label>
-              <input
-                id="auth-password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                minLength={6}
-                autoComplete="current-password"
-                className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              {loading ? 'Procesando…' : 'Iniciar sesión'}
-            </button>
-          </form>
+          {view === 'login' ? (
+            <form onSubmit={handleSubmit} className="space-y-3.5">
+              <div>
+                <label htmlFor="auth-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
+                <input
+                  id="auth-email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between mb-1.5">
+                  <label htmlFor="auth-password" className="block text-xs font-semibold text-foreground">Contraseña</label>
+                  <button
+                    type="button"
+                    onClick={() => setView('forgot')}
+                    className="text-xs font-medium text-accent hover:text-accent/80 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:underline"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+                <input
+                  id="auth-password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="current-password"
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                {loading ? 'Procesando…' : 'Iniciar sesión'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleForgot} className="space-y-3.5">
+              <div>
+                <label htmlFor="forgot-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
+                <input
+                  id="forgot-email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  autoFocus
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                {loading ? 'Enviando…' : 'Enviar link de recuperación'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('login')}
+                disabled={loading}
+                className="w-full text-xs font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 cursor-pointer disabled:opacity-50"
+              >
+                ← Volver al login
+              </button>
+            </form>
+          )}
 
           <p className="mt-6 text-xs text-muted-foreground text-center">
             Las cuentas se crean desde el panel de administración.
