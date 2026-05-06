@@ -23,36 +23,63 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false);
   // null = checking, true = sesión recovery activa, false = no hay token válido.
   const [hasRecoverySession, setHasRecoverySession] = useState<boolean | null>(null);
+  // Hash del URL al momento de cargar — útil para diagnóstico cuando falla.
+  const [urlDiag] = useState(() => ({
+    hash: typeof window !== 'undefined' ? window.location.hash : '',
+    search: typeof window !== 'undefined' ? window.location.search : '',
+  }));
 
   useEffect(() => {
-    // Detectamos sesión recovery escuchando el evento PASSWORD_RECOVERY,
-    // que supabase-js dispara cuando procesa el hash del link del email.
-    // También chequeamos getSession() por si el evento ya pasó antes de
-    // que montáramos el listener.
     let mounted = true;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return;
-      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
-        setHasRecoverySession(true);
-      }
-    });
+    // Si el URL trae hash con type=recovery o code=... (PKCE), supabase-js
+    // está procesando el token. NO marcar invalid hasta que termine de procesar.
+    const hashHasRecovery = urlDiag.hash.includes('type=recovery') || urlDiag.hash.includes('access_token=');
+    const queryHasCode = urlDiag.search.includes('code=');
+    const probablyRecovering = hashHasRecovery || queryHasCode;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mounted) return;
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!mounted) return false;
       if (session) {
         setHasRecoverySession(true);
-      } else {
-        // Si no hay sesión inmediata ni evento, asumimos token inválido
-        // tras un breve margen para que onAuthStateChange dispare.
-        setTimeout(() => {
-          setHasRecoverySession((prev) => (prev === null ? false : prev));
-        }, 1500);
+        return true;
+      }
+      return false;
+    };
+
+    // Listener que captura PASSWORD_RECOVERY o SIGNED_IN tras el procesamiento del hash.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session) || (event === 'INITIAL_SESSION' && session)) {
+        setHasRecoverySession(true);
+        if (pollTimer) clearInterval(pollTimer);
+        if (timeoutTimer) clearTimeout(timeoutTimer);
       }
     });
 
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
+    // Check inmediato + poll cada 500ms hasta que aparezca sesión o se acabe el tiempo.
+    void checkSession();
+    pollTimer = setInterval(() => { void checkSession(); }, 500);
+
+    // Margen total: 6s si el URL trae token (supabase-js se está demorando),
+    // 2s si no hay nada (link claramente inválido).
+    const totalMs = probablyRecovering ? 6000 : 2000;
+    timeoutTimer = setTimeout(() => {
+      if (!mounted) return;
+      setHasRecoverySession((prev) => (prev === null ? false : prev));
+      if (pollTimer) clearInterval(pollTimer);
+    }, totalMs);
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
+  }, [urlDiag.hash, urlDiag.search]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,18 +128,38 @@ export default function ResetPasswordPage() {
         )}
 
         {hasRecoverySession === false && (
-          <div className="rounded-xl border border-red/30 bg-red/5 p-4 text-sm text-foreground space-y-2">
-            <p className="font-semibold text-red">Enlace inválido o expirado</p>
-            <p className="text-muted-foreground text-xs">
-              El link del correo solo dura unas horas y solo se puede usar una vez.
-              Pedí uno nuevo desde la pantalla de login.
-            </p>
+          <div className="rounded-xl border border-red/30 bg-red/5 p-4 text-sm text-foreground space-y-3">
+            <div>
+              <p className="font-semibold text-red">Enlace inválido o expirado</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                El link del correo solo dura unas horas y solo se puede usar una vez.
+              </p>
+            </div>
+
+            {!urlDiag.hash && !urlDiag.search ? (
+              <div className="rounded-lg bg-card/60 border border-border p-2.5 text-[11px] text-muted-foreground">
+                <p className="font-semibold text-foreground mb-1">Probable causa</p>
+                <p>
+                  Este URL no trae el token. Posibles motivos: (1) el link del email
+                  ya fue usado antes, (2) abriste <code>/reset-password</code> manualmente
+                  sin venir del email, o (3) Supabase rechazó el redirect porque la
+                  URL <code>{typeof window !== 'undefined' ? window.location.origin : ''}/reset-password</code> no
+                  está whitelisteada en <strong>Supabase → Authentication → URL Configuration</strong>.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-card/60 border border-border p-2.5 text-[11px] text-muted-foreground">
+                <p className="font-semibold text-foreground mb-1">Diagnóstico</p>
+                <p>El URL trae token pero Supabase no lo aceptó. Probablemente expiró (los links duran ~1h) o ya fue usado.</p>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => navigate('/auth', { replace: true })}
-              className="mt-2 w-full py-2.5 rounded-xl bg-card border border-border text-xs font-semibold text-foreground hover:border-accent/40 transition-colors duration-200 cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-card border border-border text-xs font-semibold text-foreground hover:border-accent/40 transition-colors duration-200 cursor-pointer"
             >
-              Volver al login
+              Pedir un link nuevo
             </button>
           </div>
         )}
