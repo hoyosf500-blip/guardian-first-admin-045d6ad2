@@ -1,6 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
+// Bypass del tipado generado por Supabase: las RPCs nuevas (creadas en
+// migrations 20260506*) no están todavía en el types.ts auto-generado
+// porque el cliente de tipos se regenera fuera de este repo. Mismo patrón
+// usado en useMonthlyAdSpend, useTcDebtSnapshots, useProductProfitability.
+const rpc = supabase.rpc as unknown as (
+  fn: string, args?: Record<string, unknown>
+) => Promise<{ data: unknown; error: { message?: string } | null }>;
+
 // Hooks del bloque "Análisis tarjetas (gasto personal)" en /cfo.
 // Consume la tabla personal_card_movements y los RPCs definidos en la
 // migration 20260506000000. Admin-only via RLS.
@@ -78,7 +86,7 @@ export function usePersonalSpendingByMonth(opts?: { fromDate?: string; toDate?: 
   return useQuery<SpendingByMonthRow[]>({
     queryKey: ['personal-spending-by-month', fromDate ?? 'def', toDate ?? 'def'],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('personal_spending_by_month', {
+      const { data, error } = await rpc('personal_spending_by_month', {
         p_from_date: fromDate ?? undefined,
         p_to_date:   toDate   ?? undefined,
       });
@@ -105,7 +113,7 @@ export function usePersonalSpendingTopItems(yearMonth: string, categoria?: Categ
   return useQuery<TopItemRow[]>({
     queryKey: ['personal-spending-top', yearMonth, categoria ?? 'all', limit],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('personal_spending_top_items', {
+      const { data, error } = await rpc('personal_spending_top_items', {
         p_year_month: yearMonth,
         p_categoria:  categoria ?? null,
         p_limit:      limit,
@@ -162,6 +170,88 @@ export function useParseBankPdf() {
   });
 }
 
+// ─── Pagado vs Pendiente ──────────────────────────────────────────
+
+export interface PaymentsSummaryRow {
+  year_month: string;
+  compras_cop: number;
+  compras_usd: number;
+  pagos_cop: number;
+  pagos_usd: number;
+  intereses_cop: number;
+  intereses_usd: number;
+  avances_cop: number;
+  avances_usd: number;
+  comisiones_cop: number;
+  count_movimientos: number;
+}
+
+export interface ResidualDebtRow {
+  tarjeta: string;
+  marca: 'mastercard' | 'amex' | 'otro';
+  moneda: 'COP' | 'USD';
+  saldo_pendiente: number;
+  num_compras: number;
+}
+
+/**
+ * Resumen mensual de flujo de TC: compras nuevas vs pagos hechos vs
+ * intereses vs avances. COP y USD separados (no convertimos en server,
+ * la UI aplica la TRM que prefiera).
+ */
+export function usePersonalPaymentsSummary(opts?: { fromDate?: string; toDate?: string }) {
+  const fromDate = opts?.fromDate;
+  const toDate = opts?.toDate;
+  return useQuery<PaymentsSummaryRow[]>({
+    queryKey: ['personal-payments-summary', fromDate ?? 'def', toDate ?? 'def'],
+    queryFn: async () => {
+      const { data, error } = await rpc('personal_payments_summary', {
+        p_from_date: fromDate ?? undefined,
+        p_to_date:   toDate   ?? undefined,
+      });
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      return rows.map((r: Record<string, unknown>) => ({
+        year_month:        String(r.year_month ?? ''),
+        compras_cop:       toNumber(r.compras_cop),
+        compras_usd:       toNumber(r.compras_usd),
+        pagos_cop:         toNumber(r.pagos_cop),
+        pagos_usd:         toNumber(r.pagos_usd),
+        intereses_cop:     toNumber(r.intereses_cop),
+        intereses_usd:     toNumber(r.intereses_usd),
+        avances_cop:       toNumber(r.avances_cop),
+        avances_usd:       toNumber(r.avances_usd),
+        comisiones_cop:    toNumber(r.comisiones_cop),
+        count_movimientos: toNumber(r.count_movimientos),
+      }));
+    },
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Snapshot actual de deuda residual por (tarjeta, moneda). Toma el
+ * saldo_pendiente de la cuota más reciente conocida por compra.
+ */
+export function usePersonalResidualDebt() {
+  return useQuery<ResidualDebtRow[]>({
+    queryKey: ['personal-residual-debt'],
+    queryFn: async () => {
+      const { data, error } = await rpc('personal_residual_debt');
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      return rows.map((r: Record<string, unknown>) => ({
+        tarjeta:         String(r.tarjeta ?? ''),
+        marca:           String(r.marca ?? 'otro') as 'mastercard' | 'amex' | 'otro',
+        moneda:          String(r.moneda ?? 'COP') as 'COP' | 'USD',
+        saldo_pendiente: toNumber(r.saldo_pendiente),
+        num_compras:     toNumber(r.num_compras),
+      }));
+    },
+    staleTime: 60_000,
+  });
+}
+
 /**
  * Mutation: re-categorización masiva (cuando se agregan nuevos patrones a
  * categorize_personal_movement y querés re-procesar movimientos viejos).
@@ -170,7 +260,7 @@ export function useRecategorizePersonalMovements() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.rpc('recategorize_personal_movements');
+      const { data, error } = await rpc('recategorize_personal_movements');
       if (error) throw error;
       return data as { updated: number };
     },

@@ -17,6 +17,7 @@ import CfoDebtTracker from '@/components/cfo/CfoDebtTracker';
 import CfoAdSpendTracker from '@/components/cfo/CfoAdSpendTracker';
 import CfoPersonalCardUploader from '@/components/cfo/CfoPersonalCardUploader';
 import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTracker';
+import CfoPaymentsVsDebt from '@/components/cfo/CfoPaymentsVsDebt';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,15 +51,6 @@ function previousMonth(yearMonth: string): string {
   const [y, m] = yearMonth.split('-').map(Number);
   const d = new Date(y, m - 2, 1);
   return toYearMonth(d);
-}
-
-function lastNMonths(n: number): string[] {
-  const out: string[] = [];
-  const now = new Date();
-  for (let i = 0; i < n; i++) {
-    out.push(toYearMonth(new Date(now.getFullYear(), now.getMonth() - i, 1)));
-  }
-  return out;
 }
 
 /**
@@ -141,8 +133,8 @@ function useCfoSnapshot(yearMonth: string): CfoSnapshot {
   return {
     loading,
     total_ordenes: fin?.total_ordenes ?? logSummary?.total_pedidos ?? 0,
-    total_entregadas: fin?.total_entregadas ?? logSummary?.total_entregados ?? 0,
-    total_devueltas: fin?.total_devueltas ?? logSummary?.total_devueltos ?? 0,
+    total_entregadas: fin?.total_entregadas ?? logSummary?.entregados ?? 0,
+    total_devueltas: fin?.total_devueltas ?? logSummary?.devueltos ?? 0,
     total_cancelados: fin?.total_cancelados ?? 0,
     tasa_entrega: fin?.tasa_entrega_pct ?? logSummary?.tasa_entrega ?? 0,
     utilidad_bruta, ingresos_brutos,
@@ -382,6 +374,7 @@ export default function CfoTab() {
           </span>
         </header>
         <CfoPersonalCardUploader />
+        <CfoPaymentsVsDebt />
         <CfoPersonalSpendingTracker />
       </section>
 
