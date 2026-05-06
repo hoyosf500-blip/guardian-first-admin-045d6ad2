@@ -36,6 +36,16 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
   -d '{"from":"2026-01-01","to":"2026-05-02"}'
 ```
 
+## Stack & Constraints
+
+- **Frontend:** Vite + React 18 + TypeScript + Tailwind + shadcn/ui. Vite uses `@vitejs/plugin-react-swc` (SWC, not Babel). `lovable-tagger` is dev-only.
+- **Dev server runs on port 8080** (not the default 5173/3000). Configured in `vite.config.ts`.
+- **TypeScript is NOT strict.** `tsconfig.app.json` has `strict: false`, `noImplicitAny: false`, `noUnusedLocals: false`. Do not enforce strict-mode patterns when reviewing or refactoring — they are intentionally off.
+- **Path alias:** `@/` → `./src/`.
+- **Env vars (only two are read in `src/`):** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Copy `.env.example` → `.env`.
+- **Routes are lazy-loaded** in `src/App.tsx` via `React.lazy()`. Each route is wrapped in its own `ErrorBoundary` (`route()` helper), so a crash in `/confirmar` does NOT kill `/seguimiento` or the sidebar. This is intentional — keep the per-route boundary when adding new pages.
+- **`DbOrderRow` lives in `src/integrations/supabase/types.ts`** (auto-generated from Supabase schema), not in `orderUtils.ts`. The mapper `dbToOrderData()` in `orderUtils.ts` consumes it.
+
 ## Operational Gotchas (Lovable)
 
 - **Lovable does NOT auto-redeploy edge functions on `git push`.** Code in `supabase/functions/` ships to GitHub but the deployed runtime stays on the OLD version until someone explicitly redeploys (Lovable prompt or `supabase functions deploy`). Always design client-side fallback for any edge-function change you ship.
@@ -69,7 +79,8 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 | `/admin` | AdminPage | AdminTab | Admin-only config (isAdmin gate) |
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
 | `/logistica` | LogisticsPage | LogisticaTab | Análisis admin: 8 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / Billetera / Finanzas). Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas. |
-| `/pedido/:id` | OrderDetailPage | order-detail/* | Single-order drill-down |
+| `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. Mes vs mes anterior. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
+| `/pedido/:externalId` | OrderDetailPage | order-detail/* | Single-order drill-down (param es `:externalId`, no `:id`) |
 
 All authenticated routes share `ProtectedLayout` which:
 - Wraps everything in `<OrderProvider>`
@@ -94,6 +105,8 @@ Roles in `user_roles`: `admin` and `operator`. Operators see all tabs except Adm
 All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB. Maps `o.shipping_amount` → `costo_logistico_dropi` (lo que paga el dropshipper, NO lo cobrado al cliente). Uses Bearer API key.
 - `dropi-update-order` — updates a single order's Dropi status (bearer token from DB settings)
+- `dropi-update-order-full` — variant that also pushes back enriched address/notes payload to Dropi
+- `dropi-relay` — generic proxy/relay to Dropi endpoints from the client (avoids CORS + hides session token)
 - `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
 - `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`)
@@ -143,6 +156,14 @@ The Dropi API key is stored in `app_settings.dropi_token` (Bearer permanente). E
 - `financial_summary(p_from_date, p_to_date)` — KPIs financieros del período (utilidad bruta contable). Versión actual = v6 (migration `20260502000008_financial_summary_v6_devoluciones.sql`). Fórmula: `ingresos − cogs − flete_entregadas − pérdida_devoluciones − comisión_referidos − mantenimiento_tarjeta + indemnizaciones`. Usado por hook `useFinancialSummary`. NO incluye gasto pauta (Fase B pendiente).
 - `wallet_summary(from, to)` y `wallet_daily_series(from, to)` — KPIs y serie temporal del wallet de Dropi. Admin-only, security definer.
 - `upsert_wallet_movements(...)` — bulk INSERT idempotente sobre `dropi_wallet_movements` con `dropi_transaction_id` UNIQUE. RLS bloquea INSERT/UPDATE directo — todo va via este RPC.
+- `operator_productivity_stats(p_range)` — KPIs por operador para `/admin → Productividad`. `p_range` ∈ `today | yesterday | week | month`. Tasas calculadas sobre INFLOW (entrantes en el período), no sobre stock total — ver migration `20260505120000_productivity_tasa_sobre_inflow.sql`.
+- `today_call_stats()` y `submit_closing_report(p_notes)` — cierre diario por operador. `submit_closing_report` deduplica si ya hay un cierre hoy (migration `20260505200000_fix_closing_dedup.sql`).
+- `admin_daily_reports_range(p_from, p_to)` y `admin_operator_shifts_range(p_from, p_to)` — reportes admin por rango. Devuelven una fila por (operador, día), no agregado por operador. Usar para tabla histórica de cierres.
+- **CFO inputs (manual)** — admin-only, security definer:
+  - `upsert_monthly_business_inputs(p_year_month, ...)` — costos fijos, opex, salarios mensuales (tabla `monthly_business_inputs`).
+  - `upsert_tc_debt_snapshot(...)` / read via `tc_debt_snapshots` — snapshots de deuda tarjeta de crédito (USD + COP).
+  - `upsert_monthly_ad_spend(p_year_month, ...)` y `delete_monthly_ad_spend(p_id)` — gasto en pauta por canal/mes (tabla `monthly_ad_spend`).
+  - `product_profitability(p_from_date, p_to_date)` — rentabilidad por producto combinando ingresos, COGS, flete y devoluciones.
 
 ### Módulo Finanzas — dos hooks distintos, NO confundir
 
@@ -218,6 +239,8 @@ El `anon_key` se extrae del bundle JS (`fetch('/assets/index-*.js').then(r=>r.te
 Tests use Vitest + Testing Library. Test files live next to the source files they test:
 - `src/lib/*.test.ts` — pure utility unit tests (no DOM needed)
 - `src/components/**/*.test.tsx` — component tests with jsdom
+- Setup file: `src/test/setup.ts` polyfills `matchMedia` and `ResizeObserver` for jsdom. Required for any component that uses Radix primitives (most shadcn/ui components do).
+- **Do not mock the Supabase client** — tests run against the real Supabase project. The few existing component tests stub network calls inline; do not introduce a global Supabase mock.
 
 ### Design System
 

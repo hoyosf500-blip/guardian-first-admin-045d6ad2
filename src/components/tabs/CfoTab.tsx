@@ -15,6 +15,8 @@ import {
 import CfoInputsDialog from '@/components/cfo/CfoInputsDialog';
 import CfoDebtTracker from '@/components/cfo/CfoDebtTracker';
 import CfoAdSpendTracker from '@/components/cfo/CfoAdSpendTracker';
+import CfoPersonalCardUploader from '@/components/cfo/CfoPersonalCardUploader';
+import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTracker';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -349,6 +351,19 @@ export default function CfoTab() {
         prevYearMonth={prevYearMonth}
         walletGenerated={curr.utilidad_bruta}
       />
+
+      <section className="space-y-3">
+        <header className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground">
+            Análisis tarjetas (gasto personal)
+          </h3>
+          <span className="text-xs text-muted-foreground">
+            Subí extractos PDF para ver dónde se va la plata mes a mes
+          </span>
+        </header>
+        <CfoPersonalCardUploader />
+        <CfoPersonalSpendingTracker />
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TopProductsBlock
