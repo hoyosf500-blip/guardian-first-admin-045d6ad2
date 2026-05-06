@@ -129,7 +129,7 @@ function str(v: unknown): string | null {
   return String(v).trim() || null;
 }
 
-function mapRow(row: XlsxRow, syncedBy: string) {
+function mapRow(row: XlsxRow, syncedBy: string | null) {
   const id = num(row.ID);
   if (!id || id <= 0) return null;
 
@@ -176,27 +176,52 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // 1. Auth Supabase del caller
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "No autorizado" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // 1. Auth: dos caminos.
+    //    (a) cron pg_cron: header `x-cron-secret` matchea app_settings.cron_shared_secret
+    //        En este caso `userId = null` y `isCron = true`.
+    //    (b) usuario logeado: header `Authorization: Bearer <user_jwt>`
+    //        Mismo flow que antes — getUser(authHeader) → user.id.
+    // El cron lo necesitamos porque pg_cron NO tiene user JWT (mismo patrón
+    // que dropi-cron en migration 20260417020000_cron_shared_secret.sql).
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
     const sb = createClient(sbUrl, sbKey);
-    const anonClient = createClient(sbUrl, anonKey);
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(
-      authHeader.replace("Bearer ", ""),
-    );
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Token inválido" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+
+    let userId: string | null = null;
+    let isCron = false;
+    const cronSecretHeader = req.headers.get("x-cron-secret");
+    if (cronSecretHeader) {
+      const { data: secretRow } = await sb
+        .from("app_settings")
+        .select("value")
+        .eq("key", "cron_shared_secret")
+        .maybeSingle();
+      const expected = secretRow?.value || "";
+      if (expected && cronSecretHeader === expected) {
+        isCron = true;
+      }
+    }
+
+    if (!isCron) {
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: "No autorizado" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const anonClient = createClient(sbUrl, anonKey);
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(
+        authHeader.replace("Bearer ", ""),
+      );
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Token inválido" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
     }
 
     // 2. Leer JWT de Dropi
@@ -232,6 +257,17 @@ Deno.serve(async (req: Request) => {
       );
     }
     if (exp > 0 && exp * 1000 < Date.now()) {
+      // Log a sync_logs para que el cron deje rastro y el dashboard
+      // pueda mostrar warning de "token vencido" sin tener que adivinar.
+      await sb.from("sync_logs").insert({
+        source: "dropi-wallet-sync",
+        status: "error_expired",
+        synced_count: 0,
+        duplicates_count: 0,
+        total_count: 0,
+        triggered_by: userId,
+        error_message: "Token Dropi expirado",
+      }).then(() => {}, () => {}); // best effort, no romper la respuesta
       return new Response(
         JSON.stringify({
           ok: false,
@@ -303,7 +339,7 @@ Deno.serve(async (req: Request) => {
     // 7. Mapear y upsertear (capear si limit)
     const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
     const mapped = slice
-      .map((r: XlsxRow): Mapped => mapRow(r, user.id))
+      .map((r: XlsxRow): Mapped => mapRow(r, userId ?? ""))
       .filter((r): r is NonNullable<Mapped> => r !== null);
 
     let totalSynced = 0;
@@ -328,7 +364,7 @@ Deno.serve(async (req: Request) => {
         synced_count: totalSynced,
         duplicates_count: 0,
         total_count: mapped.length,
-        triggered_by: user.id,
+        triggered_by: userId,
       });
     }
 

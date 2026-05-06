@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, ExternalLink, Wallet, ArrowDown, ArrowUp, TrendingUp, ListOrdered } from 'lucide-react';
+import { ExternalLink, Wallet, ArrowDown, ArrowUp, TrendingUp, ListOrdered } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend,
@@ -18,7 +18,8 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useWalletMovements, useWalletDailySeries } from '@/hooks/useWalletMovements';
-import { useWalletSync } from '@/hooks/useWalletSync';
+import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
+import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import {
   CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR,
@@ -95,20 +96,9 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
 
   const movQ = useWalletMovements({ fromDate, toDate, tipo, categoria, page, pageSize: PAGE_SIZE });
   const seriesQ = useWalletDailySeries(fromDate, toDate);
-  const sync = useWalletSync();
 
   const totalPages = Math.max(1, Math.ceil((movQ.data?.total ?? 0) / PAGE_SIZE));
   const neto = (movQ.data?.totalEntradas ?? 0) - (movQ.data?.totalSalidas ?? 0);
-
-  const handleSync = () => {
-    const today = new Date();
-    const past = new Date();
-    past.setDate(past.getDate() - 30);
-    sync.mutate({
-      from: past.toISOString().split('T')[0],
-      untill: today.toISOString().split('T')[0],
-    });
-  };
 
   const series = useMemo(() => seriesQ.data ?? [], [seriesQ.data]);
 
@@ -120,7 +110,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
           <div className="h-10 w-10 rounded-lg bg-muted/40 flex items-center justify-center">
             <Wallet size={18} className="text-foreground" aria-hidden="true" />
           </div>
-          <div>
+          <div className="space-y-1">
             <h2 className="text-base font-bold text-foreground tracking-tight">Billetera Dropi</h2>
             <p className="text-xs text-muted-foreground">
               Saldo actual:{' '}
@@ -128,13 +118,11 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
                 {movQ.isLoading ? '…' : COP(movQ.data?.ultimoSaldo)}
               </span>
             </p>
+            <WalletSyncBadge size="md" showLabel />
           </div>
         </div>
 
-        <Button onClick={handleSync} disabled={sync.isPending} size="sm" variant="outline">
-          <RefreshCw size={14} className={`mr-1.5 ${sync.isPending ? 'animate-spin' : ''}`} />
-          {sync.isPending ? 'Sincronizando…' : 'Sincronizar últimos 30 días'}
-        </Button>
+        <WalletSyncButton />
       </div>
 
       {/* KPIs */}

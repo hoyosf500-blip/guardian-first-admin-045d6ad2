@@ -54,6 +54,7 @@ export function useWalletSync() {
         toast.success(`Sync OK: ${data.synced ?? 0} movimientos sincronizados (${data.total ?? 0} traídos del XLSX).`);
         qc.invalidateQueries({ queryKey: ['wallet_movements'] });
         qc.invalidateQueries({ queryKey: ['wallet_daily_series'] });
+        qc.invalidateQueries({ queryKey: ['wallet_sync_health'] });
       } else if (data.expired) {
         toast.error('Token Dropi expirado. Refrescá en Admin → Token sesión Dropi.');
       } else {

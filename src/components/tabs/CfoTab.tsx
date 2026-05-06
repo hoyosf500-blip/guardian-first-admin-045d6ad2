@@ -21,6 +21,9 @@ import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTrac
 import CfoPaymentsVsDebt from '@/components/cfo/CfoPaymentsVsDebt';
 import CfoPagosHistorico from '@/components/cfo/CfoPagosHistorico';
 import CfoMonthlyRetrospective from '@/components/cfo/CfoMonthlyRetrospective';
+import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
+import WalletSyncButton from '@/components/wallet/WalletSyncButton';
+import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -238,6 +241,7 @@ export default function CfoTab() {
   const curr = useCfoSnapshot(yearMonth);
   const prev = useCfoSnapshot(prevYearMonth);
   const inputsQuery = useMonthlyBusinessInputs(yearMonth);
+  const walletHealth = useWalletSyncHealth();
   const range = useMemo(() => monthRange(yearMonth), [yearMonth]);
   const logForProducts = useLogisticsStats({ fromDate: range.from, toDate: range.to });
   const topProducts = (logForProducts.products.data ?? [])
@@ -272,8 +276,21 @@ export default function CfoTab() {
     if (curr.tarjeta_pago > 0 && curr.tarjeta_pago < curr.tarjeta_interes) {
       out.push({ tone: 'warning', text: 'Pago de tarjeta no cubre los intereses del mes' });
     }
+    if (walletHealth.data?.status === 'critical') {
+      const hours = walletHealth.data.hoursSinceSync ?? 0;
+      const days = Math.round(hours / 24);
+      out.push({
+        tone: 'danger',
+        text: `Wallet desactualizado hace ${days} día${days > 1 ? 's' : ''} — los KPIs pueden estar mal. Sincronizá ahora.`,
+      });
+    } else if (walletHealth.data?.status === 'stale') {
+      out.push({
+        tone: 'warning',
+        text: `Wallet sin sincronizar hace ${Math.round(walletHealth.data.hoursSinceSync ?? 0)}h`,
+      });
+    }
     return out;
-  }, [curr]);
+  }, [curr, walletHealth.data]);
 
   const utilTone = utilidadTone(curr.utilidad_neta);
   const efTone = efectividadTone(curr.tasa_entrega);
@@ -297,6 +314,8 @@ export default function CfoTab() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <WalletSyncBadge size="sm" />
+          <WalletSyncButton size="sm" variant="outline" label="Sync wallet" />
           <Select value={yearMonth} onValueChange={setYearMonth}>
             <SelectTrigger className="h-9 w-48 text-xs">
               <SelectValue />
