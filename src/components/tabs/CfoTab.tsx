@@ -20,6 +20,7 @@ import CfoPersonalCardUploader from '@/components/cfo/CfoPersonalCardUploader';
 import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTracker';
 import CfoPaymentsVsDebt from '@/components/cfo/CfoPaymentsVsDebt';
 import CfoPagosHistorico from '@/components/cfo/CfoPagosHistorico';
+import CfoMonthlyRetrospective from '@/components/cfo/CfoMonthlyRetrospective';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -381,6 +382,18 @@ export default function CfoTab() {
         prevYearMonth={prevYearMonth}
         walletGenerated={curr.utilidad_bruta}
       />
+
+      <section className="space-y-3">
+        <header className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground">
+            Bitácora mensual
+          </h3>
+          <span className="text-xs text-muted-foreground">
+            Documentá fugas, aciertos y decisiones por mes — para no repetir errores
+          </span>
+        </header>
+        <CfoMonthlyRetrospective defaultYearMonth={yearMonth} />
+      </section>
 
       <section className="space-y-3">
         <header className="flex items-center justify-between gap-2">
