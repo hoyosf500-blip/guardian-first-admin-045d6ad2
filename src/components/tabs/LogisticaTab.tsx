@@ -16,6 +16,7 @@ import GeoDistribution from '@/components/logistics/GeoDistribution';
 import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
 import CityReturnsTable from '@/components/logistics/CityReturnsTable';
 import ProductFailuresTable from '@/components/logistics/ProductFailuresTable';
+import ProductProfitabilityTable from '@/components/logistics/ProductProfitabilityTable';
 import TrazabilidadView from '@/components/logistics/TrazabilidadView';
 import CityFilter from '@/components/logistics/CityFilter';
 import CarrierCityMatrix from '@/components/logistics/CarrierCityMatrix';
@@ -31,7 +32,7 @@ import {
   CHART_GRID_PROPS,
   CHART_BAR_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet, DollarSign, LayoutDashboard } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet, DollarSign, LayoutDashboard, Coins } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -345,6 +346,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="carriers" className="shrink-0"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
               <TabsTrigger value="cities" className="shrink-0"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
               <TabsTrigger value="products" className="shrink-0"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+              <TabsTrigger value="rentabilidad" className="shrink-0"><Coins size={13} className="mr-1.5" /> Rentabilidad</TabsTrigger>
               <TabsTrigger value="decisiones" className="shrink-0"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad" className="shrink-0"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
               <TabsTrigger value="billetera" className="shrink-0"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
@@ -388,6 +390,13 @@ export default function LogisticaTab() {
 
           <TabsContent value="products" className="mt-4">
             <ProductFailuresTable rows={products.data ?? []} />
+          </TabsContent>
+
+          {/* TAB: Rentabilidad — desglose plata por producto.
+              Lee RPC product_profitability con breakdown completo:
+              ingresos − costos = utilidad real, + proyección de tránsito. */}
+          <TabsContent value="rentabilidad" className="mt-4">
+            <ProductProfitabilityTable filters={filters} />
           </TabsContent>
 
           {/* TAB: Decisiones — heatmap matriz + tabla recomendador.

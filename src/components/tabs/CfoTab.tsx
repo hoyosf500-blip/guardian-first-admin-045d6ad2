@@ -14,6 +14,7 @@ import {
 } from '@/hooks/useCfoMonthlyInputs';
 import CfoInputsDialog from '@/components/cfo/CfoInputsDialog';
 import CfoDebtTracker from '@/components/cfo/CfoDebtTracker';
+import CfoAdSpendTracker from '@/components/cfo/CfoAdSpendTracker';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -342,6 +343,12 @@ export default function CfoTab() {
       <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
 
       <CfoDebtTracker />
+
+      <CfoAdSpendTracker
+        yearMonth={yearMonth}
+        prevYearMonth={prevYearMonth}
+        walletGenerated={curr.utilidad_bruta}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <TopProductsBlock
