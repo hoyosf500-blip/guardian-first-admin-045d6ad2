@@ -12,6 +12,7 @@ import {
   useMonthlyBusinessInputs,
   useCostosFijosMensuales,
 } from '@/hooks/useCfoMonthlyInputs';
+import { useMonthlyAdSpend } from '@/hooks/useMonthlyAdSpend';
 import CfoInputsDialog from '@/components/cfo/CfoInputsDialog';
 import CfoDebtTracker from '@/components/cfo/CfoDebtTracker';
 import CfoAdSpendTracker from '@/components/cfo/CfoAdSpendTracker';
@@ -108,18 +109,34 @@ function useCfoSnapshot(yearMonth: string): CfoSnapshot {
   });
   const inputsQuery = useMonthlyBusinessInputs(yearMonth);
   const costosQuery = useCostosFijosMensuales();
+  // Pauta REAL del mes (rows por cuenta en monthly_ad_spend). Tiene
+  // prioridad sobre los campos `ads_meta`/`ads_tiktok` de
+  // monthly_business_inputs (que son legacy/manual). Si querés cambiar
+  // un valor, hacelo en el AdSpendTracker — el P&L se recalcula solo.
+  const adSpendQuery = useMonthlyAdSpend(yearMonth);
 
   const loading =
     finQuery.isLoading || logQuery.summary.isLoading ||
-    walletQuery.isLoading || inputsQuery.isLoading || costosQuery.isLoading;
+    walletQuery.isLoading || inputsQuery.isLoading || costosQuery.isLoading ||
+    adSpendQuery.isLoading;
 
   const fin = finQuery.data;
   const logSummary = logQuery.summary.data;
   const inputs = inputsQuery.data;
   const costos_fijos = costosQuery.data ?? 0;
 
-  const ads_meta = inputs?.ads_meta ?? 0;
-  const ads_tiktok = inputs?.ads_tiktok ?? 0;
+  const adsByPlatform = (adSpendQuery.data ?? []).reduce(
+    (acc, r) => {
+      if (r.platform === 'meta')        acc.meta   += r.amount_cop;
+      else if (r.platform === 'tiktok') acc.tiktok += r.amount_cop;
+      return acc;
+    },
+    { meta: 0, tiktok: 0 },
+  );
+  // Granular (monthly_ad_spend) tiene prioridad. Si está vacío, fallback
+  // al input manual viejo para no romper meses sin seeds.
+  const ads_meta   = adsByPlatform.meta   > 0 ? adsByPlatform.meta   : (inputs?.ads_meta   ?? 0);
+  const ads_tiktok = adsByPlatform.tiktok > 0 ? adsByPlatform.tiktok : (inputs?.ads_tiktok ?? 0);
   const ads_total = ads_meta + ads_tiktok;
   const tarjeta_interes = inputs?.tarjeta_interes ?? 0;
   const tarjeta_pago = inputs?.tarjeta_pago ?? 0;
@@ -525,8 +542,8 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
           </thead>
           <tbody className="divide-y divide-border">
             <PnlRow label="Utilidad bruta Dropi" value={snap.utilidad_bruta} sign="+" origin="financial_summary" />
-            <PnlRow label="Inversión Meta Ads" value={snap.ads_meta} sign="-" origin="input manual" />
-            <PnlRow label="Inversión TikTok Ads" value={snap.ads_tiktok} sign="-" origin="input manual" />
+            <PnlRow label="Inversión Meta Ads" value={snap.ads_meta} sign="-" origin="monthly_ad_spend" />
+            <PnlRow label="Inversión TikTok Ads" value={snap.ads_tiktok} sign="-" origin="monthly_ad_spend" />
             <PnlRow label="Costos fijos" value={snap.costos_fijos} sign="-" origin="app_settings" />
             <PnlRow label="Intereses tarjeta" value={snap.tarjeta_interes} sign="-" origin="input manual" />
             <tr className={isNegative ? 'bg-red/10' : 'bg-green/10'}>
