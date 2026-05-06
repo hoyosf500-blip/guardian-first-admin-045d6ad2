@@ -392,7 +392,7 @@ export default function CfoTab() {
           </span>
         </header>
         <CfoPersonalCardUploader />
-        <CfoPagosHistorico />
+        <CfoPagosHistorico walletDisponible={curr.wallet_saldo} />
         <CfoPaymentsVsDebt />
         <CfoPersonalSpendingTracker />
       </section>

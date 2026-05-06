@@ -1,11 +1,20 @@
 import { useMemo, useState } from 'react';
 import {
   CheckCircle2, AlertCircle, Loader2, CreditCard, Calendar,
+  Calculator, TrendingDown, Zap,
 } from 'lucide-react';
 import {
   usePersonalPaymentsList, usePersonalResidualDebt,
 } from '@/hooks/usePersonalCardMovements';
 import { formatCOP } from '@/lib/utils';
+
+// Calcula el interés total que pagarías si dejás la deuda en 36 cuotas
+// al 25.5% EA. Aproximación: saldo promedio durante la vida del crédito
+// es capital/2 (para n cuotas iguales). Interés ≈ capital × 0.5 × tiempo × tasa.
+//
+// Para 36 cuotas a 25.5% EA → tiempo promedio = 1.5 años → factor 0.5×1.5×0.255 = 0.191.
+// Esto es conservador (no compone) pero da orden de magnitud realista.
+const INTEREST_FACTOR_36_CUOTAS = 0.191;
 
 // Cuadro grande de 2 columnas: a la izquierda historial cronológico
 // de pagos hechos, a la derecha desglose de deuda pendiente. Es la vista
@@ -19,8 +28,14 @@ function fmtFecha(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-export default function CfoPagosHistorico() {
+interface Props {
+  /** Saldo actual del wallet de Dropi (COP). null = no disponible aún. */
+  walletDisponible?: number | null;
+}
+
+export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
   const [trm, setTrm] = useState<number>(3800);
+  const [pagoSimulado, setPagoSimulado] = useState<number>(0);
 
   const paymentsQuery = usePersonalPaymentsList();
   const residualQuery = usePersonalResidualDebt();
@@ -37,6 +52,18 @@ export default function CfoPagosHistorico() {
     () => residual.reduce((acc, r) => acc + (r.moneda === 'USD' ? r.saldo_pendiente * trm : r.saldo_pendiente), 0),
     [residual, trm],
   );
+
+  // ─── Calculadora de pago ────────────────────────────────────────
+  // El user pidió saber: si pago $X de un golpe, cuánto baja la deuda
+  // y cuánto interés ahorro (vs dejar las 36 cuotas a 25.5% EA).
+  const pagoCapped = Math.min(Math.max(pagoSimulado, 0), totalFaltaCop);
+  const deudaRestante = Math.max(totalFaltaCop - pagoCapped, 0);
+  const interesAhorrado = pagoCapped * INTEREST_FACTOR_36_CUOTAS;
+  const pctLiquidado = totalFaltaCop > 0 ? (pagoCapped / totalFaltaCop) * 100 : 0;
+  const interesTotalSiDejara = totalFaltaCop * INTEREST_FACTOR_36_CUOTAS;
+  const faltaParaLiquidar = walletDisponible != null
+    ? Math.max(totalFaltaCop - walletDisponible, 0)
+    : null;
 
   if (paymentsQuery.isLoading || residualQuery.isLoading) {
     return (
@@ -177,6 +204,105 @@ export default function CfoPagosHistorico() {
               </ul>
             )}
           </div>
+
+          {/* ─── Calculadora de pago ─────────────────────────────── */}
+          {totalFaltaCop > 0 && (
+            <div className="border-t border-border/50 bg-background/50 px-4 py-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                <Calculator size={13} className="text-accent" />
+                <span>Calculadora de pago</span>
+              </div>
+
+              <div className="text-[11px] text-muted-foreground -mt-1">
+                Si dejás todo en 36 cuotas al 25.5% EA pagás{' '}
+                <strong className="text-orange">+{formatCOP(interesTotalSiDejara)}</strong> de interés.
+              </div>
+
+              {walletDisponible != null && (
+                <div className="flex items-center justify-between text-xs bg-muted/30 rounded p-2">
+                  <span className="text-muted-foreground">Wallet Dropi disponible:</span>
+                  <span className="tabular-nums font-medium">{formatCOP(walletDisponible)}</span>
+                </div>
+              )}
+
+              {faltaParaLiquidar != null && faltaParaLiquidar > 0 && (
+                <div className="flex items-center justify-between text-xs bg-orange/10 rounded p-2">
+                  <span className="text-orange">Falta acumular:</span>
+                  <span className="tabular-nums font-semibold text-orange">{formatCOP(faltaParaLiquidar)}</span>
+                </div>
+              )}
+              {faltaParaLiquidar === 0 && (
+                <div className="text-xs bg-green/10 rounded p-2 text-green font-semibold">
+                  ✓ Tenés cash en wallet para liquidar todo
+                </div>
+              )}
+
+              {/* Input de pago simulado */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="text-muted-foreground">Voy a pagar:</label>
+                  <input
+                    type="number"
+                    value={pagoSimulado || ''}
+                    onChange={e => setPagoSimulado(Number(e.target.value) || 0)}
+                    placeholder="0"
+                    min={0} max={totalFaltaCop} step={100000}
+                    className="w-32 bg-background border border-border rounded px-2 py-1 text-xs tabular-nums text-right"
+                  />
+                </div>
+                <input
+                  type="range"
+                  value={pagoCapped}
+                  onChange={e => setPagoSimulado(Number(e.target.value))}
+                  min={0} max={Math.ceil(totalFaltaCop)} step={100000}
+                  className="w-full accent-green"
+                />
+                <div className="flex justify-end gap-1">
+                  <button
+                    onClick={() => setPagoSimulado(totalFaltaCop)}
+                    className="text-[11px] text-accent hover:underline"
+                  >
+                    Pagar TODO
+                  </button>
+                  {walletDisponible != null && walletDisponible > 0 && (
+                    <>
+                      <span className="text-[11px] text-muted-foreground">·</span>
+                      <button
+                        onClick={() => setPagoSimulado(Math.min(walletDisponible, totalFaltaCop))}
+                        className="text-[11px] text-accent hover:underline"
+                      >
+                        Usar wallet
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Resultados */}
+              {pagoCapped > 0 && (
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                  <div className="rounded border border-red/30 bg-red/5 p-2">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Deuda restante</div>
+                    <div className="tabular-nums font-semibold text-red mt-0.5">
+                      {formatCOP(deudaRestante)}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      {pctLiquidado.toFixed(0)}% liquidado
+                    </div>
+                  </div>
+                  <div className="rounded border border-green/30 bg-green/5 p-2">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Interés ahorrado</div>
+                    <div className="tabular-nums font-semibold text-green mt-0.5">
+                      {formatCOP(interesAhorrado)}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      vs dejar 36 cuotas
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
