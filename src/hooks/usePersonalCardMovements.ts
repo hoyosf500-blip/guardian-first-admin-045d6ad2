@@ -165,6 +165,12 @@ export function useParseBankPdf() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['personal-spending-by-month'] });
       qc.invalidateQueries({ queryKey: ['personal-spending-top'] });
+      // T2-2: el cuadro "Cuánto pagué / cuánto me falta" depende de
+      // estos dos queries. Sin invalidar acá, queda con data vieja
+      // hasta que el usuario recargue.
+      qc.invalidateQueries({ queryKey: ['personal-payments-summary'] });
+      qc.invalidateQueries({ queryKey: ['personal-payments-list'] });
+      qc.invalidateQueries({ queryKey: ['personal-residual-debt'] });
     },
   });
 }
