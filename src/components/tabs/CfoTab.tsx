@@ -245,7 +245,14 @@ export default function CfoTab() {
   // este año; mostrar 12 meses para atrás incluía opciones del año pasado
   // sin datos que confundían al usuario.
   const months = useMemo(() => monthsFromJanuaryThisYear(), []);
-  const prevYearMonth = useMemo(() => previousMonth(yearMonth), [yearMonth]);
+  // T3-4: previousMonth puede caer fuera del dropdown (ej. seleccionando
+  // enero, prev = diciembre del año pasado, no listado). En ese caso
+  // devolvemos null y los componentes que dependen de prev muestran
+  // "primer mes — sin comparación" en vez de hacer un fetch silencioso
+  // que falla.
+  const prevYearMonthRaw = useMemo(() => previousMonth(yearMonth), [yearMonth]);
+  const hasPrevMonth = months.includes(prevYearMonthRaw);
+  const prevYearMonth = hasPrevMonth ? prevYearMonthRaw : yearMonth;
 
   const curr = useCfoSnapshot(yearMonth);
   const prev = useCfoSnapshot(prevYearMonth);
