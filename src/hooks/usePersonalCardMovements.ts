@@ -1,18 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-// Bypass del tipado generado por Supabase: las RPCs nuevas (creadas en
-// migrations 20260506*) no están todavía en el types.ts auto-generado
-// porque el cliente de tipos se regenera fuera de este repo. Mismo patrón
-// usado en useMonthlyAdSpend, useTcDebtSnapshots, useProductProfitability.
-//
-// .bind(supabase) es OBLIGATORIO: si solo hacés `const rpc = supabase.rpc`
-// se pierde el `this` y al invocarse el método tira
-// "Cannot read properties of undefined (reading 'rest')". El cast solo
-// cambia tipos, no preserva binding — por eso bindeamos antes del cast.
-const rpc = supabase.rpc.bind(supabase) as unknown as (
-  fn: string, args?: Record<string, unknown>
-) => Promise<{ data: unknown; error: { message?: string } | null }>;
+// Audit M4: bind movido adentro de cada queryFn/mutationFn — el bind a nivel
+// module-level quedaba stale tras sign-out/sign-in cuando el cliente Supabase
+// se recrea. Mismo patrón que useMonthlyAdSpend / useTcDebtSnapshots.
+type RpcFn = (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
+const getRpc = (): RpcFn =>
+  supabase.rpc.bind(supabase) as unknown as RpcFn;
 
 // Hooks del bloque "Análisis tarjetas (gasto personal)" en /cfo.
 // Consume la tabla personal_card_movements y los RPCs definidos en la
