@@ -166,7 +166,11 @@ function RetroCard({
     setLecciones(row?.lecciones ?? '');
     setDecisiones(row?.decisiones ?? []);
     setNotas(row?.notas ?? '');
-  }, [isOpen, row]);
+    // T3-1: depender de updated_at, no de la ref de row. Cada refetch
+    // background (staleTime 30s) crea nueva ref aunque la data sea idéntica
+    // y disparaba reset perdiendo ediciones unsaved del usuario.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, row?.updated_at]);
 
   const diag = row?.diagnostico_auto ?? null;
   const hasSnapshot = !!diag && !!row?.diagnostico_at;

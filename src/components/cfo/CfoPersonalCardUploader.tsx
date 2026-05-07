@@ -95,6 +95,15 @@ export default function CfoPersonalCardUploader() {
       toast.error('Solo se aceptan archivos PDF');
       return;
     }
+    // T2-1: limitar tamaño antes de leer arrayBuffer. Un PDF de 500MB
+    // satura el heap del browser ANTES de cualquier validación y mata
+    // la tab. 20MB cubre extractos Bancolombia con holgura.
+    const MAX_PDF_BYTES = 20 * 1024 * 1024;
+    const oversize = arr.find(f => f.size > MAX_PDF_BYTES);
+    if (oversize) {
+      toast.error(`PDF '${oversize.name}' supera 20 MB — reducí el archivo`);
+      return;
+    }
     setProcessing(true);
     setProgress({ done: 0, total: arr.length });
     const newResults: UploadResult[] = [];
