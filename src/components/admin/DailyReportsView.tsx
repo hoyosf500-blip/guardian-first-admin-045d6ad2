@@ -78,11 +78,16 @@ export default function DailyReportsView() {
     // colgada. Sin esto, si admin_operator_shifts_range falla con un
     // throw (no un error response), setLoading(false) nunca corría.
     try {
+      // Promise.resolve(...) es OBLIGATORIO: supabase.rpc() devuelve un
+      // PostgrestFilterBuilder (thenable con .then) pero NO una Promise
+      // nativa — no tiene .catch. Sin el wrap, llamar .catch directo tira
+      // "TypeError: r(...).catch is not a function". Promise.resolve adopta
+      // cualquier thenable y devuelve una Promise real con .catch.
       const [daysRes, shiftsRes] = await Promise.all([
-        rpc('admin_daily_reports_range', { p_from: from, p_to: to }).catch(
+        Promise.resolve(rpc('admin_daily_reports_range', { p_from: from, p_to: to })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
-        rpc('admin_operator_shifts_range', { p_from: from, p_to: to }).catch(
+        Promise.resolve(rpc('admin_operator_shifts_range', { p_from: from, p_to: to })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
       ]);
