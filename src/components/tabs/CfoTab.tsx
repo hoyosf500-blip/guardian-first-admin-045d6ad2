@@ -306,8 +306,39 @@ export default function CfoTab() {
         text: `Wallet sin sincronizar hace ${Math.round(walletHealth.data.hoursSinceSync ?? 0)}h`,
       });
     }
+    // T3-2: warning cuando hay pauta cargada en monthly_ad_spend (granular)
+    // Y también en monthly_business_inputs (manual legacy). El código usa
+    // el granular y descarta el manual silenciosamente; si difieren mucho,
+    // Fabian puede pensar que cambió el manual y la pantalla muestra otra cosa.
+    const inputs = inputsQuery.data;
+    const adsByPlatform = (adSpendForCurrent.data ?? []).reduce(
+      (acc, r) => {
+        if (r.platform === 'meta') acc.meta += r.amount_cop;
+        else if (r.platform === 'tiktok') acc.tiktok += r.amount_cop;
+        return acc;
+      },
+      { meta: 0, tiktok: 0 },
+    );
+    if (
+      adsByPlatform.meta > 0 && (inputs?.ads_meta ?? 0) > 0
+      && Math.abs(adsByPlatform.meta - (inputs?.ads_meta ?? 0)) > 1000
+    ) {
+      out.push({
+        tone: 'warning',
+        text: `Pauta Meta cargada en 2 lugares (granular ${formatCOP(adsByPlatform.meta)} vs manual ${formatCOP(inputs?.ads_meta ?? 0)}) — se está usando el granular. Borrá el manual para evitar confusión.`,
+      });
+    }
+    if (
+      adsByPlatform.tiktok > 0 && (inputs?.ads_tiktok ?? 0) > 0
+      && Math.abs(adsByPlatform.tiktok - (inputs?.ads_tiktok ?? 0)) > 1000
+    ) {
+      out.push({
+        tone: 'warning',
+        text: `Pauta TikTok cargada en 2 lugares (granular ${formatCOP(adsByPlatform.tiktok)} vs manual ${formatCOP(inputs?.ads_tiktok ?? 0)}) — se está usando el granular. Borrá el manual para evitar confusión.`,
+      });
+    }
     return out;
-  }, [curr, walletHealth.data]);
+  }, [curr, walletHealth.data, inputsQuery.data, adSpendForCurrent.data]);
 
   const utilTone = utilidadTone(curr.utilidad_neta);
   const efTone = efectividadTone(curr.tasa_entrega);
