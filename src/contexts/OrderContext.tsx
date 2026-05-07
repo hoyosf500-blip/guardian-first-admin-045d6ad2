@@ -396,20 +396,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           );
         };
 
+        // Audit H4: await en .catch para evitar floating promise — si el componente
+        // se desmonta entre .catch y el DB write, la marca de "failed" se perdía.
         supabase.functions
           .invoke('dropi-update-order', { body: { externalId: order.externalId } })
-          .then((res) => {
+          .then(async (res) => {
             const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
             if (res?.error || data?.ok === false) {
               const msg = res?.error?.message || data?.error || 'Error desconocido';
-              markDropiFailure(msg);
+              await markDropiFailure(msg);
             } else {
               toast.success(`Confirmado — ${order.nombre.split(' ')[0]}`, { id: toastId, duration: 2500 });
             }
           })
-          .catch((err: unknown) => {
+          .catch(async (err: unknown) => {
             const msg = err instanceof Error ? err.message : String(err);
-            markDropiFailure(`red — ${msg}`);
+            await markDropiFailure(`red — ${msg}`);
           });
       }
     }
