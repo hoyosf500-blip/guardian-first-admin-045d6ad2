@@ -233,8 +233,9 @@ export default function ConfirmarTab({ profile }: Props) {
                 if (data?.synced > 0 || data?.total > 0) {
                   // Reload orders from DB — strict match so we don't pull
                   // already-confirmed orders back into the queue.
+                  // Audit M9: usar ORDER_COLUMNS en vez de '*' — patrón del proyecto, evita columnas pesadas.
                   const { data: dbOrders } = await supabase.from('orders')
-                    .select('*')
+                    .select(ORDER_COLUMNS)
                     .eq('estado', 'PENDIENTE CONFIRMACION');
                   if (dbOrders && dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o as never, idx));
