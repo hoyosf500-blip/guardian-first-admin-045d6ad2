@@ -36,7 +36,10 @@ export interface UseLogisticsStatsResult {
   isError: boolean;
 }
 
-export function useLogisticsStats(filters: LogisticsFilters): UseLogisticsStatsResult {
+export function useLogisticsStats(
+  filters: LogisticsFilters,
+  opts?: { disableRealtime?: boolean },
+): UseLogisticsStatsResult {
   const { fromDate, toDate, ciudad } = filters;
   const ciudadKey = ciudad?.trim() || null;
   const baseKey = ['logistics', fromDate, toDate, ciudadKey] as const;
