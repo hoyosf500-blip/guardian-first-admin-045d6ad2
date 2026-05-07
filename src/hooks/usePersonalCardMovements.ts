@@ -85,7 +85,7 @@ export function usePersonalSpendingByMonth(opts?: { fromDate?: string; toDate?: 
   return useQuery<SpendingByMonthRow[]>({
     queryKey: ['personal-spending-by-month', fromDate ?? 'def', toDate ?? 'def'],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_spending_by_month', {
+      const rpc = getRpc(); const { data, error } = await rpc('personal_spending_by_month', {
         p_from_date: fromDate ?? undefined,
         p_to_date:   toDate   ?? undefined,
       });
@@ -112,7 +112,7 @@ export function usePersonalSpendingTopItems(yearMonth: string, categoria?: Categ
   return useQuery<TopItemRow[]>({
     queryKey: ['personal-spending-top', yearMonth, categoria ?? 'all', limit],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_spending_top_items', {
+      const rpc = getRpc(); const { data, error } = await rpc('personal_spending_top_items', {
         p_year_month: yearMonth,
         p_categoria:  categoria ?? null,
         p_limit:      limit,
@@ -256,7 +256,7 @@ export function usePersonalPaymentsSummary(opts?: { fromDate?: string; toDate?: 
   return useQuery<PaymentsSummaryRow[]>({
     queryKey: ['personal-payments-summary', fromDate ?? 'def', toDate ?? 'def'],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_payments_summary', {
+      const rpc = getRpc(); const { data, error } = await rpc('personal_payments_summary', {
         p_from_date: fromDate ?? undefined,
         p_to_date:   toDate   ?? undefined,
       });
@@ -288,7 +288,7 @@ export function usePersonalResidualDebt() {
   return useQuery<ResidualDebtRow[]>({
     queryKey: ['personal-residual-debt'],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_residual_debt');
+      const rpc = getRpc(); const { data, error } = await rpc('personal_residual_debt');
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];
       return rows.map((r: Record<string, unknown>) => ({
@@ -311,7 +311,7 @@ export function useRecategorizePersonalMovements() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await rpc('recategorize_personal_movements');
+      const rpc = getRpc(); const { data, error } = await rpc('recategorize_personal_movements');
       if (error) throw error;
       return data as { updated: number };
     },
