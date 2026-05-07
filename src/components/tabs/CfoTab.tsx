@@ -325,7 +325,7 @@ export default function CfoTab() {
             <span className="capitalize">{monthLabel(yearMonth)}</span>
           </h2>
           <p className="text-sm text-muted-foreground capitalize">
-            Comparativa vs {monthLabel(prevYearMonth)}
+            {hasPrevMonth ? `Comparativa vs ${monthLabel(prevYearMonth)}` : 'Primer mes — sin comparación'}
           </p>
         </div>
 
