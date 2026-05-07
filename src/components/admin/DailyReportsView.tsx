@@ -55,9 +55,14 @@ export default function DailyReportsView() {
   const [days, setDays] = useState<DayRow[]>([]);
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // errMsg expone errores de RPC en pantalla. Antes solo iban a console.error
+  // → el usuario veía "0 filas" sin pista de la causa real (Solo admins,
+  // function does not exist, signature mismatch, etc.). Surface inline.
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setErrMsg(null);
     const rpc = supabase.rpc as unknown as (
       fn: string, args: Record<string, unknown>
     ) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message?: string } | null }>;
@@ -78,7 +83,9 @@ export default function DailyReportsView() {
       ]);
 
       if (daysRes.error) {
-        console.error('admin_daily_reports_range:', daysRes.error.message);
+        const msg = `admin_daily_reports_range: ${daysRes.error.message ?? 'unknown'}`;
+        console.error(msg);
+        setErrMsg(msg);
         setDays([]);
       } else {
         setDays((daysRes.data || []).map((r) => ({
@@ -94,7 +101,9 @@ export default function DailyReportsView() {
       }
 
       if (shiftsRes.error) {
-        console.error('admin_operator_shifts_range:', shiftsRes.error.message);
+        const msg = `admin_operator_shifts_range: ${shiftsRes.error.message ?? 'unknown'}`;
+        console.error(msg);
+        setErrMsg((prev) => (prev ? `${prev} | ${msg}` : msg));
         setShifts([]);
       } else {
         setShifts((shiftsRes.data || []).map((r) => ({
@@ -215,6 +224,16 @@ export default function DailyReportsView() {
           </div>
         </div>
       </div>
+
+      {/* Banner de error de RPC. Se muestra arriba de las dos tablas cuando
+          alguna RPC falla (auth, función inexistente, signature mismatch).
+          Texto en mono+wrap para no truncar el mensaje crudo de PostgREST. */}
+      {errMsg && (
+        <div className="bg-red/10 border border-red/30 text-red rounded-xl px-4 py-3 text-xs font-mono whitespace-pre-wrap break-all">
+          <span className="font-sans font-semibold text-red mr-2">Error:</span>
+          {errMsg}
+        </div>
+      )}
 
       {loading && (
         <div className="bg-card rounded-xl border border-border flex items-center justify-center py-12">
