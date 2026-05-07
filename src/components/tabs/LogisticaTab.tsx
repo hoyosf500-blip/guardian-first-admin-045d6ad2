@@ -25,12 +25,14 @@ import ComparisonView from '@/components/logistics/ComparisonView';
 import LogisticsSkeleton from '@/components/logistics/LogisticsSkeleton';
 import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
+import BilleteraTab from '@/components/logistics/BilleteraTab';
+import FinanzasTab from '@/components/logistics/FinanzasTab';
 import {
   CHART_TOOLTIP_STYLE,
   CHART_GRID_PROPS,
   CHART_BAR_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -346,6 +348,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="products" className="shrink-0"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
               <TabsTrigger value="decisiones" className="shrink-0"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad" className="shrink-0"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
+              <TabsTrigger value="finanzas" className="shrink-0"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
             </TabsList>
           </div>
 
@@ -383,14 +386,11 @@ export default function LogisticaTab() {
             <CityReturnsTable rows={cities.data ?? []} />
           </TabsContent>
 
-          {/* TAB: Productos — falla por SKU + rentabilidad por producto.
-              Antes había dos tabs separados ("Productos" y "Rentabilidad")
-              con el mismo grano por SKU. Se fusionaron acá: arriba la tabla
-              de tasa de entrega (failures), abajo la de utilidad real
-              (ingresos − costos − flete − devoluciones). */}
+          {/* TAB: Productos — solo tasa de entrega/falla por SKU. La
+              rentabilidad por SKU se movió a la tab "Finanzas" porque es
+              análisis de plata. */}
           <TabsContent value="products" className="mt-4 space-y-4">
             <ProductFailuresTable rows={products.data ?? []} />
-            <ProductProfitabilityTable filters={filters} />
           </TabsContent>
 
           {/* TAB: Decisiones — heatmap matriz + tabla recomendador.
@@ -415,6 +415,47 @@ export default function LogisticaTab() {
               range={filters}
               carriers={carriers.data ?? []}
             />
+          </TabsContent>
+
+          {/* TAB: Finanzas — vista unificada de TODA la plata operativa de
+              la logística en una sola pantalla. Apila 3 secciones que antes
+              eran tabs separadas (Finanzas / Billetera / Rentabilidad):
+                1. Resumen financiero  → utilidad bruta + cash flow + composición
+                2. Billetera Dropi     → KPIs + serie diaria + tabla movimientos
+                3. Rentabilidad SKU    → ingresos − costos por producto
+
+              El análisis "cómo voy" del dueño (P&L mensual + ROAS + alertas)
+              vive en /cfo, no acá. /logistica = datos crudos de la operación. */}
+          <TabsContent value="finanzas" className="mt-4 space-y-6">
+            <section>
+              <header className="flex items-center gap-2 mb-3">
+                <DollarSign size={14} className="text-accent" />
+                <h2 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+                  Resumen financiero
+                </h2>
+              </header>
+              <FinanzasTab filters={filters} />
+            </section>
+
+            <section>
+              <header className="flex items-center gap-2 mb-3">
+                <Wallet size={14} className="text-accent" />
+                <h2 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+                  Billetera Dropi
+                </h2>
+              </header>
+              <BilleteraTab filters={filters} />
+            </section>
+
+            <section>
+              <header className="flex items-center gap-2 mb-3">
+                <Coins size={14} className="text-accent" />
+                <h2 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+                  Rentabilidad por producto
+                </h2>
+              </header>
+              <ProductProfitabilityTable filters={filters} />
+            </section>
           </TabsContent>
         </Tabs>
       )}

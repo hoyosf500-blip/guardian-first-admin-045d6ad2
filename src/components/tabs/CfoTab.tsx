@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle,
   CheckCircle2, DollarSign, Wallet, Target, Zap, Pencil, Loader2,
   Package as PackageIcon,
-  Gauge, LineChart, Megaphone, CreditCard, BookOpen,
+  Gauge, Megaphone, CreditCard, BookOpen,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
@@ -23,8 +23,6 @@ import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTrac
 import CfoPaymentsVsDebt from '@/components/cfo/CfoPaymentsVsDebt';
 import CfoPagosHistorico from '@/components/cfo/CfoPagosHistorico';
 import CfoMonthlyRetrospective from '@/components/cfo/CfoMonthlyRetrospective';
-import BilleteraTab from '@/components/logistics/BilleteraTab';
-import FinanzasTab from '@/components/logistics/FinanzasTab';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
@@ -254,13 +252,6 @@ export default function CfoTab() {
   const inputsQuery = useMonthlyBusinessInputs(yearMonth);
   const walletHealth = useWalletSyncHealth();
   const range = useMemo(() => monthRange(yearMonth), [yearMonth]);
-  // Filtros con shape `LogisticsFilters` para sub-tabs Finanzas y Billetera,
-  // que originalmente vivían en /logistica y aceptan ese tipo. El range
-  // viene del mes seleccionado en el header.
-  const logisticsFilters = useMemo(
-    () => ({ fromDate: range.from, toDate: range.to }),
-    [range],
-  );
   const logForProducts = useLogisticsStats({ fromDate: range.from, toDate: range.to });
   const topProducts = (logForProducts.products.data ?? [])
     .slice()
@@ -366,8 +357,6 @@ export default function CfoTab() {
             aria-label="Secciones del CFO"
           >
             <TabsTrigger value="como-voy" className="shrink-0"><Gauge size={13} className="mr-1.5" /> Cómo voy</TabsTrigger>
-            <TabsTrigger value="finanzas" className="shrink-0"><LineChart size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
-            <TabsTrigger value="billetera" className="shrink-0"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
             <TabsTrigger value="pauta" className="shrink-0"><Megaphone size={13} className="mr-1.5" /> Pauta</TabsTrigger>
             <TabsTrigger value="tarjeta" className="shrink-0"><CreditCard size={13} className="mr-1.5" /> Tarjeta</TabsTrigger>
             <TabsTrigger value="bitacora" className="shrink-0"><BookOpen size={13} className="mr-1.5" /> Bitácora</TabsTrigger>
@@ -438,17 +427,10 @@ export default function CfoTab() {
           </div>
         </TabsContent>
 
-        {/* TAB: Finanzas — utilidad bruta contable, cash flow Dropi,
-            composición ingresos/gastos. Antes vivía en /logistica → Finanzas. */}
-        <TabsContent value="finanzas" className="mt-4">
-          <FinanzasTab filters={logisticsFilters} />
-        </TabsContent>
-
-        {/* TAB: Billetera — KPIs entradas/salidas + serie diaria + tabla
-            paginada de movimientos. Antes vivía en /logistica → Billetera. */}
-        <TabsContent value="billetera" className="mt-4">
-          <BilleteraTab filters={logisticsFilters} />
-        </TabsContent>
+        {/* Las sub-tabs Finanzas + Billetera + Rentabilidad viven ahora
+            unificadas en /logistica → Finanzas (una sola pantalla con todo
+            apilado). Acá solo queda la visión "cómo voy" del dueño + sus
+            tareas mensuales (pauta, tarjeta, bitácora). */}
 
         {/* TAB: Pauta — gasto Meta/TikTok por mes + ROAS por canal */}
         <TabsContent value="pauta" className="mt-4">
