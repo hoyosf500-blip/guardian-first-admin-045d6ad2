@@ -294,6 +294,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Audit H1: PDFs de TC personal del dueño — solo admin puede subir.
+    const sbAdmin = createClient(sbUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: roleRow } = await sbAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    if (!roleRow) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Solo administradores pueden subir PDFs personales" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const text = String(body.text || "");
     const filename = String(body.filename || "extracto.pdf");

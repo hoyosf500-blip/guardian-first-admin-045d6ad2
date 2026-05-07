@@ -1,18 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-// Bypass del tipado generado por Supabase: las RPCs nuevas (creadas en
-// migrations 20260506*) no están todavía en el types.ts auto-generado
-// porque el cliente de tipos se regenera fuera de este repo. Mismo patrón
-// usado en useMonthlyAdSpend, useTcDebtSnapshots, useProductProfitability.
-//
-// .bind(supabase) es OBLIGATORIO: si solo hacés `const rpc = supabase.rpc`
-// se pierde el `this` y al invocarse el método tira
-// "Cannot read properties of undefined (reading 'rest')". El cast solo
-// cambia tipos, no preserva binding — por eso bindeamos antes del cast.
-const rpc = supabase.rpc.bind(supabase) as unknown as (
-  fn: string, args?: Record<string, unknown>
-) => Promise<{ data: unknown; error: { message?: string } | null }>;
+// Audit M4: bind movido adentro de cada queryFn/mutationFn — el bind a nivel
+// module-level quedaba stale tras sign-out/sign-in cuando el cliente Supabase
+// se recrea. Mismo patrón que useMonthlyAdSpend / useTcDebtSnapshots.
+type RpcFn = (fn: string, args?: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }>;
+const getRpc = (): RpcFn =>
+  supabase.rpc.bind(supabase) as unknown as RpcFn;
 
 // Hooks del bloque "Análisis tarjetas (gasto personal)" en /cfo.
 // Consume la tabla personal_card_movements y los RPCs definidos en la
@@ -91,7 +85,7 @@ export function usePersonalSpendingByMonth(opts?: { fromDate?: string; toDate?: 
   return useQuery<SpendingByMonthRow[]>({
     queryKey: ['personal-spending-by-month', fromDate ?? 'def', toDate ?? 'def'],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_spending_by_month', {
+      const rpc = getRpc(); const { data, error } = await rpc('personal_spending_by_month', {
         p_from_date: fromDate ?? undefined,
         p_to_date:   toDate   ?? undefined,
       });
@@ -118,7 +112,7 @@ export function usePersonalSpendingTopItems(yearMonth: string, categoria?: Categ
   return useQuery<TopItemRow[]>({
     queryKey: ['personal-spending-top', yearMonth, categoria ?? 'all', limit],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_spending_top_items', {
+      const rpc = getRpc(); const { data, error } = await rpc('personal_spending_top_items', {
         p_year_month: yearMonth,
         p_categoria:  categoria ?? null,
         p_limit:      limit,
@@ -262,7 +256,7 @@ export function usePersonalPaymentsSummary(opts?: { fromDate?: string; toDate?: 
   return useQuery<PaymentsSummaryRow[]>({
     queryKey: ['personal-payments-summary', fromDate ?? 'def', toDate ?? 'def'],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_payments_summary', {
+      const rpc = getRpc(); const { data, error } = await rpc('personal_payments_summary', {
         p_from_date: fromDate ?? undefined,
         p_to_date:   toDate   ?? undefined,
       });
@@ -294,7 +288,7 @@ export function usePersonalResidualDebt() {
   return useQuery<ResidualDebtRow[]>({
     queryKey: ['personal-residual-debt'],
     queryFn: async () => {
-      const { data, error } = await rpc('personal_residual_debt');
+      const rpc = getRpc(); const { data, error } = await rpc('personal_residual_debt');
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];
       return rows.map((r: Record<string, unknown>) => ({
@@ -317,7 +311,7 @@ export function useRecategorizePersonalMovements() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await rpc('recategorize_personal_movements');
+      const rpc = getRpc(); const { data, error } = await rpc('recategorize_personal_movements');
       if (error) throw error;
       return data as { updated: number };
     },

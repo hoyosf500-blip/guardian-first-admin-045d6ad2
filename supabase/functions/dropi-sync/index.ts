@@ -221,6 +221,20 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Audit H1: bulk sync es admin-only — operadora podía gatillar reescritura masiva.
+    const { data: roleRow } = await sb
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    if (!roleRow) {
+      return new Response(
+        JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Get Dropi API key
     let dropiApiKey: string | null = null;
     const { data: keySetting } = await sb

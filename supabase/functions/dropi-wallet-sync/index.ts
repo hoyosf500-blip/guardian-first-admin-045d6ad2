@@ -221,6 +221,19 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // Audit H1: wallet sync expone datos financieros del dueño — admin-only.
+      const { data: roleRow } = await sb
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (!roleRow) {
+        return new Response(
+          JSON.stringify({ error: "Solo administradores pueden ejecutar el wallet sync" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       userId = user.id;
     }
 

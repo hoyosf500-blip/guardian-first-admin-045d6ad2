@@ -24,7 +24,12 @@ export function MetricsUpdateBanner({ id, message, expiresAt }: Props) {
       setVisible(false);
       return;
     }
-    setVisible(!localStorage.getItem(storageKey));
+    // Audit M7: try-catch evita crash en Safari modo privado donde localStorage tira SecurityError.
+    try {
+      setVisible(!localStorage.getItem(storageKey));
+    } catch {
+      setVisible(true);
+    }
   }, [storageKey, expiresAt]);
 
   if (!visible) return null;
