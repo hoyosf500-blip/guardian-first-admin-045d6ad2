@@ -63,7 +63,12 @@ export default function DailyReportsView() {
   const load = useCallback(async () => {
     setLoading(true);
     setErrMsg(null);
-    const rpc = supabase.rpc as unknown as (
+    // .bind(supabase) es OBLIGATORIO: si solo hacés `const rpc = supabase.rpc`
+    // se pierde el `this` y al invocarse el método tira
+    // `Cannot read properties of undefined (reading 'rest')` desde dentro de
+    // supabase-js. El cast `as unknown as` solo cambia tipos, no preserva
+    // el binding — por eso bindeamos primero y casteamos después.
+    const rpc = supabase.rpc.bind(supabase) as unknown as (
       fn: string, args: Record<string, unknown>
     ) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message?: string } | null }>;
 

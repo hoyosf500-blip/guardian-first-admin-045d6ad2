@@ -5,7 +5,12 @@ import { supabase } from '@/integrations/supabase/client';
 // migrations 20260506*) no están todavía en el types.ts auto-generado
 // porque el cliente de tipos se regenera fuera de este repo. Mismo patrón
 // usado en useMonthlyAdSpend, useTcDebtSnapshots, useProductProfitability.
-const rpc = supabase.rpc as unknown as (
+//
+// .bind(supabase) es OBLIGATORIO: si solo hacés `const rpc = supabase.rpc`
+// se pierde el `this` y al invocarse el método tira
+// "Cannot read properties of undefined (reading 'rest')". El cast solo
+// cambia tipos, no preserva binding — por eso bindeamos antes del cast.
+const rpc = supabase.rpc.bind(supabase) as unknown as (
   fn: string, args?: Record<string, unknown>
 ) => Promise<{ data: unknown; error: { message?: string } | null }>;
 

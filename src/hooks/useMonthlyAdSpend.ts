@@ -87,7 +87,9 @@ export function useUpsertAdSpend() {
   const qc = useQueryClient();
   return useMutation<AdSpendRow, Error, UpsertAdSpendParams>({
     mutationFn: async (params) => {
-      const rpc = supabase.rpc as unknown as (
+      // .bind(supabase): preserva el `this` del método. Sin bind explota
+      // con "Cannot read properties of undefined (reading 'rest')".
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string, args: Record<string, unknown>
       ) => Promise<{ data: unknown; error: { message?: string } | null }>;
       const { data, error } = await rpc('upsert_monthly_ad_spend', {
@@ -113,7 +115,9 @@ export function useDeleteAdSpend() {
   const qc = useQueryClient();
   return useMutation<boolean, Error, string>({
     mutationFn: async (id: string) => {
-      const rpc = supabase.rpc as unknown as (
+      // .bind(supabase): preserva el `this` del método. Sin bind explota
+      // con "Cannot read properties of undefined (reading 'rest')".
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string, args: Record<string, unknown>
       ) => Promise<{ data: unknown; error: { message?: string } | null }>;
       const { data, error } = await rpc('delete_monthly_ad_spend', { p_id: id });

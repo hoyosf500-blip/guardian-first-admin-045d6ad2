@@ -98,7 +98,9 @@ export function useUpsertMonthlyInputs() {
   const qc = useQueryClient();
   return useMutation<MonthlyBusinessInputs, Error, UpsertMonthlyInputsParams>({
     mutationFn: async (params) => {
-      const rpc = supabase.rpc as unknown as (
+      // .bind(supabase): sin esto el método pierde `this` y tira
+      // "Cannot read properties of undefined (reading 'rest')" desde supabase-js.
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string, args: Record<string, unknown>
       ) => Promise<{ data: unknown; error: { message?: string } | null }>;
       const { data, error } = await rpc('upsert_monthly_business_inputs', {

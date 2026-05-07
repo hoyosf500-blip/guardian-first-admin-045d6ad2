@@ -99,8 +99,12 @@ function parseRow(raw: unknown): RetrospectiveRow | null {
   };
 }
 
+// .bind(supabase): obligatorio. `supabase.rpc` es un método cuyo `this`
+// se pierde al desreferenciarlo. Sin bind, supabase-js explota con
+// "Cannot read properties of undefined (reading 'rest')". El cast solo
+// ajusta el tipado para RPCs no incluidas en types.ts auto-generado.
 function rpc() {
-  return supabase.rpc as unknown as (
+  return supabase.rpc.bind(supabase) as unknown as (
     fn: string, args?: Record<string, unknown>
   ) => Promise<{ data: unknown; error: { message?: string } | null }>;
 }

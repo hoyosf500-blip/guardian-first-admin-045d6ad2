@@ -77,7 +77,9 @@ export function useProductProfitability(
   return useQuery<ProductProfitabilityRow[]>({
     queryKey: ['product-profitability', fromDate, toDate, limit],
     queryFn: async () => {
-      const rpc = supabase.rpc as unknown as (
+      // .bind(supabase): preserva `this`. Sin bind, el método se invoca
+      // con `this === undefined` y supabase-js explota leyendo `this.rest`.
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string, args: Record<string, unknown>
       ) => Promise<RpcResult<unknown>>;
       const { data, error } = await rpc('product_profitability', {

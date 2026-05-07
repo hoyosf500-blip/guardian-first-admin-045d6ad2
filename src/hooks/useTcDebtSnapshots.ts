@@ -86,7 +86,9 @@ export function useUpsertTcDebtSnapshot() {
   const qc = useQueryClient();
   return useMutation<TcDebtSnapshot, Error, UpsertTcDebtParams>({
     mutationFn: async (params) => {
-      const rpc = supabase.rpc as unknown as (
+      // .bind(supabase): preserva `this` del método. Sin bind tira
+      // "Cannot read properties of undefined (reading 'rest')".
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string, args: Record<string, unknown>
       ) => Promise<{ data: unknown; error: { message?: string } | null }>;
       const { data, error } = await rpc('upsert_tc_debt_snapshot', {
