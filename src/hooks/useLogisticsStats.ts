@@ -102,7 +102,13 @@ export function useLogisticsStats(
   // y el segundo .on('postgres_changes', ...) tira "cannot add callbacks".
   const instanceId = useId();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // T3-5: opt-out de realtime cuando el hook se monta multiples veces
+  // en la misma vista (ej. /cfo monta useCfoSnapshot para curr Y prev,
+  // mas un tercer mount para top-products). Sin esto abrimos 3 canales
+  // y cualquier UPDATE en orders dispara 3 invalidaciones.
+  const disableRealtime = opts?.disableRealtime ?? false;
   useEffect(() => {
+    if (disableRealtime) return;
     const channel = supabase
       .channel(`logistics-rt-${fromDate}-${toDate}-${instanceId}`)
       .on(
@@ -121,7 +127,7 @@ export function useLogisticsStats(
       if (debounceRef.current) clearTimeout(debounceRef.current);
       void supabase.removeChannel(channel);
     };
-  }, [queryClient, fromDate, toDate, instanceId]);
+  }, [queryClient, fromDate, toDate, instanceId, disableRealtime]);
 
   return {
     summary, carriers, cities, products,
