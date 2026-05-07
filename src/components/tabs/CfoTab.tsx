@@ -111,7 +111,9 @@ interface CfoSnapshot {
 function useCfoSnapshot(yearMonth: string): CfoSnapshot {
   const range = useMemo(() => monthRange(yearMonth), [yearMonth]);
   const finQuery = useFinancialSummary(range.from, range.to);
-  const logQuery = useLogisticsStats({ fromDate: range.from, toDate: range.to });
+  // T3-5: disableRealtime — useCfoSnapshot se monta 2 veces (curr + prev).
+  // Solo el mount de logForProducts en CfoTab mantiene el canal único.
+  const logQuery = useLogisticsStats({ fromDate: range.from, toDate: range.to }, { disableRealtime: true });
   const walletQuery = useWalletMovements({
     fromDate: range.from, toDate: range.to, page: 1, pageSize: 1,
   });
