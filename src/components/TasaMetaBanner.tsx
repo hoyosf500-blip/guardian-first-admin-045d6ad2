@@ -66,8 +66,13 @@ export default function TasaMetaBanner() {
             Hoy: <strong>{data.confirmados}</strong> conf · <strong>{data.cancelados}</strong> canc · <strong>{data.noresp}</strong> noresp
           </span>
           <span className="opacity-40">|</span>
-          <span className="font-mono text-base font-semibold">{tasa}%</span>
-          <span className="text-xs opacity-70">(meta 70%)</span>
+          <span
+            className="font-mono text-base font-semibold"
+            title={`Tasa personal: ${data.confirmados} confirmados / ${data.total} gestionados (conf+canc+noresp). NO sobre el inflow total del día.`}
+          >
+            {tasa}%
+          </span>
+          <span className="text-xs opacity-70">tasa personal · meta 70%</span>
         </div>
       </div>
       <span className="text-xs font-medium">{label}</span>

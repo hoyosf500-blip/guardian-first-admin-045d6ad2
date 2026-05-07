@@ -481,7 +481,12 @@ export default function DashboardTab() {
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1">Tasa de confirmación</div>
+                <div
+                  className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1"
+                  title="Tasa personal: tus confirmados / lo gestionado por vos hoy (conf+canc+noresp). NO sobre el inflow total del día — eso lo ves en /admin → Productividad."
+                >
+                  Tasa personal
+                </div>
                 <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold ${tasaBg} ${tasaColor}`}>
                   {tasa >= 80 ? 'Excelente' : tasa >= 60 ? 'Aceptable' : 'Necesita mejorar'}
                 </div>
@@ -594,7 +599,12 @@ export default function DashboardTab() {
                       <th className="px-3 py-2.5 text-center font-medium">Canc.</th>
                       <th className="px-3 py-2.5 text-center font-medium">N/R</th>
                       <th className="px-3 py-2.5 text-center font-medium">Total</th>
-                      <th className="px-3 py-2.5 text-center font-medium">Tasa</th>
+                      <th
+                        className="px-3 py-2.5 text-center font-medium"
+                        title="Tasa personal de cada operadora: confirmados / lo gestionado (conf+canc+noresp). NO sobre el inflow total del día."
+                      >
+                        Tasa pers.
+                      </th>
                     </tr>
                   </thead>
                   <tbody>

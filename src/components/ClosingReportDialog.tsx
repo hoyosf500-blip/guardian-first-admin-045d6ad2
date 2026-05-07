@@ -149,8 +149,11 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <PhoneCall size={12} /> Total gestionados
                   </div>
-                  <div className="font-mono font-semibold text-foreground">
-                    {stats?.total ?? 0} <span className="text-muted-foreground font-normal">· {stats?.tasa_conf ?? 0}% conf.</span>
+                  <div
+                    className="font-mono font-semibold text-foreground"
+                    title="Tasa personal: confirmados / lo gestionado por vos. NO incluye pedidos del inflow del día que no tocaste."
+                  >
+                    {stats?.total ?? 0} <span className="text-muted-foreground font-normal">· {stats?.tasa_conf ?? 0}% personal</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 text-xs">
