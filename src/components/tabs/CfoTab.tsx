@@ -3,6 +3,7 @@ import {
   TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle,
   CheckCircle2, DollarSign, Wallet, Target, Zap, Pencil, Loader2,
   Package as PackageIcon,
+  Gauge, LineChart, Megaphone, CreditCard, BookOpen,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
@@ -13,6 +14,7 @@ import {
   useCostosFijosMensuales,
 } from '@/hooks/useCfoMonthlyInputs';
 import { useMonthlyAdSpend } from '@/hooks/useMonthlyAdSpend';
+import { useSessionState } from '@/hooks/useSessionState';
 import CfoInputsDialog from '@/components/cfo/CfoInputsDialog';
 import CfoDebtTracker from '@/components/cfo/CfoDebtTracker';
 import CfoAdSpendTracker from '@/components/cfo/CfoAdSpendTracker';
@@ -21,11 +23,14 @@ import CfoPersonalSpendingTracker from '@/components/cfo/CfoPersonalSpendingTrac
 import CfoPaymentsVsDebt from '@/components/cfo/CfoPaymentsVsDebt';
 import CfoPagosHistorico from '@/components/cfo/CfoPagosHistorico';
 import CfoMonthlyRetrospective from '@/components/cfo/CfoMonthlyRetrospective';
+import BilleteraTab from '@/components/logistics/BilleteraTab';
+import FinanzasTab from '@/components/logistics/FinanzasTab';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -232,6 +237,12 @@ export default function CfoTab() {
   const [yearMonth, setYearMonth] = useState<string>(() => toYearMonth(new Date()));
   const [editOpen, setEditOpen] = useState(false);
 
+  // Sub-tab activo dentro de /cfo. Persiste en sessionStorage para que F5
+  // no devuelva al usuario al "Cómo voy". Las 3 ex-tabs de /logistica
+  // (Finanzas, Billetera, Rentabilidad) se consolidaron acá para no tener
+  // doble fuente sobre la misma plata.
+  const [activeSubTab, setActiveSubTab] = useSessionState<string>('cfo:tab', 'como-voy');
+
   // Solo meses del año en curso (enero → mes actual). El negocio arrancó
   // este año; mostrar 12 meses para atrás incluía opciones del año pasado
   // sin datos que confundían al usuario.
@@ -243,6 +254,13 @@ export default function CfoTab() {
   const inputsQuery = useMonthlyBusinessInputs(yearMonth);
   const walletHealth = useWalletSyncHealth();
   const range = useMemo(() => monthRange(yearMonth), [yearMonth]);
+  // Filtros con shape `LogisticsFilters` para sub-tabs Finanzas y Billetera,
+  // que originalmente vivían en /logistica y aceptan ese tipo. El range
+  // viene del mes seleccionado en el header.
+  const logisticsFilters = useMemo(
+    () => ({ fromDate: range.from, toDate: range.to }),
+    [range],
+  );
   const logForProducts = useLogisticsStats({ fromDate: range.from, toDate: range.to });
   const topProducts = (logForProducts.products.data ?? [])
     .slice()
@@ -341,101 +359,131 @@ export default function CfoTab() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard
-          label="Utilidad neta real"
-          value={formatCOP(curr.utilidad_neta)}
-          tone={utilTone}
-          icon={<DollarSign size={14} />}
-          delta={deltaArrow(curr.utilidad_neta, prev.utilidad_neta, { higherIsBetter: true })}
-          loading={curr.loading}
-        />
-        <KpiCard
-          label="Tasa de efectividad"
-          value={fmtPct(curr.tasa_entrega)}
-          tone={efTone}
-          icon={<Target size={14} />}
-          delta={deltaArrow(curr.tasa_entrega, prev.tasa_entrega, { higherIsBetter: true })}
-          loading={curr.loading}
-        />
-        <KpiCard
-          label="ROAS bruto"
-          value={curr.roas != null ? `${curr.roas.toFixed(2)}x` : '—'}
-          tone={rTone}
-          icon={<Zap size={14} />}
-          delta={
-            curr.roas != null && prev.roas != null
-              ? deltaArrow(curr.roas, prev.roas, { higherIsBetter: true })
-              : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
-          }
-          loading={curr.loading}
-        />
-        <KpiCard
-          label="Wallet Dropi"
-          value={curr.wallet_saldo != null ? formatCOP(curr.wallet_saldo) : '—'}
-          tone={wTone}
-          icon={<Wallet size={14} />}
-          delta={null}
-          loading={curr.loading}
-          subtitle={
-            curr.wallet_saldo != null && curr.costos_fijos > 0
-              ? `${(curr.wallet_saldo / curr.costos_fijos).toFixed(1)} meses de runway`
-              : undefined
-          }
-        />
-      </div>
+      <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
+        <div className="overflow-x-auto -mx-1 px-1">
+          <TabsList
+            className="inline-flex w-full justify-start gap-0.5 h-auto p-1"
+            aria-label="Secciones del CFO"
+          >
+            <TabsTrigger value="como-voy" className="shrink-0"><Gauge size={13} className="mr-1.5" /> Cómo voy</TabsTrigger>
+            <TabsTrigger value="finanzas" className="shrink-0"><LineChart size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
+            <TabsTrigger value="billetera" className="shrink-0"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
+            <TabsTrigger value="pauta" className="shrink-0"><Megaphone size={13} className="mr-1.5" /> Pauta</TabsTrigger>
+            <TabsTrigger value="tarjeta" className="shrink-0"><CreditCard size={13} className="mr-1.5" /> Tarjeta</TabsTrigger>
+            <TabsTrigger value="bitacora" className="shrink-0"><BookOpen size={13} className="mr-1.5" /> Bitácora</TabsTrigger>
+          </TabsList>
+        </div>
 
-      <Funnel
-        generados={curr.total_ordenes}
-        entregados={curr.total_entregadas}
-        devueltos={curr.total_devueltas}
-        loading={curr.loading}
-      />
+        {/* TAB: Cómo voy — KPIs + embudo + P&L + top productos + alertas */}
+        <TabsContent value="como-voy" className="mt-4 space-y-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KpiCard
+              label="Utilidad neta real"
+              value={formatCOP(curr.utilidad_neta)}
+              tone={utilTone}
+              icon={<DollarSign size={14} />}
+              delta={deltaArrow(curr.utilidad_neta, prev.utilidad_neta, { higherIsBetter: true })}
+              loading={curr.loading}
+            />
+            <KpiCard
+              label="Tasa de efectividad"
+              value={fmtPct(curr.tasa_entrega)}
+              tone={efTone}
+              icon={<Target size={14} />}
+              delta={deltaArrow(curr.tasa_entrega, prev.tasa_entrega, { higherIsBetter: true })}
+              loading={curr.loading}
+            />
+            <KpiCard
+              label="ROAS bruto"
+              value={curr.roas != null ? `${curr.roas.toFixed(2)}x` : '—'}
+              tone={rTone}
+              icon={<Zap size={14} />}
+              delta={
+                curr.roas != null && prev.roas != null
+                  ? deltaArrow(curr.roas, prev.roas, { higherIsBetter: true })
+                  : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
+              }
+              loading={curr.loading}
+            />
+            <KpiCard
+              label="Wallet Dropi"
+              value={curr.wallet_saldo != null ? formatCOP(curr.wallet_saldo) : '—'}
+              tone={wTone}
+              icon={<Wallet size={14} />}
+              delta={null}
+              loading={curr.loading}
+              subtitle={
+                curr.wallet_saldo != null && curr.costos_fijos > 0
+                  ? `${(curr.wallet_saldo / curr.costos_fijos).toFixed(1)} meses de runway`
+                  : undefined
+              }
+            />
+          </div>
 
-      <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
+          <Funnel
+            generados={curr.total_ordenes}
+            entregados={curr.total_entregadas}
+            devueltos={curr.total_devueltas}
+            loading={curr.loading}
+          />
 
-      <CfoDebtTracker />
+          <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
 
-      <CfoAdSpendTracker
-        yearMonth={yearMonth}
-        prevYearMonth={prevYearMonth}
-        walletGenerated={curr.utilidad_bruta}
-      />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TopProductsBlock
+              products={topProducts}
+              loading={logForProducts.products.isLoading}
+            />
+            <AlertsBlock alerts={alerts} loading={curr.loading} />
+          </div>
+        </TabsContent>
 
-      <section className="space-y-3">
-        <header className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground">
-            Bitácora mensual
-          </h3>
-          <span className="text-xs text-muted-foreground">
-            Documentá fugas, aciertos y decisiones por mes — para no repetir errores
-          </span>
-        </header>
-        <CfoMonthlyRetrospective defaultYearMonth={yearMonth} />
-      </section>
+        {/* TAB: Finanzas — utilidad bruta contable, cash flow Dropi,
+            composición ingresos/gastos. Antes vivía en /logistica → Finanzas. */}
+        <TabsContent value="finanzas" className="mt-4">
+          <FinanzasTab filters={logisticsFilters} />
+        </TabsContent>
 
-      <section className="space-y-3">
-        <header className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-foreground">
-            Análisis tarjetas (gasto personal)
-          </h3>
-          <span className="text-xs text-muted-foreground">
-            Subí extractos PDF para ver dónde se va la plata mes a mes
-          </span>
-        </header>
-        <CfoPersonalCardUploader />
-        <CfoPagosHistorico walletDisponible={curr.wallet_saldo} />
-        <CfoPaymentsVsDebt />
-        <CfoPersonalSpendingTracker />
-      </section>
+        {/* TAB: Billetera — KPIs entradas/salidas + serie diaria + tabla
+            paginada de movimientos. Antes vivía en /logistica → Billetera. */}
+        <TabsContent value="billetera" className="mt-4">
+          <BilleteraTab filters={logisticsFilters} />
+        </TabsContent>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TopProductsBlock
-          products={topProducts}
-          loading={logForProducts.products.isLoading}
-        />
-        <AlertsBlock alerts={alerts} loading={curr.loading} />
-      </div>
+        {/* TAB: Pauta — gasto Meta/TikTok por mes + ROAS por canal */}
+        <TabsContent value="pauta" className="mt-4">
+          <CfoAdSpendTracker
+            yearMonth={yearMonth}
+            prevYearMonth={prevYearMonth}
+            walletGenerated={curr.utilidad_bruta}
+          />
+        </TabsContent>
+
+        {/* TAB: Tarjeta — deuda TC, pagos vs deuda, histórico de pagos
+            y análisis de extractos personales. */}
+        <TabsContent value="tarjeta" className="mt-4 space-y-4">
+          <CfoDebtTracker />
+          <CfoPagosHistorico walletDisponible={curr.wallet_saldo} />
+          <CfoPaymentsVsDebt />
+          <section className="space-y-3">
+            <header className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">
+                Análisis tarjetas (gasto personal)
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                Subí extractos PDF para ver dónde se va la plata mes a mes
+              </span>
+            </header>
+            <CfoPersonalCardUploader />
+            <CfoPersonalSpendingTracker />
+          </section>
+        </TabsContent>
+
+        {/* TAB: Bitácora — fugas/aciertos/decisiones por mes */}
+        <TabsContent value="bitacora" className="mt-4">
+          <CfoMonthlyRetrospective defaultYearMonth={yearMonth} />
+        </TabsContent>
+      </Tabs>
 
       <CfoInputsDialog
         open={editOpen}

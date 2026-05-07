@@ -25,14 +25,12 @@ import ComparisonView from '@/components/logistics/ComparisonView';
 import LogisticsSkeleton from '@/components/logistics/LogisticsSkeleton';
 import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
-import BilleteraTab from '@/components/logistics/BilleteraTab';
-import FinanzasTab from '@/components/logistics/FinanzasTab';
 import {
   CHART_TOOLTIP_STYLE,
   CHART_GRID_PROPS,
   CHART_BAR_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, Wallet, DollarSign, LayoutDashboard, Coins } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -346,11 +344,8 @@ export default function LogisticaTab() {
               <TabsTrigger value="carriers" className="shrink-0"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
               <TabsTrigger value="cities" className="shrink-0"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
               <TabsTrigger value="products" className="shrink-0"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
-              <TabsTrigger value="rentabilidad" className="shrink-0"><Coins size={13} className="mr-1.5" /> Rentabilidad</TabsTrigger>
               <TabsTrigger value="decisiones" className="shrink-0"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad" className="shrink-0"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
-              <TabsTrigger value="billetera" className="shrink-0"><Wallet size={13} className="mr-1.5" /> Billetera</TabsTrigger>
-              <TabsTrigger value="finanzas" className="shrink-0"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
             </TabsList>
           </div>
 
@@ -388,14 +383,13 @@ export default function LogisticaTab() {
             <CityReturnsTable rows={cities.data ?? []} />
           </TabsContent>
 
-          <TabsContent value="products" className="mt-4">
+          {/* TAB: Productos — falla por SKU + rentabilidad por producto.
+              Antes había dos tabs separados ("Productos" y "Rentabilidad")
+              con el mismo grano por SKU. Se fusionaron acá: arriba la tabla
+              de tasa de entrega (failures), abajo la de utilidad real
+              (ingresos − costos − flete − devoluciones). */}
+          <TabsContent value="products" className="mt-4 space-y-4">
             <ProductFailuresTable rows={products.data ?? []} />
-          </TabsContent>
-
-          {/* TAB: Rentabilidad — desglose plata por producto.
-              Lee RPC product_profitability con breakdown completo:
-              ingresos − costos = utilidad real, + proyección de tránsito. */}
-          <TabsContent value="rentabilidad" className="mt-4">
             <ProductProfitabilityTable filters={filters} />
           </TabsContent>
 
@@ -421,14 +415,6 @@ export default function LogisticaTab() {
               range={filters}
               carriers={carriers.data ?? []}
             />
-          </TabsContent>
-
-          <TabsContent value="billetera" className="mt-4">
-            <BilleteraTab filters={filters} />
-          </TabsContent>
-
-          <TabsContent value="finanzas" className="mt-4">
-            <FinanzasTab filters={filters} />
           </TabsContent>
         </Tabs>
       )}
