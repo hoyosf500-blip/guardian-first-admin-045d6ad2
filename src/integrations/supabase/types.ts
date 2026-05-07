@@ -149,6 +149,48 @@ export type Database = {
         }
         Relationships: []
       }
+      cfo_monthly_retrospective: {
+        Row: {
+          aciertos: string[]
+          created_at: string
+          decisiones: Json
+          diagnostico_at: string | null
+          diagnostico_auto: Json | null
+          fugas: string[]
+          id: string
+          lecciones: string | null
+          notas: string | null
+          updated_at: string
+          year_month: string
+        }
+        Insert: {
+          aciertos?: string[]
+          created_at?: string
+          decisiones?: Json
+          diagnostico_at?: string | null
+          diagnostico_auto?: Json | null
+          fugas?: string[]
+          id?: string
+          lecciones?: string | null
+          notas?: string | null
+          updated_at?: string
+          year_month: string
+        }
+        Update: {
+          aciertos?: string[]
+          created_at?: string
+          decisiones?: Json
+          diagnostico_at?: string | null
+          diagnostico_auto?: Json | null
+          fugas?: string[]
+          id?: string
+          lecciones?: string | null
+          notas?: string | null
+          updated_at?: string
+          year_month?: string
+        }
+        Relationships: []
+      }
       daily_reports: {
         Row: {
           created_at: string
@@ -230,6 +272,78 @@ export type Database = {
           synced_at?: string
           synced_by?: string | null
           tipo?: string
+        }
+        Relationships: []
+      }
+      monthly_ad_spend: {
+        Row: {
+          account_name: string
+          amount_cop: number
+          created_at: string
+          id: string
+          notas: string | null
+          payment_method: string
+          platform: string
+          updated_at: string
+          year_month: string
+        }
+        Insert: {
+          account_name: string
+          amount_cop?: number
+          created_at?: string
+          id?: string
+          notas?: string | null
+          payment_method?: string
+          platform: string
+          updated_at?: string
+          year_month: string
+        }
+        Update: {
+          account_name?: string
+          amount_cop?: number
+          created_at?: string
+          id?: string
+          notas?: string | null
+          payment_method?: string
+          platform?: string
+          updated_at?: string
+          year_month?: string
+        }
+        Relationships: []
+      }
+      monthly_business_inputs: {
+        Row: {
+          ads_meta: number
+          ads_tiktok: number
+          created_at: string
+          id: string
+          notas: string | null
+          tarjeta_interes: number
+          tarjeta_pago: number
+          updated_at: string
+          year_month: string
+        }
+        Insert: {
+          ads_meta?: number
+          ads_tiktok?: number
+          created_at?: string
+          id?: string
+          notas?: string | null
+          tarjeta_interes?: number
+          tarjeta_pago?: number
+          updated_at?: string
+          year_month: string
+        }
+        Update: {
+          ads_meta?: number
+          ads_tiktok?: number
+          created_at?: string
+          id?: string
+          notas?: string | null
+          tarjeta_interes?: number
+          tarjeta_pago?: number
+          updated_at?: string
+          year_month?: string
         }
         Relationships: []
       }
@@ -537,6 +651,93 @@ export type Database = {
         }
         Relationships: []
       }
+      personal_card_movements: {
+        Row: {
+          banco: string
+          categoria: string
+          created_at: string
+          cuota_numero: number | null
+          cuotas_total: number | null
+          descripcion: string
+          es_negocio: boolean
+          fecha: string
+          id: string
+          interes_anual_pct: number | null
+          interes_mensual_pct: number | null
+          marca: string
+          moneda: string
+          monto: number
+          notas: string | null
+          numero_autorizacion: string | null
+          origen_pdf: string | null
+          periodo_corte_from: string | null
+          periodo_corte_to: string | null
+          raw_line: string | null
+          saldo_pendiente: number | null
+          subcategoria: string | null
+          tarjeta: string
+          tipo: string
+          updated_at: string
+          valor_cuota: number | null
+        }
+        Insert: {
+          banco?: string
+          categoria?: string
+          created_at?: string
+          cuota_numero?: number | null
+          cuotas_total?: number | null
+          descripcion: string
+          es_negocio?: boolean
+          fecha: string
+          id?: string
+          interes_anual_pct?: number | null
+          interes_mensual_pct?: number | null
+          marca: string
+          moneda: string
+          monto: number
+          notas?: string | null
+          numero_autorizacion?: string | null
+          origen_pdf?: string | null
+          periodo_corte_from?: string | null
+          periodo_corte_to?: string | null
+          raw_line?: string | null
+          saldo_pendiente?: number | null
+          subcategoria?: string | null
+          tarjeta: string
+          tipo: string
+          updated_at?: string
+          valor_cuota?: number | null
+        }
+        Update: {
+          banco?: string
+          categoria?: string
+          created_at?: string
+          cuota_numero?: number | null
+          cuotas_total?: number | null
+          descripcion?: string
+          es_negocio?: boolean
+          fecha?: string
+          id?: string
+          interes_anual_pct?: number | null
+          interes_mensual_pct?: number | null
+          marca?: string
+          moneda?: string
+          monto?: number
+          notas?: string | null
+          numero_autorizacion?: string | null
+          origen_pdf?: string | null
+          periodo_corte_from?: string | null
+          periodo_corte_to?: string | null
+          raw_line?: string | null
+          saldo_pendiente?: number | null
+          subcategoria?: string | null
+          tarjeta?: string
+          tipo?: string
+          updated_at?: string
+          valor_cuota?: number | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -594,6 +795,48 @@ export type Database = {
           synced_count?: number
           total_count?: number
           triggered_by?: string | null
+        }
+        Relationships: []
+      }
+      tc_debt_snapshots: {
+        Row: {
+          created_at: string
+          cupo_cop: number
+          fecha_corte: string
+          id: string
+          notas: string | null
+          saldo_cop: number
+          saldo_usd: number
+          source: string
+          tarjeta: string
+          trm: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          cupo_cop?: number
+          fecha_corte: string
+          id?: string
+          notas?: string | null
+          saldo_cop?: number
+          saldo_usd?: number
+          source?: string
+          tarjeta: string
+          trm?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          cupo_cop?: number
+          fecha_corte?: string
+          id?: string
+          notas?: string | null
+          saldo_cop?: number
+          saldo_usd?: number
+          source?: string
+          tarjeta?: string
+          trm?: number
+          updated_at?: string
         }
         Relationships: []
       }
@@ -674,14 +917,25 @@ export type Database = {
         Returns: {
           cancelados: number
           confirmados: number
+          entrantes: number
+          fecha: string
+          noresp: number
+          pct_cancelados: number
+          pct_confirmacion: number
+          pendientes: number
+        }[]
+      }
+      admin_operator_shifts_range: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          cancelados: number
+          confirmados: number
           fecha: string
           guias_apertura: number
           hora: string
           noresp: number
           notas: string
           operadora: string
-          pct_cancelados: number
-          pct_confirmacion: number
           pedidos_nuevos: number
           pendientes_ayer: number
           pendientes_manana: number
@@ -690,6 +944,14 @@ export type Database = {
         }[]
       }
       cancel_orphan_pending_orders: { Args: never; Returns: number }
+      categorize_personal_movement: {
+        Args: { p_descripcion: string; p_moneda?: string }
+        Returns: {
+          categoria: string
+          es_negocio: boolean
+          subcategoria: string
+        }[]
+      }
       claim_order: {
         Args: { p_order_id: string }
         Returns: {
@@ -750,10 +1012,33 @@ export type Database = {
       cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
+      delete_monthly_ad_spend: { Args: { p_id: string }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
         Args: { p_from_date: string; p_to_date: string }
         Returns: Json
+      }
+      get_cfo_retrospective: {
+        Args: { p_year_month: string }
+        Returns: {
+          aciertos: string[]
+          created_at: string
+          decisiones: Json
+          diagnostico_at: string | null
+          diagnostico_auto: Json | null
+          fugas: string[]
+          id: string
+          lecciones: string | null
+          notas: string | null
+          updated_at: string
+          year_month: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "cfo_monthly_retrospective"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       get_daily_operator_stats: {
         Args: { p_date: string }
@@ -779,6 +1064,28 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      list_cfo_retrospectives: {
+        Args: never
+        Returns: {
+          aciertos: string[]
+          created_at: string
+          decisiones: Json
+          diagnostico_at: string | null
+          diagnostico_auto: Json | null
+          fugas: string[]
+          id: string
+          lecciones: string | null
+          notas: string | null
+          updated_at: string
+          year_month: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "cfo_monthly_retrospective"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       logistics_by_carrier: {
         Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
@@ -949,8 +1256,87 @@ export type Database = {
         }[]
       }
       pending_tomorrow_count: { Args: never; Returns: number }
+      personal_payments_summary: {
+        Args: { p_from_date?: string; p_to_date?: string }
+        Returns: {
+          avances_cop: number
+          avances_usd: number
+          comisiones_cop: number
+          compras_cop: number
+          compras_usd: number
+          count_movimientos: number
+          intereses_cop: number
+          intereses_usd: number
+          pagos_cop: number
+          pagos_usd: number
+          year_month: string
+        }[]
+      }
+      personal_residual_debt: {
+        Args: never
+        Returns: {
+          marca: string
+          moneda: string
+          num_compras: number
+          saldo_pendiente: number
+          tarjeta: string
+        }[]
+      }
+      personal_spending_by_month: {
+        Args: { p_from_date?: string; p_to_date?: string }
+        Returns: {
+          categoria: string
+          cuotas_diferidas: number
+          es_negocio: boolean
+          monto_cop: number
+          total_count: number
+          total_monto: number
+          year_month: string
+        }[]
+      }
+      personal_spending_top_items: {
+        Args: { p_categoria?: string; p_limit?: number; p_year_month: string }
+        Returns: {
+          categoria: string
+          cuotas_total: number
+          descripcion: string
+          es_negocio: boolean
+          fecha: string
+          id: string
+          interes_anual_pct: number
+          marca: string
+          moneda: string
+          monto: number
+          monto_cop: number
+          subcategoria: string
+          tarjeta: string
+        }[]
+      }
+      recategorize_personal_movements: { Args: never; Returns: Json }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      snapshot_cfo_diagnostico: {
+        Args: { p_year_month: string }
+        Returns: {
+          aciertos: string[]
+          created_at: string
+          decisiones: Json
+          diagnostico_at: string | null
+          diagnostico_auto: Json | null
+          fugas: string[]
+          id: string
+          lecciones: string | null
+          notas: string | null
+          updated_at: string
+          year_month: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "cfo_monthly_retrospective"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
       submit_opening_report: {
         Args: {
@@ -972,7 +1358,125 @@ export type Database = {
           total: number
         }[]
       }
+      upsert_cfo_retrospective: {
+        Args: {
+          p_aciertos: Json
+          p_decisiones: Json
+          p_fugas: Json
+          p_lecciones: string
+          p_notas: string
+          p_year_month: string
+        }
+        Returns: {
+          aciertos: string[]
+          created_at: string
+          decisiones: Json
+          diagnostico_at: string | null
+          diagnostico_auto: Json | null
+          fugas: string[]
+          id: string
+          lecciones: string | null
+          notas: string | null
+          updated_at: string
+          year_month: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "cfo_monthly_retrospective"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      upsert_monthly_ad_spend: {
+        Args: {
+          p_account_name: string
+          p_amount_cop: number
+          p_notas: string
+          p_payment_method: string
+          p_platform: string
+          p_year_month: string
+        }
+        Returns: {
+          account_name: string
+          amount_cop: number
+          created_at: string
+          id: string
+          notas: string | null
+          payment_method: string
+          platform: string
+          updated_at: string
+          year_month: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "monthly_ad_spend"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      upsert_monthly_business_inputs: {
+        Args: {
+          p_ads_meta: number
+          p_ads_tiktok: number
+          p_notas: string
+          p_tarjeta_interes: number
+          p_tarjeta_pago: number
+          p_year_month: string
+        }
+        Returns: {
+          ads_meta: number
+          ads_tiktok: number
+          created_at: string
+          id: string
+          notas: string | null
+          tarjeta_interes: number
+          tarjeta_pago: number
+          updated_at: string
+          year_month: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "monthly_business_inputs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       upsert_orders_from_dropi: { Args: { p_orders: Json }; Returns: number }
+      upsert_personal_card_movements: {
+        Args: { p_movements: Json }
+        Returns: Json
+      }
+      upsert_tc_debt_snapshot: {
+        Args: {
+          p_cupo_cop: number
+          p_fecha_corte: string
+          p_notas: string
+          p_saldo_cop: number
+          p_saldo_usd: number
+          p_source: string
+          p_tarjeta: string
+          p_trm: number
+        }
+        Returns: {
+          created_at: string
+          cupo_cop: number
+          fecha_corte: string
+          id: string
+          notas: string | null
+          saldo_cop: number
+          saldo_usd: number
+          source: string
+          tarjeta: string
+          trm: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tc_debt_snapshots"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       upsert_wallet_movements: { Args: { p_movements: Json }; Returns: number }
       wallet_daily_series: {
         Args: { p_from: string; p_to: string }
