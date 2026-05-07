@@ -257,6 +257,7 @@ export default function CfoTab() {
   const curr = useCfoSnapshot(yearMonth);
   const prev = useCfoSnapshot(prevYearMonth);
   const inputsQuery = useMonthlyBusinessInputs(yearMonth);
+  const adSpendForCurrent = useMonthlyAdSpend(yearMonth);
   const walletHealth = useWalletSyncHealth();
   const range = useMemo(() => monthRange(yearMonth), [yearMonth]);
   const logForProducts = useLogisticsStats({ fromDate: range.from, toDate: range.to });
