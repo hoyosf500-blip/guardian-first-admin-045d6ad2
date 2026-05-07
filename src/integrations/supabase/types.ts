@@ -1087,22 +1087,39 @@ export type Database = {
           isSetofReturn: true
         }
       }
-      logistics_by_carrier: {
-        Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
-        Returns: {
-          avg_dias_entrega: number
-          devueltos: number
-          en_transito: number
-          entregados: number
-          novedades: number
-          tasa_devolucion: number
-          tasa_entrega: number
-          total_pedidos: number
-          transportadora: string
-          valor_entregado: number
-          valor_perdido: number
-        }[]
-      }
+      logistics_by_carrier:
+        | {
+            Args: { p_from_date: string; p_to_date: string }
+            Returns: {
+              avg_dias_entrega: number
+              devueltos: number
+              en_transito: number
+              entregados: number
+              novedades: number
+              tasa_devolucion: number
+              tasa_entrega: number
+              total_pedidos: number
+              transportadora: string
+              valor_entregado: number
+              valor_perdido: number
+            }[]
+          }
+        | {
+            Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
+            Returns: {
+              avg_dias_entrega: number
+              devueltos: number
+              en_transito: number
+              entregados: number
+              novedades: number
+              tasa_devolucion: number
+              tasa_entrega: number
+              total_pedidos: number
+              transportadora: string
+              valor_entregado: number
+              valor_perdido: number
+            }[]
+          }
       logistics_by_city: {
         Args: { p_from_date: string; p_limit?: number; p_to_date: string }
         Returns: {
@@ -1166,27 +1183,41 @@ export type Database = {
           recomendacion: string
         }[]
       }
-      logistics_summary: {
-        Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
-        Returns: {
-          cancelados: number
-          devueltos: number
-          en_transito: number
-          entregados: number
-          novedades: number
-          pendientes_por_confirmar: number
-          pendientes_sin_despachar: number
-          tasa_devolucion: number
-          tasa_entrega: number
-          total_pedidos: number
-          valor_cancelado: number
-          valor_en_transito: number
-          valor_entregado: number
-          valor_novedades: number
-          valor_pendientes: number
-          valor_perdido: number
-        }[]
-      }
+      logistics_summary:
+        | {
+            Args: { p_from_date: string; p_to_date: string }
+            Returns: {
+              devueltos: number
+              en_transito: number
+              entregados: number
+              tasa_devolucion: number
+              tasa_entrega: number
+              total_pedidos: number
+              valor_entregado: number
+              valor_perdido: number
+            }[]
+          }
+        | {
+            Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
+            Returns: {
+              cancelados: number
+              devueltos: number
+              en_transito: number
+              entregados: number
+              novedades: number
+              pendientes_por_confirmar: number
+              pendientes_sin_despachar: number
+              tasa_devolucion: number
+              tasa_entrega: number
+              total_pedidos: number
+              valor_cancelado: number
+              valor_en_transito: number
+              valor_entregado: number
+              valor_novedades: number
+              valor_pendientes: number
+              valor_perdido: number
+            }[]
+          }
       logistics_timeline: {
         Args: {
           p_estados?: string[]
@@ -1310,6 +1341,28 @@ export type Database = {
           monto_cop: number
           subcategoria: string
           tarjeta: string
+        }[]
+      }
+      product_profitability: {
+        Args: { p_from_date: string; p_limit?: number; p_to_date: string }
+        Returns: {
+          cancelados: number
+          costo_devolucion_total: number
+          costo_prod_entregados: number
+          devueltos: number
+          en_transito: number
+          entregados: number
+          flete_inicial_entregados: number
+          ingresos_entregados: number
+          margen_pct: number
+          producto: string
+          tasa_cancelacion: number
+          tasa_devolucion: number
+          tasa_entrega: number
+          ticket_promedio: number
+          total_pedidos: number
+          utilidad_proyectada: number
+          utilidad_real: number
         }[]
       }
       recategorize_personal_movements: { Args: never; Returns: Json }
