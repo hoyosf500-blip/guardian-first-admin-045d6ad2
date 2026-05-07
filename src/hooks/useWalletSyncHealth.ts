@@ -42,7 +42,7 @@ export function useWalletSyncHealth() {
   return useQuery<WalletSyncHealth>({
     queryKey: ['wallet_sync_health'],
     queryFn: async () => {
-      const [syncRes, createdRes] = await Promise.all([
+      const [syncRes, fechaRes] = await Promise.all([
         supabase
           .from('dropi_wallet_movements')
           .select('synced_at')
@@ -51,15 +51,15 @@ export function useWalletSyncHealth() {
           .maybeSingle(),
         supabase
           .from('dropi_wallet_movements')
-          .select('created_at')
-          .order('created_at', { ascending: false })
+          .select('fecha')
+          .order('fecha', { ascending: false })
           .limit(1)
           .maybeSingle(),
       ]);
       if (syncRes.error) throw syncRes.error;
-      if (createdRes.error) throw createdRes.error;
+      if (fechaRes.error) throw fechaRes.error;
       const tsSync = syncRes.data?.synced_at ? new Date(syncRes.data.synced_at) : null;
-      const tsNew = createdRes.data?.created_at ? new Date(createdRes.data.created_at) : null;
+      const tsNew = fechaRes.data?.fecha ? new Date(fechaRes.data.fecha) : null;
       const hoursSync = tsSync ? (Date.now() - tsSync.getTime()) / 3_600_000 : null;
       const hoursNew = tsNew ? (Date.now() - tsNew.getTime()) / 3_600_000 : null;
       return {
