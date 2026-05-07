@@ -360,6 +360,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // Revertir estado optimista del workQueue + counter
         setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
         setCounter(prev => ({ ...prev, conf: Math.max(0, prev.conf - 1) }));
+        // CRÍTICO: liberar el lock antes de salir. Sin esto, el dbId queda
+        // permanentemente en markingInFlight y la operadora no puede
+        // reintentar la confirmación hasta recargar la página.
+        markingInFlight.current.delete(order.dbId);
         return;
       }
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
