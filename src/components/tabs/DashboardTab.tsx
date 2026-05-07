@@ -57,11 +57,13 @@ export default function DashboardTab() {
   interface OperatorStat { name: string; operatorId: string; conf: number; canc: number; noresp: number; total: number; tasa: number; }
   const [operatorRanking, setOperatorRanking] = useState<OperatorStat[]>([]);
 
+  // Audit M3: cancellation guards — evitan setState en componente desmontado.
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     const today = bogotaToday();
     supabase.rpc('get_daily_operator_stats', { p_date: today }).then(({ data, error }) => {
-      if (error || !data) return;
+      if (cancelled || error || !data) return;
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
         .map(r => {
           const total = Number(r.conf) + Number(r.canc) + Number(r.noresp);
@@ -76,18 +78,21 @@ export default function DashboardTab() {
           };
         });
       ranking.sort((a, b) => b.total - a.total);
-      setOperatorRanking(ranking);
+      if (!cancelled) setOperatorRanking(ranking);
     });
+    return () => { cancelled = true; };
   }, [user, counter]); // re-fetch when counter changes (user marked something)
 
   // Load orders from DB for dashboard stats
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     const fetchAllOrders = async () => {
       const allData: Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }> = [];
       let from = 0;
       const pageSize = 1000;
       while (true) {
+        if (cancelled) return;
         const { data, error } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
           .order('created_at', { ascending: false })
           .range(from, from + pageSize - 1);
@@ -103,21 +108,25 @@ export default function DashboardTab() {
         if (data.length < pageSize) break;
         from += pageSize;
       }
-      setDbOrders(allData);
+      if (!cancelled) setDbOrders(allData);
     };
     fetchAllOrders();
+    return () => { cancelled = true; };
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     const since = new Date(); since.setDate(since.getDate() - 30);
     supabase.from('order_results').select('result_date, result, order_id')
       .eq('operator_id', user.id).gte('result_date', since.toISOString().split('T')[0])
       .order('result_date', { ascending: true })
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (error) console.error('Error loading history:', error.message);
         if (data) setHistoryData(data);
       });
+    return () => { cancelled = true; };
   }, [user]);
 
   // Sync health — poll the latest entry in sync_logs every 30s. Only
