@@ -141,13 +141,20 @@ function EmptyChart({ msg = 'No hay datos suficientes para este periodo' }: { ms
   );
 }
 
+// Audit fix: usar componentes LOCALES en vez de toISOString().split('T')[0].
+// Antes en Colombia (UTC-5), después de las 19:00 hora local, la conversión
+// a UTC adelantaba la fecha un día — el rango por defecto era del día siguiente.
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const localISODate = (d: Date) =>
+  `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
 function defaultRange(): LogisticsFilters {
   const to = new Date();
   const from = new Date(to);
   from.setDate(from.getDate() - 30);
   return {
-    fromDate: from.toISOString().split('T')[0],
-    toDate: to.toISOString().split('T')[0],
+    fromDate: localISODate(from),
+    toDate: localISODate(to),
   };
 }
 
@@ -172,8 +179,8 @@ function prevPeriod(filters: LogisticsFilters): LogisticsFilters {
   const newFrom = new Date(newTo);
   newFrom.setDate(newFrom.getDate() - days);
   return {
-    fromDate: newFrom.toISOString().split('T')[0],
-    toDate: newTo.toISOString().split('T')[0],
+    fromDate: localISODate(newFrom),
+    toDate: localISODate(newTo),
   };
 }
 

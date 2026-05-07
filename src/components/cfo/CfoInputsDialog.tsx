@@ -46,8 +46,23 @@ export default function CfoInputsDialog({ open, onOpenChange, yearMonth, current
   }, [open, current]);
 
   const parseAmount = (v: string): number => {
-    // Aceptamos comas y puntos como separadores. "1.500.000" → 1500000.
-    const clean = v.replace(/[^\d.,]/g, '').replace(/[.,]/g, '');
+    // Audit fix: el strip indiscriminado de [.,] convertía "1.5" en "15"
+    // (data corruption silenciosa en montos decimales). Ahora solo
+    // removemos separadores de miles — secuencias de [.,] seguidas de
+    // exactamente 3 dígitos. Decimales se preservan: "1.5" → 1.5,
+    // "1.500.000" → 1500000, "1,500,000.50" → 1500000.50.
+    let clean = v.replace(/[^\d.,]/g, '');
+    // Eliminar separadores de miles iterativamente: . o , seguidos de 3
+    // dígitos donde el siguiente carácter es otro separador-miles válido,
+    // un no-dígito, o fin de string. Hasta 5 iteraciones (cubre números
+    // enormes tipo 1.000.000.000).
+    for (let i = 0; i < 5; i++) {
+      const next = clean.replace(/([.,])(\d{3})(?=[.,]\d{3}|\D|$)/, '$2');
+      if (next === clean) break;
+      clean = next;
+    }
+    // El último separador remanente es el decimal; normalizar coma a punto.
+    clean = clean.replace(',', '.');
     const n = Number(clean);
     return isFinite(n) && n >= 0 ? n : 0;
   };
