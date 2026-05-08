@@ -63,10 +63,11 @@ const App = () => (
                   <Route path="/confirmar" element={route(<ConfirmarPage />)} />
                   <Route path="/seguimiento" element={route(<SeguimientoPage />)} />
                   <Route path="/novedades" element={route(<NovedadesPage />)} />
-                  <Route path="/rescate" element={route(<RescatePage />)} />
                   <Route path="/admin" element={route(<AdminPage />)} />
                   <Route path="/logistica" element={route(<LogisticsPage />)} />
-                  <Route path="/cfo" element={route(<CfoPage />)} />
+                  {CFO_ENABLED && CfoPage && (
+                    <Route path="/cfo" element={route(<CfoPage />)} />
+                  )}
                   <Route path="/pedido/:externalId" element={route(<OrderDetailPage />)} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
