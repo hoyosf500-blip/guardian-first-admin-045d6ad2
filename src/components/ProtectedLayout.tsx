@@ -56,21 +56,28 @@ export default function ProtectedLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const settings = useAppSettings();
 
-  if (loading) {
+  if (loading || settings.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
           <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
             <Package size={22} className="text-accent" />
           </div>
-          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Cargando Panel Operadora...</p>
+          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Cargando...</p>
         </div>
       </div>
     );
   }
 
   if (!user) return <Navigate to="/auth" replace />;
+
+  // First-run setup gate. Para admins muestra el wizard; para operadoras
+  // un mensaje "configuración pendiente" hasta que el admin complete.
+  if (settings.needsSetup) {
+    return <SetupWizard onDone={() => settings.refresh()} />;
+  }
 
   const visibleTabs = NAV_ITEMS.filter(t => !t.adminOnly || isAdmin);
   const activePath = location.pathname;
