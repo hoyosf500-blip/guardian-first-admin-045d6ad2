@@ -103,12 +103,13 @@ Verificá que el sitio cargue y muestre la pantalla de login.
    ```
 
 3. Refrescá. Vas a ver el **Setup Wizard** bloqueando el resto del CRM.
-4. Completá:
+4. Completá los **4 campos críticos**:
    - Nombre del negocio (aparece en sidebar).
    - API Key Dropi (Bearer permanente).
    - Token de sesión Dropi (JWT, vence cada ~12-24h).
-   - White Brand ID (hash de tu marca en Dropi).
-   - URL de tu tienda Dropi.
+   - URL de integración Dropi (ej. `https://rushmira.com/` — la URL
+     del "tipo" de integración que elegiste al crear la API key en
+     app.dropi.co → Mis Integraciones, NO la URL pública del sitio).
    - Logo URL (opcional).
 5. Guardar y continuar — el sidebar ahora muestra tu marca.
 
