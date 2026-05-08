@@ -97,7 +97,7 @@ export default function AuthPage() {
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-accent-foreground text-sm font-extrabold shadow-ds-md">P</div>
-            <span className="text-lg font-bold text-foreground tracking-tight">Panel COD</span>
+            <span className="text-lg font-bold text-foreground tracking-tight">CRM</span>
           </div>
 
           <h1 className="text-2xl font-extrabold text-foreground tracking-tight mb-1">

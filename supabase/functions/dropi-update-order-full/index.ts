@@ -25,7 +25,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DROPI_BASE = "https://api.dropi.co";
-const DEFAULT_STORE_URL = "https://rushmira.com/";
+const DEFAULT_STORE_URL = "";
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 type SB = SupabaseClient;
