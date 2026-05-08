@@ -115,12 +115,14 @@ export default function ProtectedLayout() {
         >
           {/* Logo / brand */}
           <div className="h-14 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/25">
-                <Package size={16} className="text-accent-foreground" aria-hidden="true" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/25 flex-shrink-0 overflow-hidden">
+                {settings.brandLogoUrl
+                  ? <img src={settings.brandLogoUrl} alt="" className="w-full h-full object-cover" />
+                  : <Package size={16} className="text-accent-foreground" aria-hidden="true" />}
               </div>
-              <div>
-                <div className="text-sm font-bold text-foreground leading-tight">Guardian CRM</div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-foreground leading-tight truncate">{settings.brandName}</div>
                 <div className="text-[10px] text-muted-foreground leading-tight">Panel COD</div>
               </div>
             </div>
