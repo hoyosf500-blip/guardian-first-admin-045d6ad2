@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
-import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado, isNovedad, isOficina, isDevolucion } from '@/lib/orderUtils';
+import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -30,10 +30,9 @@ interface OrderState {
   segLoading: boolean;
   segLastUpdate: Date | null;
   loadSegData: (force?: boolean) => Promise<void>;
-  resData: OrderData[];
-  resLoaded: boolean;
-  resLoading: boolean;
-  loadResData: (force?: boolean) => Promise<void>;
+  // Rescate eliminado (2026-05-08): /seguimiento + listas SLA cubren todos
+  // los casos. Las propiedades resData/resLoaded/resLoading/loadResData ya
+  // no existen — usar segData con filtros de segLists.ts.
   novedadesQueue: OrderData[];
   novedadesLoading: boolean;
   counter: Counter;
@@ -509,17 +508,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     resetCelebrations();
   }, [resetCelebrations, dataLoader.setSegData, dataLoader.setSegLoaded, novedades.setNovedadesQueue]);
 
-  // Fix 21: resData se deriva de segData. Evita doble fetch+merge.
-  // Mismo filtro que tenía loadResData/buildWorkQueue.
-  const resData = useMemo(() => {
-    return dataLoader.segData.filter(o => {
-      const e = o.estado.toUpperCase();
-      return (isDespachado(e) && o.diasConf >= 5) ||
-        (e.includes('NOVEDAD') && !o.novedadSol) ||
-        e.includes('OFICINA') || e.includes('RECLAME') ||
-        e.includes('DEVOL');
-    });
-  }, [dataLoader.segData]);
+  // Rescate eliminado (2026-05-08): el filtro derivado se removió porque
+  // /seguimiento + segLists.ts (8 listas SLA) cubren todos los casos.
 
   // C5: useMemo del value del Provider. Antes el objeto literal se
   // recreaba en CADA render de OrderProvider, lo que disparaba re-render
@@ -530,8 +520,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     allOrders, workQueue,
     segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
     segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
-    resData, resLoaded: dataLoader.segLoaded, resLoading: dataLoader.segLoading,
-    loadResData: dataLoader.loadSegData,
     novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
     counter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
@@ -540,7 +528,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     allOrders, workQueue,
     dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
     dataLoader.segLastUpdate, dataLoader.loadSegData,
-    resData,
     novedades.novedadesQueue, novedades.novedadesLoading,
     counter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,

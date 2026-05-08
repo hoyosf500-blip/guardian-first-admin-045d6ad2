@@ -43,7 +43,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DROPI_BASE = "https://api.dropi.co";
 const DROPI_INCIDENCE_PATH = "/api/orders/saveincidencesolution";
-const DEFAULT_STORE_URL = "https://rushmira.com/";
+const DEFAULT_STORE_URL = "";
 const MAX_SOLUTION_LEN = 500;
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";

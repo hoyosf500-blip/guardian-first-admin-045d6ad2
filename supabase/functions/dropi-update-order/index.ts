@@ -39,7 +39,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_NEW_STATUS = "PENDIENTE";
-const DEFAULT_STORE_URL = "https://rushmira.com/";
+const DEFAULT_STORE_URL = "";
 
 // Only these statuses can be pushed to Dropi via this endpoint. This prevents
 // an operator from sending arbitrary strings (e.g. "CANCELADO") through the

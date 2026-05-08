@@ -266,7 +266,7 @@ Deno.serve(async (req: Request) => {
       .select("value")
       .eq("key", "dropi_store_url")
       .maybeSingle();
-    const storeUrl = urlSetting?.value || "https://rushmira.com/";
+    const storeUrl = urlSetting?.value || "";
 
     // Get admin user id for uploaded_by (first admin)
     const { data: adminRole } = await sb

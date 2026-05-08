@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
   const requestedUrl = `${base}/integrations/${endpoint}?${params.toString()}`;
 
   // Origin/Referer: usar integration_url del JWT si viene, si no derivar del país
-  const originHost = integrationUrl || `https://rushmira.com`;
+  const originHost = integrationUrl || ``;
 
   const t0 = Date.now();
   let egressIp = "";

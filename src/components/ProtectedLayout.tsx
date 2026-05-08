@@ -5,10 +5,14 @@ import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
+import { BarChart3, Phone, Package, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import OpeningReportGate from '@/components/OpeningReportGate';
+import SetupWizard from '@/components/SetupWizard';
+import { useAppSettings } from '@/hooks/useAppSettings';
 import type { LucideIcon } from 'lucide-react';
+
+const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 
 function InlineRouteLoader() {
   return (
@@ -26,10 +30,9 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/confirmar', icon: Phone, label: 'Confirmar' },
   { path: '/seguimiento', icon: Package, label: 'Seguimiento' },
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
-  { path: '/rescate', icon: LifeBuoy, label: 'Rescate' },
   { path: '/admin', icon: Settings, label: 'Admin', adminOnly: true },
   { path: '/logistica', icon: Truck, label: 'Logística', adminOnly: true },
-  { path: '/cfo', icon: DollarSign, label: 'CFO', adminOnly: true },
+  ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', adminOnly: true } as NavItem] : []),
 ];
 
 function LiveClock() {
@@ -53,21 +56,30 @@ export default function ProtectedLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const settings = useAppSettings();
 
-  if (loading) {
+  if (loading || settings.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
           <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
             <Package size={22} className="text-accent" />
           </div>
-          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Cargando Panel Operadora...</p>
+          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Cargando...</p>
         </div>
       </div>
     );
   }
 
   if (!user) return <Navigate to="/auth" replace />;
+
+  // First-run setup gate. SOLO se evalúa para admins (RLS impide a las
+  // operadoras leer app_settings; el wizard es responsabilidad del admin).
+  // Si el admin no completó el setup, las operadoras igual pueden trabajar
+  // con el branding por defecto.
+  if (isAdmin && settings.needsSetup) {
+    return <SetupWizard onDone={() => settings.refresh()} />;
+  }
 
   const visibleTabs = NAV_ITEMS.filter(t => !t.adminOnly || isAdmin);
   const activePath = location.pathname;
@@ -103,12 +115,14 @@ export default function ProtectedLayout() {
         >
           {/* Logo / brand */}
           <div className="h-14 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/25">
-                <Package size={16} className="text-accent-foreground" aria-hidden="true" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/25 flex-shrink-0 overflow-hidden">
+                {settings.brandLogoUrl
+                  ? <img src={settings.brandLogoUrl} alt="" className="w-full h-full object-cover" />
+                  : <Package size={16} className="text-accent-foreground" aria-hidden="true" />}
               </div>
-              <div>
-                <div className="text-sm font-bold text-foreground leading-tight">Guardian CRM</div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-foreground leading-tight truncate">{settings.brandName}</div>
                 <div className="text-[10px] text-muted-foreground leading-tight">Panel COD</div>
               </div>
             </div>

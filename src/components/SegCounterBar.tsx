@@ -5,17 +5,12 @@ import { CheckCircle2, ListChecks, Hourglass, Users } from 'lucide-react';
 import { bogotaToday } from '@/lib/utils';
 
 /**
- * Barra de productividad para Seguimiento y Rescate, equivalente a
- * CounterBar pero contando touchpoints por módulo.
+ * Barra de productividad para Seguimiento. Cuenta touchpoints "SEG:*"
+ * del día. Realtime: refresca al insertarse un touchpoint nuevo.
  *
- * Muestra para el día actual:
- * - Mis acciones (cuántos pedidos toqué)
- * - Mis resueltos (Resuelto/Devolucion solicitada/Solicite devolucion)
- * - Mis pendientes (acciones que no son resolutivas)
- * - Tasa de resolución personal
- * - Total del equipo (referencia)
- *
- * Realtime: se actualiza apenas se inserta un touchpoint nuevo.
+ * Antes era SegRescueCounterBar y soportaba módulo "RESCUE"; el módulo
+ * Rescate se eliminó (2026-05-08) y las listas SLA de /seguimiento ya
+ * cubren los casos. Esto quedó single-purpose.
  */
 
 const RESOLVING_LABELS = new Set([
@@ -31,32 +26,24 @@ interface Stats {
   teamResolved: number;
 }
 
-interface Props {
-  module: 'SEG' | 'RESCUE';
-}
-
-export default function SegRescueCounterBar({ module }: Props) {
+export default function SegCounterBar() {
   const { user, isAdmin } = useAuth();
   const [stats, setStats] = useState<Stats>({
-    myActions: 0,
-    myResolved: 0,
-    teamActions: 0,
-    teamResolved: 0,
+    myActions: 0, myResolved: 0, teamActions: 0, teamResolved: 0,
   });
 
   const refetch = useCallback(async () => {
     if (!user) return;
     const today = bogotaToday();
-    const prefix = module === 'SEG' ? 'SEG:' : 'RESCUE:';
     const { data, error } = await supabase
       .from('touchpoints')
       .select('action, operator_id')
       .eq('action_date', today)
-      .like('action', `${prefix}%`);
+      .like('action', 'SEG:%');
     if (error || !data) return;
     let mA = 0, mR = 0, tA = 0, tR = 0;
     data.forEach(t => {
-      const clean = t.action.replace(/^(SEG|RESCUE):\s*/, '');
+      const clean = t.action.replace(/^SEG:\s*/, '');
       const isResolving = RESOLVING_LABELS.has(clean);
       tA++;
       if (isResolving) tR++;
@@ -66,14 +53,10 @@ export default function SegRescueCounterBar({ module }: Props) {
       }
     });
     setStats({ myActions: mA, myResolved: mR, teamActions: tA, teamResolved: tR });
-  }, [user, module]);
+  }, [user]);
 
-  useEffect(() => {
-    void refetch();
-  }, [refetch]);
+  useEffect(() => { void refetch(); }, [refetch]);
 
-  // Realtime: cuando cualquier operadora inserta un touchpoint, refresca
-  // las stats. Debounce ligero para evitar ráfagas.
   useEffect(() => {
     if (!user) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -82,9 +65,8 @@ export default function SegRescueCounterBar({ module }: Props) {
       timer = setTimeout(() => { void refetch(); }, 400);
     };
     const channel = supabase
-      .channel(`tp-stats-${module}-${user.id}`)
-      .on(
-        'postgres_changes',
+      .channel(`tp-stats-seg-${user.id}`)
+      .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'touchpoints' },
         debounced,
       )
@@ -93,24 +75,12 @@ export default function SegRescueCounterBar({ module }: Props) {
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
-  }, [user, module, refetch]);
+  }, [user, refetch]);
 
-  if (!user) return null;
-  // Admins no aparecen en stats operativas: si está logueado un admin
-  // no mostramos esta barra (no contamina su vista con métricas que no
-  // son suyas, y refuerza visualmente que no debe estar trabajando como
-  // operadora).
-  if (isAdmin) return null;
+  if (!user || isAdmin) return null;
 
   const pendientes = Math.max(0, stats.myActions - stats.myResolved);
-  const tasa = stats.myActions > 0
-    ? Math.round((stats.myResolved / stats.myActions) * 100)
-    : 0;
-
-  // La barra se muestra siempre (incluso al inicio del día con ceros)
-  // para que la operadora sepa que la herramienta está ahí desde el
-  // primer minuto.
-
+  const tasa = stats.myActions > 0 ? Math.round((stats.myResolved / stats.myActions) * 100) : 0;
   const tasaTone =
     tasa >= 50 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
     : tasa >= 25 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25'
@@ -119,21 +89,21 @@ export default function SegRescueCounterBar({ module }: Props) {
   return (
     <div className="bg-card border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 flex-wrap shadow-ds-xs">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-sm" aria-label={`Mis acciones hoy: ${stats.myActions}`}>
+        <div className="flex items-center gap-1.5 text-sm">
           <div className="w-6 h-6 rounded-lg bg-blue-500/10 border border-blue-500/25 flex items-center justify-center">
             <ListChecks size={13} className="text-blue-500" aria-hidden="true" />
           </div>
           <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myActions}</span>
           <span className="text-xs text-muted-foreground">acciones</span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm" aria-label={`Resueltos hoy: ${stats.myResolved}`}>
+        <div className="flex items-center gap-1.5 text-sm">
           <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
             <CheckCircle2 size={13} className="text-emerald-500" aria-hidden="true" />
           </div>
           <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myResolved}</span>
           <span className="text-xs text-muted-foreground">resueltos</span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm" aria-label={`Pendientes hoy: ${pendientes}`}>
+        <div className="flex items-center gap-1.5 text-sm">
           <div className="w-6 h-6 rounded-lg bg-amber-500/10 border border-amber-500/25 flex items-center justify-center">
             <Hourglass size={13} className="text-amber-500" aria-hidden="true" />
           </div>
