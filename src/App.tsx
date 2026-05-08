@@ -17,11 +17,13 @@ const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const ConfirmarPage = lazy(() => import("@/pages/ConfirmarPage"));
 const SeguimientoPage = lazy(() => import("@/pages/SeguimientoPage"));
 const NovedadesPage = lazy(() => import("@/pages/NovedadesPage"));
-const RescatePage = lazy(() => import("@/pages/RescatePage"));
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const LogisticsPage = lazy(() => import("@/pages/LogisticsPage"));
-const CfoPage = lazy(() => import("@/pages/CfoPage"));
+// CFO module is opt-in via env var (VITE_ENABLE_CFO=true). Para clientes
+// externos NO se registra la ruta — un acceso directo a /cfo cae al 404.
+const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
+const CfoPage = CFO_ENABLED ? lazy(() => import("@/pages/CfoPage")) : null;
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const queryClient = new QueryClient();
