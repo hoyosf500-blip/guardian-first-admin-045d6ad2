@@ -30,10 +30,9 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/confirmar', icon: Phone, label: 'Confirmar' },
   { path: '/seguimiento', icon: Package, label: 'Seguimiento' },
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
-  { path: '/rescate', icon: LifeBuoy, label: 'Rescate' },
   { path: '/admin', icon: Settings, label: 'Admin', adminOnly: true },
   { path: '/logistica', icon: Truck, label: 'Logística', adminOnly: true },
-  { path: '/cfo', icon: DollarSign, label: 'CFO', adminOnly: true },
+  ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', adminOnly: true } as NavItem] : []),
 ];
 
 function LiveClock() {
