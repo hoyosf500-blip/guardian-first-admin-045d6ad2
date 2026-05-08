@@ -73,9 +73,11 @@ export default function ProtectedLayout() {
 
   if (!user) return <Navigate to="/auth" replace />;
 
-  // First-run setup gate. Para admins muestra el wizard; para operadoras
-  // un mensaje "configuración pendiente" hasta que el admin complete.
-  if (settings.needsSetup) {
+  // First-run setup gate. SOLO se evalúa para admins (RLS impide a las
+  // operadoras leer app_settings; el wizard es responsabilidad del admin).
+  // Si el admin no completó el setup, las operadoras igual pueden trabajar
+  // con el branding por defecto.
+  if (isAdmin && settings.needsSetup) {
     return <SetupWizard onDone={() => settings.refresh()} />;
   }
 
