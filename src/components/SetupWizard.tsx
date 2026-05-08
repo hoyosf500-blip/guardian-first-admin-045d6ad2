@@ -19,8 +19,7 @@ const FIELDS: FieldDef[] = [
   { key: 'brand_name',           label: 'Nombre de tu negocio',     required: true,  hint: 'Ej. "Mi Tienda CRM" — aparece en el sidebar y en el título.' },
   { key: 'dropi_token',          label: 'API Key de Dropi (Bearer)', required: true,  type: 'password', hint: 'Token permanente. En Dropi → Configuración → API.' },
   { key: 'dropi_session_token',  label: 'Token de sesión Dropi',    required: true,  type: 'password', hint: 'JWT del navegador. DevTools → Network → header x-authorization en cualquier request a api.dropi.co. Vence cada ~12-24h.' },
-  { key: 'dropi_white_brand_id', label: 'White Brand ID',           required: true,  hint: 'Hash de tu marca en Dropi.' },
-  { key: 'dropi_store_url',      label: 'URL de tu tienda Dropi',   required: true,  type: 'url', hint: 'Ej. https://mitienda.com/' },
+  { key: 'dropi_store_url',      label: 'URL de integración Dropi', required: true,  type: 'url', hint: 'La URL registrada en tu integración Dropi. NO es la URL pública de tu tienda online — es la URL del "tipo" de integración que elegiste al crear la API key (ej: https://rushmira.com/ si tu integración es tipo RUSHMIRA, https://yaxa.com/ si es Yaxa). La encontrás en app.dropi.co → Mis Integraciones.' },
   { key: 'brand_logo_url',       label: 'URL del logo (opcional)',  required: false, type: 'url' },
 ];
 
