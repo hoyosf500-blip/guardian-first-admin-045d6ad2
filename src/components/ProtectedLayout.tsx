@@ -5,10 +5,14 @@ import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Package, LifeBuoy, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
+import { BarChart3, Phone, Package, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import OpeningReportGate from '@/components/OpeningReportGate';
+import SetupWizard from '@/components/SetupWizard';
+import { useAppSettings } from '@/hooks/useAppSettings';
 import type { LucideIcon } from 'lucide-react';
+
+const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 
 function InlineRouteLoader() {
   return (
