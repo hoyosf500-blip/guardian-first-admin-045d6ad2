@@ -257,7 +257,7 @@ Deno.serve(async (req: Request) => {
       .select("value")
       .eq("key", "dropi_store_url")
       .maybeSingle();
-    const storeUrl = urlSetting?.value || "https://rushmira.com/";
+    const storeUrl = urlSetting?.value || "";
 
     // Parse body
     let body: Record<string, unknown> = {};
