@@ -6,7 +6,6 @@ export const REQUIRED_SETTING_KEYS = [
   'brand_name',
   'dropi_token',
   'dropi_session_token',
-  'dropi_white_brand_id',
   'dropi_store_url',
 ] as const;
 
