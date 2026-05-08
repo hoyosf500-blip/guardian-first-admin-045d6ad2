@@ -30,10 +30,9 @@ interface OrderState {
   segLoading: boolean;
   segLastUpdate: Date | null;
   loadSegData: (force?: boolean) => Promise<void>;
-  resData: OrderData[];
-  resLoaded: boolean;
-  resLoading: boolean;
-  loadResData: (force?: boolean) => Promise<void>;
+  // Rescate eliminado (2026-05-08): /seguimiento + listas SLA cubren todos
+  // los casos. Las propiedades resData/resLoaded/resLoading/loadResData ya
+  // no existen — usar segData con filtros de segLists.ts.
   novedadesQueue: OrderData[];
   novedadesLoading: boolean;
   counter: Counter;
