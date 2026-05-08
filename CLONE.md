@@ -59,7 +59,8 @@ que la base nueva arranque limpia:
 
 - Vacía `dropi_white_brand_id` si trae el valor del seed original.
 - Crea `brand_name`, `brand_logo_url`, `dropi_store_url`,
-  `dropi_session_token` vacíos para el wizard.
+  `dropi_session_token` vacíos para el wizard. (`dropi_white_brand_id`
+  fue removido — era legacy sin uso.)
 - Borra el seed de bitácora financiera Q1 2026 (datos del dueño
   original) — solo se ejecuta si `is_seed_data_owner != 'true'`.
 
