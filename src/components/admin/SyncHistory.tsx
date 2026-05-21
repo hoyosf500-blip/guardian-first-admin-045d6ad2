@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useStore } from '@/contexts/StoreContext';
 import { History, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
@@ -19,16 +20,20 @@ interface SyncLog {
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 export default function SyncHistory() {
+  const { activeStoreId } = useStore();
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { loadLogs(); }, []);
+  // Recarga al cambiar de tienda — el historial es POR TIENDA.
+  useEffect(() => { loadLogs(); }, [activeStoreId]);
 
   async function loadLogs() {
+    if (!activeStoreId) { setLogs([]); setLoading(false); return; }
     setLoading(true);
     const { data } = await supabase
       .from('sync_logs')
       .select('*')
+      .eq('store_id', activeStoreId)
       .order('created_at', { ascending: false })
       .limit(20);
     setLogs((data as SyncLog[]) || []);

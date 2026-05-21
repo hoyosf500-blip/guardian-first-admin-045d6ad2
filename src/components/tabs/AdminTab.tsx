@@ -132,20 +132,40 @@ export default function AdminTab() {
 
   async function loadData() {
     setLoading(true);
-    const { data: profiles } = await supabase.from('profiles').select('user_id, display_name');
-    const { data: roles } = await supabase.from('user_roles').select('user_id, role');
-    if (profiles && roles) {
-      setOperators(profiles.map(p => ({ ...p, roles: roles.filter(r => r.user_id === p.user_id).map(r => r.role) })));
-    }
+    if (!activeStoreId) { setOperators([]); setReports([]); setLoading(false); return; }
+
+    // Operadoras de la TIENDA ACTIVA (no usuarios globales): se leen de
+    // store_members + profiles. Antes se listaban todos los profiles/user_roles
+    // del sistema, así que el admin de Ecuador veía a las operadoras de Colombia
+    // aunque no fueran miembros de su tienda. El rol que se muestra es el rol
+    // POR TIENDA (owner/operator), no el global de user_roles.
+    const { data: members } = await supabase
+      .from('store_members')
+      .select('user_id, role')
+      .eq('store_id', activeStoreId);
+    const memberIds = (members ?? []).map(m => m.user_id);
+    const { data: profiles } = memberIds.length
+      ? await supabase.from('profiles').select('user_id, display_name').in('user_id', memberIds)
+      : { data: [] as { user_id: string; display_name: string }[] };
+
+    const roleByUser = new Map((members ?? []).map(m => [m.user_id, m.role as string]));
+    const nameByUser = new Map((profiles ?? []).map(p => [p.user_id, p.display_name]));
+    setOperators((profiles ?? []).map(p => ({
+      user_id: p.user_id,
+      display_name: p.display_name,
+      roles: roleByUser.get(p.user_id) ? [roleByUser.get(p.user_id) as string] : [],
+    })));
+
+    // Reportes de cierre — también por tienda.
     const { data: reps } = await supabase.from('daily_reports')
       .select('operator_id, report_date, report_type, data')
-      .eq('report_type', 'cierre').order('report_date', { ascending: false }).limit(20);
-    if (reps && profiles) {
-      setReports(reps.map(r => ({
-        operator_name: profiles?.find(p => p.user_id === r.operator_id)?.display_name || 'Desconocido',
-        report_date: r.report_date, data: r.data as Record<string, number>,
-      })));
-    }
+      .eq('report_type', 'cierre')
+      .eq('store_id', activeStoreId)
+      .order('report_date', { ascending: false }).limit(20);
+    setReports((reps ?? []).map(r => ({
+      operator_name: nameByUser.get(r.operator_id) || 'Desconocido',
+      report_date: r.report_date, data: r.data as Record<string, number>,
+    })));
     setLoading(false);
   }
 
@@ -303,7 +323,7 @@ export default function AdminTab() {
                   </div>
                   <div className="flex gap-1.5">
                     {op.roles.map(r => (
-                      <span key={r} className={`pill ${r === 'admin' ? 'pill-warning' : 'pill-info'}`}>{r}</span>
+                      <span key={r} className={`pill ${r === 'admin' || r === 'owner' ? 'pill-warning' : 'pill-info'}`}>{r}</span>
                     ))}
                   </div>
                 </div>
