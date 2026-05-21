@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
@@ -32,6 +32,7 @@ function chunkDateRange(from: string, to: string, maxDays: number) {
 
 /** Fetch all pages for a date chunk */
 async function fetchAllPages(
+  base: string,
   apiKey: string,
   origin: string,
   chunkFrom: string,
@@ -55,7 +56,7 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
+    const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -101,7 +102,7 @@ function calcDias(dateStr: string): number {
 }
 
 /** Map a Dropi order to our DB schema */
-function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
+function mapOrder(o: Record<string, unknown>, userId: string, today: string, storeId: string) {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
   const productName = products
     .map((p) => (p.product as Record<string, unknown>)?.name || "")
@@ -162,6 +163,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   return {
     external_id: String(o.id || ""),
     uploaded_by: userId,
+    store_id: storeId,
     upload_date: today,
     nombre: `${o.name || ""} ${o.surname || ""}`.trim() || "Sin nombre",
     phone: String(o.phone || "").replace(/[^0-9]/g, ""),
@@ -221,47 +223,41 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Audit H1: bulk sync es admin-only — operadora podía gatillar reescritura masiva.
-    const { data: roleRow } = await sb
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (!roleRow) {
-      return new Response(
-        JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
 
-    // Get Dropi API key
-    let dropiApiKey: string | null = null;
-    const { data: keySetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_api_key")
-      .maybeSingle();
-    dropiApiKey = keySetting?.value || Deno.env.get("DROPI_API_KEY") || null;
 
-    if (!dropiApiKey) {
+
+    // Parse body — store_id is required (multi-tenant)
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* no body */ }
+
+    const storeId = typeof body.store_id === "string" && body.store_id.trim()
+      ? body.store_id.trim()
+      : (typeof body.storeId === "string" ? (body.storeId as string).trim() : "");
+
+    if (!storeId) {
       return new Response(
-        JSON.stringify({ error: "Clave API de Dropi no configurada." }),
+        JSON.stringify({ error: "Falta store_id en el body" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Get store URL for Origin header
-    const { data: urlSetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_store_url")
-      .maybeSingle();
-    const storeUrl = urlSetting?.value || "";
+    // Gate: caller debe ser owner de la tienda (sync es operación pesada)
+    const isOwner = await isStoreOwner(sb, user.id, storeId);
+    if (!isOwner) {
+      return new Response(
+        JSON.stringify({ error: "Solo el dueño de la tienda puede ejecutar el sync" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
-    // Parse body
-    let body: Record<string, unknown> = {};
-    try { body = await req.json(); } catch { /* no body */ }
+    // Load store credentials + país host
+    const cfg = await loadStoreConfig(sb, storeId);
+    if (!cfg.apiKey) {
+      return new Response(
+        JSON.stringify({ error: "La tienda no tiene Clave API de Dropi configurada" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const defaultFrom = new Date();
     defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 90);
@@ -277,13 +273,12 @@ Deno.serve(async (req: Request) => {
     let totalFromDropi = 0;
 
     for (const chunk of chunks) {
-      // Fetch all pages for this chunk
-      const dropiOrders = await fetchAllPages(dropiApiKey, storeUrl, chunk.from, chunk.to);
+      const dropiOrders = await fetchAllPages(cfg.base, cfg.apiKey, cfg.storeUrl, chunk.from, chunk.to);
       totalFromDropi += dropiOrders.length;
 
       if (dropiOrders.length === 0) continue;
 
-      const dbOrders = dropiOrders.map((o) => mapOrder(o, user.id, today));
+      const dbOrders = dropiOrders.map((o) => mapOrder(o, user.id, today, storeId));
 
       // RPC upsert_orders_from_dropi: ON CONFLICT DO UPDATE WHERE
       // IS DISTINCT FROM. Filas idénticas no se reescriben → no se
@@ -313,7 +308,8 @@ Deno.serve(async (req: Request) => {
       .from("order_results")
       .select("order_id")
       .eq("result", "conf")
-      .eq("result_date", todayDate);
+      .eq("result_date", todayDate)
+      .eq("store_id", storeId);
 
     if (confirmedToday && confirmedToday.length > 0) {
       const confirmedIds = confirmedToday.map((r) => r.order_id);
@@ -323,6 +319,7 @@ Deno.serve(async (req: Request) => {
           .from("orders")
           .update({ estado: "PENDIENTE" })
           .in("id", batch)
+          .eq("store_id", storeId)
           .eq("estado", "PENDIENTE CONFIRMACION");
       }
     }
@@ -354,6 +351,7 @@ Deno.serve(async (req: Request) => {
       duplicates_count: totalDuplicates,
       total_count: totalFromDropi,
       triggered_by: user.id,
+      store_id: storeId,
     });
 
     return new Response(

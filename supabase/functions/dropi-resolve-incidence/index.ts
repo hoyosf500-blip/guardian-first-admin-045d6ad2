@@ -40,41 +40,19 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_BASE = "https://api.dropi.co";
 const DROPI_INCIDENCE_PATH = "/api/orders/saveincidencesolution";
-const DEFAULT_STORE_URL = "";
 const MAX_SOLUTION_LEN = 500;
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 type SB = SupabaseClient;
-type SettingRow = { key: string; value: string | null };
 
 type ResolveAction = "reoffer" | "return";
 
-async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> {
-  const { data, error } = await sb
-    .from("app_settings")
-    .select("key, value")
-    .in("key", ["dropi_api_key", "dropi_store_url"]);
-
-  if (error) {
-    throw new Error(`No se pudo leer app_settings: ${error.message}`);
-  }
-
-  const map = new Map<string, string>();
-  ((data || []) as SettingRow[]).forEach((row) =>
-    map.set(String(row.key), String(row.value || "")),
-  );
-
-  const apiKey = map.get("dropi_api_key") || Deno.env.get("DROPI_API_KEY") || "";
-  const storeUrl = map.get("dropi_store_url") || DEFAULT_STORE_URL;
-
-  return { apiKey, storeUrl };
-}
-
 interface LocalOrder {
   id: string;
+  storeId: string;
   nombre: string;
   phone: string;
   direccion: string;
@@ -86,7 +64,7 @@ async function loadLocalOrder(
 ): Promise<LocalOrder | null> {
   const { data, error } = await sb
     .from("orders")
-    .select("id, external_id, nombre, phone, direccion")
+    .select("id, store_id, external_id, nombre, phone, direccion")
     .eq("external_id", externalId)
     .limit(1)
     .maybeSingle();
@@ -99,6 +77,7 @@ async function loadLocalOrder(
 
   return {
     id: String(data.id || ""),
+    storeId: String((data as { store_id: string }).store_id || ""),
     nombre: String(data.nombre || ""),
     phone: String(data.phone || ""),
     direccion: String(data.direccion || ""),
@@ -153,11 +132,12 @@ interface DropiResult {
 }
 
 async function dropiPostIncidence(
+  base: string,
   apiKey: string,
   storeUrl: string,
   payload: Record<string, unknown>,
 ): Promise<DropiResult> {
-  const res = await fetch(`${DROPI_BASE}${DROPI_INCIDENCE_PATH}`, {
+  const res = await fetch(`${base}${DROPI_INCIDENCE_PATH}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -170,24 +150,18 @@ async function dropiPostIncidence(
 
   const rawText = await res.text();
   let body: Record<string, unknown> = {};
-  try {
-    body = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    body = { raw: rawText };
-  }
-
+  try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
   const ok = res.ok && body.isSuccess !== false;
   return { ok, httpStatus: res.status, body, rawText };
 }
 
 async function dropiSanityCheck(
+  base: string,
   apiKey: string,
   storeUrl: string,
 ): Promise<{ ok: boolean; httpStatus: number; message?: string }> {
-  // Lightweight GET against the integrations listing endpoint to verify the
-  // key is still valid and Dropi is reachable (same as dropi-update-order).
   const url =
-    `${DROPI_BASE}/integrations/orders/myorders?result_number=1&start=0` +
+    `${base}/integrations/orders/myorders?result_number=1&start=0` +
     `&date_from=2020-01-01&date_to=2020-01-01` +
     `&filter_date_by=FECHA%20DE%20CREADO&orderBy=id&orderDirection=desc`;
 
@@ -199,20 +173,11 @@ async function dropiSanityCheck(
       "Origin": storeUrl,
     },
   });
-
   const rawText = await res.text();
   let body: Record<string, unknown> = {};
-  try {
-    body = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    body = {};
-  }
-
+  try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = {}; }
   const ok = res.ok && body.isSuccess !== false;
-  const message = ok
-    ? "Conexión OK"
-    : String(body.message || `HTTP ${res.status}`);
-
+  const message = ok ? "Conexión OK" : String(body.message || `HTTP ${res.status}`);
   return { ok, httpStatus: res.status, message };
 }
 
@@ -286,35 +251,24 @@ Deno.serve(async (req: Request) => {
       typeof body.solution === "string" ? body.solution : "";
     const solution = solutionRaw.trim().slice(0, MAX_SOLUTION_LEN);
 
-    // ---- Load config ----
-    const { apiKey, storeUrl } = await getConfig(sb);
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({
-          error:
-            "Clave API de Dropi no configurada. Configúrala en Admin → Clave API de Dropi.",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    // ---- DryRun: connectivity check only ----
+    // ---- DryRun: connectivity check only (requires storeId in body) ----
     if (dryRun) {
-      const check = await dropiSanityCheck(apiKey, storeUrl);
+      const storeId = typeof body.storeId === "string" ? body.storeId.trim() : "";
+      if (!storeId) {
+        return new Response(JSON.stringify({ error: "Falta storeId para dryRun" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const cfg = await loadStoreConfig(sb, storeId);
+      if (!cfg.apiKey) {
+        return new Response(JSON.stringify({ error: "La tienda no tiene Clave API de Dropi" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const check = await dropiSanityCheck(cfg.base, cfg.apiKey, cfg.storeUrl);
       return new Response(
-        JSON.stringify({
-          ok: check.ok,
-          dryRun: true,
-          dropiHttpStatus: check.httpStatus,
-          message: check.message,
-        }),
-        {
-          status: check.ok ? 200 : 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        JSON.stringify({ ok: check.ok, dryRun: true, dropiHttpStatus: check.httpStatus, message: check.message }),
+        { status: check.ok ? 200 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -322,41 +276,44 @@ Deno.serve(async (req: Request) => {
     if (!externalId) {
       return new Response(
         JSON.stringify({ error: "Falta externalId en el body" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
     if (!action) {
       return new Response(
-        JSON.stringify({
-          error: "Acción inválida. Usa 'reoffer' o 'return'.",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        JSON.stringify({ error: "Acción inválida. Usa 'reoffer' o 'return'." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
     if (action === "reoffer" && solution.length < 3) {
       return new Response(
-        JSON.stringify({
-          error:
-            "Solución requerida y con al menos 3 caracteres cuando la acción es 'reoffer'.",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        JSON.stringify({ error: "Solución requerida y con al menos 3 caracteres cuando la acción es 'reoffer'." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // ---- Load local order for pre-fill (best-effort) ----
+    // ---- Load local order for store + pre-fill ----
     const local = await loadLocalOrder(sb, externalId);
     if (!local) {
-      console.warn(
-        `No se encontró orden local con external_id=${externalId}; se usará payload con campos Confirma vacíos`,
+      return new Response(
+        JSON.stringify({ error: `Pedido ${externalId} no encontrado` }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const isMember = await isStoreMember(sb, user.id, local.storeId);
+    if (!isMember) {
+      return new Response(
+        JSON.stringify({ error: "No perteneces a esta tienda" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const cfg = await loadStoreConfig(sb, local.storeId);
+    if (!cfg.apiKey) {
+      return new Response(
+        JSON.stringify({ error: "La tienda no tiene Clave API de Dropi configurada" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -367,7 +324,7 @@ Deno.serve(async (req: Request) => {
         : buildReturnBody(externalId);
 
     // ---- Call Dropi ----
-    const res = await dropiPostIncidence(apiKey, storeUrl, payload);
+    const res = await dropiPostIncidence(cfg.base, cfg.apiKey, cfg.storeUrl, payload);
 
     if (!res.ok) {
       const errorMsg = `Dropi POST [${res.httpStatus}]: ${String(

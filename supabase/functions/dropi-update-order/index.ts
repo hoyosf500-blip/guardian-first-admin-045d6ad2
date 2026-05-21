@@ -36,40 +36,14 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, storeIdFromExternalId, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_NEW_STATUS = "PENDIENTE";
-const DEFAULT_STORE_URL = "";
 
 // Only these statuses can be pushed to Dropi via this endpoint. This prevents
 // an operator from sending arbitrary strings (e.g. "CANCELADO") through the
 // integration key. Add new values here as new flows are implemented.
 const ALLOWED_STATUSES = ["PENDIENTE", "GUIA_GENERADA", "CONFIRMADO"];
-
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-type SB = SupabaseClient;
-type SettingRow = { key: string; value: string | null };
-
-async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> {
-  const { data, error } = await sb
-    .from("app_settings")
-    .select("key, value")
-    .in("key", ["dropi_api_key", "dropi_store_url"]);
-
-  if (error) {
-    throw new Error(`No se pudo leer app_settings: ${error.message}`);
-  }
-
-  const map = new Map<string, string>();
-  ((data || []) as SettingRow[]).forEach((row) =>
-    map.set(String(row.key), String(row.value || "")),
-  );
-
-  const apiKey = map.get("dropi_api_key") || Deno.env.get("DROPI_API_KEY") || "";
-  const storeUrl = map.get("dropi_store_url") || DEFAULT_STORE_URL;
-
-  return { apiKey, storeUrl };
-}
 
 interface DropiResult {
   ok: boolean;
@@ -79,13 +53,14 @@ interface DropiResult {
 }
 
 async function dropiPutOrder(
+  base: string,
   apiKey: string,
   storeUrl: string,
   externalId: string,
   newStatus: string,
 ): Promise<DropiResult> {
   const res = await fetch(
-    `${DROPI_BASE}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+    `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
     {
       method: "PUT",
       headers: {
@@ -111,14 +86,12 @@ async function dropiPutOrder(
 }
 
 async function dropiSanityCheck(
+  base: string,
   apiKey: string,
   storeUrl: string,
 ): Promise<{ ok: boolean; httpStatus: number; message?: string }> {
-  // Lightweight GET against the integrations listing endpoint to verify the
-  // key is still valid and Dropi is reachable. This is what dropi-sync uses
-  // so we know it works.
   const url =
-    `${DROPI_BASE}/integrations/orders/myorders?result_number=1&start=0` +
+    `${base}/integrations/orders/myorders?result_number=1&start=0` +
     `&date_from=2020-01-01&date_to=2020-01-01` +
     `&filter_date_by=FECHA%20DE%20CREADO&orderBy=id&orderDirection=desc`;
 
@@ -140,10 +113,7 @@ async function dropiSanityCheck(
   }
 
   const ok = res.ok && body.isSuccess !== false;
-  const message = ok
-    ? "Conexión OK"
-    : String(body.message || `HTTP ${res.status}`);
-
+  const message = ok ? "Conexión OK" : String(body.message || `HTTP ${res.status}`);
   return { ok, httpStatus: res.status, message };
 }
 
@@ -243,42 +213,55 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- Verify the order exists in our DB (ownership check) ----
+    // ---- Resolve store + verify order exists ----
+    let storeId: string | null =
+      typeof body.storeId === "string" && body.storeId.trim() ? body.storeId.trim() : null;
+
     if (!dryRun) {
       const { data: orderRow } = await sb
         .from("orders")
-        .select("id")
+        .select("id, store_id")
         .eq("external_id", externalId)
         .maybeSingle();
       if (!orderRow) {
         return new Response(
           JSON.stringify({ error: `Pedido ${externalId} no encontrado en la base de datos` }),
-          {
-            status: 404,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          },
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
+      storeId = String((orderRow as { store_id: string }).store_id);
     }
 
-    // ---- Load config (integration-key + store URL) ----
-    const { apiKey, storeUrl } = await getConfig(sb);
-    if (!apiKey) {
+    if (!storeId) {
+      return new Response(
+        JSON.stringify({ error: "Falta storeId (para dryRun) o externalId válido." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ---- Membership check ----
+    const isMember = await isStoreMember(sb, user.id, storeId);
+    if (!isMember) {
+      return new Response(
+        JSON.stringify({ error: "No perteneces a esta tienda" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ---- Load store config (integration-key + store URL + host por país) ----
+    const cfg = await loadStoreConfig(sb, storeId);
+    if (!cfg.apiKey) {
       return new Response(
         JSON.stringify({
-          error:
-            "Clave API de Dropi no configurada. Configúrala en Admin → Clave API de Dropi.",
+          error: "La tienda no tiene Clave API de Dropi. Configurala en Ajustes → Tienda.",
         }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     // ---- DryRun: just a sanity GET so the admin can verify connectivity ----
     if (dryRun) {
-      const check = await dropiSanityCheck(apiKey, storeUrl);
+      const check = await dropiSanityCheck(cfg.base, cfg.apiKey, cfg.storeUrl);
       return new Response(
         JSON.stringify({
           ok: check.ok,
@@ -294,7 +277,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- PUT order status via integration-key ----
-    const res = await dropiPutOrder(apiKey, storeUrl, externalId, newStatus);
+    const res = await dropiPutOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId, newStatus);
 
     if (!res.ok) {
       const errorMsg = `Dropi PUT [${res.httpStatus}]: ${String(

@@ -24,8 +24,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_API = "https://api.dropi.co";
 const EXPORT_PATH = "/api/wallet/exportexcel";
 
 /** Normaliza string: uppercase + sin acentos, para matchear códigos
@@ -221,34 +221,42 @@ Deno.serve(async (req: Request) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      // Audit H1: wallet sync expone datos financieros del dueño — admin-only.
-      const { data: roleRow } = await sb
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-      if (!roleRow) {
+      userId = user.id;
+    // (gate de owner se valida después de leer storeId del body)
+    }
+
+    // 2. Body: store_id es requerido (multi-tenant)
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* sin body */ }
+
+    const storeId = typeof body.store_id === "string" && body.store_id.trim()
+      ? body.store_id.trim()
+      : (typeof body.storeId === "string" ? (body.storeId as string).trim() : "");
+    if (!storeId) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Falta store_id en el body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Gate: solo el dueño puede ejecutar wallet sync (datos financieros).
+    if (!isCron && userId) {
+      const isOwner = await isStoreOwner(sb, userId, storeId);
+      if (!isOwner) {
         return new Response(
-          JSON.stringify({ error: "Solo administradores pueden ejecutar el wallet sync" }),
+          JSON.stringify({ error: "Solo el dueño de la tienda puede ejecutar el wallet sync" }),
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      userId = user.id;
     }
 
-    // 2. Leer JWT de Dropi
-    const { data: tokenRow } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_session_token")
-      .maybeSingle();
-    const sessionToken = tokenRow?.value || "";
+    const cfg = await loadStoreConfig(sb, storeId);
+    const sessionToken = cfg.sessionToken;
     if (!sessionToken) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "Token de sesión Dropi no configurado. Ve a Admin → Token sesión Dropi.",
+          error: "La tienda no tiene token de sesión Dropi configurado.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
@@ -291,10 +299,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 4. Body opcional
-    let body: Record<string, unknown> = {};
-    try { body = await req.json(); } catch { /* sin body */ }
-
+    // 4. Rango de fechas (body ya parseado arriba)
     const today = new Date();
     const defaultFrom = new Date();
     defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 30);
@@ -303,14 +308,14 @@ Deno.serve(async (req: Request) => {
     const dryRun = Boolean(body.dryRun);
     const limit = Number(body.limit || 0);
 
-    // 5. Fetch XLSX desde Dropi (server-side, no IP block en este endpoint)
+    // 5. Fetch XLSX desde Dropi (host del país de la tienda)
     const params = new URLSearchParams({
       from: fromDate,
       until: toDate,
       user_id: String(dropiUserId),
       wallet_id: "0",
     });
-    const xlsxRes = await fetch(`${DROPI_API}${EXPORT_PATH}?${params.toString()}`, {
+    const xlsxRes = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
       method: "GET",
       headers: {
         "Accept": "application/json, text/plain, */*",
@@ -361,7 +366,7 @@ Deno.serve(async (req: Request) => {
         const batch = mapped.slice(i, i + 50);
         const { data: changedCount, error: upsertError } = await sb.rpc(
           "upsert_wallet_movements",
-          { p_movements: batch },
+          { p_movements: batch, p_store_id: storeId },
         );
         if (upsertError) {
           console.error("upsert_wallet_movements error:", upsertError);
@@ -370,7 +375,6 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // 8. Log
       await sb.from("sync_logs").insert({
         source: "dropi-wallet-sync",
         status: "success",
@@ -378,6 +382,7 @@ Deno.serve(async (req: Request) => {
         duplicates_count: 0,
         total_count: mapped.length,
         triggered_by: userId,
+        store_id: storeId,
       });
     }
 

@@ -131,7 +131,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   useRealtimeOrders(user, {
     onOrderChange: debouncedRefreshAll,
     onResultChange: debouncedRefreshAll,
-  });
+  }, activeStoreId);
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
   const markingInFlight = useRef(new Set<string>());
