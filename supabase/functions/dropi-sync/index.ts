@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
