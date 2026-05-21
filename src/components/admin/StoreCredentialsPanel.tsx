@@ -47,10 +47,15 @@ export default function StoreCredentialsPanel() {
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
   // Shopify (por tienda) — reconciliación anti-fuga.
+  // Dev Dashboard de Shopify: se guarda Client ID + Client Secret (shpss_…) y
+  // la edge function obtiene el token de Admin API en runtime (vence cada 24h
+  // pero se renueva solo). NO se pega un token estático.
   const [shopDomain, setShopDomain] = useState('');
-  const [shopToken, setShopToken] = useState('');
+  const [shopClientId, setShopClientId] = useState('');
+  const [shopClientSecret, setShopClientSecret] = useState('');
   const [shopConfigured, setShopConfigured] = useState(false);
-  const [showShopToken, setShowShopToken] = useState(false);
+  const [shopAuthMode, setShopAuthMode] = useState<string | null>(null);
+  const [showShopSecret, setShowShopSecret] = useState(false);
   const [savingShop, setSavingShop] = useState(false);
   const [testingShop, setTestingShop] = useState(false);
   const [shopTestMsg, setShopTestMsg] = useState<string | null>(null);
@@ -88,14 +93,16 @@ export default function StoreCredentialsPanel() {
     void (async () => {
       const { data } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>
-      ) => Promise<{ data: { configured: boolean; shop_domain: string | null }[] | null }>)(
+      ) => Promise<{ data: { configured: boolean; shop_domain: string | null; auth_mode: string | null }[] | null }>)(
         'get_store_shopify_status', { p_store_id: activeStoreId },
       );
       if (cancelled) return;
       const row = Array.isArray(data) ? data[0] : null;
       setShopConfigured(Boolean(row?.configured));
       setShopDomain(row?.shop_domain || '');
-      setShopToken('');
+      setShopAuthMode(row?.auth_mode ?? null);
+      setShopClientId('');
+      setShopClientSecret('');
     })();
     return () => { cancelled = true; };
   }, [activeStoreId, isOwnerOfActive]);
@@ -167,17 +174,26 @@ export default function StoreCredentialsPanel() {
 
   async function saveShopify() {
     if (!activeStoreId) return;
-    if (!shopDomain.trim() || !shopToken.trim()) { toast.error('Pegá el dominio y el token de Shopify'); return; }
+    if (!shopDomain.trim() || !shopClientId.trim() || !shopClientSecret.trim()) {
+      toast.error('Pegá dominio, Client ID y Client Secret de Shopify'); return;
+    }
     setSavingShop(true);
     type RpcRes = { error: { message: string } | null };
     const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>)(
-      'upsert_store_shopify_config',
-      { p_store_id: activeStoreId, p_shop_domain: shopDomain.trim(), p_admin_token: shopToken.trim() },
+      'upsert_store_shopify_credentials',
+      {
+        p_store_id: activeStoreId,
+        p_shop_domain: shopDomain.trim(),
+        p_client_id: shopClientId.trim(),
+        p_client_secret: shopClientSecret.trim(),
+      },
     );
     setSavingShop(false);
     if (error) { toast.error('No se pudo guardar Shopify', { description: error.message }); return; }
     setShopConfigured(true);
-    setShopToken('');
+    setShopAuthMode('client_credentials');
+    setShopClientId('');
+    setShopClientSecret('');
     toast.success('Shopify conectado');
   }
 
@@ -321,7 +337,7 @@ export default function StoreCredentialsPanel() {
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-foreground">Shopify · {activeStore.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Conectá Shopify para detectar pedidos que NO pasaron a Dropi. Creá una "App personalizada" con permiso <code className="bg-muted px-1 rounded">read_orders</code> y pegá el token.
+              Conectá Shopify para detectar pedidos que NO pasaron a Dropi. En el <strong>Dev Dashboard</strong> de Shopify creá una app con permiso <code className="bg-muted px-1 rounded">read_orders</code> e instalala en la tienda; después pegá el <strong>Client ID</strong> y el <strong>Client Secret</strong> (<code className="bg-muted px-1 rounded">shpss_…</code>). El token se renueva solo.
             </p>
           </div>
           {shopConfigured && <span className="text-xs text-success flex items-center gap-1"><CheckCircle2 size={12} /> Conectado</span>}
@@ -333,18 +349,27 @@ export default function StoreCredentialsPanel() {
               className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Token de Admin API (shpat_…)</label>
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Client ID</label>
+            <input type="text" value={shopClientId} onChange={e => setShopClientId(e.target.value)}
+              placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : '367fca75556ab8cb…'}
+              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Client Secret (shpss_…)</label>
             <div className="mt-1 relative">
-              <input type={showShopToken ? 'text' : 'password'} value={shopToken} onChange={e => setShopToken(e.target.value)}
-                placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : 'shpat_...'}
+              <input type={showShopSecret ? 'text' : 'password'} value={shopClientSecret} onChange={e => setShopClientSecret(e.target.value)}
+                placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : 'shpss_...'}
                 className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              <button type="button" onClick={() => setShowShopToken(!showShopToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                {showShopToken ? <EyeOff size={14} /> : <Eye size={14} />}
+              <button type="button" onClick={() => setShowShopSecret(!showShopSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showShopSecret ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
           </div>
           <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
-            {shopTestMsg ? <span className="text-xs text-muted-foreground">{shopTestMsg}</span> : <span />}
+            {shopTestMsg ? <span className="text-xs text-muted-foreground">{shopTestMsg}</span>
+              : shopConfigured && shopAuthMode === 'token'
+                ? <span className="text-xs text-warning">Conectada con token viejo — repegá Client ID + Secret para que no venza.</span>
+                : <span />}
             <div className="flex gap-2">
               {shopConfigured && (
                 <button onClick={testShopify} disabled={testingShop}
@@ -352,7 +377,7 @@ export default function StoreCredentialsPanel() {
                   {testingShop ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Probar
                 </button>
               )}
-              <button onClick={saveShopify} disabled={savingShop || !shopDomain.trim() || !shopToken.trim()}
+              <button onClick={saveShopify} disabled={savingShop || !shopDomain.trim() || !shopClientId.trim() || !shopClientSecret.trim()}
                 className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingShop ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar Shopify
               </button>

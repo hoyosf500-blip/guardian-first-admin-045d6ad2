@@ -12,7 +12,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
-import { loadShopifyConfig } from "../_shared/shopifyStoreConfig.ts";
+import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
 
@@ -127,8 +127,12 @@ Deno.serve(async (req: Request) => {
 
     // 1. Pedidos de Shopify (últimos `days` días). Separamos cancelados (no se
     //    despachan, no cuentan) pero los reportamos por transparencia.
+    //    El token se obtiene en runtime: si la tienda usa client_id/secret del
+    //    Dev Dashboard, hacemos el client credentials grant (token 24h cacheado);
+    //    si tiene un admin_token estático viejo, se usa directo.
+    const accessToken = await getShopifyAccessToken(cfg);
     const sinceShopify = new Date(Date.now() - days * 86400000).toISOString();
-    const allShopify = await fetchShopifyOrders(cfg.shopDomain, cfg.adminToken, sinceShopify);
+    const allShopify = await fetchShopifyOrders(cfg.shopDomain, accessToken, sinceShopify);
     const shopifyOrders = allShopify.filter((o) => !o.cancelled_at);
     const cancelledCount = allShopify.length - shopifyOrders.length;
 
