@@ -24,6 +24,7 @@ interface FailedSync { id: string; created_at: string; error_message: string | n
 
 export default function AdminTab() {
   const { isAdmin } = useAuth();
+  const { activeStoreId } = useStore();
   const [operators, setOperators] = useState<Profile[]>([]);
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,14 +32,7 @@ export default function AdminTab() {
   const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
-  const [dropiKey, setDropiKey] = useState('');
-  const [dropiKeySaved, setDropiKeySaved] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
-  const [testingKey, setTestingKey] = useState(false);
-  const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
-
-  // AI key state
+  // AI key state (sigue siendo global, no por tienda)
   const [aiKey, setAiKey] = useState('');
   const [aiKeySaved, setAiKeySaved] = useState('');
   const [showAiKey, setShowAiKey] = useState(false);
@@ -46,22 +40,13 @@ export default function AdminTab() {
   const [testingAi, setTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
 
-  // Dropi session token state (for buyer fingerprint)
-  const [dropiSession, setDropiSession] = useState('');
-  const [dropiSessionSaved, setDropiSessionSaved] = useState('');
-  const [showSession, setShowSession] = useState(false);
-  const [savingSession, setSavingSession] = useState(false);
-  const [testingSession, setTestingSession] = useState(false);
-  const [sessionTestResult, setSessionTestResult] = useState<'ok' | 'fail' | null>(null);
-
   useEffect(() => {
     if (!isAdmin) return;
     loadData();
-    loadDropiKey();
     loadAiKey();
-    loadDropiSession();
     loadFailedSyncs();
-  }, [isAdmin]);
+  }, [isAdmin, activeStoreId]);
+
 
   async function loadFailedSyncs() {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
