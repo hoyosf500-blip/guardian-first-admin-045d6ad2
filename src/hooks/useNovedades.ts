@@ -50,7 +50,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
     } finally {
       setNovedadesLoading(false);
     }
-  }, [user, novedadesLoaded]);
+  }, [user, novedadesLoaded, storeId]);
 
   const resolveNovedad = useCallback(async (
     order: OrderData,
