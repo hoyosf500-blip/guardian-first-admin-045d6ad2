@@ -52,6 +52,7 @@ type ResolveAction = "reoffer" | "return";
 
 interface LocalOrder {
   id: string;
+  storeId: string;
   nombre: string;
   phone: string;
   direccion: string;
@@ -63,7 +64,7 @@ async function loadLocalOrder(
 ): Promise<LocalOrder | null> {
   const { data, error } = await sb
     .from("orders")
-    .select("id, external_id, nombre, phone, direccion")
+    .select("id, store_id, external_id, nombre, phone, direccion")
     .eq("external_id", externalId)
     .limit(1)
     .maybeSingle();
@@ -76,6 +77,7 @@ async function loadLocalOrder(
 
   return {
     id: String(data.id || ""),
+    storeId: String((data as { store_id: string }).store_id || ""),
     nombre: String(data.nombre || ""),
     phone: String(data.phone || ""),
     direccion: String(data.direccion || ""),
