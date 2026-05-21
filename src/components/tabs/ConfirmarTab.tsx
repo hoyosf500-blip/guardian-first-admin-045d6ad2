@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
@@ -30,6 +31,7 @@ interface Props {
 
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
+  const { activeStoreId } = useStore();
   const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
