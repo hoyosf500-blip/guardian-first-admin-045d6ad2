@@ -1,0 +1,165 @@
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
+import { X, Loader2, Truck, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { usePushToDropi, type PushClient, type PushProduct, type PushUnmapped } from '@/hooks/usePushToDropi';
+import { toast } from 'sonner';
+
+interface Props {
+  storeId: string;
+  shopifyOrderId: string;
+  shopifyName?: string;     // "#1234" para el encabezado
+  onClose: () => void;
+  onSuccess: (dropiOrderId: string | null) => void;  // el panel marca el pedido como subido
+}
+
+const EMPTY_CLIENT: PushClient = { name: '', surname: '', phone: '', dir: '', city: '', state: '', email: '', notes: '' };
+
+/**
+ * Modal de "Subir a Dropi": muestra la vista previa (cliente + productos)
+ * editable y, al confirmar, crea la orden real en Dropi. Crear es irreversible
+ * (genera guía/flete), por eso siempre pasa por esta confirmación.
+ */
+export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName, onClose, onSuccess }: Props) {
+  const { preview, confirm } = usePushToDropi(storeId);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [client, setClient] = useState<PushClient>(EMPTY_CLIENT);
+  const [lines, setLines] = useState<PushProduct[]>([]);
+  const [unmapped, setUnmapped] = useState<PushUnmapped[]>([]);
+  const [alreadyPushed, setAlreadyPushed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true); setLoadError(null);
+      const p = await preview(shopifyOrderId);
+      if (cancelled) return;
+      if (!p.ok) { setLoadError(p.error || 'No se pudo armar la vista previa'); setLoading(false); return; }
+      setClient(p.client ?? EMPTY_CLIENT);
+      setLines(p.products ?? []);
+      setUnmapped(p.unmapped ?? []);
+      setAlreadyPushed(Boolean(p.alreadyPushed));
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [preview, shopifyOrderId]);
+
+  const total = useMemo(() => lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 0), 0), [lines]);
+  const setField = (k: keyof PushClient, v: string) => setClient(c => ({ ...c, [k]: v }));
+  const setLine = (i: number, k: 'price' | 'quantity', v: number) =>
+    setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
+
+  const blockedReason =
+    unmapped.length > 0 ? `${unmapped.length} producto(s) sin vínculo a Dropi — no se importaron por Dropify. Súbelo manual en Dropi o vinculá el producto primero.`
+    : !client.name || !client.dir || !client.city || !client.state || !client.phone ? 'Faltan datos del cliente (nombre, dirección, ciudad, departamento, teléfono).'
+    : null;
+
+  async function doConfirm() {
+    setSubmitting(true); setSubmitError(null);
+    const overrides = {
+      client,
+      lines: Object.fromEntries(lines.map((l, i) => [String(i), { price: Number(l.price), quantity: Number(l.quantity) }])),
+    };
+    const r = await confirm(shopifyOrderId, overrides);
+    setSubmitting(false);
+    if (!r.ok) { setSubmitError(r.error || 'Dropi rechazó el pedido'); return; }
+    toast.success(`Subido a Dropi${r.dropi_order_id ? ` (orden ${r.dropi_order_id})` : ''}`);
+    onSuccess(r.dropi_order_id ?? null);
+  }
+
+  const input = 'w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30';
+  const label = 'text-[10px] font-medium text-muted-foreground uppercase tracking-wider';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
+        onClick={e => e.stopPropagation()}
+        className="w-full max-w-lg max-h-[88vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl">
+        <div className="sticky top-0 z-10 px-5 py-4 border-b border-border bg-card flex items-center gap-2">
+          <Truck size={16} className="text-primary" />
+          <h3 className="text-sm font-semibold text-foreground flex-1">Subir a Dropi {shopifyName && <span className="text-muted-foreground font-mono">· {shopifyName}</span>}</h3>
+          <button onClick={onClose} className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"><X size={14} /></button>
+        </div>
+
+        {loading ? (
+          <div className="p-8 flex items-center justify-center"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>
+        ) : loadError ? (
+          <div className="p-5 text-sm text-destructive flex items-center gap-2"><AlertTriangle size={15} /> {loadError}</div>
+        ) : alreadyPushed ? (
+          <div className="p-6 text-center space-y-2">
+            <CheckCircle2 size={28} className="text-success mx-auto" />
+            <p className="text-sm text-foreground">Este pedido ya fue subido a Dropi.</p>
+            <button onClick={() => onSuccess(null)} className="mt-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium">Entendido</button>
+          </div>
+        ) : (
+          <div className="p-5 space-y-4">
+            {unmapped.length > 0 && (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning flex items-start gap-2">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                <span>Productos sin vínculo a Dropi: {unmapped.map(u => u.title || u.sku).join(', ')}. No se importaron por Dropify.</span>
+              </div>
+            )}
+
+            {/* Cliente */}
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={label}>Nombre</label><input className={input} value={client.name} onChange={e => setField('name', e.target.value)} /></div>
+              <div><label className={label}>Apellido</label><input className={input} value={client.surname} onChange={e => setField('surname', e.target.value)} /></div>
+              <div><label className={label}>Teléfono</label><input className={input} value={client.phone} onChange={e => setField('phone', e.target.value)} /></div>
+              <div><label className={label}>Email</label><input className={input} value={client.email} onChange={e => setField('email', e.target.value)} /></div>
+              <div className="col-span-2"><label className={label}>Dirección</label><input className={input} value={client.dir} onChange={e => setField('dir', e.target.value)} /></div>
+              <div><label className={label}>Ciudad</label><input className={input} value={client.city} onChange={e => setField('city', e.target.value)} /></div>
+              <div><label className={label}>Departamento</label><input className={input} value={client.state} onChange={e => setField('state', e.target.value)} /></div>
+              <div className="col-span-2"><label className={label}>Notas (van en la guía)</label><input className={input} value={client.notes} onChange={e => setField('notes', e.target.value)} /></div>
+            </div>
+
+            {/* Productos */}
+            <div className="rounded-lg border border-border overflow-hidden">
+              <div className="px-3 py-2 bg-muted/40 text-[10px] font-medium text-muted-foreground uppercase tracking-wider grid grid-cols-[1fr,3rem,5rem] gap-2">
+                <span>Producto</span><span className="text-center">Cant.</span><span className="text-right">Precio u.</span>
+              </div>
+              <div className="divide-y divide-border">
+                {lines.map((l, i) => (
+                  <div key={i} className="px-3 py-2 grid grid-cols-[1fr,3rem,5rem] gap-2 items-center text-sm">
+                    <div className="min-w-0">
+                      <div className="truncate text-foreground">{l.title}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono">
+                        {l.dropiId ? `Dropi #${l.dropiId}` : <span className="text-warning">sin vínculo</span>}{l.sku ? ` · ${l.sku}` : ''}
+                      </div>
+                    </div>
+                    <input type="number" min={1} value={l.quantity} onChange={e => setLine(i, 'quantity', Number(e.target.value))}
+                      className="h-8 w-full rounded border border-border bg-background px-1 text-center text-sm" />
+                    <input type="number" min={0} value={l.price} onChange={e => setLine(i, 'price', Number(e.target.value))}
+                      className="h-8 w-full rounded border border-border bg-background px-1 text-right text-sm font-mono" />
+                  </div>
+                ))}
+              </div>
+              <div className="px-3 py-2 bg-muted/40 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Total a cobrar (COD)</span>
+                <span className="font-bold tabular-nums text-foreground">${total.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {submitError && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" /><span>{submitError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted/40">Cancelar</button>
+              <button onClick={doConfirm} disabled={submitting || !!blockedReason} title={blockedReason || undefined}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} Confirmar y crear en Dropi
+              </button>
+            </div>
+            {blockedReason && <p className="text-[11px] text-warning text-right">{blockedReason}</p>}
+          </div>
+        )}
+      </motion.div>
+    </div>,
+    document.body,
+  );
+}

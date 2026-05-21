@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useStore } from '@/contexts/StoreContext';
 import { useShopifyPending, type ShopifyPendingItem } from '@/hooks/useShopifyPending';
+import { usePushToDropi } from '@/hooks/usePushToDropi';
+import PushToDropiModal from './PushToDropiModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 
 const DONE_KEY = (storeId: string) => `guardian.shopifyDone:${storeId}`;
 const BOGOTA = 'America/Bogota'; // UTC-5 — sirve para Colombia y Ecuador
@@ -37,9 +40,15 @@ function dayLabel(date: string, today?: string): string {
 export default function ShopifyPendingPanel() {
   const { activeStoreId } = useStore();
   const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
+  const { confirm: confirmPush } = usePushToDropi(activeStoreId);
   const [expanded, setExpanded] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  // Pedido abierto en el modal "Subir a Dropi"
+  const [pushItem, setPushItem] = useState<ShopifyPendingItem | null>(null);
+  // Subida en lote
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   useEffect(() => { setDone(activeStoreId ? loadDone(activeStoreId) : new Set()); }, [activeStoreId]);
 
@@ -87,6 +96,27 @@ export default function ShopifyPendingPanel() {
     }
     return [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   }, [visible]);
+
+  // Subir TODOS los pendientes visibles a Dropi (datos auto de Shopify). Los que
+  // fallen (productos sin vínculo, ciudad rara, etc.) NO se marcan y quedan en
+  // la lista para subirlos uno por uno con el modal. Crea órdenes reales: por
+  // eso pide una confirmación previa (bulkConfirm).
+  const runBulk = useCallback(async () => {
+    if (!activeStoreId || bulkRunning) return;
+    setBulkRunning(true); setBulkConfirm(false);
+    const targets = [...visible];
+    let okCount = 0; const fails: string[] = [];
+    for (const p of targets) {
+      const r = await confirmPush(p.id);            // sin overrides = valores de Shopify
+      if (r.ok) { okCount++; markDone(p.id); }
+      else fails.push(`${p.name}: ${r.error || 'error'}`);
+      await new Promise(res => setTimeout(res, 400)); // pacing suave
+    }
+    setBulkRunning(false);
+    if (okCount > 0) toast.success(`${okCount} pedido(s) subido(s) a Dropi`);
+    if (fails.length > 0) toast.error(`${fails.length} no se pudieron subir`, { description: fails.slice(0, 4).join(' · ') });
+    void refetch();
+  }, [activeStoreId, bulkRunning, visible, confirmPush, markDone, refetch]);
 
   // Guards: no estorbar la cola si no hay tienda / no cargó / no configurado.
   if (!activeStoreId) return null;
@@ -154,6 +184,13 @@ export default function ShopifyPendingPanel() {
           <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
         </button>
         {count > 0 && (
+          <button onClick={() => { setExpanded(true); setBulkConfirm(true); }} disabled={bulkRunning}
+            title="Subir todos los pendientes a Dropi de una"
+            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 flex-shrink-0 hover:bg-primary/90 disabled:opacity-50">
+            {bulkRunning ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />} Subir todos
+          </button>
+        )}
+        {count > 0 && (
           <button onClick={() => setExpanded(e => !e)}
             className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-medium text-foreground flex items-center gap-1 flex-shrink-0">
             {expanded ? 'Ocultar' : 'Ver lista'}
@@ -161,6 +198,20 @@ export default function ShopifyPendingPanel() {
           </button>
         )}
       </div>
+
+      {/* Confirmación de subida en lote */}
+      {bulkConfirm && count > 0 && (
+        <div className="px-4 py-2.5 border-t border-warning/30 bg-warning/5 flex flex-wrap items-center gap-2 text-xs">
+          <AlertTriangle size={14} className="text-warning flex-shrink-0" />
+          <span className="text-foreground flex-1 min-w-[12rem]">
+            Vas a crear <strong>{count}</strong> pedido(s) reales en Dropi con los datos de Shopify (genera guía y flete). Los que tengan productos sin vínculo quedarán en la lista.
+          </span>
+          <button onClick={() => setBulkConfirm(false)} className="h-7 px-3 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground">Cancelar</button>
+          <button onClick={runBulk} className="h-7 px-3 rounded-lg bg-primary text-primary-foreground font-medium flex items-center gap-1 hover:bg-primary/90">
+            <Truck size={12} /> Sí, subir {count}
+          </button>
+        </div>
+      )}
 
       <AnimatePresence>
         {expanded && count > 0 && (
@@ -198,8 +249,12 @@ export default function ShopifyPendingPanel() {
                         className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
                         <ExternalLink size={12} />
                       </a>
-                      <button onClick={() => markDone(p.id)}
-                        className="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 flex-shrink-0">
+                      <button onClick={() => setPushItem(p)} title="Subir este pedido a Dropi"
+                        className="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 flex items-center gap-1 flex-shrink-0">
+                        <Truck size={12} /> Subir a Dropi
+                      </button>
+                      <button onClick={() => markDone(p.id)} title="Ya lo cargué manualmente"
+                        className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex-shrink-0">
                         Ya lo metí
                       </button>
                     </div>
@@ -210,6 +265,16 @@ export default function ShopifyPendingPanel() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {pushItem && activeStoreId && (
+        <PushToDropiModal
+          storeId={activeStoreId}
+          shopifyOrderId={pushItem.id}
+          shopifyName={pushItem.name}
+          onClose={() => setPushItem(null)}
+          onSuccess={(/* dropiOrderId */) => { markDone(pushItem.id); setPushItem(null); void refetch(); }}
+        />
+      )}
     </motion.div>
   );
 }
