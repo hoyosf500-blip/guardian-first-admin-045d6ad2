@@ -903,6 +903,50 @@ export type Database = {
         }
         Relationships: []
       }
+      shopify_pushed_orders: {
+        Row: {
+          dropi_order_id: string | null
+          error_message: string | null
+          id: string
+          payload: Json | null
+          pushed_at: string
+          pushed_by: string | null
+          shopify_order_id: string
+          status: string
+          store_id: string
+        }
+        Insert: {
+          dropi_order_id?: string | null
+          error_message?: string | null
+          id?: string
+          payload?: Json | null
+          pushed_at?: string
+          pushed_by?: string | null
+          shopify_order_id: string
+          status?: string
+          store_id: string
+        }
+        Update: {
+          dropi_order_id?: string | null
+          error_message?: string | null
+          id?: string
+          payload?: Json | null
+          pushed_at?: string
+          pushed_by?: string | null
+          shopify_order_id?: string
+          status?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopify_pushed_orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_dropi_config: {
         Row: {
           country_code: string
