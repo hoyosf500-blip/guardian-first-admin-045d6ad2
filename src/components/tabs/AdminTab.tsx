@@ -60,73 +60,9 @@ export default function AdminTab() {
     setFailedSyncs((data as FailedSync[]) || []);
   }
 
-  async function loadDropiKey() {
-    const { data } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'dropi_api_key')
-      .maybeSingle();
-    if (data) {
-      setDropiKey(data.value);
-      setDropiKeySaved(data.value);
-    }
-  }
+  // (loadDropiKey / saveDropiKey / testDropiConnection eliminados —
+  //  reemplazados por StoreCredentialsPanel multi-tenant.)
 
-  async function saveDropiKey() {
-    if (!dropiKey.trim()) {
-      toast.error('La clave no puede estar vacía');
-      return;
-    }
-    setSavingKey(true);
-    try {
-      if (dropiKeySaved) {
-        const { error } = await supabase
-          .from('app_settings')
-          .update({ value: dropiKey.trim() })
-          .eq('key', 'dropi_api_key');
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('app_settings')
-          .insert({ key: 'dropi_api_key', value: dropiKey.trim() });
-        if (error) throw error;
-      }
-      setDropiKeySaved(dropiKey.trim());
-      toast.success('Clave API de Dropi guardada');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error al guardar');
-    } finally {
-      setSavingKey(false);
-    }
-  }
-
-  async function testDropiConnection() {
-    setTestingKey(true);
-    setTestResult(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error('No hay sesión activa'); return; }
-      const today = new Date().toISOString().split('T')[0];
-      const res = await supabase.functions.invoke('dropi-sync', {
-        body: { from: today, untill: today },
-      });
-      if (res.error) {
-        setTestResult('fail');
-        toast.error(`Error: ${res.error.message}`);
-      } else if (res.data?.error) {
-        setTestResult('fail');
-        toast.error(res.data.error);
-      } else {
-        setTestResult('ok');
-        toast.success(`Conexión exitosa — ${res.data.message || 'API respondió correctamente'}`);
-      }
-    } catch (err: unknown) {
-      setTestResult('fail');
-      toast.error(err instanceof Error ? err.message : 'Error de conexión');
-    } finally {
-      setTestingKey(false);
-    }
-  }
 
   async function loadAiKey() {
     const { data } = await supabase
