@@ -135,7 +135,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   const fecha = createdAt ? createdAt.split("T")[0] : today;
   const status = String(o.status || "PENDIENTE").toUpperCase();
   const isPendConf = status === "PENDIENTE CONFIRMACION";
-  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : "";
+  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : null;
 
   const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";
   const movements = (o.servientrega_movements as Array<Record<string, unknown>>) || [];
