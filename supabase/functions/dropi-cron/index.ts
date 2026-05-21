@@ -19,8 +19,14 @@ import { dropiHostFor } from "../_shared/dropiHosts.ts";
 
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
-const RATE_LIMIT_MS = 500;
+// 1500ms entre páginas = ~40 req/min, por debajo del throttle de Dropi (~60/min).
+// Antes 500ms (~120 req/min) hacía que el cron mismo se pasara del límite en
+// cuentas grandes (Ecuador: ~50 páginas/corrida) → 429 "Too Many Attempts", que
+// además tumbaba el botón manual "Probar conexión". Más lento pero estable.
+const RATE_LIMIT_MS = 1500;
 const SYNC_DAYS_BACK = 14;
+// Pausa entre tiendas para no encadenar ráfagas de una tienda con la siguiente.
+const INTER_STORE_MS = 3000;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -375,6 +381,10 @@ Deno.serve(async (req: Request) => {
         triggered_by: ownerId,
         store_id: storeId,
       });
+
+      // Pausa entre tiendas: evita encadenar la ráfaga de una con la siguiente
+      // y dejar el throttle de Dropi caliente para el botón manual.
+      await sleep(INTER_STORE_MS);
     }
 
     // ---- Post-proceso GLOBAL (sobre todas las tiendas) ----
