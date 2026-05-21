@@ -132,11 +132,12 @@ interface DropiResult {
 }
 
 async function dropiPostIncidence(
+  base: string,
   apiKey: string,
   storeUrl: string,
   payload: Record<string, unknown>,
 ): Promise<DropiResult> {
-  const res = await fetch(`${DROPI_BASE}${DROPI_INCIDENCE_PATH}`, {
+  const res = await fetch(`${base}${DROPI_INCIDENCE_PATH}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -149,24 +150,18 @@ async function dropiPostIncidence(
 
   const rawText = await res.text();
   let body: Record<string, unknown> = {};
-  try {
-    body = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    body = { raw: rawText };
-  }
-
+  try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
   const ok = res.ok && body.isSuccess !== false;
   return { ok, httpStatus: res.status, body, rawText };
 }
 
 async function dropiSanityCheck(
+  base: string,
   apiKey: string,
   storeUrl: string,
 ): Promise<{ ok: boolean; httpStatus: number; message?: string }> {
-  // Lightweight GET against the integrations listing endpoint to verify the
-  // key is still valid and Dropi is reachable (same as dropi-update-order).
   const url =
-    `${DROPI_BASE}/integrations/orders/myorders?result_number=1&start=0` +
+    `${base}/integrations/orders/myorders?result_number=1&start=0` +
     `&date_from=2020-01-01&date_to=2020-01-01` +
     `&filter_date_by=FECHA%20DE%20CREADO&orderBy=id&orderDirection=desc`;
 
@@ -178,20 +173,11 @@ async function dropiSanityCheck(
       "Origin": storeUrl,
     },
   });
-
   const rawText = await res.text();
   let body: Record<string, unknown> = {};
-  try {
-    body = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    body = {};
-  }
-
+  try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = {}; }
   const ok = res.ok && body.isSuccess !== false;
-  const message = ok
-    ? "Conexión OK"
-    : String(body.message || `HTTP ${res.status}`);
-
+  const message = ok ? "Conexión OK" : String(body.message || `HTTP ${res.status}`);
   return { ok, httpStatus: res.status, message };
 }
 
