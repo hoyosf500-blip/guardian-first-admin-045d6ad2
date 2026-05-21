@@ -69,19 +69,28 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "dropi-integration-key": apiKey,
-        "Origin": origin,
-      },
-    });
+    let res: Response | null = null;
+    let lastTxt = "";
+    let rateLimited = false;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          "Origin": origin,
+        },
+      });
+      if (res.status !== 429) { rateLimited = false; break; }
+      rateLimited = true;
+      lastTxt = await res.text();
+      await sleep(2000 * Math.pow(2, attempt));
+    }
 
-    if (!res.ok) {
-      const txt = await res.text();
-      console.error(`Dropi API error ${res.status}: ${txt}`);
+    if (!res || !res.ok) {
+      const txt = rateLimited ? lastTxt : (res ? await res.text() : "no-response");
+      console.error(`Dropi API error ${res?.status ?? "?"}: ${txt}`);
       break;
     }
 
