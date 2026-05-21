@@ -26,15 +26,16 @@ function InlineRouteLoader() {
   );
 }
 
-interface NavItem { path: string; icon: LucideIcon; label: string; adminOnly?: boolean }
+// adminOnly  → solo admin GLOBAL (Fabian). managerOnly → owner/supervisor de la tienda activa.
+interface NavItem { path: string; icon: LucideIcon; label: string; adminOnly?: boolean; managerOnly?: boolean }
 
 const NAV_ITEMS: NavItem[] = [
   { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
   { path: '/confirmar', icon: Phone, label: 'Confirmar' },
   { path: '/seguimiento', icon: Package, label: 'Seguimiento' },
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
-  { path: '/admin', icon: Settings, label: 'Admin', adminOnly: true },
-  { path: '/logistica', icon: Truck, label: 'Logística', adminOnly: true },
+  { path: '/admin', icon: Settings, label: 'Admin', managerOnly: true },
+  { path: '/logistica', icon: Truck, label: 'Logística', managerOnly: true },
   ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', adminOnly: true } as NavItem] : []),
 ];
 
@@ -138,6 +139,7 @@ function ProtectedLayoutInner() {
   // (operator/owner, nunca admin) jamás los ve aunque navegue a /cfo directo.
   const visibleTabs = NAV_ITEMS.filter(t => {
     if (t.adminOnly && !isAdmin) return false;
+    if (t.managerOnly && !store.isManagerOfActive) return false;
     if (t.path === '/cfo' && store.activeStore?.country_code !== 'CO') return false;
     return true;
   });

@@ -18,6 +18,7 @@ export default function StoreInvitePanel() {
   const [generating, setGenerating] = useState(false);
   const [link, setLink] = useState('');
   const [copied, setCopied] = useState(false);
+  const [role, setRole] = useState<'operator' | 'supervisor'>('operator');
 
   // Solo el dueño de la tienda activa puede invitar.
   if (!activeStore || !isOwnerOfActive) return null;
@@ -30,7 +31,7 @@ export default function StoreInvitePanel() {
     type RpcRes = { data: string | null; error: { message: string } | null };
     const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>)(
       'create_store_invite',
-      { p_store_id: activeStoreId, p_role: 'operator' },
+      { p_store_id: activeStoreId, p_role: role },
     );
     setGenerating(false);
     if (error || !data) {
@@ -57,14 +58,25 @@ export default function StoreInvitePanel() {
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
         <UserPlus size={16} className="text-primary" />
         <div>
-          <h3 className="text-sm font-semibold text-foreground">Invitar operadora · {activeStore.name}</h3>
+          <h3 className="text-sm font-semibold text-foreground">Invitar a tu equipo · {activeStore.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Generá un link y mandáselo. Al registrarse queda como operadora <span className="font-medium text-foreground">solo de {activeStore.name}</span> — no puede ver otras tiendas. El link vence en 7 días y sirve una sola vez.
+            Elegí el rol, generá el link y mandáselo. Al registrarse queda <span className="font-medium text-foreground">solo en {activeStore.name}</span> con ese rol — no ve otras tiendas. El link vence en 7 días y sirve una sola vez.
           </p>
         </div>
       </div>
 
       <div className="px-5 py-4 space-y-3">
+        <div>
+          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Rol de la invitación</label>
+          <select
+            value={role}
+            onChange={e => { setRole(e.target.value as 'operator' | 'supervisor'); setLink(''); }}
+            className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="operator">Operadora — solo Confirmar / Seguimiento / Novedades</option>
+            <option value="supervisor">Supervisor — además Admin y Logística (no CFO)</option>
+          </select>
+        </div>
         <button
           onClick={generate}
           disabled={generating}

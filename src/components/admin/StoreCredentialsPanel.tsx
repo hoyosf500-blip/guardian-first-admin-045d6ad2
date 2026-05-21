@@ -22,7 +22,7 @@ interface CfgRow {
  * era single-tenant y rompía cuando se agregaba una segunda tienda.
  */
 export default function StoreCredentialsPanel() {
-  const { activeStore, activeStoreId, isOwnerOfActive, refresh } = useStore();
+  const { activeStore, activeStoreId, isManagerOfActive, refresh } = useStore();
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
@@ -61,7 +61,7 @@ export default function StoreCredentialsPanel() {
   const [shopTestMsg, setShopTestMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!activeStoreId || !isOwnerOfActive) { setLoading(false); return; }
+    if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
     let cancelled = false;
     void (async () => {
       setLoading(true);
@@ -84,11 +84,11 @@ export default function StoreCredentialsPanel() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [activeStoreId, isOwnerOfActive, activeStore]);
+  }, [activeStoreId, isManagerOfActive, activeStore]);
 
   // Estado de Shopify (configurado + dominio; el token NUNCA se trae al cliente).
   useEffect(() => {
-    if (!activeStoreId || !isOwnerOfActive) return;
+    if (!activeStoreId || !isManagerOfActive) return;
     let cancelled = false;
     void (async () => {
       const { data } = await (supabase.rpc as unknown as (
@@ -105,7 +105,7 @@ export default function StoreCredentialsPanel() {
       setShopClientSecret('');
     })();
     return () => { cancelled = true; };
-  }, [activeStoreId, isOwnerOfActive]);
+  }, [activeStoreId, isManagerOfActive]);
 
   async function saveCreds() {
     if (!activeStoreId || !activeStore) return;
@@ -219,10 +219,10 @@ export default function StoreCredentialsPanel() {
       </div>
     );
   }
-  if (!isOwnerOfActive) {
+  if (!isManagerOfActive) {
     return (
       <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
-        Solo el dueño de <span className="font-medium text-foreground">{activeStore.name}</span> puede ver/editar las credenciales Dropi.
+        Solo el dueño o supervisor de <span className="font-medium text-foreground">{activeStore.name}</span> puede ver/editar las credenciales.
       </div>
     );
   }

@@ -2,11 +2,13 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef, Re
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 
+export type StoreRole = 'owner' | 'supervisor' | 'operator';
+
 export interface StoreMembership {
   id: string;
   name: string;
   country_code: string;
-  role: 'owner' | 'operator';
+  role: StoreRole;
   brand_logo_url: string | null;
   status: string;
   // ¿La tienda tiene credenciales Dropi cargadas? (sólo visible para owner)
@@ -19,6 +21,8 @@ interface StoreState {
   activeStoreId: string | null;
   activeStore: StoreMembership | null;
   isOwnerOfActive: boolean;
+  // owner O supervisor de la tienda activa — pueden entrar a Admin/Logística.
+  isManagerOfActive: boolean;
   needsSetup: boolean;        // owner + tienda activa sin dropi_api_key
   setActiveStoreId: (id: string) => void;
   refresh: () => Promise<void>;
@@ -26,6 +30,9 @@ interface StoreState {
 
 const StoreContext = createContext<StoreState | undefined>(undefined);
 const LS_KEY = 'guardian.activeStoreId';
+// Precedencia de roles: si un usuario tiene varias membresías en la misma
+// tienda (pasa con filas duplicadas viejas), gana el rol más fuerte.
+const ROLE_RANK: Record<StoreRole, number> = { owner: 3, supervisor: 2, operator: 1 };
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -75,7 +82,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       dropiByStore = new Map((cfgs ?? []).map(c => [c.store_id, Boolean(c.dropi_api_key)]));
     }
 
-    const roleByStore = new Map((memberships ?? []).map(m => [m.store_id, m.role as 'owner' | 'operator']));
+    // Rol por tienda: el MÁS FUERTE entre las membresías (owner > supervisor > operator).
+    const roleByStore = new Map<string, StoreRole>();
+    for (const m of memberships ?? []) {
+      const cur = m.role as StoreRole;
+      const prev = roleByStore.get(m.store_id);
+      if (!prev || (ROLE_RANK[cur] ?? 0) > (ROLE_RANK[prev] ?? 0)) roleByStore.set(m.store_id, cur);
+    }
     const list: StoreMembership[] = (storeRows ?? [])
       .filter(s => s.status === 'active')
       .map(s => ({
@@ -110,12 +123,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const activeStore = stores.find(s => s.id === activeStoreId) ?? null;
   const isOwnerOfActive = activeStore?.role === 'owner';
+  const isManagerOfActive = activeStore?.role === 'owner' || activeStore?.role === 'supervisor';
   // needsSetup solo es relevante para owners; operadoras no manejan credenciales.
   const needsSetup = Boolean(isOwnerOfActive && activeStore && !activeStore.hasDropiKey);
 
   return (
     <StoreContext.Provider value={{
-      loading, stores, activeStoreId, activeStore, isOwnerOfActive, needsSetup,
+      loading, stores, activeStoreId, activeStore, isOwnerOfActive, isManagerOfActive, needsSetup,
       setActiveStoreId, refresh,
     }}>
       {children}
