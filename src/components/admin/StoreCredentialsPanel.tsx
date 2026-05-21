@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, CheckCircle2, ExternalLink, Store as StoreIcon, Image as ImageIcon } from 'lucide-react';
+import { Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, CheckCircle2, ExternalLink, Store as StoreIcon, Image as ImageIcon, ShoppingBag } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -46,6 +46,15 @@ export default function StoreCredentialsPanel() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
 
+  // Shopify (por tienda) — reconciliación anti-fuga.
+  const [shopDomain, setShopDomain] = useState('');
+  const [shopToken, setShopToken] = useState('');
+  const [shopConfigured, setShopConfigured] = useState(false);
+  const [showShopToken, setShowShopToken] = useState(false);
+  const [savingShop, setSavingShop] = useState(false);
+  const [testingShop, setTestingShop] = useState(false);
+  const [shopTestMsg, setShopTestMsg] = useState<string | null>(null);
+
   useEffect(() => {
     if (!activeStoreId || !isOwnerOfActive) { setLoading(false); return; }
     let cancelled = false;
@@ -71,6 +80,25 @@ export default function StoreCredentialsPanel() {
     })();
     return () => { cancelled = true; };
   }, [activeStoreId, isOwnerOfActive, activeStore]);
+
+  // Estado de Shopify (configurado + dominio; el token NUNCA se trae al cliente).
+  useEffect(() => {
+    if (!activeStoreId || !isOwnerOfActive) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ data: { configured: boolean; shop_domain: string | null }[] | null }>)(
+        'get_store_shopify_status', { p_store_id: activeStoreId },
+      );
+      if (cancelled) return;
+      const row = Array.isArray(data) ? data[0] : null;
+      setShopConfigured(Boolean(row?.configured));
+      setShopDomain(row?.shop_domain || '');
+      setShopToken('');
+    })();
+    return () => { cancelled = true; };
+  }, [activeStoreId, isOwnerOfActive]);
 
   async function saveCreds() {
     if (!activeStoreId || !activeStore) return;
@@ -135,6 +163,36 @@ export default function StoreCredentialsPanel() {
     } finally {
       setTesting(false);
     }
+  }
+
+  async function saveShopify() {
+    if (!activeStoreId) return;
+    if (!shopDomain.trim() || !shopToken.trim()) { toast.error('Pegá el dominio y el token de Shopify'); return; }
+    setSavingShop(true);
+    type RpcRes = { error: { message: string } | null };
+    const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>)(
+      'upsert_store_shopify_config',
+      { p_store_id: activeStoreId, p_shop_domain: shopDomain.trim(), p_admin_token: shopToken.trim() },
+    );
+    setSavingShop(false);
+    if (error) { toast.error('No se pudo guardar Shopify', { description: error.message }); return; }
+    setShopConfigured(true);
+    setShopToken('');
+    toast.success('Shopify conectado');
+  }
+
+  async function testShopify() {
+    if (!activeStoreId) return;
+    setTestingShop(true); setShopTestMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('shopify-reconcile', { body: { store_id: activeStoreId, days: 1 } });
+      const r = data as { ok?: boolean; configured?: boolean; shopifyTotal?: number; pendingCount?: number; error?: string } | null;
+      if (error || !r?.ok) { setShopTestMsg('Falló: ' + (error?.message || r?.error || 'error')); return; }
+      if (!r.configured) { setShopTestMsg('Falta guardar dominio + token.'); return; }
+      setShopTestMsg(`OK — ${r.shopifyTotal ?? 0} pedidos hoy en Shopify, ${r.pendingCount ?? 0} sin pasar a Dropi.`);
+    } catch (e) {
+      setShopTestMsg('Falló: ' + (e instanceof Error ? e.message : 'error'));
+    } finally { setTestingShop(false); }
   }
 
   if (!user) return null;
@@ -253,6 +311,53 @@ export default function StoreCredentialsPanel() {
               <CheckCircle2 size={12} /> Credenciales cargadas
             </div>
           )}
+        </div>
+      </motion.div>
+
+      {/* Shopify (POR TIENDA) — reconciliación anti-fuga */}
+      <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
+        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+          <ShoppingBag size={16} className="text-primary" />
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-foreground">Shopify · {activeStore.name}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Conectá Shopify para detectar pedidos que NO pasaron a Dropi. Creá una "App personalizada" con permiso <code className="bg-muted px-1 rounded">read_orders</code> y pegá el token.
+            </p>
+          </div>
+          {shopConfigured && <span className="text-xs text-success flex items-center gap-1"><CheckCircle2 size={12} /> Conectado</span>}
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Dominio de la tienda</label>
+            <input type="text" value={shopDomain} onChange={e => setShopDomain(e.target.value)} placeholder="mitienda.myshopify.com"
+              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Token de Admin API (shpat_…)</label>
+            <div className="mt-1 relative">
+              <input type={showShopToken ? 'text' : 'password'} value={shopToken} onChange={e => setShopToken(e.target.value)}
+                placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : 'shpat_...'}
+                className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              <button type="button" onClick={() => setShowShopToken(!showShopToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showShopToken ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
+            {shopTestMsg ? <span className="text-xs text-muted-foreground">{shopTestMsg}</span> : <span />}
+            <div className="flex gap-2">
+              {shopConfigured && (
+                <button onClick={testShopify} disabled={testingShop}
+                  className="h-9 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 disabled:opacity-50">
+                  {testingShop ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Probar
+                </button>
+              )}
+              <button onClick={saveShopify} disabled={savingShop || !shopDomain.trim() || !shopToken.trim()}
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
+                {savingShop ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar Shopify
+              </button>
+            </div>
+          </div>
         </div>
       </motion.div>
 
