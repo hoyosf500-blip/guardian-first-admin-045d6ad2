@@ -102,7 +102,7 @@ function calcDias(dateStr: string): number {
 }
 
 /** Map a Dropi order to our DB schema */
-function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
+function mapOrder(o: Record<string, unknown>, userId: string, today: string, storeId: string) {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
   const productName = products
     .map((p) => (p.product as Record<string, unknown>)?.name || "")
