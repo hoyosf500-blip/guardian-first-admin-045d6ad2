@@ -1,22 +1,61 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Package, Phone, BarChart3, ShieldCheck } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { Sun, Moon, Package, Phone, BarChart3, ShieldCheck, Store as StoreIcon } from 'lucide-react';
+
+interface InvitePreview {
+  store_name: string | null;
+  country_code: string | null;
+  role: string | null;
+  valid: boolean;
+  reason: string;
+}
+
+const PENDING_INVITE_KEY = 'guardian.pendingInvite';
 
 export default function AuthPage() {
-  // Fix 4: signup público deshabilitado en la UI. Las cuentas se crean
-  // desde el panel de admin. Solo el formulario de login + recuperación
-  // de contraseña son visibles.
-  const { signIn, resetPassword, user } = useAuth();
+  // El registro público SOLO se habilita con un link de invitación válido
+  // (?invite=TOKEN). Sin invitación, la página muestra únicamente login +
+  // recuperación de contraseña (las cuentas internas se crean desde Admin).
+  const { signIn, signUp, resetPassword, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
-  // Vista 'login' = formulario normal. Vista 'forgot' = pedir email para
-  // recuperación. Toggle inline (sin route nueva).
-  const [view, setView] = useState<'login' | 'forgot'>('login');
+  const [view, setView] = useState<'login' | 'forgot' | 'signup'>('login');
+
+  // Lee el token del link UNA vez y lo persiste antes del posible redirect a
+  // /dashboard (si ya hay sesión). La redención corre en ProtectedLayout.
+  const [inviteToken] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get('invite');
+    if (t) { try { localStorage.setItem(PENDING_INVITE_KEY, t); } catch { /* noop */ } }
+    return t;
+  });
+  const [invite, setInvite] = useState<InvitePreview | null>(null);
+
+  // Preview de la invitación: nombre de tienda + validez (RPC anon).
+  useEffect(() => {
+    if (!inviteToken) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ data: InvitePreview[] | InvitePreview | null }>)(
+        'get_store_invite', { p_token: inviteToken },
+      );
+      if (cancelled) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row) {
+        setInvite(row);
+        if (row.valid) setView('signup');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [inviteToken]);
 
   if (user) return <Navigate to="/dashboard" replace />;
 
@@ -26,6 +65,22 @@ export default function AuthPage() {
     const { error } = await signIn(email, password);
     if (error) toast.error(error);
     setLoading(false);
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) { toast.error('Ingresá tu nombre'); return; }
+    setLoading(true);
+    const { error } = await signUp(email.trim(), password, name.trim());
+    setLoading(false);
+    if (error) { toast.error(error); return; }
+    toast.success(
+      'Cuenta creada. Si te pedimos confirmar el correo, revisá tu email y luego entrá; si no, ya estás dentro.',
+      { duration: 8000 },
+    );
+    // Si hubo auto-login, el redirect a /dashboard + la redención de la
+    // invitación ocurren solos. Si requiere confirmar email, mostramos login.
+    setView('login');
   };
 
   const handleForgot = async (e: React.FormEvent) => {
@@ -52,11 +107,23 @@ export default function AuthPage() {
     { icon: ShieldCheck, text: 'Sincronización directa con Dropi' },
   ];
 
+  const inviteInvalidMsg = invite && !invite.valid
+    ? (invite.reason === 'usada' ? 'Este link de invitación ya fue usado.'
+      : invite.reason === 'expirada' ? 'Este link de invitación expiró. Pedile uno nuevo al dueño.'
+      : 'Este link de invitación no es válido.')
+    : null;
+
+  const title = view === 'login' ? 'Bienvenido de nuevo'
+    : view === 'forgot' ? 'Recuperar contraseña'
+    : 'Crear tu cuenta';
+  const subtitle = view === 'login' ? 'Ingresa tus datos para continuar'
+    : view === 'forgot' ? 'Ingresa tu correo y te enviamos el link para resetearla'
+    : 'Completá tus datos para unirte a la tienda';
+
   return (
     <div className="flex min-h-screen bg-background">
       {/* Left panel — brand identity */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-accent via-accent/90 to-accent/70 items-center justify-center p-12 relative overflow-hidden">
-        {/* Decorative blobs */}
         <div className="absolute top-20 -left-20 w-64 h-64 bg-accent-foreground/10 rounded-full blur-3xl" aria-hidden="true" />
         <div className="absolute bottom-20 right-10 w-80 h-80 bg-accent-foreground/10 rounded-full blur-3xl" aria-hidden="true" />
         <div className="absolute inset-0 opacity-[0.04] bg-[radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] [background-size:24px_24px] text-accent-foreground" aria-hidden="true" />
@@ -100,16 +167,29 @@ export default function AuthPage() {
             <span className="text-lg font-bold text-foreground tracking-tight">CRM</span>
           </div>
 
-          <h1 className="text-2xl font-extrabold text-foreground tracking-tight mb-1">
-            {view === 'login' ? 'Bienvenido de nuevo' : 'Recuperar contraseña'}
-          </h1>
-          <p className="text-sm text-muted-foreground mb-8">
-            {view === 'login'
-              ? 'Ingresa tus datos para continuar'
-              : 'Ingresa tu correo y te enviamos el link para resetearla'}
-          </p>
+          {/* Banner de invitación válida */}
+          {view === 'signup' && invite?.valid && (
+            <div className="mb-5 rounded-xl border border-accent/30 bg-accent/10 p-3.5 flex items-start gap-2.5">
+              <StoreIcon size={16} className="text-accent mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-foreground leading-relaxed">
+                Te unís a <span className="font-semibold">{invite.store_name}</span>
+                {invite.country_code ? ` (${invite.country_code})` : ''} como{' '}
+                <span className="font-semibold">{invite.role === 'owner' ? 'dueño' : 'operadora'}</span>.
+              </p>
+            </div>
+          )}
 
-          {view === 'login' ? (
+          {/* Aviso de invitación inválida */}
+          {inviteInvalidMsg && view !== 'signup' && (
+            <div className="mb-5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-xs text-destructive">
+              {inviteInvalidMsg}
+            </div>
+          )}
+
+          <h1 className="text-2xl font-extrabold text-foreground tracking-tight mb-1">{title}</h1>
+          <p className="text-sm text-muted-foreground mb-8">{subtitle}</p>
+
+          {view === 'login' && (
             <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <label htmlFor="auth-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
@@ -154,8 +234,80 @@ export default function AuthPage() {
               >
                 {loading ? 'Procesando…' : 'Iniciar sesión'}
               </button>
+              {invite?.valid && (
+                <button
+                  type="button"
+                  onClick={() => setView('signup')}
+                  disabled={loading}
+                  className="w-full text-xs font-medium text-accent hover:text-accent/80 transition-colors duration-200 cursor-pointer"
+                >
+                  ← Volver a crear cuenta para {invite.store_name}
+                </button>
+              )}
             </form>
-          ) : (
+          )}
+
+          {view === 'signup' && (
+            <form onSubmit={handleSignup} className="space-y-3.5">
+              <div>
+                <label htmlFor="signup-name" className="block text-xs font-semibold text-foreground mb-1.5">Tu nombre</label>
+                <input
+                  id="signup-name"
+                  type="text"
+                  placeholder="Nombre y apellido"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  required
+                  autoComplete="name"
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
+              </div>
+              <div>
+                <label htmlFor="signup-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
+                <input
+                  id="signup-email"
+                  type="email"
+                  placeholder="tu@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
+              </div>
+              <div>
+                <label htmlFor="signup-password" className="block text-xs font-semibold text-foreground mb-1.5">Contraseña</label>
+                <input
+                  id="signup-password"
+                  type="password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                {loading ? 'Creando cuenta…' : 'Crear cuenta y unirme'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('login')}
+                disabled={loading}
+                className="w-full text-xs font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 cursor-pointer disabled:opacity-50"
+              >
+                Ya tengo cuenta → iniciar sesión
+              </button>
+            </form>
+          )}
+
+          {view === 'forgot' && (
             <form onSubmit={handleForgot} className="space-y-3.5">
               <div>
                 <label htmlFor="forgot-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
@@ -189,9 +341,11 @@ export default function AuthPage() {
             </form>
           )}
 
-          <p className="mt-6 text-xs text-muted-foreground text-center">
-            Las cuentas se crean desde el panel de administración.
-          </p>
+          {view === 'login' && !invite?.valid && (
+            <p className="mt-6 text-xs text-muted-foreground text-center">
+              Las cuentas se crean desde el panel de administración o por link de invitación.
+            </p>
+          )}
         </div>
       </div>
     </div>

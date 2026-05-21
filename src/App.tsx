@@ -26,7 +26,17 @@ const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 const CfoPage = CFO_ENABLED ? lazy(() => import("@/pages/CfoPage")) : null;
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // No refrescar TODAS las queries al volver a la pestaña. Antes (default
+      // de react-query = true) cambiar de tab y regresar recargaba todo el
+      // dashboard/logística/CFO de golpe — molesto y caro. Los datos siguen
+      // refrescándose por realtime + polls explícitos cuando corresponde.
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function PageLoader() {
   return (

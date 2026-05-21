@@ -4,8 +4,10 @@ import { OrderProvider } from '@/contexts/OrderContext';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import { BarChart3, Phone, Package, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import OpeningReportGate from '@/components/OpeningReportGate';
@@ -58,6 +60,34 @@ function ProtectedLayoutInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const store = useStore();
+
+  // Redención de invitación por link: si el usuario llegó por
+  // /auth?invite=TOKEN, AuthPage guardó el token en localStorage. Apenas hay
+  // sesión, lo canjeamos (lo mete en store_members de esa tienda) y refrescamos
+  // las tiendas. Un solo intento por sesión (ref guard).
+  const redeemAttempted = useRef(false);
+  useEffect(() => {
+    if (!user || redeemAttempted.current) return;
+    let token: string | null = null;
+    try { token = localStorage.getItem('guardian.pendingInvite'); } catch { /* noop */ }
+    if (!token) return;
+    redeemAttempted.current = true;
+    void (async () => {
+      const { error } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ data: string | null; error: { message: string } | null }>)(
+        'redeem_store_invite', { p_token: token },
+      );
+      try { localStorage.removeItem('guardian.pendingInvite'); } catch { /* noop */ }
+      if (error) {
+        toast.error('No se pudo unir a la tienda', { description: error.message });
+        return;
+      }
+      toast.success('¡Listo! Te uniste a la tienda.');
+      await store.refresh();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   if (loading || store.loading) {
     return (
