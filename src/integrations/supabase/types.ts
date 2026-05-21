@@ -970,6 +970,38 @@ export type Database = {
           },
         ]
       }
+      store_shopify_config: {
+        Row: {
+          active: boolean
+          admin_token: string
+          shop_domain: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          admin_token: string
+          shop_domain: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          admin_token?: string
+          shop_domain?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_shopify_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stores: {
         Row: {
           brand_logo_url: string | null
@@ -1326,6 +1358,13 @@ export type Database = {
           display_name: string
           noresp: number
           operator_id: string
+        }[]
+      }
+      get_store_shopify_status: {
+        Args: { p_store_id: string }
+        Returns: {
+          configured: boolean
+          shop_domain: string
         }[]
       }
       get_top_cities: {
@@ -1795,6 +1834,14 @@ export type Database = {
           p_dropi_api_key: string
           p_dropi_session_token: string
           p_dropi_store_url: string
+          p_store_id: string
+        }
+        Returns: undefined
+      }
+      upsert_store_shopify_config: {
+        Args: {
+          p_admin_token: string
+          p_shop_domain: string
           p_store_id: string
         }
         Returns: undefined
