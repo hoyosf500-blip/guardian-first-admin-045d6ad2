@@ -1,18 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { getCorsHeaders } from "../_shared/cors.ts";
+import { dropiHostFor } from "../_shared/dropiHosts.ts";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
  * Syncs orders from the last 14 days to capture status changes.
  * Auth: pg_cron sends x-cron-secret; admins send Authorization Bearer JWT.
- * v3 — usa RPC upsert_orders_from_dropi para evitar realtime spam.
- *      Antes: upsert directo escribía cada fila aunque no cambiara →
- *      Postgres disparaba 500-2000 eventos UPDATE cada 5 min →
- *      frontend re-renderizaba en cascada (parpadeo en operadoras).
- *      Ahora: RPC con ON CONFLICT DO UPDATE WHERE IS DISTINCT FROM →
- *      solo cambios reales escriben → eventos bajan ~95%.
+ *
+ * v4 — MULTI-TIENDA. Antes leía UNA credencial global de app_settings y
+ *      pegaba siempre a api.dropi.co. Ahora recorre todas las tiendas
+ *      activas de store_dropi_config y sincroniza cada una con SU país
+ *      (host correcto), SUS credenciales y SU dueño, etiquetando cada
+ *      pedido con su store_id. Una tienda que falla no frena a las demás.
+ *
+ * v3 — usa RPC upsert_orders_from_dropi (con guardia IS DISTINCT FROM)
+ *      para no spamear realtime.
  */
 
-const DROPI_API = "https://api.dropi.co";
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 500;
@@ -41,6 +45,7 @@ function chunkDateRange(from: string, to: string, maxDays: number) {
 }
 
 async function fetchAllPages(
+  base: string,
   apiKey: string,
   origin: string,
   chunkFrom: string,
@@ -64,7 +69,7 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
+    const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -109,7 +114,7 @@ function calcDias(dateStr: string): number {
   }
 }
 
-function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
+function mapOrder(o: Record<string, unknown>, userId: string, today: string, storeId: string) {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
   const productName = products
     .map((p) => (p.product as Record<string, unknown>)?.name || "")
@@ -136,7 +141,6 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   const movements = (o.servientrega_movements as Array<Record<string, unknown>>) || [];
   const lastMovement = movements.length > 0 ? String(movements[movements.length - 1]?.description || movements[movements.length - 1]?.status || "") : "";
   const novedad = novedadServ || lastMovement;
-  // H6: notes ya no se mete en `novedad` (confundía operadoras).
 
   const tags = Array.isArray(o.tags)
     ? (o.tags as Array<Record<string, unknown>>).map((t) => String(t.name || t)).filter(Boolean).join(", ")
@@ -151,6 +155,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
 
   return {
     external_id: String(o.id || ""),
+    store_id: storeId,
     uploaded_by: userId,
     upload_date: today,
     nombre: `${o.name || ""} ${o.surname || ""}`.trim() || "Sin nombre",
@@ -178,12 +183,61 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string) {
   };
 }
 
-import { getCorsHeaders } from "../_shared/cors.ts";
+interface StoreSync {
+  store_id: string;
+  country_code: string;
+  api_key: string;
+  store_url: string;
+  owner_id: string;
+}
+
+// Sincroniza UNA tienda. Devuelve {synced, total}. No lanza: captura su
+// propio error para que una tienda caída no frene a las demás.
+async function syncStore(
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  store: StoreSync,
+  from: string,
+  to: string,
+  todayStr: string,
+): Promise<{ synced: number; total: number; error?: string }> {
+  const base = dropiHostFor(store.country_code);
+  const chunks = chunkDateRange(from, to, MAX_CHUNK_DAYS);
+  let synced = 0;
+  let total = 0;
+
+  try {
+    for (const chunk of chunks) {
+      const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to);
+      total += dropiOrders.length;
+      if (dropiOrders.length === 0) continue;
+
+      const dbOrders = dropiOrders.map((o) => mapOrder(o, store.owner_id, todayStr, store.store_id));
+      for (let i = 0; i < dbOrders.length; i += 50) {
+        const batch = dbOrders.slice(i, i + 50);
+        const { data: changedCount, error: upsertError } = await sb.rpc(
+          "upsert_orders_from_dropi",
+          { p_orders: batch },
+        );
+        if (upsertError) {
+          console.error(`[store ${store.store_id}] upsert error:`, upsertError);
+        } else {
+          synced += (changedCount as number) || 0;
+        }
+      }
+      await sleep(RATE_LIMIT_MS);
+    }
+    return { synced, total };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[store ${store.store_id}] sync failed:`, msg);
+    return { synced, total, error: msg };
+  }
+}
 
 Deno.serve(async (req: Request) => {
   const CORS_HEADERS = getCorsHeaders(req);
-
-  console.log("dropi-cron v3 — secret branch active");
+  console.log("dropi-cron v4 — multi-tienda");
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
   }
@@ -194,19 +248,13 @@ Deno.serve(async (req: Request) => {
     const sb = createClient(supabaseUrl, supabaseServiceKey);
 
     // ---- Auth path 1: shared secret for pg_cron ----
-    // The pg_cron job sends x-cron-secret matching app_settings.cron_shared_secret.
-    // Needed because we can't embed the service_role key in a SQL cron command.
     const cronSecretHeader = req.headers.get("x-cron-secret");
     if (cronSecretHeader) {
       const { data: secretRow } = await sb
-        .from("app_settings")
-        .select("value")
-        .eq("key", "cron_shared_secret")
-        .maybeSingle();
+        .from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
       if (!secretRow?.value || secretRow.value !== cronSecretHeader) {
         return new Response(JSON.stringify({ error: "Cron secret invalido" }), {
-          status: 401,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
         });
       }
       console.log("dropi-cron: authenticated via cron shared secret");
@@ -215,8 +263,7 @@ Deno.serve(async (req: Request) => {
       const authHeader = req.headers.get("Authorization");
       if (!authHeader) {
         return new Response(JSON.stringify({ error: "No autorizado" }), {
-          status: 401,
-          headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+          status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
         });
       }
       if (authHeader !== `Bearer ${supabaseServiceKey}`) {
@@ -227,16 +274,11 @@ Deno.serve(async (req: Request) => {
         );
         if (authError || !user) {
           return new Response(JSON.stringify({ error: "Token inválido" }), {
-            status: 401,
-            headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+            status: 401, headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
           });
         }
         const { data: roleData } = await sb
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("role", "admin")
-          .maybeSingle();
+          .from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
         if (!roleData) {
           return new Response(
             JSON.stringify({ error: "Solo administradores pueden ejecutar el sync" }),
@@ -247,159 +289,113 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Get Dropi API key from app_settings or env
-    const { data: keySetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_api_key")
-      .maybeSingle();
-    const dropiApiKey = keySetting?.value || Deno.env.get("DROPI_API_KEY") || null;
+    // ---- Cargar todas las tiendas ACTIVAS con credenciales ----
+    const { data: configs, error: cfgErr } = await sb
+      .from("store_dropi_config")
+      .select("store_id, country_code, dropi_api_key, dropi_store_url, stores!inner(status)")
+      .eq("stores.status", "active");
 
-    if (!dropiApiKey) {
-      console.error("dropi-cron: No API key configured");
-      return new Response(JSON.stringify({ error: "No API key" }), { status: 400 });
+    if (cfgErr) {
+      console.error("dropi-cron: error leyendo store_dropi_config:", cfgErr);
+      return new Response(JSON.stringify({ error: cfgErr.message }), { status: 500 });
     }
 
-    // Get store URL
-    const { data: urlSetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_store_url")
-      .maybeSingle();
-    const storeUrl = urlSetting?.value || "https://rushmira.com/";
-
-    // Get admin user id for uploaded_by (first admin)
-    const { data: adminRole } = await sb
-      .from("user_roles")
-      .select("user_id")
-      .eq("role", "admin")
-      .limit(1)
-      .maybeSingle();
-    const uploadedBy = adminRole?.user_id;
-
-    if (!uploadedBy) {
-      console.error("dropi-cron: No admin user found");
-      return new Response(JSON.stringify({ error: "No admin" }), { status: 400 });
+    const activeConfigs = (configs || []).filter((c: Record<string, unknown>) => c.dropi_api_key);
+    if (activeConfigs.length === 0) {
+      console.warn("dropi-cron: no hay tiendas activas con dropi_api_key");
+      return new Response(JSON.stringify({ stores: 0, message: "Sin tiendas configuradas" }), {
+        status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+      });
     }
 
-    // Sync last N days to catch status changes
+    // Resolver el dueño de cada tienda (uploaded_by). Preferimos el owner;
+    // fallback a stores.created_by.
+    const storeIds = activeConfigs.map((c: Record<string, unknown>) => c.store_id);
+    const { data: owners } = await sb
+      .from("store_members").select("store_id, user_id").eq("role", "owner").in("store_id", storeIds);
+    const { data: storesRows } = await sb
+      .from("stores").select("id, created_by").in("id", storeIds);
+    const ownerByStore = new Map<string, string>();
+    (owners || []).forEach((o: Record<string, string>) => {
+      if (!ownerByStore.has(o.store_id)) ownerByStore.set(o.store_id, o.user_id);
+    });
+    (storesRows || []).forEach((s: Record<string, string>) => {
+      if (!ownerByStore.has(s.id) && s.created_by) ownerByStore.set(s.id, s.created_by);
+    });
+
+    // Rango de fechas (últimos N días) compartido por todas las tiendas
     const today = new Date();
     const fromDate = new Date(today);
     fromDate.setUTCDate(fromDate.getUTCDate() - SYNC_DAYS_BACK);
-
     const from = fromDate.toISOString().split("T")[0];
     const to = today.toISOString().split("T")[0];
     const todayStr = to;
 
-    console.log(`dropi-cron: Syncing ${from} → ${to}`);
+    let grandSynced = 0;
+    let grandTotal = 0;
+    const perStore: Record<string, unknown>[] = [];
 
-    const chunks = chunkDateRange(from, to, MAX_CHUNK_DAYS);
-    let totalSynced = 0;
-    let totalFromDropi = 0;
-
-    for (const chunk of chunks) {
-      const dropiOrders = await fetchAllPages(dropiApiKey, storeUrl, chunk.from, chunk.to);
-      totalFromDropi += dropiOrders.length;
-
-      if (dropiOrders.length === 0) continue;
-
-      const dbOrders = dropiOrders.map((o) => mapOrder(o, uploadedBy, todayStr));
-
-      // Antes: sb.from("orders").upsert(batch, {ignoreDuplicates: false})
-      // hacía UPDATE de cada fila aunque el contenido fuera idéntico →
-      // realtime broadcast por todas → frontend recibía 500-2000
-      // eventos cada 5 min → re-render en cascada aunque la lista no
-      // cambiara visualmente (parpadeo reportado por operadoras).
-      //
-      // Ahora: RPC `upsert_orders_from_dropi` corre INSERT...ON CONFLICT
-      // DO UPDATE WHERE <campos IS DISTINCT FROM>, así filas idénticas
-      // NO se escriben → cero realtime espurio. Devuelve la cantidad
-      // real de filas tocadas para logging.
-      for (let i = 0; i < dbOrders.length; i += 50) {
-        const batch = dbOrders.slice(i, i + 50);
-        const { data: changedCount, error: upsertError } = await sb.rpc(
-          "upsert_orders_from_dropi",
-          { p_orders: batch },
-        );
-
-        if (upsertError) {
-          console.error("upsert_orders_from_dropi error:", upsertError);
-        } else {
-          totalSynced += (changedCount as number) || 0;
-        }
+    for (const cfg of activeConfigs) {
+      const storeId = String(cfg.store_id);
+      const ownerId = ownerByStore.get(storeId);
+      if (!ownerId) {
+        console.warn(`dropi-cron: tienda ${storeId} sin dueño, se omite`);
+        perStore.push({ store_id: storeId, error: "sin dueño" });
+        continue;
       }
+      const store: StoreSync = {
+        store_id: storeId,
+        country_code: String(cfg.country_code || "CO"),
+        api_key: String(cfg.dropi_api_key),
+        store_url: String(cfg.dropi_store_url || "https://rushmira.com/"),
+        owner_id: ownerId,
+      };
+      console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) ${from} → ${to}`);
+      const r = await syncStore(sb, store, from, to, todayStr);
+      grandSynced += r.synced;
+      grandTotal += r.total;
+      perStore.push({ store_id: storeId, country: store.country_code, ...r });
 
-      await sleep(RATE_LIMIT_MS);
+      // Log por tienda
+      await sb.from("sync_logs").insert({
+        source: "dropi-cron",
+        status: r.error ? "error" : "success",
+        synced_count: r.synced,
+        duplicates_count: 0,
+        total_count: r.total,
+        triggered_by: ownerId,
+        store_id: storeId,
+      });
     }
 
-    // Restore estado for orders confirmed locally today. Usa fecha de Bogotá
-    // para calzar con result_date que se escribe desde el cliente (el cron
-    // corre en UTC y a partir de las 19:00 COL devolvía la fecha siguiente
-    // dejando fuera las confirmaciones de la tarde).
+    // ---- Post-proceso GLOBAL (sobre todas las tiendas) ----
+    // Restaurar estado de pedidos confirmados localmente hoy (fecha Bogotá).
     const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
     const { data: confirmedToday } = await sb
-      .from("order_results")
-      .select("order_id")
-      .eq("result", "conf")
-      .eq("result_date", todayDate);
-
+      .from("order_results").select("order_id").eq("result", "conf").eq("result_date", todayDate);
     if (confirmedToday && confirmedToday.length > 0) {
-      const confirmedIds = confirmedToday.map((r) => r.order_id);
-      // Update in batches of 50
+      const confirmedIds = confirmedToday.map((r: Record<string, string>) => r.order_id);
       for (let i = 0; i < confirmedIds.length; i += 50) {
         const batch = confirmedIds.slice(i, i + 50);
-        await sb
-          .from("orders")
-          .update({ estado: "PENDIENTE" })
-          .in("id", batch)
-          .eq("estado", "PENDIENTE CONFIRMACION");
+        await sb.from("orders").update({ estado: "PENDIENTE" })
+          .in("id", batch).eq("estado", "PENDIENTE CONFIRMACION");
       }
       console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders`);
     }
 
-    // C1: Retry de results pendientes ELIMINADO. Antes invocaba a
-    // `dropi-update-order` pasando el SUPABASE_SERVICE_ROLE_KEY como Bearer
-    // — eso requería un bypass de auth en esa edge function que es un
-    // agujero de seguridad. Los results con `dropi_sync_status='failed'`
-    // quedan visibles para que la operadora reintente manualmente desde
-    // la UI. El bulk pull de arriba ya re-sincroniza el estado de Dropi
-    // hacia la DB local.
-    const retried = 0;
-
-// Detectar y cancelar pedidos huérfanos: cuando Dropi edita un pedido,
-    // crea uno nuevo y deja el viejo en PENDIENTE CONFIRMACION. Esta RPC
-    // busca pedidos viejos con un duplicado más nuevo en estado terminal
-    // (mismo phone+producto) y los marca como CANCELADO.
-    let orphansCancelled = 0;
+    // Cancelar pedidos huérfanos (global).
     try {
-      const { data, error: cancelOrphanError } = await sb.rpc('cancel_orphan_pending_orders');
-      if (cancelOrphanError) {
-        console.warn('cancel_orphan_pending_orders error:', cancelOrphanError.message);
-      } else {
-        orphansCancelled = (data as number) || 0;
-        if (orphansCancelled > 0) {
-          console.log(`Cancelados ${orphansCancelled} pedidos viejos huérfanos`);
-        }
-      }
+      const { data, error: cancelOrphanError } = await sb.rpc("cancel_orphan_pending_orders");
+      if (cancelOrphanError) console.warn("cancel_orphan_pending_orders error:", cancelOrphanError.message);
+      else if (((data as number) || 0) > 0) console.log(`Cancelados ${data} pedidos huérfanos`);
     } catch (err) {
-      console.warn('cancel_orphan_pending_orders exception:', err);
+      console.warn("cancel_orphan_pending_orders exception:", err);
     }
 
-    // Log the sync
-    await sb.from("sync_logs").insert({
-      source: "dropi-cron",
-      status: "success",
-      synced_count: totalSynced,
-      duplicates_count: retried,
-      total_count: totalFromDropi,
-      triggered_by: uploadedBy,
-    });
-
-    console.log(`dropi-cron: Done — ${totalSynced} synced, ${totalFromDropi} from Dropi`);
-
+    console.log(`dropi-cron: Done — ${grandSynced} synced / ${grandTotal} from Dropi, ${activeConfigs.length} tiendas`);
     return new Response(
-      JSON.stringify({ synced: totalSynced, total: totalFromDropi, range: `${from} → ${to}` }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ stores: activeConfigs.length, synced: grandSynced, total: grandTotal, range: `${from} → ${to}`, perStore }),
+      { status: 200, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
     );
   } catch (err) {
     console.error("dropi-cron error:", err);
