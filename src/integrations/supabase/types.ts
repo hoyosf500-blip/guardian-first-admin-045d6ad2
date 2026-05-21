@@ -1246,6 +1246,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _resolve_scope_store: { Args: never; Returns: string }
       admin_daily_reports: {
         Args: { p_date: string }
         Returns: {
