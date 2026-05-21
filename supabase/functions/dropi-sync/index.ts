@@ -57,8 +57,7 @@ async function fetchAllPages(
       .join("&");
 
     let res: Response | null = null;
-    let lastErr = "";
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
         method: "GET",
         headers: {
@@ -69,13 +68,20 @@ async function fetchAllPages(
         },
       });
       if (res.status !== 429) break;
-      lastErr = await res.text();
-      // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-      await sleep(2000 * Math.pow(2, attempt));
+      await res.text(); // drenar el body del 429 antes de reintentar
+      // Backoff corto (1.5s, 3s) — esto es user-facing: mejor fallar rápido
+      // con mensaje claro que colgar 60s. El cron tiene su propio backoff largo.
+      if (attempt < 2) await sleep(1500 * Math.pow(2, attempt));
     }
 
+    if (res && res.status === 429) {
+      // Dropi (sobre todo Ecuador) throttlea cuando el sync manual coincide con
+      // el cron. No es un error de credenciales: el sync automático mantiene los
+      // pedidos al día igual. Mensaje claro en vez de volcar el stacktrace de Laravel.
+      throw new Error("Dropi está limitando las peticiones (Too Many Attempts). Esperá ~1 minuto y probá de nuevo — el sync automático igual mantiene tus pedidos al día.");
+    }
     if (!res || !res.ok) {
-      const txt = res?.status === 429 ? lastErr : (res ? await res.text() : "no-response");
+      const txt = res ? await res.text() : "no-response";
       throw new Error(`Dropi API [${res?.status ?? "no-response"}]: ${txt}`);
     }
 
