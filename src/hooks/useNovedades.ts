@@ -15,13 +15,13 @@ interface NovedadesState {
   resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
 }
 
-export function useNovedades(user: User | null): NovedadesState {
+export function useNovedades(user: User | null, storeId: string | null): NovedadesState {
   const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
   const [novedadesLoading, setNovedadesLoading] = useState(false);
   const [novedadesLoaded, setNovedadesLoaded] = useState(false);
 
   const loadNovedades = useCallback(async (force = false) => {
-    if (!user) return;
+    if (!user || !storeId) return;
     if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
     try {
