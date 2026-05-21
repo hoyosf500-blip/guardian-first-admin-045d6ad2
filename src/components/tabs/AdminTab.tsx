@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw, Sparkles, Fingerprint } from 'lucide-react';
+import { useStore } from '@/contexts/StoreContext';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import ReportsTable from '@/components/admin/ReportsTable';
+import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
