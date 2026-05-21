@@ -351,6 +351,7 @@ Deno.serve(async (req: Request) => {
       duplicates_count: totalDuplicates,
       total_count: totalFromDropi,
       triggered_by: user.id,
+      store_id: storeId,
     });
 
     return new Response(
