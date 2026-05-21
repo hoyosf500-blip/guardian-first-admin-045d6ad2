@@ -37,7 +37,7 @@ function saveLastSeen(s: LastSeen) {
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
 }
 
-export function useChangeAlerts(userId: string | undefined) {
+export function useChangeAlerts(userId: string | undefined, storeId?: string | null) {
   const [badges, setBadges] = useState<TabBadges>({ seguimiento: 0, rescate: 0 });
   const [banner, setBanner] = useState<string | null>(null);
   const lastSeen = useRef<LastSeen>(loadLastSeen());
@@ -45,15 +45,18 @@ export function useChangeAlerts(userId: string | undefined) {
   const initialised = useRef(false);
 
   const poll = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || !storeId) return;
 
-    // Count active novedades (unresolved)
+    // Count active novedades (unresolved) — scoped to active store.
     const [novRes, devRes, ofiRes] = await Promise.all([
       supabase.from('orders').select('id', { count: 'exact', head: true })
+        .eq('store_id', storeId)
         .or('estado.eq.NOVEDAD,estado.ilike.%INTENTO DE ENTREGA%').eq('novedad_sol', false),
       supabase.from('orders').select('id', { count: 'exact', head: true })
+        .eq('store_id', storeId)
         .ilike('estado', '%DEVOL%'),
       supabase.from('orders').select('id', { count: 'exact', head: true })
+        .eq('store_id', storeId)
         .or('estado.ilike.%OFICINA%,estado.ilike.%RECLAME%'),
     ]);
 
@@ -93,10 +96,10 @@ export function useChangeAlerts(userId: string | undefined) {
 
   // COST-1: subido de 2 min → 10 min, y se pausa con pestaña oculta.
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || !storeId) return;
     poll();
     return pollWhenVisible(poll, 10 * 60 * 1000, { runOnVisible: false });
-  }, [userId, poll]);
+  }, [userId, storeId, poll]);
 
   /** Call when the user opens a tab to reset its badge. */
   const markSeen = useCallback((tab: 'seguimiento' | 'rescate') => {
