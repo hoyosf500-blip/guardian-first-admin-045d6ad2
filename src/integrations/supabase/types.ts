@@ -972,6 +972,7 @@ export type Database = {
       }
       stores: {
         Row: {
+          brand_logo_url: string | null
           country_code: string
           created_at: string
           created_by: string | null
@@ -980,6 +981,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          brand_logo_url?: string | null
           country_code?: string
           created_at?: string
           created_by?: string | null
@@ -988,6 +990,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          brand_logo_url?: string | null
           country_code?: string
           created_at?: string
           created_by?: string | null
@@ -1282,6 +1285,10 @@ export type Database = {
       cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
+      create_store: {
+        Args: { p_country_code: string; p_name: string }
+        Returns: string
+      }
       delete_monthly_ad_spend: { Args: { p_id: string }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
@@ -1687,6 +1694,10 @@ export type Database = {
           total: number
         }[]
       }
+      update_store_branding: {
+        Args: { p_brand_logo_url: string; p_name: string; p_store_id: string }
+        Returns: undefined
+      }
       upsert_cfo_retrospective: {
         Args: {
           p_aciertos: Json
@@ -1777,6 +1788,16 @@ export type Database = {
       upsert_personal_card_movements: {
         Args: { p_movements: Json }
         Returns: Json
+      }
+      upsert_store_dropi_config: {
+        Args: {
+          p_country_code: string
+          p_dropi_api_key: string
+          p_dropi_session_token: string
+          p_dropi_store_url: string
+          p_store_id: string
+        }
+        Returns: undefined
       }
       upsert_tc_debt_snapshot: {
         Args: {
