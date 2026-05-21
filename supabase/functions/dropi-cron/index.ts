@@ -69,19 +69,28 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "dropi-integration-key": apiKey,
-        "Origin": origin,
-      },
-    });
+    let res: Response | null = null;
+    let lastTxt = "";
+    let rateLimited = false;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          "Origin": origin,
+        },
+      });
+      if (res.status !== 429) { rateLimited = false; break; }
+      rateLimited = true;
+      lastTxt = await res.text();
+      await sleep(2000 * Math.pow(2, attempt));
+    }
 
-    if (!res.ok) {
-      const txt = await res.text();
-      console.error(`Dropi API error ${res.status}: ${txt}`);
+    if (!res || !res.ok) {
+      const txt = rateLimited ? lastTxt : (res ? await res.text() : "no-response");
+      console.error(`Dropi API error ${res?.status ?? "?"}: ${txt}`);
       break;
     }
 
@@ -135,7 +144,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   const fecha = createdAt ? createdAt.split("T")[0] : today;
   const status = String(o.status || "PENDIENTE").toUpperCase();
   const isPendConf = status === "PENDIENTE CONFIRMACION";
-  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : "";
+  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : null;
 
   const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";
   const movements = (o.servientrega_movements as Array<Record<string, unknown>>) || [];

@@ -56,19 +56,27 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "dropi-integration-key": apiKey,
-        "Origin": origin,
-      },
-    });
+    let res: Response | null = null;
+    let lastErr = "";
+    for (let attempt = 0; attempt < 5; attempt++) {
+      res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          "Origin": origin,
+        },
+      });
+      if (res.status !== 429) break;
+      lastErr = await res.text();
+      // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+      await sleep(2000 * Math.pow(2, attempt));
+    }
 
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Dropi API [${res.status}]: ${txt}`);
+    if (!res || !res.ok) {
+      const txt = res ? await res.text() : lastErr;
+      throw new Error(`Dropi API [${res?.status ?? "no-response"}]: ${txt}`);
     }
 
     const data = await res.json();
@@ -126,7 +134,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   // Determine fecha_conf from updated_at if status changed from PENDIENTE CONFIRMACION
   const status = String(o.status || "PENDIENTE").toUpperCase();
   const isPendConf = status === "PENDIENTE CONFIRMACION";
-  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : "";
+  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : null;
 
   // Extract novedad from novedad_servientrega or servientrega_movements
   const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";
