@@ -56,7 +56,7 @@ async function fetchAllPages(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-    const res = await fetch(`${DROPI_API}/integrations/orders/myorders?${qs}`, {
+    const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
