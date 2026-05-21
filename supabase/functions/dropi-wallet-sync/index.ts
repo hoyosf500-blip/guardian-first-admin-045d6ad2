@@ -366,7 +366,7 @@ Deno.serve(async (req: Request) => {
         const batch = mapped.slice(i, i + 50);
         const { data: changedCount, error: upsertError } = await sb.rpc(
           "upsert_wallet_movements",
-          { p_movements: batch },
+          { p_movements: batch, p_store_id: storeId },
         );
         if (upsertError) {
           console.error("upsert_wallet_movements error:", upsertError);
@@ -375,7 +375,6 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // 8. Log
       await sb.from("sync_logs").insert({
         source: "dropi-wallet-sync",
         status: "success",
@@ -383,6 +382,7 @@ Deno.serve(async (req: Request) => {
         duplicates_count: 0,
         total_count: mapped.length,
         triggered_by: userId,
+        store_id: storeId,
       });
     }
 
