@@ -69,10 +69,13 @@ export default function ShopifyPendingPanel() {
 
   // No configurado, o cargando la primera vez sin datos → no estorbar la cola.
   if (!activeStoreId) return null;
-  if (data && data.configured === false) return null;
   if (isLoading && !data) return null;
+  // Si la función no respondió (no deployada / error de red) NO mostramos un
+  // "0 sin pasar a Dropi" engañoso — mejor nada (el dueño ve el error real en
+  // /admin → tarjeta Shopify → "Probar").
+  if (!data || data.configured === false) return null;
   // Sin pendientes y ya cargó → mensaje mínimo de "todo al día".
-  if (data?.ok && count === 0) {
+  if (data.ok && count === 0) {
     return (
       <div className="mb-4 rounded-xl border border-border bg-card px-4 py-2.5 flex items-center gap-2 text-sm">
         <ShoppingBag size={15} className="text-success" />
@@ -84,7 +87,7 @@ export default function ShopifyPendingPanel() {
       </div>
     );
   }
-  if (data && !data.ok) {
+  if (!data.ok) {
     return (
       <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive flex items-center gap-2">
         <AlertTriangle size={15} />
