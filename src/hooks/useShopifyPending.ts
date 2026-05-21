@@ -13,12 +13,26 @@ export interface ShopifyPendingItem {
   admin_url: string;
 }
 
+export interface ShopifyDayBreakdown {
+  date: string;       // YYYY-MM-DD (TZ America/Bogota)
+  shopify: number;
+  matched: number;
+  pending: number;
+}
+
 export interface ShopifyReconcileResult {
   ok: boolean;
   configured: boolean;
-  pendingCount: number;
-  shopifyTotal?: number;
   days?: number;
+  shopifyTotal?: number;     // válidos del período (sin cancelados)
+  cancelledCount?: number;
+  matchedCount?: number;     // ya están en Dropi
+  pendingCount: number;      // faltan pasar a Dropi
+  today?: string;            // YYYY-MM-DD
+  todayShopify?: number;
+  todayMatched?: number;
+  todayPending?: number;
+  byDay?: ShopifyDayBreakdown[];
   pending: ShopifyPendingItem[];
   error?: string;
 }

@@ -125,46 +125,41 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 1. Pedidos de Shopify (últimos `days` días, sin cancelados)
+    // 1. Pedidos de Shopify (últimos `days` días). Separamos cancelados (no se
+    //    despachan, no cuentan) pero los reportamos por transparencia.
     const sinceShopify = new Date(Date.now() - days * 86400000).toISOString();
-    const shopifyOrders = (await fetchShopifyOrders(cfg.shopDomain, cfg.adminToken, sinceShopify))
-      .filter((o) => !o.cancelled_at);
+    const allShopify = await fetchShopifyOrders(cfg.shopDomain, cfg.adminToken, sinceShopify);
+    const shopifyOrders = allShopify.filter((o) => !o.cancelled_at);
+    const cancelledCount = allShopify.length - shopifyOrders.length;
 
-    // 2. Teléfonos de Dropi (Guardian `orders`) de la tienda, ventana generosa
-    //    (days + 4) para cubrir pedidos entrados a Dropi después de la venta.
-    //    Paginado: el SELECT de Supabase tope ~1000 filas por página.
-    const sinceDropi = new Date(Date.now() - (days + 4) * 86400000).toISOString();
-    const dropiCount = new Map<string, number>();
+    // 2. Pedidos de Dropi (Guardian `orders`) de la tienda: teléfono + fecha.
+    //    Ventana generosa (days + 6) para cubrir pedidos entrados a Dropi
+    //    después de la venta. Paginado (SELECT tope ~1000 filas).
+    const sinceDropi = new Date(Date.now() - (days + 6) * 86400000).toISOString();
+    const dropiList: { tel: string; t: number }[] = [];
     const PAGE = 1000;
     for (let from = 0; from < 20000; from += PAGE) {
       const { data, error } = await sb
         .from("orders")
-        .select("phone")
+        .select("phone, created_at")
         .eq("store_id", storeId)
         .gte("created_at", sinceDropi)
         .range(from, from + PAGE - 1);
       if (error) throw new Error(`orders read: ${error.message}`);
-      const rows = (data || []) as { phone: string | null }[];
+      const rows = (data || []) as { phone: string | null; created_at: string }[];
       for (const r of rows) {
         const k = normalizePhone(r.phone);
-        if (k) dropiCount.set(k, (dropiCount.get(k) || 0) + 1);
+        if (k) dropiList.push({ tel: k, t: new Date(r.created_at).getTime() });
       }
       if (rows.length < PAGE) break;
     }
 
-    // 3. Cruce count-aware. Por teléfono: pendientes = shopifyN - dropiN.
-    //    Agrupamos los pedidos Shopify por teléfono (más recientes primero) y
-    //    marcamos como pendientes los que exceden lo que ya hay en Dropi.
-    const byPhone = new Map<string, ShopifyOrder[]>();
-    const noPhone: ShopifyOrder[] = [];
-    for (const o of shopifyOrders) {
-      const k = orderPhone(o);
-      if (!k) { noPhone.push(o); continue; }
-      if (!byPhone.has(k)) byPhone.set(k, []);
-      byPhone.get(k)!.push(o);
-    }
-
-    const pending: Record<string, unknown>[] = [];
+    // 3. Cruce por TELÉFONO + cercanía de fecha (greedy, count-aware).
+    //    Para cada pedido Shopify (del más viejo al más nuevo) buscamos un
+    //    pedido Dropi NO usado con el mismo teléfono y fecha cercana
+    //    [shopify-1d, shopify+6d]. Si lo hay → emparejado; si no → pendiente.
+    //    Así un pedido nuevo NO se "matchea" contra una orden vieja del mismo
+    //    cliente (eso escondería una fuga).
     const toCard = (o: ShopifyOrder, sinTel = false) => ({
       id: String(o.id),
       name: o.name,
@@ -177,25 +172,62 @@ Deno.serve(async (req: Request) => {
       admin_url: `https://${cfg.shopDomain}/admin/orders/${o.id}`,
     });
 
-    for (const [k, list] of byPhone.entries()) {
-      const already = dropiCount.get(k) || 0;
-      // los más recientes primero
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      const deficit = Math.max(0, list.length - already);
-      for (let i = 0; i < deficit; i++) pending.push(toCard(list[i]));
+    const usedDropi = new Set<number>();
+    function matchDropi(tel: string, shopT: number): boolean {
+      const lo = shopT - 1 * 86400000;
+      const hi = shopT + 6 * 86400000;
+      for (let i = 0; i < dropiList.length; i++) {
+        if (usedDropi.has(i)) continue;
+        const d = dropiList[i];
+        if (d.tel === tel && d.t >= lo && d.t <= hi) { usedDropi.add(i); return true; }
+      }
+      return false;
     }
-    // Sin teléfono → no se puede emparejar; van como pendientes para revisar.
-    for (const o of noPhone) pending.push(toCard(o, true));
 
+    // Emparejar del más viejo al más nuevo (asignación estable).
+    const sortedAsc = [...shopifyOrders].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+    const pending: Record<string, unknown>[] = [];
+    for (const o of sortedAsc) {
+      const tel = orderPhone(o);
+      const shopT = new Date(o.created_at).getTime();
+      const matched = tel ? matchDropi(tel, shopT) : false;
+      if (!matched) pending.push(toCard(o, !tel));
+    }
     pending.sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
+
+    // 4. Desglose: hoy + por día (TZ America/Bogota = UTC-5, sirve CO y EC).
+    const TZ = "America/Bogota";
+    const fmtDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(iso));
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+    const shopifyByDate: Record<string, number> = {};
+    const pendingByDate: Record<string, number> = {};
+    for (const o of shopifyOrders) { const d = fmtDay(o.created_at); shopifyByDate[d] = (shopifyByDate[d] || 0) + 1; }
+    for (const p of pending) { const d = fmtDay(p.created_at as string); pendingByDate[d] = (pendingByDate[d] || 0) + 1; }
+    const byDay = Object.keys(shopifyByDate).sort().reverse().map((date) => ({
+      date,
+      shopify: shopifyByDate[date],
+      pending: pendingByDate[date] || 0,
+      matched: shopifyByDate[date] - (pendingByDate[date] || 0),
+    }));
+    const todayShopify = shopifyByDate[todayStr] || 0;
+    const todayPending = pendingByDate[todayStr] || 0;
 
     return new Response(
       JSON.stringify({
         ok: true,
         configured: true,
-        pendingCount: pending.length,
-        shopifyTotal: shopifyOrders.length,
         days,
+        shopifyTotal: shopifyOrders.length,
+        cancelledCount,
+        matchedCount: shopifyOrders.length - pending.length,
+        pendingCount: pending.length,
+        today: todayStr,
+        todayShopify,
+        todayMatched: todayShopify - todayPending,
+        todayPending,
+        byDay,
         pending,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
