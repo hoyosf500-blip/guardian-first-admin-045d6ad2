@@ -57,6 +57,7 @@ export type Database = {
           issues: string[]
           score: number
           status: string
+          store_id: string
           validated_at: string
         }
         Insert: {
@@ -71,6 +72,7 @@ export type Database = {
           issues?: string[]
           score: number
           status: string
+          store_id?: string
           validated_at?: string
         }
         Update: {
@@ -85,9 +87,18 @@ export type Database = {
           issues?: string[]
           score?: number
           status?: string
+          store_id?: string
           validated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "address_validations_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       app_settings: {
         Row: {
@@ -122,6 +133,7 @@ export type Database = {
           old_data: Json | null
           operation: string
           row_id: string
+          store_id: string
           table_name: string
           user_id: string | null
         }
@@ -133,6 +145,7 @@ export type Database = {
           old_data?: Json | null
           operation: string
           row_id: string
+          store_id?: string
           table_name: string
           user_id?: string | null
         }
@@ -144,10 +157,19 @@ export type Database = {
           old_data?: Json | null
           operation?: string
           row_id?: string
+          store_id?: string
           table_name?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       cfo_monthly_retrospective: {
         Row: {
@@ -160,6 +182,7 @@ export type Database = {
           id: string
           lecciones: string | null
           notas: string | null
+          store_id: string
           updated_at: string
           year_month: string
         }
@@ -173,6 +196,7 @@ export type Database = {
           id?: string
           lecciones?: string | null
           notas?: string | null
+          store_id?: string
           updated_at?: string
           year_month: string
         }
@@ -186,10 +210,19 @@ export type Database = {
           id?: string
           lecciones?: string | null
           notas?: string | null
+          store_id?: string
           updated_at?: string
           year_month?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "cfo_monthly_retrospective_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       daily_reports: {
         Row: {
@@ -199,6 +232,7 @@ export type Database = {
           operator_id: string
           report_date: string
           report_type: string
+          store_id: string
         }
         Insert: {
           created_at?: string
@@ -207,6 +241,7 @@ export type Database = {
           operator_id: string
           report_date?: string
           report_type: string
+          store_id?: string
         }
         Update: {
           created_at?: string
@@ -215,8 +250,17 @@ export type Database = {
           operator_id?: string
           report_date?: string
           report_type?: string
+          store_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "daily_reports_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       dropi_wallet_movements: {
         Row: {
@@ -233,6 +277,7 @@ export type Database = {
           raw: Json
           related_order_id: string | null
           saldo_despues: number | null
+          store_id: string
           synced_at: string
           synced_by: string | null
           tipo: string
@@ -251,6 +296,7 @@ export type Database = {
           raw: Json
           related_order_id?: string | null
           saldo_despues?: number | null
+          store_id?: string
           synced_at?: string
           synced_by?: string | null
           tipo: string
@@ -269,11 +315,20 @@ export type Database = {
           raw?: Json
           related_order_id?: string | null
           saldo_despues?: number | null
+          store_id?: string
           synced_at?: string
           synced_by?: string | null
           tipo?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "dropi_wallet_movements_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       monthly_ad_spend: {
         Row: {
@@ -284,6 +339,7 @@ export type Database = {
           notas: string | null
           payment_method: string
           platform: string
+          store_id: string
           updated_at: string
           year_month: string
         }
@@ -295,6 +351,7 @@ export type Database = {
           notas?: string | null
           payment_method?: string
           platform: string
+          store_id?: string
           updated_at?: string
           year_month: string
         }
@@ -306,10 +363,19 @@ export type Database = {
           notas?: string | null
           payment_method?: string
           platform?: string
+          store_id?: string
           updated_at?: string
           year_month?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "monthly_ad_spend_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       monthly_business_inputs: {
         Row: {
@@ -318,6 +384,7 @@ export type Database = {
           created_at: string
           id: string
           notas: string | null
+          store_id: string
           tarjeta_interes: number
           tarjeta_pago: number
           updated_at: string
@@ -329,6 +396,7 @@ export type Database = {
           created_at?: string
           id?: string
           notas?: string | null
+          store_id?: string
           tarjeta_interes?: number
           tarjeta_pago?: number
           updated_at?: string
@@ -340,12 +408,21 @@ export type Database = {
           created_at?: string
           id?: string
           notas?: string | null
+          store_id?: string
           tarjeta_interes?: number
           tarjeta_pago?: number
           updated_at?: string
           year_month?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "monthly_business_inputs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notes: {
         Row: {
@@ -355,6 +432,7 @@ export type Database = {
           operator_id: string
           order_id: string | null
           phone: string
+          store_id: string
         }
         Insert: {
           created_at?: string
@@ -363,6 +441,7 @@ export type Database = {
           operator_id: string
           order_id?: string | null
           phone: string
+          store_id?: string
         }
         Update: {
           created_at?: string
@@ -371,6 +450,7 @@ export type Database = {
           operator_id?: string
           order_id?: string | null
           phone?: string
+          store_id?: string
         }
         Relationships: [
           {
@@ -378,6 +458,13 @@ export type Database = {
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notes_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
         ]
@@ -398,6 +485,7 @@ export type Database = {
           opening_notes: string | null
           opening_pending_yesterday: number | null
           report_date: string
+          store_id: string
           user_id: string
         }
         Insert: {
@@ -415,6 +503,7 @@ export type Database = {
           opening_notes?: string | null
           opening_pending_yesterday?: number | null
           report_date: string
+          store_id?: string
           user_id: string
         }
         Update: {
@@ -432,30 +521,50 @@ export type Database = {
           opening_notes?: string | null
           opening_pending_yesterday?: number | null
           report_date?: string
+          store_id?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "operator_daily_reports_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       operator_pool: {
         Row: {
           active: boolean
           created_at: string
           slot: number
+          store_id: string
           user_id: string
         }
         Insert: {
           active?: boolean
           created_at?: string
           slot: number
+          store_id?: string
           user_id: string
         }
         Update: {
           active?: boolean
           created_at?: string
           slot?: number
+          store_id?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "operator_pool_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       order_results: {
         Row: {
@@ -471,6 +580,7 @@ export type Database = {
           result_date: string
           result_notes: string | null
           result_time: string | null
+          store_id: string
         }
         Insert: {
           created_at?: string
@@ -485,6 +595,7 @@ export type Database = {
           result_date?: string
           result_notes?: string | null
           result_time?: string | null
+          store_id?: string
         }
         Update: {
           created_at?: string
@@ -499,6 +610,7 @@ export type Database = {
           result_date?: string
           result_notes?: string | null
           result_time?: string | null
+          store_id?: string
         }
         Relationships: [
           {
@@ -506,6 +618,13 @@ export type Database = {
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_results_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
             referencedColumns: ["id"]
           },
         ]
@@ -548,6 +667,7 @@ export type Database = {
           novedad_sol: boolean | null
           phone: string
           producto: string | null
+          store_id: string
           suggested_customer_message: string | null
           tags: string | null
           tienda: string | null
@@ -594,6 +714,7 @@ export type Database = {
           novedad_sol?: boolean | null
           phone: string
           producto?: string | null
+          store_id?: string
           suggested_customer_message?: string | null
           tags?: string | null
           tienda?: string | null
@@ -640,6 +761,7 @@ export type Database = {
           novedad_sol?: boolean | null
           phone?: string
           producto?: string | null
+          store_id?: string
           suggested_customer_message?: string | null
           tags?: string | null
           tienda?: string | null
@@ -649,7 +771,15 @@ export type Database = {
           validation_decision?: string | null
           valor?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       personal_card_movements: {
         Row: {
@@ -674,6 +804,7 @@ export type Database = {
           periodo_corte_to: string | null
           raw_line: string | null
           saldo_pendiente: number | null
+          store_id: string
           subcategoria: string | null
           tarjeta: string
           tipo: string
@@ -702,6 +833,7 @@ export type Database = {
           periodo_corte_to?: string | null
           raw_line?: string | null
           saldo_pendiente?: number | null
+          store_id?: string
           subcategoria?: string | null
           tarjeta: string
           tipo: string
@@ -730,13 +862,22 @@ export type Database = {
           periodo_corte_to?: string | null
           raw_line?: string | null
           saldo_pendiente?: number | null
+          store_id?: string
           subcategoria?: string | null
           tarjeta?: string
           tipo?: string
           updated_at?: string
           valor_cuota?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "personal_card_movements_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -762,6 +903,100 @@ export type Database = {
         }
         Relationships: []
       }
+      store_dropi_config: {
+        Row: {
+          country_code: string
+          dropi_api_key: string | null
+          dropi_session_token: string | null
+          dropi_store_url: string | null
+          store_id: string
+          updated_at: string
+          white_brand_id: string | null
+        }
+        Insert: {
+          country_code?: string
+          dropi_api_key?: string | null
+          dropi_session_token?: string | null
+          dropi_store_url?: string | null
+          store_id: string
+          updated_at?: string
+          white_brand_id?: string | null
+        }
+        Update: {
+          country_code?: string
+          dropi_api_key?: string | null
+          dropi_session_token?: string | null
+          dropi_store_url?: string | null
+          store_id?: string
+          updated_at?: string
+          white_brand_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_dropi_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_members: {
+        Row: {
+          created_at: string
+          role: string
+          store_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          role: string
+          store_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          role?: string
+          store_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_members_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stores: {
+        Row: {
+          country_code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          status: string
+        }
+        Insert: {
+          country_code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          status?: string
+        }
+        Update: {
+          country_code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          status?: string
+        }
+        Relationships: []
+      }
       sync_logs: {
         Row: {
           created_at: string
@@ -770,6 +1005,7 @@ export type Database = {
           id: string
           source: string
           status: string
+          store_id: string
           synced_count: number
           total_count: number
           triggered_by: string | null
@@ -781,6 +1017,7 @@ export type Database = {
           id?: string
           source?: string
           status?: string
+          store_id?: string
           synced_count?: number
           total_count?: number
           triggered_by?: string | null
@@ -792,11 +1029,20 @@ export type Database = {
           id?: string
           source?: string
           status?: string
+          store_id?: string
           synced_count?: number
           total_count?: number
           triggered_by?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sync_logs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tc_debt_snapshots: {
         Row: {
@@ -808,6 +1054,7 @@ export type Database = {
           saldo_cop: number
           saldo_usd: number
           source: string
+          store_id: string
           tarjeta: string
           trm: number
           updated_at: string
@@ -821,6 +1068,7 @@ export type Database = {
           saldo_cop?: number
           saldo_usd?: number
           source?: string
+          store_id?: string
           tarjeta: string
           trm?: number
           updated_at?: string
@@ -834,11 +1082,20 @@ export type Database = {
           saldo_cop?: number
           saldo_usd?: number
           source?: string
+          store_id?: string
           tarjeta?: string
           trm?: number
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tc_debt_snapshots_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       touchpoints: {
         Row: {
@@ -849,6 +1106,7 @@ export type Database = {
           id: string
           operator_id: string
           phone: string
+          store_id: string
         }
         Insert: {
           action: string
@@ -858,6 +1116,7 @@ export type Database = {
           id?: string
           operator_id: string
           phone: string
+          store_id?: string
         }
         Update: {
           action?: string
@@ -867,8 +1126,17 @@ export type Database = {
           id?: string
           operator_id?: string
           phone?: string
+          store_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "touchpoints_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -943,6 +1211,7 @@ export type Database = {
           total_gestionados: number
         }[]
       }
+      auth_store_ids: { Args: never; Returns: string[] }
       cancel_orphan_pending_orders: { Args: never; Returns: number }
       categorize_personal_movement: {
         Args: { p_descripcion: string; p_moneda?: string }
@@ -991,6 +1260,7 @@ export type Database = {
           novedad_sol: boolean | null
           phone: string
           producto: string | null
+          store_id: string
           suggested_customer_message: string | null
           tags: string | null
           tienda: string | null
@@ -1030,6 +1300,7 @@ export type Database = {
           id: string
           lecciones: string | null
           notas: string | null
+          store_id: string
           updated_at: string
           year_month: string
         }
@@ -1065,6 +1336,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_store_member: { Args: { p_store_id: string }; Returns: boolean }
+      is_store_owner: { Args: { p_store_id: string }; Returns: boolean }
       list_cfo_retrospectives: {
         Args: never
         Returns: {
@@ -1077,6 +1350,7 @@ export type Database = {
           id: string
           lecciones: string | null
           notas: string | null
+          store_id: string
           updated_at: string
           year_month: string
         }[]
@@ -1380,6 +1654,7 @@ export type Database = {
           id: string
           lecciones: string | null
           notas: string | null
+          store_id: string
           updated_at: string
           year_month: string
         }
@@ -1390,6 +1665,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      store_role: { Args: { p_store_id: string }; Returns: string }
       submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
       submit_opening_report: {
         Args: {
@@ -1430,6 +1706,7 @@ export type Database = {
           id: string
           lecciones: string | null
           notas: string | null
+          store_id: string
           updated_at: string
           year_month: string
         }
@@ -1457,6 +1734,7 @@ export type Database = {
           notas: string | null
           payment_method: string
           platform: string
+          store_id: string
           updated_at: string
           year_month: string
         }
@@ -1482,6 +1760,7 @@ export type Database = {
           created_at: string
           id: string
           notas: string | null
+          store_id: string
           tarjeta_interes: number
           tarjeta_pago: number
           updated_at: string
@@ -1519,6 +1798,7 @@ export type Database = {
           saldo_cop: number
           saldo_usd: number
           source: string
+          store_id: string
           tarjeta: string
           trm: number
           updated_at: string
