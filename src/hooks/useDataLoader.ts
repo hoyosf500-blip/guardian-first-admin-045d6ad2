@@ -122,7 +122,7 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
     } finally {
       setSegLoading(false);
     }
-  }, [user, segLoaded]);
+  }, [user, segLoaded, storeId]);
 
   // COST-1: auto-refresh cada 15 min y solo cuando la pestaña está visible.
   useEffect(() => {
