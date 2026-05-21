@@ -973,21 +973,27 @@ export type Database = {
       store_shopify_config: {
         Row: {
           active: boolean
-          admin_token: string
+          admin_token: string | null
+          client_id: string | null
+          client_secret: string | null
           shop_domain: string
           store_id: string
           updated_at: string
         }
         Insert: {
           active?: boolean
-          admin_token: string
+          admin_token?: string | null
+          client_id?: string | null
+          client_secret?: string | null
           shop_domain: string
           store_id: string
           updated_at?: string
         }
         Update: {
           active?: boolean
-          admin_token?: string
+          admin_token?: string | null
+          client_id?: string | null
+          client_secret?: string | null
           shop_domain?: string
           store_id?: string
           updated_at?: string
@@ -1363,6 +1369,7 @@ export type Database = {
       get_store_shopify_status: {
         Args: { p_store_id: string }
         Returns: {
+          auth_mode: string
           configured: boolean
           shop_domain: string
         }[]
@@ -1841,6 +1848,15 @@ export type Database = {
       upsert_store_shopify_config: {
         Args: {
           p_admin_token: string
+          p_shop_domain: string
+          p_store_id: string
+        }
+        Returns: undefined
+      }
+      upsert_store_shopify_credentials: {
+        Args: {
+          p_client_id: string
+          p_client_secret: string
           p_shop_domain: string
           p_store_id: string
         }
