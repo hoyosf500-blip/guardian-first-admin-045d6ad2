@@ -51,7 +51,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      setUser(session?.user ?? null);
+      // Mantener la MISMA referencia de `user` si el id no cambió. Supabase
+      // dispara TOKEN_REFRESHED (cada ~1h y al volver de pestaña) con un objeto
+      // `user` nuevo aunque sea el mismo usuario. Si cambiábamos la referencia,
+      // StoreContext.refresh (useCallback[user]) se re-ejecutaba, ponía
+      // store.loading=true y ProtectedLayout DESMONTABA toda la app → la
+      // operadora perdía su lugar ("se reinicia el CRM"). El token fresco vive
+      // en `session` (que sí actualizamos), no en `user`.
+      setUser((prev) => (prev?.id === session?.user?.id ? prev : (session?.user ?? null)));
       if (session?.user) {
         setTimeout(() => fetchProfile(session.user.id), 0);
       } else {

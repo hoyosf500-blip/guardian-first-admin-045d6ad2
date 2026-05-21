@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 
@@ -32,13 +32,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [stores, setStores] = useState<StoreMembership[]>([]);
   const [activeStoreId, setActiveStoreIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Solo bloqueamos la UI (loading=true) en la PRIMERA carga. Refreshes
+  // posteriores (token refresh al volver de pestaña, etc.) NO deben bloquear,
+  // o ProtectedLayout desmonta toda la app y la operadora pierde su lugar.
+  const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!user) {
       setStores([]); setActiveStoreIdState(null); setLoading(false);
+      hasLoadedRef.current = false;
       return;
     }
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
 
     // Membresías del user (RLS asegura que solo vea las suyas)
     const { data: memberships } = await supabase
@@ -49,6 +54,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const storeIds = (memberships ?? []).map(m => m.store_id);
     if (storeIds.length === 0) {
       setStores([]); setActiveStoreIdState(null); setLoading(false);
+      hasLoadedRef.current = true;
       return;
     }
 
@@ -91,6 +97,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveStoreIdState(valid);
     if (valid && stored !== valid) localStorage.setItem(LS_KEY, valid);
 
+    hasLoadedRef.current = true;
     setLoading(false);
   }, [user]);
 
