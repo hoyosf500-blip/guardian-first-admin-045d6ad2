@@ -126,7 +126,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   // Determine fecha_conf from updated_at if status changed from PENDIENTE CONFIRMACION
   const status = String(o.status || "PENDIENTE").toUpperCase();
   const isPendConf = status === "PENDIENTE CONFIRMACION";
-  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : "";
+  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : null;
 
   // Extract novedad from novedad_servientrega or servientrega_movements
   const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";
