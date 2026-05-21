@@ -90,6 +90,7 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
         const { data, error } = await supabase
           .from('orders')
           .select(ORDER_COLUMNS)
+          .eq('store_id', storeId)
           .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
           .not('estado', 'eq', 'ENTREGADO')
           .not('estado', 'eq', 'CANCELADO')
