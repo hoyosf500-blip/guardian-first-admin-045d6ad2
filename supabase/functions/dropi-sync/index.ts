@@ -163,6 +163,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   return {
     external_id: String(o.id || ""),
     uploaded_by: userId,
+    store_id: storeId,
     upload_date: today,
     nombre: `${o.name || ""} ${o.surname || ""}`.trim() || "Sin nombre",
     phone: String(o.phone || "").replace(/[^0-9]/g, ""),
