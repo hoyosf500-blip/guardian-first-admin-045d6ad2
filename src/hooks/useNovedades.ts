@@ -36,6 +36,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       const { data, error } = await supabase
         .from('orders')
         .select(ORDER_COLUMNS)
+        .eq('store_id', storeId)
         .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
         .eq('novedad_sol', false);
       if (error) {
