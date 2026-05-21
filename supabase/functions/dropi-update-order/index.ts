@@ -36,40 +36,14 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, storeIdFromExternalId, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_BASE = "https://api.dropi.co";
 const DEFAULT_NEW_STATUS = "PENDIENTE";
-const DEFAULT_STORE_URL = "";
 
 // Only these statuses can be pushed to Dropi via this endpoint. This prevents
 // an operator from sending arbitrary strings (e.g. "CANCELADO") through the
 // integration key. Add new values here as new flows are implemented.
 const ALLOWED_STATUSES = ["PENDIENTE", "GUIA_GENERADA", "CONFIRMADO"];
-
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-type SB = SupabaseClient;
-type SettingRow = { key: string; value: string | null };
-
-async function getConfig(sb: SB): Promise<{ apiKey: string; storeUrl: string }> {
-  const { data, error } = await sb
-    .from("app_settings")
-    .select("key, value")
-    .in("key", ["dropi_api_key", "dropi_store_url"]);
-
-  if (error) {
-    throw new Error(`No se pudo leer app_settings: ${error.message}`);
-  }
-
-  const map = new Map<string, string>();
-  ((data || []) as SettingRow[]).forEach((row) =>
-    map.set(String(row.key), String(row.value || "")),
-  );
-
-  const apiKey = map.get("dropi_api_key") || Deno.env.get("DROPI_API_KEY") || "";
-  const storeUrl = map.get("dropi_store_url") || DEFAULT_STORE_URL;
-
-  return { apiKey, storeUrl };
-}
 
 interface DropiResult {
   ok: boolean;
