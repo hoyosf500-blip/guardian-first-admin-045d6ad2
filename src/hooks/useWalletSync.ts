@@ -1,12 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useStore } from '@/contexts/StoreContext';
 
-// Sync de billetera Dropi — invoca la edge function `dropi-wallet-sync`
-// que internamente llama a /api/wallet/exportexcel (que NO tiene IP block,
-// a diferencia de /api/historywallet) y parsea el XLSX server-side.
-// Verificado 2026-04-29: server-side con JWT user funciona, browser-side
-// no porque Dropi rechaza CORS desde origins distintos a app.dropi.co.
+// Sync de billetera Dropi por TIENDA. Invoca `dropi-wallet-sync` con
+// `store_id` (multi-tenant). La edge function valida que el caller sea
+// dueño de la tienda.
 
 export interface WalletSyncResult {
   ok: boolean;
@@ -22,14 +21,19 @@ export interface WalletSyncResult {
 
 export function useWalletSync() {
   const qc = useQueryClient();
+  const { activeStoreId } = useStore();
 
   return useMutation<WalletSyncResult, Error, { from?: string; untill?: string; limit?: number; dryRun?: boolean } | undefined>({
     mutationFn: async (body) => {
+      if (!activeStoreId) {
+        throw new Error('Sin tienda activa');
+      }
       const today = new Date();
       const past = new Date();
       past.setDate(past.getDate() - 30);
       const b = body ?? {};
       const payload = {
+        store_id: activeStoreId,
         from: b.from ?? past.toISOString().split('T')[0],
         untill: b.untill ?? today.toISOString().split('T')[0],
         ...(b.limit ? { limit: b.limit } : {}),
@@ -40,7 +44,6 @@ export function useWalletSync() {
         body: payload,
       });
       if (error) {
-        // Edge function no-2xx — Supabase client retorna error con context
         const ctx = (error as unknown as { context?: { body?: string } }).context;
         if (ctx?.body) {
           try { return JSON.parse(ctx.body) as WalletSyncResult; } catch { /* noop */ }

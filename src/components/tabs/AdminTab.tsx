@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, AlertTriangle, X, RefreshCw, Sparkles, Fingerprint } from 'lucide-react';
+import { useStore } from '@/contexts/StoreContext';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import ReportsTable from '@/components/admin/ReportsTable';
+import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -22,6 +24,7 @@ interface FailedSync { id: string; created_at: string; error_message: string | n
 
 export default function AdminTab() {
   const { isAdmin } = useAuth();
+  const { activeStoreId } = useStore();
   const [operators, setOperators] = useState<Profile[]>([]);
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,14 +32,7 @@ export default function AdminTab() {
   const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
-  const [dropiKey, setDropiKey] = useState('');
-  const [dropiKeySaved, setDropiKeySaved] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
-  const [testingKey, setTestingKey] = useState(false);
-  const [testResult, setTestResult] = useState<'ok' | 'fail' | null>(null);
-
-  // AI key state
+  // AI key state (sigue siendo global, no por tienda)
   const [aiKey, setAiKey] = useState('');
   const [aiKeySaved, setAiKeySaved] = useState('');
   const [showAiKey, setShowAiKey] = useState(false);
@@ -44,22 +40,13 @@ export default function AdminTab() {
   const [testingAi, setTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
 
-  // Dropi session token state (for buyer fingerprint)
-  const [dropiSession, setDropiSession] = useState('');
-  const [dropiSessionSaved, setDropiSessionSaved] = useState('');
-  const [showSession, setShowSession] = useState(false);
-  const [savingSession, setSavingSession] = useState(false);
-  const [testingSession, setTestingSession] = useState(false);
-  const [sessionTestResult, setSessionTestResult] = useState<'ok' | 'fail' | null>(null);
-
   useEffect(() => {
     if (!isAdmin) return;
     loadData();
-    loadDropiKey();
     loadAiKey();
-    loadDropiSession();
     loadFailedSyncs();
-  }, [isAdmin]);
+  }, [isAdmin, activeStoreId]);
+
 
   async function loadFailedSyncs() {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -73,73 +60,9 @@ export default function AdminTab() {
     setFailedSyncs((data as FailedSync[]) || []);
   }
 
-  async function loadDropiKey() {
-    const { data } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'dropi_api_key')
-      .maybeSingle();
-    if (data) {
-      setDropiKey(data.value);
-      setDropiKeySaved(data.value);
-    }
-  }
+  // (loadDropiKey / saveDropiKey / testDropiConnection eliminados —
+  //  reemplazados por StoreCredentialsPanel multi-tenant.)
 
-  async function saveDropiKey() {
-    if (!dropiKey.trim()) {
-      toast.error('La clave no puede estar vacía');
-      return;
-    }
-    setSavingKey(true);
-    try {
-      if (dropiKeySaved) {
-        const { error } = await supabase
-          .from('app_settings')
-          .update({ value: dropiKey.trim() })
-          .eq('key', 'dropi_api_key');
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('app_settings')
-          .insert({ key: 'dropi_api_key', value: dropiKey.trim() });
-        if (error) throw error;
-      }
-      setDropiKeySaved(dropiKey.trim());
-      toast.success('Clave API de Dropi guardada');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error al guardar');
-    } finally {
-      setSavingKey(false);
-    }
-  }
-
-  async function testDropiConnection() {
-    setTestingKey(true);
-    setTestResult(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { toast.error('No hay sesión activa'); return; }
-      const today = new Date().toISOString().split('T')[0];
-      const res = await supabase.functions.invoke('dropi-sync', {
-        body: { from: today, untill: today },
-      });
-      if (res.error) {
-        setTestResult('fail');
-        toast.error(`Error: ${res.error.message}`);
-      } else if (res.data?.error) {
-        setTestResult('fail');
-        toast.error(res.data.error);
-      } else {
-        setTestResult('ok');
-        toast.success(`Conexión exitosa — ${res.data.message || 'API respondió correctamente'}`);
-      }
-    } catch (err: unknown) {
-      setTestResult('fail');
-      toast.error(err instanceof Error ? err.message : 'Error de conexión');
-    } finally {
-      setTestingKey(false);
-    }
-  }
 
   async function loadAiKey() {
     const { data } = await supabase

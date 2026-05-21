@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
@@ -30,6 +31,7 @@ interface Props {
 
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
+  const { activeStoreId } = useStore();
   const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
@@ -55,9 +57,11 @@ export default function ConfirmarTab({ profile }: Props) {
   // the Dropi sync fell over.
   useEffect(() => {
     if (excelLoaded || !user || autoLoading) return;
+    if (!activeStoreId) return;
     setAutoLoading(true);
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     supabase.from('orders').select(ORDER_COLUMNS).ilike('estado', 'PENDIENTE CONFIRMACION')
+      .eq('store_id', activeStoreId)
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
       .then(({ data: dbOrders, error }) => {
         if (error) {
@@ -83,7 +87,7 @@ export default function ConfirmarTab({ profile }: Props) {
         toast.error('Error de red: ' + msg);
         setAutoLoading(false);
       });
-  }, [user, excelLoaded, today, autoLoading]);
+  }, [user, excelLoaded, today, autoLoading, activeStoreId]);
 
   const handleFile = useCallback(async (file: File) => {
     toast.info('Procesando Excel...');
@@ -224,18 +228,17 @@ export default function ConfirmarTab({ profile }: Props) {
           <button
             onClick={async () => {
               if (!user) return;
+              if (!activeStoreId) { toast.error('Sin tienda activa'); return; }
               setSyncing(true);
               try {
                 const { data, error } = await supabase.functions.invoke('dropi-sync', {
-                  body: {},
+                  body: { store_id: activeStoreId },
                 });
                 if (error) throw error;
                 if (data?.synced > 0 || data?.total > 0) {
-                  // Reload orders from DB — strict match so we don't pull
-                  // already-confirmed orders back into the queue.
-                  // Audit M9: usar ORDER_COLUMNS en vez de '*' — patrón del proyecto, evita columnas pesadas.
                   const { data: dbOrders } = await supabase.from('orders')
                     .select(ORDER_COLUMNS)
+                    .eq('store_id', activeStoreId)
                     .eq('estado', 'PENDIENTE CONFIRMACION');
                   if (dbOrders && dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o as never, idx));

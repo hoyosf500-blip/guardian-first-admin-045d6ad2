@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { RefreshCw, Loader2, Calendar, ArrowDownToLine, Globe } from 'lucide-react';
+import { useStore } from '@/contexts/StoreContext';
+import { RefreshCw, Loader2, Calendar, ArrowDownToLine } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
@@ -8,42 +9,15 @@ import { Progress } from '@/components/ui/progress';
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => void }) {
+  const { activeStore, activeStoreId, isOwnerOfActive } = useStore();
   const [syncing, setSyncing] = useState(false);
   const [fromDate, setFromDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [lastResult, setLastResult] = useState<{ synced: number; duplicates: number; total: number; chunks?: number } | null>(null);
-  const [storeUrl, setStoreUrl] = useState('');
-  const [storeUrlSaved, setStoreUrlSaved] = useState(false);
-
-  useEffect(() => {
-    supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'dropi_store_url')
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) console.error('Error loading store URL:', error.message);
-        if (data?.value) {
-          setStoreUrl(data.value);
-          setStoreUrlSaved(true);
-        }
-      });
-  }, []);
-
-  async function saveStoreUrl() {
-    if (!storeUrl.trim()) return;
-    const { error } = await supabase
-      .from('app_settings')
-      .upsert({ key: 'dropi_store_url', value: storeUrl.trim() }, { onConflict: 'key' });
-    if (error) {
-      toast.error('Error guardando URL');
-    } else {
-      setStoreUrlSaved(true);
-      toast.success('URL de tienda guardada');
-    }
-  }
 
   async function handleSync() {
+    if (!activeStoreId) { toast.error('Sin tienda activa'); return; }
+    if (!isOwnerOfActive) { toast.error('Solo el dueño de la tienda puede sincronizar'); return; }
     setSyncing(true);
     setLastResult(null);
     try {
@@ -51,7 +25,7 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
       if (!session) { toast.error('No hay sesión activa'); return; }
 
       const res = await supabase.functions.invoke('dropi-sync', {
-        body: { from: fromDate, untill: toDate },
+        body: { from: fromDate, untill: toDate, store_id: activeStoreId },
       });
 
       if (res.error) {
@@ -75,35 +49,14 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
     <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
         <ArrowDownToLine size={16} className="text-primary" />
-        <div>
+        <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Sincronizar pedidos de Dropi</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Importa y actualiza pedidos desde Dropi por rango de fechas</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Tienda activa: <span className="font-medium text-foreground">{activeStore?.name ?? '—'}</span>
+            {activeStore?.country_code ? ` (${activeStore.country_code})` : ''}
+          </p>
         </div>
       </div>
-
-      {/* Store URL config */}
-      {!storeUrlSaved && (
-        <div className="px-5 py-3 border-b border-border bg-muted/30">
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1 mb-1.5">
-            <Globe size={10} /> URL de tu tienda Dropi (requerido)
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={storeUrl}
-              onChange={e => setStoreUrl(e.target.value)}
-              placeholder="https://tutienda.dropi.co"
-              className="flex-1 h-8 rounded-lg border border-border bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-            <button
-              onClick={saveStoreUrl}
-              className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
-            >
-              Guardar
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="px-5 py-4 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1">
@@ -132,7 +85,7 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
         </div>
         <button
           onClick={handleSync}
-          disabled={syncing}
+          disabled={syncing || !activeStoreId}
           className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -154,17 +107,6 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
           {lastResult.chunks && lastResult.chunks > 1 && (
             <span className="text-muted-foreground">{lastResult.chunks} chunks</span>
           )}
-        </div>
-      )}
-
-      {storeUrlSaved && (
-        <div className="px-5 pb-3">
-          <button
-            onClick={() => setStoreUrlSaved(false)}
-            className="text-[10px] text-muted-foreground hover:text-foreground transition-colors underline"
-          >
-            Cambiar URL de tienda ({storeUrl})
-          </button>
         </div>
       )}
     </motion.div>
