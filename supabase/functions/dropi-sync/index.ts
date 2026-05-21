@@ -32,6 +32,7 @@ function chunkDateRange(from: string, to: string, maxDays: number) {
 
 /** Fetch all pages for a date chunk */
 async function fetchAllPages(
+  base: string,
   apiKey: string,
   origin: string,
   chunkFrom: string,
