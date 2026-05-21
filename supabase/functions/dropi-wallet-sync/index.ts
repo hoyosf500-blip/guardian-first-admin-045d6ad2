@@ -237,18 +237,38 @@ Deno.serve(async (req: Request) => {
       userId = user.id;
     }
 
-    // 2. Leer JWT de Dropi
-    const { data: tokenRow } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_session_token")
-      .maybeSingle();
-    const sessionToken = tokenRow?.value || "";
+    // 2. Body: store_id es requerido (multi-tenant)
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* sin body */ }
+
+    const storeId = typeof body.store_id === "string" && body.store_id.trim()
+      ? body.store_id.trim()
+      : (typeof body.storeId === "string" ? (body.storeId as string).trim() : "");
+    if (!storeId) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Falta store_id en el body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Gate: solo el dueño puede ejecutar wallet sync (datos financieros).
+    if (!isCron && userId) {
+      const isOwner = await isStoreOwner(sb, userId, storeId);
+      if (!isOwner) {
+        return new Response(
+          JSON.stringify({ error: "Solo el dueño de la tienda puede ejecutar el wallet sync" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    const cfg = await loadStoreConfig(sb, storeId);
+    const sessionToken = cfg.sessionToken;
     if (!sessionToken) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "Token de sesión Dropi no configurado. Ve a Admin → Token sesión Dropi.",
+          error: "La tienda no tiene token de sesión Dropi configurado.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
