@@ -299,10 +299,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 4. Body opcional
-    let body: Record<string, unknown> = {};
-    try { body = await req.json(); } catch { /* sin body */ }
-
+    // 4. Rango de fechas (body ya parseado arriba)
     const today = new Date();
     const defaultFrom = new Date();
     defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 30);
@@ -311,14 +308,14 @@ Deno.serve(async (req: Request) => {
     const dryRun = Boolean(body.dryRun);
     const limit = Number(body.limit || 0);
 
-    // 5. Fetch XLSX desde Dropi (server-side, no IP block en este endpoint)
+    // 5. Fetch XLSX desde Dropi (host del país de la tienda)
     const params = new URLSearchParams({
       from: fromDate,
       until: toDate,
       user_id: String(dropiUserId),
       wallet_id: "0",
     });
-    const xlsxRes = await fetch(`${DROPI_API}${EXPORT_PATH}?${params.toString()}`, {
+    const xlsxRes = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
       method: "GET",
       headers: {
         "Accept": "application/json, text/plain, */*",
