@@ -53,13 +53,14 @@ interface DropiResult {
 }
 
 async function dropiPutOrder(
+  base: string,
   apiKey: string,
   storeUrl: string,
   externalId: string,
   newStatus: string,
 ): Promise<DropiResult> {
   const res = await fetch(
-    `${DROPI_BASE}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+    `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
     {
       method: "PUT",
       headers: {
@@ -85,14 +86,12 @@ async function dropiPutOrder(
 }
 
 async function dropiSanityCheck(
+  base: string,
   apiKey: string,
   storeUrl: string,
 ): Promise<{ ok: boolean; httpStatus: number; message?: string }> {
-  // Lightweight GET against the integrations listing endpoint to verify the
-  // key is still valid and Dropi is reachable. This is what dropi-sync uses
-  // so we know it works.
   const url =
-    `${DROPI_BASE}/integrations/orders/myorders?result_number=1&start=0` +
+    `${base}/integrations/orders/myorders?result_number=1&start=0` +
     `&date_from=2020-01-01&date_to=2020-01-01` +
     `&filter_date_by=FECHA%20DE%20CREADO&orderBy=id&orderDirection=desc`;
 
@@ -114,10 +113,7 @@ async function dropiSanityCheck(
   }
 
   const ok = res.ok && body.isSuccess !== false;
-  const message = ok
-    ? "Conexión OK"
-    : String(body.message || `HTTP ${res.status}`);
-
+  const message = ok ? "Conexión OK" : String(body.message || `HTTP ${res.status}`);
   return { ok, httpStatus: res.status, message };
 }
 
