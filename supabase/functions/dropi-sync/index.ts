@@ -75,7 +75,7 @@ async function fetchAllPages(
     }
 
     if (!res || !res.ok) {
-      const txt = res ? await res.text() : lastErr;
+      const txt = res?.status === 429 ? lastErr : (res ? await res.text() : "no-response");
       throw new Error(`Dropi API [${res?.status ?? "no-response"}]: ${txt}`);
     }
 
