@@ -308,7 +308,8 @@ Deno.serve(async (req: Request) => {
       .from("order_results")
       .select("order_id")
       .eq("result", "conf")
-      .eq("result_date", todayDate);
+      .eq("result_date", todayDate)
+      .eq("store_id", storeId);
 
     if (confirmedToday && confirmedToday.length > 0) {
       const confirmedIds = confirmedToday.map((r) => r.order_id);
@@ -318,6 +319,7 @@ Deno.serve(async (req: Request) => {
           .from("orders")
           .update({ estado: "PENDIENTE" })
           .in("id", batch)
+          .eq("store_id", storeId)
           .eq("estado", "PENDIENTE CONFIRMACION");
       }
     }
