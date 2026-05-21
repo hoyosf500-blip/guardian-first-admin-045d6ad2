@@ -57,9 +57,11 @@ export default function ConfirmarTab({ profile }: Props) {
   // the Dropi sync fell over.
   useEffect(() => {
     if (excelLoaded || !user || autoLoading) return;
+    if (!activeStoreId) return;
     setAutoLoading(true);
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     supabase.from('orders').select(ORDER_COLUMNS).ilike('estado', 'PENDIENTE CONFIRMACION')
+      .eq('store_id', activeStoreId)
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
       .then(({ data: dbOrders, error }) => {
         if (error) {
