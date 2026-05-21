@@ -132,7 +132,15 @@ function ProtectedLayoutInner() {
 
   const brandName = store.activeStore?.name ?? 'CRM';
   const brandLogoUrl = store.activeStore?.brand_logo_url ?? null;
-  const visibleTabs = NAV_ITEMS.filter(t => !t.adminOnly || isAdmin);
+  // CFO es la vista financiera PERSONAL del dueño (tarjetas, deuda, pauta) y
+  // solo aplica a Colombia. Se oculta en otras tiendas (Ecuador) — los datos
+  // además están protegidos por RLS admin-only a nivel DB, así que un amigo
+  // (operator/owner, nunca admin) jamás los ve aunque navegue a /cfo directo.
+  const visibleTabs = NAV_ITEMS.filter(t => {
+    if (t.adminOnly && !isAdmin) return false;
+    if (t.path === '/cfo' && store.activeStore?.country_code !== 'CO') return false;
+    return true;
+  });
   const activePath = location.pathname;
   const activeLabel = visibleTabs.find(t => activePath.startsWith(t.path))?.label
     || (activePath.startsWith('/pedido') ? 'Detalle Pedido' : 'Panel');
