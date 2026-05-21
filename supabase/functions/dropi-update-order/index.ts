@@ -213,42 +213,55 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- Verify the order exists in our DB (ownership check) ----
+    // ---- Resolve store + verify order exists ----
+    let storeId: string | null =
+      typeof body.storeId === "string" && body.storeId.trim() ? body.storeId.trim() : null;
+
     if (!dryRun) {
       const { data: orderRow } = await sb
         .from("orders")
-        .select("id")
+        .select("id, store_id")
         .eq("external_id", externalId)
         .maybeSingle();
       if (!orderRow) {
         return new Response(
           JSON.stringify({ error: `Pedido ${externalId} no encontrado en la base de datos` }),
-          {
-            status: 404,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          },
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
+      storeId = String((orderRow as { store_id: string }).store_id);
     }
 
-    // ---- Load config (integration-key + store URL) ----
-    const { apiKey, storeUrl } = await getConfig(sb);
-    if (!apiKey) {
+    if (!storeId) {
+      return new Response(
+        JSON.stringify({ error: "Falta storeId (para dryRun) o externalId válido." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ---- Membership check ----
+    const isMember = await isStoreMember(sb, user.id, storeId);
+    if (!isMember) {
+      return new Response(
+        JSON.stringify({ error: "No perteneces a esta tienda" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ---- Load store config (integration-key + store URL + host por país) ----
+    const cfg = await loadStoreConfig(sb, storeId);
+    if (!cfg.apiKey) {
       return new Response(
         JSON.stringify({
-          error:
-            "Clave API de Dropi no configurada. Configúrala en Admin → Clave API de Dropi.",
+          error: "La tienda no tiene Clave API de Dropi. Configurala en Ajustes → Tienda.",
         }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     // ---- DryRun: just a sanity GET so the admin can verify connectivity ----
     if (dryRun) {
-      const check = await dropiSanityCheck(apiKey, storeUrl);
+      const check = await dropiSanityCheck(cfg.base, cfg.apiKey, cfg.storeUrl);
       return new Response(
         JSON.stringify({
           ok: check.ok,
@@ -264,7 +277,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- PUT order status via integration-key ----
-    const res = await dropiPutOrder(apiKey, storeUrl, externalId, newStatus);
+    const res = await dropiPutOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId, newStatus);
 
     if (!res.ok) {
       const errorMsg = `Dropi PUT [${res.httpStatus}]: ${String(
