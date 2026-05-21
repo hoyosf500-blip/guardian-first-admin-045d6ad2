@@ -1,6 +1,7 @@
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
@@ -45,6 +46,7 @@ function MiniSparkline({ data, color }: { data: number[]; color: string }) {
 export default function DashboardTab() {
   const { allOrders, counter, workQueue } = useOrders();
   const { user } = useAuth();
+  const { activeStoreId } = useStore();
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -83,9 +85,9 @@ export default function DashboardTab() {
     return () => { cancelled = true; };
   }, [user, counter]); // re-fetch when counter changes (user marked something)
 
-  // Load orders from DB for dashboard stats
+  // Load orders from DB for dashboard stats (filtrado por tienda activa)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !activeStoreId) return;
     let cancelled = false;
     const fetchAllOrders = async () => {
       const allData: Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }> = [];
@@ -94,6 +96,7 @@ export default function DashboardTab() {
       while (true) {
         if (cancelled) return;
         const { data, error } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
+          .eq('store_id', activeStoreId)
           .order('created_at', { ascending: false })
           .range(from, from + pageSize - 1);
         if (error) { console.error('Error loading orders:', error.message); break; }
@@ -112,7 +115,7 @@ export default function DashboardTab() {
     };
     fetchAllOrders();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, activeStoreId]);
 
   useEffect(() => {
     if (!user) return;
@@ -135,16 +138,18 @@ export default function DashboardTab() {
   // line of defense against "Dropi se cayó y nadie se enteró" — if the
   // cron stops producing rows, the banner immediately turns red.
   const loadSyncLog = useCallback(async () => {
+    if (!activeStoreId) return;
     const { data, error } = await supabase
       .from('sync_logs')
       .select('status, created_at, synced_count, error_message, source')
+      .eq('store_id', activeStoreId)
       .in('source', ['dropi-cron', 'dropi-sync'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
     if (error) console.error('Error loading sync log:', error.message);
     if (data) setLastSync(data);
-  }, []);
+  }, [activeStoreId]);
 
   // COST-1: sync log cada 2 min (antes 30s), tick visual cada 30s (antes 15s).
   // Ambos se pausan cuando la pestaña está oculta.
@@ -158,9 +163,10 @@ export default function DashboardTab() {
 
   const resyncNow = async () => {
     if (resyncing) return;
+    if (!activeStoreId) { toast.error('Sin tienda activa'); return; }
     setResyncing(true);
     try {
-      const { error } = await supabase.functions.invoke('dropi-sync', { body: {} });
+      const { error } = await supabase.functions.invoke('dropi-sync', { body: { store_id: activeStoreId } });
       if (error) throw error;
       toast.success('Sincronización disparada');
       // Refresh the health card after a short delay so the new row appears
