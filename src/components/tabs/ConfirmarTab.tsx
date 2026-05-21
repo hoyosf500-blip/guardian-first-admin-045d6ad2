@@ -228,18 +228,17 @@ export default function ConfirmarTab({ profile }: Props) {
           <button
             onClick={async () => {
               if (!user) return;
+              if (!activeStoreId) { toast.error('Sin tienda activa'); return; }
               setSyncing(true);
               try {
                 const { data, error } = await supabase.functions.invoke('dropi-sync', {
-                  body: {},
+                  body: { store_id: activeStoreId },
                 });
                 if (error) throw error;
                 if (data?.synced > 0 || data?.total > 0) {
-                  // Reload orders from DB — strict match so we don't pull
-                  // already-confirmed orders back into the queue.
-                  // Audit M9: usar ORDER_COLUMNS en vez de '*' — patrón del proyecto, evita columnas pesadas.
                   const { data: dbOrders } = await supabase.from('orders')
                     .select(ORDER_COLUMNS)
+                    .eq('store_id', activeStoreId)
                     .eq('estado', 'PENDIENTE CONFIRMACION');
                   if (dbOrders && dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o as never, idx));
