@@ -15,13 +15,13 @@ interface NovedadesState {
   resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
 }
 
-export function useNovedades(user: User | null): NovedadesState {
+export function useNovedades(user: User | null, storeId: string | null): NovedadesState {
   const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
   const [novedadesLoading, setNovedadesLoading] = useState(false);
   const [novedadesLoaded, setNovedadesLoaded] = useState(false);
 
   const loadNovedades = useCallback(async (force = false) => {
-    if (!user) return;
+    if (!user || !storeId) return;
     if (novedadesLoaded && !force) return;
     setNovedadesLoading(true);
     try {
@@ -36,6 +36,7 @@ export function useNovedades(user: User | null): NovedadesState {
       const { data, error } = await supabase
         .from('orders')
         .select(ORDER_COLUMNS)
+        .eq('store_id', storeId)
         .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
         .eq('novedad_sol', false);
       if (error) {
@@ -49,7 +50,7 @@ export function useNovedades(user: User | null): NovedadesState {
     } finally {
       setNovedadesLoading(false);
     }
-  }, [user, novedadesLoaded]);
+  }, [user, novedadesLoaded, storeId]);
 
   const resolveNovedad = useCallback(async (
     order: OrderData,

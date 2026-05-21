@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import { useStore } from './StoreContext';
 import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
 import { calcPriority } from '@/lib/alertSystem';
 import { bogotaToday } from '@/lib/utils';
@@ -55,6 +56,7 @@ const OrderContext = createContext<OrderState | undefined>(undefined);
 
 export function OrderProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { activeStoreId } = useStore();
   const { checkMilestone, requestNotificationPermission, resetCelebrations } = useCelebration();
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
@@ -64,33 +66,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [excelLoaded, setExcelLoaded] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null>(null);
 
-  // Extracted hooks for data loading and novedades
-  const dataLoader = useDataLoader(user);
-  const novedades = useNovedades(user);
+  // Extracted hooks for data loading and novedades — ahora reciben storeId
+  // para filtrar por la tienda activa (multi-tenant).
+  const dataLoader = useDataLoader(user, activeStoreId);
+  const novedades = useNovedades(user, activeStoreId);
 
-  // loadWorkQueue: refresca la cola de Confirmar desde DB respetando los
-  // locks de las otras operadoras. Es la pieza clave del modelo PUSH:
-  // cuando otra operadora libera un pedido (al confirmar/cancelar/timeout),
-  // realtime la dispara y la operadora libre ve los pedidos disponibles
-  // sin tener que dar click en "Actualizar".
   const loadWorkQueue = useCallback(async () => {
-    if (!user) return;
+    if (!user || !activeStoreId) return;
     const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    // Fix 22: select de columnas explícitas en lugar de '*'.
     const { data: dbOrders, error } = await supabase
       .from('orders')
       .select(ORDER_COLUMNS)
+      .eq('store_id', activeStoreId)
       .ilike('estado', 'PENDIENTE CONFIRMACION')
       .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
     if (error || !dbOrders) return;
     const orders = (dbOrders as unknown as import('@/lib/orderUtils').DbOrderRow[]).map((o, idx) => dbToOrderData(o, idx));
     setAllOrdersState(orders);
     buildWorkQueue(orders);
-    // Marca la sesión como cargada para que ConfirmarTab no dispare su
-    // propia query duplicada cuando la operadora navegue entre tabs.
     setExcelLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, activeStoreId]);
 
   // Coalesce los reloads de realtime + auto-Dropi-sync en un solo timer.
   // Antes había 2 callbacks (onOrderChange + onResultChange), cada uno

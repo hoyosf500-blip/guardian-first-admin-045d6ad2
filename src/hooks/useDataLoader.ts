@@ -65,14 +65,14 @@ interface DataLoaderState {
   loadSegData: (force?: boolean) => Promise<void>;
 }
 
-export function useDataLoader(user: User | null): DataLoaderState {
+export function useDataLoader(user: User | null, storeId: string | null): DataLoaderState {
   const [segData, setSegData] = useState<OrderData[]>([]);
   const [segLoaded, setSegLoaded] = useState(false);
   const [segLoading, setSegLoading] = useState(false);
   const [segLastUpdate, setSegLastUpdate] = useState<Date | null>(null);
 
   const loadSegData = useCallback(async (force = false) => {
-    if (!user) return;
+    if (!user || !storeId) return;
     if (segLoaded && !force) return;
     setSegLoading(true);
     try {
@@ -90,6 +90,7 @@ export function useDataLoader(user: User | null): DataLoaderState {
         const { data, error } = await supabase
           .from('orders')
           .select(ORDER_COLUMNS)
+          .eq('store_id', storeId)
           .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
           .not('estado', 'eq', 'ENTREGADO')
           .not('estado', 'eq', 'CANCELADO')
@@ -121,7 +122,7 @@ export function useDataLoader(user: User | null): DataLoaderState {
     } finally {
       setSegLoading(false);
     }
-  }, [user, segLoaded]);
+  }, [user, segLoaded, storeId]);
 
   // COST-1: auto-refresh cada 15 min y solo cuando la pestaña está visible.
   useEffect(() => {
