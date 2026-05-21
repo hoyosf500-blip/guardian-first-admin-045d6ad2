@@ -242,7 +242,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // Gate: caller debe ser owner de la tienda (sync es operación pesada)
-    const { isStoreOwner } = await import("../_shared/dropiStoreConfig.ts");
     const isOwner = await isStoreOwner(sb, user.id, storeId);
     if (!isOwner) {
       return new Response(
