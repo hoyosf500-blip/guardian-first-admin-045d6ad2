@@ -49,11 +49,13 @@ export default function AdminTab() {
 
 
   async function loadFailedSyncs() {
+    if (!activeStoreId) { setFailedSyncs([]); return; }
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data } = await supabase
       .from('sync_logs')
       .select('id, created_at, error_message')
       .eq('status', 'error')
+      .eq('store_id', activeStoreId)
       .gte('created_at', twentyFourHoursAgo)
       .order('created_at', { ascending: false })
       .limit(5);
@@ -124,65 +126,9 @@ export default function AdminTab() {
     }
   }
 
-  async function loadDropiSession() {
-    const { data } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'dropi_session_token')
-      .maybeSingle();
-    if (data) {
-      setDropiSession(data.value);
-      setDropiSessionSaved(data.value);
-    }
-  }
-
-  async function saveDropiSession() {
-    if (!dropiSession.trim()) { toast.error('El token no puede estar vacío'); return; }
-    setSavingSession(true);
-    try {
-      if (dropiSessionSaved) {
-        const { error } = await supabase.from('app_settings').update({ value: dropiSession.trim() }).eq('key', 'dropi_session_token');
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('app_settings').insert({ key: 'dropi_session_token', value: dropiSession.trim() });
-        if (error) throw error;
-      }
-      setDropiSessionSaved(dropiSession.trim());
-      toast.success('Token de sesión Dropi guardado');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error al guardar');
-    } finally {
-      setSavingSession(false);
-    }
-  }
-
-  async function testDropiFingerprint() {
-    setTestingSession(true);
-    setSessionTestResult(null);
-    try {
-      const { data: raw, error } = await supabase.rpc('dropi_fingerprint', {
-        p_phone: '3001234567',
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const d = raw as Record<string, any> | null;
-      if (error) {
-        setSessionTestResult('fail');
-        toast.error(`Error: ${error.message}`);
-      } else if (d?.ok === false) {
-        setSessionTestResult('fail');
-        toast.error(d.error || 'Error desconocido');
-      } else {
-        setSessionTestResult('ok');
-        const fp = d?.fingerprint;
-        toast.success(fp?.found ? `Huella OK — ${fp.global_profile?.lifetime_totals?.orders || 0} pedidos encontrados` : 'Conexión OK — cliente no encontrado');
-      }
-    } catch (err: unknown) {
-      setSessionTestResult('fail');
-      toast.error(err instanceof Error ? err.message : 'Error de conexión');
-    } finally {
-      setTestingSession(false);
-    }
-  }
+  // Credenciales Dropi (API key + session token) ahora son POR TIENDA y se
+  // manejan en <StoreCredentialsPanel />. Se eliminaron loadDropiSession /
+  // saveDropiSession / testDropiFingerprint (escribían en app_settings global).
 
   async function loadData() {
     setLoading(true);
@@ -279,57 +225,10 @@ export default function AdminTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Dropi API Key */}
-          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <Key size={16} className="text-primary" />
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">Clave API de Dropi</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Configura la clave de integración para sincronizar pedidos</p>
-              </div>
-            </div>
-            <div className="px-5 py-4 flex gap-3 items-center">
-              <div className="relative flex-1">
-                <input
-                  type={showKey ? 'text' : 'password'}
-                  value={dropiKey}
-                  onChange={e => setDropiKey(e.target.value)}
-                  placeholder="Pega aquí tu clave de integración Dropi"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <button
-                onClick={saveDropiKey}
-                disabled={savingKey || dropiKey === dropiKeySaved}
-                className="h-10 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {savingKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Guardar
-              </button>
-            </div>
-            {dropiKeySaved && (
-              <div className="px-5 pb-4 flex items-center justify-between">
-                <span className="text-xs text-success flex items-center gap-1">
-                  <CheckCircle2 size={12} /> Clave configurada
-                </span>
-                <button
-                  onClick={testDropiConnection}
-                  disabled={testingKey}
-                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {testingKey ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-success" /> : testResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Wifi size={12} />}
-                  {testingKey ? 'Probando…' : testResult === 'ok' ? 'Conexión OK' : testResult === 'fail' ? 'Falló' : 'Probar conexión'}
-                </button>
-              </div>
-            )}
-          </motion.div>
+          {/* Credenciales Dropi POR TIENDA (reemplaza el panel global app_settings) */}
+          <div className="md:col-span-2">
+            <StoreCredentialsPanel />
+          </div>
 
           {/* AI API Key */}
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
@@ -374,62 +273,8 @@ export default function AdminTab() {
             )}
           </motion.div>
 
-          {/* Dropi Session Token (buyer fingerprint) */}
-          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.03 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <Fingerprint size={16} className="text-info" />
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">Huella del comprador (Dropi)</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Token de sesión para consultar historial del cliente en todas las tiendas Dropi</p>
-              </div>
-            </div>
-            <div className="px-5 py-4 flex gap-3 items-center">
-              <div className="relative flex-1">
-                <input
-                  type={showSession ? 'text' : 'password'}
-                  value={dropiSession}
-                  onChange={e => setDropiSession(e.target.value)}
-                  placeholder="Pega aquí el token de sesión de Dropi"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
-                />
-                <button type="button" onClick={() => setShowSession(!showSession)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                  {showSession ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <button onClick={saveDropiSession} disabled={savingSession || dropiSession === dropiSessionSaved}
-                className="h-10 px-4 rounded-lg bg-info text-info-foreground text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                {savingSession ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Guardar
-              </button>
-            </div>
-            <div className="px-5 pb-4">
-              <details className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer hover:text-foreground transition-colors">Como obtener el token</summary>
-                <ol className="mt-2 ml-4 list-decimal space-y-1 leading-relaxed">
-                  <li>Abre <strong>app.dropi.co</strong> y asegurate de estar logueado</li>
-                  <li>Presiona <strong>F12</strong> para abrir las herramientas del navegador</li>
-                  <li>Ve a la pestana <strong>Console</strong> (Consola)</li>
-                  <li>Escribe: <code className="bg-muted px-1 rounded">JSON.parse(localStorage.getItem('DROPI_token'))</code></li>
-                  <li>Copia el texto que aparece (empieza con <code className="bg-muted px-1 rounded">eyJ...</code>)</li>
-                  <li>Pegalo aqui y dale <strong>Guardar</strong></li>
-                </ol>
-                <p className="mt-2 text-yellow-600 dark:text-yellow-400">Este token expira cada dia. Si la huella deja de funcionar, repite estos pasos.</p>
-              </details>
-            </div>
-            {dropiSessionSaved && (
-              <div className="px-5 pb-4 flex items-center justify-between border-t border-border pt-3">
-                <span className="text-xs text-success flex items-center gap-1">
-                  <CheckCircle2 size={12} /> Token configurado
-                </span>
-                <button onClick={testDropiFingerprint} disabled={testingSession}
-                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                  {testingSession ? <Loader2 size={12} className="animate-spin" /> : sessionTestResult === 'ok' ? <Fingerprint size={12} className="text-info" /> : sessionTestResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Fingerprint size={12} />}
-                  {testingSession ? 'Probando…' : sessionTestResult === 'ok' ? 'Huella OK' : sessionTestResult === 'fail' ? 'Fallo' : 'Probar huella'}
-                </button>
-              </div>
-            )}
-          </motion.div>
+          {/* La "Huella del comprador" (token de sesión Dropi) ahora es por tienda
+              y vive dentro de <StoreCredentialsPanel />. */}
 
           <div className="my-4 md:col-span-2">
             <GoogleQuotaWidget />
