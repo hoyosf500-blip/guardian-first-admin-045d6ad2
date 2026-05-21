@@ -237,33 +237,39 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Get Dropi API key
-    let dropiApiKey: string | null = null;
-    const { data: keySetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_api_key")
-      .maybeSingle();
-    dropiApiKey = keySetting?.value || Deno.env.get("DROPI_API_KEY") || null;
+    // Parse body — store_id is required (multi-tenant)
+    let body: Record<string, unknown> = {};
+    try { body = await req.json(); } catch { /* no body */ }
 
-    if (!dropiApiKey) {
+    const storeId = typeof body.store_id === "string" && body.store_id.trim()
+      ? body.store_id.trim()
+      : (typeof body.storeId === "string" ? (body.storeId as string).trim() : "");
+
+    if (!storeId) {
       return new Response(
-        JSON.stringify({ error: "Clave API de Dropi no configurada." }),
+        JSON.stringify({ error: "Falta store_id en el body" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // Get store URL for Origin header
-    const { data: urlSetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_store_url")
-      .maybeSingle();
-    const storeUrl = urlSetting?.value || "";
+    // Gate: caller debe ser owner de la tienda (sync es operación pesada)
+    const { isStoreOwner } = await import("../_shared/dropiStoreConfig.ts");
+    const isOwner = await isStoreOwner(sb, user.id, storeId);
+    if (!isOwner) {
+      return new Response(
+        JSON.stringify({ error: "Solo el dueño de la tienda puede ejecutar el sync" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
-    // Parse body
-    let body: Record<string, unknown> = {};
-    try { body = await req.json(); } catch { /* no body */ }
+    // Load store credentials + país host
+    const cfg = await loadStoreConfig(sb, storeId);
+    if (!cfg.apiKey) {
+      return new Response(
+        JSON.stringify({ error: "La tienda no tiene Clave API de Dropi configurada" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const defaultFrom = new Date();
     defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 90);
@@ -279,13 +285,12 @@ Deno.serve(async (req: Request) => {
     let totalFromDropi = 0;
 
     for (const chunk of chunks) {
-      // Fetch all pages for this chunk
-      const dropiOrders = await fetchAllPages(dropiApiKey, storeUrl, chunk.from, chunk.to);
+      const dropiOrders = await fetchAllPages(cfg.base, cfg.apiKey, cfg.storeUrl, chunk.from, chunk.to);
       totalFromDropi += dropiOrders.length;
 
       if (dropiOrders.length === 0) continue;
 
-      const dbOrders = dropiOrders.map((o) => mapOrder(o, user.id, today));
+      const dbOrders = dropiOrders.map((o) => mapOrder(o, user.id, today, storeId));
 
       // RPC upsert_orders_from_dropi: ON CONFLICT DO UPDATE WHERE
       // IS DISTINCT FROM. Filas idénticas no se reescriben → no se
