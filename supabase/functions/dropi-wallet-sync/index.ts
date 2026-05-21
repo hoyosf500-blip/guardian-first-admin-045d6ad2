@@ -129,7 +129,7 @@ function str(v: unknown): string | null {
   return String(v).trim() || null;
 }
 
-function mapRow(row: XlsxRow, syncedBy: string | null) {
+function mapRow(row: XlsxRow, syncedBy: string | null, storeId: string) {
   const id = num(row.ID);
   if (!id || id <= 0) return null;
 
@@ -153,6 +153,9 @@ function mapRow(row: XlsxRow, syncedBy: string | null) {
 
   return {
     dropi_transaction_id: id,
+    // store_id va DENTRO de cada movimiento: el RPC upsert_wallet_movements
+    // es de 1 arg (p_movements jsonb) y lee store_id del recordset por fila.
+    store_id: storeId,
     fecha: fechaToISO(str(row.FECHA) ?? undefined),
     tipo,
     codigo,
@@ -357,7 +360,7 @@ Deno.serve(async (req: Request) => {
     // 7. Mapear y upsertear (capear si limit)
     const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
     const mapped = slice
-      .map((r: XlsxRow): Mapped => mapRow(r, userId ?? ""))
+      .map((r: XlsxRow): Mapped => mapRow(r, userId ?? "", storeId))
       .filter((r): r is NonNullable<Mapped> => r !== null);
 
     let totalSynced = 0;
@@ -366,7 +369,7 @@ Deno.serve(async (req: Request) => {
         const batch = mapped.slice(i, i + 50);
         const { data: changedCount, error: upsertError } = await sb.rpc(
           "upsert_wallet_movements",
-          { p_movements: batch, p_store_id: storeId },
+          { p_movements: batch },
         );
         if (upsertError) {
           console.error("upsert_wallet_movements error:", upsertError);
