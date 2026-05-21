@@ -32,14 +32,34 @@ export function useRealtimeOrders(
   orderCb.current = onOrderChange;
   resultCb.current = onResultChange;
 
+  // FIX "se reinicia al volver de la pestaña": mientras la pestaña está oculta,
+  // los cambios (sobre todo del cron cada 5 min) se encolan y al volver disparan
+  // TODOS de golpe → un refresh masivo que reconstruye las colas y resetea el
+  // scroll / la tarjeta en la que estaba la operadora. Suprimimos los eventos
+  // realtime mientras está oculta Y durante una ventana corta apenas vuelve
+  // (drena el burst de reconexión). Los eventos nuevos en vivo siguen fluyendo;
+  // si se pierde alguno, el poll de 15 min y el botón "Actualizar" lo recuperan.
+  const suppressUntilRef = useRef(0);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        suppressUntilRef.current = Date.now() + 2500;
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
   useEffect(() => {
     if (!user || !storeId) return;
 
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    const fireOrder = () => { orderCb.current?.(); };
-    const fireResult = () => { resultCb.current?.(); };
+    const shouldSuppress = () =>
+      document.visibilityState === 'hidden' || Date.now() < suppressUntilRef.current;
+    const fireOrder = () => { if (!shouldSuppress()) orderCb.current?.(); };
+    const fireResult = () => { if (!shouldSuppress()) resultCb.current?.(); };
 
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
