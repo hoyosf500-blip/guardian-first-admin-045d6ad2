@@ -24,8 +24,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 
-const DROPI_API = "https://api.dropi.co";
 const EXPORT_PATH = "/api/wallet/exportexcel";
 
 /** Normaliza string: uppercase + sin acentos, para matchear códigos
