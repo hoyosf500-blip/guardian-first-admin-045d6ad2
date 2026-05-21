@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
