@@ -39,6 +39,7 @@ interface ShopifyAddr {
 interface ShopifyOrderFull {
   id: number; name: string; phone?: string | null; email?: string | null; note?: string | null;
   line_items: ShopifyLineItem[];
+  shipping_lines?: Array<{ price?: string | null }> | null;
   shipping_address?: ShopifyAddr | null;
   billing_address?: ShopifyAddr | null;
   customer?: { first_name?: string; last_name?: string; phone?: string } | null;
@@ -219,12 +220,19 @@ Deno.serve(async (req: Request) => {
     const alreadyPushed = Boolean(prior && prior.status === "created");
 
     // Traer la orden completa de Shopify
-    const fields = "id,name,line_items,shipping_address,billing_address,customer,phone,note,email";
+    const fields = "id,name,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email";
     const ord = (await shopifyGet<{ order: ShopifyOrderFull }>(
       shopCfg.shopDomain, shopToken,
       `orders/${encodeURIComponent(shopifyOrderId)}.json?fields=${fields}`,
     )).order;
     if (!ord) return json({ ok: false, error: `Pedido ${shopifyOrderId} no existe en Shopify` }, 404, cors);
+
+    // Envío prioritario: Shopify lo manda como shipping_line (sin id de Dropi).
+    // No se manda como producto aparte; su valor se SUMA al COD que cobra Dropi
+    // (ej. $40 producto + $2 envío = $42). Ver fold más abajo en modo confirm.
+    const shipping = Math.round(
+      (ord.shipping_lines || []).reduce((s, l) => s + (Number(l?.price) || 0), 0),
+    );
 
     const addr = ord.shipping_address || ord.billing_address || {};
     // Cliente base (luego se aplican overrides)
@@ -355,7 +363,7 @@ Deno.serve(async (req: Request) => {
     if (mode === "preview") {
       return json({
         ok: true, mode: "preview", shopify_order_id: shopifyOrderId, shopify_name: ord.name,
-        client, products: resolved, total, unmapped, diagnostic, alreadyPushed,
+        client, products: resolved, total, shipping, unmapped, diagnostic, alreadyPushed,
         dropi_order_id: prior?.dropi_order_id ?? null,
       }, 200, cors);
     }
@@ -373,6 +381,14 @@ Deno.serve(async (req: Request) => {
     }
     if (!client.name || !client.dir || !client.city || !client.state || !client.phone) {
       return json({ ok: false, error: "Faltan datos del cliente (nombre, dirección, ciudad, departamento o teléfono)" }, 422, cors);
+    }
+
+    // Sumar el envío prioritario al COD: Dropi cobra el total por los productos,
+    // así que folmos el envío en el precio de la primera línea (el envío no es un
+    // producto y no tiene id). Para qty>1 se reparte por unidad.
+    if (shipping > 0 && resolved.length > 0) {
+      const first = resolved[0];
+      first.price += Math.round(shipping / Math.max(1, first.quantity));
     }
 
     const dropiPayload: Record<string, unknown> = {

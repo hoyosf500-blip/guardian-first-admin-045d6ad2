@@ -26,6 +26,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [loadError, setLoadError] = useState<string | null>(null);
   const [client, setClient] = useState<PushClient>(EMPTY_CLIENT);
   const [lines, setLines] = useState<PushProduct[]>([]);
+  const [shipping, setShipping] = useState(0);
   const [unmapped, setUnmapped] = useState<PushUnmapped[]>([]);
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [alreadyPushed, setAlreadyPushed] = useState(false);
@@ -45,6 +46,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       if (!p.ok) { setLoadError(p.error || 'No se pudo armar la vista previa'); setLoading(false); return; }
       setClient(p.client ?? EMPTY_CLIENT);
       setLines(p.products ?? []);
+      setShipping(Number(p.shipping) || 0);
       setUnmapped(p.unmapped ?? []);
       setDiagnostic(p.diagnostic ?? null);
       setAlreadyPushed(Boolean(p.alreadyPushed));
@@ -53,7 +55,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     return () => { cancelled = true; };
   }, [preview, shopifyOrderId]);
 
-  const total = useMemo(() => lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 0), 0), [lines]);
+  const productsTotal = useMemo(() => lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 0), 0), [lines]);
+  const total = productsTotal + (Number(shipping) || 0);
   const setField = (k: keyof PushClient, v: string) => setClient(c => ({ ...c, [k]: v }));
   const setLine = (i: number, k: 'price' | 'quantity', v: number) =>
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
@@ -198,6 +201,12 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                   </div>
                 ))}
               </div>
+              {shipping > 0 && (
+                <div className="px-3 py-1.5 flex items-center justify-between text-xs border-t border-border">
+                  <span className="text-muted-foreground">Envío prioritario</span>
+                  <span className="tabular-nums text-foreground">+${shipping.toLocaleString()}</span>
+                </div>
+              )}
               <div className="px-3 py-2 bg-muted/40 flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Total a cobrar (COD)</span>
                 <span className="font-bold tabular-nums text-foreground">${total.toLocaleString()}</span>

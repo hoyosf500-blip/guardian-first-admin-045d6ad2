@@ -10,6 +10,7 @@ import SyncPanel from '@/components/admin/SyncPanel';
 import ReportsTable from '@/components/admin/ReportsTable';
 import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import StoreInvitePanel from '@/components/admin/StoreInvitePanel';
+import ProductDropiMapPanel from '@/components/admin/ProductDropiMapPanel';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -249,6 +250,11 @@ export default function AdminTab() {
           {/* Credenciales Dropi POR TIENDA (reemplaza el panel global app_settings) */}
           <div className="md:col-span-2">
             <StoreCredentialsPanel />
+          </div>
+
+          {/* Vínculos de productos Shopify → Dropi (mapeo manual por tienda) */}
+          <div className="md:col-span-2">
+            <ProductDropiMapPanel />
           </div>
 
           {/* Invitar operadora por link (solo dueño de la tienda activa) */}

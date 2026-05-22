@@ -19,6 +19,7 @@ export interface PushPreview {
   client?: PushClient;
   products?: PushProduct[];
   total?: number;
+  shipping?: number;            // envío prioritario (sin id de Dropi) — se suma al total COD
   unmapped?: PushUnmapped[];
   diagnostic?: string | null;   // causa raíz cuando hay productos sin vínculo (ej. falta read_products)
   alreadyPushed?: boolean;
@@ -40,12 +41,24 @@ export interface PushOverrides {
   lines?: Record<string, { price?: number; quantity?: number }>;
 }
 
-/** Lee la respuesta de la edge function aunque venga como error HTTP (4xx/5xx
- *  con cuerpo JSON en context.body). */
-function parseInvoke<T>(data: unknown, error: unknown): T {
+/** Lee la respuesta de la edge function aunque venga como error HTTP (4xx/5xx).
+ *  En supabase-js v2, cuando la función responde un status no-2xx, `error.context`
+ *  es un objeto `Response` (su `.body` es un stream, NO un string). Hay que leer
+ *  el cuerpo con `await ctx.text()` para sacar el motivo real (ej. el rechazo de
+ *  Dropi); antes se intentaba `JSON.parse(ctx.body)` y siempre fallaba, dejando
+ *  el mensaje genérico "Edge Function returned a non-2xx status code". */
+async function parseInvoke<T>(data: unknown, error: unknown): Promise<T> {
   if (error) {
-    const ctx = (error as { context?: { body?: string } }).context;
-    if (ctx?.body) { try { return JSON.parse(ctx.body) as T; } catch { /* noop */ } }
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.text === 'function') {
+      try {
+        const body = await ctx.text();
+        if (body) {
+          try { return JSON.parse(body) as T; }
+          catch { return { ok: false, error: body.slice(0, 500) } as T; }
+        }
+      } catch { /* no se pudo leer el cuerpo */ }
+    }
     return { ok: false, error: (error as { message?: string }).message || 'error' } as T;
   }
   return data as T;
@@ -62,7 +75,7 @@ export function usePushToDropi(storeId: string | null) {
     const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
       body: { store_id: storeId, shopify_order_id: shopifyOrderId, mode: 'preview' },
     });
-    return parseInvoke<PushPreview>(data, error);
+    return await parseInvoke<PushPreview>(data, error);
   }, [storeId]);
 
   const confirm = useCallback(async (shopifyOrderId: string, overrides?: PushOverrides): Promise<PushResult> => {
@@ -70,7 +83,7 @@ export function usePushToDropi(storeId: string | null) {
     const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
       body: { store_id: storeId, shopify_order_id: shopifyOrderId, mode: 'confirm', overrides: overrides ?? {} },
     });
-    return parseInvoke<PushResult>(data, error);
+    return await parseInvoke<PushResult>(data, error);
   }, [storeId]);
 
   /** Vincula un producto de Shopify con su id de Dropi (mapeo manual por tienda,
