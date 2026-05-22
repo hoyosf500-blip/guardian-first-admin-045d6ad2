@@ -985,6 +985,53 @@ export type Database = {
           },
         ]
       }
+      store_invites: {
+        Row: {
+          created_at: string
+          created_by: string
+          email: string | null
+          expires_at: string
+          id: string
+          role: string
+          store_id: string
+          token: string
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          role?: string
+          store_id: string
+          token: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          role?: string
+          store_id?: string
+          token?: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_invites_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_members: {
         Row: {
           created_at: string
@@ -1372,6 +1419,10 @@ export type Database = {
         Args: { p_country_code: string; p_name: string }
         Returns: string
       }
+      create_store_invite: {
+        Args: { p_email?: string; p_role?: string; p_store_id: string }
+        Returns: string
+      }
       delete_monthly_ad_spend: { Args: { p_id: string }; Returns: boolean }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
@@ -1411,6 +1462,16 @@ export type Database = {
           operator_id: string
         }[]
       }
+      get_store_invite: {
+        Args: { p_token: string }
+        Returns: {
+          country_code: string
+          reason: string
+          role: string
+          store_name: string
+          valid: boolean
+        }[]
+      }
       get_store_shopify_status: {
         Args: { p_store_id: string }
         Returns: {
@@ -1434,6 +1495,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_store_manager: { Args: { p_store_id: string }; Returns: boolean }
       is_store_member: { Args: { p_store_id: string }; Returns: boolean }
       is_store_owner: { Args: { p_store_id: string }; Returns: boolean }
       list_cfo_retrospectives: {
@@ -1738,6 +1800,7 @@ export type Database = {
         }[]
       }
       recategorize_personal_movements: { Args: never; Returns: Json }
+      redeem_store_invite: { Args: { p_token: string }; Returns: string }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       snapshot_cfo_diagnostico: {
