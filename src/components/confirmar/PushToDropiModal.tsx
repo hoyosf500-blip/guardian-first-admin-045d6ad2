@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { X, Loader2, Truck, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, Loader2, Truck, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
 import { usePushToDropi, type PushClient, type PushProduct, type PushUnmapped } from '@/hooks/usePushToDropi';
 import { toast } from 'sonner';
 
@@ -21,7 +21,7 @@ const EMPTY_CLIENT: PushClient = { name: '', surname: '', phone: '', dir: '', ci
  * (genera guía/flete), por eso siempre pasa por esta confirmación.
  */
 export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName, onClose, onSuccess }: Props) {
-  const { preview, confirm } = usePushToDropi(storeId);
+  const { preview, confirm, linkProduct } = usePushToDropi(storeId);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [client, setClient] = useState<PushClient>(EMPTY_CLIENT);
@@ -31,6 +31,10 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [alreadyPushed, setAlreadyPushed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Vinculación manual (estilo Dropify): por product_id, el id de Dropi que el
+  // operador pega para productos sin metafield (catálogo cargado a mano).
+  const [linkInputs, setLinkInputs] = useState<Record<number, { dropiId: string; variationId: string }>>({});
+  const [linkingId, setLinkingId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +57,34 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const setField = (k: keyof PushClient, v: string) => setClient(c => ({ ...c, [k]: v }));
   const setLine = (i: number, k: 'price' | 'quantity', v: number) =>
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
+
+  const setLinkInput = (productId: number, k: 'dropiId' | 'variationId', v: string) =>
+    setLinkInputs(s => ({ ...s, [productId]: { dropiId: '', variationId: '', ...s[productId], [k]: v } }));
+
+  /** Guarda el vínculo Shopify→Dropi y resuelve la línea en el acto (sin
+   *  recargar, para no perder ediciones). El confirm re-valida server-side. */
+  async function doLink(productId: number) {
+    const inp = linkInputs[productId];
+    const dropiProductId = Number((inp?.dropiId ?? '').trim());
+    if (!Number.isInteger(dropiProductId) || dropiProductId <= 0) {
+      toast.error('Poné el id del producto en Dropi (solo números).'); return;
+    }
+    const variationRaw = (inp?.variationId ?? '').trim();
+    const dropiVariationId = variationRaw ? Number(variationRaw) : null;
+    if (variationRaw && (!Number.isInteger(dropiVariationId as number) || (dropiVariationId as number) <= 0)) {
+      toast.error('El id de variación debe ser un número.'); return;
+    }
+    setLinkingId(productId);
+    const r = await linkProduct(productId, dropiProductId, dropiVariationId);
+    setLinkingId(null);
+    if (!r.ok) { toast.error(r.error || 'No se pudo guardar el vínculo'); return; }
+    toast.success('Producto vinculado a Dropi ✓');
+    setLines(ls => ls.map(l => l.product_id === productId
+      ? { ...l, dropiId: dropiProductId, variationId: dropiVariationId } : l));
+    const nextUnmapped = unmapped.filter(u => u.product_id !== productId);
+    setUnmapped(nextUnmapped);
+    if (nextUnmapped.length === 0) setDiagnostic(null);
+  }
 
   const blockedReason =
     unmapped.length > 0 ? (diagnostic || `${unmapped.length} producto(s) sin vínculo a Dropi — no se importaron por Dropify. Súbelo manual en Dropi o vinculá el producto primero.`)
@@ -103,7 +135,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                 <span>
                   {diagnostic || 'Estos productos no tienen vínculo a Dropi.'}
-                  <span className="block mt-1 text-warning/80">Producto(s): {unmapped.map(u => u.title || u.sku).join(', ')}.</span>
+                  <span className="block mt-1 text-warning/80">Pegá el <strong>id de Dropi</strong> de cada producto marcado abajo y tocá «Vincular». Se guarda para esta tienda — solo lo hacés una vez por producto.</span>
                 </span>
               </div>
             )}
@@ -127,17 +159,42 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
               </div>
               <div className="divide-y divide-border">
                 {lines.map((l, i) => (
-                  <div key={i} className="px-3 py-2 grid grid-cols-[1fr,3rem,5rem] gap-2 items-center text-sm">
-                    <div className="min-w-0">
-                      <div className="truncate text-foreground">{l.title}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">
-                        {l.dropiId ? `Dropi #${l.dropiId}` : <span className="text-warning">sin vínculo</span>}{l.sku ? ` · ${l.sku}` : ''}
+                  <div key={i} className="px-3 py-2 text-sm">
+                    <div className="grid grid-cols-[1fr,3rem,5rem] gap-2 items-center">
+                      <div className="min-w-0">
+                        <div className="truncate text-foreground">{l.title}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono">
+                          {l.dropiId ? `Dropi #${l.dropiId}` : <span className="text-warning">sin vínculo</span>}{l.sku ? ` · ${l.sku}` : ''}
+                        </div>
                       </div>
+                      <input type="number" min={1} value={l.quantity} onChange={e => setLine(i, 'quantity', Number(e.target.value))}
+                        className="h-8 w-full rounded border border-border bg-background px-1 text-center text-sm" />
+                      <input type="number" min={0} value={l.price} onChange={e => setLine(i, 'price', Number(e.target.value))}
+                        className="h-8 w-full rounded border border-border bg-background px-1 text-right text-sm font-mono" />
                     </div>
-                    <input type="number" min={1} value={l.quantity} onChange={e => setLine(i, 'quantity', Number(e.target.value))}
-                      className="h-8 w-full rounded border border-border bg-background px-1 text-center text-sm" />
-                    <input type="number" min={0} value={l.price} onChange={e => setLine(i, 'price', Number(e.target.value))}
-                      className="h-8 w-full rounded border border-border bg-background px-1 text-right text-sm font-mono" />
+
+                    {l.dropiId == null && (
+                      <div className="mt-2 rounded-lg border border-warning/40 bg-warning/5 p-2 space-y-1.5">
+                        <div className="text-[10px] text-muted-foreground">
+                          Vinculá con Dropi · pegá el <strong>id del producto en Dropi</strong> (lo ves en app.dropi.ec al abrir el producto)
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input inputMode="numeric" placeholder="ID producto Dropi"
+                            value={linkInputs[l.product_id]?.dropiId ?? ''}
+                            onChange={e => setLinkInput(l.product_id, 'dropiId', e.target.value)}
+                            className="h-8 flex-1 min-w-0 rounded border border-border bg-background px-2 text-sm" />
+                          <input inputMode="numeric" placeholder="Variación (opc.)"
+                            value={linkInputs[l.product_id]?.variationId ?? ''}
+                            onChange={e => setLinkInput(l.product_id, 'variationId', e.target.value)}
+                            className="h-8 w-28 rounded border border-border bg-background px-2 text-sm" />
+                          <button type="button" onClick={() => doLink(l.product_id)}
+                            disabled={linkingId === l.product_id || !(linkInputs[l.product_id]?.dropiId ?? '').trim()}
+                            className="h-8 px-3 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
+                            {linkingId === l.product_id ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Vincular
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

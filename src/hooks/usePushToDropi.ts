@@ -73,5 +73,21 @@ export function usePushToDropi(storeId: string | null) {
     return parseInvoke<PushResult>(data, error);
   }, [storeId]);
 
-  return { preview, confirm };
+  /** Vincula un producto de Shopify con su id de Dropi (mapeo manual por tienda,
+   *  estilo Dropify). Se usa cuando el producto NO se importó con la app de Dropi
+   *  y por eso no tiene el metafield (caso típico: catálogo cargado a mano). */
+  const linkProduct = useCallback(async (
+    shopifyProductId: number, dropiProductId: number, dropiVariationId?: number | null,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!storeId) return { ok: false, error: 'Sin tienda activa' };
+    const args: { p_store_id: string; p_shopify_product_id: number; p_dropi_product_id: number; p_dropi_variation_id?: number } = {
+      p_store_id: storeId, p_shopify_product_id: shopifyProductId, p_dropi_product_id: dropiProductId,
+    };
+    if (dropiVariationId != null) args.p_dropi_variation_id = dropiVariationId;
+    const { error } = await supabase.rpc('upsert_shopify_product_dropi_map', args);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }, [storeId]);
+
+  return { preview, confirm, linkProduct };
 }
