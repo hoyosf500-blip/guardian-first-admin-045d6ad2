@@ -13,6 +13,7 @@ export interface PushUnmapped { title: string; sku: string; product_id: number; 
 
 export interface DropiVariationHit { id: number; name: string; sku?: string }
 export interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations?: DropiVariationHit[] }
+export interface ShopifyProductLite { id: number; title: string; image: string | null; status?: string | null }
 
 export interface PushPreview {
   ok: boolean;
@@ -117,5 +118,17 @@ export function usePushToDropi(storeId: string | null) {
     return r.products ?? [];
   }, [storeId]);
 
-  return { preview, confirm, linkProduct, searchDropiProducts };
+  /** Lista el catálogo de Shopify de la tienda (para el panel de vínculos en
+   *  /admin: marcar qué productos ya están vinculados a Dropi). */
+  const listShopifyProducts = useCallback(async (): Promise<ShopifyProductLite[]> => {
+    if (!storeId) return [];
+    const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
+      body: { store_id: storeId, mode: 'list_shopify_products' },
+    });
+    const r = await parseInvoke<{ ok: boolean; products?: ShopifyProductLite[]; error?: string }>(data, error);
+    if (!r.ok) throw new Error(r.error || 'No se pudieron leer los productos de Shopify');
+    return r.products ?? [];
+  }, [storeId]);
+
+  return { preview, confirm, linkProduct, searchDropiProducts, listShopifyProducts };
 }

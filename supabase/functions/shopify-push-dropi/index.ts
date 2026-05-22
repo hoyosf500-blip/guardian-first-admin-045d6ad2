@@ -261,7 +261,9 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json(); } catch { /* noop */ }
     const storeId = typeof body.store_id === "string" ? body.store_id.trim() : "";
     const mode = body.mode === "confirm" ? "confirm"
-      : body.mode === "search_products" ? "search_products" : "preview";
+      : body.mode === "search_products" ? "search_products"
+      : body.mode === "list_shopify_products" ? "list_shopify_products"
+      : "preview";
     const overrides = (body.overrides ?? {}) as Overrides;
     if (!storeId) return json({ ok: false, error: "Falta store_id" }, 400, cors);
 
@@ -282,6 +284,28 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, products }, 200, cors);
       } catch (e) {
         return json({ ok: false, error: e instanceof Error ? e.message : "No se pudo buscar en Dropi" }, 502, cors);
+      }
+    }
+
+    // Modo listar productos de Shopify (panel de vínculos en /admin): devuelve
+    // el catálogo de la tienda para marcar cuáles ya están vinculados a Dropi.
+    if (mode === "list_shopify_products") {
+      const shopCfgL = await loadShopifyConfig(sb, storeId);
+      if (!shopCfgL) return json({ ok: false, error: "Shopify no configurado para esta tienda" }, 400, cors);
+      const tokenL = await getShopifyAccessToken(shopCfgL);
+      try {
+        const data = await shopifyGet<{ products: Array<{ id: number; title: string; status?: string; image?: { src?: string } | null }> }>(
+          shopCfgL.shopDomain, tokenL, `products.json?limit=250&fields=id,title,image,status`,
+        );
+        const products = (data.products || []).map((p) => ({
+          id: Number(p.id),
+          title: String(p.title || `Producto ${p.id}`),
+          image: p.image?.src || null,
+          status: p.status || null,
+        }));
+        return json({ ok: true, products }, 200, cors);
+      } catch (e) {
+        return json({ ok: false, error: e instanceof Error ? e.message : "No se pudieron leer los productos de Shopify" }, 502, cors);
       }
     }
 
