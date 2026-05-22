@@ -324,6 +324,43 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.mode === "probe" || body.testOnly === true) {
+      // Atajo anti-falso-429: si el cron sincronizó esta tienda con éxito en los
+      // últimos 10 min, la credencial está OK por definición — no hace falta
+      // pegarle a Dropi (que con volumen alto, EC, suele estar throttled justo
+      // cuando el usuario aprieta "Probar conexión"). Esto elimina el toast
+      // "Dropi está limitando temporalmente las peticiones" en EC.
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data: recentSync } = await sb
+        .from("sync_logs")
+        .select("created_at, total_count, synced_count")
+        .eq("store_id", storeId)
+        .eq("status", "success")
+        .gte("created_at", tenMinAgo)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentSync) {
+        const ageMin = Math.max(0, Math.round((Date.now() - new Date(recentSync.created_at as string).getTime()) / 60000));
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            connected: true,
+            country: cfg.countryCode,
+            host: cfg.base,
+            status: 200,
+            rateLimited: false,
+            recentSync: true,
+            ageMinutes: ageMin,
+            total: recentSync.total_count,
+            message: ageMin <= 0
+              ? "Conexión OK — sincronizando ahora"
+              : `Conexión OK — último sync hace ${ageMin} min`,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       const probe = await probeConnection(cfg.base, cfg.apiKey, cfg.storeUrl);
       const connected = probe.ok || probe.rateLimited;
       return new Response(
@@ -339,7 +376,7 @@ Deno.serve(async (req: Request) => {
           error: connected ? undefined : probe.error,
           dropiError: probe.rateLimited ? probe.error : undefined,
           message: probe.rateLimited
-            ? "Conexión OK; Dropi está limitando temporalmente las peticiones."
+            ? "Conexión OK — Dropi está limitando temporalmente (el sync automático sigue funcionando)."
             : connected
               ? "Conexión OK"
               : "Dropi rechazó la conexión",
