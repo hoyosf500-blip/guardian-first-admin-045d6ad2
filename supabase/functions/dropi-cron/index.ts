@@ -24,7 +24,11 @@ const PAGE_SIZE = 100;
 // cuentas grandes (Ecuador: ~50 páginas/corrida) → 429 "Too Many Attempts", que
 // además tumbaba el botón manual "Probar conexión". Más lento pero estable.
 const RATE_LIMIT_MS = 1500;
-const SYNC_DAYS_BACK = 14;
+// Dos ventanas: una por CAMBIO DE ESTATUS (refresca guías que se movieron/
+// entregaron, sin importar la fecha de creación) y una corta por CREADO
+// (red de seguridad para órdenes nuevas que aún no cambiaron de estatus).
+const STATUS_CHANGE_DAYS_BACK = 21;
+const CREATED_DAYS_BACK = 3;
 // Pausa entre tiendas para no encadenar ráfagas de una tienda con la siguiente.
 const INTER_STORE_MS = 3000;
 
@@ -56,6 +60,7 @@ async function fetchAllPages(
   origin: string,
   chunkFrom: string,
   chunkTo: string,
+  filterDateBy: string,
 ): Promise<Record<string, unknown>[]> {
   const allOrders: Record<string, unknown>[] = [];
   let start = 0;
@@ -66,7 +71,7 @@ async function fetchAllPages(
       start: String(start),
       date_from: chunkFrom,
       date_to: chunkTo,
-      filter_date_by: "FECHA DE CREADO",
+      filter_date_by: filterDateBy,
       orderBy: "id",
       orderDirection: "desc",
     };
@@ -206,41 +211,49 @@ interface StoreSync {
   owner_id: string;
 }
 
-// Sincroniza UNA tienda. Devuelve {synced, total}. No lanza: captura su
-// propio error para que una tienda caída no frene a las demás.
+/** Una "pasada" de sync: un rango de fechas con un criterio de filtrado.
+ *  Corremos 2 por tienda: cambio de estatus (refresca guías que se movieron,
+ *  sin importar antigüedad) + creado reciente (red de seguridad para nuevas). */
+interface SyncPass { from: string; to: string; filterDateBy: string }
+
+// Sincroniza UNA tienda con varias pasadas. Devuelve {synced, total}. No lanza:
+// captura su propio error para que una tienda caída no frene a las demás. El
+// upsert es idempotente (guardia IS DISTINCT FROM), así que pasadas que se
+// solapan no duplican ni spamean realtime.
 async function syncStore(
   // deno-lint-ignore no-explicit-any
   sb: any,
   store: StoreSync,
-  from: string,
-  to: string,
+  passes: SyncPass[],
   todayStr: string,
 ): Promise<{ synced: number; total: number; error?: string }> {
   const base = dropiHostFor(store.country_code);
-  const chunks = chunkDateRange(from, to, MAX_CHUNK_DAYS);
   let synced = 0;
   let total = 0;
 
   try {
-    for (const chunk of chunks) {
-      const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to);
-      total += dropiOrders.length;
-      if (dropiOrders.length === 0) continue;
+    for (const pass of passes) {
+      const chunks = chunkDateRange(pass.from, pass.to, MAX_CHUNK_DAYS);
+      for (const chunk of chunks) {
+        const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy);
+        total += dropiOrders.length;
+        if (dropiOrders.length === 0) continue;
 
-      const dbOrders = dropiOrders.map((o) => mapOrder(o, store.owner_id, todayStr, store.store_id));
-      for (let i = 0; i < dbOrders.length; i += 50) {
-        const batch = dbOrders.slice(i, i + 50);
-        const { data: changedCount, error: upsertError } = await sb.rpc(
-          "upsert_orders_from_dropi",
-          { p_orders: batch },
-        );
-        if (upsertError) {
-          console.error(`[store ${store.store_id}] upsert error:`, upsertError);
-        } else {
-          synced += (changedCount as number) || 0;
+        const dbOrders = dropiOrders.map((o) => mapOrder(o, store.owner_id, todayStr, store.store_id));
+        for (let i = 0; i < dbOrders.length; i += 50) {
+          const batch = dbOrders.slice(i, i + 50);
+          const { data: changedCount, error: upsertError } = await sb.rpc(
+            "upsert_orders_from_dropi",
+            { p_orders: batch },
+          );
+          if (upsertError) {
+            console.error(`[store ${store.store_id}] upsert error:`, upsertError);
+          } else {
+            synced += (changedCount as number) || 0;
+          }
         }
+        await sleep(RATE_LIMIT_MS);
       }
-      await sleep(RATE_LIMIT_MS);
     }
     return { synced, total };
   } catch (err) {
@@ -338,13 +351,25 @@ Deno.serve(async (req: Request) => {
       if (!ownerByStore.has(s.id) && s.created_by) ownerByStore.set(s.id, s.created_by);
     });
 
-    // Rango de fechas (últimos N días) compartido por todas las tiendas
+    // Dos ventanas compartidas por todas las tiendas:
+    //  1) CAMBIO DE ESTATUS (21d): refresca toda guía que se movió/entregó, sin
+    //     importar cuándo se creó → arregla "entregadas que siguen en guía
+    //     generada" y "sin movimiento marca casi todas".
+    //  2) CREADO (3d): red de seguridad para órdenes nuevas que aún no
+    //     registraron cambio de estatus (que aparezcan rápido en /confirmar).
     const today = new Date();
-    const fromDate = new Date(today);
-    fromDate.setUTCDate(fromDate.getUTCDate() - SYNC_DAYS_BACK);
-    const from = fromDate.toISOString().split("T")[0];
     const to = today.toISOString().split("T")[0];
     const todayStr = to;
+    const dateBack = (n: number) => {
+      const d = new Date(today);
+      d.setUTCDate(d.getUTCDate() - n);
+      return d.toISOString().split("T")[0];
+    };
+    const passes: SyncPass[] = [
+      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: "FECHA DE CAMBIO DE ESTATUS" },
+      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
+    ];
+    const from = passes[0].from; // para logs
 
     let grandSynced = 0;
     let grandTotal = 0;
@@ -365,8 +390,8 @@ Deno.serve(async (req: Request) => {
         store_url: String(cfg.dropi_store_url || "https://rushmira.com/"),
         owner_id: ownerId,
       };
-      console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) ${from} → ${to}`);
-      const r = await syncStore(sb, store, from, to, todayStr);
+      console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) — cambio_estatus ${from}→${to} + creado ${dateBack(CREATED_DAYS_BACK)}→${to}`);
+      const r = await syncStore(sb, store, passes, todayStr);
       grandSynced += r.synced;
       grandTotal += r.total;
       perStore.push({ store_id: storeId, country: store.country_code, ...r });

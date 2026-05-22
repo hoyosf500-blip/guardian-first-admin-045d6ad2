@@ -28,10 +28,27 @@ interface ShopifyOrder {
   phone?: string | null;
   created_at: string;
   cancelled_at?: string | null;
+  test?: boolean;          // órdenes de prueba: Shopify NO las cuenta en "Pedidos"
   total_price?: string;
   customer?: { first_name?: string; last_name?: string; phone?: string } | null;
   shipping_address?: ShopifyAddress | null;
   billing_address?: ShopifyAddress | null;
+}
+
+/** Zona horaria IANA de la tienda Shopify (para que "hoy" coincida con el
+ *  dashboard). Fallback a America/Bogota (UTC-5, sirve CO y EC) si falla. */
+async function fetchShopTimezone(domain: string, token: string): Promise<string> {
+  try {
+    const res = await fetch(`https://${domain}/admin/api/${SHOPIFY_API_VERSION}/shop.json?fields=iana_timezone`, {
+      headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+    });
+    if (res.ok) {
+      const d = await res.json();
+      const tz = d?.shop?.iana_timezone;
+      if (tz && typeof tz === "string") return tz;
+    }
+  } catch { /* fallback abajo */ }
+  return "America/Bogota";
 }
 
 function orderPhone(o: ShopifyOrder): string {
@@ -47,7 +64,7 @@ function orderCustomer(o: ShopifyOrder): string {
 
 /** Fetch de pedidos de Shopify (paginado por header Link, cap defensivo). */
 async function fetchShopifyOrders(domain: string, token: string, sinceISO: string): Promise<ShopifyOrder[]> {
-  const fields = "id,name,phone,customer,shipping_address,billing_address,created_at,cancelled_at,financial_status,total_price";
+  const fields = "id,name,phone,customer,shipping_address,billing_address,created_at,cancelled_at,test,financial_status,total_price";
   let url: string | null =
     `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/orders.json?status=any&created_at_min=${encodeURIComponent(sinceISO)}&limit=250&fields=${fields}`;
   const all: ShopifyOrder[] = [];
@@ -133,8 +150,10 @@ Deno.serve(async (req: Request) => {
     const accessToken = await getShopifyAccessToken(cfg);
     const sinceShopify = new Date(Date.now() - days * 86400000).toISOString();
     const allShopify = await fetchShopifyOrders(cfg.shopDomain, accessToken, sinceShopify);
-    const shopifyOrders = allShopify.filter((o) => !o.cancelled_at);
-    const cancelledCount = allShopify.length - shopifyOrders.length;
+    // No cuentan: canceladas (no se despachan) ni de prueba (Shopify tampoco las
+    // cuenta en "Pedidos"). Reportamos las canceladas aparte por transparencia.
+    const shopifyOrders = allShopify.filter((o) => !o.cancelled_at && !o.test);
+    const cancelledCount = allShopify.filter((o) => o.cancelled_at).length;
 
     // 2. Pedidos de Dropi (Guardian `orders`) de la tienda: teléfono + fecha.
     //    Ventana generosa (days + 6) para cubrir pedidos entrados a Dropi
@@ -201,8 +220,10 @@ Deno.serve(async (req: Request) => {
     }
     pending.sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
 
-    // 4. Desglose: hoy + por día (TZ America/Bogota = UTC-5, sirve CO y EC).
-    const TZ = "America/Bogota";
+    // 4. Desglose: hoy + por día, usando la ZONA HORARIA REAL de la tienda para
+    //    que el corte "hoy" coincida con el dashboard de Shopify (clave en EC si
+    //    la tienda no está en UTC-5). Fallback America/Bogota.
+    const TZ = await fetchShopTimezone(cfg.shopDomain, accessToken);
     const fmtDay = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(iso));
     const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
     const shopifyByDate: Record<string, number> = {};
