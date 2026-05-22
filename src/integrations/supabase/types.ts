@@ -903,6 +903,41 @@ export type Database = {
         }
         Relationships: []
       }
+      shopify_product_dropi_map: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          dropi_product_id: number
+          dropi_variation_id: number | null
+          shopify_product_id: number
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          dropi_product_id: number
+          dropi_variation_id?: number | null
+          shopify_product_id: number
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          dropi_product_id?: number
+          dropi_variation_id?: number | null
+          shopify_product_id?: number
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopify_product_dropi_map_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopify_pushed_orders: {
         Row: {
           dropi_order_id: string | null
@@ -1424,6 +1459,10 @@ export type Database = {
         Returns: string
       }
       delete_monthly_ad_spend: { Args: { p_id: string }; Returns: boolean }
+      delete_shopify_product_dropi_map: {
+        Args: { p_shopify_product_id: number; p_store_id: string }
+        Returns: undefined
+      }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
         Args: { p_from_date: string; p_to_date: string }
@@ -1942,6 +1981,15 @@ export type Database = {
       upsert_personal_card_movements: {
         Args: { p_movements: Json }
         Returns: Json
+      }
+      upsert_shopify_product_dropi_map: {
+        Args: {
+          p_dropi_product_id: number
+          p_dropi_variation_id?: number
+          p_shopify_product_id: number
+          p_store_id: string
+        }
+        Returns: undefined
       }
       upsert_store_dropi_config: {
         Args: {
