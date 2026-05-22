@@ -103,6 +103,56 @@ async function fetchAllPages(
   return allOrders;
 }
 
+async function probeConnection(
+  base: string,
+  apiKey: string,
+  origin: string,
+): Promise<{ ok: boolean; status: number; rateLimited: boolean; total?: number; sample?: number; error?: string }> {
+  const today = new Date().toISOString().split("T")[0];
+  const qs = new URLSearchParams({
+    result_number: "1",
+    start: "0",
+    date_from: today,
+    date_to: today,
+    filter_date_by: "FECHA DE CREADO",
+    orderBy: "id",
+    orderDirection: "desc",
+  }).toString();
+
+  const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "dropi-integration-key": apiKey,
+      "Origin": origin,
+    },
+  });
+
+  const txt = await res.text();
+  if (res.status === 429) {
+    return { ok: true, status: 429, rateLimited: true, error: txt.slice(0, 500) };
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, rateLimited: false, error: txt.slice(0, 500) };
+  }
+  try {
+    const data = JSON.parse(txt);
+    if (!data.isSuccess) {
+      return { ok: false, status: res.status, rateLimited: false, error: String(data.message || data.error || "Dropi error") };
+    }
+    return {
+      ok: true,
+      status: res.status,
+      rateLimited: false,
+      total: typeof data.count === "number" ? data.count : undefined,
+      sample: Array.isArray(data.objects) ? data.objects.length : undefined,
+    };
+  } catch {
+    return { ok: false, status: res.status, rateLimited: false, error: txt.slice(0, 500) || "Respuesta inválida de Dropi" };
+  }
+}
+
 /** Calculate calendar days from a date string to today */
 function calcDias(dateStr: string): number {
   if (!dateStr) return 0;
@@ -270,6 +320,31 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ error: "La tienda no tiene Clave API de Dropi configurada" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (body.mode === "probe" || body.testOnly === true) {
+      const probe = await probeConnection(cfg.base, cfg.apiKey, cfg.storeUrl);
+      const connected = probe.ok || probe.rateLimited;
+      return new Response(
+        JSON.stringify({
+          ok: connected,
+          connected,
+          country: cfg.countryCode,
+          host: cfg.base,
+          status: probe.status,
+          rateLimited: probe.rateLimited,
+          total: probe.total,
+          sample: probe.sample,
+          error: connected ? undefined : probe.error,
+          dropiError: probe.rateLimited ? probe.error : undefined,
+          message: probe.rateLimited
+            ? "Conexión OK; Dropi está limitando temporalmente las peticiones."
+            : connected
+              ? "Conexión OK"
+              : "Dropi rechazó la conexión",
+        }),
+        { status: connected ? 200 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
