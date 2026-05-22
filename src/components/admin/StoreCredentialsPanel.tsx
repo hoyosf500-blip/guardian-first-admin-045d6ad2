@@ -174,7 +174,7 @@ export default function StoreCredentialsPanel() {
     try {
       const today = new Date().toISOString().split('T')[0];
       const res = await supabase.functions.invoke('dropi-sync', {
-        body: { from: today, untill: today, store_id: activeStoreId },
+        body: { mode: 'probe', from: today, untill: today, store_id: activeStoreId },
       });
       if (res.error) {
         const detail = await readInvokeError(res.error);
@@ -185,6 +185,7 @@ export default function StoreCredentialsPanel() {
         toast.error('Falló la conexión con Dropi', { description: res.data.error });
       } else {
         setTestResult('ok');
+        setTestDetail(res.data?.rateLimited ? 'Dropi limitó la prueba, pero autenticó la credencial.' : null);
         toast.success(res.data?.message || 'Conexión OK');
       }
     } catch (err) {
