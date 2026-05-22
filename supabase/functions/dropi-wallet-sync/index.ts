@@ -254,51 +254,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const cfg = await loadStoreConfig(sb, storeId);
-    const sessionToken = cfg.sessionToken;
-    if (!sessionToken) {
+    // 2026-05-22: usar INTEGRATIONS api_key (permanente) en vez de session_token (vence 12h).
+    // Verificado con curl real: /api/wallet/exportexcel acepta el api_key y devuelve XLSX
+    // OK 200. Como fallback (si alguna tienda solo tiene session_token cargado), seguimos
+    // soportándolo. Prioridad: apiKey > sessionToken.
+    const authToken = cfg.apiKey || cfg.sessionToken;
+    if (!authToken) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "La tienda no tiene token de sesión Dropi configurado.",
+          error: "La tienda no tiene credencial Dropi configurada (api_key ni session_token).",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // 3. Decodificar JWT
+    // 3. Decodificar JWT — necesitamos el `sub` (dropi user_id) para el query.
+    //    Tanto el INTEGRATIONS api_key como el session_token traen `sub`.
+    //    El api_key permanente NO tiene `exp` real (year 2126), así que no validamos expiry.
     let dropiUserId: number;
-    let exp = 0;
     try {
-      const parts = sessionToken.split(".");
+      const parts = authToken.split(".");
       const payload = JSON.parse(atob(parts[1]));
       dropiUserId = Number(payload.sub);
-      exp = Number(payload.exp || 0);
       if (!dropiUserId) throw new Error("sin sub");
     } catch {
       return new Response(
         JSON.stringify({ ok: false, error: "Token Dropi inválido — no se pudo decodificar." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    if (exp > 0 && exp * 1000 < Date.now()) {
-      // Log a sync_logs para que el cron deje rastro y el dashboard
-      // pueda mostrar warning de "token vencido" sin tener que adivinar.
-      await sb.from("sync_logs").insert({
-        source: "dropi-wallet-sync",
-        status: "error_expired",
-        synced_count: 0,
-        duplicates_count: 0,
-        total_count: 0,
-        triggered_by: userId,
-        error_message: "Token Dropi expirado",
-      }).then(() => {}, () => {}); // best effort, no romper la respuesta
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "Token Dropi expirado. Refrescá en Admin → Token sesión Dropi.",
-          expired: true,
-        }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
@@ -322,7 +305,7 @@ Deno.serve(async (req: Request) => {
       method: "GET",
       headers: {
         "Accept": "application/json, text/plain, */*",
-        "x-authorization": `Bearer ${sessionToken}`,
+        "x-authorization": `Bearer ${authToken}`,
       },
     });
 
