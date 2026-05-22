@@ -1,0 +1,1 @@
+DELETE FROM public.shopify_product_dropi_map WHERE store_id='512309c3-d5b7-4434-898a-31bed51dcd4d' AND shopify_product_id=9483772952801 AND dropi_product_id=9999999;
