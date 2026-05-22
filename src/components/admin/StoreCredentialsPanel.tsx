@@ -146,27 +146,51 @@ export default function StoreCredentialsPanel() {
     await refresh();
   }
 
+  const [testDetail, setTestDetail] = useState<string | null>(null);
+
+  /** Lee el motivo REAL aunque dropi-sync devuelva non-2xx. En supabase-js v2,
+   *  `error.context` es un Response (no string): hay que leer su cuerpo. Antes
+   *  solo se veía el genérico "Edge Function returned a non-2xx status code",
+   *  que ocultaba el rechazo real de Dropi (ej. 401/403, IP block). */
+  async function readInvokeError(error: unknown): Promise<string> {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.text === 'function') {
+      try {
+        const body = await ctx.text();
+        if (body) {
+          try {
+            const j = JSON.parse(body) as { error?: string; message?: string };
+            return j.error || j.message || body.slice(0, 400);
+          } catch { return body.slice(0, 400); }
+        }
+      } catch { /* sigue al fallback */ }
+    }
+    return (error as { message?: string }).message || 'Error de conexión';
+  }
+
   async function testConnection() {
     if (!activeStoreId) return;
-    setTesting(true); setTestResult(null);
+    setTesting(true); setTestResult(null); setTestDetail(null);
     try {
       const today = new Date().toISOString().split('T')[0];
       const res = await supabase.functions.invoke('dropi-sync', {
         body: { from: today, untill: today, store_id: activeStoreId },
       });
       if (res.error) {
-        setTestResult('fail');
-        toast.error(`Error: ${res.error.message}`);
+        const detail = await readInvokeError(res.error);
+        setTestResult('fail'); setTestDetail(detail);
+        toast.error('Falló la conexión con Dropi', { description: detail });
       } else if (res.data?.error) {
-        setTestResult('fail');
-        toast.error(res.data.error);
+        setTestResult('fail'); setTestDetail(res.data.error);
+        toast.error('Falló la conexión con Dropi', { description: res.data.error });
       } else {
         setTestResult('ok');
         toast.success(res.data?.message || 'Conexión OK');
       }
     } catch (err) {
-      setTestResult('fail');
-      toast.error(err instanceof Error ? err.message : 'Error de conexión');
+      const detail = err instanceof Error ? err.message : 'Error de conexión';
+      setTestResult('fail'); setTestDetail(detail);
+      toast.error('Falló la conexión con Dropi', { description: detail });
     } finally {
       setTesting(false);
     }
@@ -325,6 +349,12 @@ export default function StoreCredentialsPanel() {
           {savedApiKey && (
             <div className="text-xs text-success flex items-center gap-1">
               <CheckCircle2 size={12} /> Credenciales cargadas
+            </div>
+          )}
+          {testResult === 'fail' && testDetail && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2">
+              <WifiOff size={13} className="mt-0.5 flex-shrink-0" />
+              <span className="break-words">Dropi rechazó la conexión: {testDetail}</span>
             </div>
           )}
         </div>
