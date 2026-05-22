@@ -16,7 +16,6 @@ import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
 import DailyReportsView from '@/components/admin/DailyReportsView';
-import { GoogleQuotaWidget } from '@/components/admin/GoogleQuotaWidget';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -306,9 +305,9 @@ export default function AdminTab() {
           {/* La "Huella del comprador" (token de sesión Dropi) ahora es por tienda
               y vive dentro de <StoreCredentialsPanel />. */}
 
-          <div className="my-4 md:col-span-2">
-            <GoogleQuotaWidget />
-          </div>
+          {/* GoogleQuotaWidget eliminado 2026-05-22: Google Maps/Places está
+              desactivado (ver featureFlags.GOOGLE_PLACES_ENABLED), no hay cuota
+              que mostrar. */}
 
           <SyncPanel onSyncComplete={() => { setSyncKey(k => k + 1); loadFailedSyncs(); }} />
 

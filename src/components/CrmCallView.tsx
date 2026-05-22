@@ -19,6 +19,7 @@ import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 import { mapAddressKind } from '@/lib/mapAddressKind';
 import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
+import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
 import { locationMatches } from '@/lib/locationGuard';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -287,6 +288,16 @@ export default function CrmCallView({
     };
 
     (async () => {
+      // Google DESACTIVADO (featureFlags): no llamamos a dropi-validate-address
+      // (que usa Google + Haiku). Validamos solo con la heurística local —
+      // sin red, sin costo de Google. La heurística escribe el semáforo igual.
+      if (!GOOGLE_PLACES_ENABLED) {
+        edgeReturned = true;
+        clearTimeout(fallbackTimerId);
+        clearTimeout(hardStopTimerId);
+        await runHeuristicFallback();
+        return;
+      }
       try {
         const { data, error } = await supabase.functions.invoke<{
           decision?: 'green' | 'yellow' | 'red' | 'pickup_office' | null;

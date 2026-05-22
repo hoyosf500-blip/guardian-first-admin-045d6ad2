@@ -10,6 +10,7 @@
 
 import { useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
 
 interface AutocompletePrediction {
   description: string;
@@ -48,6 +49,13 @@ function newSessionToken(): string {
 
 export function useGooglePlaces(): GoogleApi {
   const sessionTokenRef = useRef<string | null>(null);
+
+  // Google DESACTIVADO (ver featureFlags): API inerte — autocomplete vacío,
+  // details null, available=false. AddressAutocomplete ya gatea sobre
+  // `available`, así que el campo de dirección queda como texto libre.
+  if (!GOOGLE_PLACES_ENABLED) {
+    return { available: false, autocomplete: async () => [], getDetails: async () => null };
+  }
 
   return {
     // Siempre disponible: el gating real es server-side (cap diario + auth).

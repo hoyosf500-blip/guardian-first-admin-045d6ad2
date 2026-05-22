@@ -15,6 +15,24 @@ interface CfgRow {
   country_code: string;
 }
 
+/** Decodifica el `exp` (epoch en segundos) de un JWT sin verificar la firma.
+ *  Lo usamos para mostrarle al dueño cuándo vence el token de sesión Dropi
+ *  (la huella) — Dropi fija ese `exp` (~24 h) y no se puede alargar desde acá:
+ *  el auto-refresh por login está bloqueado por el 2FA de la cuenta. */
+function decodeJwtExp(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? '='.repeat(4 - (b64.length % 4)) : '';
+    const payload = JSON.parse(atob(b64 + pad)) as { exp?: number };
+    const exp = Number(payload.exp || 0);
+    return exp > 0 ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Panel de credenciales POR TIENDA (multi-tenant).
  * Lee/escribe `store_dropi_config` para la tienda ACTIVA vía RPCs gated por
@@ -262,6 +280,19 @@ export default function StoreCredentialsPanel() {
   const credsDirty = apiKey !== savedApiKey || sessionToken !== savedSession || storeUrl !== savedUrl;
   const brandDirty = name !== savedName || logoUrl !== savedLogo;
 
+  // Host de Dropi según el país de la tienda (para las instrucciones de la huella).
+  const dropiHost = activeStore.country_code === 'EC' ? 'app.dropi.ec' : 'app.dropi.co';
+  const apiDropiHost = activeStore.country_code === 'EC' ? 'api.dropi.ec' : 'api.dropi.co';
+
+  // Vencimiento REAL del token de sesión (decodificado del JWT). Le muestra al
+  // dueño cuánto le queda de vida al token de la huella y le avisa antes de que
+  // venza, así lo refresca a tiempo en vez de adivinar.
+  const sessionExp = sessionToken.trim() ? decodeJwtExp(sessionToken.trim()) : null;
+  const sessionExpired = sessionExp != null && sessionExp * 1000 < Date.now();
+  const sessionHoursLeft = sessionExp != null
+    ? Math.max(0, Math.round((sessionExp * 1000 - Date.now()) / 3_600_000))
+    : null;
+
   return (
     <>
       {/* Credenciales Dropi (POR TIENDA) */}
@@ -312,9 +343,37 @@ export default function StoreCredentialsPanel() {
                 </button>
               </div>
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Refrescá en DevTools → Network → header <code className="bg-muted px-1 rounded">x-authorization</code> en cualquier llamada a <code className="bg-muted px-1 rounded">api.dropi.{activeStore.country_code === 'EC' ? 'ec' : 'co'}</code>.
-            </p>
+            {/* Vencimiento real del token (decodificado del JWT) */}
+            {sessionToken.trim() && (
+              sessionExp == null ? (
+                <p className="mt-1 text-[11px] text-muted-foreground">No se pudo leer el vencimiento de este token.</p>
+              ) : sessionExpired ? (
+                <p className="mt-1 text-[11px] text-danger font-medium">Token VENCIDO — refrescalo con los pasos de abajo.</p>
+              ) : (
+                <p className={`mt-1 text-[11px] ${sessionHoursLeft !== null && sessionHoursLeft <= 3 ? 'text-warning font-medium' : 'text-muted-foreground'}`}>
+                  Vence: {new Date(sessionExp * 1000).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {sessionHoursLeft !== null && <> · en ~{sessionHoursLeft} h</>}
+                </p>
+              )
+            )}
+            {/* Cómo sacar el token de la huella (método localStorage, como antes) */}
+            <details className="mt-2 text-[11px] text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground transition-colors">Cómo obtener el token de la huella</summary>
+              <ol className="mt-2 ml-4 list-decimal space-y-1 leading-relaxed">
+                <li>Abrí <strong>{dropiHost}</strong> y asegurate de estar logueado.</li>
+                <li>Presioná <strong>F12</strong> para abrir las herramientas del navegador.</li>
+                <li>Andá a la pestaña <strong>Console</strong> (Consola).</li>
+                <li>Escribí: <code className="bg-muted px-1 rounded">JSON.parse(localStorage.getItem('DROPI_token'))</code></li>
+                <li>Copiá el texto que aparece (empieza con <code className="bg-muted px-1 rounded">eyJ…</code>).</li>
+                <li>Pegalo arriba en <strong>Token de sesión</strong> y dale <strong>Guardar credenciales</strong>.</li>
+              </ol>
+              <p className="mt-2">
+                Si no aparece, también podés copiarlo desde DevTools → Network → header <code className="bg-muted px-1 rounded">x-authorization</code> de cualquier llamada a <code className="bg-muted px-1 rounded">{apiDropiHost}</code>.
+              </p>
+              <p className="mt-2 text-yellow-600 dark:text-yellow-400">
+                Este token vence cada ~24 h (lo fija Dropi y no se puede alargar desde acá). Si la huella o la billetera dejan de funcionar, repetí estos pasos.
+              </p>
+            </details>
           </div>
           {/* Store URL */}
           <div>

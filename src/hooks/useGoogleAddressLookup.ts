@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGooglePlaces } from './useGooglePlaces';
 import { locationMatches } from '@/lib/locationGuard';
+import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
 
 interface LookupResult {
   /** Dirección como Google la devuelve (ej. "Calle 15 #4-30, Pitalito, Huila, Colombia") */
@@ -51,6 +52,7 @@ export function useGoogleAddressLookup({ direccion, ciudad, departamento, enable
   const inflightRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!GOOGLE_PLACES_ENABLED) return; // Google apagado → sin lookup, cae a heurística
     if (!enabled) return;
     if (!direccion || direccion.trim().length < 5) return;
     if (sessionCache.has(cacheKey)) {
