@@ -73,13 +73,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const loadWorkQueue = useCallback(async () => {
     if (!user || !activeStoreId) return;
-    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // Pool compartido: TODAS las operadoras ven TODOS los pendientes de la
+    // tienda (sin lock por operadora). La coordinación es por el cooldown
+    // compartido (abajo en buildWorkQueue) + la etiqueta de gestión, no por bloqueo.
     const { data: dbOrders, error } = await supabase
       .from('orders')
       .select(ORDER_COLUMNS)
       .eq('store_id', activeStoreId)
-      .ilike('estado', 'PENDIENTE CONFIRMACION')
-      .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`);
+      .ilike('estado', 'PENDIENTE CONFIRMACION');
     if (error || !dbOrders) return;
     const orders = (dbOrders as unknown as import('@/lib/orderUtils').DbOrderRow[]).map((o, idx) => dbToOrderData(o, idx));
     setAllOrdersState(orders);
@@ -181,9 +182,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // (or near midnight) don't reappear in the queue today.
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
+      // Pool compartido: el cooldown/conteo de intentos es POR TIENDA (todas
+      // las operadoras), no por operadora. Así "3 llamadas/día" y "2h entre
+      // intentos" se cuentan globalmente por pedido — sin doble llamada.
       supabase.from('order_results')
         .select('order_id, phone, result, reason, result_time, result_date, created_at')
-        .eq('operator_id', user.id)
+        .eq('store_id', activeStoreId)
         .gte('result_date', sevenDaysAgo)
         .then(({ data }) => {
           // Si llegó un buildWorkQueue más nuevo mientras el fetch corría,
@@ -280,7 +284,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           }
         });
     }
-  }, [user, dataLoader.setSegData]);
+  }, [user, activeStoreId, dataLoader.setSegData]);
 
   const markResult = useCallback(async (order: OrderData, result: string, reason?: string) => {
     if (!user || order.result) return;

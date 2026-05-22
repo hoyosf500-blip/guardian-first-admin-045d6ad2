@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
-import { useSegAssignment } from '@/hooks/useSegAssignment';
 import CrmCallView from './CrmCallView';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
@@ -311,8 +310,6 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     }
   };
   const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
-  const [assignmentFilter, setAssignmentFilter] = useSessionState<'available' | 'all'>(`crmtable:${module}:assignmentFilter`, 'available');
-  const { claimSegOrder, releaseSegOrder } = useSegAssignment();
   const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
   // Guard contra doble-click: trackea dbIds en vuelo en markAction.
   const markingInFlightRef = useRef<Set<string>>(new Set());
@@ -532,23 +529,10 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     if (!order.dbId || markingInFlightRef.current.has(order.dbId)) return;
     markingInFlightRef.current.add(order.dbId);
     try {
-      // C4: si el "owner" actual es admin, lo tratamos como sin asignar.
-      const ownerIsAdmin = order.assignedTo ? adminIds.includes(order.assignedTo) : false;
-      // Bloquea la acción si el pedido pertenece a otra operadora real (no admin).
-      if (!isAdmin && user && order.assignedTo && order.assignedTo !== user.id && !ownerIsAdmin) {
-        const owner = getOperatorName(order.assignedTo);
-        toast.error(`Pedido en atención por ${owner}`);
-        return;
-      }
-      // C2: admin NUNCA hace claim/release. Solo registra el touchpoint
-      // y aplica el efecto visual optimista.
-      if (!isAdmin && user && order.dbId && (!order.assignedTo || ownerIsAdmin)) {
-        const claimed = await claimSegOrder(order.dbId);
-        if (!claimed) {
-          toast.error('Otra operadora tomó este pedido');
-          return;
-        }
-      }
+      // Pool compartido: CUALQUIER operadora puede gestionar CUALQUIER pedido.
+      // No bloqueamos por assigned_to ni reclamamos — solo registramos el
+      // touchpoint (queda la etiqueta de quién/cuándo/cuántas veces) y el
+      // snooze de cooldown (vuelve en Xh). La disciplina de llamado no cambia.
       const slaMs = getActionSLA(action) * 3600000;
       const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
       const label = `${action} · vuelve en ${hoursLeft}h`;
@@ -565,14 +549,11 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
         const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
         if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
       }
-      if (!isAdmin && order.dbId && RESOLVING_ACTIONS.has(action)) {
-        await releaseSegOrder(order.dbId);
-      }
       toast.success(action);
     } finally {
       markingInFlightRef.current.delete(order.dbId);
     }
-  }, [user, isAdmin, adminIds, claimSegOrder, releaseSegOrder, module, getOperatorName]);
+  }, [user, module]);
 
 
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
@@ -580,21 +561,9 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
 
   const filtered = useMemo(() => {
     let list = data;
-    // Filtro de asignación: por defecto cada operadora ve "Disponibles"
-    // (sin asignar + suyos + de admins). Toggle "Todos" lo deshabilita
-    // para auditoría.
-    //
-    // Admins SIEMPRE ven todos los pedidos. Antes el filtro 'available'
-    // los excluía cuando las operadoras tenían assigned_to, dejando al
-    // admin sin visibilidad de Seguimiento/Rescate aunque el toggle
-    // estuviera en 'available'. (El admin auditoría → necesita ver todo.)
-    if (assignmentFilter === 'available' && user && !isAdmin) {
-      list = list.filter(o =>
-        !o.assignedTo
-        || o.assignedTo === user.id
-        || adminIds.includes(o.assignedTo)
-      );
-    }
+    // Pool compartido: TODAS las operadoras ven TODOS los pedidos (no se oculta
+    // por assigned_to). La coordinación es por la etiqueta de gestión, no por
+    // bloqueo. El cooldown (snooze) sí se mantiene abajo.
     // Hide managed orders unless showManaged is on
     if (!showManaged) {
       list = list.filter(o => !(o.dbId && results[o.dbId]));
@@ -618,7 +587,7 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, assignmentFilter, user, adminIds]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -730,35 +699,7 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
           </button>
         )}
 
-        {/* Disponibles / Todos — filtro de asignación.
-            "Disponibles" = sin asignar + suyos (default operativo).
-            "Todos" = ver toda la cola (auditoría / ver lo de la otra). */}
-        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
-          <button
-            type="button"
-            onClick={() => setAssignmentFilter('available')}
-            aria-pressed={assignmentFilter === 'available'}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-              assignmentFilter === 'available'
-                ? 'bg-accent text-accent-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <User size={13} aria-hidden="true" /> Disponibles
-          </button>
-          <button
-            type="button"
-            onClick={() => setAssignmentFilter('all')}
-            aria-pressed={assignmentFilter === 'all'}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-              assignmentFilter === 'all'
-                ? 'bg-accent text-accent-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <Layers size={13} aria-hidden="true" /> Todos
-          </button>
-        </div>
+        {/* Pool compartido: sin filtro de asignación — todas ven todos. */}
 
         {/* Lista / Llamar toggle */}
         <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
