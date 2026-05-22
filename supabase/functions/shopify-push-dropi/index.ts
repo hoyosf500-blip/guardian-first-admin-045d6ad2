@@ -277,11 +277,47 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Fallback DB: tiendas que NO importaron sus productos con la app de Dropi
+    // (ej. Rushmira Ecuador, productos cargados a mano en Shopify) no tienen
+    // el metafield dropi/_dropi_product. Para esos casos guardamos un mapeo
+    // manual por tienda en shopify_product_dropi_map. Si lo encontramos acá,
+    // resolvemos el dropiId y sacamos esa línea de unmapped.
+    let usedManualMap = false;
+    if (unmapped.length > 0) {
+      const ids = Array.from(new Set(unmapped.map((u) => u.product_id)));
+      const { data: maps } = await sb
+        .from("shopify_product_dropi_map")
+        .select("shopify_product_id, dropi_product_id, dropi_variation_id")
+        .eq("store_id", storeId)
+        .in("shopify_product_id", ids);
+      const byId = new Map<number, { d: number; v: number | null }>();
+      (maps || []).forEach((m: { shopify_product_id: number; dropi_product_id: number; dropi_variation_id: number | null }) => {
+        byId.set(Number(m.shopify_product_id), {
+          d: Number(m.dropi_product_id),
+          v: m.dropi_variation_id != null ? Number(m.dropi_variation_id) : null,
+        });
+      });
+      if (byId.size > 0) {
+        for (const line of resolved) {
+          if (line.dropiId == null) {
+            const hit = byId.get(line.product_id);
+            if (hit) {
+              line.dropiId = hit.d;
+              if (hit.v != null) line.variationId = hit.v;
+              usedManualMap = true;
+            }
+          }
+        }
+        for (let i = unmapped.length - 1; i >= 0; i--) {
+          if (byId.has(unmapped[i].product_id)) unmapped.splice(i, 1);
+        }
+      }
+    }
+
     // Diagnóstico de alto nivel. Cuando hay productos sin vínculo, consultamos los
     // scopes REALES del token (no los configurados en el Dashboard): Shopify a
     // veces no toma scopes nuevos hasta re-instalar/re-publicar la app, así que
-    // "configurado" ≠ "el token lo tiene". Esto distingue de forma definitiva
-    // entre "falta permiso" y "el metafield de Dropi está en otro lado".
+    // "configurado" ≠ "el token lo tiene".
     let diagnostic: string | null = permissionIssue
       ? reasonMessage("sin_permiso_productos")
       : (unmapped[0]?.reason ?? null);
@@ -294,20 +330,25 @@ Deno.serve(async (req: Request) => {
           const handles = (((await sc.json()) as { access_scopes?: Array<{ handle: string }> }).access_scopes || [])
             .map((s) => s.handle);
           const hasReadProducts = handles.includes("read_products") || handles.includes("write_products");
+          const idsLeft = unmapped.map((u) => `${u.title || "(sin título)"} (Shopify product_id ${u.product_id})`).join(" · ");
           if (!hasReadProducts) {
             diagnostic = "El token de Shopify NO tiene read_products en este momento (aunque lo hayas configurado). " +
               "Re-instalá/re-publicá la app personalizada en Shopify para que el token tome el permiso, y reintentá.";
           } else if (firstSeenKeys && firstSeenKeys.length > 0) {
             diagnostic = "El token SÍ tiene read_products, pero este producto no expone el vínculo de Dropi. " +
               `Metafields visibles: ${firstSeenKeys.join(", ")}. ` +
-              "Dropi Ecuador parece guardar el id en otro namespace (o el producto no se importó con la app de Dropi).";
+              "Cargá el id de Dropi manualmente para esta tienda (RPC upsert_shopify_product_dropi_map). " +
+              `Pendientes: ${idsLeft}.`;
           } else {
-            diagnostic = "El token SÍ tiene read_products, pero este producto no tiene metafields visibles por API " +
-              "(no se importó con la app de Dropi, o el metafield es privado de esa app).";
+            diagnostic = "El token SÍ tiene read_products, pero este producto NO tiene NINGÚN metafield en Shopify " +
+              "(no se importó con la app de Dropi — típico cuando los productos se cargan a mano en Shopify, como Rushmira Ecuador). " +
+              "Solución: registrar el vínculo manualmente con el RPC upsert_shopify_product_dropi_map(store_id, shopify_product_id, dropi_product_id, dropi_variation_id?). " +
+              `Pendientes: ${idsLeft}.`;
           }
         }
       } catch { /* dejamos el diagnostic base */ }
     }
+    if (usedManualMap && unmapped.length === 0) diagnostic = null;
 
     const total = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
 

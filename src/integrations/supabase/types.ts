@@ -903,6 +903,41 @@ export type Database = {
         }
         Relationships: []
       }
+      shopify_product_dropi_map: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          dropi_product_id: number
+          dropi_variation_id: number | null
+          shopify_product_id: number
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          dropi_product_id: number
+          dropi_variation_id?: number | null
+          shopify_product_id: number
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          dropi_product_id?: number
+          dropi_variation_id?: number | null
+          shopify_product_id?: number
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopify_product_dropi_map_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopify_pushed_orders: {
         Row: {
           dropi_order_id: string | null
@@ -980,6 +1015,53 @@ export type Database = {
             foreignKeyName: "store_dropi_config_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_invites: {
+        Row: {
+          created_at: string
+          created_by: string
+          email: string | null
+          expires_at: string
+          id: string
+          role: string
+          store_id: string
+          token: string
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          role?: string
+          store_id: string
+          token: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          email?: string | null
+          expires_at?: string
+          id?: string
+          role?: string
+          store_id?: string
+          token?: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_invites_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
             referencedRelation: "stores"
             referencedColumns: ["id"]
           },
@@ -1372,7 +1454,15 @@ export type Database = {
         Args: { p_country_code: string; p_name: string }
         Returns: string
       }
+      create_store_invite: {
+        Args: { p_email?: string; p_role?: string; p_store_id: string }
+        Returns: string
+      }
       delete_monthly_ad_spend: { Args: { p_id: string }; Returns: boolean }
+      delete_shopify_product_dropi_map: {
+        Args: { p_shopify_product_id: number; p_store_id: string }
+        Returns: undefined
+      }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
         Args: { p_from_date: string; p_to_date: string }
@@ -1411,6 +1501,16 @@ export type Database = {
           operator_id: string
         }[]
       }
+      get_store_invite: {
+        Args: { p_token: string }
+        Returns: {
+          country_code: string
+          reason: string
+          role: string
+          store_name: string
+          valid: boolean
+        }[]
+      }
       get_store_shopify_status: {
         Args: { p_store_id: string }
         Returns: {
@@ -1434,6 +1534,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_store_manager: { Args: { p_store_id: string }; Returns: boolean }
       is_store_member: { Args: { p_store_id: string }; Returns: boolean }
       is_store_owner: { Args: { p_store_id: string }; Returns: boolean }
       list_cfo_retrospectives: {
@@ -1738,6 +1839,7 @@ export type Database = {
         }[]
       }
       recategorize_personal_movements: { Args: never; Returns: Json }
+      redeem_store_invite: { Args: { p_token: string }; Returns: string }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       snapshot_cfo_diagnostico: {
@@ -1879,6 +1981,15 @@ export type Database = {
       upsert_personal_card_movements: {
         Args: { p_movements: Json }
         Returns: Json
+      }
+      upsert_shopify_product_dropi_map: {
+        Args: {
+          p_dropi_product_id: number
+          p_dropi_variation_id?: number
+          p_shopify_product_id: number
+          p_store_id: string
+        }
+        Returns: undefined
       }
       upsert_store_dropi_config: {
         Args: {
