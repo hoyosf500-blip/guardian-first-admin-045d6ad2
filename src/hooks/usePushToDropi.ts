@@ -11,6 +11,9 @@ export interface PushProduct {
 }
 export interface PushUnmapped { title: string; sku: string; product_id: number; reason?: string }
 
+export interface DropiVariationHit { id: number; name: string; sku?: string }
+export interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations?: DropiVariationHit[] }
+
 export interface PushPreview {
   ok: boolean;
   mode?: 'preview';
@@ -102,5 +105,17 @@ export function usePushToDropi(storeId: string | null) {
     return { ok: true };
   }, [storeId]);
 
-  return { preview, confirm, linkProduct };
+  /** Busca productos en el catálogo de Dropi (estilo Dropify) por nombre, para
+   *  que el operador elija el producto real (id correcto) sin pegar un id a ciegas. */
+  const searchDropiProducts = useCallback(async (query: string): Promise<DropiProductHit[]> => {
+    if (!storeId || query.trim().length < 2) return [];
+    const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
+      body: { store_id: storeId, mode: 'search_products', query: query.trim() },
+    });
+    const r = await parseInvoke<{ ok: boolean; products?: DropiProductHit[]; error?: string }>(data, error);
+    if (!r.ok) throw new Error(r.error || 'No se pudo buscar en Dropi');
+    return r.products ?? [];
+  }, [storeId]);
+
+  return { preview, confirm, linkProduct, searchDropiProducts };
 }

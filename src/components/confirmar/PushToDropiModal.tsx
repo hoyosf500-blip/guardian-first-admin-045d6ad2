@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Loader2, Truck, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
 import { usePushToDropi, type PushClient, type PushProduct, type PushUnmapped } from '@/hooks/usePushToDropi';
+import DropiProductSearch from '@/components/DropiProductSearch';
 import { toast } from 'sonner';
 
 interface Props {
@@ -66,6 +67,20 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
 
   /** Guarda el vínculo Shopify→Dropi y resuelve la línea en el acto (sin
    *  recargar, para no perder ediciones). El confirm re-valida server-side. */
+  async function doLinkResolved(shopifyProductId: number, dropiProductId: number, dropiVariationId: number | null) {
+    setLinkingId(shopifyProductId);
+    const r = await linkProduct(shopifyProductId, dropiProductId, dropiVariationId);
+    setLinkingId(null);
+    if (!r.ok) { toast.error(r.error || 'No se pudo guardar el vínculo'); return; }
+    toast.success('Producto vinculado a Dropi ✓');
+    setLines(ls => ls.map(l => l.product_id === shopifyProductId
+      ? { ...l, dropiId: dropiProductId, variationId: dropiVariationId } : l));
+    const nextUnmapped = unmapped.filter(u => u.product_id !== shopifyProductId);
+    setUnmapped(nextUnmapped);
+    if (nextUnmapped.length === 0) setDiagnostic(null);
+  }
+
+  /** Fallback manual: parsea el id pegado a mano y vincula. */
   async function doLink(productId: number) {
     const inp = linkInputs[productId];
     const dropiProductId = Number((inp?.dropiId ?? '').trim());
@@ -77,16 +92,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     if (variationRaw && (!Number.isInteger(dropiVariationId as number) || (dropiVariationId as number) <= 0)) {
       toast.error('El id de variación debe ser un número.'); return;
     }
-    setLinkingId(productId);
-    const r = await linkProduct(productId, dropiProductId, dropiVariationId);
-    setLinkingId(null);
-    if (!r.ok) { toast.error(r.error || 'No se pudo guardar el vínculo'); return; }
-    toast.success('Producto vinculado a Dropi ✓');
-    setLines(ls => ls.map(l => l.product_id === productId
-      ? { ...l, dropiId: dropiProductId, variationId: dropiVariationId } : l));
-    const nextUnmapped = unmapped.filter(u => u.product_id !== productId);
-    setUnmapped(nextUnmapped);
-    if (nextUnmapped.length === 0) setDiagnostic(null);
+    await doLinkResolved(productId, dropiProductId, dropiVariationId);
   }
 
   const blockedReason =
@@ -177,25 +183,30 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                     </div>
 
                     {l.dropiId == null && (
-                      <div className="mt-2 rounded-lg border border-warning/40 bg-warning/5 p-2 space-y-1.5">
+                      <div className="mt-2 rounded-lg border border-warning/40 bg-warning/5 p-2 space-y-2">
                         <div className="text-[10px] text-muted-foreground">
-                          Vinculá con Dropi · pegá el <strong>id del producto en Dropi</strong> (lo ves en app.dropi.ec al abrir el producto)
+                          Vinculá con Dropi · buscá el producto por su <strong>nombre</strong> y elegilo (se guarda para esta tienda — una sola vez)
                         </div>
-                        <div className="flex items-center gap-2">
-                          <input inputMode="numeric" placeholder="ID producto Dropi"
-                            value={linkInputs[l.product_id]?.dropiId ?? ''}
-                            onChange={e => setLinkInput(l.product_id, 'dropiId', e.target.value)}
-                            className="h-8 flex-1 min-w-0 rounded border border-border bg-background px-2 text-sm" />
-                          <input inputMode="numeric" placeholder="Variación (opc.)"
-                            value={linkInputs[l.product_id]?.variationId ?? ''}
-                            onChange={e => setLinkInput(l.product_id, 'variationId', e.target.value)}
-                            className="h-8 w-28 rounded border border-border bg-background px-2 text-sm" />
-                          <button type="button" onClick={() => doLink(l.product_id)}
-                            disabled={linkingId === l.product_id || !(linkInputs[l.product_id]?.dropiId ?? '').trim()}
-                            className="h-8 px-3 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
-                            {linkingId === l.product_id ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Vincular
-                          </button>
-                        </div>
+                        <DropiProductSearch storeId={storeId} busy={linkingId === l.product_id}
+                          onSelect={(dropiId, varId) => doLinkResolved(l.product_id, dropiId, varId)} />
+                        <details className="text-[11px]">
+                          <summary className="cursor-pointer text-muted-foreground select-none">o pegá el id de Dropi manual</summary>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <input inputMode="numeric" placeholder="ID producto Dropi"
+                              value={linkInputs[l.product_id]?.dropiId ?? ''}
+                              onChange={e => setLinkInput(l.product_id, 'dropiId', e.target.value)}
+                              className="h-8 flex-1 min-w-0 rounded border border-border bg-background px-2 text-sm" />
+                            <input inputMode="numeric" placeholder="Variación (opc.)"
+                              value={linkInputs[l.product_id]?.variationId ?? ''}
+                              onChange={e => setLinkInput(l.product_id, 'variationId', e.target.value)}
+                              className="h-8 w-28 rounded border border-border bg-background px-2 text-sm" />
+                            <button type="button" onClick={() => doLink(l.product_id)}
+                              disabled={linkingId === l.product_id || !(linkInputs[l.product_id]?.dropiId ?? '').trim()}
+                              className="h-8 px-3 rounded bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-1 hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
+                              {linkingId === l.product_id ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Vincular
+                            </button>
+                          </div>
+                        </details>
                       </div>
                     )}
                   </div>

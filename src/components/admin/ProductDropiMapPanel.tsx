@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Link2, Save, Loader2, Trash2, ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import DropiProductSearch from '@/components/DropiProductSearch';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -108,6 +109,17 @@ export default function ProductDropiMapPanel() {
       </div>
 
       <div className="px-5 py-4 space-y-4">
+        {/* Buscar el producto en Dropi → autocompleta el id (estilo Dropify) */}
+        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+          <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Buscar producto en Dropi (autocompleta el id)</div>
+          <DropiProductSearch storeId={activeStoreId}
+            onSelect={(dropiProductId, dropiVariationId, label) => {
+              setDropiId(String(dropiProductId));
+              setVariationId(dropiVariationId != null ? String(dropiVariationId) : '');
+              toast.success(`Seleccionado: ${label} (#${dropiProductId})`);
+            }} />
+        </div>
+
         {/* Form de alta/edición */}
         <div className="grid grid-cols-1 sm:grid-cols-[1fr,1fr,8rem,auto] gap-2 items-end">
           <div>

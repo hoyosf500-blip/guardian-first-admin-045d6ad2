@@ -174,6 +174,72 @@ function reasonMessage(reason: ResolveReason | undefined, status?: number): stri
   }
 }
 
+interface DropiVariationHit { id: number; name: string; sku?: string }
+interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations: DropiVariationHit[] }
+
+/** Busca productos en el catálogo de Dropi (estilo Dropify) vía la API de
+ *  integraciones: GET {base}/integrations/products/myproducts. Manda ambos sets
+ *  de params conocidos (pageSize/startData/keywords y result_number/start/
+ *  textToSearch) por compat — Dropi ignora los que no usa. Envelope esperado:
+ *  { isSuccess, objects: [...] } (igual que dropi-sync). */
+async function searchDropiProducts(
+  cfg: { base: string; apiKey: string; storeUrl: string }, query: string,
+): Promise<DropiProductHit[]> {
+  const params = new URLSearchParams({
+    keywords: query, pageSize: "20", startData: "0",
+    textToSearch: query, result_number: "20", start: "0",
+  });
+  const url = `${cfg.base}/integrations/products/myproducts?${params.toString()}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "dropi-integration-key": cfg.apiKey,
+  };
+  if (cfg.storeUrl) {
+    headers["Origin"] = cfg.storeUrl;
+    headers["Referer"] = cfg.storeUrl.endsWith("/") ? cfg.storeUrl : `${cfg.storeUrl}/`;
+  }
+  const res = await fetch(url, { headers });
+  const txt = await res.text();
+  console.log("[shopify-push-dropi] search_products", { url, status: res.status, preview: txt.slice(0, 200) });
+  let body: Record<string, unknown> = {};
+  try { body = txt ? JSON.parse(txt) : {}; } catch { body = {}; }
+  if (!res.ok || (body as { isSuccess?: boolean }).isSuccess === false) {
+    throw new Error(String((body as { message?: string }).message || `Dropi respondió ${res.status}`));
+  }
+  const raw = body as Record<string, unknown>;
+  const objects = raw.objects as unknown;
+  const data = raw.data as unknown;
+  const arr: unknown[] =
+    Array.isArray(objects) ? objects :
+    Array.isArray((objects as { data?: unknown[] })?.data) ? (objects as { data: unknown[] }).data :
+    Array.isArray(data) ? data :
+    Array.isArray((data as { data?: unknown[] })?.data) ? (data as { data: unknown[] }).data :
+    Array.isArray(raw) ? (raw as unknown[]) : [];
+  return arr.map((p) => {
+    const pr = p as Record<string, unknown>;
+    const variations: DropiVariationHit[] = Array.isArray(pr.variations)
+      ? (pr.variations as Record<string, unknown>[]).map((v) => ({
+        id: Number(v.id),
+        name: String(
+          (Array.isArray(v.attribute_values)
+            ? (v.attribute_values as Record<string, unknown>[]).map((a) => a.value).filter(Boolean).join(" / ")
+            : "") || v.name || v.sku || `var ${v.id}`,
+        ),
+        sku: v.sku ? String(v.sku) : undefined,
+      })).filter((v) => Number.isFinite(v.id) && v.id > 0)
+      : [];
+    return {
+      id: Number(pr.id),
+      name: String(pr.name || pr.title || `Producto ${pr.id}`),
+      type: String(pr.type || "SIMPLE"),
+      sku: pr.sku ? String(pr.sku) : undefined,
+      price: Number(pr.sale_price) || undefined,
+      variations,
+    };
+  }).filter((p) => Number.isFinite(p.id) && p.id > 0);
+}
+
 Deno.serve(async (req: Request) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -194,15 +260,33 @@ Deno.serve(async (req: Request) => {
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* noop */ }
     const storeId = typeof body.store_id === "string" ? body.store_id.trim() : "";
-    const shopifyOrderId = String(body.shopify_order_id ?? "").trim();
-    const mode = body.mode === "confirm" ? "confirm" : "preview";
+    const mode = body.mode === "confirm" ? "confirm"
+      : body.mode === "search_products" ? "search_products" : "preview";
     const overrides = (body.overrides ?? {}) as Overrides;
     if (!storeId) return json({ ok: false, error: "Falta store_id" }, 400, cors);
-    if (!shopifyOrderId) return json({ ok: false, error: "Falta shopify_order_id" }, 400, cors);
 
     if (!(await isStoreMember(sb, user.id, storeId))) {
       return json({ ok: false, error: "No sos miembro de esta tienda" }, 403, cors);
     }
+
+    // Modo búsqueda de productos en Dropi (estilo Dropify): NO necesita pedido
+    // Shopify. Devuelve el catálogo del proveedor para que el operador elija el
+    // producto real (id correcto) en vez de pegar un id a ciegas.
+    if (mode === "search_products") {
+      const query = String(body.query ?? "").trim();
+      if (query.length < 2) return json({ ok: true, products: [] }, 200, cors);
+      const dropiCfgS = await loadStoreConfig(sb, storeId);
+      if (!dropiCfgS.apiKey) return json({ ok: false, error: "La tienda no tiene Clave API de Dropi" }, 400, cors);
+      try {
+        const products = await searchDropiProducts(dropiCfgS, query);
+        return json({ ok: true, products }, 200, cors);
+      } catch (e) {
+        return json({ ok: false, error: e instanceof Error ? e.message : "No se pudo buscar en Dropi" }, 502, cors);
+      }
+    }
+
+    const shopifyOrderId = String(body.shopify_order_id ?? "").trim();
+    if (!shopifyOrderId) return json({ ok: false, error: "Falta shopify_order_id" }, 400, cors);
 
     // Config Shopify (token client-credentials) + Dropi (apiKey)
     const shopCfg = await loadShopifyConfig(sb, storeId);
@@ -227,10 +311,12 @@ Deno.serve(async (req: Request) => {
     )).order;
     if (!ord) return json({ ok: false, error: `Pedido ${shopifyOrderId} no existe en Shopify` }, 404, cors);
 
-    // Envío prioritario: Shopify lo manda como shipping_line (sin id de Dropi).
-    // No se manda como producto aparte; su valor se SUMA al COD que cobra Dropi
-    // (ej. $40 producto + $2 envío = $42). Ver fold más abajo en modo confirm.
-    const shipping = Math.round(
+    // Envío prioritario / cargos sin producto: Shopify los manda como shipping_line
+    // o como line item con product_id null (ej. "DESPACHO PRIORITARIO"). No tienen
+    // id de Dropi → NO se mandan como producto: su valor se SUMA al COD que cobra
+    // Dropi (ej. $40 producto + $2 envío = $42). `shipping` final se arma tras el
+    // loop sumando shipping_lines + las líneas sin product_id (extrasTotal).
+    const shippingLinesTotal = Math.round(
       (ord.shipping_lines || []).reduce((s, l) => s + (Number(l?.price) || 0), 0),
     );
 
@@ -254,15 +340,19 @@ Deno.serve(async (req: Request) => {
     const unmapped: Array<{ title: string; sku: string; product_id: number; reason: string }> = [];
     let permissionIssue = false;
     let firstSeenKeys: string[] | undefined;
+    let extrasTotal = 0;
     for (let i = 0; i < (ord.line_items || []).length; i++) {
       const li = ord.line_items[i];
       const qty = Number(li.quantity) || 1;
       const gross = (Number(li.price) || 0) * qty;
       const disc = Number(li.total_discount || "0") || 0;
-      let price = Math.round((gross - disc) / qty);
-      const ov = overrides.lines?.[String(i)];
-      const finalQty = ov?.quantity != null ? Number(ov.quantity) : qty;
-      if (ov?.price != null) price = Number(ov.price);
+      const price = Math.round((gross - disc) / qty);
+
+      // Línea SIN product_id = cargo extra (envío prioritario / upsell, ej.
+      // "DESPACHO PRIORITARIO"). No tiene id de Dropi → no es un producto: su
+      // valor se suma al COD y NO pide vínculo. (Antes salía "sin vínculo" en
+      // cada pedido, bloqueaba el confirm y ensuciaba el lookup del mapeo.)
+      if (!li.product_id) { extrasTotal += price * qty; continue; }
 
       const { meta, reason, status, seenKeys } = await resolveDropiProduct(shopCfg.shopDomain, shopToken, li.product_id, cache);
       if (reason === "sin_permiso_productos") permissionIssue = true;
@@ -277,7 +367,7 @@ Deno.serve(async (req: Request) => {
       const line: ResolvedLine = {
         title: li.title || li.name || "", sku: li.sku || "",
         product_id: li.product_id, variant_id: li.variant_id,
-        quantity: finalQty, price, dropiId: meta ? Number(meta.id) : null, variationId,
+        quantity: qty, price, dropiId: meta ? Number(meta.id) : null, variationId,
       };
       resolved.push(line);
       if (!meta) {
@@ -285,14 +375,29 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Overrides del operador (precio/cantidad) por índice del array `resolved`,
+    // que coincide con el orden que ve el modal (products del preview). Se aplica
+    // acá —no en el loop— para que el índice del modal == índice de resolved aun
+    // cuando se omiten líneas sin product_id.
+    for (let j = 0; j < resolved.length; j++) {
+      const ov = overrides.lines?.[String(j)];
+      if (ov?.price != null) resolved[j].price = Number(ov.price);
+      if (ov?.quantity != null) resolved[j].quantity = Number(ov.quantity);
+    }
+
+    // Envío/extras a cobrar (no son productos Dropi): shipping_lines + líneas sin id.
+    const shipping = shippingLinesTotal + extrasTotal;
+
     // Fallback DB: tiendas que NO importaron sus productos con la app de Dropi
     // (ej. Rushmira Ecuador, productos cargados a mano en Shopify) no tienen
     // el metafield dropi/_dropi_product. Para esos casos guardamos un mapeo
     // manual por tienda en shopify_product_dropi_map. Si lo encontramos acá,
     // resolvemos el dropiId y sacamos esa línea de unmapped.
     let usedManualMap = false;
-    if (unmapped.length > 0) {
-      const ids = Array.from(new Set(unmapped.map((u) => u.product_id)));
+    const ids = unmapped.length > 0
+      ? Array.from(new Set(unmapped.map((u) => u.product_id).filter((x): x is number => typeof x === "number" && x > 0)))
+      : [];
+    if (ids.length > 0) {
       const { data: maps } = await sb
         .from("shopify_product_dropi_map")
         .select("shopify_product_id, dropi_product_id, dropi_variation_id")
@@ -437,7 +542,12 @@ Deno.serve(async (req: Request) => {
         store_id: storeId, shopify_order_id: shopifyOrderId, status: "error",
         payload: dropiPayload, error_message: `Dropi [${dropiRes.status}]: ${detail}`, pushed_by: user.id,
       });
-      return json({ ok: false, error: `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`, dropiBody: dBody }, 502, cors);
+      // El error "Undefined property: stdClass::$type" (o similar) significa que
+      // Dropi no encontró el producto por id → id de Dropi inválido. Mensaje claro.
+      const friendly = /\$type|Undefined property|no encontr|not found/i.test(detail)
+        ? "Dropi no encontró uno de los productos (id de Dropi inválido). Buscá el producto por su nombre y volvé a vincularlo con el id correcto."
+        : `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`;
+      return json({ ok: false, error: friendly, dropiBody: dBody }, 502, cors);
     }
 
     await sb.from("shopify_pushed_orders").insert({
