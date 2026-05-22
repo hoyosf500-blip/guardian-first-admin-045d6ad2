@@ -91,7 +91,7 @@ type ResolveReason =
   | "sin_metafield_dropi"     // tiene metafields pero ninguno es de Dropi
   | "http_error"              // Shopify respondió un error distinto
   | "error";                  // excepción inesperada
-interface DropiResolveResult { meta: DropiProductMeta | null; reason?: ResolveReason; status?: number }
+interface DropiResolveResult { meta: DropiProductMeta | null; reason?: ResolveReason; status?: number; seenKeys?: string[] }
 type RawMetafield = { namespace: string; key: string; value: string };
 
 /** Parsea el value de un metafield al shape de un producto Dropi (id numérico). */
@@ -148,7 +148,7 @@ async function resolveDropiProduct(
       const meta = extractDropiMeta(mfs);
       out = meta
         ? { meta }
-        : { meta: null, reason: mfs.length === 0 ? "sin_metafields" : "sin_metafield_dropi" };
+        : { meta: null, reason: mfs.length === 0 ? "sin_metafields" : "sin_metafield_dropi", seenKeys: mfs.map((m) => `${m.namespace}.${m.key}`) };
     }
   } catch (_e) {
     out = { meta: null, reason: "error" };
@@ -245,6 +245,7 @@ Deno.serve(async (req: Request) => {
     const resolved: ResolvedLine[] = [];
     const unmapped: Array<{ title: string; sku: string; product_id: number; reason: string }> = [];
     let permissionIssue = false;
+    let firstSeenKeys: string[] | undefined;
     for (let i = 0; i < (ord.line_items || []).length; i++) {
       const li = ord.line_items[i];
       const qty = Number(li.quantity) || 1;
@@ -255,8 +256,9 @@ Deno.serve(async (req: Request) => {
       const finalQty = ov?.quantity != null ? Number(ov.quantity) : qty;
       if (ov?.price != null) price = Number(ov.price);
 
-      const { meta, reason, status } = await resolveDropiProduct(shopCfg.shopDomain, shopToken, li.product_id, cache);
+      const { meta, reason, status, seenKeys } = await resolveDropiProduct(shopCfg.shopDomain, shopToken, li.product_id, cache);
       if (reason === "sin_permiso_productos") permissionIssue = true;
+      if (!meta && !firstSeenKeys && seenKeys && seenKeys.length > 0) firstSeenKeys = seenKeys;
       // Variaciones: esta operación es SIMPLE en CO; si hubiera variations,
       // intentar matchear por sku, sino dejar variationId null.
       let variationId: number | null = null;
@@ -275,11 +277,37 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Diagnóstico de alto nivel: si el token no puede leer productos, ese es el
-    // problema raíz (todos salen "sin vínculo"); sino, la razón del primero.
-    const diagnostic = permissionIssue
+    // Diagnóstico de alto nivel. Cuando hay productos sin vínculo, consultamos los
+    // scopes REALES del token (no los configurados en el Dashboard): Shopify a
+    // veces no toma scopes nuevos hasta re-instalar/re-publicar la app, así que
+    // "configurado" ≠ "el token lo tiene". Esto distingue de forma definitiva
+    // entre "falta permiso" y "el metafield de Dropi está en otro lado".
+    let diagnostic: string | null = permissionIssue
       ? reasonMessage("sin_permiso_productos")
       : (unmapped[0]?.reason ?? null);
+    if (unmapped.length > 0) {
+      try {
+        const sc = await fetch(`https://${shopCfg.shopDomain}/admin/oauth/access_scopes.json`, {
+          headers: { "X-Shopify-Access-Token": shopToken },
+        });
+        if (sc.ok) {
+          const handles = (((await sc.json()) as { access_scopes?: Array<{ handle: string }> }).access_scopes || [])
+            .map((s) => s.handle);
+          const hasReadProducts = handles.includes("read_products") || handles.includes("write_products");
+          if (!hasReadProducts) {
+            diagnostic = "El token de Shopify NO tiene read_products en este momento (aunque lo hayas configurado). " +
+              "Re-instalá/re-publicá la app personalizada en Shopify para que el token tome el permiso, y reintentá.";
+          } else if (firstSeenKeys && firstSeenKeys.length > 0) {
+            diagnostic = "El token SÍ tiene read_products, pero este producto no expone el vínculo de Dropi. " +
+              `Metafields visibles: ${firstSeenKeys.join(", ")}. ` +
+              "Dropi Ecuador parece guardar el id en otro namespace (o el producto no se importó con la app de Dropi).";
+          } else {
+            diagnostic = "El token SÍ tiene read_products, pero este producto no tiene metafields visibles por API " +
+              "(no se importó con la app de Dropi, o el metafield es privado de esa app).";
+          }
+        }
+      } catch { /* dejamos el diagnostic base */ }
+    }
 
     const total = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
 
