@@ -51,9 +51,9 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 - **Lovable does NOT auto-redeploy edge functions on `git push`.** Code in `supabase/functions/` ships to GitHub but the deployed runtime stays on the OLD version until someone explicitly redeploys (Lovable prompt or `supabase functions deploy`). Always design client-side fallback for any edge-function change you ship.
 - **Lovable does NOT auto-apply migrations.** Files in `supabase/migrations/` need explicit `supabase db push` or a Lovable prompt. If `ORDER_COLUMNS` (`src/lib/orderColumns.ts`) references a column whose migration hasn't run, the SELECT explodes with `column X does not exist` and breaks every order-loading screen. Mitigation pattern: hotfix by removing the column from `orderColumns.ts` until the migration is applied.
 - The DB row mapper is **`dbToOrderData`** (not `mapDbRow`) in `src/lib/orderUtils.ts`.
-- **Two distinct Dropi tokens, NOT interchangeable:**
-  - `app_settings.dropi_token` — Bearer API key (permanent). Used by `dropi-sync`, `dropi-update-order`, `dropi-resolve-incidence`. Configured in `/admin → Clave API de Dropi`.
-  - `app_settings.dropi_session_token` — JWT from `app.dropi.co` browser session (vence cada ~12-24h). Used ONLY by `dropi-wallet-sync` (the `/api/wallet/exportexcel` endpoint requires session JWT, not API key). Configured in `/admin → Huella del comprador`. Refresh from DevTools → Network → `x-authorization` header on any `api.dropi.co` call.
+- **Dropi tokens — la integration-key permanente sirve para TODO (corregido 2026-05-22):**
+  - `store_dropi_config.dropi_api_key` (multi-tienda; antes `app_settings.dropi_token`) — Bearer **INTEGRATIONS, permanente** (`exp` año 2126). Verificado por curl que funciona para `dropi-sync`, `dropi-update-order`, `dropi-resolve-incidence`, **`dropi-wallet-sync` (`/api/wallet/exportexcel`) y `dropi-fingerprint` (`/bff/customers/fingerprint/v2`)**. Su `payload.sub` ES el dropi user_id (lo usan wallet/fingerprint en el query param). Configurado en `/admin → Credenciales Dropi`.
+  - `store_dropi_config.dropi_session_token` — JWT de sesión de `app.dropi.co` (vence ~1h). **LEGACY/opcional**: solo se usa como *fallback* (`cfg.apiKey || cfg.sessionToken`) si una tienda no tiene api_key. **Ojo:** el doc viejo afirmaba que exportexcel/fingerprint *requerían* este JWT — es FALSO (de hecho fingerprint con session_token da 401 "Invalid token"). Ya no hace falta refrescarlo a mano si la api_key está cargada.
 - **Wallet sync default = últimos 30 días.** `supabase/functions/dropi-wallet-sync/index.ts:218-219` setea `defaultFrom = today - 30d`. Para histórico completo pasar body `{from, to}`. Critical when migrando o queriendo backfill — sin esto la wallet pierde meses anteriores.
 - **Cliente-side calculations son más resilientes que migrations pendientes.** Patrón usado en `FinanzasTab.tsx`: cuando una migration agrega un campo nuevo al RPC pero aún no se aplica, el parser del hook coerce `undefined → 0` y el operador `??` no cae al fallback. Solución: calcular client-side desde campos que SÍ vienen (`flete_devoluciones + costo_devoluciones`), ignorar el campo del server. Funciona con cualquier versión del RPC.
 
@@ -111,11 +111,11 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
 - `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`)
 - `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`.
-- `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Requiere `dropi_session_token` (JWT, NO el API key).
+- `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Usa `cfg.apiKey || cfg.sessionToken` (la api_key permanente funciona; el session_token es fallback legacy). Decodifica `payload.sub` del token para el query `user_id`.
 - `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. Sin esta proxy, `useGooglePlaces` no funciona.
 - `ai-order-assistant` — Claude-powered order assistant
 
-The Dropi API key is stored in `app_settings.dropi_token` (Bearer permanente). El JWT de sesión está en `app_settings.dropi_session_token` (vence cada 12-24h). Ambos son leídos en runtime, NUNCA hardcoded.
+Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_key` = INTEGRATIONS permanente; `dropi_session_token` = JWT de sesión legacy/fallback). Se leen en runtime vía `loadStoreConfig` (`_shared/dropiStoreConfig.ts`), NUNCA hardcoded. (El viejo `app_settings.dropi_token`/`dropi_session_token` era el modelo single-tenant previo.)
 
 ### Wallet Categorías (`mapCategoria` en `dropi-wallet-sync/index.ts`)
 
