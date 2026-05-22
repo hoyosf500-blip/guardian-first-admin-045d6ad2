@@ -9,7 +9,7 @@ export interface PushProduct {
   title: string; sku: string; product_id: number; variant_id: number;
   quantity: number; price: number; dropiId: number | null; variationId: number | null;
 }
-export interface PushUnmapped { title: string; sku: string; product_id: number }
+export interface PushUnmapped { title: string; sku: string; product_id: number; reason?: string }
 
 export interface PushPreview {
   ok: boolean;
@@ -20,6 +20,7 @@ export interface PushPreview {
   products?: PushProduct[];
   total?: number;
   unmapped?: PushUnmapped[];
+  diagnostic?: string | null;   // causa raíz cuando hay productos sin vínculo (ej. falta read_products)
   alreadyPushed?: boolean;
   dropi_order_id?: string | null;
   error?: string;
@@ -31,6 +32,7 @@ export interface PushResult {
   shopify_name?: string;
   error?: string;
   unmapped?: PushUnmapped[];
+  diagnostic?: string | null;
 }
 
 export interface PushOverrides {

@@ -84,24 +84,93 @@ async function shopifyGet<T>(domain: string, token: string, path: string): Promi
 
 interface DropiProductMeta { id: number; type?: string; sku?: string; name?: string; variations?: Array<Record<string, unknown>> }
 
-/** Lee el producto de Dropi desde el metafield dropi/_dropi_product (cache por product_id). */
-async function resolveDropiProduct(
-  domain: string, token: string, productId: number, cache: Map<number, DropiProductMeta | null>,
-): Promise<DropiProductMeta | null> {
-  if (cache.has(productId)) return cache.get(productId)!;
-  let result: DropiProductMeta | null = null;
+/** Razón por la que NO se pudo resolver el producto de Dropi (diagnóstico). */
+type ResolveReason =
+  | "sin_permiso_productos"   // 401/403: la app de Shopify no tiene read_products
+  | "sin_metafields"          // el producto no tiene metafields
+  | "sin_metafield_dropi"     // tiene metafields pero ninguno es de Dropi
+  | "http_error"              // Shopify respondió un error distinto
+  | "error";                  // excepción inesperada
+interface DropiResolveResult { meta: DropiProductMeta | null; reason?: ResolveReason; status?: number }
+type RawMetafield = { namespace: string; key: string; value: string };
+
+/** Parsea el value de un metafield al shape de un producto Dropi (id numérico). */
+function tryParseDropi(value: string): DropiProductMeta | null {
+  if (!value) return null;
   try {
-    const data = await shopifyGet<{ metafields: Array<{ namespace: string; key: string; value: string }> }>(
-      domain, token, `products/${productId}/metafields.json?namespace=dropi`,
-    );
-    const mf = (data.metafields || []).find((m) => m.key === "_dropi_product");
-    if (mf?.value) {
-      const parsed = JSON.parse(mf.value) as DropiProductMeta;
-      if (parsed && typeof parsed.id === "number") result = parsed;
+    const parsed = JSON.parse(value) as DropiProductMeta;
+    if (parsed && typeof parsed.id === "number") return parsed;
+  } catch { /* no es JSON */ }
+  return null;
+}
+
+/** Busca el producto Dropi entre los metafields. Dropify deja dropi/_dropi_product;
+ *  como red de seguridad aceptamos cualquier namespace que contenga "dropi". */
+function extractDropiMeta(mfs: RawMetafield[]): DropiProductMeta | null {
+  const exact = mfs.find((m) => m.namespace === "dropi" && m.key === "_dropi_product");
+  if (exact) { const p = tryParseDropi(exact.value); if (p) return p; }
+  for (const m of mfs.filter((m) => /dropi/i.test(m.namespace))) {
+    const p = tryParseDropi(m.value);
+    if (p) return p;
+  }
+  return null;
+}
+
+/** Lee el producto de Dropi desde los metafields del producto de Shopify
+ *  (cache por product_id). Dropify (la app de Dropi) deja el id de Dropi en el
+ *  metafield dropi/_dropi_product. Devuelve también una RAZÓN cuando falla, para
+ *  que el modal muestre la causa real en vez de un genérico "sin vínculo". El
+ *  caso más común en tiendas nuevas: el token no tiene read_products → Shopify
+ *  responde 401/403 al leer metafields y antes lo tragábamos en silencio. */
+async function resolveDropiProduct(
+  domain: string, token: string, productId: number, cache: Map<number, DropiResolveResult>,
+): Promise<DropiResolveResult> {
+  if (cache.has(productId)) return cache.get(productId)!;
+  let out: DropiResolveResult = { meta: null };
+  try {
+    const url = (qs: string) =>
+      `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}/metafields.json${qs}`;
+    const headers = { "X-Shopify-Access-Token": token, "Content-Type": "application/json" };
+
+    const res = await fetch(url("?namespace=dropi"), { headers });
+    if (!res.ok) {
+      const reason: ResolveReason = (res.status === 401 || res.status === 403)
+        ? "sin_permiso_productos" : "http_error";
+      out = { meta: null, reason, status: res.status };
+    } else {
+      let mfs = ((await res.json()) as { metafields?: RawMetafield[] }).metafields || [];
+      // Si el namespace dropi vino vacío, traigo TODOS y busco por si la app de
+      // Dropi de otro país (Ecuador) usó un namespace levemente distinto.
+      if (mfs.length === 0) {
+        const all = await fetch(url(""), { headers });
+        if (all.ok) mfs = ((await all.json()) as { metafields?: RawMetafield[] }).metafields || [];
+      }
+      const meta = extractDropiMeta(mfs);
+      out = meta
+        ? { meta }
+        : { meta: null, reason: mfs.length === 0 ? "sin_metafields" : "sin_metafield_dropi" };
     }
-  } catch (_e) { result = null; }
-  cache.set(productId, result);
-  return result;
+  } catch (_e) {
+    out = { meta: null, reason: "error" };
+  }
+  cache.set(productId, out);
+  return out;
+}
+
+/** Mensaje humano (es) para la razón de fallo, usado en el modal. */
+function reasonMessage(reason: ResolveReason | undefined, status?: number): string {
+  switch (reason) {
+    case "sin_permiso_productos":
+      return `La app de Shopify de esta tienda no tiene permiso para leer productos (read_products) — Shopify respondió ${status ?? 403}. Agregá el scope read_products a la app en Shopify y reintentá.`;
+    case "sin_metafields":
+      return "El producto no tiene metafields en Shopify (no se importó con la app de Dropi).";
+    case "sin_metafield_dropi":
+      return "El producto tiene metafields pero ninguno con el id de Dropi. Verificá que se haya importado con la app de Dropi.";
+    case "http_error":
+      return `Shopify devolvió un error al leer los productos (${status ?? "?"}).`;
+    default:
+      return "No se pudo leer el vínculo de Dropi del producto.";
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -172,9 +241,10 @@ Deno.serve(async (req: Request) => {
     const client: ClientFields = { ...base, ...(overrides.client || {}) };
 
     // Resolver productos vía metafield dropi/_dropi_product
-    const cache = new Map<number, DropiProductMeta | null>();
+    const cache = new Map<number, DropiResolveResult>();
     const resolved: ResolvedLine[] = [];
-    const unmapped: Array<{ title: string; sku: string; product_id: number }> = [];
+    const unmapped: Array<{ title: string; sku: string; product_id: number; reason: string }> = [];
+    let permissionIssue = false;
     for (let i = 0; i < (ord.line_items || []).length; i++) {
       const li = ord.line_items[i];
       const qty = Number(li.quantity) || 1;
@@ -185,7 +255,8 @@ Deno.serve(async (req: Request) => {
       const finalQty = ov?.quantity != null ? Number(ov.quantity) : qty;
       if (ov?.price != null) price = Number(ov.price);
 
-      const meta = await resolveDropiProduct(shopCfg.shopDomain, shopToken, li.product_id, cache);
+      const { meta, reason, status } = await resolveDropiProduct(shopCfg.shopDomain, shopToken, li.product_id, cache);
+      if (reason === "sin_permiso_productos") permissionIssue = true;
       // Variaciones: esta operación es SIMPLE en CO; si hubiera variations,
       // intentar matchear por sku, sino dejar variationId null.
       let variationId: number | null = null;
@@ -199,15 +270,23 @@ Deno.serve(async (req: Request) => {
         quantity: finalQty, price, dropiId: meta ? Number(meta.id) : null, variationId,
       };
       resolved.push(line);
-      if (!meta) unmapped.push({ title: line.title, sku: line.sku, product_id: li.product_id });
+      if (!meta) {
+        unmapped.push({ title: line.title, sku: line.sku, product_id: li.product_id, reason: reasonMessage(reason, status) });
+      }
     }
+
+    // Diagnóstico de alto nivel: si el token no puede leer productos, ese es el
+    // problema raíz (todos salen "sin vínculo"); sino, la razón del primero.
+    const diagnostic = permissionIssue
+      ? reasonMessage("sin_permiso_productos")
+      : (unmapped[0]?.reason ?? null);
 
     const total = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
 
     if (mode === "preview") {
       return json({
         ok: true, mode: "preview", shopify_order_id: shopifyOrderId, shopify_name: ord.name,
-        client, products: resolved, total, unmapped, alreadyPushed,
+        client, products: resolved, total, unmapped, diagnostic, alreadyPushed,
         dropi_order_id: prior?.dropi_order_id ?? null,
       }, 200, cors);
     }
@@ -217,7 +296,11 @@ Deno.serve(async (req: Request) => {
       return json({ ok: false, error: "Este pedido ya fue subido a Dropi", dropi_order_id: prior?.dropi_order_id ?? null }, 409, cors);
     }
     if (unmapped.length > 0) {
-      return json({ ok: false, error: "Hay productos sin vínculo a Dropi (no importados por Dropify)", unmapped }, 422, cors);
+      return json({
+        ok: false,
+        error: diagnostic || "Hay productos sin vínculo a Dropi (no importados por Dropify)",
+        unmapped, diagnostic,
+      }, 422, cors);
     }
     if (!client.name || !client.dir || !client.city || !client.state || !client.phone) {
       return json({ ok: false, error: "Faltan datos del cliente (nombre, dirección, ciudad, departamento o teléfono)" }, 422, cors);

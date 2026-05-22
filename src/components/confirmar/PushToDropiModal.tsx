@@ -27,6 +27,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [client, setClient] = useState<PushClient>(EMPTY_CLIENT);
   const [lines, setLines] = useState<PushProduct[]>([]);
   const [unmapped, setUnmapped] = useState<PushUnmapped[]>([]);
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [alreadyPushed, setAlreadyPushed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       setClient(p.client ?? EMPTY_CLIENT);
       setLines(p.products ?? []);
       setUnmapped(p.unmapped ?? []);
+      setDiagnostic(p.diagnostic ?? null);
       setAlreadyPushed(Boolean(p.alreadyPushed));
       setLoading(false);
     })();
@@ -53,7 +55,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     setLines(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
 
   const blockedReason =
-    unmapped.length > 0 ? `${unmapped.length} producto(s) sin vínculo a Dropi — no se importaron por Dropify. Súbelo manual en Dropi o vinculá el producto primero.`
+    unmapped.length > 0 ? (diagnostic || `${unmapped.length} producto(s) sin vínculo a Dropi — no se importaron por Dropify. Súbelo manual en Dropi o vinculá el producto primero.`)
     : !client.name || !client.dir || !client.city || !client.state || !client.phone ? 'Faltan datos del cliente (nombre, dirección, ciudad, departamento, teléfono).'
     : null;
 
@@ -99,7 +101,10 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
             {unmapped.length > 0 && (
               <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning flex items-start gap-2">
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                <span>Productos sin vínculo a Dropi: {unmapped.map(u => u.title || u.sku).join(', ')}. No se importaron por Dropify.</span>
+                <span>
+                  {diagnostic || 'Estos productos no tienen vínculo a Dropi.'}
+                  <span className="block mt-1 text-warning/80">Producto(s): {unmapped.map(u => u.title || u.sku).join(', ')}.</span>
+                </span>
               </div>
             )}
 
