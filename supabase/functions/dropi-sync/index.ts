@@ -4,7 +4,7 @@ import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
-const RATE_LIMIT_MS = 500;
+const RATE_LIMIT_MS = 1500;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -57,7 +57,7 @@ async function fetchAllPages(
       .join("&");
 
     let res: Response | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
         method: "GET",
         headers: {
@@ -69,9 +69,9 @@ async function fetchAllPages(
       });
       if (res.status !== 429) break;
       await res.text(); // drenar el body del 429 antes de reintentar
-      // Backoff corto (1.5s, 3s) — esto es user-facing: mejor fallar rápido
-      // con mensaje claro que colgar 60s. El cron tiene su propio backoff largo.
-      if (attempt < 2) await sleep(1500 * Math.pow(2, attempt));
+      // Backoff más paciente: EC throttlea antes que CO cuando una prueba manual
+      // cae cerca del cron; esperar evita falsos "no conectado".
+      if (attempt < 4) await sleep(2000 * Math.pow(2, attempt));
     }
 
     if (res && res.status === 429) {
@@ -101,6 +101,56 @@ async function fetchAllPages(
   }
 
   return allOrders;
+}
+
+async function probeConnection(
+  base: string,
+  apiKey: string,
+  origin: string,
+): Promise<{ ok: boolean; status: number; rateLimited: boolean; total?: number; sample?: number; error?: string }> {
+  const today = new Date().toISOString().split("T")[0];
+  const qs = new URLSearchParams({
+    result_number: "1",
+    start: "0",
+    date_from: today,
+    date_to: today,
+    filter_date_by: "FECHA DE CREADO",
+    orderBy: "id",
+    orderDirection: "desc",
+  }).toString();
+
+  const res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "dropi-integration-key": apiKey,
+      "Origin": origin,
+    },
+  });
+
+  const txt = await res.text();
+  if (res.status === 429) {
+    return { ok: true, status: 429, rateLimited: true, error: txt.slice(0, 500) };
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, rateLimited: false, error: txt.slice(0, 500) };
+  }
+  try {
+    const data = JSON.parse(txt);
+    if (!data.isSuccess) {
+      return { ok: false, status: res.status, rateLimited: false, error: String(data.message || data.error || "Dropi error") };
+    }
+    return {
+      ok: true,
+      status: res.status,
+      rateLimited: false,
+      total: typeof data.count === "number" ? data.count : undefined,
+      sample: Array.isArray(data.objects) ? data.objects.length : undefined,
+    };
+  } catch {
+    return { ok: false, status: res.status, rateLimited: false, error: txt.slice(0, 500) || "Respuesta inválida de Dropi" };
+  }
 }
 
 /** Calculate calendar days from a date string to today */
@@ -270,6 +320,31 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ error: "La tienda no tiene Clave API de Dropi configurada" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (body.mode === "probe" || body.testOnly === true) {
+      const probe = await probeConnection(cfg.base, cfg.apiKey, cfg.storeUrl);
+      const connected = probe.ok || probe.rateLimited;
+      return new Response(
+        JSON.stringify({
+          ok: connected,
+          connected,
+          country: cfg.countryCode,
+          host: cfg.base,
+          status: probe.status,
+          rateLimited: probe.rateLimited,
+          total: probe.total,
+          sample: probe.sample,
+          error: connected ? undefined : probe.error,
+          dropiError: probe.rateLimited ? probe.error : undefined,
+          message: probe.rateLimited
+            ? "Conexión OK; Dropi está limitando temporalmente las peticiones."
+            : connected
+              ? "Conexión OK"
+              : "Dropi rechazó la conexión",
+        }),
+        { status: connected ? 200 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
