@@ -4,7 +4,7 @@ import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 
 const MAX_CHUNK_DAYS = 89;
 const PAGE_SIZE = 100;
-const RATE_LIMIT_MS = 500;
+const RATE_LIMIT_MS = 1500;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -57,7 +57,7 @@ async function fetchAllPages(
       .join("&");
 
     let res: Response | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 5; attempt++) {
       res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
         method: "GET",
         headers: {
@@ -69,9 +69,9 @@ async function fetchAllPages(
       });
       if (res.status !== 429) break;
       await res.text(); // drenar el body del 429 antes de reintentar
-      // Backoff corto (1.5s, 3s) — esto es user-facing: mejor fallar rápido
-      // con mensaje claro que colgar 60s. El cron tiene su propio backoff largo.
-      if (attempt < 2) await sleep(1500 * Math.pow(2, attempt));
+      // Backoff más paciente: EC throttlea antes que CO cuando una prueba manual
+      // cae cerca del cron; esperar evita falsos "no conectado".
+      if (attempt < 4) await sleep(2000 * Math.pow(2, attempt));
     }
 
     if (res && res.status === 429) {
