@@ -41,10 +41,11 @@ const CANONICAL_PLACA_REGEX = /#?\s*\d+[a-z]?\s*[-–]\s*\d+[a-z]?/i;
 // asegura que "Apto 302" SÍ pasa (porque va seguido de un número).
 const COMPLEMENT_NO_NUMBER = /\b(?:apto|apartamento|apt|ap|torre|tor|manzana|mz|casa|cs|lote|lt|interior|int|bloque|bl)\b\.?\s*(?!\s*\d)/i;
 
-export function heuristicValidate(direccion: string): HeuristicResult {
+export function heuristicValidate(direccion: string, countryCode?: string): HeuristicResult {
   const issues: string[] = [];
   let score = 0;
   const dir = (direccion || '').trim();
+  const isEC = (countryCode || 'CO').toUpperCase() === 'EC';
 
   // Detección rural-aware + pickup-office: cuando el tipo es concluyente,
   // resolvemos sin pasar por la lógica regex urbana.
@@ -87,6 +88,21 @@ export function heuristicValidate(direccion: string): HeuristicResult {
   // Ver caso real: "Callé 21 # 10-78" — sin normalizar, el regex de tipo
   // de vía no matcheaba y la heurística marcaba `no_via_type` falso positivo.
   const normalized = dir.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+  // Ecuador usa otro formato (ciudadela/manzana/villa, "Av. X y calle Y") — la
+  // placa canónica colombiana `# X-Y` y "Calle/Carrera/Avenida" no aplican.
+  // Heurística relajada: largo razonable + algún número + palabra de referencia.
+  // Nunca marcamos RED por formato colombiano ausente; a lo sumo yellow.
+  if (isEC) {
+    if (dir.length >= 10) score += 45; else issues.push('short_length');
+    if (/\d/.test(dir)) score += 30; else issues.push('no_numbers');
+    if (/\b(ciudadela|cdla|manzana|manz|mz|villa|solar|lote|etapa|coop|cooperativa|barrio|sector|km|av|avenida|calle|conjunto|urbanizacion|urb|pasaje|psje)\b/i.test(normalized)) {
+      score += 25;
+    }
+    if (/(.)\1{4,}/.test(dir)) { score = Math.max(0, score - 30); issues.push('repeated_chars'); }
+    if (/^[\d\s\-#]+$/.test(dir)) { score = Math.max(0, score - 30); issues.push('no_letters'); }
+    return { score: Math.min(100, score), issues, address_kind: kind };
+  }
 
   if (VIA_TYPE_REGEX.test(normalized)) {
     score += 40;

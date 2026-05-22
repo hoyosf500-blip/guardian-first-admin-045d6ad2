@@ -322,8 +322,49 @@ export function isValidColombianPhone(phone: string): boolean {
   return normalizeColombianPhone(phone) !== null;
 }
 
-/** Normalize a Colombian phone for wa.me/ links (must include 57 prefix exactly once). */
-export function getWhatsAppPhone(phone: string): string {
+/**
+ * Normaliza un móvil ecuatoriano a su forma canónica de 9 dígitos arrancando
+ * en 9 (sin trunk 0 ni código de país). Acepta:
+ *   "983364222"        → "983364222"  (canónico, como lo guarda Dropi EC)
+ *   "0983364222"       → "983364222"  (con trunk 0)
+ *   "593983364222"     → "983364222"  (código país)
+ *   "+593 98 336 4222" → "983364222"  (con + y espacios)
+ * Devuelve null si no encaja.
+ */
+export function normalizeEcuadorianPhone(phone: string): string | null {
+  let d = (phone || '').replace(/\D/g, '');
+  if (d.startsWith('593')) d = d.slice(3);
+  if (d.length === 10 && d.startsWith('0')) d = d.slice(1);
+  return d.length === 9 && d.startsWith('9') ? d : null;
+}
+
+/** Validez de móvil ecuatoriano. */
+export function isValidEcuadorianPhone(phone: string): boolean {
+  return normalizeEcuadorianPhone(phone) !== null;
+}
+
+/** Normaliza según el país de la tienda (default CO). */
+export function normalizePhoneForCountry(phone: string, countryCode?: string | null): string | null {
+  return (countryCode || 'CO').toUpperCase() === 'EC'
+    ? normalizeEcuadorianPhone(phone)
+    : normalizeColombianPhone(phone);
+}
+
+/** Validez de móvil según el país de la tienda (default CO). */
+export function isValidPhoneForCountry(phone: string, countryCode?: string | null): boolean {
+  return normalizePhoneForCountry(phone, countryCode) !== null;
+}
+
+/** Normalize a phone for wa.me/ links (country code prefix exactly once).
+ *  countryCode de la tienda activa: 'EC' usa 593, default 'CO' usa 57. */
+export function getWhatsAppPhone(phone: string, countryCode?: string | null): string {
+  if ((countryCode || 'CO').toUpperCase() === 'EC') {
+    const n = normalizeEcuadorianPhone(phone);
+    if (n) return `593${n}`;
+    const d = phone.replace(/[^0-9]/g, '');
+    if (d.startsWith('593')) return d;
+    return `593${d.replace(/^0/, '')}`;
+  }
   const digits = phone.replace(/[^0-9]/g, '');
   // 10-digit Colombian mobile (3xx xxx xxxx) → always prepend 57.
   if (digits.length === 10) return `57${digits}`;

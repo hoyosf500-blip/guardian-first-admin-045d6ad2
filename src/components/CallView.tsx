@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
-import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidColombianPhone } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidPhoneForCountry } from '@/lib/orderUtils';
+import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -31,8 +32,9 @@ import { locationMatches } from '@/lib/locationGuard';
 // "573229372886" porque length !== 10. Ahora delega a
 // isValidColombianPhone que tolera el prefijo de país "57". Mantengo
 // este wrapper para que los demás call sites del archivo no cambien.
-function validarTelefono(phone: string): boolean {
-  return isValidColombianPhone(phone);
+// Country-aware: la tienda activa define la regla (CO: 10 díg / 3xx; EC: 9 díg / 9xx).
+function validarTelefono(phone: string, countryCode?: string | null): boolean {
+  return isValidPhoneForCountry(phone, countryCode);
 }
 
 // Validador-direcciones: guard fire-once-per-order-per-session para evitar
@@ -68,6 +70,8 @@ interface Props {
 export default function CallView({ items }: Props) {
   const { markResult, undoLast, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user, isAdmin } = useAuth();
+  const { activeStore } = useStore();
+  const countryCode = activeStore?.country_code;
   const { claimOrder, releaseOrder } = useOrderLock();
   // BUG B fix: persist the customer's stable identifier (externalId or dbId),
   // not the array index. Indexes break when items reorder due to refresh/sync.
@@ -307,7 +311,7 @@ export default function CallView({ items }: Props) {
 
     const runHeuristicFallback = async () => {
       if (cancelled) return;
-      const result = heuristicValidate(direccion);
+      const result = heuristicValidate(direccion, countryCode);
       const decision = result.decision ?? decisionFromHeuristic(result.score);
       const address_kind = result.address_kind ?? null;
       // Para pickup_office la heurística devuelve missing_fields=[] explícito
@@ -396,7 +400,7 @@ export default function CallView({ items }: Props) {
         let final_missing_fields = data.missing_fields;
         let final_suggested_message = data.suggested_customer_message;
         if (final_missing_fields === undefined || final_suggested_message === undefined) {
-          const heur = heuristicValidate(direccion);
+          const heur = heuristicValidate(direccion, countryCode);
           // pickup_office y green: missing_fields legítimamente vacío.
           if (decision === 'green' || decision === 'pickup_office') {
             final_missing_fields = final_missing_fields ?? [];
@@ -494,7 +498,7 @@ export default function CallView({ items }: Props) {
 
     // Re-correr heurística stricter. Si dice green, OK — quedamos en green.
     // Si no, override.
-    const heur = heuristicValidate(o.direccion);
+    const heur = heuristicValidate(o.direccion, countryCode);
     if (heur.decision === 'green') return;
 
     staleGreenOverrideIds.add(o.dbId);
@@ -527,7 +531,7 @@ export default function CallView({ items }: Props) {
     // Stale green: la heurística stricter actual capó a yellow/red, mostrar
     // la corrección YA en vez de esperar al realtime tras el UPDATE.
     if (o.validationDecision === 'green') {
-      const heur = heuristicValidate(o.direccion);
+      const heur = heuristicValidate(o.direccion, countryCode);
       if (heur.decision && heur.decision !== 'green') return heur.decision;
     }
     return o.validationDecision;
@@ -758,7 +762,7 @@ export default function CallView({ items }: Props) {
                   ciudad: o.ciudad,
                   departamento: o.departamento,
                   barrio: o.barrio,
-                });
+                }, countryCode);
                 // Sanity check: la heurística sólo usa datos del pedido y NO
                 // debería poder alucinar. Aún así, si por algún bug futuro la
                 // sugerencia generada pierde la ciudad/depto, la descartamos
@@ -788,6 +792,7 @@ export default function CallView({ items }: Props) {
                 direccion={o.direccion}
                 ciudad={o.ciudad}
                 departamento={o.departamento}
+                countryCode={countryCode}
               />
             </div>
           )
@@ -821,7 +826,7 @@ export default function CallView({ items }: Props) {
                 // de que el UPDATE+realtime corrija la fila en DB) — así el
                 // botón coincide con lo que ve la operadora en la card.
                 validation_decision: visualDecision,
-                telefonoValido: validarTelefono(o.phone),
+                telefonoValido: validarTelefono(o.phone, countryCode),
                 documentoSiCoordinadora:
                   (o.transportadora || '').toLowerCase() !== 'coordinadora' ||
                   Boolean(o.documentoDestinatario),

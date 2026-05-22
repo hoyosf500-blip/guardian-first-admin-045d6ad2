@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { OrderData, normalizeColombianPhone } from '@/lib/orderUtils';
+import { OrderData, normalizePhoneForCountry } from '@/lib/orderUtils';
+import { useStore } from '@/contexts/StoreContext';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { useAuth } from '@/contexts/AuthContext';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
@@ -30,6 +31,7 @@ function splitName(full: string): { nombre: string; apellido: string } {
 
 export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }: Props) {
   const { isAdmin } = useAuth();
+  const { activeStore } = useStore();
   // Pre-populate every field from the current order. Email now lives on
   // OrderData so it survives the hop through dbToOrderData.
   // Validador-direcciones: el form también arrastra los campos de dirección
@@ -137,7 +139,7 @@ export default function EditOrderDialog({ open, onOpenChange, order, onSuccess }
       // escribió con "57" prefix y el gate de confirmación lo rechazaba.
       // Si no es normalizable (formato raro o internacional defensivo),
       // lo mandamos como está para no perder data del operador.
-      const phoneToSend = normalizeColombianPhone(form.phone) ?? form.phone;
+      const phoneToSend = normalizePhoneForCountry(form.phone, activeStore?.country_code) ?? form.phone;
       const { data, error } = await supabase.functions.invoke('dropi-update-order-full', {
         body: {
           externalId: order.externalId,

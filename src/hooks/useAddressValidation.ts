@@ -18,6 +18,7 @@ interface Args {
   direccion: string;
   ciudad?: string;
   departamento?: string;
+  countryCode?: string;
   enabled?: boolean;
 }
 
@@ -38,18 +39,20 @@ interface Args {
 export function useAddressValidation(
   args: Args,
 ): UseQueryResult<AddressValidationResult> {
-  const { direccion, ciudad = '', departamento = '', enabled = true } = args;
+  const { direccion, ciudad = '', departamento = '', countryCode, enabled = true } = args;
   const dirTrim = direccion?.trim() || '';
 
   return useQuery<AddressValidationResult>({
-    queryKey: ['address-validation', dirTrim, ciudad.trim(), departamento.trim()],
+    queryKey: ['address-validation', dirTrim, ciudad.trim(), departamento.trim(), countryCode || 'CO'],
     enabled: enabled && dirTrim.length > 0,
     queryFn: async () => {
-      // Intento 1: edge function (geocoding + cache).
+      // Intento 1: edge function (geocoding + cache). `country` para que valide
+      // con reglas del país correcto (EC vs CO) — la edge function lo usará
+      // cuando se actualice; mientras, lo ignora sin romper.
       try {
         const { data, error } = await supabase.functions.invoke<AddressValidationResult>(
           'dropi-validate-address',
-          { body: { direccion: dirTrim, ciudad, departamento } },
+          { body: { direccion: dirTrim, ciudad, departamento, country: countryCode } },
         );
         if (!error && data && data.status) {
           return { ...data, localOnly: false };
@@ -58,8 +61,8 @@ export function useAddressValidation(
         // Falla silenciosa → fallback local
       }
 
-      // Intento 2 (fallback): heurística pura en cliente.
-      const { score, issues } = heuristicValidate(dirTrim);
+      // Intento 2 (fallback): heurística pura en cliente, country-aware.
+      const { score, issues } = heuristicValidate(dirTrim, countryCode);
       return {
         status: decideStatusLocalOnly(score),
         score,

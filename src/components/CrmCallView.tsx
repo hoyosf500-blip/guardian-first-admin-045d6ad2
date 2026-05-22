@@ -23,6 +23,7 @@ import { locationMatches } from '@/lib/locationGuard';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 
 // Validador-direcciones: guard fire-once-per-order-per-session — mismo
@@ -93,6 +94,8 @@ export default function CrmCallView({
   items, actions, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
 }: Props) {
   const { isAdmin } = useAuth();
+  const { activeStore } = useStore();
+  const countryCode = activeStore?.country_code;
   // BUG B fix: persist the *order id* of the customer being attended, not
   // the array index. When `items` reorders (refresh, sync, filter change)
   // the index points to a different customer; the id stays stable.
@@ -250,7 +253,7 @@ export default function CrmCallView({
 
     const runHeuristicFallback = async () => {
       if (cancelled) return;
-      const result = heuristicValidate(direccion);
+      const result = heuristicValidate(direccion, countryCode);
       const decision = result.decision ?? decisionFromHeuristic(result.score);
       const address_kind = result.address_kind ?? null;
       // Para pickup_office la heurística devuelve missing_fields=[] explícito
@@ -334,7 +337,7 @@ export default function CrmCallView({
         let final_missing_fields = data.missing_fields;
         let final_suggested_message = data.suggested_customer_message;
         if (final_missing_fields === undefined || final_suggested_message === undefined) {
-          const heur = heuristicValidate(direccion);
+          const heur = heuristicValidate(direccion, countryCode);
           if (decision === 'green' || decision === 'pickup_office') {
             final_missing_fields = final_missing_fields ?? [];
             final_suggested_message = final_suggested_message ?? '';
@@ -426,7 +429,7 @@ export default function CrmCallView({
     const detectedKind = mapAddressKind(previewDireccion);
     if (detectedKind === 'pickup_office') return;
 
-    const heur = heuristicValidate(previewDireccion);
+    const heur = heuristicValidate(previewDireccion, countryCode);
     if (heur.decision === 'green') return;
 
     staleGreenOverrideIdsCrm.add(previewDbId);
@@ -461,7 +464,7 @@ export default function CrmCallView({
     const detected = mapAddressKind(previewDireccion);
     if (detected === 'pickup_office') return 'pickup_office' as const;
     if (previewDecision === 'green') {
-      const heur = heuristicValidate(previewDireccion);
+      const heur = heuristicValidate(previewDireccion, countryCode);
       if (heur.decision && heur.decision !== 'green') return heur.decision;
     }
     return previewDecision;
@@ -548,7 +551,7 @@ export default function CrmCallView({
     const detected = mapAddressKind(o.direccion);
     if (detected === 'pickup_office') return 'pickup_office' as const;
     if (o.validationDecision === 'green') {
-      const heur = heuristicValidate(o.direccion);
+      const heur = heuristicValidate(o.direccion, countryCode);
       if (heur.decision && heur.decision !== 'green') return heur.decision;
     }
     return o.validationDecision;
@@ -655,7 +658,7 @@ export default function CrmCallView({
                 <PhoneIcon size={10} aria-hidden="true" /> Llamar
               </a>
               <a
-                href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`}
+                href={`https://wa.me/${getWhatsAppPhone(o.phone, activeStore?.country_code)}?text=${waMsg}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/20 no-underline"
@@ -696,6 +699,7 @@ export default function CrmCallView({
                     direccion={o.direccion}
                     ciudad={o.ciudad}
                     departamento={o.departamento}
+                    countryCode={countryCode}
                   />
                 </div>
                 {/* Validador-direcciones v2 (legacy view): solo lectura del
@@ -746,7 +750,7 @@ export default function CrmCallView({
                       ciudad: o.ciudad,
                       departamento: o.departamento,
                       barrio: o.barrio,
-                    });
+                    }, countryCode);
                     // Sanity check: la heurística sólo usa datos del pedido y
                     // NO debería poder alucinar. Aún así, si por algún bug
                     // futuro la sugerencia pierde la ciudad/depto, la

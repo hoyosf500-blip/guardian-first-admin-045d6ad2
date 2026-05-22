@@ -17,6 +17,9 @@ import {
   getErrorMessage,
   normalizeColombianPhone,
   isValidColombianPhone,
+  isValidEcuadorianPhone,
+  normalizeEcuadorianPhone,
+  isValidPhoneForCountry,
 } from './orderUtils';
 
 describe('parseDate', () => {
@@ -359,5 +362,33 @@ describe('isValidColombianPhone', () => {
     expect(isValidColombianPhone('229372886')).toBe(false);
     expect(isValidColombianPhone('6012345678')).toBe(false);
     expect(isValidColombianPhone('')).toBe(false);
+  });
+});
+
+describe('isValidEcuadorianPhone', () => {
+  it('formas válidas devuelven true', () => {
+    expect(isValidEcuadorianPhone('983364222')).toBe(true);       // 9 díg
+    expect(isValidEcuadorianPhone('0983364222')).toBe(true);      // trunk 0
+    expect(isValidEcuadorianPhone('593983364222')).toBe(true);    // país
+    expect(isValidEcuadorianPhone('+593 98 336 4222')).toBe(true);
+  });
+  it('formas inválidas devuelven false', () => {
+    expect(isValidEcuadorianPhone('3229372886')).toBe(false);     // móvil CO
+    expect(isValidEcuadorianPhone('83364222')).toBe(false);       // no empieza en 9
+    expect(isValidEcuadorianPhone('')).toBe(false);
+  });
+  it('normaliza a forma canónica de 9 díg', () => {
+    expect(normalizeEcuadorianPhone('0983364222')).toBe('983364222');
+    expect(normalizeEcuadorianPhone('593983364222')).toBe('983364222');
+  });
+});
+
+describe('isValidPhoneForCountry', () => {
+  it('despacha por país de la tienda', () => {
+    expect(isValidPhoneForCountry('983364222', 'EC')).toBe(true);
+    expect(isValidPhoneForCountry('983364222', 'CO')).toBe(false);
+    expect(isValidPhoneForCountry('3229372886', 'CO')).toBe(true);
+    expect(isValidPhoneForCountry('3229372886', 'EC')).toBe(false);
+    expect(isValidPhoneForCountry('3229372886')).toBe(true); // default CO
   });
 });

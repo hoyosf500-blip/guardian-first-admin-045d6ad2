@@ -121,7 +121,24 @@ const capitalizar = (s: string): string =>
 
 export function buildAddressSuggestion(
   input: AddressSuggestionInput,
+  countryCode?: string,
 ): AddressSuggestionOutput {
+  // Ecuador: formato distinto (ciudadela, manzana, villa, "Av. X y calle Y").
+  // No exigir "Calle/Carrera/Avenida" ni placa "# X-Y" colombiana.
+  if ((countryCode || 'CO').toUpperCase() === 'EC') {
+    const parts: string[] = [];
+    if (input.direccion && input.direccion.trim()) parts.push(capitalizar(input.direccion.trim()));
+    if (input.barrio && input.barrio.trim()) parts.push(capitalizar(input.barrio));
+    if (input.ciudad && input.ciudad.trim()) parts.push(capitalizar(input.ciudad));
+    if (input.departamento && input.departamento.trim()) parts.push(capitalizar(input.departamento));
+    const hasNum = /\d/.test(input.direccion || '');
+    const tooShort = (input.direccion || '').trim().length < 10;
+    const missingNote = (tooShort || !hasNum)
+      ? 'Confirma con el cliente la dirección exacta (ciudadela/manzana/villa o calle y número) y una referencia.'
+      : null;
+    return { suggested: parts.join(', '), missingNote, hasEnoughInfo: parts.length > 0 };
+  }
+
   const dirNorm = norm(input.direccion || '');
   const confirmedParts: string[] = [];
   const missingNotes: string[] = [];

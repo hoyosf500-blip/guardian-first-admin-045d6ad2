@@ -16,7 +16,7 @@ export interface CanConfirmResult {
 
 export function canConfirmOrder(input: CanConfirmInput): CanConfirmResult {
   if (!input.telefonoValido) {
-    return { canConfirm: false, reason: 'Teléfono inválido (debe iniciar en 3 y tener 10 dígitos)' };
+    return { canConfirm: false, reason: 'Teléfono inválido — revisá el número (CO: 3xx 10 díg · EC: 9xx 9 díg)' };
   }
   if (!input.documentoSiCoordinadora) {
     return { canConfirm: false, reason: 'Coordinadora requiere cédula del destinatario' };

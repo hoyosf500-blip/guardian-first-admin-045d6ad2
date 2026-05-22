@@ -7,6 +7,8 @@ interface Props {
   direccion: string;
   ciudad?: string;
   departamento?: string;
+  /** País de la tienda activa (EC/CO) — define las reglas de validación. */
+  countryCode?: string;
   /** Tamaño del icono. Default: 14. */
   size?: number;
 }
@@ -55,9 +57,10 @@ export default memo(function AddressValidationBadge({
   direccion,
   ciudad,
   departamento,
+  countryCode,
   size = 14,
 }: Props) {
-  const validation = useAddressValidation({ direccion, ciudad, departamento });
+  const validation = useAddressValidation({ direccion, ciudad, departamento, countryCode });
 
   if (!direccion?.trim()) return null;
 
