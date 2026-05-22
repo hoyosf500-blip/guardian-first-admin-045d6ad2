@@ -61,23 +61,27 @@ Deno.serve(async (req) => {
     }
 
     const cfg = await loadStoreConfig(sb, storeId);
-    if (!cfg.sessionToken) {
+    // 2026-05-22: usar INTEGRATIONS api_key (permanente). Verificado con curl real:
+    // /bff/customers/fingerprint/v2 con session_token devuelve 401 "Invalid token",
+    // con api_key devuelve 200 con data completa. El api_key es el correcto.
+    const authToken = cfg.apiKey || cfg.sessionToken;
+    if (!authToken) {
       return new Response(JSON.stringify({
         ok: false,
-        error: "Token de sesión Dropi no configurado para esta tienda. Configúralo en Ajustes → Tienda.",
+        error: "Credencial Dropi no configurada para esta tienda. Configúrala en Ajustes → Tienda.",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Decode user_id from the JWT (payload.sub)
+    // Decode user_id from the JWT (payload.sub) — presente en ambos tokens
     let dropiUserId: number;
     try {
-      const parts = cfg.sessionToken.split(".");
+      const parts = authToken.split(".");
       const payload = JSON.parse(atob(parts[1]));
       dropiUserId = payload.sub;
       if (!dropiUserId) throw new Error("No sub in token");
     } catch {
       return new Response(JSON.stringify({
-        ok: false, error: "Token de sesión Dropi inválido — no se pudo decodificar.",
+        ok: false, error: "Token Dropi inválido — no se pudo decodificar.",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -85,8 +89,9 @@ Deno.serve(async (req) => {
 
     const url = `${FINGERPRINT_URL}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
     const apiRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${cfg.sessionToken}` },
+      headers: { Authorization: `Bearer ${authToken}` },
     });
+
 
     if (!apiRes.ok) {
       const errText = await apiRes.text();
