@@ -240,6 +240,364 @@ async function searchDropiProducts(
   }).filter((p) => Number.isFinite(p.id) && p.id > 0);
 }
 
+// ===========================================================================
+// FALLBACK WEB (panel app.dropi.*) — para productos PRIVADOS que el endpoint de
+// integraciones (POST /integrations/orders/myorders, dropi-integration-key) NO
+// puede crear (falla con "Undefined property: stdClass::$type"). La web de Dropi
+// SÍ los crea, vía endpoints WEB /api/* que exigen un token de SESIÓN
+// (aud:"DROPI", = cfg.sessionToken). La integration-key NO sirve para /api/*.
+//
+// Secuencia verificada en vivo (tienda Rushmira Ecuador, FrescoMax id 115864):
+//   A) GET  /api/products/productlist/v1/show/?id={dropiId}      → supplier_id, type
+//   B) POST /api/locations { country }                           → cityId, stateName
+//   C) POST /api/orders/getOriginCityForCalculateShipping        → ciudad_remitente, warehouse
+//   D) POST /api/orders/cotizaEnvioTransportadoraV2              → distributionCompany, shipping_amount
+//   E) POST /api/orders/myorders                                 → crea la orden
+// ===========================================================================
+
+/** Error tipado del fallback web para distinguir "abortar con 422" del resto. */
+class WebFallbackError extends Error {
+  status: number;
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "WebFallbackError";
+    this.status = status;
+  }
+}
+
+/** MAYÚSCULAS sin tildes/acentos (para comparar ciudades/departamentos). */
+function normUp(s: unknown): string {
+  return String(s ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .trim();
+}
+
+/** Decodifica el payload (base64url) de un JWT y devuelve .sub (dropshipper id). */
+function decodeJwtSub(token: string): string {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return "";
+    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.sub != null ? String(payload.sub) : "";
+  } catch {
+    return "";
+  }
+}
+
+/** fetch a /api/* con session token + log [push-web]. Tira WebFallbackError(422)
+ *  si el endpoint responde 401 con mensaje típico de token inválido para /api/*. */
+async function dropiWebFetch(
+  cfg: { base: string; sessionToken: string; storeUrl: string },
+  path: string,
+  init: { method: "GET" | "POST"; body?: unknown },
+): Promise<{ status: number; body: any; text: string }> {
+  const url = `${cfg.base}${path}`;
+  const headers: Record<string, string> = {
+    "X-Authorization": "Bearer " + cfg.sessionToken,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+  };
+  if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
+  const res = await fetch(url, {
+    method: init.method,
+    headers,
+    body: init.body != null ? JSON.stringify(init.body) : undefined,
+  });
+  const text = await res.text();
+  console.log("[push-web]", { url, status: res.status, body: text.slice(0, 400) });
+  let body: any = {};
+  try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+
+  if (res.status === 401) {
+    const msg = String(body?.message || body?.error || text || "");
+    if (/not issued to this api|could not be parsed|unauthenticated|token/i.test(msg) || !msg) {
+      throw new WebFallbackError(
+        "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para crear órdenes en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+        422,
+      );
+    }
+  }
+  return { status: res.status, body, text };
+}
+
+interface WebProductInfo {
+  dropiId: number;
+  quantity: number;
+  price: number;
+  productType: string;
+  supplierId: string | null;
+}
+
+/** PASO A — datos del producto desde el catálogo web. supplier_id = objects.user_id,
+ *  productType = objects.type (default SIMPLE). Si da 401 con session token igual
+ *  seguimos: supplier_id cae al warehouse.user_id del PASO C. */
+async function fetchWebProductInfo(
+  cfg: { base: string; sessionToken: string; storeUrl: string },
+  dropiId: number,
+  quantity: number,
+  price: number,
+): Promise<WebProductInfo> {
+  let productType = "SIMPLE";
+  let supplierId: string | null = null;
+  try {
+    const { status, body } = await dropiWebFetch(cfg, `/api/products/productlist/v1/show/?id=${dropiId}`, { method: "GET" });
+    if (status >= 200 && status < 300) {
+      const obj = body?.objects ?? body?.data ?? {};
+      if (obj?.user_id != null) supplierId = String(obj.user_id);
+      if (obj?.type) productType = String(obj.type);
+    }
+  } catch (e) {
+    // Un 401 acá NO aborta (a diferencia del resto): seguimos con fallback de supplier.
+    if (e instanceof WebFallbackError && e.status === 422) {
+      // Pero si el session token es inválido de plano, los pasos B-E también fallarán.
+      // Re-lanzamos para abortar limpio.
+      throw e;
+    }
+  }
+  return { dropiId, quantity, price, productType, supplierId };
+}
+
+/** PASO B — resuelve la ciudad destino contra el catálogo de Dropi del país.
+ *  ⚠️ country DEBE ser exactamente "ECUADOR"/"COLOMBIA" (sino data:[] vacío). */
+async function resolveDestinationCity(
+  cfg: { base: string; sessionToken: string; storeUrl: string },
+  country: string,
+  clientCity: string,
+  clientState: string,
+): Promise<{ cityId: number; idState: number; stateName: string; cityName: string }> {
+  const { status, body } = await dropiWebFetch(cfg, `/api/locations`, { method: "POST", body: { country } });
+  if (status < 200 || status >= 300) {
+    throw new WebFallbackError(`Dropi /api/locations respondió ${status} al resolver la ciudad destino.`, 422);
+  }
+  const states: any[] = Array.isArray(body?.data) ? body.data : [];
+  if (states.length === 0) {
+    throw new WebFallbackError(`Dropi devolvió un catálogo de ubicaciones vacío para ${country}.`, 422);
+  }
+  const wantState = normUp(clientState);
+  const wantCity = normUp(clientCity);
+
+  // Buscar el estado/departamento (exacto, luego por inclusión).
+  let state =
+    states.find((st) => normUp(st?.label) === wantState) ??
+    (wantState ? states.find((st) => normUp(st?.label).includes(wantState) || wantState.includes(normUp(st?.label))) : undefined);
+
+  // Si no matchea por departamento, buscar la ciudad en TODOS los estados.
+  const findCityIn = (st: any) => {
+    const items: any[] = Array.isArray(st?.items) ? st.items : [];
+    return (
+      items.find((c) => normUp(c?.label) === wantCity) ??
+      (wantCity ? items.find((c) => normUp(c?.label).includes(wantCity) || wantCity.includes(normUp(c?.label))) : undefined)
+    );
+  };
+
+  let city: any | undefined;
+  if (state) {
+    city = findCityIn(state);
+  }
+  if (!city) {
+    for (const st of states) {
+      const hit = findCityIn(st);
+      if (hit) { state = st; city = hit; break; }
+    }
+  }
+  if (!state || !city) {
+    throw new WebFallbackError(`Ciudad/Departamento no está en el catálogo Dropi: ${clientCity}/${clientState}`, 422);
+  }
+  return {
+    cityId: Number(city.id_city),
+    idState: Number(state.id_state),
+    stateName: String(state.label),
+    cityName: String(city.label),
+  };
+}
+
+/** PASO C — origen/bodega para un producto dado. */
+async function getOriginCity(
+  cfg: { base: string; sessionToken: string; storeUrl: string },
+  dropiId: number,
+  cityId: number,
+  productType: string,
+): Promise<{ cityRemitente: any; warehouse: any; warehouseId: number }> {
+  const { status, body } = await dropiWebFetch(cfg, `/api/orders/getOriginCityForCalculateShipping`, {
+    method: "POST",
+    body: { id: dropiId, destination: cityId, type: productType },
+  });
+  if (status < 200 || status >= 300) {
+    throw new WebFallbackError(`Dropi /api/orders/getOriginCityForCalculateShipping respondió ${status}.`, 422);
+  }
+  const data = body?.data ?? {};
+  const cityRemitente = data?.city_dropi ?? null;
+  const warehouse = data?.warehouse ?? null;
+  if (!cityRemitente) {
+    throw new WebFallbackError(`El producto Dropi ${dropiId} no tiene stock en bodega (sin ciudad de origen).`, 422);
+  }
+  return { cityRemitente, warehouse, warehouseId: Number(warehouse?.id) };
+}
+
+/** PASO D — cotiza envío y elige la transportadora más barata (excluye VELOCES). */
+async function cotizaEnvio(
+  cfg: { base: string; sessionToken: string; storeUrl: string },
+  args: {
+    cityRemitente: any;
+    cityId: number;
+    cityName: string;
+    idState: number;
+    total: number;
+    products: WebProductInfo[];
+    warehouse: any;
+    warehouseId: number;
+  },
+): Promise<{ distributionCompany: { id: number | string; name: string }; typeService: string; shippingAmount: number }> {
+  const reqBody = {
+    peso: 1, largo: 1, ancho: 1, alto: 1,
+    ciudad_remitente: args.cityRemitente,
+    ciudad_destino: { id: args.cityId, name: args.cityName, department_id: args.idState },
+    EnvioConCobro: true,
+    ValorDeclarado: args.total,
+    insurance: false,
+    products: args.products.map((p) => ({
+      id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
+    })),
+    warehouse: args.warehouse,
+    warehouse_id: args.warehouseId,
+    zip_code: "",
+    colonia: "",
+  };
+  const { status, body } = await dropiWebFetch(cfg, `/api/orders/cotizaEnvioTransportadoraV2`, { method: "POST", body: reqBody });
+  if (status < 200 || status >= 300) {
+    throw new WebFallbackError(`Dropi /api/orders/cotizaEnvioTransportadoraV2 respondió ${status}.`, 422);
+  }
+  const options: any[] = Array.isArray(body?.objects) ? body.objects : [];
+  // Candidatas: sin .error, no VELOCES, con precioEnvio numérico.
+  const valid = options.filter((o) => {
+    if (o?.error) return false;
+    const name = String(o?.distributionCompany?.name || o?.transportadora || "");
+    if (normUp(name) === "VELOCES") return false;
+    const precio = Number(o?.objects?.precioEnvio);
+    return Number.isFinite(precio);
+  });
+  if (valid.length === 0) {
+    throw new WebFallbackError("Ninguna transportadora cotizó este envío (todas con error o solo VELOCES disponible).", 422);
+  }
+  valid.sort((a, b) => Number(a?.objects?.precioEnvio) - Number(b?.objects?.precioEnvio));
+  const carrier = valid[0];
+  return {
+    distributionCompany: {
+      id: carrier.distributionCompany.id,
+      name: carrier.distributionCompany.name,
+    },
+    typeService: String(carrier.transportadora_service || "normal"),
+    shippingAmount: Number(carrier.objects.precioEnvio),
+  };
+}
+
+/** Orquestador del fallback web. Devuelve el id de la orden creada o tira
+ *  WebFallbackError (que el caller convierte en status "error"). */
+async function createOrderViaWeb(
+  cfg: { base: string; sessionToken: string; storeUrl: string },
+  args: {
+    country: string;
+    client: ClientFields;
+    resolved: ResolvedLine[];
+    total: number;
+  },
+): Promise<string> {
+  if (!cfg.sessionToken) {
+    throw new WebFallbackError(
+      "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para crear órdenes en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+      422,
+    );
+  }
+
+  const lines = args.resolved.filter((l) => l.dropiId != null);
+  if (lines.length === 0) {
+    throw new WebFallbackError("No hay productos con id de Dropi para crear la orden por el panel web.", 422);
+  }
+
+  // PASO A — info de cada producto (supplier_id + type).
+  const products: WebProductInfo[] = [];
+  for (const l of lines) {
+    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price));
+  }
+  // El productType del primer producto manda para PASO C (cálculo de origen).
+  const primary = products[0];
+
+  // PASO B — ciudad destino.
+  const dest = await resolveDestinationCity(cfg, args.country, args.client.city, args.client.state);
+
+  // PASO C — origen/bodega (asume proveedor compartido entre líneas). TODO: si
+  // las líneas tienen supplier_id distinto (multi-proveedor), Dropi necesitaría
+  // una orden por bodega — caso borde no soportado acá.
+  const origin = await getOriginCity(cfg, primary.dropiId, dest.cityId, primary.productType);
+
+  // supplier_id: el del PASO A; fallback = warehouse.user_id del PASO C.
+  const supplierId =
+    primary.supplierId ??
+    (origin.warehouse?.user_id != null ? String(origin.warehouse.user_id) : "");
+
+  // PASO D — cotización (todas las líneas en products).
+  const quote = await cotizaEnvio(cfg, {
+    cityRemitente: origin.cityRemitente,
+    cityId: dest.cityId,
+    cityName: dest.cityName,
+    idState: dest.idState,
+    total: args.total,
+    products,
+    warehouse: origin.warehouse,
+    warehouseId: origin.warehouseId,
+  });
+
+  // PASO E — crear la orden.
+  const userId = decodeJwtSub(cfg.sessionToken);
+  const orderBody = {
+    total_order: args.total,
+    notes: args.client.notes || "",
+    name: args.client.name,
+    surname: args.client.surname || "",
+    dir: args.client.dir,
+    country: args.country,
+    state: dest.stateName,
+    city: dest.cityName,
+    phone: args.client.phone,
+    client_email: args.client.email || "",
+    payment_method_id: 1,
+    user_id: userId,
+    supplier_id: supplierId,
+    type: "FINAL_ORDER",
+    rate_type: "CON RECAUDO",
+    products: products.map((p) => ({
+      id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
+    })),
+    distributionCompany: quote.distributionCompany,
+    type_service: quote.typeService,
+    zip_code: null,
+    colonia: "",
+    shop_id: null,
+    dni: "",
+    dni_type: null,
+    insurance: false,
+    shalom_data: null,
+    warehouses_selected_id: origin.warehouseId,
+    shipping_amount: quote.shippingAmount,
+  };
+
+  const { status, body, text } = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: orderBody });
+  const ok = status >= 200 && status < 300 && body?.isSuccess !== false;
+  const orderId =
+    (body?.id as string | number | undefined) ??
+    (body?.objects?.id as string | number | undefined) ??
+    (body?.data?.id as string | number | undefined) ??
+    (body?.order?.id as string | number | undefined) ??
+    null;
+  if (!ok || orderId == null) {
+    const detail = String(body?.message || body?.error || text || "error").slice(0, 500);
+    throw new WebFallbackError(`Dropi (panel web) rechazó el pedido [${status}]: ${detail}`, 502);
+  }
+  return String(orderId);
+}
+
 Deno.serve(async (req: Request) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -537,258 +895,22 @@ Deno.serve(async (req: Request) => {
       }),
     };
 
-    // ----- Estrategia escalonada -----
-    // 1) PRIMARIO: /integrations/orders/myorders con dropi-integration-key.
-    //    Funciona para productos públicos (CO típicamente) — NO se toca.
-    // 2) FALLBACK: si Dropi devuelve "$type / Undefined property / not found"
-    //    (producto privado que el catálogo de integraciones NO expone),
-    //    armamos un payload "saveOrderV2" estilo web y vamos a
-    //    /api/orders/myorders. La misma integration-key sirve para /api/*
-    //    (ya se usa en dropi-resolve-incidence).
-    let dropiUserId: number | null = null;
-    try {
-      const p = JSON.parse(atob((dropiCfg.apiKey.split(".")[1] || "").replace(/-/g, "+").replace(/_/g, "/")));
-      if (p && typeof p.sub !== "undefined") dropiUserId = Number(p.sub) || null;
-    } catch { /* token no-JWT */ }
-
-    const baseHeaders = (): Record<string, string> => ({
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-      "dropi-integration-key": dropiCfg.apiKey,
-      "Origin": dropiCfg.storeUrl || "",
-      "Referer": dropiCfg.storeUrl?.endsWith("/") ? dropiCfg.storeUrl : `${dropiCfg.storeUrl || ""}/`,
+    const dropiRes = await fetch(`${dropiCfg.base}/integrations/orders/myorders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "dropi-integration-key": dropiCfg.apiKey,
+        "Origin": dropiCfg.storeUrl,
+      },
+      body: JSON.stringify(dropiPayload),
     });
-    const sessionHeaders = (): Record<string, string> => ({
-      ...baseHeaders(),
-      "X-Authorization": `Bearer ${dropiCfg.sessionToken || dropiCfg.apiKey}`,
-    });
+    const rawText = await dropiRes.text();
+    let dBody: Record<string, unknown> = {};
+    try { dBody = rawText ? JSON.parse(rawText) : {}; } catch { dBody = { raw: rawText }; }
+    const dropiOk = dropiRes.ok && dBody.isSuccess !== false;
 
-    const logSnip = (s: string) => (s || "").replace(/\s+/g, " ").slice(0, 600);
-    async function callDropi(label: string, url: string, init: RequestInit): Promise<{ status: number; text: string; body: Record<string, unknown> }> {
-      const reqBodyPreview = typeof init.body === "string" ? logSnip(init.body) : "";
-      console.log(`[push-web] →${label} url=${url} body=${reqBodyPreview}`);
-      const res = await fetch(url, init);
-      const text = await res.text();
-      let body: Record<string, unknown> = {};
-      try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
-      console.log(`[push-web] ←${label} status=${res.status} body=${logSnip(text)}`);
-      return { status: res.status, text, body };
-    }
-    // Reintenta con X-Authorization si el primer intento dio 401/403.
-    async function callWithAuthRetry(label: string, url: string, init: RequestInit): Promise<{ status: number; text: string; body: Record<string, unknown> }> {
-      const first = await callDropi(label, url, { ...init, headers: baseHeaders() });
-      if (first.status === 401 || first.status === 403) {
-        console.log(`[push-web] ${label} got ${first.status} with integration-key → retrying with X-Authorization`);
-        const second = await callDropi(`${label}#bearer`, url, { ...init, headers: sessionHeaders() });
-        return second;
-      }
-      return first;
-    }
-
-    // --- INTENTO 1: /integrations/orders/myorders ---
-    const r1 = await callDropi("integrations/myorders", `${dropiCfg.base}/integrations/orders/myorders`, {
-      method: "POST", headers: baseHeaders(), body: JSON.stringify(dropiPayload),
-    });
-    const r1Detail = String(r1.body.message || r1.body.error || r1.text || "");
-    const r1Ok = r1.status >= 200 && r1.status < 300 && r1.body.isSuccess !== false;
-    const productNotFound = /\$type|Undefined property|no encontr|not found|invalid product/i.test(r1Detail);
-
-    let finalRes: { status: number; text: string; body: Record<string, unknown> } = r1;
-    const attemptedLabels: string[] = ["integrations/myorders"];
-
-    if (!r1Ok && (productNotFound || r1.status === 404)) {
-      // --- FALLBACK WEB reversado de app.dropi.ec ---
-      const primary = resolved.find((l) => l.dropiId != null);
-      if (!primary || primary.dropiId == null) {
-        return json({ ok: false, error: "Sin producto Dropi válido para fallback", dropiBody: r1.body, attempts: attemptedLabels }, 502, cors);
-      }
-
-      const norm = (s: string) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
-      const DROPI_COUNTRY = dropiCfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
-
-      try {
-        // PASO 1 — producto
-        const rShow = await callWithAuthRetry(
-          "product/show",
-          `${dropiCfg.base}/api/products/productlist/v1/show/?id=${primary.dropiId}`,
-          { method: "GET" },
-        );
-        attemptedLabels.push("product/show");
-        const showObj = (rShow.body.objects || rShow.body.data || rShow.body) as Record<string, unknown>;
-        let supplierId =
-          Number((showObj as { user_id?: unknown }).user_id) ||
-          Number(((showObj as { user?: { id?: unknown } }).user || {}).id) || null;
-        const productType = String((showObj as { type?: unknown }).type || "SIMPLE");
-
-        // PASO 2 — catálogo de ciudades (por país)
-        const rLoc = await callWithAuthRetry(
-          "locations",
-          `${dropiCfg.base}/api/locations`,
-          { method: "POST", body: JSON.stringify({ country: DROPI_COUNTRY }) },
-        );
-        attemptedLabels.push("locations");
-        const locData = ((rLoc.body.data || rLoc.body.objects || rLoc.body) as unknown);
-        const states = Array.isArray(locData) ? locData as Array<Record<string, unknown>>
-          : (Array.isArray((locData as { data?: unknown[] })?.data) ? (locData as { data: Array<Record<string, unknown>> }).data : []);
-        const wantState = norm(client.state);
-        const wantCity = norm(client.city);
-        let stateHit = states.find((s) => norm(String(s.label || s.name || "")) === wantState)
-          || states.find((s) => norm(String(s.label || s.name || "")).includes(wantState));
-        if (!stateHit) {
-          // fallback: buscar la ciudad en cualquier estado
-          for (const s of states) {
-            const items = (s.items || s.cities || []) as Array<Record<string, unknown>>;
-            if (Array.isArray(items) && items.some((c) => norm(String(c.label || c.name || "")) === wantCity)) {
-              stateHit = s; break;
-            }
-          }
-        }
-        if (!stateHit) {
-          return json({ ok: false, error: `Departamento no encontrado en catálogo Dropi: ${client.state}`, attempts: attemptedLabels }, 502, cors);
-        }
-        const stateName = String(stateHit.label || stateHit.name || "");
-        const stateId = Number((stateHit as { id_state?: unknown }).id_state ?? (stateHit as { id?: unknown }).id ?? 0) || null;
-        const items = ((stateHit.items || stateHit.cities || []) as Array<Record<string, unknown>>) || [];
-        const cityHit = items.find((c) => norm(String(c.label || c.name || "")) === wantCity)
-          || items.find((c) => norm(String(c.label || c.name || "")).includes(wantCity));
-        if (!cityHit) {
-          return json({ ok: false, error: `Ciudad no encontrada en catálogo Dropi: ${client.city}/${client.state}`, attempts: attemptedLabels }, 502, cors);
-        }
-        const cityId = Number((cityHit as { id_city?: unknown }).id_city ?? (cityHit as { id?: unknown }).id) || null;
-        const cityName = String(cityHit.label || cityHit.name || client.city);
-
-        // PASO 3 — origen / warehouse
-        const rOrigin = await callWithAuthRetry(
-          "getOriginCity",
-          `${dropiCfg.base}/api/orders/getOriginCityForCalculateShipping`,
-          { method: "POST", body: JSON.stringify({ id: primary.dropiId, destination: cityId, type: productType }) },
-        );
-        attemptedLabels.push("getOriginCity");
-        const oData = (rOrigin.body.data || rOrigin.body) as Record<string, unknown>;
-        const cityDropi = (oData as { city_dropi?: unknown }).city_dropi as Record<string, unknown> | null | undefined;
-        const warehouse = (oData as { warehouse?: unknown }).warehouse as Record<string, unknown> | null | undefined;
-        if (!cityDropi) {
-          return json({ ok: false, error: "Producto sin stock en bodega (city_dropi null)", attempts: attemptedLabels }, 502, cors);
-        }
-        const warehouseId = warehouse ? Number(warehouse.id) || null : null;
-        if (!supplierId && warehouse && (warehouse as { user_id?: unknown }).user_id) {
-          supplierId = Number((warehouse as { user_id?: unknown }).user_id) || null;
-        }
-
-        // PASO 4 — cotización
-        const totalOrder = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
-        const cotizaPayload = {
-          peso: 1, largo: 1, ancho: 1, alto: 1,
-          ciudad_remitente: cityDropi,
-          ciudad_destino: { id: cityId, name: cityName, department_id: stateId },
-          EnvioConCobro: true,
-          ValorDeclarado: totalOrder,
-          insurance: false,
-          products: resolved.map((l) => ({
-            id: l.dropiId, uid: l.dropiId, quantity: l.quantity, price: l.price, type: productType,
-          })),
-          warehouse,
-          warehouse_id: warehouseId,
-          zip_code: "",
-          colonia: "",
-        };
-        const rCotiza = await callWithAuthRetry(
-          "cotizaEnvio",
-          `${dropiCfg.base}/api/orders/cotizaEnvioTransportadoraV2`,
-          { method: "POST", body: JSON.stringify(cotizaPayload) },
-        );
-        attemptedLabels.push("cotizaEnvio");
-        const cotRaw = (rCotiza.body.objects || rCotiza.body.data || rCotiza.body) as unknown;
-        const cotList = Array.isArray(cotRaw) ? cotRaw as Array<Record<string, unknown>>
-          : (Array.isArray((cotRaw as { data?: unknown[] })?.data) ? (cotRaw as { data: Array<Record<string, unknown>> }).data : []);
-        const valid = cotList.filter((c) => {
-          if (c.error) return false;
-          const dc = c.distributionCompany as { name?: string } | undefined;
-          if (dc && /VELOCES/i.test(String(dc.name || ""))) return false;
-          const inner = (c.objects || {}) as { precioEnvio?: unknown };
-          return inner.precioEnvio != null;
-        });
-        if (valid.length === 0) {
-          return json({ ok: false, error: "No hay transportadoras disponibles para esta ruta", attempts: attemptedLabels, cotiza: cotList.slice(0, 3) }, 502, cors);
-        }
-        valid.sort((a, b) => {
-          const ap = Number(((a.objects || {}) as { precioEnvio?: unknown }).precioEnvio) || 0;
-          const bp = Number(((b.objects || {}) as { precioEnvio?: unknown }).precioEnvio) || 0;
-          return ap - bp;
-        });
-        const carrier = valid[0];
-        const dc = carrier.distributionCompany as { id?: unknown; name?: unknown };
-        const distributionCompany = { id: Number(dc.id), name: String(dc.name || "") };
-        const typeService = String((carrier as { transportadora_service?: unknown }).transportadora_service || "normal");
-        const shippingAmount = Number(((carrier.objects || {}) as { precioEnvio?: unknown }).precioEnvio) || 0;
-
-        // PASO 5 — crear orden
-        const webPayload: Record<string, unknown> = {
-          total_order: totalOrder,
-          notes: client.notes || "",
-          name: client.name,
-          surname: client.surname || "",
-          dir: client.dir,
-          country: DROPI_COUNTRY,
-          state: stateName,
-          city: cityName,
-          phone: client.phone,
-          client_email: client.email || "",
-          payment_method_id: 1,
-          user_id: dropiUserId,
-          supplier_id: supplierId,
-          type: "FINAL_ORDER",
-          rate_type: "CON RECAUDO",
-          products: resolved.map((l) => ({
-            id: l.dropiId, uid: l.dropiId, quantity: l.quantity, price: l.price, type: productType,
-          })),
-          distributionCompany,
-          type_service: typeService,
-          zip_code: null,
-          colonia: "",
-          shop_id: null,
-          dni: "",
-          dni_type: null,
-          insurance: false,
-          shalom_data: null,
-          warehouses_selected_id: warehouseId,
-          shipping_amount: shippingAmount,
-        };
-
-        const missing: string[] = [];
-        if (!webPayload.name) missing.push("name");
-        if (!webPayload.dir) missing.push("dir");
-        if (!webPayload.phone) missing.push("phone");
-        if (!webPayload.user_id) missing.push("user_id");
-        if (!webPayload.supplier_id) missing.push("supplier_id");
-        if (!distributionCompany.id) missing.push("distributionCompany.id");
-        if (!warehouseId) missing.push("warehouses_selected_id");
-        if (missing.length > 0) {
-          console.log(`[push-web] webPayload missing required: ${missing.join(",")}`);
-          return json({
-            ok: false,
-            error: `No se pudo armar el pedido WEB para producto privado (faltan: ${missing.join(", ")}). Revisá los logs [push-web] para ajustar el mapeo.`,
-            attempts: attemptedLabels,
-          }, 502, cors);
-        }
-
-        const r2 = await callWithAuthRetry(
-          "api/myorders",
-          `${dropiCfg.base}/api/orders/myorders`,
-          { method: "POST", body: JSON.stringify(webPayload) },
-        );
-        attemptedLabels.push("api/myorders");
-        finalRes = r2;
-      } catch (e) {
-        const m = e instanceof Error ? e.message : String(e);
-        console.error(`[push-web] fallback error: ${m}`);
-        return json({ ok: false, error: `Fallback web falló: ${m}`, attempts: attemptedLabels }, 502, cors);
-      }
-    }
-
-    const dropiOk = finalRes.status >= 200 && finalRes.status < 300 && finalRes.body.isSuccess !== false;
-    const dBody = finalRes.body;
-    const rawText = finalRes.text;
+    // Intentar extraer el id de la orden creada de varias formas conocidas.
     const dropiOrderId =
       (dBody.id as string | number | undefined) ??
       ((dBody.objects as { id?: string | number })?.id) ??
@@ -798,15 +920,51 @@ Deno.serve(async (req: Request) => {
 
     if (!dropiOk || dropiOrderId == null) {
       const detail = String(dBody.message || dBody.error || rawText || "error").slice(0, 500);
+
+      // El error "Undefined property: stdClass::$type" (o "not found" / 404)
+      // típicamente significa que el producto es PRIVADO: el endpoint de
+      // integraciones no puede crearlo, pero el panel web SÍ. Disparamos el
+      // FALLBACK WEB (/api/* con session token). Productos públicos / Colombia
+      // que fallan por otra razón NO entran acá (mensaje claro de id inválido).
+      const isPrivateProductSignal =
+        dropiRes.status === 404 || /\$type|Undefined property|no encontr|not found/i.test(detail);
+
+      if (isPrivateProductSignal) {
+        const DROPI_COUNTRY = dropiCfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+        // `total` (línea ~848) se calculó ANTES de foldear el envío en
+        // resolved[0].price (línea ~876). Para el panel web los precios por línea
+        // y total_order/ValorDeclarado deben ser coherentes, así que recalculamos
+        // desde los precios YA con envío incluido.
+        const webTotal = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
+        try {
+          const webOrderId = await createOrderViaWeb(dropiCfg, {
+            country: DROPI_COUNTRY,
+            client,
+            resolved,
+            total: webTotal,
+          });
+          await sb.from("shopify_pushed_orders").insert({
+            store_id: storeId, shopify_order_id: shopifyOrderId, status: "created",
+            dropi_order_id: webOrderId, payload: dropiPayload, pushed_by: user.id,
+          });
+          return json({ ok: true, mode: "confirm", dropi_order_id: webOrderId, shopify_name: ord.name, via: "web" }, 200, cors);
+        } catch (webErr) {
+          const webMsg = webErr instanceof Error ? webErr.message : String(webErr);
+          const webStatus = webErr instanceof WebFallbackError ? webErr.status : 502;
+          await sb.from("shopify_pushed_orders").insert({
+            store_id: storeId, shopify_order_id: shopifyOrderId, status: "error",
+            payload: dropiPayload, error_message: `Fallback web [${webStatus}]: ${webMsg}`, pushed_by: user.id,
+          });
+          return json({ ok: false, error: webMsg, dropiBody: dBody }, webStatus, cors);
+        }
+      }
+
+      // Falla NO atribuible a producto privado → registrar error y devolver el motivo.
       await sb.from("shopify_pushed_orders").insert({
         store_id: storeId, shopify_order_id: shopifyOrderId, status: "error",
-        payload: { tried: attemptedLabels, last: dropiPayload },
-        error_message: `Dropi [${finalRes.status}] (${attemptedLabels.join("→")}): ${detail}`, pushed_by: user.id,
+        payload: dropiPayload, error_message: `Dropi [${dropiRes.status}]: ${detail}`, pushed_by: user.id,
       });
-      const friendly = /\$type|Undefined property|no encontr|not found/i.test(detail)
-        ? `Dropi no encontró el producto en ninguna ruta (${attemptedLabels.join(" → ")}). Revisá los logs de la edge function para ver el detalle del fallback web.`
-        : `Dropi rechazó el pedido [${finalRes.status}] (${attemptedLabels.join(" → ")}): ${detail}`;
-      return json({ ok: false, error: friendly, dropiBody: dBody, attempts: attemptedLabels }, 502, cors);
+      return json({ ok: false, error: `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`, dropiBody: dBody }, 502, cors);
     }
 
     await sb.from("shopify_pushed_orders").insert({
