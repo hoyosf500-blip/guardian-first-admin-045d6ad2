@@ -198,6 +198,9 @@ Deno.serve(async (req: Request) => {
     const usedDropi = new Set<number>();
     function matchDropi(tel: string, shopT: number): boolean {
       const lo = shopT - 1 * 86400000;
+      // +45d (antes +6d): al subir pedidos viejos en bloque, la orden de Dropi se
+      // crea HOY aunque el pedido Shopify sea de hace semanas → con +6d quedaban
+      // como falsos "sin pasar" aunque YA estuvieran en Dropi. 45d cubre el catch-up.
       const hi = shopT + 45 * 86400000;
       for (let i = 0; i < dropiList.length; i++) {
         if (usedDropi.has(i)) continue;
