@@ -56,6 +56,17 @@ function getOrderAgeDays(order: OrderData): number {
   return order.diasConf || 0;
 }
 
+// Más allá de esto, un pedido está MUERTO, no "atrasado": ningún reclamo a la
+// transportadora ni llamada al cliente lo rescata (la guía ya se devolvió hace
+// rato en la práctica). Seguimiento es para pedidos que SÍ pueden recibir
+// atención; los que no se mueven hace +1 mes solo son contaminación visual.
+// Las listas SLA más extremas (segLists) llegan a ~7 días, así que 21 días
+// hábiles (~1 mes calendario) deja 3x de margen sobre todo lo accionable.
+// OJO: esto solo OCULTA en la vista de operadora — la data sigue intacta en la
+// DB para Logística/Finanzas (ej. "ciudades con más entregas"), y se puede ver
+// poniendo un rango de fechas explícito.
+const MAX_ACTIONABLE_BUSINESS_DAYS = 21;
+
 function isActiveOrder(estado: string): boolean {
   const e = estado.toUpperCase();
   return e !== 'ENTREGADO' && !e.includes('DEVOL') && e !== 'CANCELADO' && e !== 'RECHAZADO';
@@ -104,10 +115,23 @@ export default function SeguimientoTab() {
 
   useEffect(() => { loadSegData(); }, [loadSegData]);
 
+  // Pedidos accionables: ocultamos los "muertos" (sin movimiento hace +1 mes)
+  // SOLO en la vista por defecto. Si el operador pone un rango de fechas
+  // explícito, está explorando el histórico → mostramos todo lo de ese rango.
+  // No se borra nada: la data vieja sigue en la DB para Logística/Finanzas.
+  const actionableData = useMemo(() => {
+    if (dateFrom || dateTo) return segData;
+    return segData.filter(o => getOrderAgeDays(o) <= MAX_ACTIONABLE_BUSINESS_DAYS);
+  }, [segData, dateFrom, dateTo]);
+
+  // Cuántos pedidos viejos se ocultaron (solo en la vista por defecto), para
+  // mostrar una nota sutil — transparencia: no desaparecen en silencio.
+  const hiddenStaleCount = (!dateFrom && !dateTo) ? segData.length - actionableData.length : 0;
+
   // Filter by date range
   const filteredByDate = useMemo(() => {
-    if (!dateFrom && !dateTo) return segData;
-    return segData.filter(o => {
+    if (!dateFrom && !dateTo) return actionableData;
+    return actionableData.filter(o => {
       const d = o.fecha?.trim();
       if (!d) return false;
       // Try to parse the date string to YYYY-MM-DD for comparison
@@ -124,7 +148,7 @@ export default function SeguimientoTab() {
       if (dateTo && dateStr > dateTo) return false;
       return true;
     });
-  }, [segData, dateFrom, dateTo]);
+  }, [actionableData, dateFrom, dateTo]);
 
   // Lista SLA filter — se aplica DESPUÉS del filtro de fecha. Si la lista
   // seleccionada tiene externalRoute (ej. /confirmar), no filtramos acá:
@@ -410,6 +434,14 @@ export default function SeguimientoTab() {
               <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
               {(dateFrom || dateTo) && stats.total !== segData.length && (
                 <span className="text-[10px] text-subtle font-mono">/ {segData.length}</span>
+              )}
+              {hiddenStaleCount > 0 && (
+                <span
+                  className="text-[10px] text-subtle font-mono"
+                  title={`${hiddenStaleCount} pedidos sin movimiento hace +1 mes (muertos, no accionables). No se borraron — vé el histórico poniendo un rango de fechas.`}
+                >
+                  · {hiddenStaleCount} viejos ocultos
+                </span>
               )}
             </div>
             <button
