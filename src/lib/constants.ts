@@ -35,6 +35,7 @@ export const POLL_INTERVAL_MS = 15 * 60 * 1000;
 // Auto-sync de Dropi (admin) — corre 1 vez por hora en vez de cada 5 min.
 export const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 
+// Transportadoras de COLOMBIA (tienda CO). Es el mapa por defecto.
 export const CARRIER_TRACK: Record<string, string> = {
   'INTERRAPIDISIMO': 'https://www.interrapidisimo.com/sigue-tu-envio/',
   'INTER RAPIDISIMO': 'https://www.interrapidisimo.com/sigue-tu-envio/',
@@ -45,6 +46,22 @@ export const CARRIER_TRACK: Record<string, string> = {
   'TCC': 'https://www.tcc.com.co/rastreo/',
   'VELOCES': 'https://veloces.com.co/',
   'DEPRISA': 'https://www.deprisa.com/rastreo/',
+};
+
+// Transportadoras de ECUADOR (tienda EC). Verificadas 2026-05-23.
+// OJO: SERVIENTREGA existe en CO y EC con URL distinta → por eso el rastreo es
+// por país (ver getTrackingUrl). Las que terminan en '=' reciben la guía al final.
+export const CARRIER_TRACK_EC: Record<string, string> = {
+  'GINTRACOM': 'https://ec.gintracom.site/web/site/tracking',
+  'LAARCOURIER': 'https://fenixoper.laarcourier.com/Tracking/Guiacompleta.aspx?guia=',
+  'LAAR': 'https://fenixoper.laarcourier.com/Tracking/Guiacompleta.aspx?guia=',
+  'SERVIENTREGA': 'https://www.servientrega.com.ec/Tracking/?tipo=GUIA&guia=',
+};
+
+// Mapa de rastreo por país (country_code de la tienda activa).
+export const CARRIER_TRACK_BY_COUNTRY: Record<string, Record<string, string>> = {
+  CO: CARRIER_TRACK,
+  EC: CARRIER_TRACK_EC,
 };
 
 export const SEG_ACTIONS = [

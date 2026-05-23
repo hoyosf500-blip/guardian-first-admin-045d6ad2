@@ -1,4 +1,4 @@
-import { COL_MAP, CARRIER_TRACK } from './constants';
+import { COL_MAP, CARRIER_TRACK, CARRIER_TRACK_EC } from './constants';
 
 /** Safely extract an error message from an unknown catch value */
 export function getErrorMessage(err: unknown): string {
@@ -408,11 +408,25 @@ export function isDevolucion(estado: string): boolean {
   return s === 'DEVOLUCION' || s.includes('DEVOL');
 }
 
-export function getTrackingUrl(carrier: string, guia: string): string | null {
+// País de la tienda activa, para resolver el mapa de rastreo correcto sin tener
+// que pasar el país en cada call-site. Lo setea StoreContext al cambiar de
+// tienda (patrón de estado a nivel módulo, igual que los overrides del
+// validador de direcciones). Default 'CO'.
+let _activeTrackingCountry = 'CO';
+export function setTrackingCountry(cc?: string | null): void {
+  _activeTrackingCountry = (cc || 'CO').toUpperCase();
+}
+
+export function getTrackingUrl(carrier: string, guia: string, countryCode?: string): string | null {
   const key = (carrier || '').toUpperCase().trim();
-  for (const name of Object.keys(CARRIER_TRACK)) {
+  const cc = (countryCode || _activeTrackingCountry).toUpperCase();
+  // Para Ecuador, las entradas EC pisan a las CO con el mismo nombre (ej.
+  // SERVIENTREGA tiene URL distinta por país). Para el resto (default/CO) se usa
+  // solo el mapa colombiano — comportamiento histórico intacto.
+  const map = cc === 'EC' ? { ...CARRIER_TRACK, ...CARRIER_TRACK_EC } : CARRIER_TRACK;
+  for (const name of Object.keys(map)) {
     if (key.includes(name)) {
-      const url = CARRIER_TRACK[name];
+      const url = map[name];
       return url.endsWith('=') ? url + guia : url;
     }
   }

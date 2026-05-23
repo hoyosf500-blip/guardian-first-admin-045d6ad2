@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import { setTrackingCountry } from '@/lib/orderUtils';
 
 export type StoreRole = 'owner' | 'supervisor' | 'operator';
 
@@ -122,6 +123,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const activeStore = stores.find(s => s.id === activeStoreId) ?? null;
+  // Sincroniza el país del rastreo de transportadoras (getTrackingUrl) con la
+  // tienda activa: EC usa GINTRACOM/LAAR/Servientrega-EC, CO sus propias URLs.
+  useEffect(() => { setTrackingCountry(activeStore?.country_code); }, [activeStore?.country_code]);
   const isOwnerOfActive = activeStore?.role === 'owner';
   const isManagerOfActive = activeStore?.role === 'owner' || activeStore?.role === 'supervisor';
   // needsSetup solo es relevante para owners; operadoras no manejan credenciales.
