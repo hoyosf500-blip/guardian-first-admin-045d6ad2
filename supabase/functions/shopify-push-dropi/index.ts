@@ -537,22 +537,53 @@ Deno.serve(async (req: Request) => {
       }),
     };
 
-    const dropiRes = await fetch(`${dropiCfg.base}/integrations/orders/myorders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "dropi-integration-key": dropiCfg.apiKey,
-        "Origin": dropiCfg.storeUrl,
-      },
-      body: JSON.stringify(dropiPayload),
-    });
-    const rawText = await dropiRes.text();
-    let dBody: Record<string, unknown> = {};
-    try { dBody = rawText ? JSON.parse(rawText) : {}; } catch { dBody = { raw: rawText }; }
-    const dropiOk = dropiRes.ok && dBody.isSuccess !== false;
+    // Estrategia escalonada: probamos varias rutas y enriquecemos payload si
+    // /integrations devuelve "$type" (típico de productos privados que el
+    // catálogo de integración NO expone). La integration-key sirve también
+    // para /api/* (ya se usa en dropi-resolve-incidence).
+    let dropiUserId: number | null = null;
+    try {
+      const p = JSON.parse(atob((dropiCfg.apiKey.split(".")[1] || "").replace(/-/g, "+").replace(/_/g, "/")));
+      if (p && typeof p.sub !== "undefined") dropiUserId = Number(p.sub) || null;
+    } catch { /* token no-JWT */ }
 
-    // Intentar extraer el id de la orden creada de varias formas conocidas.
+    const baseHeaders = (): Record<string, string> => ({
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "dropi-integration-key": dropiCfg.apiKey,
+      "x-authorization": `Bearer ${dropiCfg.apiKey}`,
+      "Origin": dropiCfg.storeUrl,
+      "Referer": dropiCfg.storeUrl?.endsWith("/") ? dropiCfg.storeUrl : `${dropiCfg.storeUrl || ""}/`,
+    });
+    const enrichedPayload: Record<string, unknown> = {
+      ...dropiPayload,
+      type: "FINAL_ORDER",
+      ...(dropiUserId ? { user_id: dropiUserId } : {}),
+    };
+    const attempts: Array<{ label: string; url: string; body: Record<string, unknown> }> = [
+      { label: "integrations/myorders", url: `${dropiCfg.base}/integrations/orders/myorders`, body: dropiPayload },
+      { label: "api/myorders", url: `${dropiCfg.base}/api/orders/myorders`, body: enrichedPayload },
+    ];
+    const isRetryable = (status: number, detail: string) =>
+      /\$type|Undefined property|no encontr|not found|invalid product/i.test(detail) || status === 404;
+
+    let dropiRes: Response | null = null;
+    let rawText = "";
+    let dBody: Record<string, unknown> = {};
+    const attemptedLabels: string[] = [];
+    for (const a of attempts) {
+      attemptedLabels.push(a.label);
+      dropiRes = await fetch(a.url, { method: "POST", headers: baseHeaders(), body: JSON.stringify(a.body) });
+      rawText = await dropiRes.text();
+      try { dBody = rawText ? JSON.parse(rawText) : {}; } catch { dBody = { raw: rawText }; }
+      const ok = dropiRes.ok && dBody.isSuccess !== false;
+      const detail = String(dBody.message || dBody.error || rawText || "").slice(0, 500);
+      console.log(`[shopify-push-dropi] confirm attempt=${a.label} status=${dropiRes.status} ok=${ok} preview=${detail.slice(0, 200)}`);
+      if (ok) break;
+      if (!isRetryable(dropiRes.status, detail)) break;
+    }
+    const dropiOk = dropiRes!.ok && dBody.isSuccess !== false;
+
     const dropiOrderId =
       (dBody.id as string | number | undefined) ??
       ((dBody.objects as { id?: string | number })?.id) ??
@@ -564,14 +595,13 @@ Deno.serve(async (req: Request) => {
       const detail = String(dBody.message || dBody.error || rawText || "error").slice(0, 500);
       await sb.from("shopify_pushed_orders").insert({
         store_id: storeId, shopify_order_id: shopifyOrderId, status: "error",
-        payload: dropiPayload, error_message: `Dropi [${dropiRes.status}]: ${detail}`, pushed_by: user.id,
+        payload: { tried: attemptedLabels, last: dropiPayload },
+        error_message: `Dropi [${dropiRes!.status}] (${attemptedLabels.join("→")}): ${detail}`, pushed_by: user.id,
       });
-      // El error "Undefined property: stdClass::$type" (o similar) significa que
-      // Dropi no encontró el producto por id → id de Dropi inválido. Mensaje claro.
       const friendly = /\$type|Undefined property|no encontr|not found/i.test(detail)
-        ? "Dropi no encontró uno de los productos (id de Dropi inválido). Buscá el producto por su nombre y volvé a vincularlo con el id correcto."
-        : `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`;
-      return json({ ok: false, error: friendly, dropiBody: dBody }, 502, cors);
+        ? `Dropi no encontró el producto en ninguna ruta probada (${attemptedLabels.join(" → ")}). Es un producto privado que el integrador no tiene en "Mis productos". Importalo en app.dropi.{co,ec} primero (Mis productos → agregar por ID) y reintentá.`
+        : `Dropi rechazó el pedido [${dropiRes!.status}] (${attemptedLabels.join(" → ")}): ${detail}`;
+      return json({ ok: false, error: friendly, dropiBody: dBody, attempts: attemptedLabels }, 502, cors);
     }
 
     await sb.from("shopify_pushed_orders").insert({
