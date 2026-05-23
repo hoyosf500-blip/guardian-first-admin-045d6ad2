@@ -198,7 +198,7 @@ Deno.serve(async (req: Request) => {
     const usedDropi = new Set<number>();
     function matchDropi(tel: string, shopT: number): boolean {
       const lo = shopT - 1 * 86400000;
-      const hi = shopT + 6 * 86400000;
+      const hi = shopT + 45 * 86400000;
       for (let i = 0; i < dropiList.length; i++) {
         if (usedDropi.has(i)) continue;
         const d = dropiList[i];
