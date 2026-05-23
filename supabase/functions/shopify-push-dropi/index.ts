@@ -604,7 +604,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const norm = (s: string) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
-      const countryName = dropiCfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const DROPI_COUNTRY = dropiCfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
 
       try {
         // PASO 1 — producto
