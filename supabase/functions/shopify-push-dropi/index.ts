@@ -624,7 +624,7 @@ Deno.serve(async (req: Request) => {
         const rLoc = await callWithAuthRetry(
           "locations",
           `${dropiCfg.base}/api/locations`,
-          { method: "POST", body: JSON.stringify({ country: countryName }) },
+          { method: "POST", body: JSON.stringify({ country: DROPI_COUNTRY }) },
         );
         attemptedLabels.push("locations");
         const locData = ((rLoc.body.data || rLoc.body.objects || rLoc.body) as unknown);
@@ -729,7 +729,7 @@ Deno.serve(async (req: Request) => {
           name: client.name,
           surname: client.surname || "",
           dir: client.dir,
-          country: countryName,
+          country: DROPI_COUNTRY,
           state: stateName,
           city: cityName,
           phone: client.phone,
