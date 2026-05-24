@@ -64,7 +64,9 @@ export default function DashboardTab() {
     if (!user) return;
     let cancelled = false;
     const today = bogotaToday();
-    supabase.rpc('get_daily_operator_stats', { p_date: today }).then(({ data, error }) => {
+    // p_store_id = tienda activa: el ranking queda scopeado a esa tienda (un
+    // admin global ya NO ve operadoras de todas las tiendas combinadas).
+    supabase.rpc('get_daily_operator_stats' as never, { p_date: today, p_store_id: activeStoreId } as never).then(({ data, error }) => {
       if (cancelled || error || !data) return;
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
         .map(r => {
@@ -83,7 +85,7 @@ export default function DashboardTab() {
       if (!cancelled) setOperatorRanking(ranking);
     });
     return () => { cancelled = true; };
-  }, [user, counter]); // re-fetch when counter changes (user marked something)
+  }, [user, counter, activeStoreId]); // re-fetch when counter changes (user marked something) o cambia la tienda
 
   // Load orders from DB for dashboard stats (filtrado por tienda activa)
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useStore } from '@/contexts/StoreContext';
 import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Input } from '@/components/ui/input';
@@ -47,6 +48,7 @@ interface ShiftRow {
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 
 export default function DailyReportsView() {
+  const { activeStoreId } = useStore();
   const today = useMemo(() => new Date(), []);
   const sevenAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; }, []);
 
@@ -83,11 +85,13 @@ export default function DailyReportsView() {
       // nativa — no tiene .catch. Sin el wrap, llamar .catch directo tira
       // "TypeError: r(...).catch is not a function". Promise.resolve adopta
       // cualquier thenable y devuelve una Promise real con .catch.
+      // p_store_id = tienda activa: ambos reportes quedan scopeados a esa
+      // tienda (un admin global ya NO ve todas las tiendas combinadas).
       const [daysRes, shiftsRes] = await Promise.all([
-        Promise.resolve(rpc('admin_daily_reports_range', { p_from: from, p_to: to })).catch(
+        Promise.resolve(rpc('admin_daily_reports_range', { p_from: from, p_to: to, p_store_id: activeStoreId })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
-        Promise.resolve(rpc('admin_operator_shifts_range', { p_from: from, p_to: to })).catch(
+        Promise.resolve(rpc('admin_operator_shifts_range', { p_from: from, p_to: to, p_store_id: activeStoreId })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
       ]);
@@ -135,7 +139,7 @@ export default function DailyReportsView() {
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, activeStoreId]);
 
   useEffect(() => { void load(); }, [load]);
 
