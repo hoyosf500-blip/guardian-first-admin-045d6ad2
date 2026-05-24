@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 
 export interface WalletMovement {
   id: number;
@@ -42,9 +43,13 @@ export interface WalletMovementsResult {
 
 export function useWalletMovements(params: UseWalletMovementsParams) {
   const { fromDate, toDate, tipo = 'ALL', categoria = 'ALL', page = 1, pageSize = 20 } = params;
+  // La billetera es por tienda (cada tienda = cuenta Dropi distinta). Filtramos
+  // la query directa por store_id; los agregados (wallet_summary RPC) ya se
+  // scopean server-side vía _resolve_scope_store().
+  const storeId = useActiveStoreId();
 
   return useQuery<WalletMovementsResult>({
-    queryKey: ['wallet_movements', fromDate, toDate, tipo, categoria, page, pageSize],
+    queryKey: ['wallet_movements', storeId, fromDate, toDate, tipo, categoria, page, pageSize],
     queryFn: async () => {
       const fromTs = `${fromDate}T00:00:00Z`;
       const toTs = `${toDate}T23:59:59Z`;
@@ -53,6 +58,7 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
       let q = supabase
         .from('dropi_wallet_movements')
         .select('*', { count: 'exact' })
+        .eq('store_id', storeId as string)
         .gte('fecha', fromTs)
         .lte('fecha', toTs)
         .order('fecha', { ascending: false });
@@ -88,6 +94,7 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
         categorias: (agg.categorias ?? []).slice().sort(),
       };
     },
+    enabled: Boolean(storeId),      // espera a conocer la tienda activa
     staleTime: 5 * 60 * 1000,       // 5 min — datos solo cambian al sincronizar
     refetchOnWindowFocus: false,    // no re-fetchear al volver a la pestaña
   });

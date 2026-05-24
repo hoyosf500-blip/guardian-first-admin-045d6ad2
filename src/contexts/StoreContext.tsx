@@ -111,6 +111,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveStoreIdState(valid);
     if (valid && stored !== valid) localStorage.setItem(LS_KEY, valid);
 
+    // Persistir la tienda activa server-side ANTES de soltar el loading. Las
+    // RPCs admin de logística/billetera/finanzas resuelven su alcance con
+    // _resolve_scope_store(), que para un admin lee profiles.active_store_id.
+    // Al esperar acá, los reportes (que montan recién con loading=false) ya leen
+    // la tienda correcta y NO combinan CO+EC. Best-effort: si falla, el resolver
+    // cae a su default (admin = todas) y la app igual carga.
+    if (valid) {
+      try {
+        await (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>
+        ) => Promise<unknown>)('set_active_store', { p_store_id: valid });
+      } catch { /* noop — no debe bloquear el arranque */ }
+    }
+
     hasLoadedRef.current = true;
     setLoading(false);
   }, [user]);

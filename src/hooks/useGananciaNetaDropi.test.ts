@@ -10,6 +10,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
+// La billetera es por tienda: el hook lee la tienda activa. En el test la
+// fijamos para que la query corra (enabled) y el filtro .eq('store_id') exista.
+vi.mock('@/contexts/StoreContext', () => ({
+  useActiveStoreId: () => 'store-test',
+}));
+
 import { supabase } from '@/integrations/supabase/client';
 
 function wrapper() {
@@ -19,10 +25,13 @@ function wrapper() {
 }
 
 function mockMovs(data: unknown[]) {
+  // Cadena: from().select().eq('store_id').gte().lte()
   const fromFn = vi.fn(() => ({
     select: vi.fn(() => ({
-      gte: vi.fn(() => ({
-        lte: vi.fn(() => Promise.resolve({ data, error: null })),
+      eq: vi.fn(() => ({
+        gte: vi.fn(() => ({
+          lte: vi.fn(() => Promise.resolve({ data, error: null })),
+        })),
       })),
     })),
   }));

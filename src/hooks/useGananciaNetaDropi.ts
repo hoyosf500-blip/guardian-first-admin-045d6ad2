@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 
 // Categorías OPERATIVAS de la wallet de Dropi — son las que sí mueven la
 // ganancia real del cliente. El resto (retiros, depósitos, transferencias)
@@ -71,14 +72,17 @@ const EMPTY_DESGLOSE: DesgloseGanancia = {
  * `<= ${to}T23:59:59Z` para incluir todo el día final.
  */
 export function useGananciaNetaDropi(from: string, to: string) {
+  // Por tienda: cada tienda es una cuenta Dropi distinta.
+  const storeId = useActiveStoreId();
   return useQuery<GananciaNetaResult>({
-    queryKey: ['ganancia-neta-dropi', from, to],
+    queryKey: ['ganancia-neta-dropi', storeId, from, to],
     queryFn: async () => {
       const fromTs = `${from}T00:00:00Z`;
       const toTs = `${to}T23:59:59Z`;
       const { data, error } = await supabase
         .from('dropi_wallet_movements')
         .select('categoria,monto,tipo')
+        .eq('store_id', storeId as string)
         .gte('fecha', fromTs)
         .lte('fecha', toTs);
       if (error) throw error;
@@ -108,6 +112,6 @@ export function useGananciaNetaDropi(from: string, to: string) {
       };
     },
     staleTime: 60_000,
-    enabled: Boolean(from && to),
+    enabled: Boolean(from && to && storeId),
   });
 }
