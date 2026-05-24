@@ -10,6 +10,17 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Error tipado para distinguir el throttle de Dropi (429) de un fallo real
+ *  de credenciales/endpoint. El handler lo usa para responder 200 (no es un
+ *  error del cliente) en vez de 500 — así el botón "Forzar sync" no muestra
+ *  el genérico "non-2xx status code". */
+class DropiRateLimitError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = "DropiRateLimitError";
+  }
+}
+
 /** Split a date range into chunks of maxDays */
 function chunkDateRange(from: string, to: string, maxDays: number) {
   const chunks: { from: string; to: string }[] = [];
@@ -78,7 +89,9 @@ async function fetchAllPages(
       // Dropi (sobre todo Ecuador) throttlea cuando el sync manual coincide con
       // el cron. No es un error de credenciales: el sync automático mantiene los
       // pedidos al día igual. Mensaje claro en vez de volcar el stacktrace de Laravel.
-      throw new Error("Dropi está limitando las peticiones (Too Many Attempts). Esperá ~1 minuto y probá de nuevo — el sync automático igual mantiene tus pedidos al día.");
+      // Tipado como DropiRateLimitError → el handler responde 200, no 500, así el
+      // cliente no muestra el genérico "Edge Function returned a non-2xx status code".
+      throw new DropiRateLimitError("Dropi está limitando las peticiones (Too Many Attempts). Esperá ~1 minuto y probá de nuevo — el sync automático igual mantiene tus pedidos al día.");
     }
     if (!res || !res.ok) {
       const txt = res ? await res.text() : "no-response";
@@ -385,8 +398,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Default = últimos 30 días. Antes 90d disparaba 50+ páginas en cuentas
+    // grandes (Ecuador) y caía en el throttle de Dropi (429) → se devolvía 500
+    // → el cliente mostraba "Edge Function returned a non-2xx status code".
+    // El cron mantiene el histórico al día; el botón manual solo necesita un
+    // refresco reciente. Para backfill completo, pasar {from, untill} explícito.
     const defaultFrom = new Date();
-    defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 90);
+    defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 30);
     const from = (body.from as string) || defaultFrom.toISOString().split("T")[0];
     const untill = (body.untill as string) || new Date().toISOString().split("T")[0];
 
@@ -492,9 +510,25 @@ Deno.serve(async (req: Request) => {
     );
   } catch (err) {
     console.error("dropi-sync error:", err);
+    const msg = err instanceof Error ? err.message : "Error interno";
+
+    // Throttle de Dropi: NO es un error del cliente. Responder 200 con
+    // rateLimited:true y un mensaje claro, así supabase.functions.invoke no
+    // colapsa la respuesta en el genérico "non-2xx status code" y el usuario
+    // ve la causa real (el sync automático igual mantiene los pedidos al día).
+    if (err instanceof DropiRateLimitError) {
+      return new Response(
+        JSON.stringify({ synced: 0, total: 0, rateLimited: true, error: msg, message: msg }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Cualquier otro fallo de Dropi (credenciales, endpoint, body sin
+    // isSuccess) sale como 502 con el mensaje REAL en `error`, para que la UI
+    // lo pueda mostrar en vez del genérico non-2xx.
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : "Error interno" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({ error: msg }),
+      { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });

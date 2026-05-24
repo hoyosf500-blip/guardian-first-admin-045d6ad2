@@ -64,9 +64,10 @@ export default function DashboardTab() {
     if (!user) return;
     let cancelled = false;
     const today = bogotaToday();
-    // p_store_id = tienda activa: el ranking queda scopeado a esa tienda (un
-    // admin global ya NO ve operadoras de todas las tiendas combinadas).
-    supabase.rpc('get_daily_operator_stats' as never, { p_date: today, p_store_id: activeStoreId } as never).then(({ data, error }) => {
+    // El scope por tienda lo resuelve la RPC server-side vía
+    // _resolve_scope_store() (admin → su tienda activa). No pasamos p_store_id
+    // para no depender de que la migration del parámetro esté aplicada (PGRST202).
+    supabase.rpc('get_daily_operator_stats', { p_date: today }).then(({ data, error }) => {
       if (cancelled || error || !data) return;
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
         .map(r => {
@@ -85,7 +86,7 @@ export default function DashboardTab() {
       if (!cancelled) setOperatorRanking(ranking);
     });
     return () => { cancelled = true; };
-  }, [user, counter, activeStoreId]); // re-fetch when counter changes (user marked something) o cambia la tienda
+  }, [user, counter]); // re-fetch when counter changes (user marked something)
 
   // Load orders from DB for dashboard stats (filtrado por tienda activa)
   useEffect(() => {
@@ -168,9 +169,19 @@ export default function DashboardTab() {
     if (!activeStoreId) { toast.error('Sin tienda activa'); return; }
     setResyncing(true);
     try {
-      const { error } = await supabase.functions.invoke('dropi-sync', { body: { store_id: activeStoreId } });
-      if (error) throw error;
-      toast.success('Sincronización disparada');
+      // dropi-sync ahora responde 200 con {rateLimited|error} en vez de colapsar
+      // en el genérico "non-2xx". Leemos el body para mostrar la causa REAL:
+      // throttle de Dropi (común en EC, alto volumen) → aviso, no error.
+      const res = await supabase.functions.invoke('dropi-sync', { body: { store_id: activeStoreId } });
+      if (res.error) throw res.error;
+      const data = res.data as { rateLimited?: boolean; error?: string; message?: string } | null;
+      if (data?.rateLimited) {
+        toast.warning(data.message || 'Dropi está limitando las peticiones. El sync automático igual mantiene tus pedidos al día.');
+      } else if (data?.error) {
+        toast.error(data.error);
+      } else {
+        toast.success('Sincronización disparada');
+      }
       // Refresh the health card after a short delay so the new row appears
       setTimeout(loadSyncLog, 1500);
     } catch (err: unknown) {

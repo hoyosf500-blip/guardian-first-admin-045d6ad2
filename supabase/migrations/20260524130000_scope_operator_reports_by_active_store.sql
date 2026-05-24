@@ -1,60 +1,30 @@
--- Reportes de operadoras por TIENDA ACTIVA (CO ≠ EC).
+-- "Por operadora": mostrar SOLO operadoras (rol 'operator') de la tienda.
 --
--- Problema: las RPCs de reportes resuelven el alcance con
--- `_resolve_scope_store()` (migration 20260521233349), que para un ADMIN GLOBAL
--- devuelve NULL = sin filtro = TODAS las tiendas combinadas. Fabian es admin
--- global, así que estando en Ecuador veía operadoras de Colombia mezcladas.
+-- El SCOPE por tienda ya lo da el resolver central `_resolve_scope_store()`
+-- (migration 20260524140000 lo hace leer la tienda activa del admin desde
+-- profiles.active_store_id). Las RPCs de operadoras ya llaman ese resolver, así
+-- que NO hace falta cambiar su firma ni pasar p_store_id desde el cliente —
+-- evita el PGRST202 "function ... does not exist" si la migration no se aplicó.
 --
--- Fix: un resolver PARAMETRIZADO que honra la tienda que el cliente está
--- mirando (`p_store_id`). El cliente pasa `activeStoreId`. Las 4 RPCs de
--- operadoras ganan `p_store_id uuid DEFAULT NULL` y lo usan. Además, las dos que
--- LISTAN operadoras (productividad + ranking) muestran solo miembros con rol
--- 'operator' de esa tienda (el dueño/admin no aparece como "operadora").
+-- Lo único que falta es el FILTRO DE ROL: en las dos RPCs que LISTAN operadoras
+-- (productividad + ranking del Dashboard), cuando hay tienda activa (v_store no
+-- nulo) se restringe a miembros con rol 'operator' de esa tienda. Así el
+-- dueño/admin no aparece como "operadora" y no se cuelan personas de otra tienda.
 --
--- Autorización idéntica al resolver no-arg: admin (cualquier tienda) u
--- owner/supervisor de ESA tienda. Operadoras siguen sin acceso a estos reportes.
---
--- Logística / Billetera quedan como están (mismo patrón, fuera de alcance).
-
--- ============================================================
--- Resolver parametrizado (el overload no-arg queda intacto)
--- ============================================================
-CREATE OR REPLACE FUNCTION public._resolve_scope_store(p_store_id uuid)
-RETURNS uuid
-LANGUAGE plpgsql
-STABLE SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-BEGIN
-  IF p_store_id IS NOT NULL THEN
-    -- admin ve cualquier tienda; manager debe ser owner/supervisor de ESA tienda
-    IF public.has_role(auth.uid(), 'admin')
-       OR EXISTS (
-         SELECT 1 FROM public.store_members m
-         WHERE m.user_id = auth.uid()
-           AND m.store_id = p_store_id
-           AND m.role IN ('owner','supervisor')
-       ) THEN
-      RETURN p_store_id;
-    END IF;
-    RAISE EXCEPTION 'No autorizado' USING ERRCODE = '42501';
-  END IF;
-  -- Sin tienda activa: comportamiento previo (admin = NULL/global, manager = su tienda).
-  RETURN public._resolve_scope_store();
-END;
-$$;
+-- CREATE OR REPLACE (misma firma no-param que en 20260521233349) → sin cambio de
+-- firma, sin DROP, sin riesgo de PGRST202. admin_daily_reports_range y
+-- admin_operator_shifts_range NO se tocan: el resolver ya las scopea por tienda.
 
 -- ============================================================
 -- get_daily_operator_stats — ranking del Dashboard (+ filtro rol operadora)
 -- ============================================================
-DROP FUNCTION IF EXISTS public.get_daily_operator_stats(date);
-CREATE OR REPLACE FUNCTION public.get_daily_operator_stats(p_date date, p_store_id uuid DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.get_daily_operator_stats(p_date date)
  RETURNS TABLE(operator_id uuid, display_name text, conf bigint, canc bigint, noresp bigint)
  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
 AS $function$
 DECLARE v_store uuid;
 BEGIN
-  v_store := public._resolve_scope_store(p_store_id);
+  v_store := public._resolve_scope_store();
   RETURN QUERY
   SELECT
     r.operator_id,
@@ -73,110 +43,12 @@ BEGIN
   GROUP BY r.operator_id, p.display_name;
 END;
 $function$;
-GRANT EXECUTE ON FUNCTION public.get_daily_operator_stats(date, uuid) TO authenticated;
-
--- ============================================================
--- admin_daily_reports_range — vista cohort por día (solo scope por tienda)
--- ============================================================
-DROP FUNCTION IF EXISTS public.admin_daily_reports_range(date, date);
-CREATE OR REPLACE FUNCTION public.admin_daily_reports_range(p_from date, p_to date, p_store_id uuid DEFAULT NULL)
- RETURNS TABLE(fecha date, entrantes integer, confirmados integer, cancelados integer, noresp integer, pendientes integer, pct_confirmacion numeric, pct_cancelados numeric)
- LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
-AS $function$
-DECLARE v_store uuid;
-BEGIN
-  v_store := public._resolve_scope_store(p_store_id);
-  RETURN QUERY
-  WITH days AS (
-    SELECT (p_from + (n || ' day')::interval)::date AS fecha
-    FROM generate_series(0, (p_to - p_from)::int) AS n
-  ),
-  inflow_cohort AS (
-    SELECT (o.created_at AT TIME ZONE 'America/Bogota')::date AS fecha, o.id
-    FROM public.orders o
-    WHERE (o.created_at AT TIME ZONE 'America/Bogota')::date BETWEEN p_from AND p_to
-      AND (v_store IS NULL OR o.store_id = v_store)
-      AND (
-        o.estado = 'PENDIENTE CONFIRMACION'
-        OR EXISTS (
-          SELECT 1 FROM public.order_results r
-          WHERE r.order_id = o.id AND r.module = 'confirmar'
-            AND (v_store IS NULL OR r.store_id = v_store)
-        )
-      )
-  ),
-  final_status AS (
-    SELECT ic.fecha, ic.id AS order_id,
-      CASE
-        WHEN EXISTS (SELECT 1 FROM public.order_results r WHERE r.order_id = ic.id AND r.module='confirmar' AND r.result='conf' AND (v_store IS NULL OR r.store_id = v_store)) THEN 'conf'
-        WHEN EXISTS (SELECT 1 FROM public.order_results r WHERE r.order_id = ic.id AND r.module='confirmar' AND r.result='canc' AND (v_store IS NULL OR r.store_id = v_store)) THEN 'canc'
-        WHEN EXISTS (SELECT 1 FROM public.order_results r WHERE r.order_id = ic.id AND r.module='confirmar' AND r.result='noresp' AND (v_store IS NULL OR r.store_id = v_store)) THEN 'noresp'
-        ELSE 'pendiente'
-      END AS estado_final
-    FROM inflow_cohort ic
-  )
-  SELECT
-    d.fecha,
-    COALESCE(COUNT(fs.order_id),0)::int,
-    COALESCE(COUNT(fs.order_id) FILTER (WHERE fs.estado_final='conf'),0)::int,
-    COALESCE(COUNT(fs.order_id) FILTER (WHERE fs.estado_final='canc'),0)::int,
-    COALESCE(COUNT(fs.order_id) FILTER (WHERE fs.estado_final='noresp'),0)::int,
-    COALESCE(COUNT(fs.order_id) FILTER (WHERE fs.estado_final='pendiente'),0)::int,
-    CASE WHEN COUNT(fs.order_id)=0 THEN 0
-         ELSE ROUND(COUNT(fs.order_id) FILTER (WHERE fs.estado_final='conf')::numeric/COUNT(fs.order_id)::numeric*100,0) END,
-    CASE WHEN COUNT(fs.order_id)=0 THEN 0
-         ELSE ROUND(COUNT(fs.order_id) FILTER (WHERE fs.estado_final='canc')::numeric/COUNT(fs.order_id)::numeric*100,0) END
-  FROM days d
-  LEFT JOIN final_status fs ON fs.fecha = d.fecha
-  GROUP BY d.fecha
-  ORDER BY d.fecha DESC;
-END;
-$function$;
-GRANT EXECUTE ON FUNCTION public.admin_daily_reports_range(date, date, uuid) TO authenticated;
-
--- ============================================================
--- admin_operator_shifts_range — apertura/cierre (solo scope por tienda)
--- ============================================================
-DROP FUNCTION IF EXISTS public.admin_operator_shifts_range(date, date);
-CREATE OR REPLACE FUNCTION public.admin_operator_shifts_range(p_from date, p_to date, p_store_id uuid DEFAULT NULL)
- RETURNS TABLE(fecha date, tipo text, operadora text, hora timestamp with time zone, pedidos_nuevos integer, guias_apertura integer, pendientes_ayer integer, confirmados integer, noresp integer, cancelados integer, total_gestionados integer, pendientes_manana integer, notas text)
- LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
-AS $function$
-DECLARE v_store uuid;
-BEGIN
-  v_store := public._resolve_scope_store(p_store_id);
-  RETURN QUERY
-  SELECT
-    dr.report_date, 'apertura'::text, COALESCE(p.display_name,'Operador'),
-    dr.opening_at, dr.opening_new_orders, dr.opening_guides_yesterday, dr.opening_pending_yesterday,
-    NULL::int, NULL::int, NULL::int, NULL::int, NULL::int, dr.opening_notes
-  FROM public.operator_daily_reports dr
-  LEFT JOIN public.profiles p ON p.user_id = dr.user_id
-  WHERE dr.report_date BETWEEN p_from AND p_to
-    AND dr.opening_at IS NOT NULL
-    AND (v_store IS NULL OR dr.store_id = v_store)
-  UNION ALL
-  SELECT
-    dr.report_date, 'cierre'::text, COALESCE(p.display_name,'Operador'),
-    dr.closing_at, NULL::int, NULL::int, NULL::int,
-    dr.closing_confirmados, dr.closing_noresp, dr.closing_cancelados,
-    COALESCE(dr.closing_confirmados,0)+COALESCE(dr.closing_cancelados,0)+COALESCE(dr.closing_noresp,0),
-    dr.closing_pending_tomorrow, dr.closing_notes
-  FROM public.operator_daily_reports dr
-  LEFT JOIN public.profiles p ON p.user_id = dr.user_id
-  WHERE dr.report_date BETWEEN p_from AND p_to
-    AND dr.closing_at IS NOT NULL
-    AND (v_store IS NULL OR dr.store_id = v_store)
-  ORDER BY 1 DESC, 3 ASC, 2 ASC;
-END;
-$function$;
-GRANT EXECUTE ON FUNCTION public.admin_operator_shifts_range(date, date, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_daily_operator_stats(date) TO authenticated;
 
 -- ============================================================
 -- operator_productivity_stats — "Por operadora" (+ filtro rol operadora)
 -- ============================================================
-DROP FUNCTION IF EXISTS public.operator_productivity_stats(text);
-CREATE OR REPLACE FUNCTION public.operator_productivity_stats(p_range text DEFAULT 'today'::text, p_store_id uuid DEFAULT NULL)
+CREATE OR REPLACE FUNCTION public.operator_productivity_stats(p_range text DEFAULT 'today'::text)
  RETURNS TABLE(operator_id uuid, display_name text, confirmados bigint, cancelados bigint, noresp bigint, novedades_resueltas bigint, seg_acciones bigint, seg_resueltos bigint, rescate_acciones bigint, rescate_resueltos bigint, total_atendidos bigint, total_entrantes bigint, tasa_contacto numeric, tasa_confirmacion numeric)
  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
 AS $function$
@@ -185,7 +57,7 @@ DECLARE
   v_total_entrantes bigint;
   v_store uuid;
 BEGIN
-  v_store := public._resolve_scope_store(p_store_id);
+  v_store := public._resolve_scope_store();
 
   v_since := CASE p_range
     WHEN 'today' THEN (((NOW() AT TIME ZONE 'America/Bogota')::date)::timestamp AT TIME ZONE 'America/Bogota')
@@ -274,4 +146,4 @@ BEGIN
   ORDER BY (COALESCE(b.confirmados,0)+COALESCE(t.seg_acciones,0)+COALESCE(t.rescate_acciones,0)) DESC, 2;
 END;
 $function$;
-GRANT EXECUTE ON FUNCTION public.operator_productivity_stats(text, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.operator_productivity_stats(text) TO authenticated;

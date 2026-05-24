@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useStore } from '@/contexts/StoreContext';
 import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
@@ -49,7 +48,6 @@ function RateBar({ value }: { value: number }) {
 }
 
 export default function ProductivityDashboard() {
-  const { activeStoreId } = useStore();
   const [range, setRange] = useState<Range>('today');
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,9 +60,11 @@ export default function ProductivityDashboard() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
-    // p_store_id = tienda activa: el reporte queda scopeado a esa tienda (un
-    // admin global ya NO ve todas las tiendas combinadas).
-    const { data, error: rpcErr } = await supabase.rpc('operator_productivity_stats' as never, { p_range: range, p_store_id: activeStoreId } as never);
+    // El scope por tienda lo resuelve la RPC server-side vía
+    // _resolve_scope_store() (admin → su tienda activa, profiles.active_store_id).
+    // No pasamos p_store_id: así NO dependemos de que la migration del parámetro
+    // esté aplicada (evita el PGRST202 "function ... does not exist").
+    const { data, error: rpcErr } = await supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never);
     if (rpcErr) {
       console.error('[productivity] rpc error', rpcErr);
       const e = rpcErr as { code?: string; message?: string; hint?: string; details?: string };
@@ -77,7 +77,7 @@ export default function ProductivityDashboard() {
     }
     setLoading(false);
     setRefreshing(false);
-  }, [range, activeStoreId]);
+  }, [range]);
 
   useEffect(() => { load(); }, [load]);
 
