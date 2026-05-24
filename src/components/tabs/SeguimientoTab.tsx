@@ -4,22 +4,13 @@ import { useOrders } from '@/contexts/OrderContext';
 import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
 import { SEG_ACTIONS } from '@/lib/constants';
-import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, Clock, ChevronRight, Filter, ExternalLink } from 'lucide-react';
+import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import SegCounterBar from '@/components/SegCounterBar';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -67,10 +58,14 @@ function getOrderAgeDays(order: OrderData): number {
 // poniendo un rango de fechas explícito.
 const MAX_ACTIONABLE_BUSINESS_DAYS = 21;
 
-function isActiveOrder(estado: string): boolean {
-  const e = estado.toUpperCase();
-  return e !== 'ENTREGADO' && !e.includes('DEVOL') && e !== 'CANCELADO' && e !== 'RECHAZADO';
-}
+// Punto de color por urgencia para los chips de listas SLA (mapea SegListDef.tone).
+const LIST_TONE_DOT: Record<string, string> = {
+  danger: 'bg-danger',
+  warning: 'bg-warning',
+  success: 'bg-success',
+  info: 'bg-info',
+  neutral: 'bg-muted-foreground/50',
+};
 
 export default function SeguimientoTab() {
   // Cached in OrderContext so the data survives route unmounts when the
@@ -83,10 +78,12 @@ export default function SeguimientoTab() {
   // discards (Chrome Memory Saver) and internal route navigation.
   const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom', '');
   const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo', '');
-  const [initialDelayed, setInitialDelayed] = useSessionState<boolean>('seg:initialDelayed', false);
-  const [stalledCategoryFilter, setStalledCategoryFilter] = useSessionState<string | null>('seg:stalledCategoryFilter', null);
-  // Owns the status filter so the stat cards ABOVE the table act as the single
-  // source of truth (no duplicate pill row below).
+  // Resumen por estado (las 14 tarjetas) colapsado por defecto. La forma
+  // principal de priorizar pasó a ser las listas SLA (chips arriba); estas
+  // tarjetas quedan como vista secundaria opcional.
+  const [showStatusSummary, setShowStatusSummary] = useSessionState<boolean>('seg:showStatusSummary', false);
+  // Owns the status filter so the stat cards act as the single source of truth
+  // (no duplicate pill row below).
   const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
 
   // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
@@ -174,33 +171,31 @@ export default function SeguimientoTab() {
     return s;
   }, [filteredByDate]);
 
-  // Stalled orders analysis
-  const stalledStats = useMemo(() => {
-    const stalled = filteredByDate.filter(o => {
-      if (!isActiveOrder(o.estado)) return false;
-      return getOrderAgeDays(o) >= 2;
-    });
-
-    const byCategory: { label: string; icon: React.ReactNode; count: number; color: string; days5: number }[] = [];
-    const categories = [
-      { label: 'Guía Generada', match: (e: string) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e), icon: <Tag size={13} />, color: 'text-muted-foreground' },
-      { label: 'En Procesamiento', match: (e: string) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e), icon: <Package size={13} />, color: 'text-muted-foreground' },
-      { label: 'Oficina', match: (e: string) => e.includes('OFICINA') || e.includes('RECLAME'), icon: <MapPin size={13} />, color: 'text-warning' },
-      { label: 'Novedad', match: (e: string) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA', icon: <AlertTriangle size={13} />, color: 'text-warning' },
-      { label: 'En Tránsito', match: (e: string) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e), icon: <Truck size={13} />, color: 'text-muted-foreground' },
-      { label: 'Reparto', match: (e: string) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e), icon: <Truck size={13} />, color: 'text-accent' },
-    ];
-
-    categories.forEach(cat => {
-      const matching = stalled.filter(o => cat.match(o.estado.toUpperCase()));
-      const days5 = matching.filter(o => getOrderAgeDays(o) >= 5).length;
-      if (matching.length > 0) {
-        byCategory.push({ label: cat.label, icon: cat.icon, count: matching.length, color: cat.color, days5 });
-      }
-    });
-
-    return { total: stalled.length, categories: byCategory };
+  // Conteo por lista SLA (sobre los pedidos ya filtrados por fecha). Alimenta
+  // los chips de listas — la forma principal de priorizar. Las listas con
+  // externalRoute (ej. confirmación) no se cuentan acá: viven en otra ruta.
+  const listCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const l of SEG_LISTS) {
+      counts[l.slug] = l.externalRoute ? 0 : filteredByDate.filter(l.matches).length;
+    }
+    return counts;
   }, [filteredByDate]);
+
+  // "Sugerido": la lista NO-vacía de mayor urgencia (danger > warning > resto),
+  // desempatando por el orden de SEG_LISTS (ya priorizado). Guía hacia dónde
+  // empezar sin auto-filtrar.
+  const suggestedSlug = useMemo<SegListSlug | null>(() => {
+    const toneRank: Record<string, number> = { danger: 3, warning: 2, info: 1, success: 0, neutral: 0 };
+    let best: { slug: SegListSlug; rank: number } | null = null;
+    SEG_LISTS.forEach((l, i) => {
+      if (l.externalRoute || (listCounts[l.slug] ?? 0) === 0) return;
+      // -i para que, a igual tono, gane el de menor índice (más prioritario).
+      const rank = (toneRank[l.tone] ?? 0) * 1000 - i;
+      if (!best || rank > best.rank) best = { slug: l.slug, rank };
+    });
+    return best?.slug ?? null;
+  }, [listCounts]);
 
   /**
    * Unified stat tone system — same 5 tones as CrmTable so the app reads as one
@@ -321,57 +316,6 @@ export default function SeguimientoTab() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
-            {/* Listas SLA — selector de listas pre-clasificadas estilo Boostec.
-                Vive arriba a la derecha, igual que la UX de referencia. */}
-            <div className={cn(
-              "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
-              listaSlug
-                ? "bg-accent/10 border border-accent/30 ring-1 ring-accent/20"
-                : "bg-card border border-border"
-            )}>
-              <Filter size={12} className={cn(
-                "ml-1",
-                listaSlug ? "text-accent" : "text-muted-foreground"
-              )} aria-hidden="true" />
-              <Select
-                value={listaSlug ?? '__all__'}
-                onValueChange={(v) => setListaSlug(v === '__all__' ? null : (v as SegListSlug))}
-              >
-                <SelectTrigger
-                  className={cn(
-                    "h-7 w-[15rem] sm:w-[18rem] border-0 bg-transparent px-1 text-[11px] font-medium",
-                    "focus:ring-0 focus:ring-offset-0 shadow-none",
-                    !listaSlug && "text-muted-foreground"
-                  )}
-                  aria-label="Filtrar por lista SLA"
-                >
-                  <SelectValue placeholder="Todas las listas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>Listas SLA</SelectLabel>
-                    <SelectItem value="__all__">Todas las listas</SelectItem>
-                    {SEG_LISTS.map((l) => (
-                      <SelectItem key={l.slug} value={l.slug}>
-                        {l.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {listaSlug && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setListaSlug(null)}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                  aria-label="Limpiar filtro de lista"
-                >
-                  <X size={13} />
-                </Button>
-              )}
-            </div>
-
             {/* Date range filter */}
             <div className={cn(
               "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
@@ -460,85 +404,87 @@ export default function SeguimientoTab() {
           </div>
         </header>
 
-        {/* Stalled Orders Alert Banner */}
-        {stalledStats.total > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.3 }}
-            className={cn(
-              "rounded-xl border overflow-hidden transition-colors cursor-pointer",
-              initialDelayed
-                ? "border-warning bg-warning/10"
-                : "border-warning/30 bg-warning/5 hover:border-warning/50"
-            )}
-            onClick={() => {
-              setInitialDelayed(!initialDelayed);
-              if (initialDelayed) setStalledCategoryFilter(null);
-            }}
+        {/* Listas de trabajo (SLA) — forma PRINCIPAL de priorizar. Reemplaza
+            al viejo dropdown + banner de atrasados: una sola fila de chips
+            ordenados por urgencia, con conteo y un "Sugerido" hacia dónde
+            empezar. Solo se muestran las listas con pedidos (+ las que linkean
+            a otra ruta, ej. confirmación). */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Filter size={12} aria-hidden="true" /> Listas de trabajo
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setListaSlug(null)}
+              aria-pressed={!listaSlug}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition-colors",
+                !listaSlug
+                  ? "bg-accent text-accent-foreground border-accent shadow-sm"
+                  : "bg-card border-border text-foreground hover:border-border-strong"
+              )}
+            >
+              Todas
+              <span className="font-mono tabular-nums text-[11px] opacity-80">{filteredByDate.length}</span>
+            </button>
+            {SEG_LISTS
+              .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
+              .map((l) => {
+                const active = listaSlug === l.slug;
+                const count = listCounts[l.slug] ?? 0;
+                const suggested = l.slug === suggestedSlug;
+                return (
+                  <button
+                    key={l.slug}
+                    type="button"
+                    onClick={() => setListaSlug(active ? null : l.slug)}
+                    aria-pressed={active}
+                    title={l.label}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-medium transition-colors",
+                      active
+                        ? "bg-accent text-accent-foreground border-accent shadow-sm"
+                        : "bg-card border-border text-foreground hover:border-border-strong"
+                    )}
+                  >
+                    {l.externalRoute
+                      ? <ExternalLink size={12} className={active ? '' : 'text-muted-foreground'} aria-hidden="true" />
+                      : <span className={cn("w-1.5 h-1.5 rounded-full", active ? "bg-accent-foreground" : LIST_TONE_DOT[l.tone])} aria-hidden="true" />}
+                    <span className="truncate max-w-[15rem]">{l.label}</span>
+                    {!l.externalRoute && (
+                      <span className="font-mono tabular-nums text-[11px] opacity-80">{count}</span>
+                    )}
+                    {suggested && !active && (
+                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-danger/15 text-danger border border-danger/30">
+                        Sugerido
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+
+        {/* Resumen por estado — vista SECUNDARIA, colapsada por defecto. Las
+            listas de trabajo (arriba) son la forma principal de priorizar;
+            estas tarjetas quedan como desglose opcional por estado. Siguen
+            siendo filtros clicables al expandirse. */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowStatusSummary(v => !v)}
+            aria-expanded={showStatusSummary}
+            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
           >
-            <div className="px-4 py-3 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-md bg-warning/15 ring-1 ring-warning/30 flex items-center justify-center shrink-0">
-                  <Clock size={18} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-foreground">Sin movimiento</span>
-                    <span className="pill pill-warning">{stalledStats.total}</span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Pedidos con 2+ días hábiles sin escaneo — incluye guías generadas y pendientes
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs font-semibold text-warning">
-                  {initialDelayed ? 'Mostrando' : 'Ver todos'}
-                </span>
-                <ChevronRight size={16} className={cn(
-                  "text-warning transition-transform",
-                  initialDelayed && "rotate-90"
-                )} aria-hidden="true" />
-              </div>
-            </div>
-
-            {/* Category breakdown */}
-            <div className="px-4 pb-3 flex flex-wrap gap-2">
-              {stalledStats.categories.map(cat => (
-                <button
-                  key={cat.label}
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const isActive = stalledCategoryFilter === cat.label;
-                    setStalledCategoryFilter(isActive ? null : cat.label);
-                    if (!initialDelayed) setInitialDelayed(true);
-                  }}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors",
-                    stalledCategoryFilter === cat.label
-                      ? "bg-warning/15 border-warning/60 ring-1 ring-warning/30"
-                      : "bg-card border-border hover:border-warning/40"
-                  )}
-                >
-                  <span className={cat.color}>{cat.icon}</span>
-                  <span className="text-[11px] font-medium text-foreground">{cat.label}</span>
-                  <span className="font-mono text-[11px] font-bold tabular-nums text-foreground">{cat.count}</span>
-                  {cat.days5 > 0 && (
-                    <span className="font-mono text-[9px] font-bold text-danger bg-danger/10 rounded px-1 py-0.5 tabular-nums">
-                      {cat.days5} crit
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Stat cards — clickable filters. Click a card to filter the table
-            below; click again to clear. This replaces the old pills row so
-            there's one single source of truth for the active status. */}
+            <ChevronDown size={13} className={cn("transition-transform", showStatusSummary && "rotate-180")} aria-hidden="true" />
+            {showStatusSummary ? 'Ocultar resumen por estado' : 'Ver resumen por estado'}
+            {statusFilter && !showStatusSummary && (
+              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent">filtro activo</span>
+            )}
+          </button>
+        </div>
+        {showStatusSummary && (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
           {statCards.filter(c => c.value > 0).map((card, i) => {
             const t = STAT_TONE[card.tone];
@@ -575,61 +521,38 @@ export default function SeguimientoTab() {
             );
           })}
         </div>
+        )}
       </motion.div>
 
-      {/* Banner de lista SLA activa — contador o link externo. */}
-      {listaActiva && (
-        listaActiva.externalRoute ? (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-4"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-md bg-accent/15 ring-1 ring-accent/30 flex items-center justify-center shrink-0">
-                <ExternalLink size={18} className="text-accent" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-foreground">{listaActiva.label}</div>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Esta lista vive en {listaActiva.externalRoute} — los pedidos pendientes de confirmación se gestionan desde la cola de llamadas.
-                </p>
-              </div>
+      {/* Banner solo para listas que viven en OTRA ruta (ej. confirmación).
+          Las demás listas ya muestran su estado activo + conteo en los chips
+          de arriba, así que no necesitan banner aparte. */}
+      {listaActiva?.externalRoute && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-md bg-accent/15 ring-1 ring-accent/30 flex items-center justify-center shrink-0">
+              <ExternalLink size={18} className="text-accent" aria-hidden="true" />
             </div>
-            <Link
-              to={listaActiva.externalRoute}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors shrink-0"
-            >
-              Ir a {listaActiva.externalRoute}
-              <ChevronRight size={14} aria-hidden="true" />
-            </Link>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Filter size={14} className="text-accent shrink-0" aria-hidden="true" />
-              <span className="text-sm font-semibold text-foreground truncate">
-                {listaActiva.label}
-              </span>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                · {filteredByList.length} {filteredByList.length === 1 ? 'pedido' : 'pedidos'} en esta lista
-              </span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-foreground">{listaActiva.label}</div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Esta lista vive en {listaActiva.externalRoute} — los pedidos pendientes de confirmación se gestionan desde la cola de llamadas.
+              </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setListaSlug(null)}
-              className="text-[11px] font-medium text-accent hover:text-accent/80 transition-colors shrink-0"
-            >
-              Limpiar lista
-            </button>
-          </motion.div>
-        )
+          </div>
+          <Link
+            to={listaActiva.externalRoute}
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors shrink-0"
+          >
+            Ir a {listaActiva.externalRoute}
+            <ChevronRight size={14} aria-hidden="true" />
+          </Link>
+        </motion.div>
       )}
 
       <CrmTable
@@ -639,8 +562,6 @@ export default function SeguimientoTab() {
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
         emptyTitle="Sin pedidos en seguimiento"
         emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
-        initialDelayed={initialDelayed}
-        stalledCategoryFilter={stalledCategoryFilter}
         controlledStatusFilter={statusFilter}
         onControlledStatusFilterChange={setStatusFilter}
       />

@@ -19,11 +19,16 @@ import { Label } from '@/components/ui/label';
  * estado stale entre tiendas es un hard refresh.
  */
 export default function StoreSelector() {
-  const { stores, activeStore, setActiveStoreId, refresh } = useStore();
+  const { stores, activeStore, setActiveStoreId, refresh, isManagerOfActive } = useStore();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   if (!activeStore) return null;
+  // Una sola tienda → el selector es ruido para la operadora (no hay nada que
+  // elegir; el nombre ya se ve en el header del sidebar). Lo ocultamos solo a
+  // las operadoras: los managers (owner/supervisor) lo conservan porque desde
+  // acá se crea una tienda nueva. Quien tenga varias siempre lo ve.
+  if (stores.length <= 1 && !isManagerOfActive) return null;
 
   function pick(id: string) {
     if (id === activeStore?.id) { setOpen(false); return; }

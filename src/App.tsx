@@ -1,12 +1,13 @@
 import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ProtectedLayout from "@/components/ProtectedLayout";
+import IndexRedirect from "@/components/IndexRedirect";
 import { RefreshCw } from 'lucide-react';
 
 // Lazy-load page components so the initial bundle only contains the auth page
@@ -68,7 +69,7 @@ const App = () => (
                 <Route path="/auth" element={route(<AuthPage />)} />
                 <Route path="/reset-password" element={route(<ResetPasswordPage />)} />
                 <Route element={<ProtectedLayout />}>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/" element={<IndexRedirect />} />
                   <Route path="/dashboard" element={route(<DashboardPage />)} />
                   <Route path="/confirmar" element={route(<ConfirmarPage />)} />
                   <Route path="/seguimiento" element={route(<SeguimientoPage />)} />

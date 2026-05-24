@@ -143,6 +143,16 @@ function ProtectedLayoutInner() {
     if (t.path === '/cfo' && store.activeStore?.country_code !== 'CO') return false;
     return true;
   });
+  // Para las operadoras (ni admin ni manager) el menú se ordena por el FLUJO
+  // de trabajo: Confirmar → Seguimiento → Novedades, y el Dashboard (consulta)
+  // queda al final. Managers/admin mantienen el orden original.
+  const isOperatorOnly = !isAdmin && !store.isManagerOfActive;
+  const orderedTabs = isOperatorOnly
+    ? [
+        ...visibleTabs.filter(t => t.path !== '/dashboard'),
+        ...visibleTabs.filter(t => t.path === '/dashboard'),
+      ]
+    : visibleTabs;
   const activePath = location.pathname;
   const activeLabel = visibleTabs.find(t => activePath.startsWith(t.path))?.label
     || (activePath.startsWith('/pedido') ? 'Detalle Pedido' : 'Panel');
@@ -200,7 +210,7 @@ function ProtectedLayoutInner() {
           </div>
 
           <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto" aria-label="Secciones del CRM">
-            {visibleTabs.map(tab => {
+            {orderedTabs.map(tab => {
               const Icon = tab.icon;
               const isActive = activePath.startsWith(tab.path);
               return (

@@ -57,7 +57,9 @@ export default function AuthPage() {
     return () => { cancelled = true; };
   }, [inviteToken]);
 
-  if (user) return <Navigate to="/dashboard" replace />;
+  // Funnel por el index (`/`): IndexRedirect decide el destino según el rol
+  // (operadora → /confirmar, manager/admin → /dashboard).
+  if (user) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
