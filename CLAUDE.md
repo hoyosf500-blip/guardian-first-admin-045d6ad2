@@ -42,7 +42,8 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 - **Dev server runs on port 8080** (not the default 5173/3000). Configured in `vite.config.ts`.
 - **TypeScript is NOT strict.** `tsconfig.app.json` has `strict: false`, `noImplicitAny: false`, `noUnusedLocals: false`. Do not enforce strict-mode patterns when reviewing or refactoring — they are intentionally off.
 - **Path alias:** `@/` → `./src/`.
-- **Env vars (only two are read in `src/`):** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Copy `.env.example` → `.env`.
+- **Env vars read in `src/`:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_ENABLE_CFO` (gates the `/cfo` route + nav item; only `'true'` registers it — external clients leave it unset and `/cfo` 404s). Copy `.env.example` → `.env`.
+- **Feature flags live in `src/lib/featureFlags.ts`.** `GOOGLE_PLACES_ENABLED = false` (since 2026-05-22) — the Google Places autocomplete + the `dropi-validate-address`/`google-places-proxy` edge functions are NOT invoked from the app. The address semáforo runs 100% on the local heuristic (`src/lib/addressHeuristic.ts`). Flipping it back to `true` needs only a Publish, no edge-function redeploy.
 - **Routes are lazy-loaded** in `src/App.tsx` via `React.lazy()`. Each route is wrapped in its own `ErrorBoundary` (`route()` helper), so a crash in `/confirmar` does NOT kill `/seguimiento` or the sidebar. This is intentional — keep the per-route boundary when adding new pages.
 - **`DbOrderRow` lives in `src/integrations/supabase/types.ts`** (auto-generated from Supabase schema), not in `orderUtils.ts`. The mapper `dbToOrderData()` in `orderUtils.ts` consumes it.
 
@@ -59,14 +60,15 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 
 ## Architecture Overview
 
-**Guardian First Admin** is a React/TypeScript CRM for COD (Cash-on-Delivery) e-commerce operators that integrates with the Dropi carrier platform (Colombia).
+**Guardian First Admin** is a React/TypeScript CRM for COD (Cash-on-Delivery) e-commerce operators that integrates with the Dropi carrier platform. It is **multi-tienda** (one app, many stores) and **multi-country** (Colombia + Ecuador) — see the "Multi-Country" section below.
 
 ### Data Flow
 
 1. **Excel upload** → `ExcelUploader` parses columns via `COL_MAP` in `src/lib/constants.ts` into `OrderData[]`
-2. **OrderContext** (`src/contexts/OrderContext.tsx`) holds all in-memory order state for the session; it wraps `useDataLoader` (Supabase DB queries for Seguimiento/Rescate) and `useNovedades` (active incidences)
-3. **Supabase Edge Functions** sync/update orders from the Dropi API and are called from the UI via `supabase.functions.invoke()`
-4. **Supabase project ID**: `bokhlpfmttoizjaakntc`
+2. **StoreContext** (`src/contexts/StoreContext.tsx`) resolves the user's active store (`activeStoreId`); **everything downstream is store-scoped.** `OrderContext` passes `activeStoreId` into `useDataLoader`/`useNovedades`, and the queries filter `.eq('store_id', activeStoreId)`. A null `activeStoreId` (first load) means "don't fetch yet" — guard with `if (!storeId) return;`.
+3. **OrderContext** (`src/contexts/OrderContext.tsx`) holds all in-memory order state for the session; it wraps `useDataLoader` (Supabase DB queries for Seguimiento) and `useNovedades` (active incidences)
+4. **Supabase Edge Functions** sync/update orders from the Dropi API and are called from the UI via `supabase.functions.invoke()`
+5. **Supabase project ID**: `bokhlpfmttoizjaakntc`
 
 ### Page / Tab Map
 
@@ -75,30 +77,47 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 | `/confirmar` | ConfirmarPage | ConfirmarTab | Call queue — confirm/cancel orders |
 | `/seguimiento` | SeguimientoPage | SeguimientoTab | Track dispatched orders + dropdown "Listas SLA" estilo Boostec (8 listas pre-clasificadas por estado + días hábiles). Config en `src/lib/segLists.ts`. Lista activa persiste en URL (`?lista=...`) + sessionStorage. |
 | `/novedades` | NovedadesPage | NovedadesTab | Resolve carrier incidences |
-| `/rescate` | RescatePage | RescateTab | Recovery queue for failed deliveries |
-| `/admin` | AdminPage | AdminTab | Admin-only config (isAdmin gate) |
+| `/admin` | AdminPage | AdminTab | Config por tienda. Gated `managerOnly` (owner/supervisor de la tienda activa). |
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
-| `/logistica` | LogisticsPage | LogisticaTab | Análisis admin: 8 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / Billetera / Finanzas). Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas. |
-| `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. Mes vs mes anterior. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
+| `/logistica` | LogisticsPage | LogisticaTab | Análisis: 8 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / Billetera / Finanzas). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas. |
+| `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. **Triple gate:** ruta solo se registra si `VITE_ENABLE_CFO==='true'`, nav item es `adminOnly` (global `isAdmin`, no rol de tienda), y se oculta si `activeStore.country_code !== 'CO'`. RLS admin-only en la DB es el backstop. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
 | `/pedido/:externalId` | OrderDetailPage | order-detail/* | Single-order drill-down (param es `:externalId`, no `:id`) |
 
-All authenticated routes share `ProtectedLayout` which:
-- Wraps everything in `<OrderProvider>`
-- Renders sidebar nav (Admin tab hidden for non-admins via `isAdmin`)
-- Shows `CounterBar` only on `/confirmar`
+All authenticated routes share `ProtectedLayout`, which nests `StoreProvider → ProtectedLayoutInner → OrderProvider`. `ProtectedLayoutInner`:
+- Blocks render while `auth.loading || store.loading` (first load only — see "single-app-mount" note below).
+- Branches: no session → `/auth`; member of zero stores → "Sin tiendas asignadas" screen; `store.needsSetup` (owner + active store has no `dropi_api_key`) → `<SetupWizard>`.
+- Renders the sidebar with `<StoreSelector>` and the store brand name/logo, filters `NAV_ITEMS` by gate (see below), and wraps the outlet in `<OpeningReportGate>`. Shows `CounterBar` only on `/confirmar`.
+- Redeems pending store invites: a `?invite=TOKEN` from `/auth` is stashed in `localStorage('guardian.pendingInvite')` and consumed once via the `redeem_store_invite` RPC.
 
-### Auth & Roles
+### Auth & Roles — TWO independent layers
 
-`AuthContext` (`src/contexts/AuthContext.tsx`) reads `profiles` and `user_roles` from Supabase. `isAdmin = user_roles.some(r => r.role === 'admin')`. The ref guard `profileFetchedFor` prevents double-fetch on fast connections.
+This is the most common source of confusion. There are **two role systems**; do not conflate them:
 
-Roles in `user_roles`: `admin` and `operator`. Operators see all tabs except Admin. RLS policies on the `orders` table use `auth.uid()` — operators can only read/write their own rows unless an admin-scoped policy overrides. See migration `20260416220000_fix_orders_rls_operator_view.sql` for the current operator SELECT policy.
+1. **Global platform admin** — `AuthContext` (`src/contexts/AuthContext.tsx`) reads `profiles` + `user_roles`. `isAdmin = user_roles.some(r => r.role === 'admin')`. This is essentially Fabian (the platform operator). It gates **only `adminOnly` items (CFO)**. The ref guard `profileFetchedFor` prevents double-fetch on fast connections.
+2. **Per-store membership** — `StoreContext` (`src/contexts/StoreContext.tsx`) reads `store_members` + `stores`. Per-store role ∈ `owner` · `supervisor` · `operator` (strongest wins on duplicate rows, `ROLE_RANK`). Derived: `isOwnerOfActive`, `isManagerOfActive` (owner OR supervisor), `needsSetup`. This gates **`managerOnly` items (Admin, Logística)** and store-scoped data via RLS.
+
+So: Admin/Logística → `managerOnly` (store role). CFO → `adminOnly` (global role) + `VITE_ENABLE_CFO` + `country_code==='CO'`. Confirmar/Seguimiento/Novedades/Dashboard → all members.
+
+**Single-app-mount invariant:** `AuthContext` keeps the SAME `user` object reference across `TOKEN_REFRESHED` events (only `session` updates). If `user`'s reference changed on every token refresh, `StoreContext.refresh` (`useCallback([user])`) would re-run, set `store.loading=true`, and `ProtectedLayout` would unmount the whole app — operators "lose their place / the CRM restarts". `StoreContext` likewise only sets `loading=true` on the FIRST load (`hasLoadedRef`). Preserve both guards when touching auth/store.
+
+`activeStoreId` persists in `localStorage('guardian.activeStoreId')`. RLS on `orders` and most tables is now **store-scoped** (`store_id` + membership), layered on top of the older `auth.uid()` operator policies — see migration `20260521010000_multitienda_sp2_upsert_store_id.sql` and `20260522010000_store_supervisor_role_selfcontained.sql`.
+
+### Multi-Country (CO + EC)
+
+Each store has a `stores.country_code` ∈ `'CO'` (default) · `'EC'`. The active store's country drives **carrier tracking URLs, phone normalization, and the address heuristic** — all in `src/lib/`. Pure utils stay pure: they take an optional `countryCode?` param and default to `'CO'`, so existing CO call-sites and the 55 CO tests are untouched.
+
+- **Tracking URLs** (`getTrackingUrl(carrier, guia, countryCode?)` in `orderUtils.ts`): `CARRIER_TRACK` (CO) is the default map; `CARRIER_TRACK_EC` (GINTRACOM, LAARCOURIER, Servientrega EC) is **merged over** it for EC. `SERVIENTREGA` exists in BOTH countries with different URLs — that collision is the whole reason tracking is country-scoped. Carriers whose URL ends in `=` get the guía appended.
+- **Module-level country state:** `getTrackingUrl` reads a module-level `_activeTrackingCountry` (default `'CO'`) when no explicit param is passed. `StoreContext` keeps it in sync via `setTrackingCountry(activeStore?.country_code)` in a `useEffect` (StoreContext.tsx:128). This is the **same module-level-state pattern** as the address-validator `Set<string>` overrides — set once from context, read by pure functions without threading the value through every call-site.
+- **Phones** (`normalizePhoneForCountry` / `isValidPhoneForCountry` / `getWhatsAppPhone`): CO prefixes `57`, EC prefixes `593` (`normalizeEcuadorianPhone` strips a leading `0`). `getWhatsAppPhone` is what builds `wa.me/` links.
+- **Address validation:** `heuristicValidate(direccion, countryCode?)` and `buildAddressSuggestion(..., countryCode?)` have EC branches. Pass the active store's `country_code` when calling from order screens.
+- **CFO is CO-only** (`activeStore.country_code === 'CO'`) — see its triple gate above.
 
 ### Key Domain Types
 
 - `OrderData` — canonical in-memory order shape (`src/lib/orderUtils.ts`)
 - `DbOrderRow` — raw Supabase DB row (nullable fields); mapped to `OrderData` via `mapDbRow()`
 - `COL_MAP` — multi-alias Excel column mapping (`src/lib/constants.ts`)
-- `CARRIER_TRACK` / `CARRIER_DEADLINES` — per-carrier tracking URLs and SLA days
+- `CARRIER_TRACK` (CO) / `CARRIER_TRACK_EC` (EC) / `CARRIER_TRACK_BY_COUNTRY` — per-carrier tracking URLs, resolved by country via `getTrackingUrl` (see Multi-Country). `CARRIER_DEADLINES` — per-carrier SLA days
 
 ### Supabase Edge Functions
 
@@ -110,12 +129,15 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
 - `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`)
-- `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`.
+- `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`. **NOTE: currently NOT called from the app** (`GOOGLE_PLACES_ENABLED = false`); the function still exists but is dormant.
 - `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Usa `cfg.apiKey || cfg.sessionToken` (la api_key permanente funciona; el session_token es fallback legacy). Decodifica `payload.sub` del token para el query `user_id`.
-- `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. Sin esta proxy, `useGooglePlaces` no funciona.
+- `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. Dormant mientras `GOOGLE_PLACES_ENABLED = false`.
 - `ai-order-assistant` — Claude-powered order assistant
+- `shopify-push-dropi` — sube un pedido de Shopify a Dropi (anti-fuga). Resuelve el producto Dropi leyendo el metafield `dropi/_dropi_product` que Dropify deja en cada producto Shopify. `mode: "preview"` arma cliente+productos+total sin crear nada; `"confirm"` crea la orden (`POST /integrations/orders/myorders`) y registra en `shopify_pushed_orders` (idempotente). Auth = JWT de miembro de la tienda.
+- `shopify-reconcile` — detecta pedidos de Shopify que NUNCA llegaron a Dropi cruzando por TELÉFONO (últimos 9 dígitos) contra `orders`. Body `{store_id, days?=3}`. Alimenta la cola anti-fuga.
+- `parse-bank-pdf-text` — recibe el TEXTO plano de un extracto Bancolombia (Mastercard/Amex) — el cliente extrae el texto con `pdfjs-dist` en `CfoPersonalCardUploader.tsx`, porque pdfjs server-side no corre bien en edge — y devuelve movimientos categorizados; opcionalmente upserta. Alimenta el módulo de tarjeta personal del CFO.
 
-Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_key` = INTEGRATIONS permanente; `dropi_session_token` = JWT de sesión legacy/fallback). Se leen en runtime vía `loadStoreConfig` (`_shared/dropiStoreConfig.ts`), NUNCA hardcoded. (El viejo `app_settings.dropi_token`/`dropi_session_token` era el modelo single-tenant previo.)
+Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_key` = INTEGRATIONS permanente; `dropi_session_token` = JWT de sesión legacy/fallback). Se leen en runtime vía `loadStoreConfig` (`_shared/dropiStoreConfig.ts`), NUNCA hardcoded. (El viejo `app_settings.dropi_token`/`dropi_session_token` era el modelo single-tenant previo.) Las credenciales **Shopify** viven en `store_shopify_config` y se leen vía `loadShopifyConfig` + `getShopifyAccessToken` (`_shared/shopifyStoreConfig.ts`) — usa client-credentials grant (token 24h auto-refresh; pegar un `shpss_` da 401). Todas las edge functions multi-tienda validan membresía con `isStoreMember` antes de tocar datos.
 
 ### Wallet Categorías (`mapCategoria` en `dropi-wallet-sync/index.ts`)
 
@@ -195,6 +217,8 @@ Si `OrderData.fecha` está malformada, `diasDesdeCreacion()` cae a `o.dias` como
 ### Address Validator (validador de direcciones)
 
 When a pending order is rendered in `CallView` / `CrmCallView`, the system runs a multi-layered validation pipeline. Touching this is fragile — read this section before changing anything.
+
+> **CURRENT STATE (2026-05-22): Google is OFF.** With `GOOGLE_PLACES_ENABLED = false`, step 1 below short-circuits (`edgeReturned = true`, no edge call) and the semáforo runs entirely on the local heuristic (steps 2–4). The Google/Haiku/edge-cache machinery below is preserved for when the flag flips back, but right now NO external suggestion is fetched. Re-read `src/lib/featureFlags.ts` before assuming Google runs.
 
 **Decision states** (`validation_decision` column): `green` · `yellow` · `red` · `pickup_office` · `null`. Drives the colored badge and the `DespachoGateButton` enable/disable state via `src/lib/canConfirmOrder.ts` (gate spec lives in its `.test.ts`).
 
