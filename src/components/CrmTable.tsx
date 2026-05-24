@@ -21,6 +21,12 @@ import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { getActionSLA } from '@/lib/actionSla';
 import { bogotaToday } from '@/lib/utils';
+import {
+  classifySegOwnership,
+  classifySegOwnershipFromTps,
+  matchesOwnerFilter,
+  type SegOwnerFilter,
+} from '@/lib/segOwnership';
 
 /**
  * Acciones que liberan la asignación del pedido (assigned_to = NULL).
@@ -310,6 +316,10 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     }
   };
   const [showManaged, setShowManaged] = useSessionState<boolean>(`crmtable:${module}:showManaged`, false);
+  // Filtro por propiedad según gestión REAL (touchpoints), no asignación:
+  // 'all' = todas · 'mine' = las que he gestionado · 'available' = las que nadie
+  // ha gestionado todavía (el bucket "fácil"). Ver src/lib/segOwnership.ts.
+  const [ownerFilter, setOwnerFilter] = useSessionState<SegOwnerFilter>(`crmtable:${module}:ownerFilter`, 'all');
   const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
   // Guard contra doble-click: trackea dbIds en vuelo en markAction.
   const markingInFlightRef = useRef<Set<string>>(new Set());
@@ -586,8 +596,18 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     if (activeFilter) {
       list = list.filter(o => classifyOrder(o.estado) === activeFilter);
     }
+    // Propiedad por gestión real (touchpoints), no por asignación. 'all' no
+    // filtra; 'mine'/'available' usan el bucket de segOwnership.
+    if (ownerFilter !== 'all') {
+      list = list.filter(o =>
+        matchesOwnerFilter(
+          classifySegOwnership(o.phone, phoneTouchpoints, user?.id, adminIds),
+          ownerFilter,
+        ),
+      );
+    }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, ownerFilter, phoneTouchpoints, user?.id, adminIds]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -699,7 +719,30 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
           </button>
         )}
 
-        {/* Pool compartido: sin filtro de asignación — todas ven todos. */}
+        {/* Filtro por gestión real (no bloquea — todas pueden gestionar todo).
+            'Míos' = los que he gestionado · 'Disponibles' = los que nadie ha
+            tocado todavía · 'Todas' = sin filtro. */}
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+          {([
+            { key: 'all', label: 'Todas' },
+            { key: 'mine', label: 'Míos' },
+            { key: 'available', label: 'Disponibles' },
+          ] as const).map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setOwnerFilter(opt.key)}
+              aria-pressed={ownerFilter === opt.key}
+              className={`inline-flex items-center px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                ownerFilter === opt.key
+                  ? 'bg-accent text-accent-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
         {/* Lista / Llamar toggle */}
         <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
@@ -898,17 +941,18 @@ interface OrderCardProps {
 // con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
 // el render si las props del card no cambiaron.
 const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
-  const isMine = !!(
-    o.assignedTo && currentUserId
-    && o.assignedTo === currentUserId
-    && !adminIds.includes(o.assignedTo)
-  );
-  const isOtherOwner = !!(
-    o.assignedTo && currentUserId
-    && o.assignedTo !== currentUserId
-    && !adminIds.includes(o.assignedTo)
-  );
-  const ownerName = isOtherOwner && o.assignedTo ? getOperatorName(o.assignedTo) : '';
+  // Propiedad por GESTIÓN REAL (touchpoints del módulo), no por assigned_to.
+  // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
+  // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
+  // solo alimenta la etiqueta. Los touchpoints de admins se ignoran.
+  const ownerBucket = classifySegOwnershipFromTps(tps, currentUserId, adminIds);
+  const isMine = ownerBucket === 'mine';
+  const isOtherOwner = ownerBucket === 'other';
+  // Última gestora (touchpoints vienen ordenados desc por created_at).
+  const lastOwnerTp = isOtherOwner
+    ? tps.find(tp => !adminIds.includes(tp.operator_id))
+    : undefined;
+  const ownerName = lastOwnerTp ? getOperatorName(lastOwnerTp.operator_id) : '';
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
   const trackUrl = getTrackingUrl(o.transportadora, o.guia);
@@ -968,7 +1012,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             {isMine && (
               <span
                 className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                title="Asignado a ti"
+                title="Lo has gestionado tú"
               >
                 <User size={9} aria-hidden="true" /> Mío
               </span>
@@ -976,7 +1020,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             {isOtherOwner && (
               <span
                 className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                title={`Atendido por ${ownerName}`}
+                title={`Gestionado por ${ownerName} — puedes gestionarlo igual`}
               >
                 <User size={9} aria-hidden="true" /> {ownerName}
               </span>
@@ -1187,44 +1231,32 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                 </div>
               )}
 
-              {/* Aviso si el pedido es de otra operadora */}
+              {/* Aviso informativo si otra operadora ya gestionó el pedido.
+                  NO bloquea — pool compartido: cualquiera puede continuarlo. */}
               {isOtherOwner && (
                 <div className="flex items-center gap-2 rounded-lg px-3 py-2 border bg-amber-500/10 border-amber-500/25">
                   <User size={12} className="text-amber-600 dark:text-amber-400" />
                   <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                    Atendido por {ownerName} — no puedes ejecutar acciones
+                    Gestionado por {ownerName} — puedes continuarlo
                   </span>
                 </div>
               )}
 
-              {/* Quick actions */}
+              {/* Quick actions — pool compartido: siempre habilitadas. */}
               <div className="flex gap-2">
-                {isOtherOwner ? (
-                  <>
-                    <button disabled className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500/40 text-white font-semibold inline-flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60">
-                      <Send size={12} /> WhatsApp
-                    </button>
-                    <button disabled className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold inline-flex items-center justify-center gap-1.5 border border-border/50 cursor-not-allowed opacity-60">
-                      <PhoneIcon size={12} /> Llamar
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
-                      onClick={() => onAction(o, 'WhatsApp enviado')}
-                      className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
-                      <Send size={12} /> WhatsApp
-                    </a>
-                    <a href={`tel:+57${o.phone}`}
-                      className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
-                      <PhoneIcon size={12} /> Llamar
-                    </a>
-                  </>
-                )}
+                <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
+                  onClick={() => onAction(o, 'WhatsApp enviado')}
+                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
+                  <Send size={12} /> WhatsApp
+                </a>
+                <a href={`tel:+57${o.phone}`}
+                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
+                  <PhoneIcon size={12} /> Llamar
+                </a>
               </div>
 
-              {/* CRM actions */}
-              {!managed && !isOtherOwner && (
+              {/* CRM actions — pool compartido: visibles para cualquier operadora. */}
+              {!managed && (
                 <div className="flex flex-wrap gap-1.5">
                   {actions.map(a => (
                     <button key={a} onClick={() => onAction(o, a)}
