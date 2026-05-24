@@ -881,6 +881,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          active_store_id: string | null
           created_at: string
           display_name: string
           id: string
@@ -888,6 +889,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          active_store_id?: string | null
           created_at?: string
           display_name: string
           id?: string
@@ -895,6 +897,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          active_store_id?: string | null
           created_at?: string
           display_name?: string
           id?: string
@@ -1842,6 +1845,7 @@ export type Database = {
       redeem_store_invite: { Args: { p_token: string }; Returns: string }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      set_active_store: { Args: { p_store_id: string }; Returns: undefined }
       snapshot_cfo_diagnostico: {
         Args: { p_year_month: string }
         Returns: {
