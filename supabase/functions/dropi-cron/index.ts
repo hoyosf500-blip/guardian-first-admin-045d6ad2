@@ -31,6 +31,30 @@ const STATUS_CHANGE_DAYS_BACK = 21;
 const CREATED_DAYS_BACK = 3;
 // Pausa entre tiendas para no encadenar ráfagas de una tienda con la siguiente.
 const INTER_STORE_MS = 3000;
+// Presupuesto de tiempo de pared POR TIENDA. Si una tienda (típicamente Ecuador,
+// que Dropi throttlea fuerte) se pasa de esto, cortamos su sync y devolvemos lo
+// parcial. Garantiza que el edge function NUNCA muera a mitad de una tienda sin
+// alcanzar a escribir su fila en sync_logs — que era la causa del banner rojo
+// falso "Sin sincronización hace 61h" (los pedidos SÍ entraban, pero el log no).
+const STORE_TIME_BUDGET_MS = 90_000;
+// Presupuesto GLOBAL de la corrida (todas las tiendas). Backstop por debajo del
+// límite de pared del edge function (~150s) para que SIEMPRE alcance a loguear
+// cada tienda y correr el post-proceso, aunque dos tiendas vengan pesadas.
+const GLOBAL_TIME_BUDGET_MS = 120_000;
+// Reintentos cortos ante 429: fail-fast. Si tras esto sigue throttleado, se
+// lanza DropiRateLimitError y la tienda corta YA (no encadena ~117s de backoff
+// que reventaban el presupuesto del edge function).
+const RL_MAX_ATTEMPTS = 3;
+
+// Marca un 429 sostenido de Dropi como condición ESPERADA (no un error duro):
+// la tienda corta rápido, se loguea como sync parcial 'success' y el próximo
+// tick (cada 5 min) reintenta. Distinto de un fallo real (credenciales, upsert).
+class DropiRateLimitError extends Error {
+  constructor(msg = "Dropi rate limit (429)") {
+    super(msg);
+    this.name = "DropiRateLimitError";
+  }
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -61,11 +85,18 @@ async function fetchAllPages(
   chunkFrom: string,
   chunkTo: string,
   filterDateBy: string,
+  deadline: number,
 ): Promise<Record<string, unknown>[]> {
   const allOrders: Record<string, unknown>[] = [];
   let start = 0;
 
   while (true) {
+    // Presupuesto de tiempo agotado → devolvemos lo que tengamos (parcial).
+    if (Date.now() > deadline) {
+      console.warn(`fetchAllPages: presupuesto agotado, corte parcial con ${allOrders.length} órdenes`);
+      break;
+    }
+
     const params: Record<string, string> = {
       result_number: String(PAGE_SIZE),
       start: String(start),
@@ -83,7 +114,7 @@ async function fetchAllPages(
     let res: Response | null = null;
     let lastTxt = "";
     let rateLimited = false;
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < RL_MAX_ATTEMPTS; attempt++) {
       res = await fetch(`${base}/integrations/orders/myorders?${qs}`, {
         method: "GET",
         headers: {
@@ -96,11 +127,19 @@ async function fetchAllPages(
       if (res.status !== 429) { rateLimited = false; break; }
       rateLimited = true;
       lastTxt = await res.text();
-      await sleep(2000 * Math.pow(2, attempt));
+      // Backoff corto (1s, 2s, 4s). No reintentar tras el último: fail-fast.
+      if (attempt < RL_MAX_ATTEMPTS - 1) await sleep(1000 * Math.pow(2, attempt));
+    }
+
+    // 429 sostenido: cortar la tienda YA en vez de seguir paginando hacia más
+    // 429. Devolvemos lo parcial vía la excepción (syncStore la rescata).
+    if (rateLimited && res?.status === 429) {
+      console.warn(`Dropi 429 sostenido tras ${RL_MAX_ATTEMPTS} intentos: ${lastTxt.slice(0, 120)}`);
+      throw new DropiRateLimitError();
     }
 
     if (!res || !res.ok) {
-      const txt = rateLimited ? lastTxt : (res ? await res.text() : "no-response");
+      const txt = res ? await res.text() : "no-response";
       console.error(`Dropi API error ${res?.status ?? "?"}: ${txt}`);
       break;
     }
@@ -226,8 +265,11 @@ async function syncStore(
   store: StoreSync,
   passes: SyncPass[],
   todayStr: string,
-): Promise<{ synced: number; total: number; error?: string }> {
+  globalDeadline: number,
+): Promise<{ synced: number; total: number; error?: string; throttled?: boolean }> {
   const base = dropiHostFor(store.country_code);
+  // El más cercano gana: el cap por tienda o lo que quede del presupuesto global.
+  const deadline = Math.min(Date.now() + STORE_TIME_BUDGET_MS, globalDeadline);
   let synced = 0;
   let total = 0;
 
@@ -235,7 +277,11 @@ async function syncStore(
     for (const pass of passes) {
       const chunks = chunkDateRange(pass.from, pass.to, MAX_CHUNK_DAYS);
       for (const chunk of chunks) {
-        const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy);
+        if (Date.now() > deadline) {
+          console.warn(`[store ${store.store_id}] presupuesto agotado, corte parcial`);
+          return { synced, total, throttled: true };
+        }
+        const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline);
         total += dropiOrders.length;
         if (dropiOrders.length === 0) continue;
 
@@ -257,6 +303,13 @@ async function syncStore(
     }
     return { synced, total };
   } catch (err) {
+    // 429 sostenido NO es un fallo: la tienda sincronizó lo que pudo y el próximo
+    // tick reintenta. Se devuelve como throttled (parcial) para loguear 'success'
+    // y NO pintar el banner de rojo. Cualquier otra excepción sí es error duro.
+    if (err instanceof DropiRateLimitError) {
+      console.warn(`[store ${store.store_id}] throttled por Dropi (429) — sync parcial: ${synced}/${total}`);
+      return { synced, total, throttled: true };
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[store ${store.store_id}] sync failed:`, msg);
     return { synced, total, error: msg };
@@ -374,6 +427,9 @@ Deno.serve(async (req: Request) => {
     let grandSynced = 0;
     let grandTotal = 0;
     const perStore: Record<string, unknown>[] = [];
+    // Deadline global de la corrida: ninguna tienda paginará más allá de esto,
+    // así siempre queda tiempo para loguear y correr el post-proceso.
+    const globalDeadline = Date.now() + GLOBAL_TIME_BUDGET_MS;
 
     for (const cfg of activeConfigs) {
       const storeId = String(cfg.store_id);
@@ -391,18 +447,21 @@ Deno.serve(async (req: Request) => {
         owner_id: ownerId,
       };
       console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) — cambio_estatus ${from}→${to} + creado ${dateBack(CREATED_DAYS_BACK)}→${to}`);
-      const r = await syncStore(sb, store, passes, todayStr);
+      const r = await syncStore(sb, store, passes, todayStr, globalDeadline);
       grandSynced += r.synced;
       grandTotal += r.total;
       perStore.push({ store_id: storeId, country: store.country_code, ...r });
 
-      // Log por tienda
+      // Log por tienda. throttled (429) cuenta como 'success' parcial: el sync
+      // SÍ corrió y trajo lo que pudo, así que el banner debe quedar verde
+      // ("sincronizado hace Xm"), no rojo. Solo un fallo real → 'error'.
       await sb.from("sync_logs").insert({
         source: "dropi-cron",
         status: r.error ? "error" : "success",
         synced_count: r.synced,
         duplicates_count: 0,
         total_count: r.total,
+        error_message: r.error || (r.throttled ? "Dropi throttle (429) — sincronización parcial" : null),
         triggered_by: ownerId,
         store_id: storeId,
       });
