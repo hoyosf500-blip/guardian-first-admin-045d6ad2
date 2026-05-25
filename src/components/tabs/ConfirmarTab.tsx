@@ -431,7 +431,18 @@ export default function ConfirmarTab({ profile }: Props) {
           </div>
 
           {view === 'list' ? (
-            <WorkList items={filteredItems} onOpenCall={() => setView('call')} />
+            <WorkList items={filteredItems} onOpenCall={(idx) => {
+              // Abrir EL pedido clickeado, no el primer pendiente. CallView lee el
+              // pedido activo de sessionStorage['confirmar:callOrderId'] en su
+              // inicializador de useState al montarse. useSessionState persiste en
+              // un useEffect (post-commit), que correría DESPUÉS de que CallView ya
+              // leyó → abriría otro pedido. Por eso escribimos el id SINCRÓNICAMENTE
+              // acá, antes del setView que monta CallView.
+              const target = filteredItems[idx];
+              const k = target?.externalId || target?.dbId || null;
+              try { window.sessionStorage.setItem('confirmar:callOrderId', JSON.stringify(k ? String(k) : null)); } catch { /* storage off */ }
+              setView('call');
+            }} />
           ) : (
             <CallView items={filteredItems} />
           )}

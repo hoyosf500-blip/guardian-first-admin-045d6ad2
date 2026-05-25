@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { OrderData, formatPhone } from '@/lib/orderUtils';
+import { OrderData, formatPhone, parseDate } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-react';
@@ -17,6 +17,25 @@ function timeAgo(dias: number): string {
   if (dias === 0) return 'hoy';
   if (dias === 1) return 'hace 1 día';
   return `hace ${dias}d`;
+}
+
+// Días calendario REALES desde la fecha del pedido, calculados en cada render.
+// El campo `o.dias` se congela al momento de la última sincronización: si el
+// sync de la tienda está atrasado/throttleado (caso Ecuador), un pedido de hace
+// 2 días seguía mostrando "hoy" (dias=0 viejo). Calcular desde `o.fecha` lo hace
+// siempre correcto sin depender de que el sync esté al día. Fallback a `o.dias`
+// si la fecha no parsea.
+function diasReales(o: OrderData): number {
+  try {
+    const d = parseDate(o.fecha);
+    if (d && !isNaN(d.getTime())) {
+      const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+      if (diff >= 0) return diff;
+    }
+  } catch {
+    // ignore — caemos al fallback
+  }
+  return Math.max(0, o.dias ?? 0);
 }
 
 export default function WorkList({ items, onOpenCall }: Props) {
@@ -40,6 +59,8 @@ export default function WorkList({ items, onOpenCall }: Props) {
       {items.slice(0, visibleCount).map((o, i) => {
         const pLevel = getPriorityLevel(calcPriority(o));
         const pCfg = PRIORITY_CONFIG[pLevel];
+        // Edad real desde la fecha del pedido (no el `o.dias` congelado en el sync).
+        const dias = diasReales(o);
         /* Badge color for estado "Pendiente" */
         const isPending = !o.result;
         const resultBg = o.result === 'conf'
@@ -65,12 +86,12 @@ export default function WorkList({ items, onOpenCall }: Props) {
                 : isPending
                   ? 'bg-surface hover:bg-card'
                   : 'bg-surface hover:bg-card',
-              o.dias >= 7 && !o.result ? 'urgent-pulse' : '',
+              dias >= 7 && !o.result ? 'urgent-pulse' : '',
             ].join(' ')}
           >
             {/* Priority bar */}
             <div className={`w-1 self-stretch flex-shrink-0 ${
-              o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green/50'
+              dias >= 7 ? 'bg-red' : dias >= 4 ? 'bg-yellow' : 'bg-green/50'
             }`} aria-hidden="true" />
 
             {/* Two-line content */}
@@ -92,7 +113,7 @@ export default function WorkList({ items, onOpenCall }: Props) {
                 <span className="text-subtle" aria-hidden="true">·</span>
                 <span className="flex-shrink-0">{o.ciudad || '—'}</span>
                 <span className="text-subtle" aria-hidden="true">·</span>
-                <span className="flex-shrink-0">{timeAgo(o.dias)}</span>
+                <span className="flex-shrink-0">{timeAgo(dias)}</span>
               </div>
             </div>
 
