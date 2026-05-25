@@ -503,7 +503,7 @@ export type Database = {
           opening_notes?: string | null
           opening_pending_yesterday?: number | null
           report_date: string
-          store_id?: string
+          store_id: string
           user_id: string
         }
         Update: {
