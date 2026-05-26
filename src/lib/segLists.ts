@@ -2,35 +2,56 @@ import type { OrderData } from './orderUtils';
 import { calcBusinessDays, parseDate } from './orderUtils';
 
 /**
- * "Listas SLA" estilo Boostec: 8 sublistas pre-clasificadas que el operador
- * elige desde un dropdown para enfocarse en pedidos por estado + antigüedad
- * en días hábiles (en lugar de filtrar mentalmente por estado).
+ * "Listas SLA" estilo Boostec, ORGANIZADAS POR EMBUDO DE PRIORIDAD.
+ *
+ * Filosofía: el operador necesita atender PRIMERO los pedidos más cerca de
+ * entregarse (oficina, reparto, novedad-cliente) porque ahí está el dinero;
+ * después los del medio (tránsito) y por último los iniciales (guía generada,
+ * pendientes de guía). Esto reemplaza el orden viejo "solo por SLA vencido",
+ * que dejaba países con operación reciente (EC) con TODO en "otros estados"
+ * porque ningún pedido había cruzado los umbrales de días.
+ *
+ * Orden de las listas (= prioridad visual + ranking del "sugerido"):
+ *  1. Pendientes de confirmación (link a /confirmar) — pre-embudo
+ *  2. En oficina        | FINAL — cliente va a recoger
+ *  3. En reparto/novedad| FINAL — en mano del repartidor o intento fallido
+ *  4. En tránsito       | MEDIO
+ *  5. Guía generada     | INICIO post-confirmación
+ *  6. Indem. guía generada (+5d) | sub-lista crítica disjoint de la anterior
+ *  7. Pendientes de guía         | INICIO — sin guía aún
+ *  8. Indem. pendientes de guía (+4d) | sub-lista crítica disjoint
+ *  9. Otros estados     | catch-all
  *
  * Reglas de diseño:
+ *  - Las listas de FASE matchean por ESTADO solamente (sin umbral de SLA),
+ *    para que pedidos recientes también aparezcan en su fase. Antes
+ *    `pendientes_guia_2d` y `guia_generada_2d` exigían >= 2d → países con
+ *    pedidos < 2d quedaban sin lista de fase visible.
  *  - Las listas con prefijo "indem_" son sub-conjuntos críticos (excedieron
- *    el SLA de indemnización). La lista no-indem se acota con < N días para
- *    NO duplicar (un pedido con 5 días pendiente de guía cae solo en indem,
- *    no en pendientes_guia_2d).
- *  - "pendientes_confirmacion_2d" vive en /confirmar — no se filtra acá, es
- *    sólo un link visual para mantener paridad con Boostec.
- *  - "otros_estados" es el catch-all para no perder pedidos que no encajen
- *    en ningún bucket conocido (excluye terminales: ENTREGADO/CANCELADO/DEVOLUCION).
+ *    SLA de indemnización). La lista de fase correspondiente se acota con
+ *    `< N días` para NO duplicar (un pedido con 5d sin guía cae SOLO en
+ *    indem, no en pendientes_guia).
+ *  - "pendientes_confirmacion" vive en /confirmar — no se filtra acá, es
+ *    sólo un link visual.
+ *  - "otros_estados" es el catch-all (excluye terminales: ENTREGADO/CANCELADO/
+ *    DEVOLUCION/RECHAZADO/INDEMNIZADA).
  */
 
 export type SegListSlug =
   | 'pendientes_confirmacion_2d'
-  | 'pendientes_guia_2d'
-  | 'indem_pendientes_guia_4d'
-  | 'guia_generada_2d'
+  | 'en_oficina'
+  | 'en_reparto_novedad'
+  | 'en_transito'
+  | 'guia_generada'
   | 'indem_guia_generada_5d'
-  | 'reclamar_oficina_4d'
-  | 'en_proceso_7d'
+  | 'pendientes_guia'
+  | 'indem_pendientes_guia_4d'
   | 'otros_estados';
 
 export interface SegListDef {
   slug: SegListSlug;
   label: string;
-  /** SLA en días hábiles para mostrar en el badge / hint */
+  /** SLA en días hábiles para mostrar en el badge / hint (0 = no aplica) */
   slaDias: number;
   /** Tono visual de la lista (urgencia) */
   tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral';
@@ -48,7 +69,6 @@ const ESTADOS_TRANSITO = [
   'EN TRASLADO NACIONAL',
   'EN TERMINAL ORIGEN',
   'EN TERMINAL DESTINO',
-  'EN REPARTO',
   'EN DISTRIBUCION',
   'EN REEXPEDICION',
   'ENTREGADA A CONEXIONES',
@@ -60,10 +80,20 @@ const ESTADOS_TRANSITO = [
   'RECOGIDO POR DROPI',
 ];
 
+// FASE FINAL: pedido en mano del repartidor o intento de entrega fallido —
+// la atención del operador acá impacta directo en la entrega.
+const ESTADOS_REPARTO_NOVEDAD = [
+  'EN REPARTO',
+  'NOVEDAD',
+  'INTENTO DE ENTREGA',
+  'NOVEDAD SOLUCIONADA',
+];
+
 const ESTADOS_GUIA_GENERADA = ['GUIA_GENERADA', 'GUIA GENERADA', 'ADMITIDA'];
 
-const ESTADOS_RECLAMAR = (e: string): boolean =>
-  e.includes('RECLAMAR') || e.includes('EN PUNTO');
+// FASE FINAL: cliente debe ir a recoger a oficina (alta prioridad).
+const ESTADOS_OFICINA = (e: string): boolean =>
+  e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') || e.includes('EN PUNTO');
 
 const ESTADOS_TERMINALES = [
   'ENTREGADO',
@@ -72,6 +102,7 @@ const ESTADOS_TERMINALES = [
   'DEVOLUCION EN TRANSITO',
   'DEVUELTO',
   'RECHAZADO',
+  'INDEMNIZADA',
 ];
 
 /**
@@ -94,16 +125,12 @@ function diasDesdeCreacion(o: OrderData): number {
 /**
  * Días hábiles desde el ÚLTIMO MOVIMIENTO real del pedido en Dropi
  * (`o.lastMovementAt` = updated_at). Para los buckets donde "sin movimiento" es
- * la semántica correcta (guía generada / en proceso / reclamar oficina): un
- * pedido VIEJO pero que se movió ayer NO debe contar como atrasado — antes esto
- * usaba antigüedad desde creación y marcaba como "sin movimiento" guías que de
- * hecho ya se habían entregado/movido.
+ * la semántica correcta (guía generada): un pedido VIEJO pero que se movió ayer
+ * NO debe contar como atrasado.
  *
  * 0 es un valor VÁLIDO (se movió hoy) — por eso NO usamos el patrón
  * `if (d > 0)` de diasDesdeCreacion. Solo caemos al fallback de creación si
- * `lastMovementAt` falta o no parsea: la columna aún no está viva en la DB
- * (ver orderColumns.ts) o el pedido nunca registró updated_at. Con el fallback
- * el comportamiento es idéntico al previo a la migración 20260526120000.
+ * `lastMovementAt` falta o no parsea.
  */
 function diasSinMovimiento(o: OrderData): number {
   if (o.lastMovementAt && parseDate(o.lastMovementAt)) {
@@ -113,6 +140,7 @@ function diasSinMovimiento(o: OrderData): number {
 }
 
 export const SEG_LISTS: SegListDef[] = [
+  // ── Pre-embudo ──────────────────────────────────────────────────────────
   {
     slug: 'pendientes_confirmacion_2d',
     label: 'Pendientes de confirmación (+2 días)',
@@ -121,21 +149,71 @@ export const SEG_LISTS: SegListDef[] = [
     externalRoute: '/confirmar',
     matches: () => false, // vive en /confirmar — esta lista solo es link
   },
+
+  // ── FASE FINAL (alta prioridad — pedido a punto de entregarse) ──────────
   {
-    slug: 'pendientes_guia_2d',
-    label: 'Pendientes de guía (+2 días)',
-    slaDias: 2,
+    slug: 'en_oficina',
+    label: 'En oficina (cliente recoge)',
+    slaDias: 0,
     tone: 'warning',
+    matches: (o) => ESTADOS_OFICINA(E(o.estado)),
+  },
+  {
+    slug: 'en_reparto_novedad',
+    label: 'En reparto / Novedad cliente',
+    slaDias: 0,
+    tone: 'warning',
+    matches: (o) => ESTADOS_REPARTO_NOVEDAD.includes(E(o.estado)),
+  },
+
+  // ── FASE MEDIA ──────────────────────────────────────────────────────────
+  {
+    slug: 'en_transito',
+    label: 'En tránsito',
+    slaDias: 7,
+    tone: 'info',
+    matches: (o) => ESTADOS_TRANSITO.includes(E(o.estado)),
+  },
+
+  // ── FASE INICIAL — guía generada ────────────────────────────────────────
+  {
+    slug: 'guia_generada',
+    label: 'Guía generada',
+    slaDias: 5,
+    tone: 'info',
+    matches: (o) => {
+      if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
+      // Disjoint con indem (>= 5d). Pedido nuevo o reciente cae acá.
+      return diasSinMovimiento(o) < 5;
+    },
+  },
+  {
+    slug: 'indem_guia_generada_5d',
+    label: 'Indem. guía generada (+5 días)',
+    slaDias: 5,
+    tone: 'danger',
+    matches: (o) => {
+      if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
+      return diasSinMovimiento(o) >= 5;
+    },
+  },
+
+  // ── FASE INICIAL — sin guía aún ─────────────────────────────────────────
+  {
+    slug: 'pendientes_guia',
+    label: 'Pendientes de guía',
+    slaDias: 4,
+    tone: 'info',
     matches: (o) => {
       if (E(o.estado) !== 'PENDIENTE') return false;
       if (o.guia && o.guia.trim()) return false;
-      const d = diasDesdeCreacion(o);
-      return d >= 2 && d < 4;
+      // Disjoint con indem (>= 4d). Recientes caen acá.
+      return diasDesdeCreacion(o) < 4;
     },
   },
   {
     slug: 'indem_pendientes_guia_4d',
-    label: 'Indemnización pendientes de guía (+4 días)',
+    label: 'Indem. pendientes de guía (+4 días)',
     slaDias: 4,
     tone: 'danger',
     matches: (o) => {
@@ -144,47 +222,8 @@ export const SEG_LISTS: SegListDef[] = [
       return diasDesdeCreacion(o) >= 4;
     },
   },
-  {
-    slug: 'guia_generada_2d',
-    label: 'Guía generada (+2 días)',
-    slaDias: 2,
-    tone: 'warning',
-    matches: (o) => {
-      if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
-      const d = diasSinMovimiento(o);
-      return d >= 2 && d < 5;
-    },
-  },
-  {
-    slug: 'indem_guia_generada_5d',
-    label: 'Indemnización guía generada (+5 días)',
-    slaDias: 5,
-    tone: 'danger',
-    matches: (o) => {
-      if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
-      return diasSinMovimiento(o) >= 5;
-    },
-  },
-  {
-    slug: 'reclamar_oficina_4d',
-    label: 'Reclamar en oficina (+4 días)',
-    slaDias: 4,
-    tone: 'danger',
-    matches: (o) => {
-      if (!ESTADOS_RECLAMAR(E(o.estado))) return false;
-      return diasSinMovimiento(o) >= 4;
-    },
-  },
-  {
-    slug: 'en_proceso_7d',
-    label: 'En proceso (+7 días)',
-    slaDias: 7,
-    tone: 'danger',
-    matches: (o) => {
-      if (!ESTADOS_TRANSITO.includes(E(o.estado))) return false;
-      return diasSinMovimiento(o) >= 7;
-    },
-  },
+
+  // ── Catch-all ───────────────────────────────────────────────────────────
   {
     slug: 'otros_estados',
     label: 'Otros estados',
@@ -198,7 +237,8 @@ export const SEG_LISTS: SegListDef[] = [
       if (e === 'PENDIENTE CONFIRMACION') return false;
       if (ESTADOS_GUIA_GENERADA.includes(e)) return false;
       if (ESTADOS_TRANSITO.includes(e)) return false;
-      if (ESTADOS_RECLAMAR(e)) return false;
+      if (ESTADOS_REPARTO_NOVEDAD.includes(e)) return false;
+      if (ESTADOS_OFICINA(e)) return false;
       return true;
     },
   },
