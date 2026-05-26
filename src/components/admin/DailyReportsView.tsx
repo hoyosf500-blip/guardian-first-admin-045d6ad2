@@ -55,6 +55,30 @@ interface ActionRow {
 
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 
+// % Procesado mínimo para considerar un día "concluyente". Por debajo, la tasa
+// de confirmación NO es comparable (el cohorte todavía tiene muchos pedidos sin
+// trabajar) → se muestra en gris, nunca en rojo.
+const MATURITY_THRESHOLD = 90;
+
+interface DayMetrics {
+  resueltos: number;        // confirmados + cancelados
+  pctProcesado: number;     // (conf + canc) ÷ entrantes — qué tan trabajado está el día
+  tasaConf: number | null;  // conf ÷ (conf + canc) — tasa MADURA; null si no hay resueltos
+  tasaCanc: number | null;  // canc ÷ (conf + canc)
+  inmaduro: boolean;        // pctProcesado < umbral → no concluyente
+}
+
+// Tasas "maduras": denominador = pedidos YA resueltos (conf + canc), no entrantes.
+// Así un día con muchos pendientes no diluye artificialmente la tasa, y un día
+// recién entrado (0 resueltos) marca N/A en vez de 0% rojo.
+function deriveDayMetrics(conf: number, canc: number, entrantes: number): DayMetrics {
+  const resueltos = conf + canc;
+  const pctProcesado = entrantes > 0 ? Math.round((resueltos / entrantes) * 100) : 0;
+  const tasaConf = resueltos > 0 ? Math.round((conf / resueltos) * 100) : null;
+  const tasaCanc = resueltos > 0 ? Math.round((canc / resueltos) * 100) : null;
+  return { resueltos, pctProcesado, tasaConf, tasaCanc, inmaduro: pctProcesado < MATURITY_THRESHOLD };
+}
+
 export default function DailyReportsView() {
   const today = useMemo(() => new Date(), []);
   const sevenAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; }, []);
@@ -183,9 +207,11 @@ export default function DailyReportsView() {
       }),
       { entrantes: 0, confirmados: 0, cancelados: 0, noresp: 0, pendientes: 0 },
     );
-    const pctConf = t.entrantes > 0 ? Math.round((t.confirmados / t.entrantes) * 100) : 0;
-    const pctCanc = t.entrantes > 0 ? Math.round((t.cancelados / t.entrantes) * 100) : 0;
-    return { ...t, pctConf, pctCanc };
+    // Tasas maduras del agregado (÷ resueltos, igual que cada fila). El total
+    // siempre se pinta con color normal: es un KPI agregado robusto, el gris de
+    // "inmaduro" es una señal por-día.
+    const m = deriveDayMetrics(t.confirmados, t.cancelados, t.entrantes);
+    return { ...t, ...m };
   }, [days]);
 
   const fmtHora = (h: string | null) =>
@@ -194,18 +220,25 @@ export default function DailyReportsView() {
   function exportDaysCsv() {
     const headers = [
       'Fecha', 'Entrantes', 'Confirmados', 'Cancelados',
-      'No Respondió', 'Pendientes', '% Confirmación', '% Cancelación',
+      'No Respondió', 'Pendientes', '% Procesado',
+      '% Confirmación (madura)', '% Cancelación (madura)', 'Concluyente',
     ];
     const escape = (v: unknown) => {
       if (v === null || v === undefined) return '';
       const s = String(v).replace(/"/g, '""');
       return /[",\n]/.test(s) ? `"${s}"` : s;
     };
-    const csvRows = days.map(r => [
-      r.fecha,
-      r.entrantes, r.confirmados, r.cancelados, r.noresp, r.pendientes,
-      `${r.pct_confirmacion}%`, `${r.pct_cancelados}%`,
-    ].map(escape).join(','));
+    const csvRows = days.map(r => {
+      const m = deriveDayMetrics(r.confirmados, r.cancelados, r.entrantes);
+      return [
+        r.fecha,
+        r.entrantes, r.confirmados, r.cancelados, r.noresp, r.pendientes,
+        `${m.pctProcesado}%`,
+        m.tasaConf == null ? 'N/A' : `${m.tasaConf}%`,
+        m.tasaCanc == null ? 'N/A' : `${m.tasaCanc}%`,
+        m.inmaduro ? 'no' : 'sí',
+      ].map(escape).join(',');
+    });
     const csv = [headers.join(','), ...csvRows].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -333,35 +366,59 @@ export default function DailyReportsView() {
                     </th>
                     <th
                       className="px-3 py-2 font-semibold text-center"
-                      title="Confirmados ÷ Entrantes (siempre ≤ 100%)"
+                      title="(Confirmados + Cancelados) ÷ Entrantes — qué tan trabajado está el día. Bajo 90% el día aún no es concluyente (gris)."
+                    >
+                      % Proc
+                    </th>
+                    <th
+                      className="px-3 py-2 font-semibold text-center"
+                      title="Confirmados ÷ (Confirmados + Cancelados) — tasa MADURA, solo sobre pedidos ya resueltos. Gris = día inmaduro / no concluyente."
                     >
                       % Conf
                     </th>
                     <th
                       className="px-3 py-2 font-semibold text-center"
-                      title="Cancelados ÷ Entrantes"
+                      title="Cancelados ÷ (Confirmados + Cancelados) — tasa madura"
                     >
                       % Canc
                     </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {days.map((r) => (
-                    <tr key={r.fecha} className="hover:bg-muted/30 transition-colors">
-                      <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
-                      <td className={`${cellBase} text-center font-bold text-foreground`}>{r.entrantes}</td>
-                      <td className={`${cellBase} text-center text-green font-semibold`}>{r.confirmados}</td>
-                      <td className={`${cellBase} text-center text-red font-semibold`}>{r.cancelados}</td>
-                      <td className={`${cellBase} text-center text-muted-foreground`}>{r.noresp}</td>
-                      <td className={`${cellBase} text-center text-orange`}>{r.pendientes}</td>
-                      <td className={`${cellBase} text-center font-bold ${pctConfClass(r.pct_confirmacion)}`}>
-                        {r.pct_confirmacion}%
-                      </td>
-                      <td className={`${cellBase} text-center ${r.pct_cancelados > 0 ? 'text-red' : 'text-muted-foreground'}`}>
-                        {r.pct_cancelados}%
-                      </td>
-                    </tr>
-                  ))}
+                  {days.map((r) => {
+                    const m = deriveDayMetrics(r.confirmados, r.cancelados, r.entrantes);
+                    // Color de la tasa de confirmación:
+                    //  - sin resueltos → "—" gris (N/A, no es 0% rojo)
+                    //  - inmaduro (proc < 90%) → tasa en gris "no concluyente"
+                    //  - maduro → color semántico por umbral
+                    const confClass = m.tasaConf == null || m.inmaduro
+                      ? 'text-muted-foreground'
+                      : pctConfClass(m.tasaConf);
+                    const confTitle = m.tasaConf == null
+                      ? 'Sin pedidos resueltos todavía'
+                      : m.inmaduro
+                        ? `Inmaduro / no concluyente — solo ${m.pctProcesado}% del día procesado`
+                        : undefined;
+                    return (
+                      <tr key={r.fecha} className="hover:bg-muted/30 transition-colors">
+                        <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
+                        <td className={`${cellBase} text-center font-bold text-foreground`}>{r.entrantes}</td>
+                        <td className={`${cellBase} text-center text-green font-semibold`}>{r.confirmados}</td>
+                        <td className={`${cellBase} text-center text-red font-semibold`}>{r.cancelados}</td>
+                        <td className={`${cellBase} text-center text-muted-foreground`}>{r.noresp}</td>
+                        <td className={`${cellBase} text-center text-orange`}>{r.pendientes}</td>
+                        <td className={`${cellBase} text-center font-semibold ${m.inmaduro ? 'text-muted-foreground' : 'text-foreground'}`}>
+                          {m.pctProcesado}%
+                        </td>
+                        <td className={`${cellBase} text-center font-bold ${confClass}`} title={confTitle}>
+                          {m.tasaConf == null ? '—' : `${m.tasaConf}%`}
+                        </td>
+                        <td className={`${cellBase} text-center ${m.tasaCanc == null || m.inmaduro ? 'text-muted-foreground' : (m.tasaCanc > 0 ? 'text-red' : 'text-muted-foreground')}`}>
+                          {m.tasaCanc == null ? '—' : `${m.tasaCanc}%`}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 {days.length > 1 && (
                   <tfoot>
@@ -372,11 +429,12 @@ export default function DailyReportsView() {
                       <td className={`${cellBase} text-center text-red font-bold`}>{totals.cancelados}</td>
                       <td className={`${cellBase} text-center text-muted-foreground font-bold`}>{totals.noresp}</td>
                       <td className={`${cellBase} text-center text-orange font-bold`}>{totals.pendientes}</td>
-                      <td className={`${cellBase} text-center font-bold ${pctConfClass(totals.pctConf)}`}>
-                        {totals.pctConf}%
+                      <td className={`${cellBase} text-center font-bold text-foreground`}>{totals.pctProcesado}%</td>
+                      <td className={`${cellBase} text-center font-bold ${totals.tasaConf == null ? 'text-muted-foreground' : pctConfClass(totals.tasaConf)}`}>
+                        {totals.tasaConf == null ? '—' : `${totals.tasaConf}%`}
                       </td>
-                      <td className={`${cellBase} text-center font-bold ${totals.pctCanc > 0 ? 'text-red' : 'text-muted-foreground'}`}>
-                        {totals.pctCanc}%
+                      <td className={`${cellBase} text-center font-bold ${totals.tasaCanc != null && totals.tasaCanc > 0 ? 'text-red' : 'text-muted-foreground'}`}>
+                        {totals.tasaCanc == null ? '—' : `${totals.tasaCanc}%`}
                       </td>
                     </tr>
                   </tfoot>

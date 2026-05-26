@@ -3,7 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
-type Range = 'today' | '24h' | '7d' | '30d';
+// Sin '24h' rodante: las ventanas se alinean a día-calendario Bogotá (igual que
+// el cohorte de Reportes Diarios) para que "entrantes" reconcilie entre vistas.
+type Range = 'today' | '7d' | '30d';
 
 interface Row {
   operator_id: string;
@@ -25,11 +27,17 @@ interface Row {
   /** % confirmados sobre total_entrantes (NO sobre gestionados). Refleja
    *  productividad real: penaliza dejar pedidos sin gestionar. */
   tasa_confirmacion: number;
+  /** Conteos por PEDIDO DISTINTO (phone), no por acción. Base correcta de la
+   *  tasa de resolución. Opcionales: si la migración 20260526140000 aún no se
+   *  aplicó, vienen undefined y la UI cae al cálculo viejo sobre acciones. */
+  seg_pedidos?: number;
+  seg_resueltos_dist?: number;
+  rescate_pedidos?: number;
+  rescate_resueltos_dist?: number;
 }
 
 const RANGE_LABELS: Record<Range, string> = {
   'today': 'Hoy',
-  '24h': 'Últimas 24h',
   '7d': 'Últimos 7 días',
   '30d': 'Últimos 30 días',
 };
@@ -131,7 +139,7 @@ export default function ProductivityDashboard() {
 
         <div className="flex items-center gap-2 shrink-0">
           <div className="flex rounded-lg border border-border bg-card p-0.5">
-            {(['today', '24h', '7d', '30d'] as Range[]).map(r => (
+            {(['today', '7d', '30d'] as Range[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
@@ -277,6 +285,8 @@ export default function ProductivityDashboard() {
               rows={rows}
               acciones={r => r.seg_acciones}
               resueltos={r => r.seg_resueltos}
+              pedidos={r => r.seg_pedidos}
+              resueltosDist={r => r.seg_resueltos_dist}
               actionTone="info"
             />
           </Section>
@@ -287,6 +297,8 @@ export default function ProductivityDashboard() {
               rows={rows}
               acciones={r => r.rescate_acciones}
               resueltos={r => r.rescate_resueltos}
+              pedidos={r => r.rescate_pedidos}
+              resueltosDist={r => r.rescate_resueltos_dist}
               actionTone="danger"
             />
           </Section>
@@ -384,11 +396,15 @@ function Section({ title, dotClass, note, children }: { title: string; dotClass:
 }
 
 function ResolutionTable({
-  rows, acciones, resueltos, actionTone,
+  rows, acciones, resueltos, pedidos, resueltosDist, actionTone,
 }: {
   rows: Row[];
   acciones: (r: Row) => number;
   resueltos: (r: Row) => number;
+  /** Pedidos distintos tocados (base correcta de la tasa). Si no viene → fallback. */
+  pedidos?: (r: Row) => number | undefined;
+  /** Pedidos distintos resueltos. Si no viene → fallback. */
+  resueltosDist?: (r: Row) => number | undefined;
   actionTone: 'info' | 'danger';
 }) {
   return (
@@ -398,18 +414,24 @@ function ResolutionTable({
           <tr>
             <th className="w-10">#</th>
             <th>Operadora</th>
-            <th className="text-right">Acciones</th>
+            <th className="text-right" title="Touchpoints totales (esfuerzo). Un pedido gestionado varios días suma varias acciones.">Acciones</th>
             <th className="text-right">Resueltos</th>
-            <th className="text-right">Pendientes</th>
-            <th className="text-right">Tasa de resolución</th>
+            <th className="text-right" title="Pedidos distintos tocados que aún no se cierran (Resuelto/Devolución).">Pendientes</th>
+            <th className="text-right" title="Resueltos ÷ pedidos distintos tocados (NO sobre acciones — los reintentos no inflan el denominador).">Tasa de resolución</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, idx) => {
             const acc = acciones(r);
-            const res = resueltos(r);
-            const pendientes = Math.max(0, acc - res);
-            const tasa = acc > 0 ? Math.round((res / acc) * 100) : 0;
+            // Base de la tasa = pedidos DISTINTOS si la RPC los devuelve; si no
+            // (migración sin aplicar), fallback al conteo de acciones (comportamiento viejo).
+            const pedDist = pedidos?.(r);
+            const resDist = resueltosDist?.(r);
+            const hasDistinct = pedDist != null && resDist != null;
+            const denom = hasDistinct ? (pedDist as number) : acc;
+            const res = hasDistinct ? (resDist as number) : resueltos(r);
+            const pendientes = Math.max(0, denom - res);
+            const tasa = denom > 0 ? Math.round((res / denom) * 100) : 0;
             return (
               <tr key={r.operator_id}>
                 <td>
