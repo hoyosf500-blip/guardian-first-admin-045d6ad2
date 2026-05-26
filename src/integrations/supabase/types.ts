@@ -1749,9 +1749,13 @@ export type Database = {
           novedades_resueltas: number
           operator_id: string
           rescate_acciones: number
+          rescate_pedidos: number
           rescate_resueltos: number
+          rescate_resueltos_dist: number
           seg_acciones: number
+          seg_pedidos: number
           seg_resueltos: number
+          seg_resueltos_dist: number
           tasa_confirmacion: number
           tasa_contacto: number
           total_atendidos: number
