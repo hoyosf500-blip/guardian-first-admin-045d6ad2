@@ -64,10 +64,9 @@ export const CARRIER_TRACK_BY_COUNTRY: Record<string, Record<string, string>> = 
   EC: CARRIER_TRACK_EC,
 };
 
-export const SEG_ACTIONS = [
-  'Llame cliente', 'WhatsApp enviado', 'Reclame transportadora',
-  'Esperando respuesta', 'Resuelto', 'Cliente recogera', 'Devolucion solicitada'
-];
+// SEG_ACTIONS (los 7 botones planos) se reemplazó por el modelo "revisión
+// diaria": ver SEG_METHODS / SEG_CLOSERS en src/lib/segDailyReview.ts y el
+// componente SegActionButtons. Las acciones ya no se pasan como prop a CrmTable.
 
 export const RES_ACTIONS = [
   'Llame cliente', 'Reclame transportadora', 'Solicite devolucion',

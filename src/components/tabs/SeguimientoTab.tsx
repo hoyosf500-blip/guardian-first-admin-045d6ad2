@@ -4,7 +4,6 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
-import { SEG_ACTIONS } from '@/lib/constants';
 import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
@@ -568,7 +567,6 @@ export default function SeguimientoTab() {
 
       <CrmTable
         data={listaActiva && !listaActiva.externalRoute ? filteredByList : filteredByDate}
-        actions={SEG_ACTIONS}
         module="SEG"
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
         emptyTitle="Sin pedidos en seguimiento"

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Phone as PhoneIcon, MessageSquare,
   Copy, MapPin, Package, DollarSign, Tag, Truck, AlertTriangle,
-  CheckCircle, ExternalLink, User, Clock, Send,
+  CheckCircle, ExternalLink, User, Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -13,6 +13,7 @@ import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
+import SegActionButtons from '@/components/SegActionButtons';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
@@ -21,7 +22,6 @@ import { mapAddressKind } from '@/lib/mapAddressKind';
 import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
 import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
 import { locationMatches } from '@/lib/locationGuard';
-import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -58,7 +58,6 @@ interface Touchpoint {
 
 interface Props {
   items: OrderData[];
-  actions: string[];
   managed: Record<string, string>;
   phoneTouchpoints: Record<string, Touchpoint[]>;
   getOperatorName: (id: string) => string;
@@ -92,7 +91,7 @@ function isExcludedFromDelay(estado: string): boolean {
  * the operator works the list one order at a time.
  */
 export default function CrmCallView({
-  items, actions, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
+  items, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
 }: Props) {
   const { isAdmin } = useAuth();
   const { activeStore } = useStore();
@@ -876,17 +875,7 @@ export default function CrmCallView({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {actions.map(a => (
-                <button
-                  key={a}
-                  onClick={() => handleAction(a)}
-                  className="inline-flex items-center justify-center gap-1.5 py-3 rounded-lg bg-accent/15 text-accent border border-accent/25 font-semibold text-xs hover:bg-accent/25 active:scale-[0.98] transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-                >
-                  <Send size={13} aria-hidden="true" /> <TruncatedText text={a} maxChars={28} />
-                </button>
-              ))}
-            </div>
+            <SegActionButtons variant="call" onAction={handleAction} />
           )}
         </motion.div>
       </AnimatePresence>

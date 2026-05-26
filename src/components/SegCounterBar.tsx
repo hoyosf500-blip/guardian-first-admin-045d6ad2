@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { CheckCircle2, ListChecks, Hourglass, Users } from 'lucide-react';
 import { bogotaToday } from '@/lib/utils';
+import { isSegCloser } from '@/lib/segDailyReview';
 
 /**
  * Barra de productividad para Seguimiento. Cuenta touchpoints "SEG:*"
@@ -11,13 +12,10 @@ import { bogotaToday } from '@/lib/utils';
  * Antes era SegRescueCounterBar y soportaba módulo "RESCUE"; el módulo
  * Rescate se eliminó (2026-05-08) y las listas SLA de /seguimiento ya
  * cubren los casos. Esto quedó single-purpose.
+ *
+ * "Resuelto" cuenta los cierres (Resuelto/Devolución) vía isSegCloser, que
+ * también reconoce los labels viejos para los touchpoints históricos.
  */
-
-const RESOLVING_LABELS = new Set([
-  'Resuelto',
-  'Devolucion solicitada',
-  'Solicite devolucion',
-]);
 
 interface Stats {
   myActions: number;
@@ -43,8 +41,7 @@ export default function SegCounterBar() {
     if (error || !data) return;
     let mA = 0, mR = 0, tA = 0, tR = 0;
     data.forEach(t => {
-      const clean = t.action.replace(/^SEG:\s*/, '');
-      const isResolving = RESOLVING_LABELS.has(clean);
+      const isResolving = isSegCloser(t.action);
       tA++;
       if (isResolving) tR++;
       if (t.operator_id === user.id) {

@@ -17,9 +17,10 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
 import CrmCallView from './CrmCallView';
+import SegActionButtons from './SegActionButtons';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
-import { getActionSLA } from '@/lib/actionSla';
+import { isHiddenFromTodayList, hiddenLabel, isSegCloser, cleanSegAction, type LatestTouch } from '@/lib/segDailyReview';
 import { bogotaToday } from '@/lib/utils';
 import {
   classifySegOwnership,
@@ -52,7 +53,6 @@ interface Profile {
 
 interface CrmTableProps {
   data: OrderData[];
-  actions: string[];
   module: 'SEG' | 'RESCUE';
   emptyIcon: React.ReactNode;
   emptyTitle: string;
@@ -281,7 +281,7 @@ function ColumnBody({
   );
 }
 
-export default function CrmTable({ data: dataProp, actions, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
+export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [allTouchpoints, setAllTouchpoints] = useState<Touchpoint[]>([]);
@@ -442,27 +442,27 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
       );
       setTouchpoints(moduleTp);
 
-      const latestByPhone: Record<string, { action: string; when: number }> = {};
+      // Revisión diaria: el último touchpoint por teléfono decide si el pedido
+      // sale de la lista de HOY. Gestión (método) → oculto solo si es de hoy
+      // (reaparece mañana); cierre (Resuelto/Devolución) → oculto 30 días.
+      const latestByPhone: Record<string, LatestTouch> = {};
       moduleTp.forEach(t => {
         const when = new Date(t.created_at).getTime();
         const prev = latestByPhone[t.phone];
-        if (!prev || when > prev.when) {
-          latestByPhone[t.phone] = { action: t.action, when };
+        if (!prev || when > prev.whenMs) {
+          latestByPhone[t.phone] = { action: t.action, actionDate: t.action_date, whenMs: when };
         }
       });
 
       const nowMs = Date.now();
+      const today = bogotaToday();
       const snoozed: Record<string, string> = {};
       dataRef.current.forEach(o => {
         if (!o.dbId) return;
         const hit = latestByPhone[o.phone];
         if (!hit) return;
-        const slaMs = getActionSLA(hit.action) * 3600000;
-        const remainingMs = slaMs - (nowMs - hit.when);
-        if (remainingMs > 0) {
-          const hoursLeft = Math.max(1, Math.round(remainingMs / 3600000));
-          const label = hit.action.replace(/^(SEG|RESCUE):\s*/, '');
-          snoozed[o.dbId] = `${label} · vuelve en ${hoursLeft}h`;
+        if (isHiddenFromTodayList(hit, nowMs, today)) {
+          snoozed[o.dbId] = hiddenLabel(hit);
         }
       });
       // Solo actualiza results si cambió algo: evita invalidar la
@@ -540,12 +540,10 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
     markingInFlightRef.current.add(order.dbId);
     try {
       // Pool compartido: CUALQUIER operadora puede gestionar CUALQUIER pedido.
-      // No bloqueamos por assigned_to ni reclamamos — solo registramos el
-      // touchpoint (queda la etiqueta de quién/cuándo/cuántas veces) y el
-      // snooze de cooldown (vuelve en Xh). La disciplina de llamado no cambia.
-      const slaMs = getActionSLA(action) * 3600000;
-      const hoursLeft = Math.max(1, Math.round(slaMs / 3600000));
-      const label = `${action} · vuelve en ${hoursLeft}h`;
+      // No bloqueamos por assigned_to — solo registramos el touchpoint y, de
+      // forma optimista, ocultamos el pedido de la lista de HOY. Gestión =
+      // "Gestionado hoy" (vuelve mañana); cierre = sale (snooze 30d).
+      const label = isSegCloser(action) ? cleanSegAction(action) : 'Gestionado hoy';
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
       if (user) {
         const now = new Date();
@@ -718,6 +716,27 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
             </span>
           </button>
         )}
+        {/* Revisión diaria: cuántos del tablero ya están al día hoy
+            (gestionados hoy + cerrados) sobre el total activo. Se vacía a
+            medida que el equipo trabaja y se resetea cada día (las gestiones
+            del día anterior reaparecen). Visible también para el dueño. */}
+        {data.length > 0 && (
+          <div
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+            title="Pedidos del tablero que ya gestionaste hoy o cerraste, sobre el total activo. Mañana los gestionados vuelven a aparecer."
+          >
+            <span className="text-xs text-muted-foreground">Al día hoy</span>
+            <span className="font-mono font-bold tabular-nums text-foreground">
+              {managedCount}<span className="text-muted-foreground">/{data.length}</span>
+            </span>
+            <span className="hidden sm:block h-1.5 w-16 rounded-full bg-muted overflow-hidden" aria-hidden="true">
+              <span
+                className="block h-full bg-emerald-500 transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.round((managedCount / data.length) * 100))}%` }}
+              />
+            </span>
+          </div>
+        )}
 
         {/* Filtro por gestión real (no bloquea — todas pueden gestionar todo).
             'Míos' = los que he gestionado · 'Disponibles' = los que nadie ha
@@ -827,7 +846,6 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
       ) : view === 'call' ? (
         <CrmCallView
           items={filtered}
-          actions={actions}
           managed={results}
           phoneTouchpoints={phoneTouchpoints}
           getOperatorName={getOperatorName}
@@ -884,7 +902,6 @@ export default function CrmTable({ data: dataProp, actions, module, emptyIcon, e
                         onAction={markAction}
                         currentUserId={user?.id}
                         adminIds={adminIds}
-                        actions={actions}
                         touchpoints={phoneTouchpoints[o.phone] ?? EMPTY_TPS}
                         allTouchpoints={allPhoneTouchpoints[o.phone] ?? EMPTY_TPS}
                         getOperatorName={getOperatorName}
@@ -924,7 +941,6 @@ interface OrderCardProps {
   onAction: (order: OrderData, action: string) => void;
   currentUserId: string | undefined;
   adminIds: string[];
-  actions: string[];
   touchpoints: Touchpoint[];
   /** Todos los touchpoints del teléfono (cross-modular) — para el badge de contactos */
   allTouchpoints: Touchpoint[];
@@ -940,7 +956,7 @@ interface OrderCardProps {
 // las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
 // con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
 // el render si las props del card no cambiaron.
-const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, actions, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
+const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
   // Propiedad por GESTIÓN REAL (touchpoints del módulo), no por assigned_to.
   // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
   // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
@@ -1242,10 +1258,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                 </div>
               )}
 
-              {/* Quick actions — pool compartido: siempre habilitadas. */}
+              {/* Canales de contacto (solo abren la app — el registro de la
+                  gestión va por "Gestioné hoy", abajo). */}
               <div className="flex gap-2">
                 <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
-                  onClick={() => onAction(o, 'WhatsApp enviado')}
                   className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
                   <Send size={12} /> WhatsApp
                 </a>
@@ -1255,16 +1271,9 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                 </a>
               </div>
 
-              {/* CRM actions — pool compartido: visibles para cualquier operadora. */}
+              {/* Gestión diaria — pool compartido: visible para cualquier operadora. */}
               {!managed && (
-                <div className="flex flex-wrap gap-1.5">
-                  {actions.map(a => (
-                    <button key={a} onClick={() => onAction(o, a)}
-                      className="text-[10px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary font-semibold hover:bg-primary/20 border border-primary/15 whitespace-nowrap transition-colors">
-                      {a}
-                    </button>
-                  ))}
-                </div>
+                <SegActionButtons variant="list" onAction={(a) => onAction(o, a)} />
               )}
 
             </div>
