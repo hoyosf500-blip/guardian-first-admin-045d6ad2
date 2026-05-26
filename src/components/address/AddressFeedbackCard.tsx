@@ -155,44 +155,7 @@ export function AddressFeedbackCard({
         </ul>
       </div>
 
-      {addressSuggestion?.hasEnoughInfo && (
-        <div className="mt-3 rounded bg-card/40 border border-border/60 p-2 text-xs space-y-1">
-          <div className="font-medium text-foreground inline-flex items-center gap-1.5">
-            <Lightbulb size={12} className="text-warning" />
-            <span>Cómo debería verse esta dirección:</span>
-          </div>
-          <div className="text-foreground font-mono text-[11px] leading-relaxed pl-4">
-            {addressSuggestion.suggested}
-          </div>
-          {addressSuggestion.missingNote ? (
-            <div className="text-warning text-[11px] pl-4 mt-1">
-              {addressSuggestion.missingNote}
-            </div>
-          ) : (
-            <div className="text-muted-foreground text-[10px] pl-4">
-              Confirma con el cliente que sea correcta.
-            </div>
-          )}
-        </div>
-      )}
-
-      {lookupLoading && !addressSuggestion?.hasEnoughInfo && (
-        <div className="text-muted-foreground text-[10px] pl-4 mt-1 animate-pulse">
-          Buscando dirección en Google Maps...
-        </div>
-      )}
-
-      {suggestedAddress && (
-        <div className="rounded bg-card/50 border border-border p-2 text-xs space-y-1.5">
-          <div className="font-medium text-foreground">¿Quisiste decir?</div>
-          <div className="text-muted-foreground">{suggestedAddress}</div>
-          {onApplySuggestion && (
-            <Button size="sm" variant="outline" onClick={onApplySuggestion}>
-              Aplicar
-            </Button>
-          )}
-        </div>
-      )}
+      {/* Sugerencias de Google Maps removidas a pedido. */}
 
       {/* Validador-direcciones: checkbox de override para destrabar el gate
           de Confirmar también en RED. Antes solo se renderizaba para isAdmin,
