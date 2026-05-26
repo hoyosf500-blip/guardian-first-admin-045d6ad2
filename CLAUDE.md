@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **This file is the source of truth.** `AGENTS.md` and `README.md` are older and stale on several points — they still describe the pre-multitienda model (`app_settings.dropi_token`, "integration-key not Bearer"), a `mapDbRow()` mapper that no longer exists (it's `dbToOrderData`), a `/rescate` route that was removed, CO-only scope, and a 1-min cron. When they disagree with this file, this file wins.
+
 ## Commands
 
 ```bash
@@ -115,7 +117,7 @@ Each store has a `stores.country_code` ∈ `'CO'` (default) · `'EC'`. The activ
 ### Key Domain Types
 
 - `OrderData` — canonical in-memory order shape (`src/lib/orderUtils.ts`)
-- `DbOrderRow` — raw Supabase DB row (nullable fields); mapped to `OrderData` via `mapDbRow()`
+- `DbOrderRow` — raw Supabase DB row (nullable fields); mapped to `OrderData` via `dbToOrderData()` in `src/lib/orderUtils.ts` (there is no `mapDbRow`)
 - `COL_MAP` — multi-alias Excel column mapping (`src/lib/constants.ts`)
 - `CARRIER_TRACK` (CO) / `CARRIER_TRACK_EC` (EC) / `CARRIER_TRACK_BY_COUNTRY` — per-carrier tracking URLs, resolved by country via `getTrackingUrl` (see Multi-Country). `CARRIER_DEADLINES` — per-carrier SLA days
 
