@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Fingerprint, Package, CheckCircle2, RotateCcw, TrendingUp, ShieldAlert, ShieldCheck, Shield } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useStore } from '@/contexts/StoreContext';
+
 
 interface FpData {
   risk: string;
