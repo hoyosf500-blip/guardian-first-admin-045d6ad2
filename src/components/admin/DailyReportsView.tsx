@@ -476,6 +476,69 @@ export default function DailyReportsView() {
           )}
         </motion.div>
       )}
+
+      {/* ── Vista 3: Acciones por operadora por día (por fecha de la acción) ── */}
+      {!loading && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
+          className="bg-card rounded-xl border border-border overflow-hidden"
+        >
+          <div className="px-5 py-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Users size={16} className="text-primary" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Acciones por operadora por día</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Lo que gestionó cada operadora cada día — por fecha de la acción (no por fecha del pedido).
+                  Explica por qué el cohort puede mostrar "6 conf" mientras la operadora confirmó 12 el mismo día:
+                  los otros 6 son de pedidos creados días anteriores (backlog). · {actions.length} fila{actions.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {actions.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">No hay acciones en este rango</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-muted/50 text-muted-foreground text-[10px] uppercase tracking-wider">
+                    <th className="px-3 py-2 font-semibold">Fecha</th>
+                    <th className="px-3 py-2 font-semibold">Operadora</th>
+                    <th className="px-3 py-2 font-semibold text-center">Atendidos</th>
+                    <th className="px-3 py-2 font-semibold text-center">Confirmados</th>
+                    <th className="px-3 py-2 font-semibold text-center">Cancelados</th>
+                    <th className="px-3 py-2 font-semibold text-center">No Respondió</th>
+                    <th
+                      className="px-3 py-2 font-semibold text-center"
+                      title="Confirmados ÷ Atendidos del día (qué % de lo que tocó cerró en conf)"
+                    >
+                      % Conf / Atendidos
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {actions.map((r, i) => {
+                    const pct = r.atendidos > 0 ? Math.round((r.conf / r.atendidos) * 100) : 0;
+                    return (
+                      <tr key={`${r.fecha}-${r.operadora}-${i}`} className="hover:bg-muted/30 transition-colors">
+                        <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
+                        <td className={`${cellBase} font-sans`}>{r.operadora}</td>
+                        <td className={`${cellBase} text-center font-bold text-foreground`}>{r.atendidos}</td>
+                        <td className={`${cellBase} text-center text-green font-semibold`}>{r.conf}</td>
+                        <td className={`${cellBase} text-center text-red font-semibold`}>{r.canc}</td>
+                        <td className={`${cellBase} text-center text-muted-foreground`}>{r.noresp}</td>
+                        <td className={`${cellBase} text-center font-bold ${pctConfClass(pct)}`}>{pct}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+      )}
     </div>
   );
 }
