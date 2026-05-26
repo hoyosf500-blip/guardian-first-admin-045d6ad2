@@ -44,6 +44,15 @@ interface ShiftRow {
   notas: string | null;
 }
 
+interface ActionRow {
+  fecha: string;
+  operadora: string;
+  conf: number;
+  canc: number;
+  noresp: number;
+  atendidos: number;
+}
+
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 
 export default function DailyReportsView() {
@@ -54,6 +63,7 @@ export default function DailyReportsView() {
   const [to, setTo] = useState(isoDate(today));
   const [days, setDays] = useState<DayRow[]>([]);
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
+  const [actions, setActions] = useState<ActionRow[]>([]);
   const [loading, setLoading] = useState(true);
   // errMsg expone errores de RPC en pantalla. Antes solo iban a console.error
   // → el usuario veía "0 filas" sin pista de la causa real (Solo admins,
@@ -86,11 +96,14 @@ export default function DailyReportsView() {
       // El scope por tienda lo resuelve cada RPC server-side vía
       // _resolve_scope_store() (admin → su tienda activa). No pasamos p_store_id
       // para no depender de que la migration del parámetro esté aplicada.
-      const [daysRes, shiftsRes] = await Promise.all([
+      const [daysRes, shiftsRes, actionsRes] = await Promise.all([
         Promise.resolve(rpc('admin_daily_reports_range', { p_from: from, p_to: to })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
         Promise.resolve(rpc('admin_operator_shifts_range', { p_from: from, p_to: to })).catch(
+          (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
+        ),
+        Promise.resolve(rpc('admin_operator_actions_per_day', { p_from: from, p_to: to })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
       ]);
@@ -133,6 +146,22 @@ export default function DailyReportsView() {
           total_gestionados: r.total_gestionados as number | null,
           pendientes_manana: r.pendientes_manana as number | null,
           notas: r.notas as string | null,
+        })));
+      }
+
+      if (actionsRes.error) {
+        const msg = `admin_operator_actions_per_day: ${actionsRes.error.message ?? 'unknown'}`;
+        console.error(msg);
+        setErrMsg((prev) => (prev ? `${prev} | ${msg}` : msg));
+        setActions([]);
+      } else {
+        setActions((actionsRes.data || []).map((r) => ({
+          fecha: String(r.fecha),
+          operadora: String(r.operadora),
+          conf: Number(r.conf) || 0,
+          canc: Number(r.canc) || 0,
+          noresp: Number(r.noresp) || 0,
+          atendidos: Number(r.atendidos) || 0,
         })));
       }
     } finally {
@@ -441,6 +470,69 @@ export default function DailyReportsView() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* ── Vista 3: Acciones por operadora por día (por fecha de la acción) ── */}
+      {!loading && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
+          className="bg-card rounded-xl border border-border overflow-hidden"
+        >
+          <div className="px-5 py-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Users size={16} className="text-primary" />
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Acciones por operadora por día</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Lo que gestionó cada operadora cada día — por fecha de la acción (no por fecha del pedido).
+                  Explica por qué el cohort puede mostrar "6 conf" mientras la operadora confirmó 12 el mismo día:
+                  los otros 6 son de pedidos creados días anteriores (backlog). · {actions.length} fila{actions.length === 1 ? '' : 's'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {actions.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">No hay acciones en este rango</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-muted/50 text-muted-foreground text-[10px] uppercase tracking-wider">
+                    <th className="px-3 py-2 font-semibold">Fecha</th>
+                    <th className="px-3 py-2 font-semibold">Operadora</th>
+                    <th className="px-3 py-2 font-semibold text-center">Atendidos</th>
+                    <th className="px-3 py-2 font-semibold text-center">Confirmados</th>
+                    <th className="px-3 py-2 font-semibold text-center">Cancelados</th>
+                    <th className="px-3 py-2 font-semibold text-center">No Respondió</th>
+                    <th
+                      className="px-3 py-2 font-semibold text-center"
+                      title="Confirmados ÷ Atendidos del día (qué % de lo que tocó cerró en conf)"
+                    >
+                      % Conf / Atendidos
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {actions.map((r, i) => {
+                    const pct = r.atendidos > 0 ? Math.round((r.conf / r.atendidos) * 100) : 0;
+                    return (
+                      <tr key={`${r.fecha}-${r.operadora}-${i}`} className="hover:bg-muted/30 transition-colors">
+                        <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
+                        <td className={`${cellBase} font-sans`}>{r.operadora}</td>
+                        <td className={`${cellBase} text-center font-bold text-foreground`}>{r.atendidos}</td>
+                        <td className={`${cellBase} text-center text-green font-semibold`}>{r.conf}</td>
+                        <td className={`${cellBase} text-center text-red font-semibold`}>{r.canc}</td>
+                        <td className={`${cellBase} text-center text-muted-foreground`}>{r.noresp}</td>
+                        <td className={`${cellBase} text-center font-bold ${pctConfClass(pct)}`}>{pct}%</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
