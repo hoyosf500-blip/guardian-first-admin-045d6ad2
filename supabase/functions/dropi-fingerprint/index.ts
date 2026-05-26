@@ -2,7 +2,17 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, storeIdFromExternalId, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
-const FINGERPRINT_URL = "https://api-v2.dropi.co/bff/customers/fingerprint/v2";
+// api-v2.dropi.{tld} — el fingerprint vive en un host por país. Antes estaba
+// hardcoded a .co y para tiendas EC devolvía 401 "Invalid token" porque el
+// token EC no es válido en el tenant CO.
+const FINGERPRINT_TLD: Record<string, string> = {
+  CO: "co", MX: "mx", EC: "ec", CL: "cl", PE: "pe", PA: "pa",
+  AR: "ar", GT: "gt", PY: "com.py", VE: "com.ve", BO: "bo", CR: "cr",
+};
+function fingerprintBase(cc: string): string {
+  const tld = FINGERPRINT_TLD[String(cc || "CO").toUpperCase()] || "co";
+  return `https://api-v2.dropi.${tld}/bff/customers/fingerprint/v2`;
+}
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -93,7 +103,7 @@ Deno.serve(async (req) => {
       ? stripped.replace(/^593/, "").replace(/^0/, "")
       : stripped.replace(/^57/, "");
 
-    const url = `${FINGERPRINT_URL}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
+    const url = `${fingerprintBase(cfg.countryCode)}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
     const apiRes = await fetch(url, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
