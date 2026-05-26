@@ -533,11 +533,29 @@ Deno.serve(async (req: Request) => {
 
     // ---- Post-proceso GLOBAL (sobre todas las tiendas) ----
 
+    // Restaurar PRIMERO (rápido) — evita que si el reintento consume todo el
+    // presupuesto del edge, queden pedidos confirmados reapareciendo en /confirmar.
+    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
+    const { data: confirmedToday } = await sb
+      .from("order_results").select("order_id").eq("result", "conf").eq("result_date", todayDate);
+    const { data: confirmedStuck } = await sb
+      .from("order_results").select("order_id").eq("result", "conf").in("dropi_sync_status", ["failed", "pending"]);
+    const idsToRestore = new Set<string>();
+    (confirmedToday || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
+    (confirmedStuck || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
+    if (idsToRestore.size > 0) {
+      const confirmedIds = Array.from(idsToRestore);
+      for (let i = 0; i < confirmedIds.length; i += 50) {
+        const batch = confirmedIds.slice(i, i + 50);
+        await sb.from("orders").update({ estado: "PENDIENTE" })
+          .in("id", batch).eq("estado", "PENDIENTE CONFIRMACION");
+      }
+      console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders (today + stuck-failed)`);
+    }
+
     // Reintento de confirmaciones cuyo push a Dropi falló en su momento
-    // (dropi_sync_status='failed'). Sin esto, el pedido quedaba confirmado
-    // localmente pero Dropi nunca lo recibía → al día siguiente reaparecía
-    // como PENDIENTE CONFIRMACION en /confirmar. Ventana 7 días, máx 50 por
-    // corrida para no exceder el presupuesto del edge.
+    // (dropi_sync_status='failed'). Corre DESPUÉS del restore para no quedarnos
+    // sin presupuesto antes de proteger el estado local. Ventana 7 días, máx 50.
     try {
       const cfgByStore = new Map<string, { base: string; apiKey: string; storeUrl: string }>();
       for (const c of activeConfigs) {
@@ -592,27 +610,7 @@ Deno.serve(async (req: Request) => {
       console.warn("dropi-cron retry-failed exception:", err);
     }
 
-    // Restaurar estado de pedidos confirmados localmente — INCLUYE rows con
-    // dropi_sync_status IN ('failed','pending') sin importar fecha, para que
-    // una confirmación cuyo push a Dropi sigue pendiente NO reaparezca en
-    // /confirmar al día siguiente como PENDIENTE CONFIRMACION.
-    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
-    const { data: confirmedToday } = await sb
-      .from("order_results").select("order_id").eq("result", "conf").eq("result_date", todayDate);
-    const { data: confirmedStuck } = await sb
-      .from("order_results").select("order_id").eq("result", "conf").in("dropi_sync_status", ["failed", "pending"]);
-    const idsToRestore = new Set<string>();
-    (confirmedToday || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
-    (confirmedStuck || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
-    if (idsToRestore.size > 0) {
-      const confirmedIds = Array.from(idsToRestore);
-      for (let i = 0; i < confirmedIds.length; i += 50) {
-        const batch = confirmedIds.slice(i, i + 50);
-        await sb.from("orders").update({ estado: "PENDIENTE" })
-          .in("id", batch).eq("estado", "PENDIENTE CONFIRMACION");
-      }
-      console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders (today + stuck-failed)`);
-    }
+
 
 
     // Cancelar pedidos huérfanos (global).
