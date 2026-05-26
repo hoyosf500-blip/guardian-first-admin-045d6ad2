@@ -256,11 +256,11 @@ function isExcludedFromDelay(estado: string): boolean {
 
 const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
   'Guía Generada': (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e),
-  'En Procesamiento': (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e),
-  'Oficina': (e) => e.includes('OFICINA') || e.includes('RECLAME'),
+  'En Procesamiento': (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e),
+  'Oficina': matchOficina,
   'Novedad': (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA',
-  'En Tránsito': (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e),
-  'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
+  'En Tránsito': matchTransito,
+  'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO'].includes(e),
 };
 
 /**
