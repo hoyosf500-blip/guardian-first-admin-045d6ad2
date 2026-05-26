@@ -51,14 +51,18 @@ const baseOrder: OrderData = {
   lastMovementAt: null,
 };
 
-describe('SEG_LISTS — definición', () => {
-  it('exporta exactamente 8 listas', () => {
-    expect(SEG_LISTS).toHaveLength(8);
+describe('SEG_LISTS — definición (embudo por prioridad)', () => {
+  it('exporta exactamente 9 listas', () => {
+    expect(SEG_LISTS).toHaveLength(9);
   });
 
-  it('orden mantiene paridad con Boostec (confirmación primero, otros al final)', () => {
-    expect(SEG_LISTS[0].slug).toBe('pendientes_confirmacion_2d');
-    expect(SEG_LISTS[SEG_LISTS.length - 1].slug).toBe('otros_estados');
+  it('orden: confirmación → final (oficina/reparto) → medio → inicial → otros', () => {
+    const slugs = SEG_LISTS.map((l) => l.slug);
+    expect(slugs[0]).toBe('pendientes_confirmacion_2d');
+    expect(slugs[1]).toBe('en_oficina');
+    expect(slugs[2]).toBe('en_reparto_novedad');
+    expect(slugs[3]).toBe('en_transito');
+    expect(slugs[slugs.length - 1]).toBe('otros_estados');
   });
 
   it('pendientes_confirmacion_2d tiene externalRoute /confirmar y nunca matchea', () => {
@@ -68,142 +72,121 @@ describe('SEG_LISTS — definición', () => {
   });
 });
 
-describe('SEG_LISTS — predicados', () => {
-  // Para tests deterministas usamos `fecha: ''` y seteamos `dias` directamente —
-  // diasDesdeCreacion() cae al fallback de `o.dias` cuando la fecha está vacía,
-  // evitando jitter por fines de semana/feriados de calcBusinessDays.
+describe('SEG_LISTS — predicados de fase (sin umbral de SLA)', () => {
+  it('en_oficina: RECLAMAR EN OFICINA → matchea sin importar días', () => {
+    const lista = findSegList('en_oficina')!;
+    expect(lista.matches({ ...baseOrder, estado: 'RECLAMAR EN OFICINA', dias: 1 })).toBe(true);
+    expect(lista.matches({ ...baseOrder, estado: 'EN PUNTO DE ENTREGA', dias: 0 })).toBe(true);
+  });
 
-  it('pendientes_guia_2d: PENDIENTE sin guía, 3 días → matchea', () => {
-    const lista = findSegList('pendientes_guia_2d')!;
-    const o: OrderData = { ...baseOrder, estado: 'PENDIENTE', guia: '', fecha: '', dias: 3 };
+  it('en_reparto_novedad: EN REPARTO / NOVEDAD / INTENTO DE ENTREGA → matchea', () => {
+    const lista = findSegList('en_reparto_novedad')!;
+    expect(lista.matches({ ...baseOrder, estado: 'EN REPARTO', dias: 0 })).toBe(true);
+    expect(lista.matches({ ...baseOrder, estado: 'NOVEDAD', dias: 1 })).toBe(true);
+    expect(lista.matches({ ...baseOrder, estado: 'INTENTO DE ENTREGA', dias: 2 })).toBe(true);
+  });
+
+  it('en_transito: EN TRANSPORTE recién creado → matchea (no requiere +7d)', () => {
+    const lista = findSegList('en_transito')!;
+    expect(lista.matches({ ...baseOrder, estado: 'EN TRANSPORTE', dias: 1 })).toBe(true);
+    expect(lista.matches({ ...baseOrder, estado: 'EN TRANSPORTE', dias: 10 })).toBe(true);
+  });
+});
+
+describe('SEG_LISTS — predicados iniciales con indem disjoint', () => {
+  it('pendientes_guia: PENDIENTE sin guía, 1 día → matchea (no exige +2d)', () => {
+    const lista = findSegList('pendientes_guia')!;
+    const o: OrderData = { ...baseOrder, estado: 'PENDIENTE', guia: '', fecha: '', dias: 1 };
     expect(lista.matches(o)).toBe(true);
   });
 
-  it('pendientes_guia_2d: PENDIENTE con guía generada NO matchea', () => {
-    const lista = findSegList('pendientes_guia_2d')!;
+  it('pendientes_guia: PENDIENTE con guía generada NO matchea', () => {
+    const lista = findSegList('pendientes_guia')!;
     const o: OrderData = { ...baseOrder, estado: 'PENDIENTE', guia: 'ABC123', fecha: '', dias: 3 };
     expect(lista.matches(o)).toBe(false);
   });
 
-  it('indem_pendientes_guia_4d: 5 días → matchea acá, NO en pendientes_guia_2d (sin duplicar)', () => {
+  it('indem_pendientes_guia_4d: 5d → matchea SOLO en indem (disjoint de pendientes_guia)', () => {
     const indem = findSegList('indem_pendientes_guia_4d')!;
-    const pend = findSegList('pendientes_guia_2d')!;
+    const pend = findSegList('pendientes_guia')!;
     const o: OrderData = { ...baseOrder, estado: 'PENDIENTE', guia: '', fecha: '', dias: 5 };
     expect(indem.matches(o)).toBe(true);
     expect(pend.matches(o)).toBe(false);
   });
 
-  it('guia_generada_2d: estado GUIA GENERADA, 3 días → matchea', () => {
-    const lista = findSegList('guia_generada_2d')!;
-    const o: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 3 };
+  it('guia_generada: GUIA GENERADA recién → matchea (no exige +2d)', () => {
+    const lista = findSegList('guia_generada')!;
+    const o: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 1 };
     expect(lista.matches(o)).toBe(true);
   });
 
-  it('indem_guia_generada_5d: ADMITIDA con 6 días → matchea (alias de guía generada)', () => {
-    const lista = findSegList('indem_guia_generada_5d')!;
+  it('indem_guia_generada_5d: ADMITIDA 6d → matchea acá, NO en guia_generada', () => {
+    const indem = findSegList('indem_guia_generada_5d')!;
+    const gg = findSegList('guia_generada')!;
     const o: OrderData = { ...baseOrder, estado: 'ADMITIDA', fecha: '', dias: 6 };
-    expect(lista.matches(o)).toBe(true);
+    expect(indem.matches(o)).toBe(true);
+    expect(gg.matches(o)).toBe(false);
   });
+});
 
-  it('guia_generada_2d con 6 días NO matchea (cae en indem)', () => {
-    const lista = findSegList('guia_generada_2d')!;
-    const o: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 6 };
-    expect(lista.matches(o)).toBe(false);
-  });
-
-  it('reclamar_oficina_4d: estado con RECLAMAR, 5 días → matchea', () => {
-    const lista = findSegList('reclamar_oficina_4d')!;
-    const o: OrderData = { ...baseOrder, estado: 'RECLAMAR EN OFICINA', fecha: '', dias: 5 };
-    expect(lista.matches(o)).toBe(true);
-  });
-
-  it('en_proceso_7d: EN TRANSPORTE 8 días → matchea', () => {
-    const lista = findSegList('en_proceso_7d')!;
-    const o: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8 };
-    expect(lista.matches(o)).toBe(true);
-  });
-
-  it('en_proceso_7d: EN REPARTO 3 días NO matchea (no llegó al SLA)', () => {
-    const lista = findSegList('en_proceso_7d')!;
-    const o: OrderData = { ...baseOrder, estado: 'EN REPARTO', fecha: '', dias: 3 };
-    expect(lista.matches(o)).toBe(false);
-  });
-
-  it('otros_estados: estado raro (NOVEDAD) → matchea solo aquí', () => {
+describe('SEG_LISTS — catch-all y terminales', () => {
+  it('otros_estados: estado raro inventado → matchea solo aquí', () => {
     const otros = findSegList('otros_estados')!;
-    const o: OrderData = { ...baseOrder, estado: 'NOVEDAD', fecha: '', dias: 1 };
+    const o: OrderData = { ...baseOrder, estado: 'ESTADO_INVENTADO', fecha: '', dias: 1 };
     expect(otros.matches(o)).toBe(true);
-    // ninguna otra lista debería matchear NOVEDAD
     for (const lista of SEG_LISTS) {
       if (lista.slug === 'otros_estados') continue;
       expect(lista.matches(o)).toBe(false);
     }
   });
 
-  it('estados terminales (ENTREGADO/CANCELADO/DEVOLUCION) NO matchean ninguna lista', () => {
-    for (const estadoTerminal of ['ENTREGADO', 'CANCELADO', 'DEVOLUCION']) {
+  it('estados terminales (ENTREGADO/CANCELADO/DEVOLUCION/INDEMNIZADA) NO matchean ninguna lista', () => {
+    for (const estadoTerminal of ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'INDEMNIZADA']) {
       const o: OrderData = { ...baseOrder, estado: estadoTerminal, fecha: '', dias: 10 };
       for (const lista of SEG_LISTS) {
         expect(lista.matches(o), `${lista.slug} no debe matchear ${estadoTerminal}`).toBe(false);
       }
     }
   });
-
-  it('fallback a o.dias cuando fecha es inválida/vacía', () => {
-    const lista = findSegList('en_proceso_7d')!;
-    const o: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8 };
-    expect(lista.matches(o)).toBe(true);
-  });
 });
 
 describe('SEG_LISTS — días sin movimiento (lastMovementAt)', () => {
-  // Hoy en ISO: calcBusinessDays(hoy) === 0 (la fecha no es < hoy) → determinista.
   const hoyIso = new Date().toISOString();
 
-  it('guía generada VIEJA (10d) pero movida HOY → NO cae en indemnización (se movió)', () => {
+  it('guía generada VIEJA (10d) pero movida HOY → NO cae en indemnización', () => {
     const indem = findSegList('indem_guia_generada_5d')!;
-    // Sin lastMovementAt usa antigüedad desde creación → 10d → matchea indem.
     const stale: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 10 };
     expect(indem.matches(stale)).toBe(true);
-    // Con lastMovementAt = hoy → 0 días sin movimiento → NO matchea (no atrasada).
     const movedToday: OrderData = { ...stale, lastMovementAt: hoyIso };
     expect(indem.matches(movedToday)).toBe(false);
   });
 
-  it('guía generada movida HOY tampoco cae en guia_generada_2d (0 < 2)', () => {
-    const lista = findSegList('guia_generada_2d')!;
+  it('guía generada movida HOY cae en guia_generada (recien movida, 0d sin movimiento)', () => {
+    const lista = findSegList('guia_generada')!;
     const movedToday: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 10, lastMovementAt: hoyIso };
-    expect(lista.matches(movedToday)).toBe(false);
+    expect(lista.matches(movedToday)).toBe(true);
   });
 
-  it('en_proceso movido HOY → NO atrasado aunque sea viejo (8d creación)', () => {
-    const lista = findSegList('en_proceso_7d')!;
-    const movedToday: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8, lastMovementAt: hoyIso };
-    expect(lista.matches(movedToday)).toBe(false);
-  });
-
-  it('lastMovementAt inválido → cae al fallback de creación (o.dias)', () => {
-    const lista = findSegList('en_proceso_7d')!;
-    const o: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8, lastMovementAt: 'no-es-fecha' };
-    expect(lista.matches(o)).toBe(true);
-  });
-
-  it('pendientes_guia sigue usando antigüedad desde CREACIÓN (no movimiento)', () => {
-    // Un pedido sin guía nunca "se movió" en transportadora → la antigüedad
-    // relevante es desde creación. lastMovementAt no debe alterar este bucket.
-    const lista = findSegList('pendientes_guia_2d')!;
+  it('pendientes_guia sigue usando antigüedad desde CREACIÓN (sin guía → no hay movimiento real)', () => {
+    const lista = findSegList('pendientes_guia')!;
     const o: OrderData = { ...baseOrder, estado: 'PENDIENTE', guia: '', fecha: '', dias: 3, lastMovementAt: new Date().toISOString() };
     expect(lista.matches(o)).toBe(true);
   });
 });
 
 describe('helpers', () => {
-  it('isValidSegListSlug acepta slugs válidos', () => {
-    expect(isValidSegListSlug('pendientes_guia_2d')).toBe(true);
+  it('isValidSegListSlug acepta slugs válidos nuevos', () => {
+    expect(isValidSegListSlug('pendientes_guia')).toBe(true);
+    expect(isValidSegListSlug('en_oficina')).toBe(true);
+    expect(isValidSegListSlug('en_reparto_novedad')).toBe(true);
+    expect(isValidSegListSlug('en_transito')).toBe(true);
+    expect(isValidSegListSlug('guia_generada')).toBe(true);
     expect(isValidSegListSlug('otros_estados')).toBe(true);
   });
 
-  it('isValidSegListSlug rechaza slugs inválidos / null / vacío', () => {
+  it('isValidSegListSlug rechaza slugs viejos / inválidos / null', () => {
+    expect(isValidSegListSlug('pendientes_guia_2d')).toBe(false); // viejo
+    expect(isValidSegListSlug('en_proceso_7d')).toBe(false); // viejo
     expect(isValidSegListSlug('foo_bar')).toBe(false);
     expect(isValidSegListSlug(null)).toBe(false);
     expect(isValidSegListSlug('')).toBe(false);
