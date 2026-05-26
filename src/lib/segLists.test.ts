@@ -48,6 +48,7 @@ const baseOrder: OrderData = {
   suggestedCustomerMessage: '',
   suggestedAddress: null,
   addressParsed: null,
+  lastMovementAt: null,
 };
 
 describe('SEG_LISTS — definición', () => {
@@ -151,6 +152,47 @@ describe('SEG_LISTS — predicados', () => {
   it('fallback a o.dias cuando fecha es inválida/vacía', () => {
     const lista = findSegList('en_proceso_7d')!;
     const o: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8 };
+    expect(lista.matches(o)).toBe(true);
+  });
+});
+
+describe('SEG_LISTS — días sin movimiento (lastMovementAt)', () => {
+  // Hoy en ISO: calcBusinessDays(hoy) === 0 (la fecha no es < hoy) → determinista.
+  const hoyIso = new Date().toISOString();
+
+  it('guía generada VIEJA (10d) pero movida HOY → NO cae en indemnización (se movió)', () => {
+    const indem = findSegList('indem_guia_generada_5d')!;
+    // Sin lastMovementAt usa antigüedad desde creación → 10d → matchea indem.
+    const stale: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 10 };
+    expect(indem.matches(stale)).toBe(true);
+    // Con lastMovementAt = hoy → 0 días sin movimiento → NO matchea (no atrasada).
+    const movedToday: OrderData = { ...stale, lastMovementAt: hoyIso };
+    expect(indem.matches(movedToday)).toBe(false);
+  });
+
+  it('guía generada movida HOY tampoco cae en guia_generada_2d (0 < 2)', () => {
+    const lista = findSegList('guia_generada_2d')!;
+    const movedToday: OrderData = { ...baseOrder, estado: 'GUIA GENERADA', fecha: '', dias: 10, lastMovementAt: hoyIso };
+    expect(lista.matches(movedToday)).toBe(false);
+  });
+
+  it('en_proceso movido HOY → NO atrasado aunque sea viejo (8d creación)', () => {
+    const lista = findSegList('en_proceso_7d')!;
+    const movedToday: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8, lastMovementAt: hoyIso };
+    expect(lista.matches(movedToday)).toBe(false);
+  });
+
+  it('lastMovementAt inválido → cae al fallback de creación (o.dias)', () => {
+    const lista = findSegList('en_proceso_7d')!;
+    const o: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', fecha: '', dias: 8, lastMovementAt: 'no-es-fecha' };
+    expect(lista.matches(o)).toBe(true);
+  });
+
+  it('pendientes_guia sigue usando antigüedad desde CREACIÓN (no movimiento)', () => {
+    // Un pedido sin guía nunca "se movió" en transportadora → la antigüedad
+    // relevante es desde creación. lastMovementAt no debe alterar este bucket.
+    const lista = findSegList('pendientes_guia_2d')!;
+    const o: OrderData = { ...baseOrder, estado: 'PENDIENTE', guia: '', fecha: '', dias: 3, lastMovementAt: new Date().toISOString() };
     expect(lista.matches(o)).toBe(true);
   });
 });

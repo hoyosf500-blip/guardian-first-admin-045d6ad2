@@ -53,6 +53,10 @@ export interface OrderData {
   suggestedCustomerMessage: string;
   suggestedAddress: string | null;
   addressParsed: Record<string, unknown> | null;
+  /** Último movimiento real en Dropi (updated_at). Lo usan las Listas SLA para
+   *  medir días hábiles SIN MOVIMIENTO. Opcional/null hasta que la columna esté
+   *  viva (ver nota HOTFIX en orderColumns.ts) → cae al fallback de creación. */
+  lastMovementAt?: string | null;
 }
 
 /** Shape of a raw DB row from the orders table (all fields nullable) */
@@ -98,6 +102,9 @@ export interface DbOrderRow {
   suggested_customer_message?: string | null;
   suggested_address?: string | null;
   address_parsed?: Record<string, unknown> | null;
+  // Último movimiento en Dropi — migración 20260526120000. Opcional: el SELECT
+  // no lo trae hasta que la migración esté aplicada (ver orderColumns.ts).
+  last_movement_at?: string | null;
 }
 
 /** Convert a raw DB row into an OrderData object */
@@ -129,6 +136,7 @@ export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
     suggestedCustomerMessage: o.suggested_customer_message || '',
     suggestedAddress: o.suggested_address ?? null,
     addressParsed: (o.address_parsed as Record<string, unknown>) ?? null,
+    lastMovementAt: o.last_movement_at ?? null,
   };
 }
 

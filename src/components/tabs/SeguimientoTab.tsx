@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
+import { useStore } from '@/contexts/StoreContext';
 import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
 import { SEG_ACTIONS } from '@/lib/constants';
@@ -51,12 +52,17 @@ function getOrderAgeDays(order: OrderData): number {
 // transportadora ni llamada al cliente lo rescata (la guía ya se devolvió hace
 // rato en la práctica). Seguimiento es para pedidos que SÍ pueden recibir
 // atención; los que no se mueven hace +1 mes solo son contaminación visual.
-// Las listas SLA más extremas (segLists) llegan a ~7 días, así que 21 días
-// hábiles (~1 mes calendario) deja 3x de margen sobre todo lo accionable.
 // OJO: esto solo OCULTA en la vista de operadora — la data sigue intacta en la
 // DB para Logística/Finanzas (ej. "ciudades con más entregas"), y se puede ver
 // poniendo un rango de fechas explícito.
-const MAX_ACTIONABLE_BUSINESS_DAYS = 21;
+//
+// El cutoff es POR PAÍS: Colombia cicla rápido (21 días hábiles ~ 1 mes deja 3x
+// de margen sobre las listas SLA que llegan a ~7 días). Ecuador cicla MUCHO más
+// lento (las transportadoras EC tardan semanas), así que un cutoff de 21d
+// escondía operación EC legítimamente activa → "no me muestra toda mi
+// operación". EC usa una ventana más amplia.
+const MAX_ACTIONABLE_BY_COUNTRY: Record<string, number> = { CO: 21, EC: 60 };
+const DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS = 21;
 
 // Punto de color por urgencia para los chips de listas SLA (mapea SegListDef.tone).
 const LIST_TONE_DOT: Record<string, string> = {
@@ -73,6 +79,11 @@ export default function SeguimientoTab() {
   // "Cargando seguimiento..." and lose all filter/selection state every
   // time they switched tabs.
   const { segData, segLoaded, segLoading, segLastUpdate, loadSegData } = useOrders();
+  // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
+  // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
+  const { activeStore } = useStore();
+  const maxActionableDays =
+    MAX_ACTIONABLE_BY_COUNTRY[activeStore?.country_code ?? 'CO'] ?? DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS;
 
   // Filter state persisted to sessionStorage so it also survives tab
   // discards (Chrome Memory Saver) and internal route navigation.
@@ -118,8 +129,8 @@ export default function SeguimientoTab() {
   // No se borra nada: la data vieja sigue en la DB para Logística/Finanzas.
   const actionableData = useMemo(() => {
     if (dateFrom || dateTo) return segData;
-    return segData.filter(o => getOrderAgeDays(o) <= MAX_ACTIONABLE_BUSINESS_DAYS);
-  }, [segData, dateFrom, dateTo]);
+    return segData.filter(o => getOrderAgeDays(o) <= maxActionableDays);
+  }, [segData, dateFrom, dateTo, maxActionableDays]);
 
   // Cuántos pedidos viejos se ocultaron (solo en la vista por defecto), para
   // mostrar una nota sutil — transparencia: no desaparecen en silencio.
@@ -382,7 +393,7 @@ export default function SeguimientoTab() {
               {hiddenStaleCount > 0 && (
                 <span
                   className="text-[10px] text-subtle font-mono"
-                  title={`${hiddenStaleCount} pedidos sin movimiento hace +1 mes (muertos, no accionables). No se borraron — vé el histórico poniendo un rango de fechas.`}
+                  title={`${hiddenStaleCount} pedidos sin movimiento hace +${maxActionableDays} días hábiles (muertos, no accionables). No se borraron — vé el histórico poniendo un rango de fechas.`}
                 >
                   · {hiddenStaleCount} viejos ocultos
                 </span>

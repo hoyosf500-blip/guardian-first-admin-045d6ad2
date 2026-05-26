@@ -239,6 +239,9 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
     tags,
     tienda,
     novedad_sol: novedadSol,
+    // Último movimiento real en Dropi (updated_at). Lo usan las Listas SLA de
+    // /seguimiento para medir días hábiles SIN MOVIMIENTO (no antigüedad).
+    last_movement_at: updatedAt || null,
   };
 }
 
@@ -266,10 +269,17 @@ async function syncStore(
   passes: SyncPass[],
   todayStr: string,
   globalDeadline: number,
+  perStoreBudgetMs: number,
 ): Promise<{ synced: number; total: number; error?: string; throttled?: boolean }> {
   const base = dropiHostFor(store.country_code);
-  // El más cercano gana: el cap por tienda o lo que quede del presupuesto global.
-  const deadline = Math.min(Date.now() + STORE_TIME_BUDGET_MS, globalDeadline);
+  // El más cercano gana: la rebanada JUSTA de esta tienda (presupuesto global /
+  // nº de tiendas, con techo STORE_TIME_BUDGET_MS) o lo que quede del global.
+  // Esto GARANTIZA que cada tienda —incluida la que corre primero— deje tiempo
+  // para las demás: una tienda pesada/throttleada ya no se come toda la corrida.
+  const deadline = Math.min(
+    Date.now() + Math.min(STORE_TIME_BUDGET_MS, perStoreBudgetMs),
+    globalDeadline,
+  );
   let synced = 0;
   let total = 0;
 
@@ -382,6 +392,15 @@ Deno.serve(async (req: Request) => {
     }
 
     const activeConfigs = (configs || []).filter((c: Record<string, unknown>) => c.dropi_api_key);
+    // Orden determinista: CO (mercado principal) primero. Antes el orden era el
+    // que devolvía Postgres (indefinido) y si Ecuador —que Dropi throttlea
+    // fuerte— caía primero, consumía el presupuesto global y dejaba a Colombia
+    // SIN sincronizar → guías "que no se mueven". Con CO primero + presupuesto
+    // justo por tienda (abajo), ninguna tienda puede starvear a otra.
+    activeConfigs.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+      const rank = (cc: unknown) => (String(cc || "CO") === "CO" ? 0 : 1);
+      return rank(a.country_code) - rank(b.country_code);
+    });
     if (activeConfigs.length === 0) {
       console.warn("dropi-cron: no hay tiendas activas con dropi_api_key");
       return new Response(JSON.stringify({ stores: 0, message: "Sin tiendas configuradas" }), {
@@ -430,6 +449,10 @@ Deno.serve(async (req: Request) => {
     // Deadline global de la corrida: ninguna tienda paginará más allá de esto,
     // así siempre queda tiempo para loguear y correr el post-proceso.
     const globalDeadline = Date.now() + GLOBAL_TIME_BUDGET_MS;
+    // Rebanada justa por tienda: reparte el presupuesto global en partes iguales
+    // para que la 1ª tienda no lo devore. Con 2 tiendas → ~60s c/u. Si una
+    // termina antes, las siguientes igual respetan su techo (no se penaliza CO).
+    const perStoreBudget = Math.floor(GLOBAL_TIME_BUDGET_MS / activeConfigs.length);
 
     for (const cfg of activeConfigs) {
       const storeId = String(cfg.store_id);
@@ -447,7 +470,7 @@ Deno.serve(async (req: Request) => {
         owner_id: ownerId,
       };
       console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) — cambio_estatus ${from}→${to} + creado ${dateBack(CREATED_DAYS_BACK)}→${to}`);
-      const r = await syncStore(sb, store, passes, todayStr, globalDeadline);
+      const r = await syncStore(sb, store, passes, todayStr, globalDeadline, perStoreBudget);
       grandSynced += r.synced;
       grandTotal += r.total;
       perStore.push({ store_id: storeId, country: store.country_code, ...r });

@@ -1,5 +1,5 @@
 import type { OrderData } from './orderUtils';
-import { calcBusinessDays } from './orderUtils';
+import { calcBusinessDays, parseDate } from './orderUtils';
 
 /**
  * "Listas SLA" estilo Boostec: 8 sublistas pre-clasificadas que el operador
@@ -91,6 +91,27 @@ function diasDesdeCreacion(o: OrderData): number {
   return Math.max(0, o.dias || 0);
 }
 
+/**
+ * Días hábiles desde el ÚLTIMO MOVIMIENTO real del pedido en Dropi
+ * (`o.lastMovementAt` = updated_at). Para los buckets donde "sin movimiento" es
+ * la semántica correcta (guía generada / en proceso / reclamar oficina): un
+ * pedido VIEJO pero que se movió ayer NO debe contar como atrasado — antes esto
+ * usaba antigüedad desde creación y marcaba como "sin movimiento" guías que de
+ * hecho ya se habían entregado/movido.
+ *
+ * 0 es un valor VÁLIDO (se movió hoy) — por eso NO usamos el patrón
+ * `if (d > 0)` de diasDesdeCreacion. Solo caemos al fallback de creación si
+ * `lastMovementAt` falta o no parsea: la columna aún no está viva en la DB
+ * (ver orderColumns.ts) o el pedido nunca registró updated_at. Con el fallback
+ * el comportamiento es idéntico al previo a la migración 20260526120000.
+ */
+function diasSinMovimiento(o: OrderData): number {
+  if (o.lastMovementAt && parseDate(o.lastMovementAt)) {
+    return calcBusinessDays(o.lastMovementAt);
+  }
+  return diasDesdeCreacion(o);
+}
+
 export const SEG_LISTS: SegListDef[] = [
   {
     slug: 'pendientes_confirmacion_2d',
@@ -130,7 +151,7 @@ export const SEG_LISTS: SegListDef[] = [
     tone: 'warning',
     matches: (o) => {
       if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
-      const d = diasDesdeCreacion(o);
+      const d = diasSinMovimiento(o);
       return d >= 2 && d < 5;
     },
   },
@@ -141,7 +162,7 @@ export const SEG_LISTS: SegListDef[] = [
     tone: 'danger',
     matches: (o) => {
       if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
-      return diasDesdeCreacion(o) >= 5;
+      return diasSinMovimiento(o) >= 5;
     },
   },
   {
@@ -151,7 +172,7 @@ export const SEG_LISTS: SegListDef[] = [
     tone: 'danger',
     matches: (o) => {
       if (!ESTADOS_RECLAMAR(E(o.estado))) return false;
-      return diasDesdeCreacion(o) >= 4;
+      return diasSinMovimiento(o) >= 4;
     },
   },
   {
@@ -161,7 +182,7 @@ export const SEG_LISTS: SegListDef[] = [
     tone: 'danger',
     matches: (o) => {
       if (!ESTADOS_TRANSITO.includes(E(o.estado))) return false;
-      return diasDesdeCreacion(o) >= 7;
+      return diasSinMovimiento(o) >= 7;
     },
   },
   {

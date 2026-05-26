@@ -264,6 +264,9 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
     tags,
     tienda,
     novedad_sol: novedadSol,
+    // Último movimiento real en Dropi (updated_at). Lo usan las Listas SLA de
+    // /seguimiento para medir días hábiles SIN MOVIMIENTO (no antigüedad).
+    last_movement_at: updatedAt || null,
   };
 }
 
