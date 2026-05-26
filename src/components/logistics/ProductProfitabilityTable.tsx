@@ -11,6 +11,7 @@ import {
   type ProfitTone,
 } from '@/hooks/useProductProfitability';
 import { formatCOP } from '@/lib/utils';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 
 // ─────────────────────────────────────────────────────────────────
@@ -186,6 +187,9 @@ export default function ProductProfitabilityTable({ filters }: Props) {
               {sortedRows.map((row) => {
                 const tone = marginTone(row);
                 const totalCostos = row.costo_prod_entregados + row.flete_inicial_entregados + row.costo_devolucion_total;
+                // Tasa de entrega MADURA (÷ entregados+devueltos), consistente con
+                // el resto de logística. El margen/utilidad ya van sobre entregados.
+                const tasaEntregaMadura = deriveDeliveryMaturity(row.entregados, row.devueltos, row.total_pedidos).tasaEntregaMadura;
                 return (
                   <tr key={row.producto} className={TONE_BG[tone]}>
                     <td className="px-3 py-2 text-xs text-foreground font-medium sticky left-0 bg-card max-w-[280px] truncate" title={row.producto}>
@@ -196,7 +200,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
                     <td className="px-3 py-2 text-right text-xs tabular-nums text-info">{row.en_transito}</td>
                     <td className="px-3 py-2 text-right text-xs tabular-nums text-red">{row.devueltos}</td>
                     <td className="px-3 py-2 text-right text-xs tabular-nums text-muted-foreground">{row.cancelados}</td>
-                    <td className="px-3 py-2 text-right text-xs tabular-nums text-foreground">{row.tasa_entrega.toFixed(0)}%</td>
+                    <td className="px-3 py-2 text-right text-xs tabular-nums text-foreground">{tasaEntregaMadura == null ? '—' : `${tasaEntregaMadura}%`}</td>
                     <td className="px-3 py-2 text-right text-xs tabular-nums font-mono text-muted-foreground">
                       {row.ticket_promedio > 0 ? formatCOP(row.ticket_promedio) : '—'}
                     </td>
