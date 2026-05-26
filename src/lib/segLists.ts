@@ -251,7 +251,7 @@ export const SEG_LISTS: SegListDef[] = [
       if (e === 'PENDIENTE') return false;
       if (e === 'PENDIENTE CONFIRMACION') return false;
       if (ESTADOS_GUIA_GENERADA.includes(e)) return false;
-      if (ESTADOS_TRANSITO.includes(e)) return false;
+      if (matchTransito(e)) return false;
       if (ESTADOS_REPARTO_NOVEDAD.includes(e)) return false;
       if (ESTADOS_OFICINA(e)) return false;
       return true;
