@@ -1,0 +1,231 @@
+import { useMemo } from 'react';
+import {
+  Package as PackageIcon, Wallet, ArrowRight, TrendingDown, Info,
+} from 'lucide-react';
+import { buildMesResumen, type BucketTone } from '@/lib/mesResumen';
+import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
+import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
+import { useWalletMovements } from '@/hooks/useWalletMovements';
+import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
+import { formatCOP } from '@/lib/utils';
+
+// "Cómo voy este mes" — vive en Logística → Resumen (managerOnly, lo ven los
+// socios). Responde dos preguntas del dueño:
+//   1. De lo generado, ¿cuánto está en tránsito / entregado / novedad / devuelto?
+//      (embudo por estado, SIN huecos — ver buildMesResumen).
+//   2. ¿Por qué Dropi dice "utilidad estimada $X" pero mi wallet tiene $Y?
+//      (conciliación: valor generado → realizado + plata REAL del wallet).
+//
+// El `summary` lo inyecta LogisticaTab (ya lo trae useLogisticsStats, no
+// re-fetch). La plata real sí la pide acá (ganancia neta + saldo del wallet),
+// scopeada a la tienda activa.
+
+// Color del bullet por estado — mismos tokens DS que el stacked bar de la tab.
+const TONE_BAR: Record<BucketTone, string> = {
+  pending:   'hsl(var(--muted-foreground))',
+  transit:   'hsl(var(--info))',
+  novedad:   'hsl(var(--warning))',
+  entregado: 'hsl(var(--success))',
+  devuelto:  'hsl(var(--danger))',
+  cancelado: 'hsl(var(--muted-foreground) / 0.6)',
+  otros:     'hsl(var(--muted-foreground) / 0.4)',
+};
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Título: "Cómo voy — mayo 2026" si el rango es el mes calendario actual; si
+ *  no, "Resumen del período". Detecta mes-actual comparando from=1ro y to=hoy. */
+function rangeTitle(filters: LogisticsFilters): string {
+  const now = new Date();
+  const firstOfMonth = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
+  const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  if (filters.fromDate === firstOfMonth && filters.toDate === today) {
+    const mes = now.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+    return `Cómo voy — ${mes}`;
+  }
+  return 'Cómo voy — período seleccionado';
+}
+
+interface Props {
+  summary: LogisticsSummary | null;
+  filters: LogisticsFilters;
+}
+
+export default function MesActualResumen({ summary, filters }: Props) {
+  const resumen = useMemo(() => buildMesResumen(summary), [summary]);
+
+  const { data: ganancia, isLoading: gananciaLoading } = useGananciaNetaDropi(
+    filters.fromDate, filters.toDate,
+  );
+  const { data: wallet, isLoading: walletLoading } = useWalletMovements({
+    fromDate: filters.fromDate, toDate: filters.toDate, page: 1, pageSize: 1,
+  });
+
+  const title = rangeTitle(filters);
+
+  if (!resumen) {
+    return (
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="h-40 animate-pulse bg-muted/30 rounded" />
+      </section>
+    );
+  }
+
+  const gananciaNeta = ganancia?.ganancia_neta ?? 0;
+  const totalEntradas = ganancia?.total_entradas ?? 0;
+  const totalSalidas = ganancia?.total_salidas ?? 0;
+  const saldoActual = wallet?.ultimoSaldo ?? null;
+
+  return (
+    <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
+      {/* Header */}
+      <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <PackageIcon size={15} className="text-accent shrink-0" strokeWidth={2.25} />
+          <h3 className="text-sm font-bold tracking-tight text-foreground capitalize truncate">
+            {title}
+          </h3>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] text-muted-foreground">
+            {resumen.generadoTotal.toLocaleString('es-CO')} pedidos generados
+          </span>
+          <WalletSyncBadge size="sm" showLabel />
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-border">
+        {/* ── Bloque A — Embudo por estado ─────────────────────────── */}
+        <div className="p-5 space-y-3">
+          <h4 className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+            Embudo del mes · por estado
+          </h4>
+          <div className="space-y-2.5">
+            {resumen.buckets.map((b) => (
+              <div key={b.key}>
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <div className="min-w-0">
+                    <span className="text-xs font-medium text-foreground">{b.label}</span>
+                    {b.sublabel && (
+                      <span className="text-[10px] text-muted-foreground ml-2">{b.sublabel}</span>
+                    )}
+                  </div>
+                  <div className="flex items-baseline gap-2 shrink-0 tabular-nums">
+                    <span className="text-sm font-bold text-foreground">{b.count}</span>
+                    <span className="text-[10px] text-muted-foreground w-9 text-right">
+                      {b.pct.toFixed(0)}%
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground w-24 text-right">
+                      {b.valor > 0 ? formatCOP(b.valor) : '—'}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.max(2, Math.min(100, b.pct))}%`,
+                      background: TONE_BAR[b.tone],
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Bloque B — Conciliación de plata ──────────────────────── */}
+        <div className="p-5 space-y-4">
+          <h4 className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+            Conciliación · de lo generado a lo real
+          </h4>
+
+          {/* Cascada: valor generado − fugas = realizado */}
+          <div className="rounded-lg border border-border bg-muted/10 divide-y divide-border text-sm">
+            <WaterfallRow label="Valor generado" value={resumen.valorGenerado} tone="base" />
+            <WaterfallRow label="En tránsito (sin cobrar aún)" value={-resumen.valorEnTransito} tone="muted" />
+            <WaterfallRow label="En novedad (en riesgo)" value={-resumen.valorNovedades} tone="muted" />
+            <WaterfallRow label="Pendientes" value={-resumen.valorPendientes} tone="muted" />
+            <WaterfallRow label="Devueltos (perdido)" value={-resumen.valorPerdido} tone="danger" />
+            <WaterfallRow label="Cancelados" value={-resumen.valorCancelado} tone="muted" />
+            <WaterfallRow label="Valor entregado (realizado)" value={resumen.valorEntregado} tone="success" emphasis />
+          </div>
+
+          {/* Wallet REAL */}
+          <div className="rounded-lg border border-border bg-card p-3.5 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <Wallet size={13} className="text-accent" />
+              <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                Wallet REAL
+              </span>
+            </div>
+            {(gananciaLoading || walletLoading) ? (
+              <div className="h-12 animate-pulse bg-muted/30 rounded" />
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Ganancia neta operativa del mes
+                    <span className="block text-[10px] text-muted-foreground/70">
+                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)}
+                    </span>
+                  </span>
+                  <span className={`text-base font-bold tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
+                    {formatCOP(gananciaNeta)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5">
+                  <span className="text-xs text-foreground font-medium">Saldo disponible hoy</span>
+                  <span className="text-base font-bold tabular-nums text-foreground shrink-0">
+                    {saldoActual != null ? formatCOP(saldoActual) : '—'}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Explicación llana del gap */}
+          <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
+            <Info size={13} className="text-info shrink-0 mt-0.5" />
+            <p>
+              Dropi te muestra un <strong className="text-foreground">estimado optimista</strong> que asume
+              que TODO lo generado se entrega. Acá ves lo que ya es real (entregado) vs lo que
+              falta cobrar (tránsito/novedad) o se perdió (devoluciones). El{' '}
+              <strong className="text-foreground">saldo del wallet</strong> es tu plata disponible hoy,
+              después de fletes, devoluciones y retiros — por eso no coincide con el estimado.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function WaterfallRow({
+  label, value, tone, emphasis,
+}: {
+  label: string;
+  value: number;
+  tone: 'base' | 'muted' | 'success' | 'danger';
+  emphasis?: boolean;
+}) {
+  const isNeg = value < 0;
+  const valTone =
+    tone === 'success' ? 'text-green'
+    : tone === 'danger' ? 'text-red'
+    : tone === 'muted' ? 'text-muted-foreground'
+    : 'text-foreground';
+
+  return (
+    <div className={`flex items-center justify-between gap-2 px-3.5 py-2 ${emphasis ? 'bg-green/5' : ''}`}>
+      <span className={`flex items-center gap-1.5 ${emphasis ? 'text-sm font-bold text-foreground' : 'text-xs text-foreground/90'}`}>
+        {emphasis && <ArrowRight size={12} className="text-green" />}
+        {tone === 'danger' && <TrendingDown size={11} className="text-red" />}
+        {label}
+      </span>
+      <span className={`font-mono tabular-nums shrink-0 ${emphasis ? 'text-sm font-bold' : 'text-xs'} ${valTone}`}>
+        {isNeg ? '−' : ''}{formatCOP(Math.abs(value))}
+      </span>
+    </div>
+  );
+}

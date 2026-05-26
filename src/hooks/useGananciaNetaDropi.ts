@@ -58,58 +58,101 @@ const EMPTY_DESGLOSE: DesgloseGanancia = {
   orden_sin_recaudo: 0,
 };
 
+function num(v: unknown): number {
+  const n = Number(v);
+  return isFinite(n) ? n : 0;
+}
+
 /**
- * Calcula la GANANCIA NETA REAL desde la wallet de Dropi sumando solo
- * categorías OPERATIVAS (excluye retiros/depósitos/transferencias que
- * no afectan la ganancia, son movimientos de tesorería).
+ * Agrega movimientos crudos del wallet en la ganancia neta operativa.
+ * Función PURA — la usa el fallback (select directo, solo admin por RLS).
+ * Toma valor absoluto del monto porque las salidas pueden venir negativas.
+ */
+export function aggregateMovements(
+  data: Array<{ categoria?: string | null; monto?: number | string | null }>,
+): GananciaNetaResult {
+  const desglose: DesgloseGanancia = { ...EMPTY_DESGLOSE };
+  let totalEntradas = 0;
+  let totalSalidas = 0;
+  let count = 0;
+  for (const m of data || []) {
+    const monto = Math.abs(num(m.monto));
+    const cat = (m.categoria ?? '') as string;
+    if ((ENTRADAS_OPERATIVAS as readonly string[]).includes(cat)) {
+      (desglose as unknown as Record<string, number>)[cat] += monto;
+      totalEntradas += monto;
+      count++;
+    } else if ((SALIDAS_OPERATIVAS as readonly string[]).includes(cat)) {
+      (desglose as unknown as Record<string, number>)[cat] += monto;
+      totalSalidas += monto;
+      count++;
+    }
+  }
+  return {
+    total_entradas: totalEntradas,
+    total_salidas: totalSalidas,
+    ganancia_neta: totalEntradas - totalSalidas,
+    movimientos_count: count,
+    desglose,
+  };
+}
+
+/** Mapea la fila del RPC `wallet_ganancia_neta` al shape del hook. */
+function mapRpcRow(row: Record<string, unknown>): GananciaNetaResult {
+  return {
+    total_entradas: num(row.total_entradas),
+    total_salidas: num(row.total_salidas),
+    ganancia_neta: num(row.ganancia_neta),
+    movimientos_count: num(row.movimientos_count),
+    desglose: {
+      ganancia_dropshipper: num(row.ganancia_dropshipper),
+      ganancia_proveedor: num(row.ganancia_proveedor),
+      reembolso_flete: num(row.reembolso_flete),
+      indemnizacion: num(row.indemnizacion),
+      flete_inicial: num(row.flete_inicial),
+      costo_devolucion: num(row.costo_devolucion),
+      comision_referidos: num(row.comision_referidos),
+      mantenimiento_tarjeta: num(row.mantenimiento_tarjeta),
+      orden_sin_recaudo: num(row.orden_sin_recaudo),
+    },
+  };
+}
+
+/**
+ * GANANCIA NETA REAL desde la wallet de Dropi (entradas − salidas operativas,
+ * excluye retiros/depósitos/transferencias de tesorería).
  *
- * El cálculo es client-side para no depender de migrations del RPC.
- * Hace una sola query a dropi_wallet_movements filtrando por fecha y
- * agrupa client-side por categoria.
- *
- * Formato de fecha alineado con useWalletMovements: la columna `fecha` es
- * timestamptz, así que filtramos `>= ${from}T00:00:00Z` y
- * `<= ${to}T23:59:59Z` para incluir todo el día final.
+ * RPC-first: `wallet_ganancia_neta` es SECURITY DEFINER scopeado por tienda
+ * (_resolve_scope_store), así un SOCIO (owner/supervisor, no admin) ve la
+ * ganancia de SU tienda. Si el RPC no está desplegado todavía (pre-`db push`),
+ * cae al SELECT directo — que por RLS admin-only le sirve al admin y devuelve
+ * 0 a un socio (estado previo, sin romper nada).
  */
 export function useGananciaNetaDropi(from: string, to: string) {
-  // Por tienda: cada tienda es una cuenta Dropi distinta.
   const storeId = useActiveStoreId();
   return useQuery<GananciaNetaResult>({
     queryKey: ['ganancia-neta-dropi', storeId, from, to],
     queryFn: async () => {
       const fromTs = `${from}T00:00:00Z`;
       const toTs = `${to}T23:59:59Z`;
-      const { data, error } = await supabase
+
+      // 1. RPC store-scoped (camino principal — funciona para socios).
+      const { data, error } = await supabase.rpc('wallet_ganancia_neta', {
+        p_from: fromTs, p_to: toTs,
+      });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return mapRpcRow(data[0] as Record<string, unknown>);
+      }
+
+      // 2. Fallback: select directo (RPC no desplegado aún). Admin OK; socio → 0.
+      const { data: movs, error: selErr } = await supabase
         .from('dropi_wallet_movements')
         .select('categoria,monto,tipo')
         .eq('store_id', storeId as string)
         .gte('fecha', fromTs)
         .lte('fecha', toTs);
-      if (error) throw error;
-      const desglose: DesgloseGanancia = { ...EMPTY_DESGLOSE };
-      let totalEntradas = 0;
-      let totalSalidas = 0;
-      let count = 0;
-      for (const m of data || []) {
-        const monto = Math.abs(Number(m.monto) || 0);
-        const cat = m.categoria as string;
-        if ((ENTRADAS_OPERATIVAS as readonly string[]).includes(cat)) {
-          (desglose as unknown as Record<string, number>)[cat] += monto;
-          totalEntradas += monto;
-          count++;
-        } else if ((SALIDAS_OPERATIVAS as readonly string[]).includes(cat)) {
-          (desglose as unknown as Record<string, number>)[cat] += monto;
-          totalSalidas += monto;
-          count++;
-        }
-      }
-      return {
-        total_entradas: totalEntradas,
-        total_salidas: totalSalidas,
-        ganancia_neta: totalEntradas - totalSalidas,
-        movimientos_count: count,
-        desglose,
-      };
+      if (selErr) throw selErr;
+      return aggregateMovements(movs || []);
     },
     staleTime: 60_000,
     enabled: Boolean(from && to && storeId),

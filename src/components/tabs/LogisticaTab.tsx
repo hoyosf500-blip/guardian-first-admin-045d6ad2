@@ -27,6 +27,7 @@ import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import BilleteraTab from '@/components/logistics/BilleteraTab';
 import FinanzasTab from '@/components/logistics/FinanzasTab';
+import MesActualResumen from '@/components/logistics/MesActualResumen';
 import {
   CHART_TOOLTIP_STYLE,
   CHART_GRID_PROPS,
@@ -148,10 +149,13 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 const localISODate = (d: Date) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
+// Default = MES CALENDARIO ACTUAL (1ro → hoy), no 30d rolling. El dueño quiere
+// abrir en "cómo voy este mes" y que los KPIs coincidan con la vista mensual de
+// Dropi (el rolling 30d mostraba 253 vs los 181 del mes en Dropi → confundía).
+// Los presets 7d/30d/90d/Histórico siguen disponibles para ampliar.
 function defaultRange(): LogisticsFilters {
   const to = new Date();
-  const from = new Date(to);
-  from.setDate(from.getDate() - 30);
+  const from = new Date(to.getFullYear(), to.getMonth(), 1);
   return {
     fromDate: localISODate(from),
     toDate: localISODate(to),
@@ -363,6 +367,12 @@ export default function LogisticaTab() {
               transportadora. Antes vivían fuera del sistema de tabs y se
               renderizaban siempre (espacio muerto en las otras tabs). */}
           <TabsContent value="resumen" className="mt-4 space-y-4">
+            {/* "Cómo voy este mes": embudo por estado (sin huecos) +
+                conciliación de plata (generado → realizado + wallet real).
+                Responde "de los 181, cuántos en tránsito/entregado/novedad" y
+                "por qué el estimado de Dropi ≠ mi saldo del wallet". */}
+            <MesActualResumen summary={summary.data ?? null} filters={filters} />
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               <div className="lg:col-span-7">
                 <LogisticsHeroChart rows={carriers.data ?? []} />

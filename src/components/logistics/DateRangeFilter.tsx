@@ -16,7 +16,11 @@ interface Props {
 // operar bastante después, así que cubre todo el histórico real.
 const HISTORICO_FROM = '2020-01-01';
 
-const PRESETS: { label: string; days: number | null }[] = [
+// `kind: 'month'` = mes calendario actual (1ro → hoy). Es el default del panel
+// (ver LogisticaTab.defaultRange) — el dueño quiere "cómo voy este mes".
+type Preset = { label: string; days: number | null; kind?: 'month' };
+const PRESETS: Preset[] = [
+  { label: 'Mes actual', days: null, kind: 'month' },
   { label: '7d', days: 7 },
   { label: '30d', days: 30 },
   { label: '90d', days: 90 },
@@ -24,25 +28,38 @@ const PRESETS: { label: string; days: number | null }[] = [
   { label: 'Histórico', days: null },
 ];
 
+// Fecha en formato YYYY-MM-DD usando hora LOCAL (no toISOString, que en CO
+// de noche —UTC-5— adelanta el día y corre el rango).
+const pad2 = (n: number) => String(n).padStart(2, '0');
 function isoDate(d: Date): string {
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function firstOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
 export default memo(function DateRangeFilter({ value, onChange }: Props) {
-  const applyPreset = useCallback((days: number | null) => {
+  const applyPreset = useCallback((p: Preset) => {
     const to = new Date();
-    if (days == null) {
+    if (p.kind === 'month') {
+      onChange({ fromDate: isoDate(firstOfMonth(to)), toDate: isoDate(to) });
+      return;
+    }
+    if (p.days == null) {
       onChange({ fromDate: HISTORICO_FROM, toDate: isoDate(to) });
       return;
     }
     const from = new Date(to);
-    from.setDate(from.getDate() - days);
+    from.setDate(from.getDate() - p.days);
     onChange({ fromDate: isoDate(from), toDate: isoDate(to) });
   }, [onChange]);
 
   // Detecta cuál preset coincide para resaltar.
   const today = isoDate(new Date());
   const activePreset = PRESETS.find(p => {
+    if (p.kind === 'month') {
+      return value.fromDate === isoDate(firstOfMonth(new Date())) && value.toDate === today;
+    }
     if (p.days == null) {
       return value.fromDate === HISTORICO_FROM && value.toDate === today;
     }
@@ -60,7 +77,7 @@ export default memo(function DateRangeFilter({ value, onChange }: Props) {
           <button
             key={p.label}
             type="button"
-            onClick={() => applyPreset(p.days)}
+            onClick={() => applyPreset(p)}
             aria-pressed={activePreset === p.label}
             className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
               activePreset === p.label

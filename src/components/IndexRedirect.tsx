@@ -5,8 +5,12 @@ import { useStore } from '@/contexts/StoreContext';
 /**
  * Aterrizaje del index (`/`) según rol. Las operadoras caen directo en su
  * primera tarea del día (Confirmar) en vez del Dashboard de gráficas — uno de
- * los puntos donde más "se perdían" al entrar. Managers/admin siguen yendo al
- * Dashboard.
+ * los puntos donde más "se perdían" al entrar.
+ *
+ * Managers/admin aterrizan en `/logistica` → Resumen ("Cómo voy este mes":
+ * embudo por estado + conciliación del wallet). El viejo `/dashboard` solo
+ * mostraba conteos de confirmación (cosa de operador) y no le servía al dueño;
+ * sigue accesible desde el nav, pero ya no es el landing.
  *
  * Se renderiza dentro del outlet de ProtectedLayout, que ya bloqueó el render
  * mientras auth/store cargaban, así que `isManagerOfActive`/`isAdmin` ya son
@@ -15,6 +19,6 @@ import { useStore } from '@/contexts/StoreContext';
 export default function IndexRedirect() {
   const { isAdmin } = useAuth();
   const { isManagerOfActive } = useStore();
-  const target = isAdmin || isManagerOfActive ? '/dashboard' : '/confirmar';
+  const target = isAdmin || isManagerOfActive ? '/logistica' : '/confirmar';
   return <Navigate to={target} replace />;
 }
