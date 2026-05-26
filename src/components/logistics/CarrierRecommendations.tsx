@@ -1,6 +1,7 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Lightbulb, Copy, ArrowRightLeft, CheckCircle2, Info } from 'lucide-react';
-import { useCarrierRecommendations } from '@/hooks/useCarrierRecommendations';
+import { useCityCarrierMatrix } from '@/hooks/useCityCarrierMatrix';
+import { deriveCarrierRecommendations } from '@/lib/carrierRecommendations';
 import { copyToClipboard } from '@/lib/clipboard';
 import type { LogisticsFilters, CarrierRecommendation } from '@/lib/logistics.types';
 
@@ -19,23 +20,28 @@ export default memo(function CarrierRecommendations({
   filters,
   minOrders = 20,
 }: Props) {
-  const recs = useCarrierRecommendations({ filters, minOrders });
+  // Derivado de la matriz city-carrier (scopeada por tienda) con tasa MADURA.
+  // topCities alto para cubrir prácticamente todas las ciudades relevantes
+  // (el ranking viejo no estaba limitado a top N).
+  const matrix = useCityCarrierMatrix({ filters, minOrders, topCities: 50 });
+  const rows = useMemo(
+    () => deriveCarrierRecommendations(matrix.data ?? [], minOrders),
+    [matrix.data, minOrders],
+  );
 
-  if (recs.isLoading) {
+  if (matrix.isLoading) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 skeleton-shimmer min-h-[300px]" />
     );
   }
 
-  if (recs.isError) {
+  if (matrix.isError) {
     return (
       <div className="rounded-xl border border-border bg-card p-5 text-sm text-danger">
-        Error cargando recomendaciones: {recs.error?.message}
+        Error cargando recomendaciones: {matrix.error?.message}
       </div>
     );
   }
-
-  const rows = recs.data ?? [];
 
   if (rows.length === 0) {
     return (

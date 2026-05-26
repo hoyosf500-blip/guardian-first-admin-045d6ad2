@@ -2,6 +2,7 @@ import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useWalletDailySeries } from '@/hooks/useWalletMovements';
 import type { LogisticsFilters } from '@/lib/logistics.types';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import { formatCOP } from '@/lib/utils';
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, RotateCcw,
@@ -62,6 +63,13 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const totalDevs = data?.total_devueltas ?? 0;
   const promedioDev = totalDevs > 0 ? Math.round(perdidaTotalDevs / totalDevs) : 0;
   const utilidad = data?.utilidad_bruta ?? 0;
+
+  // Tasa de entrega MADURA: ÷ (entregadas + devueltas), no ÷ total_ordenes (que
+  // incluye cancelados, pendientes y en-tránsito → diluye la tasa en rangos
+  // recientes). El donut de al lado sigue mostrando la composición sobre el total.
+  const entregaMaturity = deriveDeliveryMaturity(
+    data?.total_entregadas ?? 0, data?.total_devueltas ?? 0, data?.total_ordenes ?? 0,
+  );
 
   const gn = gananciaNeta?.ganancia_neta ?? 0;
   const totalEntradas = gananciaNeta?.total_entradas ?? 0;
@@ -231,10 +239,11 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             />
             <KpiCard
               label="Tasa de entrega"
-              value={`${(data?.tasa_entrega_pct ?? 0).toFixed(1)}%`}
+              value={entregaMaturity.tasaEntregaMadura == null ? '—' : `${entregaMaturity.tasaEntregaMadura.toFixed(1)}%`}
               icon={Target}
-              tone={(data?.tasa_entrega_pct ?? 0) >= 60 ? 'success' : 'warning'}
-              hint={`${data?.total_entregadas ?? 0} de ${data?.total_ordenes ?? 0} órdenes`}
+              tone={entregaMaturity.inmaduro ? 'neutral'
+                : (entregaMaturity.tasaEntregaMadura ?? 0) >= 60 ? 'success' : 'warning'}
+              hint={`${data?.total_entregadas ?? 0} de ${entregaMaturity.resueltos} concluidas · ${entregaMaturity.pctConcluido}% del total${entregaMaturity.inmaduro ? ' (prelim.)' : ''}`}
             />
           </div>
 
