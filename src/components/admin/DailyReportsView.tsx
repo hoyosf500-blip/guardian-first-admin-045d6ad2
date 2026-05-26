@@ -44,6 +44,15 @@ interface ShiftRow {
   notas: string | null;
 }
 
+interface ActionRow {
+  fecha: string;
+  operadora: string;
+  conf: number;
+  canc: number;
+  noresp: number;
+  atendidos: number;
+}
+
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 
 export default function DailyReportsView() {
