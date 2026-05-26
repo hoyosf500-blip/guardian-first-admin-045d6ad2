@@ -26,6 +26,7 @@ import CfoMonthlyRetrospective from '@/components/cfo/CfoMonthlyRetrospective';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
+import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -260,7 +261,8 @@ export default function CfoTab() {
   const prev = useCfoSnapshot(prevYearMonth);
   const inputsQuery = useMonthlyBusinessInputs(yearMonth);
   const adSpendForCurrent = useMonthlyAdSpend(yearMonth);
-  const walletHealth = useWalletSyncHealth();
+  const { activeStoreId } = useStore();
+  const walletHealth = useWalletSyncHealth(activeStoreId);
   const range = useMemo(() => monthRange(yearMonth), [yearMonth]);
   const logForProducts = useLogisticsStats({ fromDate: range.from, toDate: range.to });
   const topProducts = (logForProducts.products.data ?? [])

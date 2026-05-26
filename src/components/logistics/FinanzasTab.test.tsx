@@ -71,6 +71,10 @@ vi.mock('@/hooks/useWalletMovements', () => ({
   useWalletMovements: () => ({ data: undefined, isLoading: false }),
 }));
 
+// El badge de frescura del wallet usa StoreContext + react-query, no provistos
+// en este render aislado. No es objeto de estos tests → lo mockeamos a nada.
+vi.mock('@/components/wallet/WalletSyncBadge', () => ({ default: () => null }));
+
 const FILTERS = { fromDate: '2026-04-01', toDate: '2026-04-30' };
 
 const SAMPLE: FinancialSummary = {

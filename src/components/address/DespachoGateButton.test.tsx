@@ -20,9 +20,13 @@ describe('DespachoGateButton', () => {
     expect(onConfirm).toHaveBeenCalled();
   });
 
-  it('red sin override: button disabled', () => {
-    render(<DespachoGateButton gate={{ ...baseGate, validation_decision: 'red' }} onConfirm={vi.fn()}>Confirmar</DespachoGateButton>);
-    expect(screen.getByRole('button', { name: /confirmar/i })).toBeDisabled();
+  it('red ya NO bloquea: button habilitado (semáforo informativo desde 2026-05-26)', () => {
+    const onConfirm = vi.fn();
+    render(<DespachoGateButton gate={{ ...baseGate, validation_decision: 'red' }} onConfirm={onConfirm}>Confirmar</DespachoGateButton>);
+    const btn = screen.getByRole('button', { name: /confirmar/i });
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+    expect(onConfirm).toHaveBeenCalled();
   });
 
   it('phone invalid: button disabled', () => {

@@ -19,20 +19,19 @@ describe('canConfirmOrder', () => {
     expect(canConfirmOrder({ ...baseInput, validation_decision: 'pickup_office' })).toEqual({ canConfirm: true });
   });
 
-  it('yellow without override -> blocked', () => {
-    const r = canConfirmOrder({ ...baseInput, validation_decision: 'yellow' });
-    expect(r.canConfirm).toBe(false);
-    expect(r.reason).toMatch(/confirma/i);
+  // 2026-05-26: el gate de despacho por dirección se quitó a pedido. El semáforo
+  // (green/yellow/red) ahora es INFORMATIVO y NO bloquea confirmar. Solo bloquean
+  // teléfono inválido y cédula de coordinadora. Estos casos lo verifican.
+  it('yellow sin override -> confirma (semáforo informativo, ya no bloquea)', () => {
+    expect(canConfirmOrder({ ...baseInput, validation_decision: 'yellow' })).toEqual({ canConfirm: true });
   });
 
   it('yellow + override -> can confirm', () => {
     expect(canConfirmOrder({ ...baseInput, validation_decision: 'yellow', overrideChecked: true })).toEqual({ canConfirm: true });
   });
 
-  it('red without override -> blocked', () => {
-    const r = canConfirmOrder({ ...baseInput, validation_decision: 'red' });
-    expect(r.canConfirm).toBe(false);
-    expect(r.reason).toMatch(/incompleta|falta/i);
+  it('red sin override -> confirma (semáforo informativo, ya no bloquea)', () => {
+    expect(canConfirmOrder({ ...baseInput, validation_decision: 'red' })).toEqual({ canConfirm: true });
   });
 
   it('red + admin + override -> can confirm', () => {

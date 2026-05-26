@@ -172,6 +172,113 @@ function mapRow(row: XlsxRow, syncedBy: string | null, storeId: string) {
   };
 }
 
+interface SyncStoreResult {
+  store_id: string;
+  ok: boolean;
+  synced?: number;
+  total?: number;
+  rows_in_excel?: number;
+  expired?: boolean;
+  error?: string;
+}
+
+/**
+ * Sincroniza el wallet de UNA tienda. No tira Response: devuelve un resultado,
+ * así el caller (manual o cron multi-tienda) decide cómo responder y una tienda
+ * que falle (token vencido, throttle EC) no aborta a las demás.
+ */
+async function syncStore(
+  sb: ReturnType<typeof createClient>,
+  storeId: string,
+  fromDate: string,
+  toDate: string,
+  dryRun: boolean,
+  limit: number,
+  userId: string | null,
+): Promise<SyncStoreResult> {
+  const cfg = await loadStoreConfig(sb, storeId);
+  // 2026-05-22: priorizar INTEGRATIONS api_key (permanente) sobre session_token.
+  const authToken = cfg.apiKey || cfg.sessionToken;
+  if (!authToken) {
+    return { store_id: storeId, ok: false, error: "Sin credencial Dropi (api_key ni session_token)" };
+  }
+
+  // Decodificar JWT → `sub` (dropi user_id) para el query.
+  let dropiUserId: number;
+  try {
+    const payload = JSON.parse(atob(authToken.split(".")[1]));
+    dropiUserId = Number(payload.sub);
+    if (!dropiUserId) throw new Error("sin sub");
+  } catch {
+    return { store_id: storeId, ok: false, error: "Token Dropi inválido — no se pudo decodificar." };
+  }
+
+  const params = new URLSearchParams({
+    from: fromDate,
+    until: toDate,
+    user_id: String(dropiUserId),
+    wallet_id: "0",
+  });
+  const xlsxRes = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json, text/plain, */*",
+      "x-authorization": `Bearer ${authToken}`,
+    },
+  });
+  if (!xlsxRes.ok) {
+    const txt = await xlsxRes.text();
+    return {
+      store_id: storeId,
+      ok: false,
+      expired: xlsxRes.status === 401,
+      error: `Dropi exportexcel [${xlsxRes.status}]: ${txt.slice(0, 200)}`,
+    };
+  }
+
+  const arrayBuffer = await xlsxRes.arrayBuffer();
+  const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+  const firstSheetName = wb.SheetNames[0];
+  if (!firstSheetName) return { store_id: storeId, ok: false, error: "XLSX sin sheets" };
+
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheetName], { defval: null }) as XlsxRow[];
+  type Mapped = ReturnType<typeof mapRow>;
+  const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
+  const mapped = slice
+    .map((r: XlsxRow): Mapped => mapRow(r, userId ?? "", storeId))
+    .filter((r): r is NonNullable<Mapped> => r !== null);
+
+  let totalSynced = 0;
+  if (!dryRun && mapped.length > 0) {
+    for (let i = 0; i < mapped.length; i += 50) {
+      const batch = mapped.slice(i, i + 50);
+      const { data: changedCount, error: upsertError } = await sb.rpc(
+        "upsert_wallet_movements",
+        { p_movements: batch },
+      );
+      if (upsertError) console.error(`upsert_wallet_movements error (store ${storeId}):`, upsertError);
+      else totalSynced += (changedCount as number) || 0;
+    }
+    await sb.from("sync_logs").insert({
+      source: "dropi-wallet-sync",
+      status: "success",
+      synced_count: totalSynced,
+      duplicates_count: 0,
+      total_count: mapped.length,
+      triggered_by: userId,
+      store_id: storeId,
+    });
+  }
+
+  return {
+    store_id: storeId,
+    ok: true,
+    synced: totalSynced,
+    total: mapped.length,
+    rows_in_excel: rows.length,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
@@ -228,64 +335,10 @@ Deno.serve(async (req: Request) => {
     // (gate de owner se valida después de leer storeId del body)
     }
 
-    // 2. Body: store_id es requerido (multi-tenant)
+    // 2. Body + rango de fechas.
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* sin body */ }
 
-    const storeId = typeof body.store_id === "string" && body.store_id.trim()
-      ? body.store_id.trim()
-      : (typeof body.storeId === "string" ? (body.storeId as string).trim() : "");
-    if (!storeId) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Falta store_id en el body" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    // Gate: solo el dueño puede ejecutar wallet sync (datos financieros).
-    if (!isCron && userId) {
-      const isOwner = await isStoreOwner(sb, userId, storeId);
-      if (!isOwner) {
-        return new Response(
-          JSON.stringify({ error: "Solo el dueño de la tienda puede ejecutar el wallet sync" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-    }
-
-    const cfg = await loadStoreConfig(sb, storeId);
-    // 2026-05-22: usar INTEGRATIONS api_key (permanente) en vez de session_token (vence 12h).
-    // Verificado con curl real: /api/wallet/exportexcel acepta el api_key y devuelve XLSX
-    // OK 200. Como fallback (si alguna tienda solo tiene session_token cargado), seguimos
-    // soportándolo. Prioridad: apiKey > sessionToken.
-    const authToken = cfg.apiKey || cfg.sessionToken;
-    if (!authToken) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "La tienda no tiene credencial Dropi configurada (api_key ni session_token).",
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    // 3. Decodificar JWT — necesitamos el `sub` (dropi user_id) para el query.
-    //    Tanto el INTEGRATIONS api_key como el session_token traen `sub`.
-    //    El api_key permanente NO tiene `exp` real (year 2126), así que no validamos expiry.
-    let dropiUserId: number;
-    try {
-      const parts = authToken.split(".");
-      const payload = JSON.parse(atob(parts[1]));
-      dropiUserId = Number(payload.sub);
-      if (!dropiUserId) throw new Error("sin sub");
-    } catch {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Token Dropi inválido — no se pudo decodificar." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    // 4. Rango de fechas (body ya parseado arriba)
     const today = new Date();
     const defaultFrom = new Date();
     defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 30);
@@ -294,99 +347,76 @@ Deno.serve(async (req: Request) => {
     const dryRun = Boolean(body.dryRun);
     const limit = Number(body.limit || 0);
 
-    // 5. Fetch XLSX desde Dropi (host del país de la tienda)
-    const params = new URLSearchParams({
-      from: fromDate,
-      until: toDate,
-      user_id: String(dropiUserId),
-      wallet_id: "0",
-    });
-    const xlsxRes = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json, text/plain, */*",
-        "x-authorization": `Bearer ${authToken}`,
-      },
-    });
+    const storeId = typeof body.store_id === "string" && body.store_id.trim()
+      ? body.store_id.trim()
+      : (typeof body.storeId === "string" ? (body.storeId as string).trim() : "");
 
-    if (!xlsxRes.ok) {
-      const txt = await xlsxRes.text();
-      const expired = xlsxRes.status === 401;
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          expired,
-          error: `Dropi exportexcel [${xlsxRes.status}]: ${txt.slice(0, 300)}`,
-        }),
-        { status: xlsxRes.status === 401 ? 401 : 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-
-    const arrayBuffer = await xlsxRes.arrayBuffer();
-    const fileSize = arrayBuffer.byteLength;
-
-    // 6. Parsear XLSX
-    const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
-    const firstSheetName = wb.SheetNames[0];
-    if (!firstSheetName) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "XLSX sin sheets" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
-    const sheet = wb.Sheets[firstSheetName];
-    // sheet_to_json con headers leídos de la primera fila
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as XlsxRow[];
-    type Mapped = ReturnType<typeof mapRow>;
-
-    // 7. Mapear y upsertear (capear si limit)
-    const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
-    const mapped = slice
-      .map((r: XlsxRow): Mapped => mapRow(r, userId ?? "", storeId))
-      .filter((r): r is NonNullable<Mapped> => r !== null);
-
-    let totalSynced = 0;
-    if (!dryRun && mapped.length > 0) {
-      for (let i = 0; i < mapped.length; i += 50) {
-        const batch = mapped.slice(i, i + 50);
-        const { data: changedCount, error: upsertError } = await sb.rpc(
-          "upsert_wallet_movements",
-          { p_movements: batch },
-        );
-        if (upsertError) {
-          console.error("upsert_wallet_movements error:", upsertError);
-        } else {
-          totalSynced += (changedCount as number) || 0;
+    // ── Path A: store_id explícito (sync manual desde la UI, o cron dirigido) ──
+    if (storeId) {
+      // Gate: solo el dueño puede ejecutar wallet sync (datos financieros).
+      if (!isCron && userId) {
+        const isOwner = await isStoreOwner(sb, userId, storeId);
+        if (!isOwner) {
+          return new Response(
+            JSON.stringify({ error: "Solo el dueño de la tienda puede ejecutar el wallet sync" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
         }
       }
+      const result = await syncStore(sb, storeId, fromDate, toDate, dryRun, limit, userId);
+      const status = result.ok ? 200 : (result.expired ? 401 : 502);
+      return new Response(
+        JSON.stringify({ ...result, from: fromDate, until: toDate, dry_run: dryRun }),
+        { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
-      await sb.from("sync_logs").insert({
-        source: "dropi-wallet-sync",
-        status: "success",
-        synced_count: totalSynced,
-        duplicates_count: 0,
-        total_count: mapped.length,
-        triggered_by: userId,
-        store_id: storeId,
-      });
+    // ── Path B: sin store_id ──
+    // Un usuario logueado DEBE indicar su tienda (no adivinamos).
+    if (!isCron) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Falta store_id en el body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ── Path C: cron sin store_id → FAN-OUT a todas las tiendas activas ──
+    // El cron (pg_cron) no pasa store_id; antes de esto la función devolvía 400 y
+    // la wallet NUNCA se auto-sincronizaba en multi-tienda. Mismo enumerado que
+    // dropi-cron: store_dropi_config con api_key + tienda activa.
+    const { data: configs, error: cfgErr } = await sb
+      .from("store_dropi_config")
+      .select("store_id, dropi_api_key, stores!inner(status)")
+      .eq("stores.status", "active");
+    if (cfgErr) {
+      return new Response(
+        JSON.stringify({ ok: false, error: `store_dropi_config: ${cfgErr.message}` }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const activeStoreIds = (configs || [])
+      .filter((c: Record<string, unknown>) => c.dropi_api_key)
+      .map((c: Record<string, unknown>) => String(c.store_id));
+
+    const results: SyncStoreResult[] = [];
+    for (const sid of activeStoreIds) {
+      // try/catch por tienda: que una con token vencido / throttle (EC) NO aborte
+      // la sincronización de las demás (CO).
+      try {
+        results.push(await syncStore(sb, sid, fromDate, toDate, dryRun, limit, null));
+      } catch (e) {
+        results.push({ store_id: sid, ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
     }
 
     return new Response(
       JSON.stringify({
         ok: true,
-        synced: totalSynced,
-        total: mapped.length,
-        rows_in_excel: rows.length,
-        file_size_bytes: fileSize,
+        mode: "cron-fanout",
+        stores: results,
         from: fromDate,
         until: toDate,
-        dropi_user_id: dropiUserId,
-        sample_first_row: mapped[0] || null,
-        dry_run: dryRun,
-        message: dryRun
-          ? `DRY RUN — ${mapped.length} movimientos parseados del XLSX (${fileSize} bytes)`
-          : `${totalSynced} sincronizados de ${mapped.length} traídos del XLSX (${fileSize} bytes)`,
+        synced_total: results.reduce((s, r) => s + (r.synced || 0), 0),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

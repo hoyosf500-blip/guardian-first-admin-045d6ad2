@@ -28,22 +28,24 @@ describe('AddressFeedbackCard', () => {
     expect(screen.getByText(/referencia/i)).toBeInTheDocument();
   });
 
-  it('red + admin muestra checkbox override', () => {
+  // 2026-05-26: el gate de despacho por dirección y las sugerencias de Google
+  // Maps se quitaron a pedido. La card ahora es SOLO informativa: lista qué
+  // confirmar/falta, sin checkbox de override ni "¿Quisiste decir?". Estos tests
+  // validan el comportamiento actual (y que el UI removido ya no aparezca).
+  it('red lista los faltantes y NO muestra checkbox de override', () => {
     render(<AddressFeedbackCard {...baseProps} decision="red" missingFields={['placa']} isAdmin={true} />);
-    expect(screen.getByRole('checkbox')).toBeInTheDocument();
+    expect(screen.getByText(/falta/i)).toBeInTheDocument();
+    expect(screen.getByText(/número de la casa/i)).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
-  it('red + non-admin SÍ muestra checkbox (operadora destraba tras verificar con cliente)', () => {
-    // Cambio 2026-05-05: antes RED ocultaba el override para no-admin y dejaba
-    // pedidos válidos imposibles de confirmar cuando el heurístico/Google/Haiku
-    // marcaba mal la dirección (rural, complementos tipo "18a19", barrios
-    // nuevos). Ahora la operadora ve el checkbox con texto enfático.
+  it('red para operadora (no-admin): mismo card informativo, sin override', () => {
     render(<AddressFeedbackCard {...baseProps} decision="red" missingFields={['placa']} isAdmin={false} />);
-    expect(screen.getByRole('checkbox')).toBeInTheDocument();
-    expect(screen.getByText(/Verifiqué la dirección con el cliente/i)).toBeInTheDocument();
+    expect(screen.getByText(/falta/i)).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
-  it('muestra sugerencia cuando suggestedAddress está poblado y decision es red', () => {
+  it('NO muestra sugerencia de dirección (Google Maps removido) en red', () => {
     render(<AddressFeedbackCard
       decision="red"
       missingFields={['numero_casa']}
@@ -51,11 +53,13 @@ describe('AddressFeedbackCard', () => {
       isAdmin={false}
       onOverrideChange={() => {}}
     />);
-    expect(screen.getByText('¿Quisiste decir?')).toBeInTheDocument();
-    expect(screen.getByText(/Calle 50 # 23-45/)).toBeInTheDocument();
+    expect(screen.queryByText('¿Quisiste decir?')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Calle 50 # 23-45/)).not.toBeInTheDocument();
+    // Sigue listando lo que falta (es lo informativo que queda).
+    expect(screen.getByText(/número de la casa/i)).toBeInTheDocument();
   });
 
-  it('muestra sugerencia cuando addressSuggestion.hasEnoughInfo es true en yellow', () => {
+  it('NO muestra "Cómo debería verse" (suggestion removida) en yellow', () => {
     render(<AddressFeedbackCard
       decision="yellow"
       missingFields={['tipo_via']}
@@ -63,34 +67,24 @@ describe('AddressFeedbackCard', () => {
       isAdmin={false}
       onOverrideChange={() => {}}
     />);
-    expect(screen.getByText(/Cómo debería verse/i)).toBeInTheDocument();
-    expect(screen.getByText(/Calle 21 # 10-78/)).toBeInTheDocument();
-  });
-
-  it('NO muestra sugerencia si hasEnoughInfo es false', () => {
-    render(<AddressFeedbackCard
-      decision="red"
-      missingFields={['numero_casa']}
-      addressSuggestion={{ suggested: '', hasEnoughInfo: false }}
-      isAdmin={false}
-      onOverrideChange={() => {}}
-    />);
     expect(screen.queryByText(/Cómo debería verse/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Calle 21 # 10-78/)).not.toBeInTheDocument();
+    expect(screen.getByText(/tipo de vía/i)).toBeInTheDocument();
   });
 
-  it('Bug 2: muestra missingNote cuando hay info parcial', () => {
+  it('NO muestra missingNote (suggestion removida)', () => {
     render(<AddressFeedbackCard
       decision="yellow"
       missingFields={['numero_casa']}
       addressSuggestion={{
         suggested: 'Calle 7A en Tumaco, Nariño',
-        missingNote: 'Falta confirmar: pídele al cliente el número exacto de la casa con guion (ej. 23-45).',
+        missingNote: 'Falta confirmar: pídele al cliente el número exacto.',
         hasEnoughInfo: true,
       }}
       isAdmin={false}
       onOverrideChange={() => {}}
     />);
-    expect(screen.getByText('Calle 7A en Tumaco, Nariño')).toBeInTheDocument();
-    expect(screen.getByText(/Falta confirmar/)).toBeInTheDocument();
+    expect(screen.queryByText('Calle 7A en Tumaco, Nariño')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Falta confirmar/)).not.toBeInTheDocument();
   });
 });

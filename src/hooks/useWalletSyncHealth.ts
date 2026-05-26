@@ -38,23 +38,31 @@ function deriveStatus(hoursSync: number | null, hoursNew: number | null): Wallet
   return 'critical';
 }
 
-export function useWalletSyncHealth() {
+// `storeId` scopea la frescura a la TIENDA activa. Sin esto, un admin (que por
+// RLS ve todas las tiendas) veía el sync más reciente de CUALQUIER tienda → el
+// badge marcaba "fresh" aunque la tienda que está mirando estuviera vieja (falsa
+// tranquilidad). Pasá `activeStoreId` desde StoreContext.
+export function useWalletSyncHealth(storeId?: string | null) {
   return useQuery<WalletSyncHealth>({
-    queryKey: ['wallet_sync_health'],
+    queryKey: ['wallet_sync_health', storeId ?? 'all'],
     queryFn: async () => {
+      let syncQ = supabase
+        .from('dropi_wallet_movements')
+        .select('synced_at')
+        .order('synced_at', { ascending: false })
+        .limit(1);
+      let fechaQ = supabase
+        .from('dropi_wallet_movements')
+        .select('fecha')
+        .order('fecha', { ascending: false })
+        .limit(1);
+      if (storeId) {
+        syncQ = syncQ.eq('store_id', storeId);
+        fechaQ = fechaQ.eq('store_id', storeId);
+      }
       const [syncRes, fechaRes] = await Promise.all([
-        supabase
-          .from('dropi_wallet_movements')
-          .select('synced_at')
-          .order('synced_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('dropi_wallet_movements')
-          .select('fecha')
-          .order('fecha', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
+        syncQ.maybeSingle(),
+        fechaQ.maybeSingle(),
       ]);
       if (syncRes.error) throw syncRes.error;
       if (fechaRes.error) throw fechaRes.error;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, Clock } from 'lucide-react';
 import { useWalletSyncHealth, type WalletSyncStatus } from '@/hooks/useWalletSyncHealth';
+import { useStore } from '@/contexts/StoreContext';
 
 // Badge visual de "última sincronización wallet" — verde/amarillo/rojo
 // según el status que devuelva useWalletSyncHealth.
@@ -53,7 +54,8 @@ function useMinuteTick(): void {
 }
 
 export default function WalletSyncBadge({ size = 'sm', showLabel = false, className = '' }: Props) {
-  const q = useWalletSyncHealth();
+  const { activeStoreId } = useStore();
+  const q = useWalletSyncHealth(activeStoreId);
   useMinuteTick();
 
   if (q.isLoading) {

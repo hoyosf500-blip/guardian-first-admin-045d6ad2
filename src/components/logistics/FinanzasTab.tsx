@@ -10,6 +10,7 @@ import {
   Ban, Sparkles, ArrowDownToLine, ArrowUpFromLine,
 } from 'lucide-react';
 import KpiCard from './finanzas/KpiCard';
+import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import FinanzasHero from './finanzas/FinanzasHero';
 import EstadoOrdenesDonut from './finanzas/EstadoOrdenesDonut';
 import CashFlowChart from './finanzas/CashFlowChart';
@@ -103,10 +104,15 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
       <div className="rounded-xl border border-info/30 bg-info/5 p-4">
         <div className="flex items-start gap-3">
           <Info size={16} className="text-info shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold text-foreground">
-              Fase A — Cash flow operativo Dropi
-            </h3>
+          <div className="space-y-1 flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h3 className="text-sm font-semibold text-foreground">
+                Fase A — Cash flow operativo Dropi
+              </h3>
+              {/* Frescura del wallet (scopeada a la tienda activa): si está vieja,
+                  la Ganancia Neta de abajo no es de fiar. */}
+              <WalletSyncBadge size="sm" showLabel />
+            </div>
             <p className="text-xs text-muted-foreground">
               La <strong className="text-foreground">Ganancia Neta</strong> es lo que Dropi te abonó al wallet menos lo que te debitó (flete, devoluciones, mantenimiento). Es plata REAL en tu wallet.
               <strong className="text-foreground"> NO incluye gasto pauta</strong> (Meta / TikTok) — eso entra en Fase B.
