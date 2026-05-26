@@ -186,7 +186,7 @@ export default function AuthPage() {
               <p className="text-xs text-foreground leading-relaxed">
                 Te unís a <span className="font-semibold">{invite.store_name}</span>
                 {invite.country_code ? ` (${invite.country_code})` : ''} como{' '}
-                <span className="font-semibold">{invite.role === 'owner' ? 'dueño' : 'operadora'}</span>.
+                <span className="font-semibold">{invite.role === 'owner' ? 'dueño' : invite.role === 'supervisor' ? 'supervisor' : 'operadora'}</span>.
               </p>
             </div>
           )}
