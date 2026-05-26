@@ -657,6 +657,7 @@ export type Database = {
           id: string
           last_edit_sync_at: string | null
           last_edited_by: string | null
+          last_movement_at: string | null
           lat: number | null
           lng: number | null
           locked_at: string | null
@@ -704,6 +705,7 @@ export type Database = {
           id?: string
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
+          last_movement_at?: string | null
           lat?: number | null
           lng?: number | null
           locked_at?: string | null
@@ -751,6 +753,7 @@ export type Database = {
           id?: string
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
+          last_movement_at?: string | null
           lat?: number | null
           lng?: number | null
           locked_at?: string | null
@@ -1432,6 +1435,7 @@ export type Database = {
           id: string
           last_edit_sync_at: string | null
           last_edited_by: string | null
+          last_movement_at: string | null
           lat: number | null
           lng: number | null
           locked_at: string | null
