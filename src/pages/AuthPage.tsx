@@ -42,16 +42,24 @@ export default function AuthPage() {
     if (!inviteToken) return;
     let cancelled = false;
     void (async () => {
-      const { data } = await (supabase.rpc as unknown as (
+      const { data, error } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>
-      ) => Promise<{ data: InvitePreview[] | InvitePreview | null }>)(
+      ) => Promise<{ data: InvitePreview[] | InvitePreview | null; error: { message: string } | null }>)(
         'get_store_invite', { p_token: inviteToken },
       );
       if (cancelled) return;
+      if (error) {
+        console.error('[AuthPage] get_store_invite falló:', error);
+        setInvite({ store_name: null, country_code: null, role: null, valid: false, reason: 'rpc_error' });
+        return;
+      }
       const row = Array.isArray(data) ? data[0] : data;
       if (row) {
         setInvite(row);
         if (row.valid) setView('signup');
+      } else {
+        console.warn('[AuthPage] get_store_invite no devolvió fila para token', inviteToken);
+        setInvite({ store_name: null, country_code: null, role: null, valid: false, reason: 'sin_datos' });
       }
     })();
     return () => { cancelled = true; };
