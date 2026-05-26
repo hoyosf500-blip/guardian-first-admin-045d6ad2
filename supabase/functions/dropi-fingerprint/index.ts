@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
       ? stripped.replace(/^593/, "").replace(/^0/, "")
       : stripped.replace(/^57/, "");
 
-    const url = `${FINGERPRINT_URL}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
+    const url = `${fingerprintBase(cfg.countryCode)}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
     const apiRes = await fetch(url, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
