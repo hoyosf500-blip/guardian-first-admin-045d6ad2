@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrders } from '@/contexts/OrderContext';
 import { TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { confRateBySample } from '@/lib/confirmationRate';
 
 interface TasaRow {
   confirmados: number;
@@ -34,8 +35,12 @@ export default function TasaMetaBanner() {
 
   if (!data) return null;
 
-  const hasSample = data.total >= 5;
-  const tasa = data.tasa_confirmacion;
+  // Tasa MADURA (conf ÷ resueltos), ignorando data.tasa_confirmacion del RPC
+  // (que era conf ÷ (conf+canc+noresp) — metía los no-contesta). Misma fórmula
+  // que ProductivityDashboard / Reportes Diarios. Ver src/lib/confirmationRate.ts.
+  const cr = confRateBySample(data.confirmados, data.cancelados);
+  const hasSample = !cr.inmaduro && cr.tasa != null;
+  const tasa = cr.tasa ?? 0;
 
   let bg = 'bg-muted text-muted-foreground border-muted-foreground/20';
   let Icon = Target;
@@ -68,7 +73,7 @@ export default function TasaMetaBanner() {
           <span className="opacity-40">|</span>
           <span
             className="font-mono text-base font-semibold"
-            title={`Tasa personal: ${data.confirmados} confirmados / ${data.total} gestionados (conf+canc+noresp). NO sobre el inflow total del día.`}
+            title={`Tasa personal MADURA: ${data.confirmados} confirmados ÷ ${data.confirmados + data.cancelados} resueltos (confirmados + cancelados). Los no-contesta NO cuentan acá.`}
           >
             {tasa}%
           </span>

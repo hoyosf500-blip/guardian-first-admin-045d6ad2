@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
 import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
+import { confRateBySample } from '@/lib/confirmationRate';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -79,7 +80,8 @@ export default function DashboardTab() {
             canc: Number(r.canc),
             noresp: Number(r.noresp),
             total,
-            tasa: total > 0 ? Math.round(Number(r.conf) / total * 100) : 0,
+            // Tasa MADURA conf÷(conf+canc), igual que toda la app (no ÷total).
+            tasa: confRateBySample(Number(r.conf), Number(r.canc)).tasa ?? 0,
           };
         });
       ranking.sort((a, b) => b.total - a.total);
@@ -220,7 +222,7 @@ export default function DashboardTab() {
       const t = d.conf + d.canc + d.noresp;
       return {
         date: new Date(date + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }),
-        ...d, tasa: t > 0 ? Math.round(d.conf / t * 100) : 0, total: t
+        ...d, tasa: confRateBySample(d.conf, d.canc).tasa ?? 0, total: t
       };
     });
   }, [historyData, period]);
@@ -232,7 +234,7 @@ export default function DashboardTab() {
     const yd = yesterday.toISOString().split('T')[0];
     const { conf, canc, noresp } = computeDailyCounter(historyData, yd);
     const total = conf + canc + noresp;
-    return { conf, canc, noresp, total, tasa: total > 0 ? Math.round(conf / total * 100) : 0 };
+    return { conf, canc, noresp, total, tasa: confRateBySample(conf, canc).tasa ?? 0 };
   }, [historyData]);
 
   const sparkData = useMemo(() => {
@@ -245,7 +247,7 @@ export default function DashboardTab() {
   }, [chartData]);
 
   const total = counter.conf + counter.canc + counter.noresp;
-  const tasa = total > 0 ? Math.round(counter.conf / total * 100) : 0;
+  const tasa = confRateBySample(counter.conf, counter.canc).tasa ?? 0;
   const pendLeft = workQueue.filter(o => !o.result).length;
 
   // Memoized so downstream useMemo (statusBreakdown, prods) gets a stable reference.

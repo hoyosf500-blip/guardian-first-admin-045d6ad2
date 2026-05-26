@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
+import { confRateBySample } from '@/lib/confirmationRate';
 
 // Sin '24h' rodante: las ventanas se alinean a día-calendario Bogotá (igual que
 // el cohorte de Reportes Diarios) para que "entrantes" reconcilie entre vistas.
@@ -120,6 +121,14 @@ export default function ProductivityDashboard() {
     ? [...rows].sort((a, b) => b.confirmados - a.confirmados)[0]
     : null;
 
+  // Cobertura del EQUIPO: cuánto del inflow del período alcanzó a resolver el
+  // equipo. `entrantes` es global (no por operadora) → va en el header de la
+  // sección, NO en la columna por-operadora (eso confundía: numerador por-op /
+  // denominador de equipo daba el viejo 83%).
+  const entrantes = rows[0]?.total_entrantes ?? 0;
+  const teamResueltos = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
+  const teamCobertura = entrantes > 0 ? Math.round((teamResueltos / entrantes) * 100) : 0;
+
   return (
     <div className="space-y-5">
       {/* Page sub-header — eyebrow + título + meta + actions */}
@@ -201,27 +210,36 @@ export default function ProductivityDashboard() {
                 </div>
                 <div className="text-sm font-bold text-foreground truncate">{leader.display_name}</div>
                 <div className="text-xs text-accent font-mono font-semibold tabular-nums">
-                  {leader.confirmados} confirmados · {leader.tasa_confirmacion}% tasa
+                  {leader.confirmados} confirmados · {(() => {
+                    const t = confRateBySample(leader.confirmados, leader.cancelados).tasa;
+                    return t == null ? '—' : `${t}%`;
+                  })()} confirmación
                 </div>
               </div>
             </div>
           )}
 
-          {/* Confirmar — el `note` ahora muestra la N de inflow del período
-              (total_entrantes) porque es el denominador de "Tasa confirmación"
-              desde la migration 20260505120000. Antes la tasa era sobre lo
-              gestionado por cada operadora; ahora es sobre el inflow global,
-              así que la operadora ve cuántos pedidos en total se ofrecieron
-              al equipo en el período. */}
+          {/* Confirmar — el `note` muestra la COBERTURA DEL EQUIPO (cuánto del
+              inflow del período alcanzó a resolver el equipo). La tasa POR
+              OPERADORA de la tabla es la MADURA (conf ÷ resueltos), separada del
+              volumen del equipo — antes se mezclaba (conf ÷ entrantes = 83%) y
+              confundía. Ver src/lib/confirmationRate.ts. */}
           <Section
             title="Confirmar"
             dotClass="bg-success"
             note={
-              rows[0]?.total_entrantes && rows[0].total_entrantes > 0
-                ? `${rows[0].total_entrantes} pedido${rows[0].total_entrantes === 1 ? '' : 's'} entró al período · tasa = confirmados ÷ entrantes`
+              entrantes > 0
+                ? `${entrantes} entrante${entrantes === 1 ? '' : 's'} al período · el equipo resolvió ${teamResueltos} (${teamCobertura}% cobertura)`
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
+            {/* Mini-glosario: que se entienda cada KPI de un vistazo */}
+            <div className="px-4 py-2.5 border-b border-border/60 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+              <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que gestionó</span>
+              <span><strong className="text-foreground">Contacto</strong>: % de lo atendido que contestó</span>
+              <span><strong className="text-foreground">% Confirmación</strong>: confirmados ÷ (confirmados + cancelados)</span>
+              <span className="opacity-70">gris* = pocos datos, preliminar</span>
+            </div>
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
@@ -239,19 +257,15 @@ export default function ProductivityDashboard() {
                     <th className="text-right">Atendidos</th>
                     <th
                       className="text-right"
-                      title="Pedidos contactados (confirmados + cancelados) sobre total atendidos. Los reintentos del mismo pedido NO inflan el denominador."
+                      title="De los pedidos que atendió, % que contestó (confirmó o canceló). Los pendientes que aún no tocó NO cuentan."
                     >
-                      Tasa contacto
+                      Contacto
                     </th>
                     <th
                       className="text-right"
-                      title={
-                        rows[0]?.total_entrantes && rows[0].total_entrantes > 0
-                          ? `Confirmados ÷ ${rows[0].total_entrantes} pedidos entrantes (sobre el inflow del período, no sobre los que la operadora gestionó)`
-                          : 'Confirmados ÷ pedidos entrantes (sobre el inflow del período, no sobre los que la operadora gestionó)'
-                      }
+                      title="Confirmados ÷ (confirmados + cancelados) — tasa MADURA, solo sobre pedidos ya resueltos. Gris* = pocos datos, preliminar."
                     >
-                      Tasa confirmación
+                      % Confirmación
                     </th>
                   </tr>
                 </thead>
@@ -271,7 +285,16 @@ export default function ProductivityDashboard() {
                       <td className="text-right">
                         <span className="font-mono tabular-nums text-xs text-muted-foreground">{r.tasa_contacto}%</span>
                       </td>
-                      <td className="text-right"><RateBar value={r.tasa_confirmacion} /></td>
+                      <td className="text-right">{(() => {
+                        const cr = confRateBySample(r.confirmados, r.cancelados);
+                        if (cr.tasa == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>;
+                        if (cr.inmaduro) return (
+                          <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Pocos resueltos — preliminar">
+                            {cr.tasa}% *
+                          </span>
+                        );
+                        return <RateBar value={cr.tasa} />;
+                      })()}</td>
                     </tr>
                   ))}
                 </tbody>

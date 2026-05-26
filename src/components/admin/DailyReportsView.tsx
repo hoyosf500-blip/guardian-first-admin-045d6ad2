@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
+import { confRateByCohort } from '@/lib/confirmationRate';
 
 // Panel de "Reportes diarios" con DOS vistas:
 //
@@ -55,11 +56,6 @@ interface ActionRow {
 
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 
-// % Procesado mínimo para considerar un día "concluyente". Por debajo, la tasa
-// de confirmación NO es comparable (el cohorte todavía tiene muchos pedidos sin
-// trabajar) → se muestra en gris, nunca en rojo.
-const MATURITY_THRESHOLD = 90;
-
 interface DayMetrics {
   resueltos: number;        // confirmados + cancelados
   pctProcesado: number;     // (conf + canc) ÷ entrantes — qué tan trabajado está el día
@@ -68,15 +64,18 @@ interface DayMetrics {
   inmaduro: boolean;        // pctProcesado < umbral → no concluyente
 }
 
-// Tasas "maduras": denominador = pedidos YA resueltos (conf + canc), no entrantes.
-// Así un día con muchos pendientes no diluye artificialmente la tasa, y un día
-// recién entrado (0 resueltos) marca N/A en vez de 0% rojo.
+// Delegamos en la fuente ÚNICA de la tasa (src/lib/confirmationRate.ts) para que
+// la fórmula no vuelva a divergir entre pantallas. Mantenemos el shape DayMetrics
+// (campo `tasaConf`) para no tocar los call-sites de esta vista.
 function deriveDayMetrics(conf: number, canc: number, entrantes: number): DayMetrics {
-  const resueltos = conf + canc;
-  const pctProcesado = entrantes > 0 ? Math.round((resueltos / entrantes) * 100) : 0;
-  const tasaConf = resueltos > 0 ? Math.round((conf / resueltos) * 100) : null;
-  const tasaCanc = resueltos > 0 ? Math.round((canc / resueltos) * 100) : null;
-  return { resueltos, pctProcesado, tasaConf, tasaCanc, inmaduro: pctProcesado < MATURITY_THRESHOLD };
+  const r = confRateByCohort(conf, canc, entrantes);
+  return {
+    resueltos: r.resueltos,
+    pctProcesado: r.pctProcesado,
+    tasaConf: r.tasa,
+    tasaCanc: r.tasaCanc,
+    inmaduro: r.inmaduro,
+  };
 }
 
 export default function DailyReportsView() {
