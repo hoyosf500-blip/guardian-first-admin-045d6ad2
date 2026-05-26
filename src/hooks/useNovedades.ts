@@ -44,7 +44,8 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
         toast.error('Error cargando novedades: ' + error.message);
         return;
       }
-      const orders = (data || []).map((o, idx) => dbToOrderData(o, idx));
+      type Row = Parameters<typeof dbToOrderData>[0];
+      const orders = ((data || []) as Row[]).map((o, idx) => dbToOrderData(o, idx));
       orders.sort((a, b) => b.dias - a.dias);
       setNovedadesQueue(orders);
       setNovedadesLoaded(true);
