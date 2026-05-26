@@ -60,6 +60,43 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Reintenta el PUT a Dropi para una orden cuya confirmación original falló
+// (order_results.dropi_sync_status='failed'). Devuelve ok=true si Dropi aceptó.
+async function dropiPutOrderRetry(
+  base: string,
+  apiKey: string,
+  storeUrl: string,
+  externalId: string,
+  newStatus = "PENDIENTE",
+): Promise<{ ok: boolean; httpStatus: number; error?: string }> {
+  try {
+    const res = await fetch(
+      `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          "Origin": storeUrl,
+        },
+        body: JSON.stringify({ status: newStatus }),
+      },
+    );
+    const rawText = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
+    const ok = res.ok && body.isSuccess !== false;
+    return {
+      ok,
+      httpStatus: res.status,
+      error: ok ? undefined : String(body.message || body.error || rawText).slice(0, 200),
+    };
+  } catch (e) {
+    return { ok: false, httpStatus: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 function chunkDateRange(from: string, to: string, maxDays: number) {
   const chunks: { from: string; to: string }[] = [];
   let start = new Date(from + "T00:00:00Z");
@@ -495,19 +532,88 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- Post-proceso GLOBAL (sobre todas las tiendas) ----
-    // Restaurar estado de pedidos confirmados localmente hoy (fecha Bogotá).
+
+    // Reintento de confirmaciones cuyo push a Dropi falló en su momento
+    // (dropi_sync_status='failed'). Sin esto, el pedido quedaba confirmado
+    // localmente pero Dropi nunca lo recibía → al día siguiente reaparecía
+    // como PENDIENTE CONFIRMACION en /confirmar. Ventana 7 días, máx 50 por
+    // corrida para no exceder el presupuesto del edge.
+    try {
+      const cfgByStore = new Map<string, { base: string; apiKey: string; storeUrl: string }>();
+      for (const c of activeConfigs) {
+        cfgByStore.set(String(c.store_id), {
+          base: dropiHostFor(String(c.country_code || "CO")),
+          apiKey: String(c.dropi_api_key),
+          storeUrl: String(c.dropi_store_url || "https://rushmira.com/"),
+        });
+      }
+      const retryFrom = new Date();
+      retryFrom.setUTCDate(retryFrom.getUTCDate() - 7);
+      const retryFromStr = retryFrom.toISOString().split("T")[0];
+      const { data: failedRows } = await sb
+        .from("order_results")
+        .select("id, order_id, result_date")
+        .eq("result", "conf")
+        .eq("dropi_sync_status", "failed")
+        .gte("result_date", retryFromStr)
+        .limit(50);
+      if (failedRows && failedRows.length > 0) {
+        const orderIds = (failedRows as Array<{ order_id: string }>).map(r => r.order_id);
+        const { data: ordersForRetry } = await sb
+          .from("orders").select("id, external_id, store_id").in("id", orderIds);
+        const orderById = new Map<string, { external_id: string | null; store_id: string }>();
+        (ordersForRetry || []).forEach((o: { id: string; external_id: string | null; store_id: string }) => {
+          orderById.set(o.id, { external_id: o.external_id, store_id: o.store_id });
+        });
+        let retryOk = 0, retryFail = 0;
+        for (const row of failedRows as Array<{ id: string; order_id: string }>) {
+          const ord = orderById.get(row.order_id);
+          if (!ord || !ord.external_id) continue;
+          const cfg = cfgByStore.get(String(ord.store_id));
+          if (!cfg) continue;
+          const r = await dropiPutOrderRetry(cfg.base, cfg.apiKey, cfg.storeUrl, ord.external_id, "PENDIENTE");
+          if (r.ok) {
+            retryOk++;
+            await sb.from("order_results").update({
+              dropi_sync_status: "synced",
+              result_notes: null,
+            }).eq("id", row.id);
+          } else {
+            retryFail++;
+            await sb.from("order_results").update({
+              result_notes: `Reintento dropi-cron falló [${r.httpStatus}]: ${r.error || ""}`.slice(0, 500),
+            }).eq("id", row.id);
+          }
+          await sleep(500);
+        }
+        console.log(`dropi-cron: retry confirmaciones failed → ${retryOk} OK / ${retryFail} aún fallan`);
+      }
+    } catch (err) {
+      console.warn("dropi-cron retry-failed exception:", err);
+    }
+
+    // Restaurar estado de pedidos confirmados localmente — INCLUYE rows con
+    // dropi_sync_status IN ('failed','pending') sin importar fecha, para que
+    // una confirmación cuyo push a Dropi sigue pendiente NO reaparezca en
+    // /confirmar al día siguiente como PENDIENTE CONFIRMACION.
     const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
     const { data: confirmedToday } = await sb
       .from("order_results").select("order_id").eq("result", "conf").eq("result_date", todayDate);
-    if (confirmedToday && confirmedToday.length > 0) {
-      const confirmedIds = confirmedToday.map((r: Record<string, string>) => r.order_id);
+    const { data: confirmedStuck } = await sb
+      .from("order_results").select("order_id").eq("result", "conf").in("dropi_sync_status", ["failed", "pending"]);
+    const idsToRestore = new Set<string>();
+    (confirmedToday || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
+    (confirmedStuck || []).forEach((r: { order_id: string }) => idsToRestore.add(r.order_id));
+    if (idsToRestore.size > 0) {
+      const confirmedIds = Array.from(idsToRestore);
       for (let i = 0; i < confirmedIds.length; i += 50) {
         const batch = confirmedIds.slice(i, i + 50);
         await sb.from("orders").update({ estado: "PENDIENTE" })
           .in("id", batch).eq("estado", "PENDIENTE CONFIRMACION");
       }
-      console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders`);
+      console.log(`dropi-cron: Restored ${confirmedIds.length} locally confirmed orders (today + stuck-failed)`);
     }
+
 
     // Cancelar pedidos huérfanos (global).
     try {
