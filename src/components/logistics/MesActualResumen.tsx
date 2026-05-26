@@ -7,6 +7,8 @@ import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useWalletMovements } from '@/hooks/useWalletMovements';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
+import WalletSyncButton from '@/components/wallet/WalletSyncButton';
+import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 
 // "Cómo voy este mes" — vive en Logística → Resumen (managerOnly, lo ven los
@@ -53,6 +55,10 @@ interface Props {
 
 export default function MesActualResumen({ summary, filters }: Props) {
   const resumen = useMemo(() => buildMesResumen(summary), [summary]);
+  // El sync de wallet es solo del dueño (la edge function valida isStoreOwner).
+  // Mostramos el botón únicamente al owner para que un supervisor no choque
+  // contra un 403; el badge de frescura sí lo ven todos.
+  const { isOwnerOfActive } = useStore();
 
   const { data: ganancia, isLoading: gananciaLoading } = useGananciaNetaDropi(
     filters.fromDate, filters.toDate,
@@ -91,6 +97,9 @@ export default function MesActualResumen({ summary, filters }: Props) {
             {resumen.generadoTotal.toLocaleString('es-CO')} pedidos generados
           </span>
           <WalletSyncBadge size="sm" showLabel />
+          {isOwnerOfActive && (
+            <WalletSyncButton size="sm" variant="outline" label="Sincronizar" />
+          )}
         </div>
       </header>
 
