@@ -7,7 +7,7 @@ export const ORDER_COLUMNS =
   'cantidad, direccion, novedad, guia, transportadora, tags, tienda, ' +
   'novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by, ' +
   'validation_decision, address_kind, missing_fields, suggested_customer_message, ' +
-  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed';
+  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed, last_movement_at';
 // PENDIENTE 2026-05-26: 'last_movement_at' fuera del SELECT hasta aplicar la
 // migración 20260526120000_add_last_movement_at.sql (`supabase db push`).
 // Mientras NO esté viva, las Listas SLA caen al fallback de creación (idéntico
