@@ -337,12 +337,30 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       result_date: today,
       result_time: now,
       dropi_sync_status: 'synced',
+      // CRÍTICO: pasar store_id de la tienda activa. La columna tiene default
+      // '00000...001' (CO legacy); sin esto, en tiendas Ecuador (u otras)
+      // el INSERT viola la RLS `oresults_ins` (store_id IN auth_store_ids())
+      // y la operadora ve "new row violates row-level security policy".
+      store_id: activeStoreId,
       // Sin esto, `operator_productivity_stats` no contaba las
       // confirmaciones (filtra por r.module='confirmar') y el panel
       // de admin → Productividad mostraba "Sin actividad en este rango"
       // aunque las operadoras hubieran confirmado pedidos todo el día.
       module: 'confirmar',
     }).select('id').single();
+
+    if (error) {
+      // Revertir estado optimista + liberar lock para que la operadora pueda reintentar.
+      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
+      setCounter(prev => ({
+        conf: Math.max(0, prev.conf - (result === 'conf' ? 1 : 0)),
+        canc: Math.max(0, prev.canc - (result === 'canc' ? 1 : 0)),
+        noresp: prev.noresp,
+      }));
+      markingInFlight.current.delete(order.dbId);
+      toast.error(`Error guardando resultado: ${error.message}`);
+      return;
+    }
 
     if (!error && result === 'conf' && order.dbId) {
       // REG-3: usar RPC confirm_order_locally en vez de UPDATE directo.
