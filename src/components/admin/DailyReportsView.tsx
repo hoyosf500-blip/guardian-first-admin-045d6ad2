@@ -148,6 +148,22 @@ export default function DailyReportsView() {
           notas: r.notas as string | null,
         })));
       }
+
+      if (actionsRes.error) {
+        const msg = `admin_operator_actions_per_day: ${actionsRes.error.message ?? 'unknown'}`;
+        console.error(msg);
+        setErrMsg((prev) => (prev ? `${prev} | ${msg}` : msg));
+        setActions([]);
+      } else {
+        setActions((actionsRes.data || []).map((r) => ({
+          fecha: String(r.fecha),
+          operadora: String(r.operadora),
+          conf: Number(r.conf) || 0,
+          canc: Number(r.canc) || 0,
+          noresp: Number(r.noresp) || 0,
+          atendidos: Number(r.atendidos) || 0,
+        })));
+      }
     } finally {
       setLoading(false);
     }
