@@ -12,6 +12,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+// Etiqueta del rol por tienda en español. OJO: el supervisor ANTES caía en el
+// `else` de un ternario owner/Operador y se mostraba como "Operador" — por eso un
+// supervisor parecía operadora. Mapear los 3 roles explícitamente.
+const ROLE_LABEL: Record<string, string> = {
+  owner: 'Dueño',
+  supervisor: 'Supervisor',
+  operator: 'Operador',
+};
+
 /**
  * Selector de tienda activa para el sidebar. Solo lista tiendas donde el
  * usuario es miembro (RLS lo garantiza). Cambiar la tienda recarga la
@@ -50,7 +59,7 @@ export default function StoreSelector() {
             <div className="flex-1 min-w-0">
               <div className="text-xs font-semibold text-foreground truncate">{activeStore.name}</div>
               <div className="text-[10px] text-muted-foreground">
-                {activeStore.country_code} · {activeStore.role === 'owner' ? 'Dueño' : 'Operador'}
+                {activeStore.country_code} · {ROLE_LABEL[activeStore.role] ?? 'Operador'}
               </div>
             </div>
             <ChevronsUpDown size={12} className="text-muted-foreground flex-shrink-0" />
@@ -69,7 +78,7 @@ export default function StoreSelector() {
               <Check size={12} className={s.id === activeStore.id ? 'text-accent' : 'text-transparent'} />
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-medium text-foreground truncate">{s.name}</div>
-                <div className="text-[10px] text-muted-foreground">{s.country_code} · {s.role}</div>
+                <div className="text-[10px] text-muted-foreground">{s.country_code} · {ROLE_LABEL[s.role] ?? s.role}</div>
               </div>
             </button>
           ))}

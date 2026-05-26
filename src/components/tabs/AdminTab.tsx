@@ -24,8 +24,12 @@ interface DayReport { operator_name: string; report_date: string; data: Record<s
 interface FailedSync { id: string; created_at: string; error_message: string | null; }
 
 export default function AdminTab() {
+  // isAdmin = admin GLOBAL de plataforma (Fabian). isManagerOfActive = owner o
+  // supervisor de la tienda activa. El Admin es managerOnly (igual que el gate de
+  // AdminPage): un supervisor DEBE poder entrar. Solo la config GLOBAL (clave IA)
+  // queda reservada al admin de plataforma.
   const { isAdmin } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isManagerOfActive } = useStore();
   const [operators, setOperators] = useState<Profile[]>([]);
   const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,11 +46,11 @@ export default function AdminTab() {
   const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isManagerOfActive) return;
     loadData();
-    loadAiKey();
     loadFailedSyncs();
-  }, [isAdmin, activeStoreId]);
+    if (isAdmin) loadAiKey(); // clave IA = config global, solo admin de plataforma
+  }, [isManagerOfActive, isAdmin, activeStoreId]);
 
 
   async function loadFailedSyncs() {
@@ -170,7 +174,7 @@ export default function AdminTab() {
     setLoading(false);
   }
 
-  if (!isAdmin) return <div className="text-center py-10 text-muted-foreground">Acceso denegado</div>;
+  if (!isManagerOfActive) return <div className="text-center py-10 text-muted-foreground">Acceso denegado</div>;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -259,7 +263,8 @@ export default function AdminTab() {
           {/* Invitar operadora por link (solo dueño de la tienda activa) */}
           <StoreInvitePanel />
 
-          {/* AI API Key */}
+          {/* AI API Key — config GLOBAL (app_settings), solo admin de plataforma */}
+          {isAdmin && (
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2">
               <Sparkles size={16} className="text-ai" />
@@ -301,6 +306,7 @@ export default function AdminTab() {
               </div>
             )}
           </motion.div>
+          )}
 
           {/* La "Huella del comprador" (token de sesión Dropi) ahora es por tienda
               y vive dentro de <StoreCredentialsPanel />. */}

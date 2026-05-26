@@ -241,7 +241,12 @@ function ProtectedLayoutInner() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-semibold text-foreground truncate">{profile?.display_name || 'Usuario'}</div>
-                <div className="text-[10px] text-muted-foreground">{isAdmin ? 'Administrador' : 'Operadora'}</div>
+                <div className="text-[10px] text-muted-foreground">{
+                  isAdmin ? 'Administrador'
+                  : store.activeStore?.role === 'owner' ? 'Dueño'
+                  : store.activeStore?.role === 'supervisor' ? 'Supervisor'
+                  : 'Operadora'
+                }</div>
               </div>
               <button onClick={signOut} aria-label="Cerrar sesión" title="Cerrar sesión"
                 className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
