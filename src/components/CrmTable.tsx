@@ -162,21 +162,44 @@ const TONE_STYLES: Record<Tone, {
   },
 };
 
+// Helpers de clasificación — usamos prefijos/regex para capturar variantes EC
+// que Dropi inventa sin avisar (EN RUTA A CENTRO LOGISTICO, EN RUTA A
+// CONCESION, INGRESANDO OPERATIVO A, ASIGNADO A <transportadora>, etc.)
+// Sin esto, todos los pedidos EC en fase tránsito caen en "Otros" y la
+// operadora ve una columna gigante sin priorización real (bug reportado en
+// pantalla — Soraya Ojeda "EN RUTA A CENTRO LOGISTICO" → Otros).
+const TRANSITO_EXACT = new Set([
+  'EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL',
+  'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES',
+  'EN DISTRIBUCION', 'EN REEXPEDICION', 'DESPACHADA',
+  'EN ESPERA DE RUTA DOMESTICA', 'BODEGA DESTINO', 'EN BODEGA ORIGEN',
+]);
+const matchTransito = (e: string): boolean => {
+  if (TRANSITO_EXACT.has(e)) return true;
+  if (e.startsWith('EN RUTA')) return true;        // EN RUTA / EN RUTA A CENTRO LOGISTICO / EN RUTA A CONCESION
+  if (e.startsWith('INGRESANDO')) return true;     // INGRESANDO A / INGRESANDO OPERATIVO A
+  if (e.startsWith('ASIGNADO')) return true;       // ASIGNADO A <transportadora>
+  return false;
+};
+const matchOficina = (e: string): boolean =>
+  e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') ||
+  e.includes('EN PUNTO') || e.startsWith('PARA RETIRO') || e.startsWith('RETIRO');
+
 const STATUS_COLUMNS: StatusColumn[] = [
   { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />, tone: 'neutral',
-    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) },
+    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) },
   { key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />, tone: 'neutral',
     match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e) },
   { key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />, tone: 'neutral',
     match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e) },
   { key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />, tone: 'neutral',
-    match: (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e) },
+    match: matchTransito },
   { key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />, tone: 'accent',
-    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e) },
+    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO'].includes(e) },
   { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />, tone: 'warning',
     match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
   { key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />, tone: 'warning',
-    match: (e) => e.includes('OFICINA') || e.includes('RECLAME') },
+    match: matchOficina },
   { key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />, tone: 'danger',
     match: (e) => e === 'RECHAZADO' },
   { key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />, tone: 'success',
@@ -184,13 +207,13 @@ const STATUS_COLUMNS: StatusColumn[] = [
   { key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />, tone: 'danger',
     match: (e) => e === 'DEVOLUCION EN TRANSITO' },
   { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />, tone: 'danger',
-    match: (e) => e === 'DEVOLUCION' },
+    match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
   { key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />, tone: 'muted',
     match: (e) => e.includes('INDEMNIZADA') },
   { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />, tone: 'success',
     match: (e) => e === 'ENTREGADO' },
   { key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />, tone: 'muted',
-    match: (e) => e === 'CANCELADO' },
+    match: (e) => e === 'CANCELADO' || e === 'ARCHIVADO_GHOST' },
   { key: 'otros', label: 'Otros', icon: <Layers size={14} />, tone: 'muted',
     match: () => true },
 ];
@@ -233,11 +256,11 @@ function isExcludedFromDelay(estado: string): boolean {
 
 const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
   'Guía Generada': (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e),
-  'En Procesamiento': (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e),
-  'Oficina': (e) => e.includes('OFICINA') || e.includes('RECLAME'),
+  'En Procesamiento': (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e),
+  'Oficina': matchOficina,
   'Novedad': (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA',
-  'En Tránsito': (e) => ['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e),
-  'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e),
+  'En Tránsito': matchTransito,
+  'Reparto': (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO'].includes(e),
 };
 
 /**

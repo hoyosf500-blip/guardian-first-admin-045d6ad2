@@ -86,7 +86,17 @@ export default function SeguimientoTab() {
 
   // Filter state persisted to sessionStorage so it also survives tab
   // discards (Chrome Memory Saver) and internal route navigation.
-  const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom', '');
+  // Default: primer día del mes en curso → la operadora ve SIEMPRE el mes
+  // actual al entrar. Si quiere más historia, expande el rango con el
+  // date picker. Antes el default era "" (todo) y mezclaba pedidos de
+  // hace 6 meses con la operación viva → ruido visual.
+  const currentMonthStart = (() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}-01`;
+  })();
+  const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom', currentMonthStart);
   const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo', '');
   // Resumen por estado (las 14 tarjetas) colapsado por defecto. La forma
   // principal de priorizar pasó a ser las listas SLA (chips arriba); estas

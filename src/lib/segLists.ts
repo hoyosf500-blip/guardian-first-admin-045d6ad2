@@ -63,7 +63,7 @@ export interface SegListDef {
 
 const E = (s: string | null | undefined): string => (s || '').toUpperCase().trim();
 
-const ESTADOS_TRANSITO = [
+const ESTADOS_TRANSITO_EXACT = new Set([
   'EN TRANSPORTE',
   'EN DESPACHO',
   'EN TRASLADO NACIONAL',
@@ -77,8 +77,21 @@ const ESTADOS_TRANSITO = [
   'REENVÍO',
   'EN BODEGA TRANSPORTADORA',
   'EN BODEGA DROPI',
+  'EN BODEGA ORIGEN',
+  'BODEGA DESTINO',
   'RECOGIDO POR DROPI',
-];
+  'DESPACHADA',
+  'EN ESPERA DE RUTA DOMESTICA',
+]);
+const matchTransito = (e: string): boolean => {
+  if (ESTADOS_TRANSITO_EXACT.has(e)) return true;
+  // Variantes EC que Dropi inventa con sufijos: "EN RUTA A CENTRO LOGISTICO",
+  // "INGRESANDO OPERATIVO A", "ASIGNADO A <transportadora>".
+  if (e.startsWith('EN RUTA')) return true;
+  if (e.startsWith('INGRESANDO')) return true;
+  if (e.startsWith('ASIGNADO')) return true;
+  return false;
+};
 
 // FASE FINAL: pedido en mano del repartidor o intento de entrega fallido —
 // la atención del operador acá impacta directo en la entrega.
@@ -89,11 +102,13 @@ const ESTADOS_REPARTO_NOVEDAD = [
   'NOVEDAD SOLUCIONADA',
 ];
 
-const ESTADOS_GUIA_GENERADA = ['GUIA_GENERADA', 'GUIA GENERADA', 'ADMITIDA'];
+const ESTADOS_GUIA_GENERADA = ['GUIA_GENERADA', 'GUIA GENERADA', 'ADMITIDA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'];
 
 // FASE FINAL: cliente debe ir a recoger a oficina (alta prioridad).
+// Incluye "PARA RETIRO EN AGENCIA SERVIENTREGA" (EC) y "EN PUNTO DROOP" (CO).
 const ESTADOS_OFICINA = (e: string): boolean =>
-  e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') || e.includes('EN PUNTO');
+  e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') ||
+  e.includes('EN PUNTO') || e.startsWith('PARA RETIRO') || e.startsWith('RETIRO');
 
 const ESTADOS_TERMINALES = [
   'ENTREGADO',
@@ -172,7 +187,7 @@ export const SEG_LISTS: SegListDef[] = [
     label: 'En tránsito',
     slaDias: 7,
     tone: 'info',
-    matches: (o) => ESTADOS_TRANSITO.includes(E(o.estado)),
+    matches: (o) => matchTransito(E(o.estado)),
   },
 
   // ── FASE INICIAL — guía generada ────────────────────────────────────────
@@ -236,7 +251,7 @@ export const SEG_LISTS: SegListDef[] = [
       if (e === 'PENDIENTE') return false;
       if (e === 'PENDIENTE CONFIRMACION') return false;
       if (ESTADOS_GUIA_GENERADA.includes(e)) return false;
-      if (ESTADOS_TRANSITO.includes(e)) return false;
+      if (matchTransito(e)) return false;
       if (ESTADOS_REPARTO_NOVEDAD.includes(e)) return false;
       if (ESTADOS_OFICINA(e)) return false;
       return true;
