@@ -3,6 +3,7 @@ import { Download, MapPin, AlertTriangle } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { CityReturns } from '@/lib/logistics.types';
 
 interface Props { rows: CityReturns[]; }
@@ -26,8 +27,15 @@ export default memo(function CityReturnsTable({ rows }: Props) {
   const [sortKey, setSortKey] = useState<Key>('tasa_devolucion');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  // tasa_entrega/tasa_devolucion → maduras (÷ entregados+devueltos). Conteos
+  // crudos intactos. Sort/bars/CSV usan la tasa madura automáticamente.
+  const matureRows = useMemo<CityReturns[]>(() => rows.map(r => {
+    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
+    return { ...r, tasa_entrega: m.tasaEntregaMadura ?? 0, tasa_devolucion: m.tasaDevolucionMadura ?? 0 };
+  }), [rows]);
+
   const sorted = useMemo(() => {
-    const out = [...rows];
+    const out = [...matureRows];
     out.sort((a, b) => {
       const av = a[sortKey] ?? 0;
       const bv = b[sortKey] ?? 0;
@@ -39,7 +47,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
         : String(bv).localeCompare(String(av));
     });
     return out;
-  }, [rows, sortKey, sortDir]);
+  }, [matureRows, sortKey, sortDir]);
 
   const totalLost = useMemo(
     () => sorted.reduce((s, r) => s + (r.valor_perdido ?? 0), 0),

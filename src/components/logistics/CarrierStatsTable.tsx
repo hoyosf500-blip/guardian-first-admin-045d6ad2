@@ -3,6 +3,7 @@ import { Download, Truck } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { CarrierStats } from '@/lib/logistics.types';
 
 interface Props { rows: CarrierStats[]; }
@@ -128,8 +129,17 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
   const [sortKey, setSortKey] = useState<Key>('entregados');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  // Sobreescribe tasa_entrega/tasa_devolucion con las MADURAS (÷ entregados+
+  // devueltos). Así el sort, los bullets, los DataBar y el CSV usan la tasa
+  // madura sin tocar nada más. Los conteos crudos (entregados/devueltos/total)
+  // quedan intactos → la CompositionBar sigue mostrando composición real.
+  const matureRows = useMemo<CarrierStats[]>(() => rows.map(r => {
+    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
+    return { ...r, tasa_entrega: m.tasaEntregaMadura ?? 0, tasa_devolucion: m.tasaDevolucionMadura ?? 0 };
+  }), [rows]);
+
   const sorted = useMemo(() => {
-    const out = [...rows];
+    const out = [...matureRows];
     out.sort((a, b) => {
       const av = a[sortKey] ?? 0;
       const bv = b[sortKey] ?? 0;
@@ -141,12 +151,12 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
         : String(bv).localeCompare(String(av));
     });
     return out;
-  }, [rows, sortKey, sortDir]);
+  }, [matureRows, sortKey, sortDir]);
 
   // Top 5 por volumen — leaderboard analítico
   const topByVolume = useMemo(
-    () => [...rows].sort((a, b) => (b.total_pedidos ?? 0) - (a.total_pedidos ?? 0)).slice(0, 5),
-    [rows],
+    () => [...matureRows].sort((a, b) => (b.total_pedidos ?? 0) - (a.total_pedidos ?? 0)).slice(0, 5),
+    [matureRows],
   );
 
   const maxVolume = useMemo(

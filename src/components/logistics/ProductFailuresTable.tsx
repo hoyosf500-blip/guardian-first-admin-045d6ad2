@@ -3,11 +3,22 @@ import { Download, Package, AlertOctagon } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { ProductFailure } from '@/lib/logistics.types';
 
 interface Props { rows: ProductFailure[]; }
 
 type Key = keyof ProductFailure;
+
+// Mínimo de pedidos CONCLUIDOS (entregados+devueltos) para marcar "Crítico".
+// Con la tasa madura, un producto con todo en tránsito daría 0% de entrega sin
+// estar realmente fallando — este guard evita falsos críticos por inmadurez.
+const CRITICO_MIN_RESUELTOS = 5;
+function esCritico(r: ProductFailure): boolean {
+  return r.total_pedidos >= 10
+    && (r.entregados + r.devueltos) >= CRITICO_MIN_RESUELTOS
+    && r.tasa_entrega < 30;
+}
 
 /** Heat-map data bar para tasa de entrega. Tono inverso: <30%
  *  danger (producto crítico), 30-60% warning, ≥60% success. */
@@ -25,7 +36,7 @@ function DeliveryRateBar({ value }: { value: number }) {
 /** Severity badge — productos crónicamente fallidos (entrega <30%
  *  + ≥10 envíos) → invita a discontinuar del catálogo. */
 function SeverityBadge({ row }: { row: ProductFailure }) {
-  if (row.total_pedidos >= 10 && row.tasa_entrega < 30) {
+  if (esCritico(row)) {
     return (
       <span className="pill pill-danger">
         <AlertOctagon size={9} aria-hidden="true" /> Crítico
@@ -39,8 +50,15 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
   const [sortKey, setSortKey] = useState<Key>('tasa_entrega');
   const [sortDir, setSortDir] = useState<SortDir>('asc'); // peores primero
 
+  // tasa_entrega/tasa_devolucion → maduras (÷ entregados+devueltos). Conteos
+  // crudos intactos. Sort/bars/CSV/"Crítico" usan la tasa madura.
+  const matureRows = useMemo<ProductFailure[]>(() => rows.map(r => {
+    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
+    return { ...r, tasa_entrega: m.tasaEntregaMadura ?? 0, tasa_devolucion: m.tasaDevolucionMadura ?? 0 };
+  }), [rows]);
+
   const sorted = useMemo(() => {
-    const out = [...rows];
+    const out = [...matureRows];
     out.sort((a, b) => {
       const av = a[sortKey] ?? 0;
       const bv = b[sortKey] ?? 0;
@@ -52,10 +70,10 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
         : String(bv).localeCompare(String(av));
     });
     return out;
-  }, [rows, sortKey, sortDir]);
+  }, [matureRows, sortKey, sortDir]);
 
   const criticalCount = useMemo(
-    () => sorted.filter(r => r.total_pedidos >= 10 && r.tasa_entrega < 30).length,
+    () => sorted.filter(esCritico).length,
     [sorted],
   );
   const totalLost = useMemo(
