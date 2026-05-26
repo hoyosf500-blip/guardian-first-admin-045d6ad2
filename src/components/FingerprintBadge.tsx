@@ -91,14 +91,16 @@ function devolutionColor(): { text: string; fill: string } {
 }
 
 export default function FingerprintBadge({ phone }: { phone: string }) {
+  const { activeStoreId } = useStore();
+  const cacheKey = `${activeStoreId ?? 'none'}|${phone}`;
   const [data, setData] = useState<FpData | null | undefined>(
-    () => getCachedFp(phone),
+    () => getCachedFp(cacheKey),
   );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!phone) return;
-    const cached = getCachedFp(phone);
+    if (!phone || !activeStoreId) return;
+    const cached = getCachedFp(cacheKey);
     if (cached !== undefined) {
       setData(cached);
       return;
@@ -107,24 +109,24 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
     (async () => {
       setLoading(true);
       try {
-        const { data: raw, error } = await supabase.rpc('dropi_fingerprint', {
-          p_phone: phone,
+        // Multi-tienda + EC-aware: usa la edge function (lee store_dropi_config,
+        // normaliza prefijo CO/EC, valida membresía). El viejo RPC público
+        // dropi_fingerprint hardcodeaba app_settings.dropi_session_token +
+        // country=CO + ^57 → roto en EC y en cualquier tienda multi-tenant.
+        const { data: raw, error } = await supabase.functions.invoke('dropi-fingerprint', {
+          body: { phone, storeId: activeStoreId },
         });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = raw as Record<string, any> | null;
-        // OLD-2: NO loguear el phone completo. Si mañana enchufamos
-        // Sentry/LogFlare, los teléfonos vuelan al SaaS sin redacción.
-        // Mostramos solo los últimos 4 dígitos como tag de debug.
+        const d = raw as Record<string, unknown> | null;
         const phoneTag = phone ? `***${phone.slice(-4)}` : '<empty>';
         if (error) {
-          console.error('[FingerprintBadge] RPC error', { phoneTag, error });
-        } else if (d && d.ok === false) {
-          console.error('[FingerprintBadge] RPC returned ok=false', { phoneTag, payload: d });
-        } else if (d?.ok && !d.fingerprint?.found) {
-          console.warn('[FingerprintBadge] No fingerprint found for phone', { phoneTag });
+          console.error('[FingerprintBadge] edge error', { phoneTag, error });
+        } else if (d && (d as { ok?: boolean }).ok === false) {
+          console.error('[FingerprintBadge] edge ok=false', { phoneTag, payload: d });
         }
-        if (!cancelled && !error && d?.ok && d.fingerprint?.found) {
-          const gp = d.fingerprint.global_profile;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const dd = d as any;
+        if (!cancelled && !error && dd?.ok && dd.fingerprint?.found) {
+          const gp = dd.fingerprint.global_profile;
           const result: FpData = {
             risk: gp.risk_label,
             color: gp.risk_color,
@@ -133,21 +135,23 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             returned: gp.lifetime_totals.returned,
             buyerType: gp.buyer_type,
           };
-          setCachedFp(phone, result);
+          setCachedFp(cacheKey, result);
           setData(result);
         } else {
-          setCachedFp(phone, null);
+          setCachedFp(cacheKey, null);
           setData(null);
         }
-      } catch {
-        fpCache.set(phone, null);
+      } catch (e) {
+        console.error('[FingerprintBadge] threw', e);
+        fpCache.set(cacheKey, { value: null, expires: Date.now() + FP_CACHE_TTL_MS });
         setData(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [phone]);
+  }, [phone, activeStoreId, cacheKey]);
+
 
   if (loading) {
     return (
