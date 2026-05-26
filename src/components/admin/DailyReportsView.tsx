@@ -63,6 +63,7 @@ export default function DailyReportsView() {
   const [to, setTo] = useState(isoDate(today));
   const [days, setDays] = useState<DayRow[]>([]);
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
+  const [actions, setActions] = useState<ActionRow[]>([]);
   const [loading, setLoading] = useState(true);
   // errMsg expone errores de RPC en pantalla. Antes solo iban a console.error
   // → el usuario veía "0 filas" sin pista de la causa real (Solo admins,
