@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Package, CheckCircle2, RotateCcw, DollarSign } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import type { LogisticsSummary } from '@/lib/logistics.types';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 
 interface Props {
   data: LogisticsSummary | null;
@@ -18,8 +19,16 @@ export default memo(function CompactKpiGrid({ data }: Props) {
     );
   }
 
-  const tasaEntrega = data.tasa_entrega ?? 0;
-  const tasaDevolucion = data.tasa_devolucion ?? 0;
+  // Tasas MADURAS: sobre (entregados + devueltos), no sobre el total — así los
+  // pedidos en tránsito no hunden la tasa de entrega en rangos recientes.
+  // `% concluido` indica madurez; bajo el umbral la tasa es preliminar (gris).
+  const m = deriveDeliveryMaturity(data.entregados, data.devueltos, data.total_pedidos);
+  const entregaHint = m.tasaEntregaMadura == null
+    ? 'Sin concluir aún'
+    : `${m.tasaEntregaMadura}% entrega · ${m.pctConcluido}% concluido${m.inmaduro ? ' · prelim.' : ''}`;
+  const devolHint = m.tasaDevolucionMadura == null
+    ? 'Sin concluir aún'
+    : `${m.tasaDevolucionMadura}% sobre concluidos${m.inmaduro ? ' · prelim.' : ''}`;
 
   return (
     <div className="grid grid-cols-2 gap-3 h-full">
@@ -35,17 +44,19 @@ export default memo(function CompactKpiGrid({ data }: Props) {
         value={data.entregados.toLocaleString('es-CO')}
         icon={CheckCircle2}
         tone="success"
-        hint={`${tasaEntrega.toFixed(1)}% de tasa`}
-        trendPct={tasaEntrega}
+        hint={entregaHint}
+        trendPct={m.tasaEntregaMadura ?? undefined}
+        mutedTrend={m.inmaduro}
       />
       <KpiCard
         label="Devueltos"
         value={data.devueltos.toLocaleString('es-CO')}
         icon={RotateCcw}
         tone="danger"
-        hint={`${tasaDevolucion.toFixed(1)}% de tasa`}
-        trendPct={tasaDevolucion}
+        hint={devolHint}
+        trendPct={m.tasaDevolucionMadura ?? undefined}
         inverseTrend
+        mutedTrend={m.inmaduro}
       />
       <KpiCard
         label="Valor entregado"
@@ -72,6 +83,9 @@ interface KpiCardProps {
   hintTone?: 'neutral' | 'danger';
   trendPct?: number;
   inverseTrend?: boolean;
+  /** Cohorte inmaduro (% concluido bajo el umbral): el chip de tasa se muestra
+   *  en gris para no leer como definitivo. */
+  mutedTrend?: boolean;
 }
 
 const TONE_CARD: Record<Tone, string> = {
@@ -102,7 +116,7 @@ const TONE_TREND: Record<Tone, string> = {
   accent:  'bg-accent/12 text-accent',
 };
 
-function KpiCard({ label, value, valueClass, icon: Icon, tone, hint, hintTone, trendPct, inverseTrend }: KpiCardProps) {
+function KpiCard({ label, value, valueClass, icon: Icon, tone, hint, hintTone, trendPct, inverseTrend, mutedTrend }: KpiCardProps) {
   const showTrend = trendPct !== undefined;
   const arrow = inverseTrend ? '↓' : '↑';
 
@@ -126,7 +140,7 @@ function KpiCard({ label, value, valueClass, icon: Icon, tone, hint, hintTone, t
           {hint}
         </span>
         {showTrend && (
-          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums shrink-0 ${TONE_TREND[tone]}`}>
+          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums shrink-0 ${mutedTrend ? 'bg-muted/40 text-muted-foreground' : TONE_TREND[tone]}`}>
             <span aria-hidden="true">{arrow}</span>
             {trendPct.toFixed(0)}%
           </span>
