@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildMesResumen } from './mesResumen';
+import { buildMesResumen, buildMesResumenFromBreakdown } from './mesResumen';
 import type { LogisticsSummary } from './logistics.types';
+import type { EstadoRow } from './estadoBuckets';
 
 // Summary realista (estilo el mes que reportó el dueño: ~181 generados).
 const base: LogisticsSummary = {
@@ -95,5 +96,71 @@ describe('buildMesResumen', () => {
     expect(r.valorGenerado).toBe(120); // entregado + perdido
     const suma = r.buckets.reduce((a, b) => a + b.count, 0);
     expect(suma).toBe(10);
+  });
+});
+
+describe('buildMesResumenFromBreakdown', () => {
+  const rows: EstadoRow[] = [
+    { estado: 'ENTREGADO',              pedidos: 69, valor: 6_899_293, unidades: 86 },
+    { estado: 'DEVOLUCION',             pedidos: 19, valor: 2_513_199, unidades: 22 },
+    { estado: 'EN TRANSPORTE',          pedidos: 17, valor: 1_707_000, unidades: 20 },
+    { estado: 'NOVEDAD',                pedidos: 4,  valor: 418_549,   unidades: 4 },
+    { estado: 'PENDIENTE',              pedidos: 34, valor: 3_560_150, unidades: 38 },
+    { estado: 'GUIA_GENERADA',          pedidos: 20, valor: 2_000_000, unidades: 24 },
+    { estado: 'CONFIRMADO',             pedidos: 12, valor: 1_200_000, unidades: 14 },
+    { estado: 'CANCELADO',              pedidos: 31, valor: 3_200_701, unidades: 33 },
+  ];
+
+  it('null → null', () => {
+    expect(buildMesResumenFromBreakdown(null)).toBeNull();
+  });
+
+  it('tiles: generados sin/con cancelados, total vendido, unidades', () => {
+    const r = buildMesResumenFromBreakdown(rows)!;
+    expect(r.generadoTotal).toBe(206);
+    expect(r.cancelados).toBe(31);
+    expect(r.generadosSinCancel).toBe(175);
+    expect(r.entregados).toBe(69);
+    // Total vendido = SUM(valor) sin cancelados (matchea "Total vendido" de Dropi)
+    const totalValor = rows.reduce((a, x) => a + x.valor, 0);
+    expect(r.totalVendido).toBe(totalValor - 3_200_701);
+    // Unidades vendidas = SUM(cantidad) sin cancelados
+    const totalUnd = rows.reduce((a, x) => a + x.unidades, 0);
+    expect(r.unidadesVendidas).toBe(totalUnd - 33);
+  });
+
+  it('SIN HUECOS: Σ counts de buckets === generadoTotal', () => {
+    const r = buildMesResumenFromBreakdown(rows)!;
+    const suma = r.buckets.reduce((a, b) => a + b.count, 0);
+    expect(suma).toBe(r.generadoTotal);
+  });
+
+  it('CONFIRMADO/GUIA_GENERADA aparecen como "En preparación", no como Otros', () => {
+    const r = buildMesResumenFromBreakdown(rows)!;
+    const prep = r.buckets.find((b) => b.key === 'preparacion')!;
+    expect(prep).toBeDefined();
+    expect(prep.count).toBe(32); // 20 + 12
+    expect(r.valorOtros).toBe(0);
+    expect(r.buckets.some((b) => b.key.startsWith('otros:'))).toBe(false);
+  });
+
+  it('estado desconocido → bucket propio POR NOMBRE (no "Otros" anónimo)', () => {
+    const r = buildMesResumenFromBreakdown([
+      ...rows,
+      { estado: 'LIMBO_XYZ', pedidos: 5, valor: 1000, unidades: 5 },
+    ])!;
+    const limbo = r.buckets.find((b) => b.label === 'LIMBO_XYZ');
+    expect(limbo).toBeDefined();
+    expect(limbo!.count).toBe(5);
+    expect(limbo!.tone).toBe('otros');
+    const suma = r.buckets.reduce((a, b) => a + b.count, 0);
+    expect(suma).toBe(r.generadoTotal);
+  });
+
+  it('cascada balancea: generado − fugas − otros = entregado', () => {
+    const r = buildMesResumenFromBreakdown(rows)!;
+    const fugas = r.valorEnTransito + r.valorNovedades + r.valorPreparacion
+      + r.valorPendientes + r.valorPerdido + r.valorCancelado + r.valorOtros;
+    expect(r.valorGenerado - fugas).toBe(r.valorEntregado);
   });
 });

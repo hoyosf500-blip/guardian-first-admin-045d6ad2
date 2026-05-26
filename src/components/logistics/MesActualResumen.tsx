@@ -1,42 +1,47 @@
 import { useMemo } from 'react';
 import {
   Package as PackageIcon, Wallet, ArrowRight, TrendingDown, Info,
+  Boxes, DollarSign, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
-import { buildMesResumen, type BucketTone } from '@/lib/mesResumen';
+import { buildMesResumen, buildMesResumenFromBreakdown, type BucketTone } from '@/lib/mesResumen';
 import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
+import { useEstadoBreakdown } from '@/hooks/useEstadoBreakdown';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useWalletMovements } from '@/hooks/useWalletMovements';
+import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
+import KpiCard from '@/components/logistics/finanzas/KpiCard';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 
 // "Cómo voy este mes" — vive en Logística → Resumen (managerOnly, lo ven los
-// socios). Responde dos preguntas del dueño:
-//   1. De lo generado, ¿cuánto está en tránsito / entregado / novedad / devuelto?
-//      (embudo por estado, SIN huecos — ver buildMesResumen).
-//   2. ¿Por qué Dropi dice "utilidad estimada $X" pero mi wallet tiene $Y?
-//      (conciliación: valor generado → realizado + plata REAL del wallet).
+// socios). Pantalla única de rendimiento, reconciliada con el dashboard de Dropi:
+//   1. Tiles Dropi-parity (generados / productos vendidos / total vendido /
+//      entregados / ganancia neta real).
+//   2. Embudo por estado SIN huecos (desde el desglose real; los estados sin
+//      mapear se muestran por nombre, no en un "Otros" anónimo).
+//   3. Conciliación: lo realizado (≈ "Utilidad Total" de Dropi, ya pagada) vs lo
+//      pendiente (≈ "Estimada" de Dropi) vs lo perdido. + el saldo real del wallet.
 //
-// El `summary` lo inyecta LogisticaTab (ya lo trae useLogisticsStats, no
-// re-fetch). La plata real sí la pide acá (ganancia neta + saldo del wallet),
-// scopeada a la tienda activa.
+// Datos: desglose por estado vía useEstadoBreakdown (RPC store-scoped). Si el RPC
+// no está desplegado aún, cae al builder basado en el `summary` de logistics_summary.
 
 // Color del bullet por estado — mismos tokens DS que el stacked bar de la tab.
 const TONE_BAR: Record<BucketTone, string> = {
-  pending:   'hsl(var(--muted-foreground))',
-  transit:   'hsl(var(--info))',
-  novedad:   'hsl(var(--warning))',
-  entregado: 'hsl(var(--success))',
-  devuelto:  'hsl(var(--danger))',
-  cancelado: 'hsl(var(--muted-foreground) / 0.6)',
-  otros:     'hsl(var(--muted-foreground) / 0.4)',
+  pending:     'hsl(var(--muted-foreground))',
+  preparacion: 'hsl(var(--ai))',
+  transit:     'hsl(var(--info))',
+  novedad:     'hsl(var(--warning))',
+  entregado:   'hsl(var(--success))',
+  devuelto:    'hsl(var(--danger))',
+  cancelado:   'hsl(var(--muted-foreground) / 0.6)',
+  otros:       'hsl(var(--muted-foreground) / 0.4)',
 };
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Título: "Cómo voy — mayo 2026" si el rango es el mes calendario actual; si
- *  no, "Resumen del período". Detecta mes-actual comparando from=1ro y to=hoy. */
+/** Título: "Cómo voy — mayo 2026" si el rango es el mes calendario actual. */
 function rangeTitle(filters: LogisticsFilters): string {
   const now = new Date();
   const firstOfMonth = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
@@ -54,11 +59,16 @@ interface Props {
 }
 
 export default function MesActualResumen({ summary, filters }: Props) {
-  const resumen = useMemo(() => buildMesResumen(summary), [summary]);
+  // Desglose real por estado (RPC). Si no está desplegado → null → fallback.
+  const { data: breakdown } = useEstadoBreakdown(filters.fromDate, filters.toDate);
+  const full = useMemo(() => buildMesResumenFromBreakdown(breakdown ?? null), [breakdown]);
+  const fallback = useMemo(() => buildMesResumen(summary), [summary]);
+  const resumen = full ?? fallback;
+
   // El sync de wallet es solo del dueño (la edge function valida isStoreOwner).
-  // Mostramos el botón únicamente al owner para que un supervisor no choque
-  // contra un 403; el badge de frescura sí lo ven todos.
-  const { isOwnerOfActive } = useStore();
+  const { isOwnerOfActive, activeStoreId } = useStore();
+  const walletHealth = useWalletSyncHealth(activeStoreId);
+  const walletStale = walletHealth.data?.status === 'stale' || walletHealth.data?.status === 'critical';
 
   const { data: ganancia, isLoading: gananciaLoading } = useGananciaNetaDropi(
     filters.fromDate, filters.toDate,
@@ -77,10 +87,21 @@ export default function MesActualResumen({ summary, filters }: Props) {
     );
   }
 
+  // ── Valores derivados para tiles (funcionan con full o fallback) ──
+  const canceladoCount = resumen.buckets.find((b) => b.key === 'cancelado')?.count ?? 0;
+  const entregadoCount = resumen.buckets.find((b) => b.key === 'entregado')?.count ?? 0;
+  const generadosSinCancel = full?.generadosSinCancel ?? Math.max(0, resumen.generadoTotal - canceladoCount);
+  const pctCompletado = full?.pctCompletado
+    ?? (generadosSinCancel > 0 ? (entregadoCount / generadosSinCancel) * 100 : 0);
+  const unidadesVendidas = full?.unidadesVendidas ?? null;
+  const totalVendido = full?.totalVendido ?? null;
+
   const gananciaNeta = ganancia?.ganancia_neta ?? 0;
   const totalEntradas = ganancia?.total_entradas ?? 0;
   const totalSalidas = ganancia?.total_salidas ?? 0;
   const saldoActual = wallet?.ultimoSaldo ?? null;
+  const valorPreparacion = full?.valorPreparacion ?? 0;
+  const valorOtros = full?.valorOtros ?? 0;
 
   return (
     <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
@@ -102,6 +123,45 @@ export default function MesActualResumen({ summary, filters }: Props) {
           )}
         </div>
       </header>
+
+      {/* ── Tiles Dropi-parity ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-5 border-b border-border">
+        <KpiCard
+          label="Pedidos generados"
+          value={generadosSinCancel.toLocaleString('es-CO')}
+          icon={PackageIcon}
+          tone="info"
+          hint={canceladoCount > 0 ? `${canceladoCount} cancelados aparte` : 'sin cancelados'}
+        />
+        <KpiCard
+          label="Productos vendidos"
+          value={unidadesVendidas != null ? unidadesVendidas.toLocaleString('es-CO') : '—'}
+          icon={Boxes}
+          tone="info"
+          hint="unidades (sin cancelar)"
+        />
+        <KpiCard
+          label="Total vendido"
+          value={totalVendido != null ? formatCOP(totalVendido) : '—'}
+          icon={DollarSign}
+          tone="accent"
+          hint="sin cancelados · = Dropi"
+        />
+        <KpiCard
+          label="Entregados"
+          value={entregadoCount.toLocaleString('es-CO')}
+          icon={CheckCircle2}
+          tone="success"
+          hint={`${pctCompletado.toFixed(0)}% completado`}
+        />
+        <KpiCard
+          label="Ganancia neta real"
+          value={gananciaLoading ? '…' : formatCOP(gananciaNeta)}
+          icon={Wallet}
+          tone={walletStale ? 'warning' : gananciaNeta >= 0 ? 'success' : 'danger'}
+          hint={walletStale ? '⚠ wallet viejo, sincronizá' : '≈ Utilidad Total Dropi'}
+        />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-border">
         {/* ── Bloque A — Embudo por estado ─────────────────────────── */}
@@ -151,45 +211,58 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
           {/* Cascada: valor generado − fugas = realizado */}
           <div className="rounded-lg border border-border bg-muted/10 divide-y divide-border text-sm">
-            <WaterfallRow label="Valor generado" value={resumen.valorGenerado} tone="base" />
+            <WaterfallRow label="Valor generado (con cancelados)" value={resumen.valorGenerado} tone="base" />
+            {valorPreparacion > 0 && (
+              <WaterfallRow label="En preparación" value={-valorPreparacion} tone="muted" />
+            )}
             <WaterfallRow label="En tránsito (sin cobrar aún)" value={-resumen.valorEnTransito} tone="muted" />
             <WaterfallRow label="En novedad (en riesgo)" value={-resumen.valorNovedades} tone="muted" />
             <WaterfallRow label="Pendientes" value={-resumen.valorPendientes} tone="muted" />
+            {valorOtros > 0 && (
+              <WaterfallRow label="Otros estados" value={-valorOtros} tone="muted" />
+            )}
             <WaterfallRow label="Devueltos (perdido)" value={-resumen.valorPerdido} tone="danger" />
             <WaterfallRow label="Cancelados" value={-resumen.valorCancelado} tone="muted" />
             <WaterfallRow label="Valor entregado (realizado)" value={resumen.valorEntregado} tone="success" emphasis />
           </div>
 
           {/* Wallet REAL */}
-          <div className="rounded-lg border border-border bg-card p-3.5 space-y-2.5">
-            <div className="flex items-center gap-2">
-              <Wallet size={13} className="text-accent" />
-              <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                Wallet REAL
-              </span>
+          <div className={`rounded-lg border p-3.5 space-y-2.5 ${walletStale ? 'border-warning/40 bg-warning/5' : 'border-border bg-card'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Wallet size={13} className="text-accent" />
+                <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                  Wallet REAL
+                </span>
+              </div>
+              {walletStale && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-warning">
+                  <AlertTriangle size={10} /> desactualizado — sincronizá
+                </span>
+              )}
             </div>
             {(gananciaLoading || walletLoading) ? (
               <div className="h-12 animate-pulse bg-muted/30 rounded" />
             ) : (
-              <>
+              <div className={walletStale ? 'opacity-60' : ''}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">
                     Ganancia neta operativa del mes
                     <span className="block text-[10px] text-muted-foreground/70">
-                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)}
+                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · ≈ <strong>Utilidad Total</strong> de Dropi
                     </span>
                   </span>
                   <span className={`text-base font-bold tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
                     {formatCOP(gananciaNeta)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5">
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5 mt-2.5">
                   <span className="text-xs text-foreground font-medium">Saldo disponible hoy</span>
                   <span className="text-base font-bold tabular-nums text-foreground shrink-0">
                     {saldoActual != null ? formatCOP(saldoActual) : '—'}
                   </span>
                 </div>
-              </>
+              </div>
             )}
           </div>
 
@@ -197,11 +270,11 @@ export default function MesActualResumen({ summary, filters }: Props) {
           <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
             <Info size={13} className="text-info shrink-0 mt-0.5" />
             <p>
-              Dropi te muestra un <strong className="text-foreground">estimado optimista</strong> que asume
-              que TODO lo generado se entrega. Acá ves lo que ya es real (entregado) vs lo que
-              falta cobrar (tránsito/novedad) o se perdió (devoluciones). El{' '}
-              <strong className="text-foreground">saldo del wallet</strong> es tu plata disponible hoy,
-              después de fletes, devoluciones y retiros — por eso no coincide con el estimado.
+              Dropi ya te pagó la <strong className="text-foreground">Utilidad Total</strong> (lo realizado).
+              Lo <strong className="text-foreground">"Estimado"</strong> de Dropi es si lo pendiente
+              (preparación + tránsito + novedad) también entrega. Acá ves realizado vs pendiente vs
+              perdido. El <strong className="text-foreground">saldo del wallet</strong> es tu plata
+              disponible hoy, después de fletes, devoluciones y retiros.
             </p>
           </div>
         </div>

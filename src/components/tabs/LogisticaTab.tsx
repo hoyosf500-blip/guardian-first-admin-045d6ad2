@@ -10,7 +10,6 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
-import CompactKpiGrid from '@/components/logistics/CompactKpiGrid';
 import LogisticsHeroChart from '@/components/logistics/LogisticsHeroChart';
 import GeoDistribution from '@/components/logistics/GeoDistribution';
 import CarrierStatsTable from '@/components/logistics/CarrierStatsTable';
@@ -367,20 +366,13 @@ export default function LogisticaTab() {
               transportadora. Antes vivían fuera del sistema de tabs y se
               renderizaban siempre (espacio muerto en las otras tabs). */}
           <TabsContent value="resumen" className="mt-4 space-y-4">
-            {/* "Cómo voy este mes": embudo por estado (sin huecos) +
-                conciliación de plata (generado → realizado + wallet real).
-                Responde "de los 181, cuántos en tránsito/entregado/novedad" y
-                "por qué el estimado de Dropi ≠ mi saldo del wallet". */}
+            {/* "Cómo voy este mes": tiles Dropi-parity + embudo por estado (sin
+                huecos) + conciliación (realizado vs pendiente vs perdido + wallet
+                real). Reemplaza al CompactKpiGrid (sus KPIs quedan cubiertos). */}
             <MesActualResumen summary={summary.data ?? null} filters={filters} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-              <div className="lg:col-span-7">
-                <LogisticsHeroChart rows={carriers.data ?? []} />
-              </div>
-              <div className="lg:col-span-5">
-                <CompactKpiGrid data={summary.data ?? null} />
-              </div>
-            </div>
+            {/* Composición por transportadora (complementa los tiles de arriba). */}
+            <LogisticsHeroChart rows={carriers.data ?? []} />
           </TabsContent>
 
           <TabsContent value="carriers" className="mt-4 space-y-4">

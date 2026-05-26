@@ -10,9 +10,11 @@
 // desaparecer silenciosamente.
 
 import type { LogisticsSummary } from './logistics.types';
+import { bucketizeEstados, type EstadoRow } from './estadoBuckets';
 
 export type BucketTone =
   | 'pending'
+  | 'preparacion'
   | 'transit'
   | 'novedad'
   | 'entregado'
@@ -168,5 +170,124 @@ export function buildMesResumen(summary: LogisticsSummary | null): MesResumen | 
     valorPendientes,
     valorPerdido,
     valorCancelado,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Versión RICA — desde el desglose CRUDO por estado (RPC
+// orders_estado_breakdown). Agrega tiles estilo Dropi (productos
+// vendidos, total vendido sin cancelados) y NO tiene "Otros" misterioso:
+// los estados sin mapear se muestran POR NOMBRE como buckets propios.
+// ─────────────────────────────────────────────────────────────────
+
+export interface MesResumenFull extends MesResumen {
+  /** Pedidos generados SIN cancelados (matchea "Pedidos Generados" de Dropi). */
+  generadosSinCancel: number;
+  cancelados: number;          // conteo
+  entregados: number;          // conteo
+  /** % completado = entregados / generados sin cancelar. */
+  pctCompletado: number;
+  /** Unidades vendidas (SUM cantidad sin cancelados) = "Productos vendidos" Dropi. */
+  unidadesVendidas: number;
+  /** SUM(valor) sin cancelados = "Total vendido" de Dropi. */
+  totalVendido: number;
+  valorPreparacion: number;
+  /** En tránsito + novedad + preparación + pendientes = el "Estimado" de Dropi. */
+  valorPendienteUpside: number;
+  /** Valor de los estados sin clasificar (debería ser 0 con el mapeo completo). */
+  valorOtros: number;
+}
+
+const TONE_BY_BUCKET: Record<string, BucketTone> = {
+  pendiente: 'pending',
+  preparacion: 'preparacion',
+  en_transito: 'transit',
+  novedad: 'novedad',
+  entregado: 'entregado',
+  devuelto: 'devuelto',
+  cancelado: 'cancelado',
+};
+
+const BUCKET_META: Array<{ key: string; label: string; sublabel?: string }> = [
+  { key: 'pendiente',   label: 'Pendientes',   sublabel: 'Sin confirmar / sin despachar' },
+  { key: 'preparacion', label: 'En preparación', sublabel: 'Confirmados · guía generada' },
+  { key: 'en_transito', label: 'En tránsito',  sublabel: 'Plata en la calle, aún sin cobrar' },
+  { key: 'novedad',     label: 'En novedad',   sublabel: 'En riesgo — requiere gestión' },
+  { key: 'entregado',   label: 'Entregados',   sublabel: 'Realizado' },
+  { key: 'devuelto',    label: 'Devueltos',    sublabel: 'Perdido (flete + cargo)' },
+  { key: 'cancelado',   label: 'Cancelados',   sublabel: 'No se concretó' },
+];
+
+/**
+ * Construye el resumen desde el desglose crudo por estado. Garantiza que la suma
+ * de counts de TODOS los buckets (incl. los "otros" itemizados) === generadoTotal.
+ */
+export function buildMesResumenFromBreakdown(rows: EstadoRow[] | null | undefined): MesResumenFull | null {
+  if (!rows) return null;
+  const { buckets: b, otros, totals } = bucketizeEstados(rows);
+
+  const generadoTotal = totals.pedidos;
+  const cancelados = b.cancelado.pedidos;
+  const generadosSinCancel = generadoTotal - cancelados;
+  const entregados = b.entregado.pedidos;
+
+  const buckets: FunnelBucket[] = BUCKET_META
+    .filter((m) => b[m.key as keyof typeof b].pedidos > 0)
+    .map((m) => {
+      const t = b[m.key as keyof typeof b];
+      return {
+        key: m.key,
+        label: m.label,
+        sublabel: m.sublabel,
+        count: t.pedidos,
+        valor: t.valor,
+        pct: pctOf(t.pedidos, generadoTotal),
+        tone: TONE_BY_BUCKET[m.key],
+      };
+    });
+
+  // Estados sin mapear → un bucket POR NOMBRE (no una bolsa anónima).
+  for (const o of otros) {
+    buckets.push({
+      key: `otros:${o.estado}`,
+      label: o.estado,
+      sublabel: 'Estado sin clasificar',
+      count: o.pedidos,
+      valor: o.valor,
+      pct: pctOf(o.pedidos, generadoTotal),
+      tone: 'otros',
+    });
+  }
+
+  const valorOtros = otros.reduce((a, o) => a + o.valor, 0);
+  const valorGenerado = totals.valor;
+  const valorEntregado = b.entregado.valor;
+  const valorEnTransito = b.en_transito.valor;
+  const valorNovedades = b.novedad.valor;
+  const valorPendientes = b.pendiente.valor;
+  const valorPreparacion = b.preparacion.valor;
+  const valorPerdido = b.devuelto.valor;
+  const valorCancelado = b.cancelado.valor;
+
+  return {
+    generadoTotal,
+    buckets,
+    valorGenerado,
+    valorEntregado,
+    valorEnTransito,
+    valorNovedades,
+    valorPendientes,
+    valorPerdido,
+    valorCancelado,
+    // extras (Full)
+    generadosSinCancel,
+    cancelados,
+    entregados,
+    pctCompletado: pctOf(entregados, generadosSinCancel),
+    unidadesVendidas: totals.unidades - b.cancelado.unidades,
+    totalVendido: totals.valor - valorCancelado,
+    valorPreparacion,
+    valorPendienteUpside: valorEnTransito + valorNovedades + valorPreparacion + valorPendientes,
+    valorOtros,
   };
 }
