@@ -1364,6 +1364,17 @@ export type Database = {
           pendientes: number
         }[]
       }
+      admin_operator_actions_per_day: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          atendidos: number
+          canc: number
+          conf: number
+          fecha: string
+          noresp: number
+          operadora: string
+        }[]
+      }
       admin_operator_shifts_range: {
         Args: { p_from: string; p_to: string }
         Returns: {
