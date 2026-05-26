@@ -187,7 +187,7 @@ export const SEG_LISTS: SegListDef[] = [
     label: 'En tránsito',
     slaDias: 7,
     tone: 'info',
-    matches: (o) => ESTADOS_TRANSITO.includes(E(o.estado)),
+    matches: (o) => matchTransito(E(o.estado)),
   },
 
   // ── FASE INICIAL — guía generada ────────────────────────────────────────
