@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
+import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { bogotaToday } from '@/lib/utils';
 import { POLL_INTERVAL_MS } from '@/lib/constants';
 import { toast } from 'sonner';
