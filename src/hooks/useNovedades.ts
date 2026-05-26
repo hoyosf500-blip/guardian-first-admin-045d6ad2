@@ -29,10 +29,10 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       // Match any estado que contenga NOVEDAD o INTENTO DE ENTREGA — Dropi usa
       // variantes ('NOVEDAD PENDIENTE', 'NOVEDAD EN RUTA', etc.) y un .in()
       // estricto dejaba pedidos fuera de la cola.
-      // M5: columnas explícitas en vez de `select('*')` para ser
-      // consistente con useDataLoader (Fix 22) y evitar traer columnas
-      // futuras innecesarias automáticamente.
-      const ORDER_COLUMNS = 'id, external_id, nombre, phone, ciudad, departamento, producto, estado, fecha, fecha_conf, dias, dias_conf, valor, flete, costo_prod, costo_dev, cantidad, direccion, novedad, guia, transportadora, tags, tienda, novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by';
+      // M5: usamos ORDER_COLUMNS compartido para que las cards de Novedades
+      // traigan validation_decision, address_kind, suggested_customer_message,
+      // lat/lng, etc. (mismas que Confirmar/Seguimiento). Antes el string local
+      // omitía esos campos y los badges de validación nunca aparecían.
       const { data, error } = await supabase
         .from('orders')
         .select(ORDER_COLUMNS)
