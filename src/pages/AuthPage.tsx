@@ -120,6 +120,8 @@ export default function AuthPage() {
   const inviteInvalidMsg = invite && !invite.valid
     ? (invite.reason === 'usada' ? 'Este link de invitación ya fue usado.'
       : invite.reason === 'expirada' ? 'Este link de invitación expiró. Pedile uno nuevo al dueño.'
+      : invite.reason === 'rpc_error' ? 'No pudimos validar el link de invitación (error de servidor). Pedile uno nuevo al dueño o intentá de nuevo.'
+      : invite.reason === 'sin_datos' ? 'No pudimos validar el link de invitación — pedí uno nuevo al dueño.'
       : 'Este link de invitación no es válido.')
     : null;
 
