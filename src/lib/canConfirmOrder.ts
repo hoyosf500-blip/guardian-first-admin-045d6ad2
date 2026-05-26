@@ -27,3 +27,5 @@ export function canConfirmOrder(input: CanConfirmInput): CanConfirmResult {
   // el semáforo ahora es solo informativo, NO bloquea el confirmar.
   // Quedan los gates duros: teléfono válido y cédula si es coordinadora.
   return { canConfirm: true };
+}
+
