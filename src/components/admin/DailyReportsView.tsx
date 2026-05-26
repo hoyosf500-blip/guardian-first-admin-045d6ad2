@@ -96,11 +96,14 @@ export default function DailyReportsView() {
       // El scope por tienda lo resuelve cada RPC server-side vía
       // _resolve_scope_store() (admin → su tienda activa). No pasamos p_store_id
       // para no depender de que la migration del parámetro esté aplicada.
-      const [daysRes, shiftsRes] = await Promise.all([
+      const [daysRes, shiftsRes, actionsRes] = await Promise.all([
         Promise.resolve(rpc('admin_daily_reports_range', { p_from: from, p_to: to })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
         Promise.resolve(rpc('admin_operator_shifts_range', { p_from: from, p_to: to })).catch(
+          (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
+        ),
+        Promise.resolve(rpc('admin_operator_actions_per_day', { p_from: from, p_to: to })).catch(
           (err: unknown) => ({ data: null, error: { message: String(err) } } as const)
         ),
       ]);
