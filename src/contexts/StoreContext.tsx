@@ -122,7 +122,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await (supabase.rpc as unknown as (
           fn: string, args: Record<string, unknown>
         ) => Promise<unknown>)('set_active_store', { p_store_id: valid });
-      } catch { /* noop — no debe bloquear el arranque */ }
+      } catch (e) {
+        // No bloquea el arranque (el resolver del backend tiene fallback), pero
+        // sí logueamos para diagnosticar desincronización server-side de la
+        // tienda activa cuando un admin reporta "reportes mezclan tiendas".
+        console.warn('[StoreContext] set_active_store falló:', e);
+      }
     }
 
     hasLoadedRef.current = true;

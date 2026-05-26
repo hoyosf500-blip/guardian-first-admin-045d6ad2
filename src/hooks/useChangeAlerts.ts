@@ -92,7 +92,7 @@ export function useChangeAlerts(userId: string | undefined, storeId?: string | n
       if (newOfi > 0) parts.push(`${newOfi} en oficina`);
       setBanner(`Nuevos: ${parts.join(', ')}`);
     }
-  }, [userId]);
+  }, [userId, storeId]);
 
   // COST-1: subido de 2 min → 10 min, y se pausa con pestaña oculta.
   useEffect(() => {

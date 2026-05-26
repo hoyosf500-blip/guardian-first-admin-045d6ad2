@@ -158,7 +158,10 @@ Deno.serve(async (req: Request) => {
       }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const { error: updateErr } = await sbUser
+    // Usar sbAdmin: la membresía ya se validó arriba (línea ~115) y Dropi YA
+    // aceptó el cambio. Si RLS con sbUser bloquea, queda Dropi actualizado y
+    // DB local desincronizado — bug peor que el riesgo de bypass.
+    const { error: updateErr } = await sbAdmin
       .from("orders")
       .update({
         nombre: fullName,

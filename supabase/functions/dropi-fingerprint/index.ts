@@ -85,7 +85,13 @@ Deno.serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const cleanPhone = phone.replace(/[\s\-+]/g, "").replace(/^57/, "");
+    // Normalización country-aware: CO usa prefijo 57, EC usa 593 (+ a veces un
+    // 0 inicial estilo local "0991234567"). Antes hardcodeaba /^57/ y para EC
+    // mandaba "59398..." sin limpiar → Dropi devolvía fingerprint vacío o 4xx.
+    const stripped = phone.replace(/[\s\-+]/g, "");
+    const cleanPhone = (cfg.countryCode === "EC")
+      ? stripped.replace(/^593/, "").replace(/^0/, "")
+      : stripped.replace(/^57/, "");
 
     const url = `${FINGERPRINT_URL}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
     const apiRes = await fetch(url, {
