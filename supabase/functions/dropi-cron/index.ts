@@ -60,6 +60,43 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Reintenta el PUT a Dropi para una orden cuya confirmación original falló
+// (order_results.dropi_sync_status='failed'). Devuelve ok=true si Dropi aceptó.
+async function dropiPutOrderRetry(
+  base: string,
+  apiKey: string,
+  storeUrl: string,
+  externalId: string,
+  newStatus = "PENDIENTE",
+): Promise<{ ok: boolean; httpStatus: number; error?: string }> {
+  try {
+    const res = await fetch(
+      `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          "Origin": storeUrl,
+        },
+        body: JSON.stringify({ status: newStatus }),
+      },
+    );
+    const rawText = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
+    const ok = res.ok && body.isSuccess !== false;
+    return {
+      ok,
+      httpStatus: res.status,
+      error: ok ? undefined : String(body.message || body.error || rawText).slice(0, 200),
+    };
+  } catch (e) {
+    return { ok: false, httpStatus: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 function chunkDateRange(from: string, to: string, maxDays: number) {
   const chunks: { from: string; to: string }[] = [];
   let start = new Date(from + "T00:00:00Z");
