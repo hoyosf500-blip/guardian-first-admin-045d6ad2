@@ -130,15 +130,7 @@ export function AddressFeedbackCard({
         </div>
         {/* Sugerencias de Google Maps removidas a pedido — la operadora
             verifica la dirección directamente con el cliente al teléfono. */}
-        {/* Validador-direcciones: checkbox de override para destrabar el gate
-            de Confirmar. En yellow CUALQUIER usuario puede marcarlo (no
-            requiere isAdmin) — la regla del spec es que el admin solo es
-            necesario para red. La operadora marca este check después de
-            hablar con el cliente y confirmar los datos. */}
-        <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
-          <Checkbox checked={overrideChecked} onCheckedChange={(v) => handleOverrideChange(v === true)} />
-          <span>Confirmé con el cliente — proceder a despachar</span>
-        </label>
+        {/* Checkbox de override removido — el semáforo es informativo, no bloquea. */}
       </div>
     );
   }
