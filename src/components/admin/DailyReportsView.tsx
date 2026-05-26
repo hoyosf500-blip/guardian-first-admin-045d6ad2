@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Input } from '@/components/ui/input';
+import PresetDateRangePicker from '@/components/PresetDateRangePicker';
 
 // Panel de "Reportes diarios" con DOS vistas:
 //
@@ -255,16 +255,11 @@ export default function DailyReportsView() {
         <div className="text-xs text-muted-foreground">
           Reportes diarios — rango compartido por las dos vistas
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <label className="text-xs text-muted-foreground">Desde</label>
-            <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 w-36 text-xs" />
-          </div>
-          <div className="flex items-center gap-1">
-            <label className="text-xs text-muted-foreground">Hasta</label>
-            <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 w-36 text-xs" />
-          </div>
-        </div>
+        <PresetDateRangePicker
+          value={{ from, to }}
+          onChange={({ from: f, to: t }) => { setFrom(f); setTo(t); }}
+          align="end"
+        />
       </div>
 
       {/* Banner de error de RPC. Se muestra arriba de las dos tablas cuando
