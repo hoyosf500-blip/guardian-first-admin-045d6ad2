@@ -28,6 +28,8 @@ export interface PushPreview {
   diagnostic?: string | null;   // causa raíz cuando hay productos sin vínculo (ej. falta read_products)
   alreadyPushed?: boolean;
   dropi_order_id?: string | null;
+  shopify_total?: number;   // total real de Shopify (lo que el cliente aceptó)
+  cod_mismatch?: boolean;   // true si el COD calculado supera el total de Shopify
   error?: string;
 }
 
