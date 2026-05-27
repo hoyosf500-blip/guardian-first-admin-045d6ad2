@@ -65,14 +65,16 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
     setSubmitting(true);
     const { error } = await (supabase.rpc as unknown as (
       fn: string, args: Record<string, unknown>
-    ) => Promise<{ error: { message?: string } | null }>)('submit_closing_report', {
+    ) => Promise<{ error: { message?: string; details?: string; hint?: string; code?: string } | null }>)('submit_closing_report', {
       p_notes: notes,
       p_force: force,
     });
     setSubmitting(false);
     if (error) {
-      toast.error(error.message || 'No se pudo cerrar el turno');
-      void load();
+      console.error('[ClosingReport] submit failed', { force, error });
+      const msg = error.message || error.details || error.hint || 'No se pudo cerrar el turno';
+      toast.error(msg);
+      if (!force) void load();
       return;
     }
     toast.success(force ? 'Turno cerrado (con pendientes)' : 'Turno cerrado');
