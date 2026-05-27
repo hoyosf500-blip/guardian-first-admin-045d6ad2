@@ -31,6 +31,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [unmapped, setUnmapped] = useState<PushUnmapped[]>([]);
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [alreadyPushed, setAlreadyPushed] = useState(false);
+  const [shopifyTotal, setShopifyTotal] = useState<number | null>(null);
+  const [codMismatch, setCodMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Vinculación manual (estilo Dropify): por product_id, el id de Dropi que el
