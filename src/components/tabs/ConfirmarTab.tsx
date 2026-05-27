@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
+import { findSupersededPendingConf, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -47,6 +48,10 @@ export default function ConfirmarTab({ profile }: Props) {
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
   const [closing, setClosing] = useState(false);
+  // Pedidos "progresados" (ya reales en Dropi) de los mismos teléfonos de la cola,
+  // para detectar PENDIENTE CONFIRMACION duplicados/viejos y ocultarlos (ver abajo).
+  const [progressedOrders, setProgressedOrders] = useState<ProgressedOrder[]>([]);
+  const [dupExpanded, setDupExpanded] = useState(false);
   const today = bogotaToday();
 
   // Auto-load orders from DB on mount if not already loaded. Uses a strict
@@ -128,7 +133,44 @@ export default function ConfirmarTab({ profile }: Props) {
     reader.readAsArrayBuffer(file);
   }, [user, today, setAllOrders, buildWorkQueue]);
 
-  const filteredItems = workQueue.filter(o => {
+  // Traer los pedidos YA reales en Dropi (no PENDIENTE CONFIRMACION, no CANCELADO)
+  // de los mismos teléfonos que están en la cola, para detectar duplicados viejos.
+  useEffect(() => {
+    if (!activeStoreId || workQueue.length === 0) { setProgressedOrders([]); return; }
+    const phones = Array.from(new Set(workQueue.map(o => o.phone).filter(Boolean)));
+    if (phones.length === 0) { setProgressedOrders([]); return; }
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    let cancelled = false;
+    supabase.from('orders')
+      .select('phone, producto, external_id, estado, fecha, created_at')
+      .eq('store_id', activeStoreId)
+      .in('phone', phones)
+      .not('estado', 'ilike', 'PENDIENTE CONFIRMACION')
+      .neq('estado', 'CANCELADO')
+      .gte('created_at', since)
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
+        setProgressedOrders(data as ProgressedOrder[]);
+      }, () => { /* red: dejamos la cola sin filtrar (no rompemos Confirmar) */ });
+    return () => { cancelled = true; };
+  }, [workQueue, activeStoreId]);
+
+  // Duplicados: PENDIENTE CONFIRMACION ya superados por un pedido real más nuevo
+  // del mismo cliente+producto. Se ocultan de la cola (no se cancela nada).
+  const supersededIds = useMemo(
+    () => findSupersededPendingConf(workQueue, progressedOrders),
+    [workQueue, progressedOrders],
+  );
+  const visibleQueue = useMemo(
+    () => workQueue.filter(o => !supersededIds.has(String(o.externalId))),
+    [workQueue, supersededIds],
+  );
+  const hiddenDuplicates = useMemo(
+    () => workQueue.filter(o => supersededIds.has(String(o.externalId))),
+    [workQueue, supersededIds],
+  );
+
+  const filteredItems = visibleQueue.filter(o => {
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
@@ -150,7 +192,7 @@ export default function ConfirmarTab({ profile }: Props) {
   });
 
   const total = counter.conf + counter.canc + counter.noresp;
-  const pending = workQueue.filter(o => !o.result).length;
+  const pending = visibleQueue.filter(o => !o.result).length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -322,8 +364,8 @@ export default function ConfirmarTab({ profile }: Props) {
           </div>
 
           {(() => {
-            const d7 = workQueue.filter(o => o.dias >= 7 && !o.result).length;
-            const d46 = workQueue.filter(o => o.dias >= 4 && o.dias <= 6 && !o.result).length;
+            const d7 = visibleQueue.filter(o => o.dias >= 7 && !o.result).length;
+            const d46 = visibleQueue.filter(o => o.dias >= 4 && o.dias <= 6 && !o.result).length;
             if (!d7 && !d46) return null;
             return (
               <div className="flex gap-2 mb-4 flex-wrap">
@@ -342,7 +384,7 @@ export default function ConfirmarTab({ profile }: Props) {
           })()}
 
           {(() => {
-            const retryOrders = workQueue.filter(o => o.retryCount && !o.result);
+            const retryOrders = visibleQueue.filter(o => o.retryCount && !o.result);
             if (!retryOrders.length) return null;
             return (
               <div className="flex items-center gap-3 mb-4 rounded-xl bg-warning/10 border border-warning/25 px-4 py-3">
@@ -427,8 +469,34 @@ export default function ConfirmarTab({ profile }: Props) {
               </div>
             </div>
 
-            <WorkFilters workQueue={workQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
+            <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
           </div>
+
+          {hiddenDuplicates.length > 0 && (
+            <div className="mb-4 rounded-xl border border-border bg-muted/40 overflow-hidden">
+              <button onClick={() => setDupExpanded(e => !e)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs">
+                <AlertTriangle size={14} className="text-muted-foreground shrink-0" aria-hidden="true" />
+                <span className="font-semibold text-foreground">
+                  {hiddenDuplicates.length} pedido{hiddenDuplicates.length > 1 ? 's' : ''} oculto{hiddenDuplicates.length > 1 ? 's' : ''} por duplicado
+                </span>
+                <span className="text-muted-foreground">— ya hay un pedido más nuevo del mismo cliente</span>
+                <span className="ml-auto text-muted-foreground">{dupExpanded ? 'Ocultar' : 'Ver'}</span>
+              </button>
+              {dupExpanded && (
+                <div className="border-t border-border divide-y divide-border">
+                  {hiddenDuplicates.map(o => (
+                    <div key={o.externalId || o.dbId} className="px-4 py-2 flex items-center gap-3 text-xs">
+                      <span className="font-medium text-foreground truncate">{o.nombre}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">#{o.externalId}</span>
+                      <span className="text-muted-foreground">{o.producto}</span>
+                      <span className="ml-auto tabular-nums text-muted-foreground">${Number(o.valor || 0).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {view === 'list' ? (
             <WorkList items={filteredItems} onOpenCall={(idx) => {
