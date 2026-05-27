@@ -66,7 +66,7 @@ describe('CustomerHistoryCard', () => {
     mockData = [];
     render(<CustomerHistoryCard currentPhone="3111111111" currentOrderId="order-1" />);
     await waitFor(() => {
-      expect(screen.getByText(/primer pedido/)).toBeTruthy();
+      expect(screen.getByText(/Primer pedido/i)).toBeTruthy();
     });
   });
 
@@ -74,7 +74,7 @@ describe('CustomerHistoryCard', () => {
     mockData = null;
     // With null data, it stays in loading since the promise resolves with null
     render(<CustomerHistoryCard currentPhone="3111111111" currentOrderId="order-1" />);
-    expect(screen.getByText(/Cargando historial/)).toBeTruthy();
+    expect(screen.getByText(/Cargando huella/i)).toBeTruthy();
   });
 
   it('shows order history with stats when orders exist', async () => {
@@ -84,16 +84,18 @@ describe('CustomerHistoryCard', () => {
     ];
     render(<CustomerHistoryCard currentPhone="3111111111" currentOrderId="order-current" />);
     await waitFor(() => {
-      expect(screen.getByText(/Historial del cliente/)).toBeTruthy();
+      expect(screen.getByText(/Huella del comprador/i)).toBeTruthy();
     });
-    // Stats: total = 3 (2 history + 1 current), 1 entregado, 1 devolucion
-    expect(screen.getByText('3')).toBeTruthy(); // total
+    // Stats: total = 3 (2 history + 1 current). El "3" aparece en el header
+    // ("· 3 pedidos") y en el KPI Total, así que usamos getAllByText para no
+    // chocar con el "multiple elements" de getByText.
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
   });
 
   it('does not load when phone is empty', async () => {
     render(<CustomerHistoryCard currentPhone="" currentOrderId="order-1" />);
     await waitFor(() => {
-      expect(screen.getByText(/primer pedido/)).toBeTruthy();
+      expect(screen.getByText(/Primer pedido/i)).toBeTruthy();
     });
     expect(mockSelect).not.toHaveBeenCalled();
   });
