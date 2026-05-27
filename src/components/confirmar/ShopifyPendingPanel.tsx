@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useStore } from '@/contexts/StoreContext';
-import { useShopifyPending, type ShopifyPendingItem } from '@/hooks/useShopifyPending';
+import { useShopifyPending, useShopifyValueMismatches, type ShopifyPendingItem } from '@/hooks/useShopifyPending';
 import { usePushToDropi } from '@/hooks/usePushToDropi';
 import PushToDropiModal from './PushToDropiModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
@@ -40,8 +40,10 @@ function dayLabel(date: string, today?: string): string {
 export default function ShopifyPendingPanel() {
   const { activeStoreId } = useStore();
   const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
+  const { data: vmData } = useShopifyValueMismatches(activeStoreId);
   const { confirm: confirmPush } = usePushToDropi(activeStoreId);
   const [expanded, setExpanded] = useState(false);
+  const [showMismatches, setShowMismatches] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
   const [copied, setCopied] = useState<string | null>(null);
   // Pedido abierto en el modal "Subir a Dropi"
@@ -151,7 +153,63 @@ export default function ShopifyPendingPanel() {
 
   const accent = allClear ? 'success' : 'warning';
 
+  // Aviso de pedidos YA en Dropi con valor distinto al de Shopify (cobro de más).
+  // Independiente de la cola de pendientes; le ahorra al operador revisar a mano.
+  const mismatches = vmData?.valueMismatches ?? [];
+  const mismatchBanner = mismatches.length > 0 ? (
+    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 overflow-hidden">
+      <div className="px-4 py-3 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+          <AlertTriangle size={18} className="text-destructive" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-extrabold tabular-nums text-destructive">{mismatches.length}</span>
+            <span className="text-sm font-semibold text-foreground">con valor distinto a Shopify</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Dropi va a cobrar más de lo que el cliente aceptó — corregilo en el panel de Dropi para que no rechacen la entrega.
+          </p>
+        </div>
+        <button onClick={() => setShowMismatches(s => !s)}
+          className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-medium text-foreground flex items-center gap-1 flex-shrink-0">
+          {showMismatches ? 'Ocultar' : 'Ver lista'}
+          {showMismatches ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </button>
+      </div>
+      <AnimatePresence>
+        {showMismatches && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            className="border-t border-destructive/30 max-h-[24rem] overflow-y-auto bg-card/50 divide-y divide-border">
+            {mismatches.map(m => (
+              <div key={m.external_id || m.shopify_name} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground truncate">{m.customer}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{m.shopify_name}</span>
+                    {m.estado && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{m.estado}</span>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 text-xs mt-0.5">
+                    <span className="text-muted-foreground">Shopify <span className="tabular-nums text-foreground">${m.shopify_total.toLocaleString()}</span></span>
+                    <span className="text-muted-foreground">· Dropi <span className="tabular-nums font-semibold text-destructive">${m.dropi_valor.toLocaleString()}</span></span>
+                    <span className="font-semibold text-destructive">(+${m.overcharge.toLocaleString()} de más)</span>
+                  </div>
+                </div>
+                <a href={m.admin_url} target="_blank" rel="noreferrer" title="Abrir en Shopify"
+                  className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  ) : null;
+
   return (
+    <>
+    {mismatchBanner}
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       className={`mb-4 rounded-xl border overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
       <div className="px-4 py-3 flex items-center gap-3">
@@ -276,5 +334,6 @@ export default function ShopifyPendingPanel() {
         />
       )}
     </motion.div>
+    </>
   );
 }

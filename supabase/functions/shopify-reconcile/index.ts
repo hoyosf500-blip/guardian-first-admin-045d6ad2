@@ -159,20 +159,25 @@ Deno.serve(async (req: Request) => {
     //    Ventana generosa (days + 6) para cubrir pedidos entrados a Dropi
     //    después de la venta. Paginado (SELECT tope ~1000 filas).
     const sinceDropi = new Date(Date.now() - (days + 6) * 86400000).toISOString();
-    const dropiList: { tel: string; t: number }[] = [];
+    // Además del teléfono+fecha (para el cruce), guardamos valor/external_id/estado
+    // para poder comparar el valor en los pares emparejados (auditoría de "valor distinto").
+    const dropiList: { tel: string; t: number; valor: number; external_id: string; estado: string }[] = [];
     const PAGE = 1000;
     for (let from = 0; from < 20000; from += PAGE) {
       const { data, error } = await sb
         .from("orders")
-        .select("phone, created_at")
+        .select("phone, created_at, valor, external_id, estado")
         .eq("store_id", storeId)
         .gte("created_at", sinceDropi)
         .range(from, from + PAGE - 1);
       if (error) throw new Error(`orders read: ${error.message}`);
-      const rows = (data || []) as { phone: string | null; created_at: string }[];
+      const rows = (data || []) as { phone: string | null; created_at: string; valor: number | null; external_id: string | null; estado: string | null }[];
       for (const r of rows) {
         const k = normalizePhone(r.phone);
-        if (k) dropiList.push({ tel: k, t: new Date(r.created_at).getTime() });
+        if (k) dropiList.push({
+          tel: k, t: new Date(r.created_at).getTime(),
+          valor: Number(r.valor) || 0, external_id: String(r.external_id ?? ""), estado: String(r.estado ?? ""),
+        });
       }
       if (rows.length < PAGE) break;
     }
@@ -196,7 +201,7 @@ Deno.serve(async (req: Request) => {
     });
 
     const usedDropi = new Set<number>();
-    function matchDropi(tel: string, shopT: number): boolean {
+    function matchDropi(tel: string, shopT: number): number {
       const lo = shopT - 1 * 86400000;
       // +45d (antes +6d): al subir pedidos viejos en bloque, la orden de Dropi se
       // crea HOY aunque el pedido Shopify sea de hace semanas → con +6d quedaban
@@ -205,23 +210,48 @@ Deno.serve(async (req: Request) => {
       for (let i = 0; i < dropiList.length; i++) {
         if (usedDropi.has(i)) continue;
         const d = dropiList[i];
-        if (d.tel === tel && d.t >= lo && d.t <= hi) { usedDropi.add(i); return true; }
+        if (d.tel === tel && d.t >= lo && d.t <= hi) { usedDropi.add(i); return i; }
       }
-      return false;
+      return -1;
     }
 
-    // Emparejar del más viejo al más nuevo (asignación estable).
+    // Emparejar del más viejo al más nuevo (asignación estable). En los pares
+    // emparejados comparamos el valor: si en Dropi se cobra MÁS que el total de
+    // Shopify (descuento perdido u otra causa), lo reportamos en valueMismatches
+    // para avisarle al operador (read-only, lo corrige a mano en Dropi).
     const sortedAsc = [...shopifyOrders].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
     const pending: Record<string, unknown>[] = [];
+    const valueMismatches: Record<string, unknown>[] = [];
     for (const o of sortedAsc) {
       const tel = orderPhone(o);
       const shopT = new Date(o.created_at).getTime();
-      const matched = tel ? matchDropi(tel, shopT) : false;
-      if (!matched) pending.push(toCard(o, !tel));
+      const idx = tel ? matchDropi(tel, shopT) : -1;
+      if (idx === -1) { pending.push(toCard(o, !tel)); continue; }
+      // Par emparejado → comparar valor (misma tolerancia/dirección que el guardrail
+      // del push: shopify-push-dropi/discount.ts isCodOvercharge; inline para no
+      // acoplar dos edge functions deployadas por separado).
+      const d = dropiList[idx];
+      const shopTotal = o.total_price ? Number(o.total_price) : 0;
+      const tol = Math.max(2, shopTotal * 0.01);
+      if (shopTotal > 0 && d.valor - shopTotal > tol) {
+        valueMismatches.push({
+          shopify_name: o.name,
+          admin_url: `https://${cfg.shopDomain}/admin/orders/${o.id}`,
+          customer: orderCustomer(o),
+          phone: o.phone || o.customer?.phone || o.shipping_address?.phone || "",
+          shopify_total: shopTotal,
+          dropi_valor: d.valor,
+          overcharge: Math.round(d.valor - shopTotal),
+          external_id: d.external_id,
+          estado: d.estado,
+          created_at: o.created_at,
+        });
+      }
     }
     pending.sort((a, b) => new Date(b.created_at as string).getTime() - new Date(a.created_at as string).getTime());
+    valueMismatches.sort((a, b) => Number(b.overcharge) - Number(a.overcharge));
 
     // 4. Desglose: hoy + por día, usando la ZONA HORARIA REAL de la tienda para
     //    que el corte "hoy" coincida con el dashboard de Shopify (clave en EC si
@@ -257,6 +287,8 @@ Deno.serve(async (req: Request) => {
         todayPending,
         byDay,
         pending,
+        valueMismatchCount: valueMismatches.length,
+        valueMismatches,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
