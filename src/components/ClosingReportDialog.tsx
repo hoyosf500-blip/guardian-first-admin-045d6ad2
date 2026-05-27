@@ -210,7 +210,7 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
                     <ArrowLeft size={14} /> Atrás
                   </Button>
-                  <Button onClick={submit} disabled={submitting} className="flex-1">
+                  <Button onClick={() => submit(false)} disabled={submitting} className="flex-1">
                     {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Enviar cierre'}
                   </Button>
                 </div>
