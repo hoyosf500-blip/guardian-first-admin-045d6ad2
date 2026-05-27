@@ -53,6 +53,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       setUnmapped(p.unmapped ?? []);
       setDiagnostic(p.diagnostic ?? null);
       setAlreadyPushed(Boolean(p.alreadyPushed));
+      setShopifyTotal(typeof p.shopify_total === 'number' ? p.shopify_total : null);
+      setCodMismatch(Boolean(p.cod_mismatch));
       setLoading(false);
     })();
     return () => { cancelled = true; };
