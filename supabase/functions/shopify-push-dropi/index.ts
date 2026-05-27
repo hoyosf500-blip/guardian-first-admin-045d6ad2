@@ -18,7 +18,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
 import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers } from "../_shared/dropiWebQuote.ts";
-import { allocateOrderDiscount } from "./discount.ts";
+import { allocateOrderDiscount, isCodOvercharge } from "./discount.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
 
@@ -51,6 +51,10 @@ interface ShopifyOrderFull {
   total_line_items_price?: string;
   current_subtotal_price?: string;
   subtotal_price?: string;
+  // Total que el cliente VIO y aceptó pagar (subtotal con descuento + envío, IVA
+  // incluido en EC/CO). Es el ancla del guardrail: el COD a Dropi nunca debe superarlo.
+  current_total_price?: string;
+  total_price?: string;
   line_items: ShopifyLineItem[];
   shipping_lines?: Array<{ price?: string | null }> | null;
   shipping_address?: ShopifyAddr | null;
@@ -506,7 +510,7 @@ Deno.serve(async (req: Request) => {
     // DE ORDEN (total_discounts/total_line_items_price): Releasit COD Form registra
     // su "QUANTITY DISCOUNT" como descuento de orden, NO en line_items[].total_discount,
     // así que sin esto el descuento se perdía y Dropi cobraba el subtotal sin rebaja.
-    const fields = "id,name,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email,total_discounts,total_line_items_price,current_subtotal_price,subtotal_price";
+    const fields = "id,name,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email,total_discounts,total_line_items_price,current_subtotal_price,subtotal_price,current_total_price,total_price";
     const ord = (await shopifyGet<{ order: ShopifyOrderFull }>(
       shopCfg.shopDomain, shopToken,
       `orders/${encodeURIComponent(shopifyOrderId)}.json?fields=${fields}`,
@@ -692,9 +696,13 @@ Deno.serve(async (req: Request) => {
     const total = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
 
     if (mode === "preview") {
+      // Total real de Shopify para que el modal muestre "Shopify: $X · A cobrar: $Y"
+      // y avise si no coinciden (mismo criterio que el bloqueo del confirm).
+      const shopifyTotal = Number(ord.current_total_price || ord.total_price || "0") || 0;
       return json({
         ok: true, mode: "preview", shopify_order_id: shopifyOrderId, shopify_name: ord.name,
         client, products: resolved, total, shipping, unmapped, diagnostic, alreadyPushed,
+        shopify_total: shopifyTotal, cod_mismatch: isCodOvercharge(total + shipping, shopifyTotal),
         dropi_order_id: prior?.dropi_order_id ?? null,
       }, 200, cors);
     }
@@ -720,6 +728,23 @@ Deno.serve(async (req: Request) => {
     if (shipping > 0 && resolved.length > 0) {
       const first = resolved[0];
       first.price += Math.round(shipping / Math.max(1, first.quantity));
+    }
+
+    // RED DE SEGURIDAD (definitiva): el COD a cobrar NUNCA debe superar el total real
+    // de Shopify (lo que el cliente aceptó). Si lo supera, casi seguro se perdió un
+    // descuento que el reparto no vio → BLOQUEAMOS antes de crear la orden (cubre el
+    // camino de integraciones Y el fallback web, que vienen después). Escape: si el
+    // operador puso un precio a mano, manda su decisión y no bloqueamos.
+    const pushedGrandTotal = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
+    const shopifyTotal = Number(ord.current_total_price || ord.total_price || "0") || 0;
+    const hasManualPrice = Object.values(overrides.lines || {}).some((o) => o?.price != null);
+    if (!hasManualPrice && isCodOvercharge(pushedGrandTotal, shopifyTotal)) {
+      return json({
+        ok: false,
+        error: `El total a cobrar ($${pushedGrandTotal}) supera el total de Shopify ($${shopifyTotal}). ` +
+          `Probablemente un descuento no se aplicó — revisá el pedido en Shopify antes de subirlo a Dropi.`,
+        pushed_total: pushedGrandTotal, shopify_total: shopifyTotal, blocked: "cod_mismatch",
+      }, 422, cors);
     }
 
     const dropiPayload: Record<string, unknown> = {

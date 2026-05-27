@@ -1,7 +1,7 @@
 // Tests del reparto de descuento de orden. Correr con:
 //   deno test supabase/functions/shopify-push-dropi/discount.test.ts
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { allocateOrderDiscount } from "./discount.ts";
+import { allocateOrderDiscount, isCodOvercharge } from "./discount.ts";
 
 // Caso del bug real (#1132): 2 × $45 = $90, descuento de ORDEN $20, sin descuento
 // de línea. Debe repartir los $20 a la única línea → precio neto 70 → $35/u.
@@ -46,4 +46,29 @@ Deno.test("clamp cuando el descuento supera el neto", () => {
   const extras = allocateOrderDiscount([{ gross: 50, lineDiscount: 0 }], 999);
   assertEquals(extras, [50]); // a lo sumo todo el neto
   assertEquals(50 - 0 - extras[0], 0); // precio neto no baja de 0
+});
+
+// --- Guardrail isCodOvercharge ---
+
+// El caso del bug: a cobrar 90 vs Shopify 70 → BLOQUEA.
+Deno.test("guardrail: cobro de más bloquea", () => {
+  assertEquals(isCodOvercharge(90, 70), true);
+  assertEquals(isCodOvercharge(90000, 70000), true); // pesos CO
+});
+
+// Coinciden o dentro de tolerancia → NO bloquea.
+Deno.test("guardrail: coincide o redondeo no bloquea", () => {
+  assertEquals(isCodOvercharge(70, 70), false);
+  assertEquals(isCodOvercharge(71, 70), false); // dentro de 1%+2
+});
+
+// Cobro POR DEBAJO (ej. IVA aparte) → NO bloquea (no es el problema).
+Deno.test("guardrail: undercharge no bloquea", () => {
+  assertEquals(isCodOvercharge(70, 80), false);
+});
+
+// Sin total de Shopify (0/NaN) → NO bloquea a ciegas.
+Deno.test("guardrail: sin total de Shopify no bloquea", () => {
+  assertEquals(isCodOvercharge(90, 0), false);
+  assertEquals(isCodOvercharge(90, Number("x")), false);
 });

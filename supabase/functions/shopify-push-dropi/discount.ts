@@ -37,3 +37,19 @@ export function allocateOrderDiscount(
   }
   return out;
 }
+
+/**
+ * Red de seguridad (guardrail): ¿el COD que se cobraría supera el total REAL de
+ * Shopify (= lo que el cliente vio y aceptó)? Si es así, casi seguro se perdió un
+ * descuento y NO hay que subirlo a Dropi.
+ *
+ * Solo marca la dirección PELIGROSA (cobrar de más). Si Shopify suma IVA aparte y
+ * el cobro queda por DEBAJO, no marca (no es el problema). Tolera el redondeo
+ * (1% + 2 unidades de moneda); un descuento perdido lo supera de lejos. Si no hay
+ * total de Shopify, NO marca (no podemos comparar → no bloqueamos a ciegas).
+ */
+export function isCodOvercharge(pushedTotal: number, shopifyTotal: number): boolean {
+  if (!(shopifyTotal > 0)) return false;
+  const tol = Math.max(2, shopifyTotal * 0.01);
+  return pushedTotal - shopifyTotal > tol;
+}
