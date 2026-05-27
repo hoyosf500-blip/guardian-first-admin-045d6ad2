@@ -1898,7 +1898,10 @@ export type Database = {
         }
       }
       store_role: { Args: { p_store_id: string }; Returns: string }
-      submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
+      submit_closing_report: {
+        Args: { p_force?: boolean; p_notes?: string }
+        Returns: undefined
+      }
       submit_opening_report: {
         Args: {
           p_guides_yesterday: number
