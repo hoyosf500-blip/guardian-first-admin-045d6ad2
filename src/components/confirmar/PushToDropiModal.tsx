@@ -31,6 +31,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [unmapped, setUnmapped] = useState<PushUnmapped[]>([]);
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [alreadyPushed, setAlreadyPushed] = useState(false);
+  const [shopifyTotal, setShopifyTotal] = useState<number | null>(null);
+  const [codMismatch, setCodMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Vinculación manual (estilo Dropify): por product_id, el id de Dropi que el
@@ -51,6 +53,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       setUnmapped(p.unmapped ?? []);
       setDiagnostic(p.diagnostic ?? null);
       setAlreadyPushed(Boolean(p.alreadyPushed));
+      setShopifyTotal(typeof p.shopify_total === 'number' ? p.shopify_total : null);
+      setCodMismatch(Boolean(p.cod_mismatch));
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -139,6 +143,16 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
           </div>
         ) : (
           <div className="p-5 space-y-4">
+            {codMismatch && shopifyTotal != null && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                <span>
+                  El COD calculado (<strong>${total.toLocaleString()}</strong>) supera el total real de Shopify
+                  (<strong>${shopifyTotal.toLocaleString()}</strong>). Probablemente se perdió un descuento —
+                  revisá los precios antes de subir para no cobrarle de más al cliente.
+                </span>
+              </div>
+            )}
             {unmapped.length > 0 && (
               <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning flex items-start gap-2">
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
