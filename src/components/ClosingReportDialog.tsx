@@ -61,12 +61,13 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
     }
   }, [open, load]);
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (force = false) => {
     setSubmitting(true);
     const { error } = await (supabase.rpc as unknown as (
       fn: string, args: Record<string, unknown>
     ) => Promise<{ error: { message?: string } | null }>)('submit_closing_report', {
       p_notes: notes,
+      p_force: force,
     });
     setSubmitting(false);
     if (error) {
@@ -74,9 +75,15 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
       void load();
       return;
     }
-    toast.success('Turno cerrado');
+    toast.success(force ? 'Turno cerrado (con pendientes)' : 'Turno cerrado');
     onClose();
   }, [notes, load, onClose]);
+
+  // Excepción one-shot pedida 2026-05-27 (operadora EC, tarde para cerrar).
+  // El botón "Cerrar de todas maneras" SOLO aparece este día — mañana desaparece.
+  const FORCE_CLOSE_ALLOWED_DATE = '2026-05-27';
+  const todayBogota = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+  const forceCloseAllowed = todayBogota === FORCE_CLOSE_ALLOWED_DATE;
 
   const blocked = pending.length > 0;
 
@@ -116,6 +123,21 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                 </div>
               ))}
             </div>
+            {forceCloseAllowed && (
+              <div className="rounded-lg border border-orange/40 bg-orange/10 p-3 space-y-2">
+                <div className="text-xs text-orange">
+                  Excepción de hoy: podés cerrar de todas maneras. Mañana este botón ya no estará disponible — completá los reintentos antes del cierre.
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange/60 text-orange hover:bg-orange/20"
+                  disabled={submitting}
+                  onClick={() => submit(true)}
+                >
+                  {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Cerrar de todas maneras (solo hoy)'}
+                </Button>
+              </div>
+            )}
             <Button variant="outline" onClick={onClose} className="w-full">Volver</Button>
           </div>
         ) : (
@@ -188,7 +210,7 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
                     <ArrowLeft size={14} /> Atrás
                   </Button>
-                  <Button onClick={submit} disabled={submitting} className="flex-1">
+                  <Button onClick={() => submit(false)} disabled={submitting} className="flex-1">
                     {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Enviar cierre'}
                   </Button>
                 </div>

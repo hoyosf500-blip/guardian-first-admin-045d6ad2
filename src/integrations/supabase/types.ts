@@ -1772,6 +1772,15 @@ export type Database = {
           total: number
         }[]
       }
+      orders_estado_breakdown: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          estado: string
+          pedidos: number
+          unidades: number
+          valor: number
+        }[]
+      }
       pending_retry_list: {
         Args: never
         Returns: {
@@ -1889,7 +1898,10 @@ export type Database = {
         }
       }
       store_role: { Args: { p_store_id: string }; Returns: string }
-      submit_closing_report: { Args: { p_notes?: string }; Returns: undefined }
+      submit_closing_report: {
+        Args: { p_force?: boolean; p_notes?: string }
+        Returns: undefined
+      }
       submit_opening_report: {
         Args: {
           p_guides_yesterday: number
@@ -2080,6 +2092,24 @@ export type Database = {
           entrada: number
           fecha: string
           salida: number
+        }[]
+      }
+      wallet_ganancia_neta: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          comision_referidos: number
+          costo_devolucion: number
+          flete_inicial: number
+          ganancia_dropshipper: number
+          ganancia_neta: number
+          ganancia_proveedor: number
+          indemnizacion: number
+          mantenimiento_tarjeta: number
+          movimientos_count: number
+          orden_sin_recaudo: number
+          reembolso_flete: number
+          total_entradas: number
+          total_salidas: number
         }[]
       }
       wallet_summary: {
