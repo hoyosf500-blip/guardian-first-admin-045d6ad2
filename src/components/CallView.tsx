@@ -16,6 +16,7 @@ import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Ta
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
+import ChangeCarrierDialog from '@/components/confirmar/ChangeCarrierDialog';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
@@ -111,6 +112,7 @@ export default function CallView({ items }: Props) {
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
+  const [carrierOrder, setCarrierOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
   // Validador-direcciones: override admin-only para destrabar el gate cuando
   // la dirección quedó en yellow/red pero el admin decidió despachar igual.
@@ -811,7 +813,7 @@ export default function CallView({ items }: Props) {
 
         {/* Edit order button (AI script generator removed — unused) */}
         {!o.result && o.externalId && (
-          <div className="mb-3">
+          <div className="mb-3 grid gap-2">
             <button
               type="button"
               onClick={() => setEditingOrder(o)}
@@ -821,6 +823,19 @@ export default function CallView({ items }: Props) {
             >
               <UserCog size={14} aria-hidden="true" /> Editar datos del cliente
             </button>
+            {/* Cambiar transportadora: solo sin guía generada (luego queda fija). */}
+            {!o.guia && (
+              <button
+                type="button"
+                onClick={() => setCarrierOrder(o)}
+                title="Cambiar transportadora"
+                aria-label="Cambiar transportadora"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-xs font-semibold hover:bg-cyan-500/20 hover:border-cyan-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
+              >
+                <Package size={14} aria-hidden="true" /> Cambiar transportadora
+                {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
+              </button>
+            )}
           </div>
         )}
 
@@ -891,6 +906,27 @@ export default function CallView({ items }: Props) {
             // BUG 4 fix: re-fetch del pedido editado para refrescar pantalla.
             if (!editingOrder?.dbId) return;
             const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', editingOrder.dbId).maybeSingle();
+            if (data) {
+              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
+              const merged = allOrders.map(ord => ord.dbId === updated.dbId
+                ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
+                : ord);
+              setAllOrders(merged);
+              buildWorkQueue(merged);
+            }
+          }}
+        />
+      )}
+
+      {carrierOrder && (
+        <ChangeCarrierDialog
+          open={!!carrierOrder}
+          onOpenChange={(op) => { if (!op) setCarrierOrder(null); }}
+          order={carrierOrder}
+          onSuccess={async () => {
+            // Re-fetch del pedido para reflejar la nueva transportadora.
+            if (!carrierOrder?.dbId) return;
+            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', carrierOrder.dbId).maybeSingle();
             if (data) {
               const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
               const merged = allOrders.map(ord => ord.dbId === updated.dbId

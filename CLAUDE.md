@@ -21,6 +21,7 @@ npx vitest run src/lib/orderUtils.test.ts
 # Supabase Edge Functions (deploy individually)
 supabase functions deploy dropi-sync
 supabase functions deploy dropi-update-order
+supabase functions deploy dropi-change-carrier
 supabase functions deploy dropi-resolve-incidence
 supabase functions deploy dropi-fingerprint
 supabase functions deploy dropi-cron
@@ -127,6 +128,7 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-sync` — bulk-fetches orders from Dropi API, chunked in ≤89-day ranges, upserts to DB. Maps `o.shipping_amount` → `costo_logistico_dropi` (lo que paga el dropshipper, NO lo cobrado al cliente). Uses Bearer API key.
 - `dropi-update-order` — updates a single order's Dropi status (bearer token from DB settings)
 - `dropi-update-order-full` — variant that also pushes back enriched address/notes payload to Dropi
+- `dropi-change-carrier` — cambia la transportadora de un pedido pendiente desde Confirmar. `mode:"quote"` lee los productos del pedido (GET integrations por id) y cotiza en vivo vía `quoteCarriers` (`_shared/dropiWebQuote.ts`, session token web) → lista transportadoras + precio; `mode:"apply"` reasigna en Dropi vía `PUT /integrations/orders/myorders/{id}` con `{distribution_company_id}` (integration-key) + actualiza `orders.transportadora` + audita en `order_results` (`result:'cambio_transportadora'`). Solo sin guía generada. **OJO FASE 0:** el campo `distribution_company_id` del PUT es el candidato a confirmar — si Dropi lo rechaza, ver `dropiHttpStatus`/`dropiBody` y capturar el request real del panel. La cotización depende del `dropi_session_token` (legacy, vence ~1h).
 - `dropi-relay` — generic proxy/relay to Dropi endpoints from the client (avoids CORS + hides session token)
 - `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
@@ -135,7 +137,7 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Usa `cfg.apiKey || cfg.sessionToken` (la api_key permanente funciona; el session_token es fallback legacy). Decodifica `payload.sub` del token para el query `user_id`.
 - `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. Dormant mientras `GOOGLE_PLACES_ENABLED = false`.
 - `ai-order-assistant` — Claude-powered order assistant
-- `shopify-push-dropi` — sube un pedido de Shopify a Dropi (anti-fuga). Resuelve el producto Dropi leyendo el metafield `dropi/_dropi_product` que Dropify deja en cada producto Shopify. `mode: "preview"` arma cliente+productos+total sin crear nada; `"confirm"` crea la orden (`POST /integrations/orders/myorders`) y registra en `shopify_pushed_orders` (idempotente). Auth = JWT de miembro de la tienda.
+- `shopify-push-dropi` — sube un pedido de Shopify a Dropi (anti-fuga). Resuelve el producto Dropi leyendo el metafield `dropi/_dropi_product` que Dropify deja en cada producto Shopify. `mode: "preview"` arma cliente+productos+total sin crear nada; `"confirm"` crea la orden (`POST /integrations/orders/myorders`) y registra en `shopify_pushed_orders` (idempotente). Auth = JWT de miembro de la tienda. La secuencia de cotización web (A–D: product/show → locations → getOriginCity → cotizaEnvioTransportadoraV2) vive en `_shared/dropiWebQuote.ts` (`quoteCarriers`) y la comparte con `dropi-change-carrier`; al crear sigue eligiendo la más barata ≠ VELOCES.
 - `shopify-reconcile` — detecta pedidos de Shopify que NUNCA llegaron a Dropi cruzando por TELÉFONO (últimos 9 dígitos) contra `orders`. Body `{store_id, days?=3}`. Alimenta la cola anti-fuga.
 - `parse-bank-pdf-text` — recibe el TEXTO plano de un extracto Bancolombia (Mastercard/Amex) — el cliente extrae el texto con `pdfjs-dist` en `CfoPersonalCardUploader.tsx`, porque pdfjs server-side no corre bien en edge — y devuelve movimientos categorizados; opcionalmente upserta. Alimenta el módulo de tarjeta personal del CFO.
 
