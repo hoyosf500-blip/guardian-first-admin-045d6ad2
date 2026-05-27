@@ -144,6 +144,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // realtime trajo un cambio mientras la operadora hacía scroll), descarta
   // el resultado para no pisar estado fresco con datos viejos.
   const lastBuildIdRef = useRef(0);
+  // Teléfonos cuyo aviso "disponible para reintentar" YA se mostró esta sesión.
+  // Evita el spam del toast en cada poll/refresh (buildWorkQueue corre seguido).
+  const announcedRetryPhonesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     requestNotificationPermission();
@@ -266,11 +269,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             });
             setWorkQueue(updated);
 
+            // Avisar SOLO por teléfonos nuevos (no re-mostrar en cada poll → no spam).
+            // El banner naranja arriba de la lista ya muestra el conteo en vivo.
             if (retryPhones.size > 0) {
-              toast.info(`${retryPhones.size} pedido${retryPhones.size > 1 ? 's' : ''} sin respuesta disponible${retryPhones.size > 1 ? 's' : ''} para reintentar`, {
-                description: 'No contestaron antes — intenta llamar de nuevo',
-                duration: 8000,
-              });
+              const nuevos = [...retryPhones.keys()].filter(p => !announcedRetryPhonesRef.current.has(p));
+              if (nuevos.length > 0) {
+                nuevos.forEach(p => announcedRetryPhonesRef.current.add(p));
+                toast.info(`${nuevos.length} pedido${nuevos.length > 1 ? 's' : ''} sin respuesta listo${nuevos.length > 1 ? 's' : ''} para reintentar`, {
+                  description: 'Tocá el aviso naranja arriba de la lista para verlos',
+                  duration: 6000,
+                  id: 'retry-available', // sonner dedup por id → nunca se apilan
+                });
+              }
             }
 
             // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta

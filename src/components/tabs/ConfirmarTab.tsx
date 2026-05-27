@@ -175,6 +175,8 @@ export default function ConfirmarTab({ profile }: Props) {
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
     if (filter === 'noresp' && o.result !== 'noresp') return false;
+    // 'retry' = los que no contestaron antes y ya cumplieron el cooldown (banner naranja).
+    if (filter === 'retry' && !(o.retryCount && !o.result)) return false;
     if (filter.startsWith('prod_') && o.producto !== filter.slice(5)) return false;
     // Date filter
     if (dateFrom || dateTo) {
@@ -386,10 +388,16 @@ export default function ConfirmarTab({ profile }: Props) {
           {(() => {
             const retryOrders = visibleQueue.filter(o => o.retryCount && !o.result);
             if (!retryOrders.length) return null;
+            const active = filter === 'retry';
             return (
-              <div className="flex items-center gap-3 mb-4 rounded-xl bg-warning/10 border border-warning/25 px-4 py-3">
+              <button
+                onClick={() => { setView('list'); setFilter(active ? 'pending' : 'retry'); }}
+                aria-pressed={active}
+                className={`w-full flex items-center gap-3 mb-4 rounded-xl border px-4 py-3 text-left transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none ${
+                  active ? 'bg-warning/20 border-warning/50' : 'bg-warning/10 border-warning/25 hover:bg-warning/15'
+                }`}>
                 <RotateCcw size={16} className="text-warning shrink-0" aria-hidden="true" strokeWidth={2.25} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <span className="text-xs font-bold text-warning">
                     {retryOrders.length} pedido{retryOrders.length > 1 ? 's' : ''} para reintentar
                   </span>
@@ -397,7 +405,10 @@ export default function ConfirmarTab({ profile }: Props) {
                     No contestaron antes — volver a llamar
                   </span>
                 </div>
-              </div>
+                <span className="text-[11px] font-semibold text-warning shrink-0">
+                  {active ? 'Quitar filtro ✕' : 'Ver estos →'}
+                </span>
+              </button>
             );
           })()}
 
