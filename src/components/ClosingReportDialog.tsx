@@ -79,11 +79,12 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
     onClose();
   }, [notes, load, onClose]);
 
-  // Excepción one-shot pedida 2026-05-27 (operadora EC, tarde para cerrar).
-  // El botón "Cerrar de todas maneras" SOLO aparece este día — mañana desaparece.
-  const FORCE_CLOSE_ALLOWED_DATE = '2026-05-27';
-  const todayBogota = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-  const forceCloseAllowed = todayBogota === FORCE_CLOSE_ALLOWED_DATE;
+  // Excepción pedida 2026-05-27 (operadora EC, tarde para cerrar).
+  // El botón "Cerrar de todas maneras" expira automáticamente al día siguiente.
+  // Se usa un timestamp absoluto (no comparación de strings de fecha) para evitar
+  // problemas de huso horario entre el reloj del cliente y Bogotá.
+  const FORCE_CLOSE_EXPIRES_AT = new Date('2026-05-28T05:00:00-05:00').getTime();
+  const forceCloseAllowed = Date.now() < FORCE_CLOSE_EXPIRES_AT;
 
   const blocked = pending.length > 0;
 
