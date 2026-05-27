@@ -18,6 +18,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
 import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers } from "../_shared/dropiWebQuote.ts";
+import { allocateOrderDiscount } from "./discount.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
 
@@ -30,6 +31,9 @@ interface ShopifyLineItem {
   quantity: number;
   price: string;
   total_discount?: string;
+  // Descuentos de ORDEN que Shopify SÍ reparte a la línea. total_discount a veces
+  // queda en 0 y el monto vive acá (ej. algunos descuentos automáticos).
+  discount_allocations?: Array<{ amount?: string }>;
   variant_title?: string | null;
 }
 interface ShopifyAddr {
@@ -39,6 +43,14 @@ interface ShopifyAddr {
 }
 interface ShopifyOrderFull {
   id: number; name: string; phone?: string | null; email?: string | null; note?: string | null;
+  // Descuento a NIVEL DE ORDEN (ej. "QUANTITY DISCOUNT" de Releasit COD Form).
+  // total_discounts = suma de TODOS los descuentos; total_line_items_price = subtotal
+  // de productos ANTES de descuentos. La resta de ambos = lo que el cliente paga por
+  // los productos (el COD correcto que debe cobrar Dropi).
+  total_discounts?: string;
+  total_line_items_price?: string;
+  current_subtotal_price?: string;
+  subtotal_price?: string;
   line_items: ShopifyLineItem[];
   shipping_lines?: Array<{ price?: string | null }> | null;
   shipping_address?: ShopifyAddr | null;
@@ -366,6 +378,7 @@ Deno.serve(async (req: Request) => {
     const mode = body.mode === "confirm" ? "confirm"
       : body.mode === "search_products" ? "search_products"
       : body.mode === "list_shopify_products" ? "list_shopify_products"
+      : body.mode === "audit" ? "audit"
       : "preview";
     const overrides = (body.overrides ?? {}) as Overrides;
     if (!storeId) return json({ ok: false, error: "Falta store_id" }, 400, cors);
@@ -412,6 +425,65 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Modo auditoría: revisa los pedidos YA subidos a Dropi y detecta los que se
+    // cobraron de más porque el descuento de orden de Shopify no se aplicó (bug
+    // previo a este fix). NO escribe nada — solo devuelve la lista para corregir a
+    // mano en Dropi. Body: { store_id, days?=60, limit?=100 }.
+    if (mode === "audit") {
+      const shopCfgA = await loadShopifyConfig(sb, storeId);
+      if (!shopCfgA) return json({ ok: false, error: "Shopify no configurado para esta tienda" }, 400, cors);
+      const tokenA = await getShopifyAccessToken(shopCfgA);
+      const days = Number(body.days) > 0 ? Math.min(Number(body.days), 365) : 60;
+      const limit = Number(body.limit) > 0 ? Math.min(Number(body.limit), 500) : 100;
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+      const { data: pushed, error: pErr } = await sb
+        .from("shopify_pushed_orders")
+        .select("shopify_order_id, dropi_order_id, payload, pushed_at")
+        .eq("store_id", storeId).eq("status", "created")
+        .gte("pushed_at", cutoff)
+        .order("pushed_at", { ascending: false })
+        .limit(limit);
+      if (pErr) return json({ ok: false, error: pErr.message }, 500, cors);
+
+      const flagged: Array<Record<string, unknown>> = [];
+      let checked = 0;
+      let errors = 0;
+      for (const row of (pushed || [])) {
+        const products = ((row.payload as { products?: Array<{ price?: number; quantity?: number }> })?.products) || [];
+        const pushedTotal = products.reduce((s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 0), 0);
+        let aud: ShopifyOrderFull | null = null;
+        try {
+          aud = (await shopifyGet<{ order: ShopifyOrderFull }>(
+            shopCfgA.shopDomain, tokenA,
+            `orders/${encodeURIComponent(String(row.shopify_order_id))}.json?fields=id,name,total_discounts,total_line_items_price,current_subtotal_price`,
+          )).order;
+        } catch { errors++; continue; }
+        checked++;
+        if (!aud) continue;
+        const totalDiscounts = Number(aud.total_discounts || "0") || 0;
+        const totalLineItems = Number(aud.total_line_items_price || "0") || 0;
+        // Flag: hay descuento de orden y el total subido NO lo restó (≈ subtotal sin rebaja).
+        if (totalDiscounts > 0 && pushedTotal >= totalLineItems - 1) {
+          flagged.push({
+            shopify_name: aud.name,
+            shopify_order_id: row.shopify_order_id,
+            dropi_order_id: row.dropi_order_id,
+            pushed_total: pushedTotal,
+            total_line_items: totalLineItems,
+            total_discounts: totalDiscounts,
+            should_be: Math.max(0, totalLineItems - totalDiscounts),
+            overcharge: Math.round(pushedTotal - (totalLineItems - totalDiscounts)),
+            pushed_at: row.pushed_at,
+          });
+        }
+      }
+      return json({
+        ok: true, mode: "audit", days,
+        total_pushed: (pushed || []).length, checked, errors,
+        flagged_count: flagged.length, flagged,
+      }, 200, cors);
+    }
+
     const shopifyOrderId = String(body.shopify_order_id ?? "").trim();
     if (!shopifyOrderId) return json({ ok: false, error: "Falta shopify_order_id" }, 400, cors);
 
@@ -430,8 +502,11 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
     const alreadyPushed = Boolean(prior && prior.status === "created");
 
-    // Traer la orden completa de Shopify
-    const fields = "id,name,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email";
+    // Traer la orden completa de Shopify. Pedimos los campos de descuento a NIVEL
+    // DE ORDEN (total_discounts/total_line_items_price): Releasit COD Form registra
+    // su "QUANTITY DISCOUNT" como descuento de orden, NO en line_items[].total_discount,
+    // así que sin esto el descuento se perdía y Dropi cobraba el subtotal sin rebaja.
+    const fields = "id,name,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email,total_discounts,total_line_items_price,current_subtotal_price,subtotal_price";
     const ord = (await shopifyGet<{ order: ShopifyOrderFull }>(
       shopCfg.shopDomain, shopToken,
       `orders/${encodeURIComponent(shopifyOrderId)}.json?fields=${fields}`,
@@ -464,6 +539,9 @@ Deno.serve(async (req: Request) => {
     // Resolver productos vía metafield dropi/_dropi_product
     const cache = new Map<number, DropiResolveResult>();
     const resolved: ResolvedLine[] = [];
+    // Por cada línea de PRODUCTO guardamos su bruto y el descuento ya aplicado, para
+    // luego repartir el descuento de ORDEN (ver allocateOrderDiscount más abajo).
+    const productDiscountInfo: { resolvedIdx: number; gross: number; lineDiscount: number; qty: number }[] = [];
     const unmapped: Array<{ title: string; sku: string; product_id: number; reason: string }> = [];
     let permissionIssue = false;
     let firstSeenKeys: string[] | undefined;
@@ -472,7 +550,10 @@ Deno.serve(async (req: Request) => {
       const li = ord.line_items[i];
       const qty = Number(li.quantity) || 1;
       const gross = (Number(li.price) || 0) * qty;
-      const disc = Number(li.total_discount || "0") || 0;
+      // Descuento de la línea: total_discount O la suma de discount_allocations
+      // (lo mayor) — Shopify a veces deja total_discount en 0 y el monto en allocations.
+      const allocSum = (li.discount_allocations || []).reduce((s, a) => s + (Number(a?.amount) || 0), 0);
+      const disc = Math.max(Number(li.total_discount || "0") || 0, allocSum);
       const price = Math.round((gross - disc) / qty);
 
       // Línea SIN product_id = cargo extra (envío prioritario / upsell, ej.
@@ -497,9 +578,27 @@ Deno.serve(async (req: Request) => {
         quantity: qty, price, dropiId: meta ? Number(meta.id) : null, variationId,
       };
       resolved.push(line);
+      productDiscountInfo.push({ resolvedIdx: resolved.length - 1, gross, lineDiscount: disc, qty });
       if (!meta) {
         unmapped.push({ title: line.title, sku: line.sku, product_id: li.product_id, reason: reasonMessage(reason, status) });
       }
+    }
+
+    // Repartir el descuento a NIVEL DE ORDEN (ej. "QUANTITY DISCOUNT" de Releasit)
+    // sobre las líneas de producto. Se hace ANTES de los overrides del operador,
+    // para que un precio puesto a mano gane (igual que con el descuento de línea).
+    const orderDiscount = Number(ord.total_discounts || "0") || 0;
+    if (orderDiscount > 0 && productDiscountInfo.length > 0) {
+      const extras = allocateOrderDiscount(
+        productDiscountInfo.map((p) => ({ gross: p.gross, lineDiscount: p.lineDiscount })),
+        orderDiscount,
+      );
+      productDiscountInfo.forEach((p, k) => {
+        if (extras[k] > 0) {
+          const newLineTotal = Math.max(0, p.gross - p.lineDiscount - extras[k]);
+          resolved[p.resolvedIdx].price = Math.round(newLineTotal / p.qty);
+        }
+      });
     }
 
     // Overrides del operador (precio/cantidad) por índice del array `resolved`,
