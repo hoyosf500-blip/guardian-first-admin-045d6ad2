@@ -123,6 +123,21 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                 </div>
               ))}
             </div>
+            {forceCloseAllowed && (
+              <div className="rounded-lg border border-orange/40 bg-orange/10 p-3 space-y-2">
+                <div className="text-xs text-orange">
+                  Excepción de hoy: podés cerrar de todas maneras. Mañana este botón ya no estará disponible — completá los reintentos antes del cierre.
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full border-orange/60 text-orange hover:bg-orange/20"
+                  disabled={submitting}
+                  onClick={() => submit(true)}
+                >
+                  {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Cerrar de todas maneras (solo hoy)'}
+                </Button>
+              </div>
+            )}
             <Button variant="outline" onClick={onClose} className="w-full">Volver</Button>
           </div>
         ) : (
