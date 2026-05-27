@@ -133,12 +133,21 @@ export default function ConfirmarTab({ profile }: Props) {
     reader.readAsArrayBuffer(file);
   }, [user, today, setAllOrders, buildWorkQueue]);
 
+  // Firma estable del conjunto de teléfonos de la cola. El efecto de abajo
+  // depende de ESTO, no del array `workQueue`: una ráfaga de realtime que
+  // reconstruye `workQueue` con los MISMOS teléfonos no re-dispara la query
+  // (antes re-consultaba Supabase + setProgressedOrders en cada refresh →
+  // cascada de re-render que alimentaba el parpadeo).
+  const phoneSig = useMemo(
+    () => Array.from(new Set(workQueue.map(o => o.phone).filter(Boolean))).sort().join('|'),
+    [workQueue],
+  );
+
   // Traer los pedidos YA reales en Dropi (no PENDIENTE CONFIRMACION, no CANCELADO)
   // de los mismos teléfonos que están en la cola, para detectar duplicados viejos.
   useEffect(() => {
-    if (!activeStoreId || workQueue.length === 0) { setProgressedOrders([]); return; }
-    const phones = Array.from(new Set(workQueue.map(o => o.phone).filter(Boolean)));
-    if (phones.length === 0) { setProgressedOrders([]); return; }
+    const phones = phoneSig ? phoneSig.split('|') : [];
+    if (!activeStoreId || phones.length === 0) { setProgressedOrders([]); return; }
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     let cancelled = false;
     supabase.from('orders')
@@ -153,7 +162,7 @@ export default function ConfirmarTab({ profile }: Props) {
         setProgressedOrders(data as ProgressedOrder[]);
       }, () => { /* red: dejamos la cola sin filtrar (no rompemos Confirmar) */ });
     return () => { cancelled = true; };
-  }, [workQueue, activeStoreId]);
+  }, [phoneSig, activeStoreId]);
 
   // Duplicados: PENDIENTE CONFIRMACION ya superados por un pedido real más nuevo
   // del mismo cliente+producto. Se ocultan de la cola (no se cancela nada).
@@ -170,7 +179,10 @@ export default function ConfirmarTab({ profile }: Props) {
     [workQueue, supersededIds],
   );
 
-  const filteredItems = visibleQueue.filter(o => {
+  // Memoizado: sin esto, `filteredItems` era un array nuevo en CADA render
+  // (incluido cada refresh de realtime), forzando a WorkList/CallView a
+  // re-renderizar aunque el contenido fuera idéntico.
+  const filteredItems = useMemo(() => visibleQueue.filter(o => {
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
@@ -191,7 +203,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  });
+  }), [visibleQueue, filter, search, dateFrom, dateTo]);
 
   const total = counter.conf + counter.canc + counter.noresp;
   const pending = visibleQueue.filter(o => !o.result).length;

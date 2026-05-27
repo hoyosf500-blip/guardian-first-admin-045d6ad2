@@ -68,9 +68,10 @@ export default function ShopifyPendingPanel() {
     const pendingIds = new Set(pending.map(p => p.id));
     setDone(prev => {
       const next = new Set([...prev].filter(id => pendingIds.has(id)));
-      if (next.size !== prev.size) {
-        try { sessionStorage.setItem(DONE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
-      }
+      // Idempotente: si no se removió nada, devolver `prev` para no crear un
+      // Set nuevo en cada `data` (evita un re-render extra del panel).
+      if (next.size === prev.size) return prev;
+      try { sessionStorage.setItem(DONE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
       return next;
     });
   }, [data, pending, activeStoreId]);

@@ -34,7 +34,15 @@ export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
       old.novedad !== n.novedad ||
       old.novedadSol !== n.novedadSol ||
       old.guia !== n.guia ||
-      old.transportadora !== n.transportadora
+      old.transportadora !== n.transportadora ||
+      // Confirmar: el branch async de buildWorkQueue (order_results) marca
+      // result/reason/retryCount sobre la cola. Sin estos campos, smartMerge
+      // preservaría la fila vieja (sin el resultado nuevo) Y, al revés, no
+      // detectaría que NO cambió nada en una ráfaga de realtime → reemplazaba
+      // el array y re-renderizaba toda la cola (parpadeo).
+      old.result !== n.result ||
+      old.reason !== n.reason ||
+      old.retryCount !== n.retryCount
     );
     if (fieldsChanged) {
       anyChanged = true;

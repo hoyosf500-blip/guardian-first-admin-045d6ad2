@@ -267,7 +267,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               if (retry) return { ...o, retryCount: retry };
               return o;
             });
-            setWorkQueue(updated);
+            // smartMerge (no reemplazo directo): si la ráfaga de realtime trajo
+            // los MISMOS datos, smartMerge devuelve el array previo intacto y
+            // React no re-renderiza la cola → mata el parpadeo. Los cambios
+            // reales (result/reason/retryCount) pasan porque ya están en
+            // fieldsChanged de smartMerge.
+            setWorkQueue(prev => smartMerge(prev, updated));
 
             // Avisar SOLO por teléfonos nuevos (no re-mostrar en cada poll → no spam).
             // El banner naranja arriba de la lista ya muestra el conteo en vivo.
@@ -290,7 +295,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // confirma, ese pedido suma a conf y NO a noresp. Lógica
             // compartida en computeDailyCounter para que CounterBar y panel
             // admin nunca diverjan.
-            setCounter(computeDailyCounter(data as Parameters<typeof computeDailyCounter>[0], todayLocal));
+            // Idempotente: si los conteos no cambiaron, devolver `prev` para NO
+            // crear un objeto nuevo. `counter` está en el value memoizado del
+            // OrderContext, así que un objeto nuevo en cada refresh re-renderiza
+            // a TODOS los consumers de useOrders (CounterBar, ConfirmarTab, …)
+            // aunque los números sean idénticos — la causa principal del
+            // "parpadeo de toda la página" bajo ráfagas de realtime.
+            setCounter(prev => {
+              const next = computeDailyCounter(data as Parameters<typeof computeDailyCounter>[0], todayLocal);
+              return (prev.conf === next.conf && prev.canc === next.canc && prev.noresp === next.noresp)
+                ? prev
+                : next;
+            });
           }
         });
     }
