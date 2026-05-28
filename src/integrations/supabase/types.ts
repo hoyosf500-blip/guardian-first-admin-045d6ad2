@@ -432,6 +432,7 @@ export type Database = {
           operator_id: string
           order_id: string | null
           phone: string
+          remind_at: string | null
           store_id: string
         }
         Insert: {
@@ -441,6 +442,7 @@ export type Database = {
           operator_id: string
           order_id?: string | null
           phone: string
+          remind_at?: string | null
           store_id?: string
         }
         Update: {
@@ -450,6 +452,7 @@ export type Database = {
           operator_id?: string
           order_id?: string | null
           phone?: string
+          remind_at?: string | null
           store_id?: string
         }
         Relationships: [
