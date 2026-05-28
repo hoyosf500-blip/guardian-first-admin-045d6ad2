@@ -264,7 +264,11 @@ function ColumnBody({
 
 export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
+  // countryCode pasa a cada OrderCard como prop para que `getTrackingUrl`
+  // resuelva URLs EC en el primer paint (no dependa del estado a nivel
+  // módulo que setea StoreContext vía useEffect post-render).
+  const countryCode = activeStore?.country_code;
   // Notas/recordatorios agregados de los pedidos del listado actual. 1 query
   // por la tienda activa (no N) + realtime → cualquier asesora que deje una
   // nota la ven todas en vivo.
@@ -930,6 +934,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         index={i}
                         statusColor={col.tone}
                         notesEntry={o.dbId ? notesIndex.get(o.dbId) : undefined}
+                        countryCode={countryCode}
                       />
                     ))}
                   </ColumnBody>
@@ -974,6 +979,10 @@ interface OrderCardProps {
    *  nextReminderAt). Se pasa por prop para que `useOrderNotesIndex` corra
    *  UNA vez en el padre, no por card. `undefined` = sin notas. */
   notesEntry: { count: number; nextReminderAt: string | null } | undefined;
+  /** Country code de la tienda activa (CO/EC). Necesario para que
+   *  `getTrackingUrl` resuelva URLs EC sin depender del estado a nivel módulo
+   *  que se setea via useEffect (que en el primer paint todavía es 'CO'). */
+  countryCode?: string | null;
 }
 
 // C5: React.memo. Antes cualquier setState de CrmTable (ej. setExpandedPhone,
@@ -981,7 +990,7 @@ interface OrderCardProps {
 // las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
 // con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
 // el render si las props del card no cambiaron.
-const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry }: OrderCardProps) {
+const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry, countryCode }: OrderCardProps) {
   // Propiedad por GESTIÓN REAL (touchpoints del módulo), no por assigned_to.
   // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
   // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
@@ -996,7 +1005,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   const ownerName = lastOwnerTp ? getOperatorName(lastOwnerTp.operator_id) : '';
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora);
-  const trackUrl = getTrackingUrl(o.transportadora, o.guia);
+  // countryCode explícito: el módulo-state _activeTrackingCountry lo setea
+  // StoreContext vía useEffect post-render, así que en el primer paint con
+  // tienda EC los pedidos con carrier GINTRACOM/LAARCOURIER caían en el mapa
+  // CO (no existe ahí) → trackUrl null → botón oculto. Pasar el código
+  // explícito desde useStore() elimina el race.
+  const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
@@ -1161,18 +1175,23 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
           );
         })()}
 
-        {/* Guía + tracking — Rastrear is now a proper button, amber outline that goes solid on hover */}
-        {o.guia && (
+        {/* Guía + tracking. Botón "Rastrear" rediseñado: bg-accent sólido en
+            lugar del outline tonal — antes con el outline accent/10 quedaba
+            casi invisible contra el fondo de la card; ahora es un CTA claro.
+            Cuando hay transportadora pero NO hay guía aún, mostramos un chip
+            "Sin guía aún · GINTRACOM" para que la asesora entienda por qué no
+            puede rastrear (más útil que ocultar todo). */}
+        {o.guia ? (
           <div className="mt-2.5 flex items-center gap-2">
             <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
-              <Tag size={10} className="text-muted-foreground/70 flex-shrink-0" />
+              <Tag size={10} className="text-muted-foreground/70 flex-shrink-0" aria-hidden="true" />
               <span className="truncate">{o.guia}</span>
               <button
                 onClick={e => { e.stopPropagation(); void copyToClipboard(o.guia, 'Guía copiada'); }}
                 aria-label="Copiar guía"
                 className="flex-shrink-0 rounded p-0.5 transition-colors hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
-                <Copy size={10} />
+                <Copy size={10} aria-hidden="true" />
               </button>
             </div>
             {trackUrl && (
@@ -1181,15 +1200,20 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={e => { e.stopPropagation(); void copyToClipboard(o.guia, 'Guía copiada'); }}
-                aria-label="Abrir rastreo de la transportadora"
-                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-[11px] font-semibold text-accent shadow-sm transition-colors duration-200 hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
+                aria-label={`Rastrear guía ${o.guia} en ${o.transportadora}`}
+                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-accent border-2 border-accent px-3 h-9 text-xs font-bold text-accent-foreground shadow-sm transition-colors duration-200 hover:bg-accent/85 hover:border-accent/85 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none no-underline cursor-pointer"
               >
-                <ExternalLink size={12} aria-hidden="true" />
+                <ExternalLink size={13} aria-hidden="true" />
                 <span>Rastrear</span>
               </a>
             )}
           </div>
-        )}
+        ) : o.transportadora ? (
+          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+            <Tag size={10} className="text-muted-foreground/60 flex-shrink-0" aria-hidden="true" />
+            <span>Sin guía aún · {o.transportadora}</span>
+          </div>
+        ) : null}
 
         {/* Delay warning — collapsed to 2 tones so it doesn't fight the column tone */}
         {isDelayed && !isExcludedFromDelay(o.estado) && (

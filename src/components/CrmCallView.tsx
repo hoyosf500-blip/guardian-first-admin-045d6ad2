@@ -510,7 +510,13 @@ export default function CrmCallView({
   const o = items[idx];
   const diasEnEstatus = getOrderStatusAgeDays(o);
   const alert = getAlertLevel(diasEnEstatus, o.dias, o.estado, o.transportadora, o.novedad);
-  const trackUrl = getTrackingUrl(o.transportadora, o.guia);
+  // Pasamos `countryCode` EXPLÍCITO en vez de confiar en el estado a nivel
+  // módulo (`_activeTrackingCountry` en orderUtils.ts). El estado lo setea
+  // StoreContext vía useEffect, que corre DESPUÉS del primer render —
+  // significa que en el primer paint con tienda EC activa, el matcher CO
+  // se usaba y `getTrackingUrl('GINTRACOM', ...)` devolvía null. Eso
+  // explicaba el "en EC no aparece Rastrear" del operador.
+  const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
   const currentManaged = o.dbId ? managed[o.dbId] : undefined;
   const tps = phoneTouchpoints[o.phone] || [];
   const isDelayed = diasEnEstatus >= 2 && !isExcludedFromDelay(o.estado);
@@ -784,13 +790,18 @@ export default function CrmCallView({
               </div>
             )}
 
-            {o.guia && (
-              <div className="flex items-center gap-2 mt-1">
-                <div className="flex items-center gap-1.5 bg-secondary/50 rounded-lg px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                  <Tag size={10} className="text-muted-foreground/60" />
+            {/* Bloque guía + Rastrear. Cuando hay guía mostramos el botón
+                grande (h-9, accent sólido) — antes era text-[10px] py-1, casi
+                invisible. Cuando hay transportadora pero TODAVÍA no hay guía,
+                mostramos un hint claro "Sin guía aún" para que la asesora sepa
+                por qué no puede rastrear (más útil que ocultar todo). */}
+            {o.guia ? (
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-secondary/50 rounded-lg px-2.5 py-2 font-mono text-xs text-muted-foreground">
+                  <Tag size={12} className="text-muted-foreground/60" aria-hidden="true" />
                   <span className="truncate">{o.guia}</span>
-                  <button onClick={copyGuia} className="hover:text-foreground">
-                    <Copy size={9} />
+                  <button onClick={copyGuia} aria-label="Copiar guía" className="hover:text-foreground p-1 -m-1">
+                    <Copy size={11} aria-hidden="true" />
                   </button>
                 </div>
                 {trackUrl && (
@@ -798,13 +809,21 @@ export default function CrmCallView({
                     href={trackUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-3 py-1 text-[10px] font-bold text-white hover:bg-orange-600 no-underline"
+                    aria-label={`Rastrear guía ${o.guia} en ${o.transportadora}`}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent border-2 border-accent px-4 h-9 text-xs font-bold text-accent-foreground hover:bg-accent/85 hover:border-accent/85 transition-colors shadow-sm no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                   >
-                    <ExternalLink size={10} /> Rastrear
+                    <ExternalLink size={14} aria-hidden="true" /> Rastrear guía
                   </a>
                 )}
               </div>
-            )}
+            ) : o.transportadora ? (
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <div className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+                  <Tag size={12} className="text-muted-foreground/60" aria-hidden="true" />
+                  <span>Sin guía aún · {o.transportadora}</span>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Novedad banner */}
