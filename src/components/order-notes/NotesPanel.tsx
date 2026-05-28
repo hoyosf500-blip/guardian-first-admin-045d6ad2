@@ -42,6 +42,48 @@ function datetimeLocalToIso(v: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** Formato `YYYY-MM-DDTHH:mm` en hora local del navegador (el que pide
+ *  `<input type=datetime-local>`). */
+const pad2 = (n: number) => String(n).padStart(2, '0');
+function toDatetimeLocal(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** Atajos rápidos para el recordatorio — para no tener que abrir el calendario
+ *  en los casos comunes (90% de las veces es "en 1-3 horas" o "mañana"). El
+ *  input manual sigue disponible debajo. */
+const QUICK_REMINDERS: Array<{ label: string; build: () => Date }> = [
+  { label: 'En 1 h', build: () => new Date(Date.now() + 60 * 60_000) },
+  { label: 'En 3 h', build: () => new Date(Date.now() + 3 * 60 * 60_000) },
+  {
+    label: 'Mañana 9 am',
+    build: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    },
+  },
+  {
+    label: 'Mañana 3 pm',
+    build: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(15, 0, 0, 0);
+      return d;
+    },
+  },
+  {
+    label: 'En 2 días',
+    build: () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 2);
+      d.setHours(9, 0, 0, 0);
+      return d;
+    },
+  },
+];
+
 export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) {
   const { user } = useAuth();
   const { notes, isLoading, addNote, deleteNote } = useOrderNotes({ phone, orderId });
@@ -133,36 +175,52 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
           rows={2}
           className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200 resize-y"
         />
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-            <Bell size={11} aria-hidden="true" /> Recuérdame el
-          </label>
-          <input
-            type="datetime-local"
-            value={remindAt}
-            onChange={(e) => setRemindAt(e.target.value)}
-            aria-label="Fecha y hora del recordatorio (opcional)"
-            className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-          {remindAt && (
+        {/* Recordatorio: chips rápidos arriba (90% de los casos no abren el
+            calendario) + input manual abajo como escape hatch. */}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1.5 mr-1">
+              <Bell size={11} aria-hidden="true" /> Recordatorio
+            </span>
+            {QUICK_REMINDERS.map(q => (
+              <button
+                key={q.label}
+                type="button"
+                onClick={() => setRemindAt(toDatetimeLocal(q.build()))}
+                className="text-[10px] px-2 py-0.5 rounded-md border border-transparent bg-muted/40 text-muted-foreground hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer"
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="datetime-local"
+              value={remindAt}
+              onChange={(e) => setRemindAt(e.target.value)}
+              aria-label="Fecha y hora del recordatorio (opcional)"
+              className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            />
+            {remindAt && (
+              <button
+                type="button"
+                onClick={() => setRemindAt('')}
+                className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                aria-label="Quitar recordatorio"
+              >
+                quitar
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setRemindAt('')}
-              className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
-              aria-label="Quitar recordatorio"
+              onClick={submit}
+              disabled={!canSubmit}
+              aria-label="Guardar nota"
+              className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              quitar
+              <Send size={12} aria-hidden="true" /> Agregar
             </button>
-          )}
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!canSubmit}
-            aria-label="Guardar nota"
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-          >
-            <Send size={12} aria-hidden="true" /> Agregar
-          </button>
+          </div>
         </div>
       </div>
 
