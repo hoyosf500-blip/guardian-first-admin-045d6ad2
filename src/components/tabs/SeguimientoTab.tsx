@@ -397,11 +397,11 @@ export default function SeguimientoTab() {
               <span className="text-xs text-muted-foreground">Total</span>
               <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
               {(dateFrom || dateTo) && stats.total !== segData.length && (
-                <span className="text-[10px] text-subtle font-mono">/ {segData.length}</span>
+                <span className="text-[10px] text-muted-foreground/70 font-mono">/ {segData.length}</span>
               )}
               {hiddenStaleCount > 0 && (
                 <span
-                  className="text-[10px] text-subtle font-mono"
+                  className="text-[10px] text-muted-foreground/70 font-mono"
                   title={`${hiddenStaleCount} pedidos sin movimiento hace +${maxActionableDays} días hábiles (muertos, no accionables). No se borraron — vé el histórico poniendo un rango de fechas.`}
                 >
                   · {hiddenStaleCount} viejos ocultos

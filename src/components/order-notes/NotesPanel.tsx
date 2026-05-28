@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquare, Bell, Send, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -105,6 +105,15 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
   // Usamos AlertDialog (shadcn) en vez de window.confirm — está estilizado,
   // es accesible (Radix), no se ve diminuto en iOS y respeta el tema.
   const [noteToDelete, setNoteToDelete] = useState<NoteRow | null>(null);
+  // Auto-grow del textarea: ajustamos height al scrollHeight cada vez que
+  // cambia el texto, evitando handler manual de resize. Spotify-style.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`; // tope ~10 líneas
+  }, [text]);
 
   // Profiles (display_name por operator_id). Una sola carga al montar — la
   // tabla `profiles` es global y chica. Si crece, paginamos.
@@ -181,13 +190,14 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
       {/* Formulario */}
       <div className="space-y-2">
         <textarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onTextareaKey}
           placeholder="Ej: el cliente recoge el viernes 3pm; llamar mañana temprano…"
           aria-label="Escribir una nota sobre el pedido"
           rows={2}
-          className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200 resize-y"
+          className="w-full bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200 resize-none overflow-hidden min-h-[3.5rem]"
         />
         {/* Recordatorio: chips rápidos arriba (90% de los casos no abren el
             calendario) + input manual abajo como escape hatch. */}

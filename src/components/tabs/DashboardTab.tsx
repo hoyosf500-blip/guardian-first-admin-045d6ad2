@@ -731,7 +731,7 @@ export default function DashboardTab() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Resumen del día</h3>
-                <p className="text-[10px] text-subtle mt-0.5">{formatDateES(new Date().toISOString().split('T')[0])}</p>
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">{formatDateES(new Date().toISOString().split('T')[0])}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

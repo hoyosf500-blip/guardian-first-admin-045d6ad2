@@ -109,16 +109,16 @@ export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
                   cssTruncate
                   className="block text-sm font-semibold text-foreground truncate flex-1"
                 />
-                <span className="font-mono text-xs text-subtle flex-shrink-0 hidden sm:block">
+                <span className="font-mono text-xs text-muted-foreground/70 flex-shrink-0 hidden sm:block">
                   {formatPhone(o.phone)}
                 </span>
               </div>
               {/* Line 2: Product · city · time */}
               <div className="flex items-center gap-1.5 mt-0.5 text-xs text-muted-foreground">
                 <TruncatedText text={o.producto || '—'} maxChars={20} className="truncate" />
-                <span className="text-subtle" aria-hidden="true">·</span>
+                <span className="text-muted-foreground/60" aria-hidden="true">·</span>
                 <span className="flex-shrink-0">{o.ciudad || '—'}</span>
-                <span className="text-subtle" aria-hidden="true">·</span>
+                <span className="text-muted-foreground/60" aria-hidden="true">·</span>
                 <span className="flex-shrink-0">{timeAgo(dias)}</span>
               </div>
             </div>
