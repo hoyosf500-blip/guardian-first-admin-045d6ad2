@@ -25,6 +25,7 @@ import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { isHiddenFromTodayList, hiddenLabel, isSegCloser, cleanSegAction, type LatestTouch } from '@/lib/segDailyReview';
 import { bogotaToday } from '@/lib/utils';
+import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
 import {
   classifySegOwnership,
   classifySegOwnershipFromTps,
@@ -83,6 +84,7 @@ interface StatusColumn {
   label: string;
   icon: React.ReactNode;
   tone: Tone;
+  /** Legacy field, ya no se invoca — el matching vive en classifySegEstado. */
   match: (estado: string) => boolean;
 }
 
@@ -165,79 +167,32 @@ const TONE_STYLES: Record<Tone, {
   },
 };
 
-// Helpers de clasificación — usamos prefijos/regex para capturar variantes EC
-// que Dropi inventa sin avisar (EN RUTA A CENTRO LOGISTICO, EN RUTA A
-// CONCESION, INGRESANDO OPERATIVO A, ASIGNADO A <transportadora>, etc.)
-// Sin esto, todos los pedidos EC en fase tránsito caen en "Otros" y la
-// operadora ve una columna gigante sin priorización real (bug reportado en
-// pantalla — Soraya Ojeda "EN RUTA A CENTRO LOGISTICO" → Otros).
-const TRANSITO_EXACT = new Set([
-  'EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL',
-  'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES',
-  'EN DISTRIBUCION', 'EN REEXPEDICION', 'DESPACHADA',
-  'EN ESPERA DE RUTA DOMESTICA', 'BODEGA DESTINO', 'EN BODEGA ORIGEN',
-]);
-const matchTransito = (e: string): boolean => {
-  if (TRANSITO_EXACT.has(e)) return true;
-  if (e.startsWith('EN RUTA')) return true;        // EN RUTA / EN RUTA A CENTRO LOGISTICO / EN RUTA A CONCESION
-  if (e.startsWith('INGRESANDO')) return true;     // INGRESANDO A / INGRESANDO OPERATIVO A
-  if (e.startsWith('ASIGNADO')) return true;       // ASIGNADO A <transportadora>
-  return false;
-};
-const matchOficina = (e: string): boolean =>
-  e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') ||
-  e.includes('EN PUNTO') || e.startsWith('PARA RETIRO') || e.startsWith('RETIRO');
-
+// STATUS_COLUMNS: solo metadata visual (label, icon, tone). El matching de
+// estados vive en src/lib/segStatus.ts (`classifySegEstado`) — ese mismo
+// clasificador lo consume SeguimientoTab para que el resumen arriba y el
+// Kanban abajo SIEMPRE muestren las mismas cuentas. Antes había 2 clasificadores
+// duplicados y los EC perdían estados en el resumen.
 const STATUS_COLUMNS: StatusColumn[] = [
-  { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />, tone: 'neutral',
-    match: (e) => ['PENDIENTE', 'EN PROCESAMIENTO', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e) },
-  { key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />, tone: 'neutral',
-    match: (e) => ['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e) },
-  { key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />, tone: 'neutral',
-    match: (e) => ['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e) },
-  { key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />, tone: 'neutral',
-    match: matchTransito },
-  { key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />, tone: 'accent',
-    match: (e) => ['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO'].includes(e) },
-  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />, tone: 'warning',
-    match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
-  { key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />, tone: 'warning',
-    match: matchOficina },
-  { key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />, tone: 'danger',
-    match: (e) => e === 'RECHAZADO' },
-  { key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />, tone: 'success',
-    match: (e) => e === 'NOVEDAD SOLUCIONADA' },
-  { key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />, tone: 'danger',
-    match: (e) => e === 'DEVOLUCION EN TRANSITO' },
-  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />, tone: 'danger',
-    match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
-  { key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />, tone: 'muted',
-    match: (e) => e.includes('INDEMNIZADA') },
-  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />, tone: 'success',
-    match: (e) => e === 'ENTREGADO' },
-  { key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />, tone: 'muted',
-    match: (e) => e === 'CANCELADO' || e === 'ARCHIVADO_GHOST' },
-  { key: 'otros', label: 'Otros', icon: <Layers size={14} />, tone: 'muted',
-    match: () => true },
+  { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={14} />, tone: 'neutral', match: () => false },
+  { key: 'guia', label: 'Guía Generada', icon: <Tag size={14} />, tone: 'neutral', match: () => false },
+  { key: 'bodega_trans', label: 'Bodega Transportadora', icon: <Package size={14} />, tone: 'neutral', match: () => false },
+  { key: 'transito', label: 'En Tránsito', icon: <Truck size={14} />, tone: 'neutral', match: () => false },
+  { key: 'reparto', label: 'En Reparto', icon: <Truck size={14} />, tone: 'accent', match: () => false },
+  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={14} />, tone: 'warning', match: () => false },
+  { key: 'oficina', label: 'Reclame en Oficina', icon: <MapPin size={14} />, tone: 'warning', match: () => false },
+  { key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={14} />, tone: 'danger', match: () => false },
+  { key: 'novedad_sol', label: 'Novedad Solucionada', icon: <CheckCircle size={14} />, tone: 'success', match: () => false },
+  { key: 'devolucion_transito', label: 'Devolución en Tránsito', icon: <RotateCcw size={14} />, tone: 'danger', match: () => false },
+  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={14} />, tone: 'danger', match: () => false },
+  { key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={14} />, tone: 'muted', match: () => false },
+  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={14} />, tone: 'success', match: () => false },
+  { key: 'cancelado', label: 'Cancelado', icon: <Layers size={14} />, tone: 'muted', match: () => false },
+  { key: 'otros', label: 'Otros', icon: <Layers size={14} />, tone: 'muted', match: () => true },
 ];
 
-// M7: alerta cuando aparece un estado nuevo de Dropi que no calza con
-// ninguna columna conocida. Sin alerting infrastructure, solo un
-// console.warn una vez por estado nuevo (Set evita spam). Dropi puede
-// agregar variantes ("EN REPARTO ESPECIAL") sin avisar y los pedidos
-// caen invisibles en la columna "otros".
-const _unclassifiedStatusesSeen = new Set<string>();
-
-function classifyOrder(estado: string): string {
-  const e = estado.toUpperCase();
-  for (const col of STATUS_COLUMNS) {
-    if (col.key !== 'otros' && col.match(e)) return col.key;
-  }
-  if (e && !_unclassifiedStatusesSeen.has(e)) {
-    _unclassifiedStatusesSeen.add(e);
-    console.warn(`[CrmTable] Estado sin clasificar: "${e}" → cae en columna "otros". Si Dropi agregó esta variante, agregarla a STATUS_COLUMNS.`);
-  }
-  return 'otros';
+/** Wrapper para no romper call-sites internos. Delega a classifySegEstado. */
+function classifyOrder(estado: string): SegStatusKey {
+  return classifySegEstado(estado);
 }
 
 function getOrderStatusAgeDays(order: OrderData): number {
@@ -911,8 +866,31 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                   style={isEmpty ? { display: 'none' } : undefined}
                   className="flex-1 min-w-[280px] max-w-[340px] flex flex-col"
                 >
-                  {/* Column header — solid surface + thin tone accent bar */}
-                  <div className={`relative rounded-t-xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-2.5 flex items-center justify-between`}>
+                  {/* Column header — clickeable. Si la asesora hace click en
+                      "Novedad 8" se activa el filtro a SOLO esa categoría; el
+                      siguiente click la quita. Después puede cambiar a vista
+                      "Llamar" (toggle arriba) si quiere enfocarse en llamadas
+                      de ese estado. Si la columna ya está filtrada, agregamos
+                      un hint visual con "✕ filtro" para que sepan que pueden
+                      salir clickeando otra vez. */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilter(activeFilter === col.key ? null : col.key)}
+                    aria-pressed={activeFilter === col.key}
+                    aria-label={
+                      activeFilter === col.key
+                        ? `Quitar filtro "${col.label}"`
+                        : `Filtrar para ver solo ${col.label} (${items.length})`
+                    }
+                    title={
+                      activeFilter === col.key
+                        ? `Quitar filtro — volver a ver todas las columnas`
+                        : `Click para enfocarse en "${col.label}" (después podés pasar a Llamar)`
+                    }
+                    className={`relative w-full rounded-t-xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:brightness-110 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                      activeFilter === col.key ? 'ring-2 ring-accent' : ''
+                    }`}
+                  >
                     <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-tl-xl ${t.dot}`} aria-hidden="true" />
                     <div className={`flex items-center gap-2 pl-1.5 ${t.headerText}`}>
                       <span className="flex items-center justify-center w-6 h-6 rounded-md bg-card/60 border border-border/60">
@@ -920,10 +898,17 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                       </span>
                       <span className="text-[13px] font-semibold tracking-tight text-foreground">{col.label}</span>
                     </div>
-                    <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md text-[11px] font-bold tabular-nums ${t.headerCount}`}>
-                      {items.length}
+                    <span className="flex items-center gap-1.5">
+                      {activeFilter === col.key && (
+                        <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30">
+                          ✕ filtro
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md text-[11px] font-bold tabular-nums ${t.headerCount}`}>
+                        {items.length}
+                      </span>
                     </span>
-                  </div>
+                  </button>
 
                   {/* Column body */}
                   <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef}>

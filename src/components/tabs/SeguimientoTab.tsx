@@ -20,26 +20,7 @@ import {
   findSegList,
   isValidSegListSlug,
 } from '@/lib/segLists';
-
-
-function classifyEstado(estado: string) {
-  const e = estado.toUpperCase();
-  if (['PENDIENTE', 'EN PROCESAMIENTO', 'EN PUNTO DROOP', 'ALISTAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(e)) return 'procesamiento';
-  if (['GUIA GENERADA', 'GUIA_GENERADA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'].includes(e)) return 'guia';
-  if (['EN BODEGA TRANSPORTADORA', 'ADMITIDA'].includes(e)) return 'bodega_trans';
-  if (['EN TRANSPORTE', 'EN DESPACHO', 'EN TRASLADO NACIONAL', 'EN TERMINAL ORIGEN', 'EN TERMINAL DESTINO', 'ENTREGADA A CONEXIONES'].includes(e)) return 'transito';
-  if (['EN REPARTO', 'TELEMERCADEO', 'REENVÍO', 'REENVIO', 'EN DISTRIBUCION', 'EN REEXPEDICION'].includes(e)) return 'reparto';
-  if (e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA') return 'novedad';
-  if (e === 'NOVEDAD SOLUCIONADA') return 'novedad_sol';
-  if (e.includes('OFICINA') || e.includes('RECLAME')) return 'oficina';
-  if (e === 'RECHAZADO') return 'rechazado';
-  if (e === 'DEVOLUCION EN TRANSITO') return 'devolucion_transito';
-  if (e.includes('DEVOL')) return 'devolucion';
-  if (e.includes('INDEMNIZADA')) return 'indemnizada';
-  if (e === 'ENTREGADO') return 'entregado';
-  if (e === 'CANCELADO') return 'cancelado';
-  return 'otros';
-}
+import { classifySegEstado } from '@/lib/segStatus';
 
 function getOrderAgeDays(order: OrderData): number {
   const fechaConf = (order.fechaConf || '').trim();
@@ -185,7 +166,10 @@ export default function SeguimientoTab() {
       total: filteredByDate.length,
     };
     filteredByDate.forEach(o => {
-      const cat = classifyEstado(o.estado);
+      // classifySegEstado vive en src/lib/segStatus.ts — mismo clasificador
+      // que CrmTable (sin esto, el resumen perdía estados EC y mostraba 3 cards
+      // mientras el Kanban abajo mostraba 5+ columnas reales).
+      const cat = classifySegEstado(o.estado);
       if (cat in s) (s as Record<string, number>)[cat]++;
     });
     return s;
