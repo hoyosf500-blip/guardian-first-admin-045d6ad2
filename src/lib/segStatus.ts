@@ -122,7 +122,9 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
   { key: 'novedad', match: (e) => e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA' },
   { key: 'oficina', match: matchOficina },
   { key: 'rechazado', match: (e) => e === 'RECHAZADO' },
-  { key: 'novedad_sol', match: (e) => e === 'NOVEDAD SOLUCIONADA' },
+  // SOLUCION APROBADA = variante EC de "novedad solucionada". Antes caía en
+  // 'otros' (vista en consola Rushmira Ecuador 2026-05-28).
+  { key: 'novedad_sol', match: (e) => e === 'NOVEDAD SOLUCIONADA' || e === 'SOLUCION APROBADA' },
   { key: 'devolucion_transito', match: (e) => e === 'DEVOLUCION EN TRANSITO' },
   { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
   { key: 'indemnizada', match: (e) => e.includes('INDEMNIZADA') },

@@ -62,6 +62,10 @@ describe('classifySegEstado', () => {
       expect(classifySegEstado('INTENTO DE ENTREGA')).toBe('novedad'));
     it('NOVEDAD SOLUCIONADA es categoría aparte', () =>
       expect(classifySegEstado('NOVEDAD SOLUCIONADA')).toBe('novedad_sol'));
+    // Variante EC vista en consola Rushmira Ecuador 2026-05-28: Dropi usa
+    // "SOLUCION APROBADA" para algunos casos en lugar de NOVEDAD SOLUCIONADA.
+    it('SOLUCION APROBADA (variante EC) tambien va a novedad_sol', () =>
+      expect(classifySegEstado('SOLUCION APROBADA')).toBe('novedad_sol'));
   });
 
   describe('terminales', () => {
