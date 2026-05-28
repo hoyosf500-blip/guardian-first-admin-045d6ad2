@@ -216,18 +216,16 @@ export default function ProductivityDashboard() {
         <div className="rounded-xl border border-border bg-card p-10 flex items-center justify-center">
           <Loader2 className="animate-spin text-accent" size={20} aria-hidden="true" />
         </div>
-      ) : !error && rows.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
-          <p className="text-sm font-semibold text-foreground mb-1">Sin actividad</p>
-          <p className="text-xs text-muted-foreground">Nadie ha registrado acciones en {RANGE_LABELS[range].toLowerCase()}.</p>
-        </div>
       ) : !error ? (
         <>
-          {/* Jornada — hora de inicio + tiempo activo/idle por operadora.
-              Section separada porque es métrica de presencia, no de outcome.
-              Si activityRows está vacía (migración aún sin aplicar o no hubo
-              pings hoy) la sección directamente no renderiza para no agregar
-              ruido. */}
+          {/* Jornada SIEMPRE arriba si hay activityRows — métrica de presencia
+              (cuándo empezó / cuánto activa). Va separada de las secciones de
+              resultado (Confirmar/Seguimiento/Rescate) porque pueden coexistir:
+              una operadora puede tener jornada larga y 0 confirmados (o al
+              revés). Si activityRows está vacía la sección no se renderiza.
+              Bug del primer release: estaba DENTRO del branch
+              `rows.length > 0`, así que con 0 confirmados se ocultaba aunque
+              hubiera pings — ahora vive fuera. */}
           {activityRows.length > 0 && (
             <Section
               title="Jornada"
@@ -289,6 +287,17 @@ export default function ProductivityDashboard() {
             </Section>
           )}
 
+          {/* "Sin actividad" — solo cuando NI hay productividad NI hay jornada.
+              Antes mostraba este mensaje con rows=0 aunque hubiera pings,
+              ocultando la sección Jornada. Ahora cubre solo el verdadero
+              cero-y-cero. */}
+          {rows.length === 0 && activityRows.length === 0 && (
+            <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+              <p className="text-sm font-semibold text-foreground mb-1">Sin actividad</p>
+              <p className="text-xs text-muted-foreground">Nadie ha registrado acciones en {RANGE_LABELS[range].toLowerCase()}.</p>
+            </div>
+          )}
+
           {/* Top performer callout */}
           {leader && leader.confirmados > 0 && (
             <div className="rounded-xl border border-accent/25 bg-card p-3.5 flex items-center gap-3">
@@ -309,6 +318,12 @@ export default function ProductivityDashboard() {
               </div>
             </div>
           )}
+
+          {/* Las secciones de outcome (Confirmar / Seguimiento / Rescate / Novedades)
+              solo se muestran si hay productividad medible. Si solo hay jornada
+              registrada pero todavía nadie confirmó nada, NO renderizamos tablas
+              vacías — la Jornada de arriba ya cuenta la historia. */}
+          {rows.length > 0 && <>
 
           {/* Confirmar — el `note` muestra la COBERTURA DEL EQUIPO (cuánto del
               inflow del período alcanzó a resolver el equipo). La tasa POR
@@ -446,6 +461,8 @@ export default function ProductivityDashboard() {
               </div>
             </Section>
           )}
+
+          </>}
         </>
       ) : null}
 
