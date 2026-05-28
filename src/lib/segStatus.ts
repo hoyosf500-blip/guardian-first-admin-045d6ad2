@@ -84,8 +84,14 @@ const REPARTO_EXACT = new Set([
   'REENVIO',
 ]);
 
-/** Tránsito: covers EC variantes (`EN RUTA …`, `INGRESANDO …`, `ASIGNADO …`). */
-const matchTransito = (e: string): boolean => {
+/**
+ * Tránsito: covers EC variantes (`EN RUTA …`, `INGRESANDO …`, `ASIGNADO …`).
+ *
+ * Se exporta porque `STALLED_LABEL_TO_MATCH` en CrmTable.tsx también lo
+ * necesita — el commit 05f6363 lo dejó como const privado y eso crasheaba
+ * /seguimiento con "matchTransito is not defined" cuando el módulo cargaba.
+ */
+export const matchTransito = (e: string): boolean => {
   if (TRANSITO_EXACT.has(e)) return true;
   if (e.startsWith('EN RUTA')) return true;
   if (e.startsWith('INGRESANDO')) return true;
@@ -93,8 +99,12 @@ const matchTransito = (e: string): boolean => {
   return false;
 };
 
-/** "Reclame en Oficina": cubre CO/EC variantes (`RECLAME EN …`, `PARA RETIRO …`). */
-const matchOficina = (e: string): boolean =>
+/**
+ * "Reclame en Oficina": cubre CO/EC variantes (`RECLAME EN …`, `PARA RETIRO …`).
+ *
+ * Se exporta — mismo motivo que `matchTransito`.
+ */
+export const matchOficina = (e: string): boolean =>
   e.includes('OFICINA') ||
   e.includes('RECLAME') ||
   e.includes('RECLAMAR') ||

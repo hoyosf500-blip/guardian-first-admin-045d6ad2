@@ -25,7 +25,7 @@ import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { isHiddenFromTodayList, hiddenLabel, isSegCloser, cleanSegAction, type LatestTouch } from '@/lib/segDailyReview';
 import { bogotaToday } from '@/lib/utils';
-import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
+import { classifySegEstado, matchOficina, matchTransito, type SegStatusKey } from '@/lib/segStatus';
 import {
   classifySegOwnership,
   classifySegOwnershipFromTps,

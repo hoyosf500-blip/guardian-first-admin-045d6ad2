@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifySegEstado } from './segStatus';
+import { classifySegEstado, matchOficina, matchTransito } from './segStatus';
 
 // Regression: SeguimientoTab antes tenía su propio clasificador que no
 // reconocía variantes EC → pedidos EC caían en 'otros' y el resumen mostraba
@@ -82,5 +82,38 @@ describe('classifySegEstado', () => {
     it('vacío → otros', () => expect(classifySegEstado('')).toBe('otros'));
     it('desconocido → otros', () =>
       expect(classifySegEstado('ESTADO_RARO_NUEVO')).toBe('otros'));
+  });
+});
+
+// Regression: el commit 05f6363 movió matchTransito/matchOficina a este módulo
+// como const PRIVADOS, pero CrmTable.tsx:STALLED_LABEL_TO_MATCH los seguía
+// referenciando → "matchOficina is not defined" al cargar el módulo →
+// /seguimiento crasheaba. Estos tests blindan el contrato: si alguien remueve
+// el `export`, el test rompe ANTES de que llegue a producción.
+describe('matchers exportados (consumidos por STALLED_LABEL_TO_MATCH en CrmTable)', () => {
+  it('matchTransito existe como función', () => {
+    expect(typeof matchTransito).toBe('function');
+  });
+  it('matchTransito reconoce variantes EC', () => {
+    expect(matchTransito('EN RUTA A CENTRO LOGISTICO')).toBe(true);
+    expect(matchTransito('INGRESANDO DE RECEPCION')).toBe(true);
+    expect(matchTransito('ASIGNADO A GINTRACOM')).toBe(true);
+  });
+  it('matchTransito rechaza estados que no son tránsito', () => {
+    expect(matchTransito('ENTREGADO')).toBe(false);
+    expect(matchTransito('NOVEDAD')).toBe(false);
+  });
+
+  it('matchOficina existe como función', () => {
+    expect(typeof matchOficina).toBe('function');
+  });
+  it('matchOficina reconoce variantes CO + EC', () => {
+    expect(matchOficina('RECLAME EN OFICINA')).toBe(true);
+    expect(matchOficina('PARA RETIRO EN AGENCIA')).toBe(true);
+    expect(matchOficina('EN PUNTO DE RETIRO')).toBe(true);
+  });
+  it('matchOficina rechaza estados que no son oficina', () => {
+    expect(matchOficina('EN TRANSPORTE')).toBe(false);
+    expect(matchOficina('ENTREGADO')).toBe(false);
   });
 });
