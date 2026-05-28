@@ -78,11 +78,12 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "tienda sin dropi_api_key configurada" }, 400, corsHeaders);
     }
 
-    // GET /integrations/orders/{external_id}. Endpoint conocido (lo usa
-    // dropi-change-carrier en mode:"quote"). Devuelve el objeto pedido con
-    // el shape esperado por mapDropiOrderToRow.
+    // GET /integrations/orders/myorders/{external_id}. Endpoint correcto
+    // (verificado en dropi-change-carrier:45 — el path es `myorders/{id}`,
+    // no `/{id}` directo. La primera versión causaba 404 sobre TODOS los
+    // pedidos en la auditoría EC del 2026-05-28).
     const origin = cfg.storeUrl || "";
-    const url = `${cfg.base}/integrations/orders/${encodeURIComponent(externalId)}`;
+    const url = `${cfg.base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`;
     const res = await fetch(url, {
       method: "GET",
       headers: {
