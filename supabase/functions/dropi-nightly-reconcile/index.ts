@@ -111,7 +111,7 @@ async function reconcileStore(
     }
 
     const base = dropiHostFor(countryCode);
-    const dropiList = await fetchDropiRange(base, apiKey, storeUrl, from, to);
+    const dropiList = await fetchDropiRange(base, apiKey, storeUrl, from, to, statusFilter);
     const dropiMap = new Map<string, Record<string, unknown>>();
     for (const o of dropiList) {
       dropiMap.set(String(o.id), o);
