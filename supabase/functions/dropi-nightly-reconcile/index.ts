@@ -34,11 +34,13 @@ async function fetchDropiRange(
   origin: string,
   from: string,
   to: string,
+  statusFilter: string,
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   let start = 0;
+  const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
   while (true) {
-    const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}&filter_date_by=FECHA DE CAMBIO DE ESTATUS&orderBy=id&orderDirection=desc`;
+    const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}${filterParam}&orderBy=id&orderDirection=desc`;
     const res = await fetch(url, {
       headers: {
         "Accept": "application/json",
