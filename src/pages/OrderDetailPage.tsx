@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
+import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -20,11 +22,6 @@ import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
 import CommunicationLog from '@/components/order-detail/CommunicationLog';
-// NotesPanel reemplaza el bloque ad-hoc de notas de esta página. Tiene su
-// propia carga + realtime (compartido con CallView via el hook useOrderNotes),
-// así que la lista que muestra el Timeline puede quedar un poco stale hasta
-// el próximo load del detalle — UX aceptable porque el Timeline ya no se
-// refrescaba en vivo de todas formas.
 import NotesPanel from '@/components/order-notes/NotesPanel';
 
 interface OrderRow {
