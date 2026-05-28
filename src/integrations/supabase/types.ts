@@ -171,6 +171,53 @@ export type Database = {
           },
         ]
       }
+      audit_runs: {
+        Row: {
+          created_at: string
+          divergences_applied: number
+          divergences_found: number
+          dropi_count: number
+          guardian_count: number
+          id: string
+          missing_in_dropi: number
+          notes: string | null
+          run_by: string
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          divergences_applied?: number
+          divergences_found?: number
+          dropi_count?: number
+          guardian_count?: number
+          id?: string
+          missing_in_dropi?: number
+          notes?: string | null
+          run_by: string
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          divergences_applied?: number
+          divergences_found?: number
+          dropi_count?: number
+          guardian_count?: number
+          id?: string
+          missing_in_dropi?: number
+          notes?: string | null
+          run_by?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_runs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cfo_monthly_retrospective: {
         Row: {
           aciertos: string[]
@@ -417,6 +464,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "monthly_business_inputs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      nightly_reconcile_results: {
+        Row: {
+          applied_count: number
+          created_at: string
+          divergent_count: number
+          error_message: string | null
+          id: string
+          orphan_cancelled: number
+          store_id: string
+        }
+        Insert: {
+          applied_count?: number
+          created_at?: string
+          divergent_count?: number
+          error_message?: string | null
+          id?: string
+          orphan_cancelled?: number
+          store_id: string
+        }
+        Update: {
+          applied_count?: number
+          created_at?: string
+          divergent_count?: number
+          error_message?: string | null
+          id?: string
+          orphan_cancelled?: number
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "nightly_reconcile_results_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -997,6 +1082,8 @@ export type Database = {
           dropi_api_key: string | null
           dropi_session_token: string | null
           dropi_store_url: string | null
+          last_health_checked_at: string | null
+          last_health_status: string | null
           store_id: string
           updated_at: string
           white_brand_id: string | null
@@ -1006,6 +1093,8 @@ export type Database = {
           dropi_api_key?: string | null
           dropi_session_token?: string | null
           dropi_store_url?: string | null
+          last_health_checked_at?: string | null
+          last_health_status?: string | null
           store_id: string
           updated_at?: string
           white_brand_id?: string | null
@@ -1015,6 +1104,8 @@ export type Database = {
           dropi_api_key?: string | null
           dropi_session_token?: string | null
           dropi_store_url?: string | null
+          last_health_checked_at?: string | null
+          last_health_status?: string | null
           store_id?: string
           updated_at?: string
           white_brand_id?: string | null
