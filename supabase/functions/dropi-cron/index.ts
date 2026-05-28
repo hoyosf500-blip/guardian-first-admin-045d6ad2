@@ -486,7 +486,26 @@ Deno.serve(async (req: Request) => {
       "MODIFIED_DATE",
       "", // sin filter_date_by (default)
     ];
+    // GAP A: arrancamos por el último ganador persistido (si existe) para que
+    // health y reconcile auto-curen también vía app_settings. Si Dropi cambia
+    // el valor otra vez, el chain de fallback abajo lo re-descubre y persiste.
     let winningStatusFilter: string | null = null;
+    try {
+      const { data: prev } = await sb.from("app_settings")
+        .select("value").eq("key", "dropi_winning_status_filter").maybeSingle();
+      const prevVal = prev?.value;
+      if (prevVal !== undefined && prevVal !== null) {
+        const idx = STATUS_FILTER_VARIANTS.indexOf(prevVal);
+        if (idx > 0) {
+          STATUS_FILTER_VARIANTS.splice(idx, 1);
+          STATUS_FILTER_VARIANTS.unshift(prevVal);
+        } else if (idx === -1) {
+          STATUS_FILTER_VARIANTS.unshift(prevVal);
+        }
+      }
+    } catch (e) {
+      console.warn("dropi-cron: no se pudo leer dropi_winning_status_filter previo:", e);
+    }
     const buildPasses = (statusFilter: string): SyncPass[] => ([
       { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter },
       { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
