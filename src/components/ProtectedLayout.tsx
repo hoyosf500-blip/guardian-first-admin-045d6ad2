@@ -286,6 +286,7 @@ function ProtectedLayoutInner() {
 
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
             <OpeningReportGate>
+              <div className="mb-3"><SyncFreshness /></div>
               {isConfirmar && <CounterBar />}
               <Suspense fallback={<InlineRouteLoader />}>
                 <Outlet />
