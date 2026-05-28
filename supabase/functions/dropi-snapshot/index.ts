@@ -31,9 +31,18 @@ interface SnapshotOrder {
   name: string;
 }
 
-const PAGE_SIZE = 100;
+// 200 es el máximo que aceptamos por página — Dropi devuelve hasta 200 sin error
+// y reduce a la mitad la cantidad de requests vs 100. Menos requests = menos
+// chance de pegar el rate-limit (429) de la cuenta.
+const PAGE_SIZE = 200;
 const RATE_LIMIT_MS = 1500;
-const MAX_PAGES = 50; // 5000 órdenes máximo, hard cap
+// Hard cap por seguridad: 30 páginas × 200 = 6000 órdenes. Una tienda grande
+// con 14d de actividad suele estar en 500-2000, así que es holgado.
+const MAX_PAGES = 30;
+// Backoff exponencial cuando Dropi tira 429: 2s, 4s, 8s. Después de 3 intentos
+// cortamos y devolvemos lo parcial. Antes (sin backoff) cortábamos inmediato
+// → cobertura baja, el modal mostraba "paridad perfecta" engañoso.
+const RL_BACKOFF_MS = [2000, 4000, 8000];
 const FALLBACK_FILTER = "FECHA DE CAMBIO DE ESTATUS";
 
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
@@ -101,7 +110,10 @@ Deno.serve(async (req) => {
     const orders: SnapshotOrder[] = [];
     let start = 0;
     let page = 0;
-    while (page < MAX_PAGES) {
+    let partial = false;
+    let partialReason: string | null = null;
+
+    pageLoop: while (page < MAX_PAGES) {
       const params = new URLSearchParams({
         result_number: String(PAGE_SIZE),
         start: String(start),
@@ -112,27 +124,38 @@ Deno.serve(async (req) => {
         orderDirection: "desc",
       });
       const url = `${cfg.base}/integrations/orders/myorders?${params.toString()}`;
-      const res = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Accept": "application/json",
-          "dropi-integration-key": cfg.apiKey,
-          ...(cfg.storeUrl ? { Origin: cfg.storeUrl } : {}),
-        },
-      });
 
-      if (res.status === 429) {
-        // Throttle parcial — devolvemos lo que tengamos.
-        console.warn(`dropi-snapshot: 429 en página ${page} start=${start}`);
-        return jsonResp({
-          orders, partial: true, throttled: true,
-          message: `Dropi limitó (429) en página ${page}. Devolviendo ${orders.length} órdenes parciales.`,
-        }, 200, CORS);
+      // Backoff exponencial: 3 intentos antes de cortar parcial.
+      let res: Response | null = null;
+      let rateLimited = false;
+      for (let attempt = 0; attempt < RL_BACKOFF_MS.length + 1; attempt++) {
+        res = await fetch(url, {
+          method: "GET",
+          headers: {
+            "Accept": "application/json",
+            "dropi-integration-key": cfg.apiKey,
+            ...(cfg.storeUrl ? { Origin: cfg.storeUrl } : {}),
+          },
+        });
+        if (res.status !== 429) { rateLimited = false; break; }
+        rateLimited = true;
+        if (attempt < RL_BACKOFF_MS.length) {
+          console.warn(`dropi-snapshot: 429 página ${page}, attempt ${attempt + 1}, backoff ${RL_BACKOFF_MS[attempt]}ms`);
+          await sleep(RL_BACKOFF_MS[attempt]);
+        }
       }
-      if (!res.ok) {
-        const txt = await res.text().catch(() => "");
+
+      if (rateLimited) {
+        // Después del backoff sigue throttled → corto y devuelvo parcial.
+        partial = true;
+        partialReason = `Dropi limitó (429) en página ${page} tras ${RL_BACKOFF_MS.length} reintentos`;
+        console.warn(`dropi-snapshot: throttle sostenido, devolviendo ${orders.length} órdenes parciales`);
+        break pageLoop;
+      }
+      if (!res || !res.ok) {
+        const txt = res ? await res.text().catch(() => "") : "no-response";
         return jsonResp({
-          error: `Dropi HTTP ${res.status}`,
+          error: `Dropi HTTP ${res?.status ?? "?"}`,
           dropiBody: txt.slice(0, 200),
         }, 502, CORS);
       }
@@ -156,10 +179,22 @@ Deno.serve(async (req) => {
       if (objs.length < PAGE_SIZE) break;
       start += PAGE_SIZE;
       page++;
+      // Si llegamos al hard cap, marcar parcial.
+      if (page >= MAX_PAGES) {
+        partial = true;
+        partialReason = `Hard cap alcanzado: ${MAX_PAGES} páginas × ${PAGE_SIZE} = ${MAX_PAGES * PAGE_SIZE} órdenes`;
+        break;
+      }
       await sleep(RATE_LIMIT_MS);
     }
 
-    return jsonResp({ orders, count: orders.length, filter: filterDateBy }, 200, CORS);
+    return jsonResp({
+      orders,
+      count: orders.length,
+      filter: filterDateBy,
+      partial,
+      message: partialReason,
+    }, 200, CORS);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("dropi-snapshot error:", msg);

@@ -38,14 +38,22 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 
   if (!open) return null;
 
+  // Ventana de auditoría: 14 días es el sweet-spot. Cubre la totalidad de
+  // pedidos no-terminales (los que llevan > 14d sin entregar son fantasmas o
+  // huérfanos de backfill viejo, no transit normal) y reduce N páginas a
+  // Dropi (menos chance de throttle).
+  const RANGE_DAYS = 14;
+  const [coverageMissing, setCoverageMissing] = useState<number>(0);
+
   const handleScan = async () => {
     setError(null);
     setWarning(null);
+    setCoverageMissing(0);
     setState('scanning');
     try {
       const today = new Date();
       const to = today.toISOString().split('T')[0];
-      const fromD = new Date(today); fromD.setUTCDate(fromD.getUTCDate() - 30);
+      const fromD = new Date(today); fromD.setUTCDate(fromD.getUTCDate() - RANGE_DAYS);
       const from = fromD.toISOString().split('T')[0];
 
       const [guardian, dropi] = await Promise.all([
@@ -54,8 +62,31 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
       ]);
       setGuardianCount(guardian.length);
       setDropiCount(dropi.snapshot.size);
-      if (dropi.partial && dropi.message) setWarning(dropi.message);
-      const divs = findDivergences(guardian, dropi.snapshot);
+
+      // Coverage real: ¿cuántos no-terminales de Guardian NO aparecieron en
+      // el snapshot? Si la respuesta fue parcial, esos pueden ser huérfanos
+      // o pueden ser falsos positivos (estaban en una página que no trajimos).
+      // Solo marcamos divergencias para los que SÍ vimos en Dropi (matched)
+      // — los faltantes los contamos aparte como "coverage incompleta".
+      let missingCount = 0;
+      if (dropi.partial) {
+        for (const g of guardian) {
+          if (!dropi.snapshot.has(String(g.external_id))) missingCount++;
+        }
+        setCoverageMissing(missingCount);
+      }
+      if (dropi.partial && dropi.message) {
+        setWarning(`${dropi.message}. ${missingCount > 0 ? `${missingCount} de ${guardian.length} pedidos Guardian no se pudieron verificar.` : ''}`);
+      }
+
+      // Si fue parcial, filtramos las divergencias tipo "cancel_orphan" para
+      // pedidos que NO vimos en Dropi — no sabemos si son realmente huérfanos
+      // o solo quedaron en una página no traída. Las "update" sí son confiables
+      // (el pedido apareció en Dropi pero con estado distinto).
+      let divs = findDivergences(guardian, dropi.snapshot);
+      if (dropi.partial) {
+        divs = divs.filter(d => d.action === 'update');
+      }
       setDivergences(divs);
       setState('results');
     } catch (err) {
@@ -146,11 +177,14 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 
           {(state === 'results' || state === 'applying') && (
             <>
-              <div className="grid grid-cols-4 gap-3">
+              <div className={`grid gap-3 ${coverageMissing > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
                 <Stat label="Guardian" value={guardianCount} />
                 <Stat label="Dropi" value={dropiCount} />
                 <Stat label="Updates" value={updates} accent={updates > 0 ? 'warning' : undefined} />
                 <Stat label="Huérfanos" value={orphans} accent={orphans > 0 ? 'danger' : undefined} />
+                {coverageMissing > 0 && (
+                  <Stat label="Sin verificar" value={coverageMissing} accent="warning" />
+                )}
               </div>
 
               {warning && (
@@ -161,10 +195,29 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
               )}
 
               {divergences.length === 0 ? (
-                <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/30">
-                  <CheckCircle2 size={20} className="text-success" />
-                  <p className="text-sm font-semibold text-success">Paridad perfecta — sin divergencias.</p>
-                </div>
+                coverageMissing > 0 ? (
+                  // Cobertura incompleta: no podemos afirmar paridad perfecta.
+                  // Mostramos un mensaje neutro con el número de no verificados
+                  // y CTA para reintentar (en 1–2 min, throttle Dropi suele liberar).
+                  <div className="flex items-start gap-3 p-4 rounded-lg bg-warning/10 border border-warning/30">
+                    <AlertTriangle size={20} className="text-warning flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-semibold text-warning">
+                        Análisis incompleto — Dropi limitó la cobertura.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Verificamos {guardianCount - coverageMissing} de {guardianCount} pedidos Guardian. Los
+                        {' '}{coverageMissing} restantes podrían estar OK o ser huérfanos — esperá 1–2 min y
+                        reintentá.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/30">
+                    <CheckCircle2 size={20} className="text-success" />
+                    <p className="text-sm font-semibold text-success">Paridad perfecta — sin divergencias.</p>
+                  </div>
+                )
               ) : (
                 <>
                   <div className="flex items-center gap-2 text-xs">
