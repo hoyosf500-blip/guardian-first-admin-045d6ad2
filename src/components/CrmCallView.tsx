@@ -162,6 +162,28 @@ export default function CrmCallView({
   const previewProducto = previewOrder?.producto ?? '';
   const previewManaged = previewOrder?.dbId ? Boolean(managed[previewOrder.dbId]) : false;
 
+  // Capa 2 — auto-refresh per-pedido: cuando el preview cambia, si el último
+  // movimiento es > 1h y NO es terminal, traer fresh data de Dropi (silent).
+  const autoRefreshedIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const ext = previewOrder?.externalId;
+    if (!ext || !activeStoreId) return;
+    if (autoRefreshedIds.current.has(ext)) return;
+    const estado = (previewOrder?.estado || '').toUpperCase();
+    const TERMINAL = ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'DEVUELTO', 'RECHAZADO'];
+    if (TERMINAL.some(t => estado.includes(t))) return;
+    const lastMov = previewOrder?.lastMovementAt || previewOrder?.fecha;
+    if (!lastMov) return;
+    let ageHs: number;
+    try { ageHs = (Date.now() - new Date(lastMov).getTime()) / 3600000; }
+    catch { return; }
+    if (!Number.isFinite(ageHs) || ageHs < 1) return;
+    autoRefreshedIds.current.add(ext);
+    void refreshOrder(activeStoreId, ext, { silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewOrder?.externalId]);
+
+
   useEffect(() => {
     if (!previewDbId) return;
     // Skip si decision terminal y completa:
