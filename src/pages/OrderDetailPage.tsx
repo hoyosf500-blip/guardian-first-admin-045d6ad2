@@ -50,6 +50,7 @@ interface OrderRow {
   tienda: string | null;
   novedad_sol: boolean | null;
   upload_date: string | null;
+  last_movement_at: string | null;
   created_at: string;
 }
 
@@ -93,6 +94,8 @@ export default function OrderDetailPage() {
   const { externalId } = useParams<{ externalId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeStoreId } = useStore();
+  const { refresh: refreshOrder } = useRefreshOrder();
 
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,6 +105,11 @@ export default function OrderDetailPage() {
   // `notes` solo se usa para el Timeline (read-only). El módulo de
   // escritura/recordatorios vive en <NotesPanel> con su propia carga + realtime.
   const [notes, setNotes] = useState<NoteRow[]>([]);
+
+  // Capa 2 — auto-refresh per-pedido cuando se abre uno no-terminal con
+  // last_movement_at > 1h. Una sola vez por sesión por external_id (silent: el
+  // realtime de orders refresca el UI cuando el upsert termina, sin toast).
+  const refreshedThisSession = useRef<Set<string>>(new Set());
 
   // Novedad resolution state (F3)
   const [showReofferInput, setShowReofferInput] = useState(false);
@@ -147,6 +155,20 @@ export default function OrderDetailPage() {
 
     load();
   }, [externalId]);
+
+  // Capa 2 — auto-refresh per-pedido si el último movimiento es > 1h
+  useEffect(() => {
+    if (!order?.external_id || !activeStoreId) return;
+    if (refreshedThisSession.current.has(order.external_id)) return;
+    const TERMINAL = ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'DEVUELTO'];
+    if (TERMINAL.includes((order.estado || '').toUpperCase())) return;
+    const lastMov = order.last_movement_at || order.created_at;
+    if (!lastMov) return;
+    const ageHs = (Date.now() - new Date(lastMov).getTime()) / 3600000;
+    if (ageHs < 1) return;
+    refreshedThisSession.current.add(order.external_id);
+    void refreshOrder(activeStoreId, order.external_id, { silent: true });
+  }, [order?.external_id, order?.last_movement_at, order?.estado, order?.created_at, activeStoreId, refreshOrder]);
 
   // Map operator_id → display_name for the timeline
   const operatorNames = useMemo(() => {

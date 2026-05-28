@@ -11,6 +11,7 @@ import ReportsTable from '@/components/admin/ReportsTable';
 import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import StoreInvitePanel from '@/components/admin/StoreInvitePanel';
 import ProductDropiMapPanel from '@/components/admin/ProductDropiMapPanel';
+import DropiParityPanel from '@/components/admin/DropiParityPanel';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -254,6 +255,9 @@ export default function AdminTab() {
           <div className="md:col-span-2">
             <StoreCredentialsPanel />
           </div>
+
+          {/* Paridad Guardian ↔ Dropi (Capa 3 del PLAN-PARITY-DROPI) */}
+          <DropiParityPanel />
 
           {/* Vínculos de productos Shopify → Dropi (mapeo manual por tienda) */}
           <div className="md:col-span-2">
