@@ -35,7 +35,7 @@ interface Props {
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
@@ -44,6 +44,10 @@ export default function ConfirmarTab({ profile }: Props) {
   const [search, setSearch] = useSessionState<string>('confirmar:search', '');
   const [dateFrom, setDateFrom] = useSessionState<string>('confirmar:dateFrom', '');
   const [dateTo, setDateTo] = useSessionState<string>('confirmar:dateTo', '');
+  // Toggle "Solo sin tocar" — filtra workQueue para que solo aparezcan los
+  // pedidos donde la operadora aún NO ha registrado un order_results hoy.
+  // Persiste en sessionStorage para sobrevivir a tab discard de mobile.
+  const [onlyUntouched, setOnlyUntouched] = useSessionState<boolean>('confirmar:onlyUntouched', false);
   const [aperturaCompleted, setAperturaCompleted] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
@@ -195,6 +199,12 @@ export default function ConfirmarTab({ profile }: Props) {
   // (incluido cada refresh de realtime), forzando a WorkList/CallView a
   // re-renderizar aunque el contenido fuera idéntico.
   const filteredItems = useMemo(() => visibleQueue.filter(o => {
+    // Toggle "Solo sin tocar" — los pedidos que ya marqué (cualquier result)
+    // se ocultan. Útil cuando me quedan los noresp pendientes pero no quiero
+    // ver los que ya gestioné hoy. dbId puede ser undefined en pedidos
+    // recién subidos por Excel sin sincronizar — esos no caen en el set y se
+    // muestran (mejor mostrar que perder).
+    if (onlyUntouched && o.dbId && myConfirmTouchedToday.has(o.dbId)) return false;
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
@@ -223,7 +233,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex]);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday]);
 
   const total = counter.conf + counter.canc + counter.noresp;
   const pending = visibleQueue.filter(o => !o.result).length;
@@ -383,6 +393,53 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {excelLoaded && workQueue.length > 0 && (
         <>
+          {/* Chip "Tu cola hoy" — cobertura por operadora. La queja del usuario
+              fue: "no sé si Mayra YA llamó a las 20 o si le faltan 5". Este
+              chip lo resuelve por encima del KPI: muestra cuántos ya tocaste
+              HOY (cualquier resultado) y cuántos pendientes te quedan SIN
+              tocar. `tocadosHoy` cuenta a TODOS los pedidos del día (incluye
+              confirmados que ya no están en la cola); `faltanEnCola` cuenta
+              solo los pendientes que todavía no marcaste — accionable. */}
+          {(() => {
+            const tocadosHoy = myConfirmTouchedToday.size;
+            const sinTocarEnCola = visibleQueue.filter(o => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
+            const tone = sinTocarEnCola === 0
+              ? 'success'
+              : sinTocarEnCola >= Math.max(1, Math.ceil(visibleQueue.length / 2))
+                ? 'danger'
+                : 'warning';
+            const dotTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
+            const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
+            const bgTone = tone === 'success' ? 'bg-success/5' : tone === 'warning' ? 'bg-warning/5' : 'bg-danger/5';
+            return (
+              <div className={`mb-3 rounded-xl border ${borderTone} ${bgTone} px-4 py-3 flex items-center flex-wrap gap-x-4 gap-y-2`}>
+                <span className={`h-2 w-2 rounded-full shrink-0 ${dotTone}`} aria-hidden="true" />
+                <div className="text-sm font-semibold text-foreground">
+                  Tu cola hoy
+                </div>
+                <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span>
+                    Has llamado a <strong className="font-mono tabular-nums text-foreground">{tocadosHoy}</strong>
+                  </span>
+                  <span className="opacity-50">·</span>
+                  <span>
+                    Te faltan <strong className={`font-mono tabular-nums text-${tone}`}>{sinTocarEnCola}</strong> sin tocar
+                    {sinTocarEnCola === 0 && <span className="text-success ml-1">✓</span>}
+                  </span>
+                </div>
+                <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={onlyUntouched}
+                    onChange={(e) => setOnlyUntouched(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
+                  />
+                  Solo sin tocar
+                </label>
+              </div>
+            );
+          })()}
+
           {/* KPIs compactos + urgent pills inline. Antes el chip "N urgente
               (D4-6)" ocupaba su propia fila — en desktop quedaba ese pill
               suelto con 800px de aire al lado. Ahora va en la MISMA strip, al

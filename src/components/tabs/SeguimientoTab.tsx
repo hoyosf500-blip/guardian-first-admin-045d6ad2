@@ -59,7 +59,7 @@ export default function SeguimientoTab() {
   // operator navigates between CRM tabs. Without the cache they'd see
   // "Cargando seguimiento..." and lose all filter/selection state every
   // time they switched tabs.
-  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData } = useOrders();
+  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore } = useStore();
@@ -87,6 +87,10 @@ export default function SeguimientoTab() {
   // Owns the status filter so the stat cards act as the single source of truth
   // (no duplicate pill row below).
   const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
+  // Toggle "Solo sin tocar" — esconde los pedidos donde YO ya marqué un
+  // touchpoint SEG:* hoy. Sirve para que la operadora vea solo lo que aún
+  // tiene que llamar. mySegTouchedToday viene del OrderContext (set de phones).
+  const [onlyUntouchedSeg, setOnlyUntouchedSeg] = useSessionState<boolean>('seg:onlyUntouched', false);
 
   // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
   // y la sessionStorage se mantienen sincronizadas: ?lista=<slug> permite
@@ -592,8 +596,64 @@ export default function SeguimientoTab() {
         </motion.div>
       )}
 
+      {/* Chip "Tu cola de seguimiento hoy" — análogo al de ConfirmarTab.
+          La métrica se calcula sobre el feed actual (la lista SLA activa, o
+          el total deduplicado si no hay lista). touchpoints no tiene order_id,
+          por eso identificamos por phone (mismo patrón que classifySegOwnership-
+          FromTps en segOwnership.ts). El toggle aplica al CrmTable de abajo. */}
+      {(() => {
+        const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+        const tocadosFeed = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
+        const sinTocarFeed = Math.max(0, feedBase.length - tocadosFeed);
+        const tone = sinTocarFeed === 0
+          ? 'success'
+          : sinTocarFeed >= Math.max(1, Math.ceil(feedBase.length / 2))
+            ? 'danger'
+            : 'warning';
+        const dotTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
+        const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
+        const bgTone = tone === 'success' ? 'bg-success/5' : tone === 'warning' ? 'bg-warning/5' : 'bg-danger/5';
+        if (feedBase.length === 0) return null;
+        return (
+          <div className={`mb-3 rounded-xl border ${borderTone} ${bgTone} px-4 py-3 flex items-center flex-wrap gap-x-4 gap-y-2`}>
+            <span className={`h-2 w-2 rounded-full shrink-0 ${dotTone}`} aria-hidden="true" />
+            <div className="text-sm font-semibold text-foreground">
+              {listaActiva && !listaActiva.externalRoute ? 'Esta lista' : 'Tu cola de seguimiento'} · hoy
+            </div>
+            <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span>
+                <strong className="font-mono tabular-nums text-foreground">{feedBase.length}</strong> en total
+              </span>
+              <span className="opacity-50">·</span>
+              <span>
+                Has gestionado <strong className="font-mono tabular-nums text-foreground">{tocadosFeed}</strong>
+              </span>
+              <span className="opacity-50">·</span>
+              <span>
+                Te faltan <strong className={`font-mono tabular-nums text-${tone}`}>{sinTocarFeed}</strong>
+                {sinTocarFeed === 0 && <span className="text-success ml-1">✓</span>}
+              </span>
+            </div>
+            <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={onlyUntouchedSeg}
+                onChange={(e) => setOnlyUntouchedSeg(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
+              />
+              Solo sin tocar
+            </label>
+          </div>
+        );
+      })()}
+
       <CrmTable
-        data={listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate}
+        data={(() => {
+          const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+          return onlyUntouchedSeg
+            ? feedBase.filter(o => !o.phone || !mySegTouchedToday.has(o.phone))
+            : feedBase;
+        })()}
         module="SEG"
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
         emptyTitle="Sin pedidos en seguimiento"

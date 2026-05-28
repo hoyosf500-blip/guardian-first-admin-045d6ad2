@@ -50,6 +50,15 @@ interface OrderState {
   resetOrders: () => void;
   loadNovedades: (force?: boolean) => Promise<void>;
   resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
+  /** Cobertura del DÍA de la operadora — para el chip "Tu cola hoy".
+   *  - myConfirmTouchedToday: Set<order_id> de pedidos donde ESTA operadora
+   *    insertó un order_results (module='confirmar') hoy (Bogotá). Se cruza
+   *    contra workQueue para mostrar "X / Y llamados, Z sin tocar".
+   *  - mySegTouchedToday: Set<phone> de pedidos donde ESTA operadora insertó
+   *    un touchpoint (action ILIKE 'SEG:%') hoy. Touchpoints no tiene order_id
+   *    → identificamos por phone. Se cruza contra segData. */
+  myConfirmTouchedToday: Set<string>;
+  mySegTouchedToday: Set<string>;
 }
 
 const OrderContext = createContext<OrderState | undefined>(undefined);
@@ -65,6 +74,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [loading] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
   const [lastMark, setLastMark] = useState<{ order: OrderData; result: string; reason?: string; resultId?: string; touchpointId?: string } | null>(null);
+  // Cobertura del día — sets que se llenan con un query barato al cargar y
+  // se mantienen al día por suscripción realtime a INSERT en order_results /
+  // touchpoints filtrada por mi operator_id. Sirven para el chip "Tu cola
+  // hoy" en ConfirmarTab y SeguimientoTab. No persiste entre sesiones porque
+  // se recalcula del backend en cada loadWorkQueue/loadSegData.
+  const [myConfirmTouchedToday, setMyConfirmTouchedToday] = useState<Set<string>>(new Set());
+  const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
 
   // Extracted hooks for data loading and novedades — ahora reciben storeId
   // para filtrar por la tienda activa (multi-tenant).
@@ -86,6 +102,25 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setAllOrdersState(orders);
     buildWorkQueue(orders);
     setExcelLoaded(true);
+    // Cobertura: cargar set de pedidos de confirmar que YO toqué HOY (Bogotá).
+    // Query barato — solo order_id, sin joins. Si falla silenciosamente, el
+    // chip de "Tu cola hoy" muestra 0 llamados (peor-caso) hasta el siguiente
+    // loadWorkQueue. La RLS ya garantiza que solo veo mis filas.
+    const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
+    void supabase
+      .from('order_results')
+      .select('order_id')
+      .eq('store_id', activeStoreId)
+      .eq('operator_id', user.id)
+      .eq('module', 'confirmar')
+      .gte('created_at', todayStartIso)
+      .then(({ data: mine }) => {
+        if (!mine) return;
+        const ids = (mine as { order_id: string | null }[])
+          .map(r => r.order_id)
+          .filter((id): id is string => !!id);
+        setMyConfirmTouchedToday(new Set(ids));
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, activeStoreId]);
 
@@ -133,6 +168,83 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     onOrderChange: debouncedRefreshAll,
     onResultChange: debouncedRefreshAll,
   }, activeStoreId);
+
+  // Cobertura del día (mySegTouchedToday inicial + realtime de los 2 sets).
+  // Por qué un effect separado: estos sets son `myConfirmTouchedToday` y
+  // `mySegTouchedToday`, no afectan al workQueue ni al counter, solo al chip
+  // "Tu cola hoy". Si los cargáramos dentro de `loadWorkQueue`, no se
+  // refrescarían cuando otra operadora confirma un pedido (esa rama ya no
+  // pasa por mí). Aquí mantenemos los dos sets sincronizados vía realtime
+  // sobre INSERT filtrado por operator_id=me.
+  useEffect(() => {
+    if (!user || !activeStoreId) return;
+    const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
+    // Carga inicial del set de seguimiento (touchpoints SEG:* del día).
+    // touchpoints no tiene order_id, el match contra segData es por phone.
+    void supabase
+      .from('touchpoints')
+      .select('phone, action')
+      .eq('store_id', activeStoreId)
+      .eq('operator_id', user.id)
+      .ilike('action', 'SEG:%')
+      .gte('created_at', todayStartIso)
+      .then(({ data }) => {
+        if (!data) return;
+        setMySegTouchedToday(new Set((data as { phone: string }[]).map(r => r.phone)));
+      });
+
+    // Realtime: agregamos al set en cada INSERT mío. Filtro server-side por
+    // operator_id (Realtime no soporta ILIKE), filtro de module/action lo
+    // hacemos client-side. Cero queries adicionales — la fila llega completa
+    // en el payload.
+    const channel = supabase
+      .channel(`my-coverage-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'order_results',
+          filter: `operator_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as { order_id?: string; module?: string; store_id?: string };
+          if (row.module !== 'confirmar') return;
+          if (row.store_id !== activeStoreId) return;
+          if (!row.order_id) return;
+          setMyConfirmTouchedToday(prev => {
+            if (prev.has(row.order_id!)) return prev;
+            const next = new Set(prev);
+            next.add(row.order_id!);
+            return next;
+          });
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'touchpoints',
+          filter: `operator_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as { phone?: string; action?: string; store_id?: string };
+          if (!row.action?.startsWith('SEG:')) return;
+          if (row.store_id !== activeStoreId) return;
+          if (!row.phone) return;
+          setMySegTouchedToday(prev => {
+            if (prev.has(row.phone!)) return prev;
+            const next = new Set(prev);
+            next.add(row.phone!);
+            return next;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, [user, activeStoreId]);
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
   const markingInFlight = useRef(new Set<string>());
@@ -568,6 +680,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
+    myConfirmTouchedToday, mySegTouchedToday,
   }), [
     allOrders, workQueue,
     dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
@@ -576,6 +689,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
+    myConfirmTouchedToday, mySegTouchedToday,
   ]);
 
   return (

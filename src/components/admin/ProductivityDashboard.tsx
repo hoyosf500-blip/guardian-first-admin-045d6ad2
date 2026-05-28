@@ -45,6 +45,20 @@ interface Row {
   seg_resueltos_dist?: number;
   rescate_pedidos?: number;
   rescate_resueltos_dist?: number;
+  /** Esfuerzo bruto de confirmar (v4 — migration 20260528220000).
+   *  - intentos_noresp: pedidos distintos donde marcó "no contestó" al menos
+   *    una vez, INCLUSO si después se confirmaron. Esto es lo que la columna
+   *    `noresp` original esconde (porque allá un noresp con conf posterior se
+   *    descuenta). Métrica de ESFUERZO.
+   *  - intentos_total: COUNT(*) acciones de confirmar. Si llamó 3 veces al
+   *    mismo pedido = 3.
+   *  - pendientes_sin_tocar: GLOBAL del store (mismo valor para todos los rows)
+   *    = entrantes − atendidos. Lo leemos de rows[0] para la fila TOTAL.
+   *  Opcionales: si la migración aún no se aplicó, vienen undefined y la UI
+   *  muestra '—'. */
+  intentos_noresp?: number;
+  intentos_total?: number;
+  pendientes_sin_tocar?: number;
 }
 
 const RANGE_LABELS: Record<Range, string> = {
@@ -339,9 +353,17 @@ export default function ProductivityDashboard() {
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
-            {/* Mini-glosario: que se entienda cada KPI de un vistazo */}
+            {/* Mini-glosario: que se entienda cada KPI de un vistazo. Se
+                amplió en v4 (2026-05-28) con "Intentos N/R" y "Faltan" — el
+                operador veía 0 en N/R y creía que no estaba registrando, pero
+                la N/R original solo cuenta los que SIGUEN sin contestar.
+                Intentos N/R muestra el esfuerzo real (incluye los que después
+                confirmaron) y Faltan dice cuántos pedidos del período NADIE
+                tocó todavía. */}
             <div className="px-4 py-2.5 border-b border-border/60 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
               <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que gestionó</span>
+              <span><strong className="text-foreground">Intentos N/R</strong>: no contestaron al menos 1 vez (aunque después confirmó)</span>
+              <span><strong className="text-foreground">N/R abiertos</strong>: sigue sin contestar al cierre del período</span>
               <span><strong className="text-foreground">Contacto</strong>: % de lo atendido que contestó</span>
               <span><strong className="text-foreground">% Confirmación</strong>: confirmados ÷ (confirmados + cancelados)</span>
               <span className="opacity-70">gris* = pocos datos, preliminar</span>
@@ -356,9 +378,15 @@ export default function ProductivityDashboard() {
                     <th className="text-right">Canc.</th>
                     <th
                       className="text-right"
-                      title="Pedidos distintos que no contestaron al final del período (un pedido reintentado 3 veces cuenta como 1)"
+                      title="Pedidos donde marcó 'no contestó' al menos UNA vez en el período, incluso si después se confirmaron. Métrica de ESFUERZO (no de estado final)."
                     >
-                      N/R
+                      Intentos N/R
+                    </th>
+                    <th
+                      className="text-right"
+                      title="Pedidos cuyo último intento sigue siendo 'no contestó' (sin conf/canc posterior). Métrica de ESTADO ACTUAL — los que quedaron sin cerrar."
+                    >
+                      N/R abiertos
                     </th>
                     <th className="text-right">Atendidos</th>
                     <th
@@ -386,6 +414,13 @@ export default function ProductivityDashboard() {
                       <td className="font-semibold text-foreground">{r.display_name}</td>
                       <td className="text-right font-mono tabular-nums text-success font-semibold">{r.confirmados}</td>
                       <td className="text-right font-mono tabular-nums text-danger font-semibold">{r.cancelados}</td>
+                      {/* Intentos N/R — si la migration v4 no se aplicó vendrá
+                          undefined → mostramos '—' en gris para no engañar. */}
+                      <td className="text-right font-mono tabular-nums text-warning font-semibold">
+                        {r.intentos_noresp == null
+                          ? <span className="text-muted-foreground">—</span>
+                          : r.intentos_noresp}
+                      </td>
                       <td className="text-right font-mono tabular-nums text-muted-foreground">{r.noresp}</td>
                       <td className="text-right font-mono tabular-nums">{r.total_atendidos}</td>
                       <td className="text-right">
@@ -403,6 +438,47 @@ export default function ProductivityDashboard() {
                       })()}</td>
                     </tr>
                   ))}
+                  {/* Fila TOTAL del equipo. `pendientes_sin_tocar` es GLOBAL
+                      del store — vale lo mismo para todos los rows (entrantes
+                      − atendidos del operador, pero el dato que importa al
+                      Manager es cuántos no tocó NADIE). Lo leemos como el
+                      máximo entre rows: si todos los operadores tienen el
+                      mismo inflow, el max == min == el valor real. */}
+                  {(() => {
+                    const totConf = rows.reduce((a, r) => a + r.confirmados, 0);
+                    const totCanc = rows.reduce((a, r) => a + r.cancelados, 0);
+                    const totNoresp = rows.reduce((a, r) => a + r.noresp, 0);
+                    const totAt = rows.reduce((a, r) => a + r.total_atendidos, 0);
+                    const intentosDefined = rows.some(r => r.intentos_noresp != null);
+                    const totIntentos = rows.reduce((a, r) => a + (r.intentos_noresp ?? 0), 0);
+                    // Faltan = entrantes globales − atendidos POR EL EQUIPO.
+                    // pendientes_sin_tocar de v4 es por-operador, así que
+                    // usamos la fórmula directa: entrantes − sum(atendidos).
+                    // Si total_entrantes está disponible y > 0, mostramos.
+                    const faltan = Math.max(0, entrantes - totAt);
+                    const faltanTone = faltan === 0 ? 'success' : faltan < entrantes / 2 ? 'warning' : 'danger';
+                    return (
+                      <tr className="border-t-2 border-border bg-muted/30 font-bold">
+                        <td></td>
+                        <td className="text-foreground uppercase text-[11px] tracking-wider">Total equipo</td>
+                        <td className="text-right font-mono tabular-nums text-success">{totConf}</td>
+                        <td className="text-right font-mono tabular-nums text-danger">{totCanc}</td>
+                        <td className="text-right font-mono tabular-nums text-warning">
+                          {intentosDefined ? totIntentos : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="text-right font-mono tabular-nums text-muted-foreground">{totNoresp}</td>
+                        <td className="text-right font-mono tabular-nums">{totAt}</td>
+                        <td colSpan={2} className="text-right">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums border-${faltanTone}/30 bg-${faltanTone}/10 text-${faltanTone}`}
+                            title={`Pedidos del período (${entrantes} entrantes) que NADIE del equipo ha tocado todavía. Cero = cobertura 100%.`}
+                          >
+                            Faltan: {faltan}{faltan === 0 ? ' ✓' : ''}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
