@@ -18,7 +18,7 @@ interface StoreCfg {
   dropi_store_url: string | null;
 }
 
-async function checkStore(cfg: StoreCfg): Promise<{ status: string; sample: number; httpStatus: number }> {
+async function checkStore(cfg: StoreCfg, statusFilter: string): Promise<{ status: string; sample: number; httpStatus: number }> {
   const base = dropiHostFor(cfg.country_code || "CO");
   const today = new Date().toISOString().split("T")[0];
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
@@ -43,8 +43,9 @@ async function checkStore(cfg: StoreCfg): Promise<{ status: string; sample: numb
       return { status: "ok", sample: objs1.length, httpStatus: 200 };
     }
 
-    // Vacío hoy. Probamos 7d.
-    const url7 = `${base}/integrations/orders/myorders?result_number=1&date_from=${sevenDaysAgo}&date_to=${today}&filter_date_by=FECHA DE CAMBIO DE ESTATUS`;
+    // Vacío hoy. Probamos 7d con el filter ganador (lo persiste dropi-cron, GAP A).
+    const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
+    const url7 = `${base}/integrations/orders/myorders?result_number=1&date_from=${sevenDaysAgo}&date_to=${today}${filterParam}`;
     const res7 = await fetch(url7, {
       headers: {
         "Accept": "application/json",
