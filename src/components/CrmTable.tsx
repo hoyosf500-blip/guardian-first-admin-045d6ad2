@@ -944,6 +944,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         module={module}
                         index={i}
                         statusColor={col.tone}
+                        notesEntry={o.dbId ? notesIndex.get(o.dbId) : undefined}
                       />
                     ))}
                   </ColumnBody>
@@ -984,6 +985,10 @@ interface OrderCardProps {
   module: string;
   index: number;
   statusColor: string;
+  /** Entrada agregada de notas/recordatorios para ESTE pedido (count +
+   *  nextReminderAt). Se pasa por prop para que `useOrderNotesIndex` corra
+   *  UNA vez en el padre, no por card. `undefined` = sin notas. */
+  notesEntry: { count: number; nextReminderAt: string | null } | undefined;
 }
 
 // C5: React.memo. Antes cualquier setState de CrmTable (ej. setExpandedPhone,
@@ -991,7 +996,7 @@ interface OrderCardProps {
 // las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
 // con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
 // el render si las props del card no cambiaron.
-const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor }: OrderCardProps) {
+const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry }: OrderCardProps) {
   // Propiedad por GESTIÓN REAL (touchpoints del módulo), no por assigned_to.
   // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
   // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
@@ -1060,9 +1065,9 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               </span>
             )}
             <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
-            {/* Indicador de notas: pulsa si hay recordatorio vencido. */}
+{/* Indicador de notas: pulsa si hay recordatorio vencido. */}
             {(() => {
-              const n = o.dbId ? notesIndex.get(o.dbId) : undefined;
+              const n = notesEntry;
               if (!n || n.count === 0) return null;
               const due = isReminderDue(n.nextReminderAt);
               return (
