@@ -383,51 +383,51 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {excelLoaded && workQueue.length > 0 && (
         <>
-          {/* KPIs compactos: antes eran 4 cards grandes (~110px de altura cada
-              una) que ocupaban casi una pantalla mobile sin contenido real.
-              Ahora 1 strip de 1 fila con la misma información en menos espacio.
-              En md+ las cards se sienten cómodas; en mobile la jerarquía es
-              clara con "Por confirmar" destacado y los 3 secundarios al lado. */}
-          <div className="mb-4 bg-card border border-border rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 hover:border-border-strong transition-colors">
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-3xl font-extrabold tabular-nums text-accent leading-none">{pending}</span>
-              <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">por confirmar</span>
-            </div>
-            <div className="flex items-baseline gap-x-4 gap-y-1 flex-wrap text-xs">
-              <span className="inline-flex items-baseline gap-1">
-                <strong className="font-mono text-base font-bold tabular-nums text-success leading-none">{counter.conf}</strong>
-                <span className="text-muted-foreground">conf</span>
-              </span>
-              <span className="inline-flex items-baseline gap-1">
-                <strong className="font-mono text-base font-bold tabular-nums text-danger leading-none">{counter.canc}</strong>
-                <span className="text-muted-foreground">canc</span>
-              </span>
-              <span className="inline-flex items-baseline gap-1">
-                <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{counter.noresp}</strong>
-                <span className="text-muted-foreground">noresp</span>
-              </span>
-              <span className="inline-flex items-baseline gap-1 border-l border-border/60 pl-4">
-                <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{total}</strong>
-                <span className="text-muted-foreground">gestionados</span>
-              </span>
-            </div>
-          </div>
-
+          {/* KPIs compactos + urgent pills inline. Antes el chip "N urgente
+              (D4-6)" ocupaba su propia fila — en desktop quedaba ese pill
+              suelto con 800px de aire al lado. Ahora va en la MISMA strip, al
+              final, separado por un border-l. Ahorra una fila en desktop y
+              mantiene la misma jerarquía en mobile (wrap natural). */}
           {(() => {
             const d7 = visibleQueue.filter(o => o.dias >= 7 && !o.result).length;
             const d46 = visibleQueue.filter(o => o.dias >= 4 && o.dias <= 6 && !o.result).length;
-            if (!d7 && !d46) return null;
             return (
-              <div className="flex gap-2 mb-4 flex-wrap">
-                {d7 > 0 && (
-                  <span className="pill pill-danger">
-                    <span className="w-1.5 h-1.5 rounded-full bg-danger" aria-hidden="true" /> {d7} cancelar (D7+)
+              <div className="mb-4 bg-card border border-border rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 hover:border-border-strong transition-colors">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono text-3xl font-extrabold tabular-nums text-accent leading-none">{pending}</span>
+                  <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">por confirmar</span>
+                </div>
+                <div className="flex items-baseline gap-x-4 gap-y-1 flex-wrap text-xs">
+                  <span className="inline-flex items-baseline gap-1">
+                    <strong className="font-mono text-base font-bold tabular-nums text-success leading-none">{counter.conf}</strong>
+                    <span className="text-muted-foreground">conf</span>
                   </span>
-                )}
-                {d46 > 0 && (
-                  <span className="pill pill-warning">
-                    <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" /> {d46} urgente (D4-6)
+                  <span className="inline-flex items-baseline gap-1">
+                    <strong className="font-mono text-base font-bold tabular-nums text-danger leading-none">{counter.canc}</strong>
+                    <span className="text-muted-foreground">canc</span>
                   </span>
+                  <span className="inline-flex items-baseline gap-1">
+                    <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{counter.noresp}</strong>
+                    <span className="text-muted-foreground">noresp</span>
+                  </span>
+                  <span className="inline-flex items-baseline gap-1 border-l border-border/60 pl-4">
+                    <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{total}</strong>
+                    <span className="text-muted-foreground">gestionados</span>
+                  </span>
+                </div>
+                {(d7 > 0 || d46 > 0) && (
+                  <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:border-l sm:border-border/60 sm:pl-5">
+                    {d7 > 0 && (
+                      <span className="pill pill-danger">
+                        <span className="w-1.5 h-1.5 rounded-full bg-danger" aria-hidden="true" /> {d7} cancelar (D7+)
+                      </span>
+                    )}
+                    {d46 > 0 && (
+                      <span className="pill pill-warning">
+                        <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" /> {d46} urgente (D4-6)
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             );
@@ -460,66 +460,72 @@ export default function ConfirmarTab({ profile }: Props) {
             );
           })()}
 
-          <div className="bg-surface border border-border rounded-xl p-4 mb-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className={cn(
-                      "h-7 gap-1.5 text-[11px] font-normal rounded-lg",
-                      !dateFrom && "text-muted-foreground"
-                    )}>
-                      <CalendarIcon size={12} />
-                      {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Desde'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
-                      onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
-                      initialFocus
-                      className="p-3 pointer-events-auto"
-                    />
-                  </PopoverContent>
-                </Popover>
-                <span className="text-[10px] text-muted-foreground/50">—</span>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className={cn(
-                      "h-7 gap-1.5 text-[11px] font-normal rounded-lg",
-                      !dateTo && "text-muted-foreground"
-                    )}>
-                      <CalendarIcon size={12} />
-                      {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Hasta'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
-                      onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
-                      initialFocus
-                      className="p-3 pointer-events-auto"
-                    />
-                  </PopoverContent>
-                </Popover>
-                {(dateFrom || dateTo) && (
-                  <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground rounded-lg">
-                    <X size={13} />
+          {/* Card de controles: en mobile apila (fechas / view / filtros), en
+              desktop pone fechas+view en la MISMA fila (gap chico, no
+              justify-between → sin aire vacío al medio) y filtros debajo. Los
+              botones de fecha pasan de h-7/text-[11px] (28px, casi
+              indistinguibles del fondo) a h-9/text-xs con el ícono más visible
+              — el popover trigger ya cubría todo el botón (asChild forwardea
+              onClick), pero el target era demasiado chiquito. */}
+          <div className="bg-surface border border-border rounded-xl p-3 sm:p-4 mb-4 space-y-3">
+            <div className="flex items-center flex-wrap gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn(
+                    "h-9 gap-1.5 text-xs font-medium rounded-lg cursor-pointer",
+                    !dateFrom && "text-muted-foreground"
+                  )}>
+                    <CalendarIcon size={14} aria-hidden="true" />
+                    {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Desde'}
                   </Button>
-                )}
-              </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
+                    onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="text-xs text-muted-foreground/60" aria-hidden="true">—</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn(
+                    "h-9 gap-1.5 text-xs font-medium rounded-lg cursor-pointer",
+                    !dateTo && "text-muted-foreground"
+                  )}>
+                    <CalendarIcon size={14} aria-hidden="true" />
+                    {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Hasta'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
+                    onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
+              {(dateFrom || dateTo) && (
+                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  aria-label="Limpiar rango de fechas"
+                  className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground rounded-lg cursor-pointer">
+                  <X size={14} aria-hidden="true" />
+                </Button>
+              )}
 
-              <div className="flex gap-1 bg-card border border-border rounded-lg p-0.5">
+              <div className="flex gap-1 bg-card border border-border rounded-lg p-0.5 ml-auto">
                 {([
                   { key: 'list' as const, icon: List, label: 'Lista' },
                   { key: 'call' as const, icon: Phone, label: 'Llamar' },
                 ]).map(v => (
                   <button key={v.key} onClick={() => setView(v.key)}
                     aria-pressed={view === v.key}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-md text-xs font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                       view === v.key ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                     }`}>
                     <v.icon size={13} aria-hidden="true" /> {v.label}

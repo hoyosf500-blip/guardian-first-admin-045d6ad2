@@ -211,7 +211,11 @@ export default function ShopifyPendingPanel() {
   return (
     <>
     {mismatchBanner}
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+    {/* No `initial` animation: el panel se re-monta cada refetch (cuando
+        `data` flipa momentáneamente, o cuando el guard `!data || configured`
+        cambia), y `motion.div initial=opacity:0,y:8` re-disparaba la animación
+        de entrada → la pila visual de arriba "parpadeaba" cada poll. */}
+    <div
       className={`mb-4 rounded-xl border overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
       {/* Layout 2-rows en mobile, 1-row en sm+:
             - Row 1 (siempre): icono · texto principal · Actualizar (refresh).
@@ -342,7 +346,7 @@ export default function ShopifyPendingPanel() {
           onSuccess={(/* dropiOrderId */) => { markDone(pushItem.id); setPushItem(null); void refetch(); }}
         />
       )}
-    </motion.div>
+    </div>
     </>
   );
 }
