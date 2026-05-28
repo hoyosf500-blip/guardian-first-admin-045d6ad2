@@ -557,6 +557,44 @@ export type Database = {
           },
         ]
       }
+      operator_activity_daily: {
+        Row: {
+          active_seconds: number
+          activity_date: string
+          first_action_at: string
+          idle_seconds: number
+          last_active_at: string
+          operator_id: string
+          store_id: string
+        }
+        Insert: {
+          active_seconds?: number
+          activity_date: string
+          first_action_at: string
+          idle_seconds?: number
+          last_active_at: string
+          operator_id: string
+          store_id: string
+        }
+        Update: {
+          active_seconds?: number
+          activity_date?: string
+          first_action_at?: string
+          idle_seconds?: number
+          last_active_at?: string
+          operator_id?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_activity_daily_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operator_daily_reports: {
         Row: {
           closing_at: string | null
@@ -1833,6 +1871,17 @@ export type Database = {
           has_opening: boolean
         }[]
       }
+      operator_activity_stats: {
+        Args: { p_range?: string }
+        Returns: {
+          active_seconds: number
+          display_name: string
+          first_action_at: string
+          idle_seconds: number
+          last_active_at: string
+          operator_id: string
+        }[]
+      }
       operator_productivity_stats: {
         Args: { p_range?: string }
         Returns: {
@@ -1964,6 +2013,14 @@ export type Database = {
         }[]
       }
       recategorize_personal_movements: { Args: never; Returns: Json }
+      record_operator_heartbeat: {
+        Args: {
+          p_active_seconds: number
+          p_idle_seconds: number
+          p_store_id: string
+        }
+        Returns: undefined
+      }
       redeem_store_invite: { Args: { p_token: string }; Returns: string }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
