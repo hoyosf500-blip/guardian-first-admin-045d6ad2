@@ -13,13 +13,19 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { buildTimeline } from '@/lib/timelineBuilder';
-import { sanitizeNote, sanitizeAction } from '@/lib/sanitize';
+import { sanitizeAction } from '@/lib/sanitize';
 import { bogotaToday } from '@/lib/utils';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
 import Timeline from '@/components/order-detail/Timeline';
 import CommunicationLog from '@/components/order-detail/CommunicationLog';
+// NotesPanel reemplaza el bloque ad-hoc de notas de esta página. Tiene su
+// propia carga + realtime (compartido con CallView via el hook useOrderNotes),
+// así que la lista que muestra el Timeline puede quedar un poco stale hasta
+// el próximo load del detalle — UX aceptable porque el Timeline ya no se
+// refrescaba en vivo de todas formas.
+import NotesPanel from '@/components/order-notes/NotesPanel';
 
 interface OrderRow {
   id: string;
@@ -96,7 +102,8 @@ export default function OrderDetailPage() {
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [orderResults, setOrderResults] = useState<OrderResultRow[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [noteText, setNoteText] = useState('');
+  // `notes` solo se usa para el Timeline (read-only). El módulo de
+  // escritura/recordatorios vive en <NotesPanel> con su propia carga + realtime.
   const [notes, setNotes] = useState<NoteRow[]>([]);
 
   // Novedad resolution state (F3)
@@ -168,25 +175,6 @@ export default function OrderDetailPage() {
     () => (order ? dbToOrderData(order, 0) : null),
     [order],
   );
-
-  const addNote = async () => {
-    if (!noteText.trim() || !user || !order) return;
-    const cleanNote = sanitizeNote(noteText);
-    if (!cleanNote) return;
-    const { data, error } = await supabase.from('notes').insert({
-      phone: order.phone,
-      note_text: cleanNote,
-      operator_id: user.id,
-      order_id: order.id,
-    }).select();
-    if (!error && data) {
-      setNotes((prev) => [...(data as NoteRow[]), ...prev]);
-      setNoteText('');
-      toast.success('Nota guardada');
-    } else if (error) {
-      toast.error('Error guardando nota: ' + error.message);
-    }
-  };
 
   /**
    * Registers a communication touchpoint (call/whatsapp) with debounce — avoids
@@ -569,47 +557,8 @@ export default function OrderDetailPage() {
         <CommunicationLog events={timelineEvents} />
       </div>
 
-      {/* Notes */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-        className="bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
-        <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-          <MessageSquare size={13} aria-hidden="true" /> Notas
-        </h3>
-
-        <div className="flex gap-2">
-          <input
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addNote()}
-            placeholder="Agregar nota..."
-            aria-label="Escribir una nota sobre el pedido"
-            className="flex-1 bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
-          />
-          <button
-            onClick={addNote}
-            aria-label="Guardar nota"
-            className="p-2 rounded-lg bg-accent text-accent-foreground hover:opacity-90 transition-opacity duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-          >
-            <Send size={13} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="space-y-2 max-h-48 overflow-y-auto">
-          {notes.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Sin notas</p>}
-          {notes.map((n) => {
-            const operatorName = profiles.find((p) => p.user_id === n.operator_id)?.display_name || 'Operador';
-            return (
-              <div key={n.id} className="text-xs bg-card border border-border/50 rounded-lg px-3 py-2">
-                <div className="flex justify-between mb-1">
-                  <span className="font-semibold text-foreground">{operatorName}</span>
-                  <span className="text-subtle">{new Date(n.created_at).toLocaleDateString('es-CO')}</span>
-                </div>
-                <p className="text-muted-foreground">{n.note_text}</p>
-              </div>
-            );
-          })}
-        </div>
-      </motion.div>
+      {/* Notas y recordatorios — componente compartido (también usado en CallView). */}
+      <NotesPanel phone={order.phone} orderId={order.id} variant="full" />
     </main>
   );
 }

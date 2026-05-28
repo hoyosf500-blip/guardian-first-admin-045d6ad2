@@ -2,15 +2,21 @@ import { useState } from 'react';
 import { OrderData, formatPhone, parseDate } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
+import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
+import { isReminderDue } from '@/lib/reminders';
 // import { useAuth } from '@/contexts/AuthContext'; // gate removed after end-to-end validation
 
 interface Props {
   items: OrderData[];
   onOpenCall: (idx: number) => void;
+  /** Mapa agregado de notas por order_id (de `useOrderNotesIndex`). Opcional:
+   *  si no se pasa, las filas no muestran ícono de nota. Permite que la tab
+   *  padre haga 1 sola query agregada en vez de N. */
+  notesIndex?: NoteIndex;
 }
 
 function timeAgo(dias: number): string {
@@ -38,7 +44,7 @@ function diasReales(o: OrderData): number {
   return Math.max(0, o.dias ?? 0);
 }
 
-export default function WorkList({ items, onOpenCall }: Props) {
+export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   // isAdmin gate removed — feature validated end-to-end. Ownership is now
@@ -145,6 +151,29 @@ export default function WorkList({ items, onOpenCall }: Props) {
               )}
               {/* Lock badge — visible only when another operator owns the lock */}
               <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
+              {/* Indicador de notas: cuenta + pulse si hay recordatorio vencido.
+                  La data viene del agregado `useOrderNotesIndex` que carga el
+                  tab padre (1 sola query, no N). */}
+              {(() => {
+                const n = o.dbId ? notesIndex?.get(o.dbId) : undefined;
+                if (!n || n.count === 0) return null;
+                const due = isReminderDue(n.nextReminderAt);
+                return (
+                  <span
+                    title={due ? 'Recordatorio para ahora' : `${n.count} nota${n.count > 1 ? 's' : ''}`}
+                    aria-label={due ? `Recordatorio vencido (${n.count} nota${n.count > 1 ? 's' : ''})` : `${n.count} nota${n.count > 1 ? 's' : ''}`}
+                    className={[
+                      'text-[10px] px-1.5 py-0.5 rounded-md font-bold inline-flex items-center gap-0.5 flex-shrink-0 border',
+                      due
+                        ? 'bg-warning/15 text-warning border-warning/40 animate-pulse'
+                        : 'bg-accent/10 text-accent border-accent/25',
+                    ].join(' ')}
+                  >
+                    {due ? <Bell size={9} aria-hidden="true" /> : <MessageSquare size={9} aria-hidden="true" />}
+                    {n.count}
+                  </span>
+                );
+              })()}
               {/* Retry badge */}
               {o.retryCount && !o.result && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-orange-500/15 text-orange-500 border border-orange-500/20 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Reintento ${o.retryCount} de 3`}>

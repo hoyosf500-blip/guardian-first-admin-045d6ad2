@@ -12,8 +12,11 @@ import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
   Package, Truck, MapPin, RotateCcw, Layers, DollarSign,
-  Send, Tag, CheckCircle, ChevronDown, Search, List,
+  Send, Tag, CheckCircle, ChevronDown, Search, List, Bell,
 } from 'lucide-react';
+import { useStore } from '@/contexts/StoreContext';
+import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
+import { isReminderDue } from '@/lib/reminders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
 import CrmCallView from './CrmCallView';
@@ -306,6 +309,15 @@ function ColumnBody({
 
 export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
+  const { activeStoreId } = useStore();
+  // Notas/recordatorios agregados de los pedidos del listado actual. 1 query
+  // por la tienda activa (no N) + realtime → cualquier asesora que deje una
+  // nota la ven todas en vivo.
+  const notesIndexOrderIds = useMemo(
+    () => dataProp.map(o => o.dbId).filter((id): id is string => !!id),
+    [dataProp],
+  );
+  const notesIndex = useOrderNotesIndex(activeStoreId, notesIndexOrderIds);
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [allTouchpoints, setAllTouchpoints] = useState<Touchpoint[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -1048,6 +1060,27 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               </span>
             )}
             <LockBadge lockedBy={o.lockedBy} lockedAt={o.lockedAt} />
+            {/* Indicador de notas: pulsa si hay recordatorio vencido. */}
+            {(() => {
+              const n = o.dbId ? notesIndex.get(o.dbId) : undefined;
+              if (!n || n.count === 0) return null;
+              const due = isReminderDue(n.nextReminderAt);
+              return (
+                <span
+                  title={due ? 'Recordatorio para ahora' : `${n.count} nota${n.count > 1 ? 's' : ''}`}
+                  aria-label={due ? `Recordatorio vencido (${n.count} nota${n.count > 1 ? 's' : ''})` : `${n.count} nota${n.count > 1 ? 's' : ''}`}
+                  className={[
+                    'text-[9px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5 border',
+                    due
+                      ? 'bg-warning/15 text-warning border-warning/40 animate-pulse'
+                      : 'bg-accent/10 text-accent border-accent/25',
+                  ].join(' ')}
+                >
+                  {due ? <Bell size={9} aria-hidden="true" /> : <MessageSquare size={9} aria-hidden="true" />}
+                  {n.count}
+                </span>
+              );
+            })()}
             {isMine && (
               <span
                 className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"

@@ -1,6 +1,7 @@
 import { OrderData } from '@/lib/orderUtils';
 import { useMemo } from 'react';
-import { Search, CheckCircle2, XCircle, PhoneOff, Clock, LayoutGrid } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, PhoneOff, Clock, LayoutGrid, Bell } from 'lucide-react';
+import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
 
 interface Props {
   workQueue: OrderData[];
@@ -8,6 +9,9 @@ interface Props {
   setFilter: (f: string) => void;
   search: string;
   setSearch: (s: string) => void;
+  /** Mapa agregado de notas por pedido. Si trae alguno con recordatorio
+   *  cercano (≤1h o ya vencido), aparece el chip "Recordatorios". */
+  notesIndex?: NoteIndex;
 }
 
 const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
@@ -15,15 +19,29 @@ const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
   conf:    { icon: CheckCircle2, color: 'text-success' },
   canc:    { icon: XCircle,      color: 'text-danger' },
   noresp:  { icon: PhoneOff,     color: 'text-warning' },
+  remind:  { icon: Bell,         color: 'text-warning' },
   all:     { icon: LayoutGrid,   color: 'text-muted-foreground' },
 };
 
-export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch }: Props) {
+/** "Próximo" = recordatorio que llega en ≤1h o que ya pasó (vencido). */
+const REMIND_LOOKAHEAD_MS = 60 * 60 * 1000;
+
+export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch, notesIndex }: Props) {
   const counts = useMemo(() => {
     const confCount = workQueue.filter(o => o.result === 'conf').length;
     const cancCount = workQueue.filter(o => o.result === 'canc').length;
     const nrCount = workQueue.filter(o => o.result === 'noresp').length;
     const pendCount = workQueue.filter(o => !o.result).length;
+
+    const now = Date.now();
+    const remindCount = notesIndex
+      ? workQueue.filter(o => {
+          const r = o.dbId ? notesIndex.get(o.dbId)?.nextReminderAt : null;
+          if (!r) return false;
+          const t = Date.parse(r);
+          return Number.isFinite(t) && t <= now + REMIND_LOOKAHEAD_MS;
+        }).length
+      : 0;
 
     const seen: Record<string, boolean> = {};
     const products = workQueue
@@ -31,11 +49,12 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
       .filter(p => { if (!p || seen[p]) return false; seen[p] = true; return true; })
       .sort();
 
-    return { confCount, cancCount, nrCount, pendCount, products };
-  }, [workQueue]);
+    return { confCount, cancCount, nrCount, pendCount, remindCount, products };
+  }, [workQueue, notesIndex]);
 
   const filters = [
     { id: 'pending', label: 'Pendientes', count: counts.pendCount },
+    ...(counts.remindCount ? [{ id: 'remind', label: 'Recordatorios', count: counts.remindCount }] : []),
     ...(counts.confCount ? [{ id: 'conf', label: 'Confirmados', count: counts.confCount }] : []),
     ...(counts.cancCount ? [{ id: 'canc', label: 'Cancelados', count: counts.cancCount }] : []),
     ...(counts.nrCount ? [{ id: 'noresp', label: 'No respondió', count: counts.nrCount }] : []),

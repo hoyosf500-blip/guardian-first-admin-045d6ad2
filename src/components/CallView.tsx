@@ -17,6 +17,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
 import ChangeCarrierDialog from '@/components/confirmar/ChangeCarrierDialog';
+import NotesPanel from '@/components/order-notes/NotesPanel';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
@@ -878,6 +879,15 @@ export default function CallView({ items }: Props) {
           </div>
         )}
       </div>
+
+      {/* Notas y recordatorios del cliente — visible para toda la tienda.
+          Por phone (no solo orderId): si el mismo cliente tiene otro pedido,
+          la asesora ve la nota previa que dejó otra compañera. */}
+      {o.dbId && (
+        <div className="mb-4">
+          <NotesPanel phone={o.phone} orderId={o.dbId} variant="compact" />
+        </div>
+      )}
 
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center" onClick={() => setShowCancelModal(false)}>

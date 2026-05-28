@@ -3,6 +3,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { findSupersededPendingConf, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
@@ -179,6 +180,17 @@ export default function ConfirmarTab({ profile }: Props) {
     [workQueue, supersededIds],
   );
 
+  // Notas/recordatorios agregados por pedido (1 sola query, no N). El hook
+  // se suscribe a realtime para que cuando otra asesora deje una nota, todos
+  // los listados se actualicen.
+  const queueOrderIds = useMemo(
+    () => visibleQueue.map(o => o.dbId).filter((id): id is string => !!id),
+    [visibleQueue],
+  );
+  const notesIndex = useOrderNotesIndex(activeStoreId, queueOrderIds);
+  // "Recordatorios para hoy/ahora": recordatorio que llega en ≤1h o ya vencido.
+  const REMIND_LOOKAHEAD_MS = 60 * 60 * 1000;
+
   // Memoizado: sin esto, `filteredItems` era un array nuevo en CADA render
   // (incluido cada refresh de realtime), forzando a WorkList/CallView a
   // re-renderizar aunque el contenido fuera idéntico.
@@ -189,6 +201,14 @@ export default function ConfirmarTab({ profile }: Props) {
     if (filter === 'noresp' && o.result !== 'noresp') return false;
     // 'retry' = los que no contestaron antes y ya cumplieron el cooldown (banner naranja).
     if (filter === 'retry' && !(o.retryCount && !o.result)) return false;
+    // 'remind' = recordatorio que llega en ≤1h o ya pasó (visible para que la
+    // asesora actúe sin tener que abrir cada pedido).
+    if (filter === 'remind') {
+      const r = o.dbId ? notesIndex.get(o.dbId)?.nextReminderAt : null;
+      if (!r) return false;
+      const t = Date.parse(r);
+      if (!Number.isFinite(t) || t > Date.now() + REMIND_LOOKAHEAD_MS) return false;
+    }
     if (filter.startsWith('prod_') && o.producto !== filter.slice(5)) return false;
     // Date filter
     if (dateFrom || dateTo) {
@@ -203,7 +223,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo]);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex]);
 
   const total = counter.conf + counter.canc + counter.noresp;
   const pending = visibleQueue.filter(o => !o.result).length;
@@ -492,7 +512,7 @@ export default function ConfirmarTab({ profile }: Props) {
               </div>
             </div>
 
-            <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} />
+            <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} />
           </div>
 
           {hiddenDuplicates.length > 0 && (
@@ -522,7 +542,7 @@ export default function ConfirmarTab({ profile }: Props) {
           )}
 
           {view === 'list' ? (
-            <WorkList items={filteredItems} onOpenCall={(idx) => {
+            <WorkList items={filteredItems} notesIndex={notesIndex} onOpenCall={(idx) => {
               // Abrir EL pedido clickeado, no el primer pendiente. CallView lee el
               // pedido activo de sessionStorage['confirmar:callOrderId'] en su
               // inicializador de useState al montarse. useSessionState persiste en
