@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useOperatorHeartbeat } from '@/hooks/useOperatorHeartbeat';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -62,6 +63,11 @@ function ProtectedLayoutInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const store = useStore();
+
+  // Heartbeat de jornada (tracking de inicio + tiempo activo/idle). El hook
+  // tiene sus propios gates: solo emite ping para no-admin con tienda activa.
+  // Mantener acá (no en un sub-componente) para que viva toda la sesión.
+  useOperatorHeartbeat();
 
   // Redención de invitación por link: si el usuario llegó por
   // /auth?invite=TOKEN, AuthPage guardó el token en localStorage. Apenas hay

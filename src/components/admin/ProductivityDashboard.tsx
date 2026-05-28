@@ -1,8 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { confRateBySample } from '@/lib/confirmationRate';
+import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
+
+interface ActivityRow {
+  operator_id: string;
+  display_name: string;
+  first_action_at: string | null;
+  last_active_at: string | null;
+  active_seconds: number;
+  idle_seconds: number;
+}
 
 // Sin '24h' rodante: las ventanas se alinean a día-calendario Bogotá (igual que
 // el cohorte de Reportes Diarios) para que "entrantes" reconcilie entre vistas.
@@ -59,6 +69,7 @@ function RateBar({ value }: { value: number }) {
 export default function ProductivityDashboard() {
   const [range, setRange] = useState<Range>('today');
   const [rows, setRows] = useState<Row[]>([]);
+  const [activityRows, setActivityRows] = useState<ActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Antes solo console.error → la UI mostraba "Sin actividad" indistinguible
@@ -73,7 +84,14 @@ export default function ProductivityDashboard() {
     // _resolve_scope_store() (admin → su tienda activa, profiles.active_store_id).
     // No pasamos p_store_id: así NO dependemos de que la migration del parámetro
     // esté aplicada (evita el PGRST202 "function ... does not exist").
-    const { data, error: rpcErr } = await supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never);
+    const [productivity, activity] = await Promise.all([
+      supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never),
+      // Jornada — RPC separada (migration 20260528200000). Si aún no se aplicó,
+      // capturamos el PGRST202 silencioso y mostramos la sección vacía: el
+      // dashboard principal sigue funcionando aunque jornada no exista.
+      supabase.rpc('operator_activity_stats' as never, { p_range: range } as never),
+    ]);
+    const { data, error: rpcErr } = productivity;
     if (rpcErr) {
       console.error('[productivity] rpc error', rpcErr);
       const e = rpcErr as { code?: string; message?: string; hint?: string; details?: string };
@@ -83,6 +101,12 @@ export default function ProductivityDashboard() {
       const arr = (data as Row[] | null) ?? [];
       setRows(arr);
       setError(null);
+    }
+    // Jornada: ignoramos error silenciosamente (la migration puede no estar).
+    if (!activity.error) {
+      setActivityRows((activity.data as ActivityRow[] | null) ?? []);
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.warn('[productivity] activity rpc error', activity.error);
     }
     setLoading(false);
     setRefreshing(false);
@@ -103,6 +127,7 @@ export default function ProductivityDashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results' }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints' }, debounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily' }, debounced)
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
@@ -198,6 +223,72 @@ export default function ProductivityDashboard() {
         </div>
       ) : !error ? (
         <>
+          {/* Jornada — hora de inicio + tiempo activo/idle por operadora.
+              Section separada porque es métrica de presencia, no de outcome.
+              Si activityRows está vacía (migración aún sin aplicar o no hubo
+              pings hoy) la sección directamente no renderiza para no agregar
+              ruido. */}
+          {activityRows.length > 0 && (
+            <Section
+              title="Jornada"
+              dotClass="bg-info"
+              note="Cuándo empezó cada operadora y cuánto tiempo estuvo activa (mouse/teclado idle > 5 min cuenta como muerto)"
+            >
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="w-10">#</th>
+                      <th>Operadora</th>
+                      <th className="text-right" title="Primer movimiento de mouse o teclado del día (zona Bogotá)">Empezó</th>
+                      <th className="text-right" title="Último movimiento detectado">Última act.</th>
+                      <th className="text-right" title="Tiempo total con actividad en los últimos 5 min">Activo</th>
+                      <th className="text-right" title="Tiempo sin actividad > 5 min">Inactivo</th>
+                      <th className="text-right" title="Activo ÷ (Activo + Inactivo)">% Activa</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityRows.map((r, idx) => {
+                      const total = r.active_seconds + r.idle_seconds;
+                      const pct = total > 0 ? Math.round((r.active_seconds / total) * 100) : 0;
+                      const pctTone = pct >= 70 ? 'success' : pct >= 50 ? 'warning' : 'danger';
+                      return (
+                        <tr key={r.operator_id}>
+                          <td>
+                            <span className="font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                              {String(idx + 1).padStart(2, '0')}
+                            </span>
+                          </td>
+                          <td className="font-semibold text-foreground">{r.display_name}</td>
+                          <td className="text-right font-mono tabular-nums text-foreground">
+                            <span className="inline-flex items-center gap-1 justify-end">
+                              <Clock size={11} className="text-muted-foreground" aria-hidden="true" />
+                              {formatTimeBogota(r.first_action_at)}
+                            </span>
+                          </td>
+                          <td className="text-right font-mono tabular-nums text-muted-foreground">
+                            {formatTimeBogota(r.last_active_at)}
+                          </td>
+                          <td className="text-right font-mono tabular-nums text-success font-semibold">
+                            {formatDurationHM(r.active_seconds)}
+                          </td>
+                          <td className="text-right font-mono tabular-nums text-danger font-semibold">
+                            {formatDurationHM(r.idle_seconds)}
+                          </td>
+                          <td className="text-right">
+                            <span className={`font-mono tabular-nums font-bold text-${pctTone}`}>
+                              {total > 0 ? `${pct}%` : '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+          )}
+
           {/* Top performer callout */}
           {leader && leader.confirmados > 0 && (
             <div className="rounded-xl border border-accent/25 bg-card p-3.5 flex items-center gap-3">
