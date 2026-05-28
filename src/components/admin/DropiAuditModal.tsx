@@ -15,21 +15,11 @@ interface Props {
   open: boolean;
   onClose: () => void;
   storeId: string;
-  sessionToken: string;
-  countryCode: string;
 }
 
 type State = 'idle' | 'scanning' | 'results' | 'applying' | 'done';
 
-function parseJwtSub(jwt: string): number | null {
-  try {
-    const payload = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    const n = Number(payload.sub);
-    return Number.isFinite(n) ? n : null;
-  } catch { return null; }
-}
-
-export default function DropiAuditModal({ open, onClose, storeId, sessionToken, countryCode }: Props) {
+export default function DropiAuditModal({ open, onClose, storeId }: Props) {
   const { user } = useAuth();
   const [state, setState] = useState<State>('idle');
   const [divergences, setDivergences] = useState<Divergence[]>([]);
@@ -39,6 +29,7 @@ export default function DropiAuditModal({ open, onClose, storeId, sessionToken, 
   const [applied, setApplied] = useState(0);
   const [failed, setFailed] = useState<Divergence[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const filtered = useMemo(
     () => filter === 'all' ? divergences : divergences.filter(d => d.action === filter),
@@ -49,11 +40,9 @@ export default function DropiAuditModal({ open, onClose, storeId, sessionToken, 
 
   const handleScan = async () => {
     setError(null);
+    setWarning(null);
     setState('scanning');
     try {
-      const userId = parseJwtSub(sessionToken);
-      if (!userId) throw new Error('No se pudo extraer user_id del session token. Re-pegá el token en Credenciales Dropi.');
-
       const today = new Date();
       const to = today.toISOString().split('T')[0];
       const fromD = new Date(today); fromD.setUTCDate(fromD.getUTCDate() - 30);
@@ -61,11 +50,12 @@ export default function DropiAuditModal({ open, onClose, storeId, sessionToken, 
 
       const [guardian, dropi] = await Promise.all([
         fetchGuardianNonTerminal(supabase, storeId),
-        fetchDropiSnapshot(sessionToken, from, to, userId, countryCode),
+        fetchDropiSnapshot(supabase, storeId, from, to),
       ]);
       setGuardianCount(guardian.length);
-      setDropiCount(dropi.size);
-      const divs = findDivergences(guardian, dropi);
+      setDropiCount(dropi.snapshot.size);
+      if (dropi.partial && dropi.message) setWarning(dropi.message);
+      const divs = findDivergences(guardian, dropi.snapshot);
       setDivergences(divs);
       setState('results');
     } catch (err) {
@@ -162,6 +152,13 @@ export default function DropiAuditModal({ open, onClose, storeId, sessionToken, 
                 <Stat label="Updates" value={updates} accent={updates > 0 ? 'warning' : undefined} />
                 <Stat label="Huérfanos" value={orphans} accent={orphans > 0 ? 'danger' : undefined} />
               </div>
+
+              {warning && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                  <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-warning">{warning}</p>
+                </div>
+              )}
 
               {divergences.length === 0 ? (
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/30">

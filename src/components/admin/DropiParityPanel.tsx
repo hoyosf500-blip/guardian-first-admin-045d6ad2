@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
-import { useAuth } from '@/contexts/AuthContext';
 import { Search, Shield, Activity, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import DropiAuditModal from './DropiAuditModal';
@@ -22,13 +21,12 @@ interface AuditRow {
 interface HealthRow {
   last_health_status: string | null;
   last_health_checked_at: string | null;
-  dropi_session_token: string | null;
+  dropi_api_key: string | null;
   country_code: string;
 }
 
 export default function DropiParityPanel() {
   const { activeStoreId, isManagerOfActive } = useStore();
-  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<AuditRow[]>([]);
   const [health, setHealth] = useState<HealthRow | null>(null);
@@ -37,7 +35,7 @@ export default function DropiParityPanel() {
     if (!activeStoreId) return;
     const [h, hist] = await Promise.all([
       supabase.from('store_dropi_config')
-        .select('last_health_status, last_health_checked_at, dropi_session_token, country_code')
+        .select('last_health_status, last_health_checked_at, dropi_api_key, country_code')
         .eq('store_id', activeStoreId).maybeSingle(),
       supabase.from('audit_runs')
         .select('id, created_at, guardian_count, dropi_count, divergences_found, divergences_applied, missing_in_dropi, notes')
@@ -51,8 +49,11 @@ export default function DropiParityPanel() {
 
   if (!isManagerOfActive || !activeStoreId) return null;
 
-  const sessionToken = health?.dropi_session_token || '';
-  const canAudit = sessionToken.length > 50;
+  // Antes el gate era `dropi_session_token` (JWT web 1h, había que pegarlo a mano).
+  // Ahora la edge function dropi-snapshot usa la integration-key permanente,
+  // así que basta con tener api_key configurada (que es lo mínimo para que el
+  // cron y health funcionen también).
+  const canAudit = Boolean((health?.dropi_api_key || '').length > 0);
   const healthStatus = health?.last_health_status || 'unknown';
   const healthColor = healthStatus === 'ok' ? 'success'
     : healthStatus === 'degraded' ? 'warning'
@@ -92,14 +93,14 @@ export default function DropiParityPanel() {
             <button
               onClick={() => setOpen(true)}
               disabled={!canAudit}
-              title={canAudit ? '' : 'Falta dropi_session_token en Credenciales Dropi'}
+              title={canAudit ? '' : 'Falta dropi_api_key en Credenciales Dropi'}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Search size={14} /> Auditar paridad ahora
             </button>
             {!canAudit && (
               <span className="text-[11px] text-warning inline-flex items-center gap-1">
-                <AlertTriangle size={11} /> Cargá el session token de Dropi web para habilitar
+                <AlertTriangle size={11} /> Cargá la api_key de Dropi para habilitar
               </span>
             )}
           </div>
@@ -143,8 +144,6 @@ export default function DropiParityPanel() {
         open={open}
         onClose={() => { setOpen(false); void load(); }}
         storeId={activeStoreId}
-        sessionToken={sessionToken}
-        countryCode={health?.country_code || 'CO'}
       />
     </>
   );

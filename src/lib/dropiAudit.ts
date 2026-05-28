@@ -62,44 +62,32 @@ export async function fetchGuardianNonTerminal(
   return ((data || []) as GuardianOrder[]).filter((o) => o.external_id);
 }
 
-/** Llama al endpoint web v2 de Dropi (api.dropi.ec para EC) con el session
- *  token del owner. Pagina hasta agotar resultados. */
+/** Pide el snapshot Dropi al edge function `dropi-snapshot`. El proxy
+ *  server-side existe porque api.dropi.ec/co NO permite CORS desde
+ *  guardian-first-admin.lovable.app → un fetch directo desde el browser
+ *  daba "Failed to fetch" en preflight. El edge usa la integration-key
+ *  permanente de la tienda (no necesita session token web) y devuelve
+ *  el snapshot ya mapeado al shape DropiOrder. */
 export async function fetchDropiSnapshot(
-  sessionToken: string,
+  supabase: SupabaseClient,
+  storeId: string,
   fromDate: string,
   toDate: string,
-  userId: number,
-  countryCode = 'EC',
-): Promise<Map<string, DropiOrder>> {
+): Promise<{ snapshot: Map<string, DropiOrder>; partial: boolean; message?: string }> {
+  const { data, error } = await supabase.functions.invoke('dropi-snapshot', {
+    body: { store_id: storeId, from: fromDate, to: toDate },
+  });
+  if (error) throw new Error(error.message || 'dropi-snapshot falló');
+  const result = data as {
+    orders?: DropiOrder[];
+    error?: string;
+    partial?: boolean;
+    message?: string;
+  };
+  if (result?.error) throw new Error(result.error);
   const out = new Map<string, DropiOrder>();
-  const host = countryCode === 'EC' ? 'https://api.dropi.ec' : 'https://api.dropi.co';
-  let start = 0;
-  const pageSize = 200;
-  while (true) {
-    const url = `${host}/api/orders/myorders/v2?exportAs=orderByRow&orderBy=id&orderDirection=desc`
-      + `&result_number=${pageSize}&start=${start}`
-      + `&textToSearch=&status=null&supplier_id=false&user_id=${userId}`
-      + `&from=${fromDate}&until=${toDate}`
-      + `&filter_product=undefined&haveIncidenceProcesamiento=false&tag_id=&warranty=false&seller=null`
-      + `&filter_date_by=Modified%20Date&invoiced=null`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${sessionToken}` } });
-    if (!r.ok) throw new Error(`Dropi HTTP ${r.status} en página start=${start}`);
-    const data = await r.json();
-    const objs = Array.isArray(data?.objects) ? data.objects : [];
-    if (objs.length === 0) break;
-    for (const o of objs) {
-      out.set(String(o.id), {
-        id: String(o.id),
-        status: String(o.status || ''),
-        guia: String(o.shipping_guide || ''),
-        trans: String((o.distribution_company && o.distribution_company.name) || o.shipping_company || ''),
-        name: ((o.name || '') + ' ' + (o.surname || '')).trim(),
-      });
-    }
-    if (objs.length < pageSize) break;
-    start += pageSize;
-  }
-  return out;
+  for (const o of result?.orders || []) out.set(String(o.id), o);
+  return { snapshot: out, partial: Boolean(result?.partial), message: result?.message };
 }
 
 /** Mapea el status crudo de Dropi al estado canónico de Guardian. */
