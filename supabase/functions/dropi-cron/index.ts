@@ -474,11 +474,24 @@ Deno.serve(async (req: Request) => {
       d.setUTCDate(d.getUTCDate() - n);
       return d.toISOString().split("T")[0];
     };
-    const passes: SyncPass[] = [
-      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: "FECHA DE CAMBIO DE ESTATUS" },
-      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
+    // Fallback chain de filter_date_by: si la primera variante devuelve 0,
+    // probamos la siguiente. Cuando una funciona, la "ganadora" se cachea para
+    // las próximas tiendas del run (evita probar 4 variantes por tienda).
+    // Por qué: el 2026-05-21 Dropi cambió silenciosamente algo en su endpoint
+    // integrations y "FECHA DE CAMBIO DE ESTATUS" empezó a devolver 0 sin
+    // error. Con el chain, si vuelve a pasar, el cron auto-cura.
+    const STATUS_FILTER_VARIANTS = [
+      "FECHA DE CAMBIO DE ESTATUS",
+      "Modified Date",
+      "MODIFIED_DATE",
+      "", // sin filter_date_by (default)
     ];
-    const from = passes[0].from; // para logs
+    let winningStatusFilter: string | null = null;
+    const buildPasses = (statusFilter: string): SyncPass[] => ([
+      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter },
+      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
+    ]);
+    const from = dateBack(STATUS_CHANGE_DAYS_BACK); // para logs
 
     let grandSynced = 0;
     let grandTotal = 0;
@@ -507,21 +520,53 @@ Deno.serve(async (req: Request) => {
         owner_id: ownerId,
       };
       console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) — cambio_estatus ${from}→${to} + creado ${dateBack(CREATED_DAYS_BACK)}→${to}`);
-      const r = await syncStore(sb, store, passes, todayStr, globalDeadline, perStoreBudget);
+
+      // Si ya sabemos qué filter_date_by funciona (de una tienda previa), arrancamos con ese.
+      let chosenFilter = winningStatusFilter ?? STATUS_FILTER_VARIANTS[0];
+      let r = await syncStore(sb, store, buildPasses(chosenFilter), todayStr, globalDeadline, perStoreBudget);
+
+      // Fallback: si la 1ª variante devolvió 0/0 SIN error/throttle, probamos el resto.
+      // Solo aplicamos fallback si aún no tenemos winner (evita penalizar a las tiendas siguientes).
+      if (!winningStatusFilter && r.total === 0 && !r.error && !r.throttled) {
+        for (const variant of STATUS_FILTER_VARIANTS.slice(1)) {
+          if (Date.now() > globalDeadline) break;
+          console.warn(`dropi-cron: tienda ${storeId} — filter_date_by="${chosenFilter}" dio 0. Probando "${variant}"`);
+          chosenFilter = variant;
+          r = await syncStore(sb, store, buildPasses(variant), todayStr, globalDeadline, perStoreBudget);
+          if (r.total > 0) {
+            console.log(`dropi-cron: filter_date_by GANADOR="${variant}" (devolvió ${r.total} pedidos)`);
+            winningStatusFilter = variant;
+            break;
+          }
+        }
+      } else if (r.total > 0 && !winningStatusFilter) {
+        winningStatusFilter = chosenFilter;
+      }
+
       grandSynced += r.synced;
       grandTotal += r.total;
-      perStore.push({ store_id: storeId, country: store.country_code, ...r });
+      perStore.push({ store_id: storeId, country: store.country_code, filter: chosenFilter, ...r });
 
-      // Log por tienda. throttled (429) cuenta como 'success' parcial: el sync
-      // SÍ corrió y trajo lo que pudo, así que el banner debe quedar verde
-      // ("sincronizado hace Xm"), no rojo. Solo un fallo real → 'error'.
+      // Detección de estado zombie: sync corrió sin error/throttle pero Dropi
+      // devolvió 0 pedidos en TODAS las pasadas. Eso es lo que pasó del 21/05 al
+      // 28/05 — invisible con status='success'. Ahora se loguea como 'warn' con
+      // mensaje explícito para que el banner SyncFreshness lo detecte.
+      const isZombie = !r.error && !r.throttled && r.synced === 0 && r.total === 0;
+      const logStatus = r.error ? "error" : (isZombie ? "warn" : "success");
+      const logMsg = r.error
+        ? r.error
+        : r.throttled
+          ? "Dropi throttle (429) — sincronización parcial"
+          : isZombie
+            ? `Dropi devolvió 0 pedidos en ambas ventanas (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o cuenta vacía`
+            : null;
       await sb.from("sync_logs").insert({
         source: "dropi-cron",
-        status: r.error ? "error" : "success",
+        status: logStatus,
         synced_count: r.synced,
         duplicates_count: 0,
         total_count: r.total,
-        error_message: r.error || (r.throttled ? "Dropi throttle (429) — sincronización parcial" : null),
+        error_message: logMsg,
         triggered_by: ownerId,
         store_id: storeId,
       });
