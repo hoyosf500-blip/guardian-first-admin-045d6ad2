@@ -83,7 +83,7 @@ export function useRefreshOrder() {
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(`Error: ${msg}`);
+      if (!opts.silent) toast.error(`Error: ${msg}`);
       return { ok: false };
     } finally {
       setIsRefreshing(false);
