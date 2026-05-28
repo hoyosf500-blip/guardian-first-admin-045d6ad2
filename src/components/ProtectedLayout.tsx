@@ -13,6 +13,7 @@ import CounterBar from '@/components/CounterBar';
 import OpeningReportGate from '@/components/OpeningReportGate';
 import SetupWizard from '@/components/SetupWizard';
 import StoreSelector from '@/components/StoreSelector';
+import SyncFreshness from '@/components/SyncFreshness';
 import type { LucideIcon } from 'lucide-react';
 
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
@@ -285,6 +286,7 @@ function ProtectedLayoutInner() {
 
           <main className="flex-1 overflow-y-auto p-4 md:p-6">
             <OpeningReportGate>
+              <div className="mb-3"><SyncFreshness /></div>
               {isConfirmar && <CounterBar />}
               <Suspense fallback={<InlineRouteLoader />}>
                 <Outlet />

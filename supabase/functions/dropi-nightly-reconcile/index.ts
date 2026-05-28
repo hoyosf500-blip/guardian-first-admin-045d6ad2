@@ -34,11 +34,13 @@ async function fetchDropiRange(
   origin: string,
   from: string,
   to: string,
+  statusFilter: string,
 ): Promise<Record<string, unknown>[]> {
   const out: Record<string, unknown>[] = [];
   let start = 0;
+  const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
   while (true) {
-    const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}&filter_date_by=FECHA DE CAMBIO DE ESTATUS&orderBy=id&orderDirection=desc`;
+    const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}${filterParam}&orderBy=id&orderDirection=desc`;
     const res = await fetch(url, {
       headers: {
         "Accept": "application/json",
@@ -85,6 +87,7 @@ async function reconcileStore(
   apiKey: string,
   storeUrl: string,
   ownerId: string,
+  statusFilter: string,
 ): Promise<{ divergent: number; applied: number; orphanCancelled: number; error?: string }> {
   try {
     const today = new Date();
@@ -108,7 +111,7 @@ async function reconcileStore(
     }
 
     const base = dropiHostFor(countryCode);
-    const dropiList = await fetchDropiRange(base, apiKey, storeUrl, from, to);
+    const dropiList = await fetchDropiRange(base, apiKey, storeUrl, from, to, statusFilter);
     const dropiMap = new Map<string, Record<string, unknown>>();
     for (const o of dropiList) {
       dropiMap.set(String(o.id), o);
@@ -212,6 +215,11 @@ Deno.serve(async (req) => {
     if (!ownerByStore.has(o.store_id)) ownerByStore.set(o.store_id, o.user_id);
   });
 
+  // GAP A: leer el filter_date_by ganador que persiste dropi-cron.
+  const { data: filterRow } = await sb.from("app_settings")
+    .select("value").eq("key", "dropi_winning_status_filter").maybeSingle();
+  const STATUS_FILTER = (filterRow?.value as string) || "FECHA DE CAMBIO DE ESTATUS";
+
   const summary: Array<Record<string, unknown>> = [];
   for (const cfg of active as unknown as Array<{ store_id: string; country_code: string; dropi_api_key: string; dropi_store_url: string | null }>) {
     const ownerId = ownerByStore.get(cfg.store_id);
@@ -219,7 +227,7 @@ Deno.serve(async (req) => {
     const r = await reconcileStore(
       sb, cfg.store_id, cfg.country_code || "CO",
       cfg.dropi_api_key, cfg.dropi_store_url || "",
-      ownerId,
+      ownerId, STATUS_FILTER,
     );
     await sb.from("nightly_reconcile_results").insert({
       store_id: cfg.store_id,
