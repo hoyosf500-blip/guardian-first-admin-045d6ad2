@@ -1077,7 +1077,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   className={[
                     'text-[9px] font-bold px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5 border',
                     due
-                      ? 'bg-warning/15 text-warning border-warning/40 animate-pulse'
+                      ? 'bg-warning/15 text-warning border-warning/40 motion-safe:animate-pulse'
                       : 'bg-accent/10 text-accent border-accent/25',
                   ].join(' ')}
                 >

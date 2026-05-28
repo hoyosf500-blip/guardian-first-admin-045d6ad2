@@ -130,7 +130,8 @@ export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
                   {formatCOP(o.valor)}
                 </span>
               )}
-              {/* Edit order button — visible to anyone; trigger enforces ownership. */}
+              {/* Edit order button — visible to anyone; trigger enforces ownership.
+                  Tamaño 36x36 (era 28x28) para tocarlo sin mis-tap en mobile. */}
               {o.externalId && (
                 <button
                   type="button"
@@ -138,9 +139,9 @@ export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
                   onKeyDown={(e) => e.stopPropagation()}
                   aria-label={`Editar datos del pedido de ${o.nombre}`}
                   title="Editar datos del cliente"
-                  className="w-7 h-7 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-500 flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                  className="w-9 h-9 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-500 inline-flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
                 >
-                  <UserCog size={13} aria-hidden="true" />
+                  <UserCog size={15} aria-hidden="true" />
                 </button>
               )}
               {/* Priority badge (high/critical only) */}
@@ -165,7 +166,7 @@ export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
                     className={[
                       'text-[10px] px-1.5 py-0.5 rounded-md font-bold inline-flex items-center gap-0.5 flex-shrink-0 border',
                       due
-                        ? 'bg-warning/15 text-warning border-warning/40 animate-pulse'
+                        ? 'bg-warning/15 text-warning border-warning/40 motion-safe:animate-pulse'
                         : 'bg-accent/10 text-accent border-accent/25',
                     ].join(' ')}
                   >

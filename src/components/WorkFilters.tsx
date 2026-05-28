@@ -76,15 +76,16 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
             <button
               key={f.id}
               onClick={() => setFilter(f.id)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors duration-200 border cursor-pointer ${
+              aria-pressed={isActive}
+              className={`inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-lg text-xs font-semibold transition-colors duration-200 border cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
                 isActive
                   ? 'bg-accent/12 text-accent border-accent/30 shadow-ds-xs'
                   : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70 hover:text-foreground'
               }`}
             >
-              <Icon size={12} className={isActive ? meta.color : ''} aria-hidden="true" />
+              <Icon size={13} className={isActive ? meta.color : ''} aria-hidden="true" />
               <span>{f.label}</span>
-              <span className={`ml-0.5 text-[10px] font-mono tabular-nums ${isActive ? 'text-accent/80' : 'text-muted-foreground/60'}`}>
+              <span className={`ml-0.5 text-[11px] font-mono tabular-nums ${isActive ? 'text-accent/80' : 'text-muted-foreground/60'}`}>
                 {f.count}
               </span>
             </button>
@@ -93,13 +94,16 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
       </div>
 
       <div className="relative">
-        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 pointer-events-none" aria-hidden="true" />
+        <label className="sr-only" htmlFor="confirmar-search">Buscar nombre, teléfono o ciudad</label>
         <input
-          type="text"
+          id="confirmar-search"
+          type="search"
+          inputMode="search"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Buscar nombre, teléfono o ciudad..."
-          className="w-full pl-8 pr-3 py-2 bg-muted/30 border border-border/60 rounded-lg text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors duration-200"
+          className="w-full pl-10 pr-3 py-2.5 min-h-[44px] bg-muted/30 border border-border/60 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors duration-200"
         />
       </div>
     </div>

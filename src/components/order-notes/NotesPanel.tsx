@@ -4,8 +4,18 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useOrderNotes } from '@/hooks/useOrderNotes';
+import { useOrderNotes, type NoteRow } from '@/hooks/useOrderNotes';
 import { isReminderDue, summarizeReminder } from '@/lib/reminders';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface Props {
   /** Phone del cliente. Si se pasa, carga TODAS las notas del cliente (mismo
@@ -91,6 +101,10 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
   const [remindAt, setRemindAt] = useState(''); // datetime-local string
   const [submitting, setSubmitting] = useState(false);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
+  // Nota cuya eliminación se está confirmando. null = sin diálogo abierto.
+  // Usamos AlertDialog (shadcn) en vez de window.confirm — está estilizado,
+  // es accesible (Radix), no se ve diminuto en iOS y respeta el tema.
+  const [noteToDelete, setNoteToDelete] = useState<NoteRow | null>(null);
 
   // Profiles (display_name por operator_id). Una sola carga al montar — la
   // tabla `profiles` es global y chica. Si crece, paginamos.
@@ -186,8 +200,9 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
               <button
                 key={q.label}
                 type="button"
+                aria-label={`Programar recordatorio: ${q.label}`}
                 onClick={() => setRemindAt(toDatetimeLocal(q.build()))}
-                className="text-[10px] px-2 py-0.5 rounded-md border border-transparent bg-muted/40 text-muted-foreground hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer"
+                className="text-xs px-3 min-h-[32px] inline-flex items-center rounded-md border border-transparent bg-muted/40 text-muted-foreground hover:bg-accent/10 hover:text-accent hover:border-accent/30 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 {q.label}
               </button>
@@ -265,16 +280,11 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
                 {mine && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      const ok = window.confirm('¿Borrar esta nota?');
-                      if (!ok) return;
-                      const r = await deleteNote(n.id);
-                      if (!r.ok) toast.error('No se pudo borrar: ' + r.error);
-                    }}
+                    onClick={() => setNoteToDelete(n)}
                     aria-label="Borrar nota"
-                    className={`${n.remind_at ? '' : 'ml-auto'} text-muted-foreground hover:text-destructive`}
+                    className={`${n.remind_at ? '' : 'ml-auto'} w-9 h-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors focus-visible:ring-2 focus-visible:ring-destructive focus-visible:outline-none`}
                   >
-                    <Trash2 size={11} aria-hidden="true" />
+                    <Trash2 size={14} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -283,6 +293,42 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
           );
         })}
       </div>
+
+      {/* Diálogo de confirmación de borrado — reemplaza al `window.confirm`
+          (que en iOS sale chiquito, sin tema y rompe el flow mobile). */}
+      <AlertDialog open={!!noteToDelete} onOpenChange={(open) => { if (!open) setNoteToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Borrar esta nota?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Esta acción no se puede deshacer. La nota desaparecerá para todas las asesoras de la tienda.
+                </p>
+                {noteToDelete && (
+                  <blockquote className="mt-3 max-h-32 overflow-y-auto rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground whitespace-pre-wrap break-words">
+                    {noteToDelete.note_text}
+                  </blockquote>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!noteToDelete) return;
+                const r = await deleteNote(noteToDelete.id);
+                setNoteToDelete(null);
+                if (!r.ok) toast.error('No se pudo borrar: ' + r.error);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Borrar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.section>
   );
 }

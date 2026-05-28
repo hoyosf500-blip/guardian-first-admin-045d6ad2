@@ -213,12 +213,18 @@ export default function ShopifyPendingPanel() {
     {mismatchBanner}
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       className={`mb-4 rounded-xl border overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
-      <div className="px-4 py-3 flex items-center gap-3">
+      {/* Layout 2-rows en mobile, 1-row en sm+:
+            - Row 1 (siempre): icono · texto principal · Actualizar (refresh).
+            - Row 2: botones de acción (Subir todos / Ver lista). En mobile son
+              full-width; en sm+ se acomodan a la derecha en la misma fila.
+            En mobile el texto principal NO compite con 2 botones por espacio,
+            así que "N sin pasar a Dropi" ya no se apila letra por palabra. */}
+      <div className="px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${allClear ? 'bg-success/20' : 'bg-warning/20'}`}>
-          {allClear ? <CheckCircle2 size={18} className="text-success" /> : <ShoppingBag size={18} className="text-warning" />}
+          {allClear ? <CheckCircle2 size={18} className="text-success" aria-hidden="true" /> : <ShoppingBag size={18} className="text-warning" aria-hidden="true" />}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
+        <div className="flex-1 min-w-0 basis-[14rem]">
+          <div className="flex items-baseline gap-2 flex-wrap">
             <span className={`text-2xl font-extrabold tabular-nums ${allClear ? 'text-success' : 'text-foreground'}`}>{count}</span>
             <span className="text-sm font-semibold text-foreground">
               {allClear ? 'sin pasar a Dropi — todo al día ✓' : 'sin pasar a Dropi'}
@@ -238,23 +244,25 @@ export default function ShopifyPendingPanel() {
             {cancelled > 0 && <span className="opacity-70">· {cancelled} cancelados</span>}
           </div>
         </div>
-        <button onClick={() => refetch()} title="Actualizar"
-          className="h-8 w-8 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
-          <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+        <button onClick={() => refetch()} aria-label="Actualizar Shopify"
+          className="h-9 w-9 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          <RefreshCw size={14} className={isFetching ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
         </button>
         {count > 0 && (
-          <button onClick={() => { setExpanded(true); setBulkConfirm(true); }} disabled={bulkRunning}
-            title="Subir todos los pendientes a Dropi de una"
-            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 flex-shrink-0 hover:bg-primary/90 disabled:opacity-50">
-            {bulkRunning ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />} Subir todos
-          </button>
-        )}
-        {count > 0 && (
-          <button onClick={() => setExpanded(e => !e)}
-            className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-medium text-foreground flex items-center gap-1 flex-shrink-0">
-            {expanded ? 'Ocultar' : 'Ver lista'}
-            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
+          <div className="flex items-center gap-2 basis-full sm:basis-auto sm:ml-auto">
+            <button onClick={() => { setExpanded(true); setBulkConfirm(true); }} disabled={bulkRunning}
+              aria-label="Subir todos los pendientes a Dropi"
+              className="h-9 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold inline-flex items-center justify-center gap-1.5 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none flex-1 sm:flex-none">
+              {bulkRunning ? <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" /> : <Truck size={13} aria-hidden="true" />} Subir todos
+            </button>
+            <button onClick={() => setExpanded(e => !e)}
+              aria-label={expanded ? 'Ocultar lista de pendientes' : 'Ver lista de pendientes'}
+              aria-expanded={expanded}
+              className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold text-foreground inline-flex items-center justify-center gap-1.5 hover:border-border-strong cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none flex-1 sm:flex-none">
+              {expanded ? 'Ocultar' : 'Ver lista'}
+              {expanded ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+            </button>
+          </div>
         )}
       </div>
 
