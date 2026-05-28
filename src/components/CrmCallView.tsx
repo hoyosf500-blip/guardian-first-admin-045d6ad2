@@ -14,6 +14,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import SegActionButtons from '@/components/SegActionButtons';
+import NotesPanel from '@/components/order-notes/NotesPanel';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
@@ -876,6 +877,14 @@ export default function CrmCallView({
             </div>
           ) : (
             <SegActionButtons variant="call" onAction={handleAction} />
+          )}
+
+          {/* Notas y recordatorios — mismo componente que Confirmar/OrderDetail.
+              Compartido entre asesoras de la tienda (realtime). Útil acá para
+              dejar notas tipo "cliente confirmó que recoge el viernes" sin
+              tener que navegar al detalle del pedido. */}
+          {o?.dbId && (
+            <NotesPanel phone={o.phone} orderId={o.dbId} variant="compact" />
           )}
         </motion.div>
       </AnimatePresence>
