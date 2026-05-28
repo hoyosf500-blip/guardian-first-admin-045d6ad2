@@ -1888,9 +1888,12 @@ export type Database = {
           cancelados: number
           confirmados: number
           display_name: string
+          intentos_noresp: number
+          intentos_total: number
           noresp: number
           novedades_resueltas: number
           operator_id: string
+          pendientes_sin_tocar: number
           rescate_acciones: number
           rescate_pedidos: number
           rescate_resueltos: number
