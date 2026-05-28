@@ -1011,6 +1011,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   // CO (no existe ahí) → trackUrl null → botón oculto. Pasar el código
   // explícito desde useStore() elimina el race.
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
+  // URL base de la transportadora (sin guía) — para que el chip "Sin guía
+  // aún" sea clickeable y abra la página donde el operador puede buscar
+  // manualmente por nombre/teléfono mientras se genera la guía.
+  const carrierHomeUrl = getTrackingUrl(o.transportadora, '', countryCode);
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
@@ -1209,10 +1213,25 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             )}
           </div>
         ) : o.transportadora ? (
-          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-1.5 text-[10px] text-muted-foreground">
-            <Tag size={10} className="text-muted-foreground/60 flex-shrink-0" aria-hidden="true" />
-            <span>Sin guía aún · {o.transportadora}</span>
-          </div>
+          carrierHomeUrl ? (
+            <a
+              href={carrierHomeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              aria-label={`Abrir página de ${o.transportadora} para buscar manualmente`}
+              title={`Abre ${o.transportadora} — buscá por nombre o teléfono mientras se genera la guía`}
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent/60 px-2.5 py-1.5 text-[10px] text-foreground transition-colors no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              <ExternalLink size={10} className="text-accent flex-shrink-0" aria-hidden="true" />
+              <span>Sin guía aún · <span className="font-semibold">{o.transportadora}</span></span>
+            </a>
+          ) : (
+            <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+              <Tag size={10} className="text-muted-foreground/60 flex-shrink-0" aria-hidden="true" />
+              <span>Sin guía aún · {o.transportadora}</span>
+            </div>
+          )
         ) : null}
 
         {/* Delay warning — collapsed to 2 tones so it doesn't fight the column tone */}

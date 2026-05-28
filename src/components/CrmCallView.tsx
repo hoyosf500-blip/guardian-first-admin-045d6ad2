@@ -517,6 +517,12 @@ export default function CrmCallView({
   // se usaba y `getTrackingUrl('GINTRACOM', ...)` devolvía null. Eso
   // explicaba el "en EC no aparece Rastrear" del operador.
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
+  // URL de la página BASE de la transportadora — el chip "Sin guía aún" la usa
+  // para que el operador entre a buscar manualmente (por nombre/teléfono)
+  // mientras el pedido no tiene guía generada. Para carriers con URL `?guia=`,
+  // devuelve la URL con el param vacío (la página igual carga). Para los que
+  // no tienen `=`, devuelve la URL tal cual.
+  const carrierHomeUrl = getTrackingUrl(o.transportadora, '', countryCode);
   const currentManaged = o.dbId ? managed[o.dbId] : undefined;
   const tps = phoneTouchpoints[o.phone] || [];
   const isDelayed = diasEnEstatus >= 2 && !isExcludedFromDelay(o.estado);
@@ -791,10 +797,13 @@ export default function CrmCallView({
             )}
 
             {/* Bloque guía + Rastrear. Cuando hay guía mostramos el botón
-                grande (h-9, accent sólido) — antes era text-[10px] py-1, casi
-                invisible. Cuando hay transportadora pero TODAVÍA no hay guía,
-                mostramos un hint claro "Sin guía aún" para que la asesora sepa
-                por qué no puede rastrear (más útil que ocultar todo). */}
+                grande (h-9, accent sólido) y al click COPIA la guía + abre la
+                página de la transportadora (algunas páginas no levantan el
+                query param, te dejan el input vacío → con la guía en el
+                portapapeles solo es pegar). Cuando hay transportadora pero
+                todavía NO hay guía, el chip "Sin guía aún" es clickeable y
+                abre la página base de la transportadora para que el operador
+                busque manualmente por nombre o teléfono. */}
             {o.guia ? (
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 <div className="flex items-center gap-1.5 bg-secondary/50 rounded-lg px-2.5 py-2 font-mono text-xs text-muted-foreground">
@@ -809,7 +818,9 @@ export default function CrmCallView({
                     href={trackUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label={`Rastrear guía ${o.guia} en ${o.transportadora}`}
+                    onClick={copyGuia}
+                    aria-label={`Rastrear guía ${o.guia} en ${o.transportadora}. Copia la guía al portapapeles.`}
+                    title="Abre la página de la transportadora y copia la guía al portapapeles"
                     className="inline-flex items-center gap-1.5 rounded-lg bg-accent border-2 border-accent px-4 h-9 text-xs font-bold text-accent-foreground hover:bg-accent/85 hover:border-accent/85 transition-colors shadow-sm no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                   >
                     <ExternalLink size={14} aria-hidden="true" /> Rastrear guía
@@ -818,10 +829,24 @@ export default function CrmCallView({
               </div>
             ) : o.transportadora ? (
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <div className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
-                  <Tag size={12} className="text-muted-foreground/60" aria-hidden="true" />
-                  <span>Sin guía aún · {o.transportadora}</span>
-                </div>
+                {carrierHomeUrl ? (
+                  <a
+                    href={carrierHomeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Abrir página de ${o.transportadora} para buscar manualmente`}
+                    title={`Abre ${o.transportadora} — buscá por nombre o teléfono mientras se genera la guía`}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent/60 px-2.5 py-2 text-xs text-foreground transition-colors no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                  >
+                    <ExternalLink size={12} className="text-accent" aria-hidden="true" />
+                    <span>Sin guía aún · <span className="font-semibold">{o.transportadora}</span></span>
+                  </a>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+                    <Tag size={12} className="text-muted-foreground/60" aria-hidden="true" />
+                    <span>Sin guía aún · {o.transportadora}</span>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
