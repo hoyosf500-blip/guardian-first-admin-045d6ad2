@@ -50,6 +50,7 @@ interface OrderRow {
   tienda: string | null;
   novedad_sol: boolean | null;
   upload_date: string | null;
+  last_movement_at: string | null;
   created_at: string;
 }
 
