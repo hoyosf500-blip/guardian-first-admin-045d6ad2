@@ -60,3 +60,79 @@ export function findSupersededPendingConf(
   }
   return out;
 }
+
+/**
+ * Versión para Seguimiento: detecta duplicados donde Dropi REEMPLAZÓ una orden
+ * por otra (caso real Rushmira EC 2026-05-23: 5524001 → 5529961).
+ *
+ * A diferencia de `findSupersededPendingConf`, este helper recibe UNA sola
+ * lista y no le importa el estado de las órdenes — solo busca pares del mismo
+ * `phone + producto` con `external_id` numéricamente distinto y `fecha`
+ * contemporánea (dentro de `windowDays`), marcando como "superada" la del
+ * `external_id` menor.
+ *
+ * Por qué `external_id` numérico: Dropi asigna IDs auto-incrementales, así
+ * que un ID mayor implica una orden creada después. Si en algún edge case el
+ * orden no es monótono, la ventana de fechas sirve como segunda señal.
+ *
+ * Excepciones de seguridad:
+ * - Si la "vieja" ya está en `ENTREGADO`, NUNCA la oculta — es un pedido
+ *   legítimamente completado, no un reemplazo.
+ * - Si la diferencia entre fechas excede `windowDays`, es probablemente una
+ *   recompra del mismo cliente — no la oculta.
+ */
+export function findSupersededInSeg(
+  orders: OrderData[],
+  windowDays = 14,
+): Set<string> {
+  const out = new Set<string>();
+  const winMs = windowDays * DAY_MS;
+
+  // Agrupamos por phone+producto. Pares de orden del mismo grupo son
+  // candidatos a reemplazo.
+  const groups = new Map<string, OrderData[]>();
+  for (const o of orders) {
+    const tel = normalizePhone(o.phone);
+    if (!tel) continue;
+    const id = Number(o.externalId);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const key = `${tel}|${(o.producto || '').trim().toLowerCase()}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(o);
+    groups.set(key, bucket);
+  }
+
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+
+    // Ordenamos por external_id numérico descendente — el primero es la
+    // versión más nueva en Dropi.
+    const sorted = [...list].sort((a, b) => Number(b.externalId) - Number(a.externalId));
+    const newest = sorted[0];
+    const newestId = Number(newest.externalId);
+    const newestT = Date.parse(String(newest.fecha || ''));
+
+    for (let i = 1; i < sorted.length; i++) {
+      const older = sorted[i];
+      const olderId = Number(older.externalId);
+      if (olderId >= newestId) continue; // seguridad: si por algún caso quedó igual o mayor, skip
+
+      // Excepción: pedidos ya entregados NUNCA se ocultan. La asesora debe
+      // poder ver el histórico de entregados; ocultarlos sería un bug
+      // destructivo. La cobranza/contabilidad ya pasó por ese pedido.
+      const olderEstado = (older.estado || '').toUpperCase();
+      if (olderEstado === 'ENTREGADO') continue;
+
+      // Excepción: ventana de fechas. Si están muy lejos (>14d), probable
+      // recompra del mismo cliente — no es reemplazo Dropi.
+      const olderT = Date.parse(String(older.fecha || ''));
+      if (!Number.isNaN(olderT) && !Number.isNaN(newestT)) {
+        if (Math.abs(newestT - olderT) > winMs) continue;
+      }
+
+      out.add(String(older.externalId ?? ''));
+    }
+  }
+
+  return out;
+}

@@ -21,6 +21,7 @@ import {
   isValidSegListSlug,
 } from '@/lib/segLists';
 import { classifySegEstado } from '@/lib/segStatus';
+import { findSupersededInSeg } from '@/lib/duplicateOrders';
 
 function getOrderAgeDays(order: OrderData): number {
   const fechaConf = (order.fechaConf || '').trim();
@@ -148,14 +149,33 @@ export default function SeguimientoTab() {
     });
   }, [actionableData, dateFrom, dateTo]);
 
-  // Lista SLA filter — se aplica DESPUÉS del filtro de fecha. Si la lista
-  // seleccionada tiene externalRoute (ej. /confirmar), no filtramos acá:
-  // mostramos un banner-link en lugar de la tabla.
+  // Dedup de órdenes reemplazadas por Dropi (caso EC 2026-05-23: 5524001 →
+  // 5529961, mismo cliente + mismo producto). Cuando Dropi edita un pedido
+  // crea uno nuevo con `external_id` mayor; el viejo queda como PENDIENTE
+  // stale en el DB hasta que el sync llegue al estado terminal. `findSuper-
+  // sededInSeg` mira pares phone+producto contemporáneos y oculta el de id
+  // menor. Aplicamos ANTES de filteredByList/stats para que el dedup se
+  // refleje en TODO (Kanban, resumen por estado, listas SLA, total).
+  const supersededIds = useMemo(
+    () => findSupersededInSeg(filteredByDate),
+    [filteredByDate],
+  );
+  const dedupedByDate = useMemo(
+    () => supersededIds.size === 0
+      ? filteredByDate
+      : filteredByDate.filter((o) => !supersededIds.has(String(o.externalId ?? ''))),
+    [filteredByDate, supersededIds],
+  );
+  const hiddenSupersededCount = supersededIds.size;
+
+  // Lista SLA filter — se aplica DESPUÉS del filtro de fecha y del dedup. Si
+  // la lista seleccionada tiene externalRoute (ej. /confirmar), no filtramos
+  // acá: mostramos un banner-link en lugar de la tabla.
   const listaActiva = listaSlug ? findSegList(listaSlug) : undefined;
   const filteredByList = useMemo(() => {
-    if (!listaActiva || listaActiva.externalRoute) return filteredByDate;
-    return filteredByDate.filter((o) => listaActiva.matches(o));
-  }, [filteredByDate, listaActiva]);
+    if (!listaActiva || listaActiva.externalRoute) return dedupedByDate;
+    return dedupedByDate.filter((o) => listaActiva.matches(o));
+  }, [dedupedByDate, listaActiva]);
 
   const stats = useMemo(() => {
     const s = {
@@ -163,9 +183,9 @@ export default function SeguimientoTab() {
       novedad: 0, novedad_sol: 0, oficina: 0, rechazado: 0,
       devolucion_transito: 0, devolucion: 0, indemnizada: 0,
       entregado: 0, cancelado: 0, otros: 0,
-      total: filteredByDate.length,
+      total: dedupedByDate.length,
     };
-    filteredByDate.forEach(o => {
+    dedupedByDate.forEach(o => {
       // classifySegEstado vive en src/lib/segStatus.ts — mismo clasificador
       // que CrmTable (sin esto, el resumen perdía estados EC y mostraba 3 cards
       // mientras el Kanban abajo mostraba 5+ columnas reales).
@@ -173,18 +193,19 @@ export default function SeguimientoTab() {
       if (cat in s) (s as Record<string, number>)[cat]++;
     });
     return s;
-  }, [filteredByDate]);
+  }, [dedupedByDate]);
 
-  // Conteo por lista SLA (sobre los pedidos ya filtrados por fecha). Alimenta
-  // los chips de listas — la forma principal de priorizar. Las listas con
-  // externalRoute (ej. confirmación) no se cuentan acá: viven en otra ruta.
+  // Conteo por lista SLA (sobre los pedidos ya filtrados por fecha + deduped).
+  // Alimenta los chips de listas — la forma principal de priorizar. Las
+  // listas con externalRoute (ej. confirmación) no se cuentan acá: viven en
+  // otra ruta.
   const listCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const l of SEG_LISTS) {
-      counts[l.slug] = l.externalRoute ? 0 : filteredByDate.filter(l.matches).length;
+      counts[l.slug] = l.externalRoute ? 0 : dedupedByDate.filter(l.matches).length;
     }
     return counts;
-  }, [filteredByDate]);
+  }, [dedupedByDate]);
 
   // "Sugerido": la lista NO-vacía de mayor urgencia (danger > warning > resto),
   // desempatando por el orden de SEG_LISTS (ya priorizado). Guía hacia dónde
@@ -391,6 +412,14 @@ export default function SeguimientoTab() {
                   · {hiddenStaleCount} viejos ocultos
                 </span>
               )}
+              {hiddenSupersededCount > 0 && (
+                <span
+                  className="text-[10px] text-warning/80 font-mono"
+                  title={`${hiddenSupersededCount} pedido${hiddenSupersededCount > 1 ? 's' : ''} reemplazados por Dropi (mismo cliente + producto, nueva versión más reciente). Se ocultan para no duplicar la cola — el más reciente sí aparece.`}
+                >
+                  · {hiddenSupersededCount} reemplazados Dropi
+                </span>
+              )}
             </div>
             <button
               onClick={() => loadSegData(true)}
@@ -434,7 +463,7 @@ export default function SeguimientoTab() {
               )}
             >
               Todas
-              <span className="font-mono tabular-nums text-[11px] opacity-80">{filteredByDate.length}</span>
+              <span className="font-mono tabular-nums text-[11px] opacity-80">{dedupedByDate.length}</span>
             </button>
             {SEG_LISTS
               .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
@@ -564,7 +593,7 @@ export default function SeguimientoTab() {
       )}
 
       <CrmTable
-        data={listaActiva && !listaActiva.externalRoute ? filteredByList : filteredByDate}
+        data={listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate}
         module="SEG"
         emptyIcon={<Truck size={28} className="text-muted-foreground" />}
         emptyTitle="Sin pedidos en seguimiento"
