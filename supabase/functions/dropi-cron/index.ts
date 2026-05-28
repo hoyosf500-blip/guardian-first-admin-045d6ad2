@@ -474,11 +474,24 @@ Deno.serve(async (req: Request) => {
       d.setUTCDate(d.getUTCDate() - n);
       return d.toISOString().split("T")[0];
     };
-    const passes: SyncPass[] = [
-      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: "FECHA DE CAMBIO DE ESTATUS" },
-      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
+    // Fallback chain de filter_date_by: si la primera variante devuelve 0,
+    // probamos la siguiente. Cuando una funciona, la "ganadora" se cachea para
+    // las próximas tiendas del run (evita probar 4 variantes por tienda).
+    // Por qué: el 2026-05-21 Dropi cambió silenciosamente algo en su endpoint
+    // integrations y "FECHA DE CAMBIO DE ESTATUS" empezó a devolver 0 sin
+    // error. Con el chain, si vuelve a pasar, el cron auto-cura.
+    const STATUS_FILTER_VARIANTS = [
+      "FECHA DE CAMBIO DE ESTATUS",
+      "Modified Date",
+      "MODIFIED_DATE",
+      "", // sin filter_date_by (default)
     ];
-    const from = passes[0].from; // para logs
+    let winningStatusFilter: string | null = null;
+    const buildPasses = (statusFilter: string): SyncPass[] => ([
+      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter },
+      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
+    ]);
+    const from = dateBack(STATUS_CHANGE_DAYS_BACK); // para logs
 
     let grandSynced = 0;
     let grandTotal = 0;
