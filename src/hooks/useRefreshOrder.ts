@@ -21,13 +21,14 @@ export function useRefreshOrder() {
   const refresh = useCallback(async (
     storeId: string | null | undefined,
     externalId: string | number | null | undefined,
+    opts: { silent?: boolean } = {},
   ): Promise<{ ok: boolean; estado?: string; guia?: string; transportadora?: string }> => {
     if (!storeId) {
-      toast.error('Sin tienda activa');
+      if (!opts.silent) toast.error('Sin tienda activa');
       return { ok: false };
     }
     if (!externalId) {
-      toast.error('Pedido sin external_id');
+      if (!opts.silent) toast.error('Pedido sin external_id');
       return { ok: false };
     }
 
@@ -38,10 +39,8 @@ export function useRefreshOrder() {
       });
 
       if (error) {
-        // supabase-js envuelve el error de la edge function. El body real
-        // viene en error.context.response.body o en data si invoke devolvió.
         const msg = error.message || 'Error invocando refresh';
-        toast.error(`No se pudo refrescar: ${msg}`);
+        if (!opts.silent) toast.error(`No se pudo refrescar: ${msg}`);
         return { ok: false };
       }
 
@@ -55,22 +54,26 @@ export function useRefreshOrder() {
       };
 
       if (!result?.ok) {
-        if (result?.rateLimited) {
-          toast.warning('Dropi está limitando peticiones — esperá ~1 min y reintentá', { duration: 6000 });
-        } else if (result?.error) {
-          toast.error(result.error);
-        } else {
-          toast.error('No se pudo refrescar el pedido');
+        if (!opts.silent) {
+          if (result?.rateLimited) {
+            toast.warning('Dropi está limitando peticiones — esperá ~1 min y reintentá', { duration: 6000 });
+          } else if (result?.error) {
+            toast.error(result.error);
+          } else {
+            toast.error('No se pudo refrescar el pedido');
+          }
         }
         return { ok: false };
       }
 
-      // Mensaje útil al operador: qué cambió.
-      const parts: string[] = [];
-      if (result.estado) parts.push(result.estado);
-      if (result.transportadora) parts.push(result.transportadora);
-      if (result.guia) parts.push(`guía ${result.guia}`);
-      toast.success(`Actualizado · ${parts.join(' · ') || 'sin cambios'}`);
+      // Mensaje útil al operador: qué cambió. Silenciado en auto-refresh.
+      if (!opts.silent) {
+        const parts: string[] = [];
+        if (result.estado) parts.push(result.estado);
+        if (result.transportadora) parts.push(result.transportadora);
+        if (result.guia) parts.push(`guía ${result.guia}`);
+        toast.success(`Actualizado · ${parts.join(' · ') || 'sin cambios'}`);
+      }
 
       return {
         ok: true,
