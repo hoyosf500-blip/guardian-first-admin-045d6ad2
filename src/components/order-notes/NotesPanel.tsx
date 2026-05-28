@@ -12,6 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -63,6 +70,24 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 function toDatetimeLocal(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+
+/** Horas y minutos para los <Select> dentro del popover del calendario. La
+ *  asesora elige todo de listas (sin escribir nada). Hora en formato 12h con
+ *  am/pm — más natural en CO/EC que 24h. Minutos en pasos de 5 (60% de los
+ *  recordatorios reales caen en :00, :15, :30, :45 y los demás casi siempre en
+ *  múltiplos de 5; un set de 12 opciones cabe en el popover sin scroll). */
+const HOUR_OPTIONS: Array<{ value: string; label: string }> = Array.from(
+  { length: 24 },
+  (_, h) => ({
+    value: String(h),
+    label:
+      h === 0 ? '12 am'
+      : h < 12 ? `${h} am`
+      : h === 12 ? '12 pm'
+      : `${h - 12} pm`,
+  }),
+);
+const MINUTE_OPTIONS: string[] = Array.from({ length: 12 }, (_, i) => pad2(i * 5));
 
 /** Atajos rápidos para el recordatorio — para no tener que abrir el calendario
  *  en los casos comunes (90% de las veces es "en 1-3 horas" o "mañana"). El
@@ -234,9 +259,15 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
               const displayText = remindDate
                 ? format(remindDate, "EEE d MMM · h:mm a", { locale: es })
                 : 'Elegir fecha y hora…';
-              const timeValue = remindDate
-                ? `${pad2(remindDate.getHours())}:${pad2(remindDate.getMinutes())}`
-                : '09:00';
+              // Hora actual seleccionada (default 9am). Los dos <Select> abajo
+              // controlan estas piezas independientemente — la asesora elige
+              // hora y minuto haciendo click, sin escribir nada.
+              const currentHour = remindDate ? remindDate.getHours() : 9;
+              const currentMinute = remindDate ? remindDate.getMinutes() : 0;
+              // Si el minuto actual no está en MINUTE_OPTIONS (paso de 5), lo
+              // mostramos como su redondeo hacia abajo más cercano para que el
+              // Select tenga un value que coincida con uno de sus items.
+              const minuteSelectValue = pad2(Math.floor(currentMinute / 5) * 5);
               return (
                 <Popover>
                   <PopoverTrigger asChild>
@@ -269,22 +300,52 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
                       className="p-3 pointer-events-auto"
                     />
                     <div className="border-t border-border p-3 flex items-center gap-2">
-                      <label htmlFor="reminder-time" className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
                         <Bell size={11} aria-hidden="true" /> Hora
-                      </label>
-                      <input
-                        id="reminder-time"
-                        type="time"
-                        value={timeValue}
-                        onChange={(e) => {
-                          const [h, m] = e.target.value.split(':').map(Number);
-                          if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+                      </span>
+                      <Select
+                        value={String(currentHour)}
+                        onValueChange={(v) => {
+                          const h = Number(v);
+                          if (!Number.isFinite(h)) return;
                           const target = remindDate ?? new Date();
-                          target.setHours(h, m, 0, 0);
+                          target.setHours(h, currentMinute, 0, 0);
                           setRemindAt(toDatetimeLocal(target));
                         }}
-                        className="bg-card border border-border rounded-md px-2 py-1 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      />
+                      >
+                        <SelectTrigger className="h-8 w-[88px] text-xs" aria-label="Hora">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-56">
+                          {HOUR_OPTIONS.map(opt => (
+                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-xs text-muted-foreground">:</span>
+                      <Select
+                        value={minuteSelectValue}
+                        onValueChange={(v) => {
+                          const m = Number(v);
+                          if (!Number.isFinite(m)) return;
+                          const target = remindDate ?? new Date();
+                          target.setHours(currentHour, m, 0, 0);
+                          setRemindAt(toDatetimeLocal(target));
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-[68px] text-xs" aria-label="Minutos">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-56">
+                          {MINUTE_OPTIONS.map(m => (
+                            <SelectItem key={m} value={m} className="text-xs">
+                              {m}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {remindAt && (
                         <button
                           type="button"
