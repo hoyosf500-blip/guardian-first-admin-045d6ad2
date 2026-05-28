@@ -1,11 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquare, Bell, Send, Trash2 } from 'lucide-react';
+import { MessageSquare, Bell, Send, Trash2, CalendarIcon, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderNotes, type NoteRow } from '@/hooks/useOrderNotes';
 import { isReminderDue, summarizeReminder } from '@/lib/reminders';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -218,24 +223,83 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
               </button>
             ))}
           </div>
+          {/* Selector de fecha+hora custom: reemplaza al `<input type=datetime-local>`
+              (que mostraba `dd/mm/aaaa --:--` y obligaba a escribir en lugar de
+              abrir un calendario; el target del ícono de calendario era diminuto).
+              Ahora es un Button + Popover — click en CUALQUIER parte del botón
+              abre el calendario; abajo del calendario hay un input de hora. */}
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="datetime-local"
-              value={remindAt}
-              onChange={(e) => setRemindAt(e.target.value)}
-              aria-label="Fecha y hora del recordatorio (opcional)"
-              className="bg-card border border-border rounded-lg px-2 py-1 text-[11px] text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-            {remindAt && (
-              <button
-                type="button"
-                onClick={() => setRemindAt('')}
-                className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2"
-                aria-label="Quitar recordatorio"
-              >
-                quitar
-              </button>
-            )}
+            {(() => {
+              const remindDate = remindAt ? new Date(remindAt) : null;
+              const displayText = remindDate
+                ? format(remindDate, "EEE d MMM · h:mm a", { locale: es })
+                : 'Elegir fecha y hora…';
+              const timeValue = remindDate
+                ? `${pad2(remindDate.getHours())}:${pad2(remindDate.getMinutes())}`
+                : '09:00';
+              return (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-9 gap-1.5 text-xs font-medium rounded-lg cursor-pointer ${remindDate ? 'text-foreground border-accent/40' : 'text-muted-foreground'}`}
+                      aria-label={remindDate ? `Recordatorio: ${displayText}. Cambiar.` : 'Elegir fecha y hora del recordatorio'}
+                    >
+                      <CalendarIcon size={14} aria-hidden="true" />
+                      {displayText}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={remindDate ?? undefined}
+                      onSelect={(d) => {
+                        if (!d) return;
+                        const target = new Date(d);
+                        // Conserva la hora previa si había, sino 9am default
+                        if (remindDate) {
+                          target.setHours(remindDate.getHours(), remindDate.getMinutes(), 0, 0);
+                        } else {
+                          target.setHours(9, 0, 0, 0);
+                        }
+                        setRemindAt(toDatetimeLocal(target));
+                      }}
+                      initialFocus
+                      className="p-3 pointer-events-auto"
+                    />
+                    <div className="border-t border-border p-3 flex items-center gap-2">
+                      <label htmlFor="reminder-time" className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                        <Bell size={11} aria-hidden="true" /> Hora
+                      </label>
+                      <input
+                        id="reminder-time"
+                        type="time"
+                        value={timeValue}
+                        onChange={(e) => {
+                          const [h, m] = e.target.value.split(':').map(Number);
+                          if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+                          const target = remindDate ?? new Date();
+                          target.setHours(h, m, 0, 0);
+                          setRemindAt(toDatetimeLocal(target));
+                        }}
+                        className="bg-card border border-border rounded-md px-2 py-1 text-xs text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      />
+                      {remindAt && (
+                        <button
+                          type="button"
+                          onClick={() => setRemindAt('')}
+                          aria-label="Quitar recordatorio"
+                          className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive"
+                        >
+                          <X size={11} aria-hidden="true" /> Quitar
+                        </button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              );
+            })()}
             <button
               type="button"
               onClick={submit}
