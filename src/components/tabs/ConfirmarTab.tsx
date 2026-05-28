@@ -383,18 +383,34 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {excelLoaded && workQueue.length > 0 && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-            {[
-              { label: 'Por confirmar', value: pending,      color: 'text-accent' },
-              { label: 'Confirmados',   value: counter.conf, color: 'text-success' },
-              { label: 'Cancelados',    value: counter.canc, color: 'text-danger' },
-              { label: 'Gestionados',   value: total,        color: 'text-foreground' },
-            ].map(kpi => (
-              <div key={kpi.label} className="bg-card border border-border rounded-xl p-4 hover:border-border-strong transition-colors">
-                <div className="text-[11px] text-muted-foreground font-semibold uppercase tracking-[0.08em] mb-2">{kpi.label}</div>
-                <div className={`font-mono text-3xl font-bold tabular-nums leading-none ${kpi.color}`}>{kpi.value}</div>
-              </div>
-            ))}
+          {/* KPIs compactos: antes eran 4 cards grandes (~110px de altura cada
+              una) que ocupaban casi una pantalla mobile sin contenido real.
+              Ahora 1 strip de 1 fila con la misma información en menos espacio.
+              En md+ las cards se sienten cómodas; en mobile la jerarquía es
+              clara con "Por confirmar" destacado y los 3 secundarios al lado. */}
+          <div className="mb-4 bg-card border border-border rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 hover:border-border-strong transition-colors">
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-3xl font-extrabold tabular-nums text-accent leading-none">{pending}</span>
+              <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">por confirmar</span>
+            </div>
+            <div className="flex items-baseline gap-x-4 gap-y-1 flex-wrap text-xs">
+              <span className="inline-flex items-baseline gap-1">
+                <strong className="font-mono text-base font-bold tabular-nums text-success leading-none">{counter.conf}</strong>
+                <span className="text-muted-foreground">conf</span>
+              </span>
+              <span className="inline-flex items-baseline gap-1">
+                <strong className="font-mono text-base font-bold tabular-nums text-danger leading-none">{counter.canc}</strong>
+                <span className="text-muted-foreground">canc</span>
+              </span>
+              <span className="inline-flex items-baseline gap-1">
+                <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{counter.noresp}</strong>
+                <span className="text-muted-foreground">noresp</span>
+              </span>
+              <span className="inline-flex items-baseline gap-1 border-l border-border/60 pl-4">
+                <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{total}</strong>
+                <span className="text-muted-foreground">gestionados</span>
+              </span>
+            </div>
           </div>
 
           {(() => {

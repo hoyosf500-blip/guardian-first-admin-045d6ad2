@@ -820,19 +820,29 @@ export default function CrmCallView({
             </div>
           )}
 
-          {/* Delay warning */}
-          {isDelayed && (
-            <div className={`mb-4 flex items-center gap-2 rounded-lg px-3 py-2 ${
-              diasEnEstatus >= 5 ? 'bg-red-500/10 border border-red-500/20' :
-              diasEnEstatus >= 3 ? 'bg-amber-500/10 border border-amber-500/20' :
-              'bg-orange-400/10 border border-orange-400/20'
-            }`}>
-              <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'} />
-              <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : 'text-orange-400'}`}>
-                {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
-              </span>
-            </div>
-          )}
+          {/* Delay warning con etiqueta de severidad explícita (Crítico/Alerta/
+              Aviso) — antes solo el color comunicaba la urgencia, lo que
+              fallaba para color-blind y se perdía a un vistazo rápido. */}
+          {isDelayed && (() => {
+            const tier = diasEnEstatus >= 5 ? 'critico' : diasEnEstatus >= 3 ? 'alerta' : 'aviso';
+            const tierLabel = tier === 'critico' ? 'Crítico' : tier === 'alerta' ? 'Alerta' : 'Aviso';
+            const tierBg = tier === 'critico' ? 'bg-red-500/10 border-red-500/30' : tier === 'alerta' ? 'bg-amber-500/10 border-amber-500/30' : 'bg-orange-400/10 border-orange-400/30';
+            const tierText = tier === 'critico' ? 'text-red-500' : tier === 'alerta' ? 'text-amber-500' : 'text-orange-400';
+            const action = tier === 'critico' ? 'Posible pérdida' : tier === 'alerta' ? 'Llamar + reclamar' : 'Monitorear';
+            return (
+              <div className={`mb-4 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 border ${tierBg}`}
+                   role="status" aria-label={`Demora ${tierLabel}: ${diasEnEstatus} días sin movimiento. ${action}`}>
+                <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${tierText} bg-current/10 border border-current/30`}
+                      aria-hidden="true">
+                  {tierLabel}
+                </span>
+                <Clock size={12} className={tierText} aria-hidden="true" />
+                <span className={`text-[11px] font-semibold ${tierText}`}>
+                  {diasEnEstatus}d sin movimiento — {action}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* History */}
           {tps.length > 0 && (
@@ -840,7 +850,7 @@ export default function CrmCallView({
               <h4 className="text-[10px] font-semibold text-muted-foreground mb-2 inline-flex items-center gap-1 uppercase tracking-wider">
                 <MessageSquare size={10} /> Historial ({tps.length})
               </h4>
-              <div className="space-y-1 max-h-32 overflow-y-auto">
+              <div className="space-y-1 max-h-48 overflow-y-auto">
                 {tps.slice(0, 6).map(tp => (
                   <div key={tp.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card border border-border/20 text-[10px]">
                     <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">

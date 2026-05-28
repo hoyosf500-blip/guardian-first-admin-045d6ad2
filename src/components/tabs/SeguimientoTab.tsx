@@ -433,13 +433,17 @@ export default function SeguimientoTab() {
           <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <Filter size={12} aria-hidden="true" /> Listas de trabajo
           </div>
-          <div className="flex flex-wrap gap-2">
+          {/* En mobile, las 8 listas apiladas (flex-wrap) ocupaban ~250px
+              verticales antes del dato. Ahora un carrusel horizontal con snap
+              (shrink-0 + overflow-x-auto + snap-x): 1 fila scrolleable
+              lateralmente. En sm+ vuelve a flex-wrap (espacio sobra). */}
+          <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-1 -mx-1 px-1 sm:overflow-visible sm:flex-wrap sm:mx-0 sm:px-0 sm:pb-0 [scrollbar-width:thin]">
             <button
               type="button"
               onClick={() => setListaSlug(null)}
               aria-pressed={!listaSlug}
               className={cn(
-                "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition-colors",
+                "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-3 min-h-[36px] text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                 !listaSlug
                   ? "bg-accent text-accent-foreground border-accent shadow-sm"
                   : "bg-card border-border text-foreground hover:border-border-strong"
@@ -462,7 +466,7 @@ export default function SeguimientoTab() {
                     aria-pressed={active}
                     title={l.label}
                     className={cn(
-                      "inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-medium transition-colors",
+                      "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-3 min-h-[36px] text-[12px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                       active
                         ? "bg-accent text-accent-foreground border-accent shadow-sm"
                         : "bg-card border-border text-foreground hover:border-border-strong"

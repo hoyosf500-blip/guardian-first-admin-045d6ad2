@@ -840,8 +840,14 @@ export default function CallView({ items }: Props) {
           </div>
         )}
 
+        {/* Sticky action bar en mobile: los 3 botones (Confirmó/Canceló/No
+            contestó) quedan pegados al fondo del viewport mientras la asesora
+            scrollea por la dirección/notas/sugerencias. Si el card scroll fuera
+            del viewport, sticky se va con él (esperado).
+            En sm+ vuelve a layout inline (mt-4) porque la card cabe en pantalla. */}
+        <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card/95 backdrop-blur sm:bg-transparent sm:backdrop-blur-none -mx-5 sm:mx-0 px-5 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
         {!o.result ? (
-          <div className="grid grid-cols-3 gap-2 mt-4">
+          <div className="grid grid-cols-3 gap-2">
             {/* Validador-direcciones: el botón Confirmar pasa por el gate
                 (validación dirección + teléfono + documento Coordinadora +
                 override admin). Si el gate bloquea, el Button queda
@@ -863,21 +869,22 @@ export default function CallView({ items }: Props) {
               onConfirm={() => handleMark('conf')}
             >
               <span className="inline-flex items-center justify-center gap-1.5">
-                <CheckCircle2 size={16} /> Confirmó
+                <CheckCircle2 size={16} aria-hidden="true" /> Confirmó
               </span>
             </DespachoGateButton>
-            <button onClick={() => setShowCancelModal(true)} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform">
-              <XCircle size={16} /> Canceló
+            <button onClick={() => setShowCancelModal(true)} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform">
+              <XCircle size={16} aria-hidden="true" /> Canceló
             </button>
-            <button onClick={() => handleMark('noresp')} className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-muted text-muted-foreground font-bold text-sm active:scale-[0.97] transition-transform">
-              <PhoneOff size={16} /> No contestó
+            <button onClick={() => handleMark('noresp')} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-muted text-muted-foreground font-bold text-sm active:scale-[0.97] transition-transform">
+              <PhoneOff size={16} aria-hidden="true" /> No contestó
             </button>
           </div>
         ) : (
           <div className="text-center py-3 text-sm font-semibold inline-flex items-center gap-1.5 justify-center w-full">
-            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-green" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-red" /> Cancelado</> : <><PhoneOff size={16} /> No respondió</>}
+            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-green" aria-hidden="true" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-red" aria-hidden="true" /> Cancelado</> : <><PhoneOff size={16} aria-hidden="true" /> No respondió</>}
           </div>
         )}
+        </div>
       </div>
 
       {/* Notas y recordatorios del cliente — visible para toda la tienda.

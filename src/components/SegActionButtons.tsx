@@ -77,16 +77,18 @@ export default function SegActionButtons({ onAction, variant = 'list' }: SegActi
         </div>
       )}
 
-      {/* Cierre: sale de Seguimiento */}
+      {/* Cierre: sale de Seguimiento. Contraste subido (12/25 → 20/50) para
+          que en light mode pasen WCAG 4.5:1 y el borde sea visible. */}
       <div className="grid grid-cols-2 gap-1.5">
         <button
           type="button"
           onClick={() => pick(SEG_CLOSERS[0])}
+          aria-label={`${SEG_CLOSERS[0]} — saca el pedido de Seguimiento`}
           className={cn(
             'inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold transition-colors',
-            'bg-success/12 text-success border border-success/25 hover:bg-success/20',
+            'bg-success/20 text-success border border-success/50 hover:bg-success/30',
             'focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none',
-            big ? 'py-3 text-xs' : 'py-2 text-[11px]',
+            big ? 'py-3 text-xs' : 'py-2 text-[11px] min-h-[40px]',
           )}
         >
           <CheckCircle2 size={13} aria-hidden="true" /> {SEG_CLOSERS[0]}
@@ -94,11 +96,12 @@ export default function SegActionButtons({ onAction, variant = 'list' }: SegActi
         <button
           type="button"
           onClick={() => pick(SEG_CLOSERS[1])}
+          aria-label={`${SEG_CLOSERS[1]} — saca el pedido de Seguimiento`}
           className={cn(
             'inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold transition-colors',
-            'bg-danger/10 text-danger border border-danger/25 hover:bg-danger/18',
+            'bg-danger/20 text-danger border border-danger/50 hover:bg-danger/30',
             'focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none',
-            big ? 'py-3 text-xs' : 'py-2 text-[11px]',
+            big ? 'py-3 text-xs' : 'py-2 text-[11px] min-h-[40px]',
           )}
         >
           <RotateCcw size={13} aria-hidden="true" /> {SEG_CLOSERS[1]}
