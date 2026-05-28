@@ -11,11 +11,12 @@ import { copyToClipboard } from '@/lib/clipboard';
 import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
-  Package, Truck, MapPin, RotateCcw, Layers, DollarSign,
+  Package, Truck, MapPin, RotateCcw, Layers, DollarSign, RefreshCw,
   Send, Tag, CheckCircle, ChevronDown, Search, List, Bell,
 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
+import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { isReminderDue } from '@/lib/reminders';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -1015,6 +1016,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   // aún" sea clickeable y abra la página donde el operador puede buscar
   // manualmente por nombre/teléfono mientras se genera la guía.
   const carrierHomeUrl = getTrackingUrl(o.transportadora, '', countryCode);
+  // Refresh on-demand desde la API de Dropi (single-order). useRefreshOrder
+  // tiene su propio estado isLoading por card → cada Refrescar se muestra
+  // independiente. Llamamos useStore() ACÁ para tener activeStoreId; no
+  // rompe el memo porque memo compara props (no contexts).
+  const { activeStoreId: cardActiveStoreId } = useStore();
+  const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
@@ -1115,8 +1122,20 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             <span className="truncate font-mono">{o.phone}</span>
           </div>
           <button onClick={e => { e.stopPropagation(); void copyToClipboard(o.phone, 'Tel copiado'); }}
+            aria-label="Copiar teléfono"
             className="p-2 rounded-lg bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             <Copy size={11} />
+          </button>
+          {/* Refrescar desde Dropi (single-order). Trae el estado actual en
+              vivo — útil cuando el cron está stale (caso EC throttle). */}
+          <button
+            onClick={e => { e.stopPropagation(); void refreshOrder(cardActiveStoreId, o.externalId); }}
+            disabled={isRefreshing || !o.externalId || !cardActiveStoreId}
+            aria-label="Refrescar este pedido desde Dropi"
+            title="Trae el estado actual desde la API de Dropi (estado, guía, transportadora)"
+            className="p-2 rounded-lg bg-accent/10 border border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            <RefreshCw size={11} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
 

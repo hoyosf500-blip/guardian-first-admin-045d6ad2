@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, Phone as PhoneIcon, MessageSquare,
   Copy, MapPin, Package, DollarSign, Tag, Truck, AlertTriangle,
-  CheckCircle, ExternalLink, User, Clock,
+  CheckCircle, ExternalLink, User, Clock, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -21,6 +21,7 @@ import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
 import { buildAddressSuggestion } from '@/lib/buildAddressSuggestion';
 import { mapAddressKind } from '@/lib/mapAddressKind';
 import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
+import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
 import { locationMatches } from '@/lib/locationGuard';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -95,8 +96,12 @@ export default function CrmCallView({
   items, managed, phoneTouchpoints, getOperatorName, onAction, storageKey, module,
 }: Props) {
   const { isAdmin } = useAuth();
-  const { activeStore } = useStore();
+  const { activeStore, activeStoreId } = useStore();
   const countryCode = activeStore?.country_code;
+  // Refresh on-demand desde la API de Dropi — la asesora no espera al cron
+  // (que cada 5 min puede estar throttleado en EC). El realtime de orders
+  // refresca el UI automáticamente cuando el upsert termina.
+  const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
   // BUG B fix: persist the *order id* of the customer being attended, not
   // the array index. When `items` reorders (refresh, sync, filter change)
   // the index points to a different customer; the id stays stable.
@@ -594,6 +599,20 @@ export default function CrmCallView({
       <div className="flex justify-between items-center mb-2">
         <span className="text-xs text-muted-foreground font-mono">{idx + 1} / {items.length}</span>
         <div className="flex gap-1.5">
+          {/* Refrescar desde Dropi: trae el estado AHORA de este pedido en
+              tiempo real, sin esperar al cron. Pensado para los casos en que
+              EC throttlea y la data en Guardian quedó stale. */}
+          <button
+            type="button"
+            onClick={() => void refreshOrder(activeStoreId, o.externalId)}
+            disabled={isRefreshing || !o.externalId || !activeStoreId}
+            aria-label="Refrescar este pedido desde Dropi (trae el estado actual en vivo)"
+            title="Trae el estado actual desde la API de Dropi (estado, guía, transportadora)"
+            className="px-3 py-1.5 rounded-md bg-accent/10 border border-accent/40 text-accent text-xs font-semibold disabled:opacity-30 inline-flex items-center gap-1.5 hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
+            <span className="hidden sm:inline">{isRefreshing ? 'Refrescando…' : 'Refrescar Dropi'}</span>
+          </button>
           <button
             onClick={() => navCall(-1)}
             disabled={idx <= 0}
