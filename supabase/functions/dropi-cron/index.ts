@@ -595,6 +595,18 @@ Deno.serve(async (req: Request) => {
       await sleep(INTER_STORE_MS);
     }
 
+    // GAP A: persistir el filter ganador para que health/reconcile lo usen.
+    if (winningStatusFilter !== null) {
+      try {
+        await sb.from("app_settings").upsert(
+          { key: "dropi_winning_status_filter", value: winningStatusFilter, updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      } catch (e) {
+        console.warn("dropi-cron: no se pudo persistir dropi_winning_status_filter:", e);
+      }
+    }
+
     // ---- Post-proceso GLOBAL (sobre todas las tiendas) ----
 
     // Restaurar PRIMERO (rápido) — evita que si el reintento consume todo el
