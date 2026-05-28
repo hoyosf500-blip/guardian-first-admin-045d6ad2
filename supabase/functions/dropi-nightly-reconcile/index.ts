@@ -87,6 +87,7 @@ async function reconcileStore(
   apiKey: string,
   storeUrl: string,
   ownerId: string,
+  statusFilter: string,
 ): Promise<{ divergent: number; applied: number; orphanCancelled: number; error?: string }> {
   try {
     const today = new Date();
