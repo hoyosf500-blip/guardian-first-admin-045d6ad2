@@ -17,6 +17,7 @@ import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
 import DailyReportsView from '@/components/admin/DailyReportsView';
+import WaBotConfigPanel from '@/components/admin/WaBotConfigPanel';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -196,6 +197,7 @@ export default function AdminTab() {
       <Tabs defaultValue="config" className="w-full">
         <TabsList className="mb-5">
           <TabsTrigger value="config">Configuración</TabsTrigger>
+          <TabsTrigger value="bot">Bot WhatsApp</TabsTrigger>
           <TabsTrigger value="productividad">Productividad</TabsTrigger>
           <TabsTrigger value="reportes">Reportes diarios</TabsTrigger>
         </TabsList>
@@ -206,6 +208,10 @@ export default function AdminTab() {
 
         <TabsContent value="reportes" className="mt-0">
           <DailyReportsView />
+        </TabsContent>
+
+        <TabsContent value="bot" className="mt-0">
+          <WaBotConfigPanel />
         </TabsContent>
 
         <TabsContent value="config" className="mt-0 space-y-0">
