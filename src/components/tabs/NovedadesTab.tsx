@@ -1,20 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { AlertTriangle, RefreshCw, Search, CheckCircle2, Truck, ListChecks, BarChart3, Lightbulb } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, CheckCircle2, Truck, ListChecks, BarChart3, Lightbulb, Target } from 'lucide-react';
 import { motion } from 'framer-motion';
 import NovedadView from '@/components/NovedadView';
 import NovedadesSeguimiento from '@/components/NovedadesSeguimiento';
 import NovedadesPuntosMejora from '@/components/novedades/NovedadesPuntosMejora';
+import NovedadesCausaRaiz from '@/components/novedades/NovedadesCausaRaiz';
+import { useStore } from '@/contexts/StoreContext';
 import { useSessionState } from '@/hooks/useSessionState';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 export default function NovedadesTab() {
   const { user } = useAuth();
+  const { isManagerOfActive } = useStore();
   const { novedadesQueue, novedadesLoading, loadNovedades } = useOrders();
   const [search, setSearch] = useState('');
-  const [view, setView] = useSessionState<'pendientes' | 'seguimiento' | 'mejora'>('novedades:view', 'pendientes');
+  const [view, setView] = useSessionState<'pendientes' | 'seguimiento' | 'mejora' | 'causa'>('novedades:view', 'pendientes');
+  // 'causa' (causa raíz) es solo de encargado; si un no-encargado tiene esa vista
+  // persistida en sessionState, caemos a 'pendientes'.
+  const effectiveView = view === 'causa' && !isManagerOfActive ? 'pendientes' : view;
 
   useEffect(() => {
     if (user) loadNovedades();
@@ -59,7 +65,7 @@ export default function NovedadesTab() {
             <button
               onClick={() => setView('pendientes')}
               className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                view === 'pendientes' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+                effectiveView === 'pendientes' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <ListChecks size={13} /> Pendientes
@@ -67,7 +73,7 @@ export default function NovedadesTab() {
             <button
               onClick={() => setView('seguimiento')}
               className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                view === 'seguimiento' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+                effectiveView === 'seguimiento' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <BarChart3 size={13} /> Seguimiento
@@ -75,13 +81,23 @@ export default function NovedadesTab() {
             <button
               onClick={() => setView('mejora')}
               className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                view === 'mejora' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+                effectiveView === 'mejora' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <Lightbulb size={13} /> Mejora
             </button>
+            {isManagerOfActive && (
+              <button
+                onClick={() => setView('causa')}
+                className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                  effectiveView === 'causa' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Target size={13} /> Causa raíz
+              </button>
+            )}
           </div>
-          {view === 'pendientes' && (
+          {effectiveView === 'pendientes' && (
             <button
               onClick={() => loadNovedades(true)}
               disabled={novedadesLoading}
@@ -94,11 +110,13 @@ export default function NovedadesTab() {
         </div>
       </div>
 
-      {view === 'seguimiento' && <NovedadesSeguimiento />}
+      {effectiveView === 'seguimiento' && <NovedadesSeguimiento />}
 
-      {view === 'mejora' && <NovedadesPuntosMejora />}
+      {effectiveView === 'mejora' && <NovedadesPuntosMejora />}
 
-      {view === 'pendientes' && (
+      {effectiveView === 'causa' && <NovedadesCausaRaiz />}
+
+      {effectiveView === 'pendientes' && (
        <>
       {/* KPIs — sistema unificado de tonos */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
