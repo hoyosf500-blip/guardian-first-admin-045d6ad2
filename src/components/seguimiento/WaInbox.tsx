@@ -44,12 +44,12 @@ export default function WaInbox({ storeId }: WaInboxProps) {
       <SheetTrigger asChild>
         <button
           type="button"
-          className="relative inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-foreground hover:bg-card hover:border-border-strong transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          className="relative inline-flex items-center gap-2 rounded-lg border border-transparent bg-[#25D366] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1da851] transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-[#25D366]/60 focus-visible:ring-offset-1 focus-visible:ring-offset-background focus-visible:outline-none"
         >
-          <MessageCircle size={14} className="text-accent" aria-hidden="true" />
+          <MessageCircle size={15} className="text-white" aria-hidden="true" />
           <span className="hidden sm:inline">WhatsApp</span>
           {totalUnread > 0 && (
-            <span className="ml-0.5 inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white tabular-nums">
+            <span className="ml-0.5 inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-[#128C7E] tabular-nums">
               {totalUnread > 99 ? '99+' : totalUnread}
             </span>
           )}
