@@ -25,6 +25,9 @@ supabase functions deploy dropi-change-carrier
 supabase functions deploy dropi-resolve-incidence
 supabase functions deploy dropi-fingerprint
 supabase functions deploy dropi-cron
+supabase functions deploy dropi-health
+supabase functions deploy dropi-nightly-reconcile
+supabase functions deploy dropi-snapshot
 supabase functions deploy ai-order-assistant
 supabase functions deploy dropi-validate-address
 supabase functions deploy dropi-wallet-sync
@@ -132,7 +135,10 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-relay` — generic proxy/relay to Dropi endpoints from the client (avoids CORS + hides session token)
 - `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
-- `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`)
+- `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`). **Resiliente a "zombie state":** intenta una cadena `STATUS_FILTER_VARIANTS` y persiste el ganador en `app_settings.dropi_winning_status_filter`. Si todos los filtros vuelven 0 sin error/throttle, marca `status='warn'` (no `success`) para que el banner de freshness pueda detectar "corre pero no trae nada". Ver `PLAN-PARITY-DROPI.md`.
+- `dropi-health` — ping read-only por tienda contra `/integrations/orders/myorders` (page=1). Escribe `last_health_status` en `store_dropi_config` cada hora. Alimenta el banner `SyncFreshness` (verde=OK 24h, amarillo=zombie, rojo=error). Usa el `dropi_winning_status_filter` calculado por `dropi-cron`.
+- `dropi-nightly-reconcile` — reconciliación diaria 3am UTC. Cancela huérfanos `PENDIENTE CONFIRMACION` con `external_id < 5M` que no se mueven hace +N días y barre divergencias estado-Guardian vs Dropi. Defensa contra zombies que sobreviven al cron.
+- `dropi-snapshot` — proxy server-side de auditoría: recibe `{store_id, from, to}`, pagina `/integrations/orders/myorders` (PAGE_SIZE 200, MAX_PAGES 30, backoff 2s/4s/8s en 429), filtra por `dropi_winning_status_filter` con fallback a "FECHA DE CAMBIO DE ESTATUS", devuelve `{orders, partial, message}`. Llamado por `DropiAuditModal` para comparar Dropi vs Guardian guía-por-guía. Existe por CORS — `api.dropi.co/ec` no permite fetch desde el browser.
 - `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`. **NOTE: currently NOT called from the app** (`GOOGLE_PLACES_ENABLED = false`); the function still exists but is dormant.
 - `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Usa `cfg.apiKey || cfg.sessionToken` (la api_key permanente funciona; el session_token es fallback legacy). Decodifica `payload.sub` del token para el query `user_id`.
 - `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. Dormant mientras `GOOGLE_PLACES_ENABLED = false`.
@@ -182,7 +188,11 @@ Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_ke
 - `financial_summary(p_from_date, p_to_date)` — KPIs financieros del período (utilidad bruta contable). Versión actual = v6 (migration `20260502000008_financial_summary_v6_devoluciones.sql`). Fórmula: `ingresos − cogs − flete_entregadas − pérdida_devoluciones − comisión_referidos − mantenimiento_tarjeta + indemnizaciones`. Usado por hook `useFinancialSummary`. NO incluye gasto pauta (Fase B pendiente).
 - `wallet_summary(from, to)` y `wallet_daily_series(from, to)` — KPIs y serie temporal del wallet de Dropi. Admin-only, security definer.
 - `upsert_wallet_movements(...)` — bulk INSERT idempotente sobre `dropi_wallet_movements` con `dropi_transaction_id` UNIQUE. RLS bloquea INSERT/UPDATE directo — todo va via este RPC.
-- `operator_productivity_stats(p_range)` — KPIs por operador para `/admin → Productividad`. `p_range` ∈ `today | yesterday | week | month`. Tasas calculadas sobre INFLOW (entrantes en el período), no sobre stock total — ver migration `20260505120000_productivity_tasa_sobre_inflow.sql`.
+- `operator_productivity_stats(p_range)` — KPIs por operador para `/admin → Productividad`. `p_range` ∈ `today | 7d | 30d` (ventanas alineadas a medianoche Bogotá desde la v3 `20260526140000`, NO rodantes). Tasas calculadas sobre INFLOW (entrantes en el período). Versión actual = **v4** (`20260528220000`) agrega 3 columnas de ESFUERZO sin tocar las existentes:
+  - `intentos_noresp` — `COUNT(DISTINCT order_id)` con `result='noresp'` sin importar si después se cerró conf/canc. La columna original `noresp` mantiene el filtro `NOT EXISTS conf/canc posterior` (estado actual del pedido). Son métricas distintas.
+  - `intentos_total` — `COUNT(*)` acciones de confirmar (no distinct).
+  - `pendientes_sin_tocar` — `GREATEST(entrantes_global − atendidos_del_op, 0)`.
+- `operator_activity_stats(p_range)` y `record_operator_heartbeat(p_store_id, p_active_seconds, p_idle_seconds)` — tracking de jornada (migration `20260528190848` + `20260528210000` para excluir admins). El cliente sube buckets cada 60s vía hook `useOperatorHeartbeat`; la RPC de lectura agrega por operador y excluye admins server-side. Ver sección "Productividad operadora: jornada + cobertura del día".
 - `today_call_stats()` y `submit_closing_report(p_notes)` — cierre diario por operador. `submit_closing_report` deduplica si ya hay un cierre hoy (migration `20260505200000_fix_closing_dedup.sql`).
 - `admin_daily_reports_range(p_from, p_to)` y `admin_operator_shifts_range(p_from, p_to)` — reportes admin por rango. Devuelven una fila por (operador, día), no agregado por operador. Usar para tabla histórica de cierres.
 - **CFO inputs (manual)** — admin-only, security definer:
@@ -217,6 +227,22 @@ Selector de 8 listas pre-clasificadas estilo Boostec. Cada lista tiene un predic
 Slugs: `pendientes_confirmacion_2d` (link a `/confirmar`), `pendientes_guia_2d`, `indem_pendientes_guia_4d`, `guia_generada_2d`, `indem_guia_generada_5d`, `reclamar_oficina_4d`, `en_proceso_7d`, `otros_estados`.
 
 Si `OrderData.fecha` está malformada, `diasDesdeCreacion()` cae a `o.dias` como fallback (try/catch).
+
+### Productividad operadora: jornada + cobertura del día
+
+Dos sistemas independientes, ambos client-side-light + server-state-authoritative:
+
+**1. Jornada (heartbeat de actividad).** Hook `src/hooks/useOperatorHeartbeat.ts` montado una sola vez en `ProtectedLayoutInner` (después de los providers). Listeners de `mousemove` (throttled 1s), `keydown`, `touchstart`, `click`, `wheel`. Tick interno cada 1s acumula en buckets `activeSecondsRef` / `idleSecondsRef` según si la última actividad cae dentro de `IDLE_THRESHOLD_MS = 5 * 60 * 1000`. Cada 60s flushea vía `record_operator_heartbeat` (cap defensivo de 120s por bucket en el server). **Gates obligatorios:** `!authLoading && !isAdmin && activeStoreId`. **No usa `visibilitychange`** — confiamos en que mousemove no se dispara con la tab en background, así el idle sube natural. La sección "Jornada" del dashboard sale de `operator_activity_stats` y excluye admins server-side (migration `20260528210000`).
+
+**2. Cobertura del día por operadora.** `OrderContext` mantiene dos `Set<string>`:
+- `myConfirmTouchedToday: Set<order_id>` — pedidos donde YO inserté `order_results` con `module='confirmar'` hoy (Bogotá).
+- `mySegTouchedToday: Set<phone>` — pedidos donde YO inserté `touchpoints` con `action ILIKE 'SEG:%'` hoy. `touchpoints` no tiene `order_id`, el match con `segData` es por phone (mismo patrón que `classifySegOwnershipFromTps` en `segOwnership.ts`).
+
+Carga inicial: query barato (solo `order_id` / `phone`) filtrado por `operator_id=me` + `created_at >= startOfTodayBogota`. **Realtime:** un único canal `my-coverage-${user.id}` suscrito a INSERT en ambas tablas con `filter: operator_id=eq.${user.id}` (Postgres Realtime NO soporta ILIKE — el match de `module='confirmar'` / `action LIKE 'SEG:%'` se hace client-side en el handler). El payload de Realtime trae la fila completa → cero queries extra.
+
+Estos sets alimentan los chips "Tu cola hoy" en `ConfirmarTab.tsx` y `SeguimientoTab.tsx` (toggle "Solo sin tocar" filtra `workQueue` / `feedBase` antes de pasar al `<WorkList>` / `<CrmTable>`). El chip de Confirmar usa `myConfirmTouchedToday.size` como "Has llamado a X"; el de Seguimiento cruza por phone contra la lista SLA activa.
+
+**Por qué dos métricas N/R en el dashboard ("Intentos N/R" vs "N/R abiertos"):** el filtro `NOT EXISTS conf/canc posterior` de la v3 (líneas 73-81 de `20260526140000`) descuenta de `noresp` cualquier pedido que después se cerró. Esto está bien para el estado actual del pedido, pero esconde el ESFUERZO de la operadora ("llamé a 5 que no contestaron y volví a llamarlos hasta que confirmaron"). `intentos_noresp` (v4, `20260528220000`) sí cuenta esos. NO mezclar: "N/R abiertos = pedidos sin cerrar"; "Intentos N/R = llamadas que no contestaron al primer intento".
 
 ### Address Validator (validador de direcciones)
 
