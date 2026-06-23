@@ -8,6 +8,7 @@ import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, Dolla
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import SegCounterBar from '@/components/SegCounterBar';
+import WaInbox from '@/components/seguimiento/WaInbox';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -62,7 +63,7 @@ export default function SeguimientoTab() {
   const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
-  const { activeStore } = useStore();
+  const { activeStore, activeStoreId } = useStore();
   const maxActionableDays =
     MAX_ACTIONABLE_BY_COUNTRY[activeStore?.country_code ?? 'CO'] ?? DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS;
 
@@ -425,6 +426,7 @@ export default function SeguimientoTab() {
                 </span>
               )}
             </div>
+            <WaInbox storeId={activeStoreId} />
             <button
               onClick={() => loadSegData(true)}
               disabled={segLoading}
