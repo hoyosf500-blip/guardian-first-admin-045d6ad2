@@ -31,6 +31,7 @@ interface ResumenSyncVars {
 // storeId/rango. Cada una verificada con archivo:línea en el diagnóstico.
 const KEYS_TO_INVALIDATE: string[] = [
   'orders-estado-breakdown', // useEstadoBreakdown.ts:27   → embudo
+  'orders-sync-health',      // useOrdersSyncHealth.ts      → badge de frescura de pedidos (header)
   'ganancia-neta-dropi',     // useGananciaNetaDropi.ts:134 → ganancia neta real
   'wallet_movements',        // useWalletMovements.ts:52    → saldo
   'wallet_daily_series',     // useWalletMovements.ts:106

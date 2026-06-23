@@ -9,7 +9,7 @@ import { useEstadoBreakdown } from '@/hooks/useEstadoBreakdown';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useWalletMovements } from '@/hooks/useWalletMovements';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
-import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
+import OrdersSyncBadge from '@/components/logistics/OrdersSyncBadge';
 import { Button } from '@/components/ui/button';
 import { useResumenSync } from '@/hooks/useResumenSync';
 import KpiCard from '@/components/logistics/finanzas/KpiCard';
@@ -119,7 +119,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
           <span className="text-[11px] text-muted-foreground">
             {resumen.generadoTotal.toLocaleString('es-CO')} pedidos generados
           </span>
-          <WalletSyncBadge size="sm" showLabel />
+          <OrdersSyncBadge size="sm" />
           {isOwnerOfActive && (
             <Button
               onClick={() => resumenSync.mutate({ from: filters.fromDate, untill: filters.toDate })}
