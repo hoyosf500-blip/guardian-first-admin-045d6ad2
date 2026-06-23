@@ -2,7 +2,8 @@
 // mensaje en un hilo con la IA en modo 'auto'.
 //
 // Patrón heredado de ai-order-assistant (guard anti-inyección + reporte de
-// tokens) pero endurecido para cara-al-cliente y con Claude (Anthropic):
+// tokens) pero endurecido para cara-al-cliente y con Claude vía kie.ai
+// (endpoint Anthropic-compatible; proveedor swappable por env):
 //   - GROUNDING: la IA recibe el estado REAL del pedido (orders) — nunca inventa
 //     guía/estado.
 //   - GUARDRAILS: scope estricto (solo entrega), handoff_to_human ante enojo /
@@ -18,8 +19,12 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadWaChannel, sendAndRecord } from "../_shared/waChannel.ts";
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+// Proveedor LLM configurable por env. Por defecto kie.ai, cuyo endpoint de
+// Claude (/claude/v1/messages) es Anthropic-compatible (mismos `messages` +
+// `tools`/`input_schema` + bloques de respuesta). Para swappear a Anthropic
+// directo: setear WA_AI_BASE_URL=https://api.anthropic.com/v1/messages.
+const AI_URL = Deno.env.get("WA_AI_BASE_URL") || "https://api.kie.ai/claude/v1/messages";
+const DEFAULT_MODEL = "claude-haiku-4-5";
 const MAX_HISTORY = 15;
 const OPT_OUT_RE = /\b(baja|stop|no\s+(me\s+)?(escrib|moleste|contacte|llame))/i;
 
@@ -147,10 +152,13 @@ Deno.serve(async (req) => {
       return json({ ok: true, action: "handoff", reason: "opt-out" }, 200, corsHeaders);
     }
 
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
+    // Key del proveedor de IA. Acepta varios nombres de secreto para no atarse a
+    // uno (kie.ai → WA_AI_API_KEY/KIE_API_KEY; Anthropic directo → ANTHROPIC_API_KEY).
+    const apiKey = Deno.env.get("WA_AI_API_KEY") || Deno.env.get("KIE_API_KEY") ||
+      Deno.env.get("ANTHROPIC_API_KEY") || "";
     if (!apiKey) {
-      await recordRun("noop", { output: "ANTHROPIC_API_KEY no configurada" });
-      return json({ ok: false, error: "ANTHROPIC_API_KEY no configurada" }, 500, corsHeaders);
+      await recordRun("noop", { output: "Falta el secreto WA_AI_API_KEY (key del proveedor de IA)" });
+      return json({ ok: false, error: "Falta WA_AI_API_KEY" }, 500, corsHeaders);
     }
 
     const storeRes = await sbAdmin.from("stores").select("name").eq("id", storeId).maybeSingle();
@@ -169,10 +177,12 @@ Deno.serve(async (req) => {
       `Respondé al ÚLTIMO mensaje del cliente siguiendo tus reglas. Si corresponde escalar, usá handoff_to_human.`;
 
     const model = Deno.env.get("WA_AI_MODEL") || DEFAULT_MODEL;
-    const aiRes = await fetch(ANTHROPIC_URL, {
+    const aiRes = await fetch(AI_URL, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
+        // kie.ai autentica con Authorization: Bearer (su endpoint /claude es
+        // Anthropic-compat). anthropic-version se mantiene por el formato.
+        "Authorization": `Bearer ${apiKey}`,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
@@ -199,8 +209,8 @@ Deno.serve(async (req) => {
 
     if (!aiRes.ok) {
       const errText = await aiRes.text();
-      console.error("Anthropic error:", aiRes.status, errText);
-      await recordRun("noop", { model, output: `anthropic ${aiRes.status}` });
+      console.error("IA provider error:", aiRes.status, errText);
+      await recordRun("noop", { model, output: `ia_provider ${aiRes.status}: ${errText.slice(0, 300)}` });
       return json({ ok: false, error: `IA error (${aiRes.status})` }, 502, corsHeaders);
     }
 
