@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import {
   Package as PackageIcon, Wallet, ArrowRight, TrendingDown, Info,
-  Boxes, DollarSign, CheckCircle2, AlertTriangle,
+  Boxes, DollarSign, CheckCircle2, AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import { buildMesResumen, buildMesResumenFromBreakdown, type BucketTone } from '@/lib/mesResumen';
 import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
@@ -10,7 +10,8 @@ import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useWalletMovements } from '@/hooks/useWalletMovements';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
-import WalletSyncButton from '@/components/wallet/WalletSyncButton';
+import { Button } from '@/components/ui/button';
+import { useResumenSync } from '@/hooks/useResumenSync';
 import KpiCard from '@/components/logistics/finanzas/KpiCard';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
@@ -65,8 +66,9 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const fallback = useMemo(() => buildMesResumen(summary), [summary]);
   const resumen = full ?? fallback;
 
-  // El sync de wallet es solo del dueño (la edge function valida isStoreOwner).
+  // El sync es solo del dueño (las edge functions validan isStoreOwner / membresía).
   const { isOwnerOfActive, activeStoreId } = useStore();
+  const resumenSync = useResumenSync();
   const walletHealth = useWalletSyncHealth(activeStoreId);
   const walletStale = walletHealth.data?.status === 'stale' || walletHealth.data?.status === 'critical';
 
@@ -119,7 +121,15 @@ export default function MesActualResumen({ summary, filters }: Props) {
           </span>
           <WalletSyncBadge size="sm" showLabel />
           {isOwnerOfActive && (
-            <WalletSyncButton size="sm" variant="outline" label="Sincronizar" />
+            <Button
+              onClick={() => resumenSync.mutate({ from: filters.fromDate, untill: filters.toDate })}
+              disabled={resumenSync.isPending}
+              size="sm"
+              variant="outline"
+            >
+              <RefreshCw size={14} className={`mr-1.5 ${resumenSync.isPending ? 'animate-spin' : ''}`} />
+              {resumenSync.isPending ? 'Sincronizando…' : 'Sincronizar'}
+            </Button>
           )}
         </div>
       </header>
