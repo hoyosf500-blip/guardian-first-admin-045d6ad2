@@ -1461,6 +1461,268 @@ export type Database = {
         }
         Relationships: []
       }
+      wa_ai_runs: {
+        Row: {
+          action: string | null
+          completion_tokens: number | null
+          confidence: string | null
+          conversation_id: string | null
+          created_at: string
+          id: string
+          model: string | null
+          output: string | null
+          prompt_tokens: number | null
+          store_id: string
+          trigger_message_id: string | null
+        }
+        Insert: {
+          action?: string | null
+          completion_tokens?: number | null
+          confidence?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          model?: string | null
+          output?: string | null
+          prompt_tokens?: number | null
+          store_id: string
+          trigger_message_id?: string | null
+        }
+        Update: {
+          action?: string | null
+          completion_tokens?: number | null
+          confidence?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          model?: string | null
+          output?: string | null
+          prompt_tokens?: number | null
+          store_id?: string
+          trigger_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_ai_runs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "wa_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wa_ai_runs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wa_ai_runs_trigger_message_id_fkey"
+            columns: ["trigger_message_id"]
+            isOneToOne: false
+            referencedRelation: "wa_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wa_channels: {
+        Row: {
+          created_at: string
+          id: string
+          instance_name: string | null
+          meta: Json
+          phone_number: string | null
+          provider: string
+          provider_base: string | null
+          provider_token: string | null
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          instance_name?: string | null
+          meta?: Json
+          phone_number?: string | null
+          provider?: string
+          provider_base?: string | null
+          provider_token?: string | null
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          instance_name?: string | null
+          meta?: Json
+          phone_number?: string | null
+          provider?: string
+          provider_base?: string | null
+          provider_token?: string | null
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_channels_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wa_conversations: {
+        Row: {
+          ai_enabled: boolean
+          ai_state: string
+          assigned_operator_id: string | null
+          channel_id: string | null
+          created_at: string
+          customer_name: string | null
+          customer_phone: string
+          id: string
+          last_direction: string | null
+          last_message_at: string | null
+          last_message_preview: string | null
+          linked_external_id: string | null
+          snooze_until: string | null
+          status: string
+          store_id: string
+          unread_count: number
+          updated_at: string
+        }
+        Insert: {
+          ai_enabled?: boolean
+          ai_state?: string
+          assigned_operator_id?: string | null
+          channel_id?: string | null
+          created_at?: string
+          customer_name?: string | null
+          customer_phone: string
+          id?: string
+          last_direction?: string | null
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          linked_external_id?: string | null
+          snooze_until?: string | null
+          status?: string
+          store_id: string
+          unread_count?: number
+          updated_at?: string
+        }
+        Update: {
+          ai_enabled?: boolean
+          ai_state?: string
+          assigned_operator_id?: string | null
+          channel_id?: string | null
+          created_at?: string
+          customer_name?: string | null
+          customer_phone?: string
+          id?: string
+          last_direction?: string | null
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          linked_external_id?: string | null
+          snooze_until?: string | null
+          status?: string
+          store_id?: string
+          unread_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_conversations_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "wa_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wa_conversations_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wa_messages: {
+        Row: {
+          ai_generated: boolean
+          body: string | null
+          channel_id: string | null
+          conversation_id: string
+          created_at: string
+          direction: string
+          id: string
+          media: Json | null
+          operator_id: string | null
+          provider_ts: string | null
+          sender: string
+          status: string
+          store_id: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          ai_generated?: boolean
+          body?: string | null
+          channel_id?: string | null
+          conversation_id: string
+          created_at?: string
+          direction: string
+          id?: string
+          media?: Json | null
+          operator_id?: string | null
+          provider_ts?: string | null
+          sender?: string
+          status?: string
+          store_id: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          ai_generated?: boolean
+          body?: string | null
+          channel_id?: string | null
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          media?: Json | null
+          operator_id?: string | null
+          provider_ts?: string | null
+          sender?: string
+          status?: string
+          store_id?: string
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_messages_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "wa_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wa_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "wa_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wa_messages_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1675,6 +1937,16 @@ export type Database = {
           ciudad: string
           departamento: string
           total_pedidos: number
+        }[]
+      }
+      get_wa_channel_status: {
+        Args: { p_store_id: string }
+        Returns: {
+          channel_id: string
+          phone_number: string
+          provider: string
+          status: string
+          updated_at: string
         }[]
       }
       has_role: {
@@ -2238,6 +2510,17 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      upsert_wa_channel: {
+        Args: {
+          p_instance_name?: string
+          p_phone_number?: string
+          p_provider: string
+          p_provider_base?: string
+          p_provider_token: string
+          p_store_id: string
+        }
+        Returns: string
       }
       upsert_wallet_movements: { Args: { p_movements: Json }; Returns: number }
       wallet_daily_series: {
