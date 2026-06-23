@@ -81,14 +81,13 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
     onClose();
   }, [notes, load, onClose]);
 
-  // Excepción pedida 2026-05-27 (operadora EC, tarde para cerrar).
-  // El botón "Cerrar de todas maneras" expira automáticamente al día siguiente.
-  // Se usa un timestamp absoluto (no comparación de strings de fecha) para evitar
-  // problemas de huso horario entre el reloj del cliente y Bogotá.
-  const FORCE_CLOSE_EXPIRES_AT = new Date('2026-05-28T05:00:00-05:00').getTime();
-  const forceCloseAllowed = Date.now() < FORCE_CLOSE_EXPIRES_AT;
-
-  const blocked = pending.length > 0;
+  // 2026-05-28: el cierre NO bloquea por pendientes. La lista de "no llamados"
+  // aparece como ADVERTENCIA dentro del flow normal y el submit se manda con
+  // `p_force=true` cuando hay pendientes, para que el reporte de cierre quede
+  // registrado server-side como "cerrado con N pendientes". La supervisora ve
+  // el detalle en /admin → reportes diarios. Antes había un gate hard + una
+  // exception window con fecha fija — ambos eliminados.
+  const hasPending = pending.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -96,57 +95,49 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Moon size={18} className="text-accent" />
-            Cerrar turno {!blocked && !loading && <span className="text-xs text-muted-foreground font-normal">— paso {step} de 2</span>}
+            Cerrar turno {!loading && <span className="text-xs text-muted-foreground font-normal">— paso {step} de 2</span>}
           </DialogTitle>
           <DialogDescription>
-            {blocked
-              ? 'Antes de cerrar, completa los reintentos pendientes.'
+            {hasPending
+              ? `Tenés ${pending.length} cliente${pending.length > 1 ? 's' : ''} sin llamar. Podés cerrar igual, pero quedará registrado.`
               : 'Resumen automático del día. Solo agrega notas si lo necesitas.'}
           </DialogDescription>
         </DialogHeader>
 
         {loading ? (
           <div className="flex justify-center py-8"><Loader2 className="animate-spin text-accent" /></div>
-        ) : blocked ? (
-          <div className="space-y-3">
-            <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/30 p-3">
-              <AlertTriangle size={16} className="text-destructive mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-destructive">
-                No puedes cerrar — faltan {pending.length} cliente{pending.length > 1 ? 's' : ''} con llamadas pendientes.
-              </div>
-            </div>
-            <div className="max-h-64 overflow-y-auto space-y-1.5">
-              {pending.map((p) => (
-                <div key={p.phone} className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2 text-xs">
-                  <div>
-                    <div className="font-medium text-foreground">{p.nombre}</div>
-                    <div className="text-muted-foreground">{p.phone}</div>
-                  </div>
-                  <span className="font-mono text-muted-foreground">{p.attempts}/3</span>
-                </div>
-              ))}
-            </div>
-            {forceCloseAllowed && (
-              <div className="rounded-lg border border-orange/40 bg-orange/10 p-3 space-y-2">
-                <div className="text-xs text-orange">
-                  Excepción de hoy: podés cerrar de todas maneras. Mañana este botón ya no estará disponible — completá los reintentos antes del cierre.
-                </div>
-                <Button
-                  variant="outline"
-                  className="w-full border-orange/60 text-orange hover:bg-orange/20"
-                  disabled={submitting}
-                  onClick={() => submit(true)}
-                >
-                  {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Cerrar de todas maneras (solo hoy)'}
-                </Button>
-              </div>
-            )}
-            <Button variant="outline" onClick={onClose} className="w-full">Volver</Button>
-          </div>
         ) : (
           <div className="space-y-4">
             {step === 1 && (
               <div className="space-y-3">
+                {/* Advertencia (NO bloqueo) si quedaron pendientes. La lista
+                    muestra hasta 3 in-line + un "ver más" si hay más; el
+                    submit del step 2 detecta hasPending y pasa p_force=true
+                    para que el cierre quede etiquetado server-side. */}
+                {hasPending && (
+                  <div className="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={16} className="text-warning mt-0.5 flex-shrink-0" />
+                      <div className="text-xs text-warning flex-1">
+                        <div className="font-semibold mb-0.5">
+                          Faltaron {pending.length} llamada{pending.length > 1 ? 's' : ''} pendiente{pending.length > 1 ? 's' : ''}
+                        </div>
+                        <div className="opacity-80">Podés cerrar igual — quedará registrado en el reporte.</div>
+                      </div>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {pending.map((p) => (
+                        <div key={p.phone} className="flex items-center justify-between bg-surface/60 border border-warning/20 rounded px-2.5 py-1.5 text-[11px]">
+                          <div className="min-w-0">
+                            <div className="font-medium text-foreground truncate">{p.nombre}</div>
+                            <div className="text-muted-foreground font-mono">{p.phone}</div>
+                          </div>
+                          <span className="font-mono text-warning ml-2 shrink-0">{p.attempts}/3</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Todos estos números los calcula el sistema automáticamente — no se editan.
                 </p>
@@ -213,8 +204,12 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                   <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
                     <ArrowLeft size={14} /> Atrás
                   </Button>
-                  <Button onClick={() => submit(false)} disabled={submitting} className="flex-1">
-                    {submitting ? <Loader2 className="animate-spin" size={16} /> : 'Enviar cierre'}
+                  {/* `force = hasPending`: si quedaron llamadas sin hacer, el
+                      RPC recibe p_force=true y registra el cierre con la marca
+                      "cerrado con N pendientes" — el bloqueo server-side se
+                      mantiene activo para auditoría pero ya no impide cerrar. */}
+                  <Button onClick={() => submit(hasPending)} disabled={submitting} className="flex-1">
+                    {submitting ? <Loader2 className="animate-spin" size={16} /> : hasPending ? 'Cerrar con pendientes' : 'Enviar cierre'}
                   </Button>
                 </div>
               </div>
