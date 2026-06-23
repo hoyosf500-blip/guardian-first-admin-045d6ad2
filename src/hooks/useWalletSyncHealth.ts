@@ -2,25 +2,39 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
 // Hook para detectar staleness del wallet de Dropi.
-// T3-3: además de synced_at, ahora miramos max(created_at). Antes
-// solo el synced_at. Si el cron se rompe y nunca corre de nuevo,
-// synced_at queda en el pasado pero no detectamos que dejaron de
-// llegar movimientos NUEVOS (lo que importa al negocio).
+//
+// FIX 2026-06-23 — antes medíamos max(synced_at) de dropi_wallet_movements (la
+// última FILA upserteada) y max(fecha) (el último movimiento), tomando el PEOR de
+// los dos. En una tienda de baja actividad NO entran movimientos nuevos, así que
+// max(fecha) es viejo por naturaleza y el UPSERT idempotente
+// (ON CONFLICT … WHERE … IS DISTINCT FROM, migration 20260430000000:110-127) NO
+// re-bumpea synced_at cuando la fila no cambió → ambas señales envejecían y el
+// badge marcaba "stale"/"critical" aunque el cron corriera sano cada 6h. Confundía
+// "no hay actividad nueva" con "el sync se rompió".
+//
+// Ahora anclamos la frescura a la ÚLTIMA CORRIDA del cron del wallet, que se
+// registra en sync_logs (source='dropi-wallet-sync') en CADA corrida — incluso si
+// trajo 0 movimientos nuevos (dropi-wallet-sync/index.ts:262). Si el cron deja de
+// correr no se inserta fila nueva → lastSyncAt envejece → stale/critical, que es
+// lo que de verdad importa. Bonus: sync_logs es legible por socios (policy
+// is_store_member, migration 20260623120000); dropi_wallet_movements es admin-only
+// (wallet_admin_select), así que el badge viejo NUNCA funcionó para socios — ahora sí.
 //
 // Devuelve un status simbólico que el badge usa para colorear:
-//   fresh     → < 8h         (verde)
-//   stale     → 8h-24h       (amarillo, warning)
-//   critical  → > 24h        (rojo)
-//   never     → null         (gris)
+//   fresh     → corrió < 8h    (verde)
+//   stale     → corrió 8h-24h  (amarillo, warning)
+//   critical  → corrió > 24h   (rojo, cron caído)
+//   never     → sin corridas   (gris)
 
 export type WalletSyncStatus = 'fresh' | 'stale' | 'critical' | 'never';
 
 export interface WalletSyncHealth {
+  /** Última CORRIDA del cron del wallet (sync_logs), no la última fila upserteada. */
   lastSyncAt: Date | null;
   hoursSinceSync: number | null;
-  // Hours desde el último movimiento NUEVO insertado (created_at).
-  // Si esto es viejo aunque synced_at sea reciente, el cron sigue corriendo
-  // pero la API de Dropi no está devolviendo movimientos nuevos.
+  // Horas desde el último movimiento del wallet (max fecha). INFORMATIVO: ya NO
+  // dirige el color — una tienda sin movimientos nuevos no está "rota". Admin-only
+  // por RLS (wallet_admin_select); para socios queda en null sin romper el badge.
   hoursSinceNewMovement: number | null;
   status: WalletSyncStatus;
 }
@@ -28,53 +42,60 @@ export interface WalletSyncHealth {
 const FRESH_HOURS = 8;
 const STALE_HOURS = 24;
 
-function deriveStatus(hoursSync: number | null, hoursNew: number | null): WalletSyncStatus {
-  if (hoursSync === null) return 'never';
-  // El peor de los dos manda. Si o el cron no corre o no llegan movs nuevos,
-  // los KPIs están desactualizados.
-  const worst = Math.max(hoursSync, hoursNew ?? hoursSync);
-  if (worst < FRESH_HOURS) return 'fresh';
-  if (worst < STALE_HOURS) return 'stale';
+// Pura y exportada para testear. El color depende SOLO de cuándo corrió el sync,
+// no de si hubo movimientos nuevos (ese era el bug: una tienda de baja actividad
+// envejecía aunque el cron estuviera sano).
+export function deriveStatus(hoursSinceRun: number | null): WalletSyncStatus {
+  if (hoursSinceRun === null) return 'never';
+  if (hoursSinceRun < FRESH_HOURS) return 'fresh';
+  if (hoursSinceRun < STALE_HOURS) return 'stale';
   return 'critical';
 }
 
 // `storeId` scopea la frescura a la TIENDA activa. Sin esto, un admin (que por
-// RLS ve todas las tiendas) veía el sync más reciente de CUALQUIER tienda → el
+// RLS ve todas las tiendas) veía la corrida más reciente de CUALQUIER tienda → el
 // badge marcaba "fresh" aunque la tienda que está mirando estuviera vieja (falsa
 // tranquilidad). Pasá `activeStoreId` desde StoreContext.
 export function useWalletSyncHealth(storeId?: string | null) {
   return useQuery<WalletSyncHealth>({
     queryKey: ['wallet_sync_health', storeId ?? 'all'],
     queryFn: async () => {
-      let syncQ = supabase
-        .from('dropi_wallet_movements')
-        .select('synced_at')
-        .order('synced_at', { ascending: false })
+      // 1) Última corrida del cron del wallet — la fuente de verdad de "¿corrió?".
+      //    source='dropi-wallet-sync' la distingue del sync de ÓRDENES
+      //    (source='dropi'), que comparte la misma tabla sync_logs.
+      let runQ = supabase
+        .from('sync_logs')
+        .select('created_at')
+        .eq('source', 'dropi-wallet-sync')
+        .order('created_at', { ascending: false })
         .limit(1);
+      // 2) Último movimiento (informativo, best-effort: dropi_wallet_movements es
+      //    admin-only, así que para socios esta query falla y la tratamos como null).
       let fechaQ = supabase
         .from('dropi_wallet_movements')
         .select('fecha')
         .order('fecha', { ascending: false })
         .limit(1);
       if (storeId) {
-        syncQ = syncQ.eq('store_id', storeId);
+        runQ = runQ.eq('store_id', storeId);
         fechaQ = fechaQ.eq('store_id', storeId);
       }
-      const [syncRes, fechaRes] = await Promise.all([
-        syncQ.maybeSingle(),
+      const [runRes, fechaRes] = await Promise.all([
+        runQ.maybeSingle(),
         fechaQ.maybeSingle(),
       ]);
-      if (syncRes.error) throw syncRes.error;
-      if (fechaRes.error) throw fechaRes.error;
-      const tsSync = syncRes.data?.synced_at ? new Date(syncRes.data.synced_at) : null;
-      const tsNew = fechaRes.data?.fecha ? new Date(fechaRes.data.fecha) : null;
-      const hoursSync = tsSync ? (Date.now() - tsSync.getTime()) / 3_600_000 : null;
+      // El run query SÍ es crítico: si falla, que el badge se oculte (isError).
+      if (runRes.error) throw runRes.error;
+      // El fecha query NO es crítico — un socio sin permiso no debe romper el badge.
+      const tsRun = runRes.data?.created_at ? new Date(runRes.data.created_at) : null;
+      const tsNew = !fechaRes.error && fechaRes.data?.fecha ? new Date(fechaRes.data.fecha) : null;
+      const hoursSinceRun = tsRun ? (Date.now() - tsRun.getTime()) / 3_600_000 : null;
       const hoursNew = tsNew ? (Date.now() - tsNew.getTime()) / 3_600_000 : null;
       return {
-        lastSyncAt: tsSync,
-        hoursSinceSync: hoursSync,
+        lastSyncAt: tsRun,
+        hoursSinceSync: hoursSinceRun,
         hoursSinceNewMovement: hoursNew,
-        status: deriveStatus(hoursSync, hoursNew),
+        status: deriveStatus(hoursSinceRun),
       };
     },
     staleTime: 60_000,

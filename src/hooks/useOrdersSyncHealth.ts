@@ -85,6 +85,11 @@ export function useOrdersSyncHealth(storeId?: string | null) {
         .from('sync_logs')
         .select('status, synced_count, total_count, created_at, error_message')
         .eq('store_id', sid as string)
+        // sync_logs es compartida: source='dropi' = sync de ÓRDENES,
+        // source='dropi-wallet-sync' = wallet. Sin este filtro, una corrida del
+        // wallet (cada 6h) se colaba como si fuera de pedidos y contaminaba la
+        // señal de frescura del badge de órdenes.
+        .eq('source', 'dropi')
         .order('created_at', { ascending: false })
         .limit(12);
       if (error) throw error;
