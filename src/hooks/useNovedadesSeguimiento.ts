@@ -11,6 +11,7 @@ import {
   NovedadResultTipo,
   DeliveryOutcome,
 } from '@/lib/novedadGestion';
+import { classifyNovedad, Culpa } from '@/lib/novedadTaxonomy';
 
 export type SeguimientoRange = 'today' | '7d' | '30d';
 
@@ -47,6 +48,25 @@ export interface NovedadFrequency {
   count: number;
 }
 
+/** Desglose de novedades por culpa+categoría con tasa de devolución (de las terminadas). */
+export interface CulpaRow {
+  culpa: Culpa;
+  categoria: string;
+  count: number;
+  conOutcome: number;   // órdenes con estado terminal (entregada|devuelta)
+  devueltas: number;
+  pctDevolucion: number | null; // devueltas / conOutcome
+}
+
+/** Métrica problemática por dimensión (transportadora o ciudad). */
+export interface DimensionRow {
+  label: string;
+  total: number;
+  conOutcome: number;
+  devueltas: number;
+  tasaDevolucion: number | null;
+}
+
 export interface NovedadesSeguimientoData {
   loading: boolean;
   range: SeguimientoRange;
@@ -70,6 +90,10 @@ export interface NovedadesSeguimientoData {
   // detalle + ranking
   gestiones: NovedadGestionRow[];
   frecuentes: NovedadFrequency[];
+  // inteligencia (M1/M5): atribución de culpa + dimensiones problemáticas
+  porCulpa: CulpaRow[];
+  carriersProblematicos: DimensionRow[];
+  ciudadesProblematicas: DimensionRow[];
 }
 
 const RANGE_DAYS: Record<SeguimientoRange, number> = { today: 0, '7d': 6, '30d': 29 };
@@ -84,8 +108,13 @@ interface OrderLite {
   last_movement_at: string | null;
   valor: number | null;
   transportadora: string | null;
+  ciudad: string | null;
   nombre: string | null;
 }
+
+const MIN_SAMPLE = 3; // mínimo de pedidos para rankear una transportadora/ciudad
+
+type PendOrder = Pick<OrderLite, 'id' | 'phone' | 'novedad' | 'last_movement_at' | 'estado' | 'transportadora' | 'ciudad'>;
 
 const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | 'loading'> = {
   pendientes: 0,
@@ -102,6 +131,9 @@ const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | '
   tiempoRespuestaPromMs: null,
   gestiones: [],
   frecuentes: [],
+  porCulpa: [],
+  carriersProblematicos: [],
+  ciudadesProblematicas: [],
 };
 
 /**
@@ -147,7 +179,7 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
           .order('created_at', { ascending: false }),
         supabase
           .from('orders')
-          .select('id, phone, novedad, last_movement_at')
+          .select('id, phone, novedad, last_movement_at, estado, transportadora, ciudad')
           .eq('store_id', activeStoreId)
           .or(NOVEDAD_QUEUE_FILTER)
           .eq('novedad_sol', false),
@@ -160,7 +192,7 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       if (seq !== seqRef.current) return; // una carga más nueva ganó
 
       const tps = (tpRes.data ?? []).filter((t) => parseNovedadAction(t.action).tipo != null);
-      const pend = (pendRes.data ?? []) as Pick<OrderLite, 'id' | 'phone' | 'novedad' | 'last_movement_at'>[];
+      const pend = (pendRes.data ?? []) as PendOrder[];
       const memberIds = (memberRes.data ?? []).map((m) => m.user_id as string);
 
       // Teléfonos a enriquecer (de las marcas).
@@ -170,7 +202,7 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       const orderRes = phones.length
         ? await supabase
             .from('orders')
-            .select('id, phone, estado, novedad, last_movement_at, valor, transportadora, nombre')
+            .select('id, phone, estado, novedad, last_movement_at, valor, transportadora, ciudad, nombre')
             .eq('store_id', activeStoreId)
             .in('phone', phones)
         : { data: [] as OrderLite[] };
@@ -298,6 +330,55 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       orders.forEach((o) => { if (o.novedad && o.novedad.trim()) addFreq(o.id, o.novedad); });
       const frecuentes = Array.from(freq.values()).sort((a, b) => b.count - a.count).slice(0, 8);
 
+      // ───────── Inteligencia (M1/M5): universo de novedad-órdenes ─────────
+      // Pendientes ∪ órdenes de las marcas, deduplicado por id. Es la base del
+      // desglose por culpa y por transportadora/ciudad. La tasa de devolución se
+      // calcula SOLO sobre las que ya llegaron a estado terminal (entregada/
+      // devuelta) — las pendientes están 'en_proceso' y no cuentan en el denom.
+      // NOTA: este universo NO ve las devoluciones que nunca se gestionaron (sin
+      // touchpoint y ya fuera de estado novedad) — ese cruce completo es el RPC
+      // del Módulo 2 (Fase 2). Acá es "de lo gestionado + lo pendiente".
+      interface UniOrder { id: string; novedad: string | null; estado: string | null; transportadora: string | null; ciudad: string | null; }
+      const uniById = new Map<string, UniOrder>();
+      const addUni = (o: UniOrder) => { if (o.id && !uniById.has(o.id)) uniById.set(o.id, o); };
+      pend.forEach((p) => addUni({ id: p.id, novedad: p.novedad, estado: p.estado ?? null, transportadora: p.transportadora ?? null, ciudad: p.ciudad ?? null }));
+      orders.forEach((o) => addUni({ id: o.id, novedad: o.novedad, estado: o.estado, transportadora: o.transportadora, ciudad: o.ciudad }));
+      const universe = Array.from(uniById.values());
+      const isTerminal = (oc: DeliveryOutcome) => oc === 'entregada' || oc === 'devuelta';
+
+      // Desglose por culpa + categoría.
+      const culpaMap = new Map<string, CulpaRow>();
+      for (const o of universe) {
+        const { culpa, categoria } = classifyNovedad(o.novedad);
+        const key = `${culpa}|${categoria}`;
+        let row = culpaMap.get(key);
+        if (!row) { row = { culpa, categoria, count: 0, conOutcome: 0, devueltas: 0, pctDevolucion: null }; culpaMap.set(key, row); }
+        row.count += 1;
+        const oc = classifyDeliveryOutcome(o.estado);
+        if (isTerminal(oc)) { row.conOutcome += 1; if (oc === 'devuelta') row.devueltas += 1; }
+      }
+      culpaMap.forEach((r) => { r.pctDevolucion = r.conOutcome > 0 ? r.devueltas / r.conOutcome : null; });
+      const porCulpa = Array.from(culpaMap.values()).sort((a, b) => b.count - a.count);
+
+      // Dimensiones problemáticas (transportadora / ciudad).
+      const dimRank = (pick: (o: UniOrder) => string | null, fallback: string): DimensionRow[] => {
+        const m = new Map<string, DimensionRow>();
+        for (const o of universe) {
+          const label = (pick(o) || '').trim() || fallback;
+          let row = m.get(label);
+          if (!row) { row = { label, total: 0, conOutcome: 0, devueltas: 0, tasaDevolucion: null }; m.set(label, row); }
+          row.total += 1;
+          const oc = classifyDeliveryOutcome(o.estado);
+          if (isTerminal(oc)) { row.conOutcome += 1; if (oc === 'devuelta') row.devueltas += 1; }
+        }
+        m.forEach((r) => { r.tasaDevolucion = r.conOutcome > 0 ? r.devueltas / r.conOutcome : null; });
+        return Array.from(m.values())
+          .filter((r) => r.total >= MIN_SAMPLE)
+          .sort((a, b) => (b.tasaDevolucion ?? -1) - (a.tasaDevolucion ?? -1) || b.total - a.total);
+      };
+      const carriersProblematicos = dimRank((o) => o.transportadora, 'Sin transportadora');
+      const ciudadesProblematicas = dimRank((o) => o.ciudad, 'Sin ciudad');
+
       setData({
         pendientes: pend.length,
         nuevasHoy: pendientesHoy + cerradasHoy,
@@ -313,6 +394,9 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
         tiempoRespuestaPromMs,
         gestiones,
         frecuentes,
+        porCulpa,
+        carriersProblematicos,
+        ciudadesProblematicas,
       });
     } finally {
       if (seq === seqRef.current) setLoading(false);
