@@ -155,7 +155,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
           value={totalVendido != null ? formatCOP(totalVendido) : '—'}
           icon={DollarSign}
           tone="accent"
-          hint="sin cancelados · = Dropi"
+          hint="sin cancelados · por fecha de creación"
         />
         <KpiCard
           label="Entregados"
@@ -169,7 +169,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
           value={gananciaLoading ? '…' : formatCOP(gananciaNeta)}
           icon={Wallet}
           tone={walletStale ? 'warning' : gananciaNeta >= 0 ? 'success' : 'danger'}
-          hint={walletStale ? '⚠ wallet viejo, sincronizá' : '≈ Utilidad Total Dropi'}
+          hint={walletStale ? '⚠ wallet viejo, sincronizá' : 'caja neta del wallet · este mes'}
         />
       </div>
 
@@ -259,7 +259,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
                   <span className="text-xs text-muted-foreground">
                     Ganancia neta operativa del mes
                     <span className="block text-[10px] text-muted-foreground/70">
-                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · ≈ <strong>Utilidad Total</strong> de Dropi
+                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · caja del wallet por fecha de movimiento
                     </span>
                   </span>
                   <span className={`text-base font-bold tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
@@ -280,11 +280,13 @@ export default function MesActualResumen({ summary, filters }: Props) {
           <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
             <Info size={13} className="text-info shrink-0 mt-0.5" />
             <p>
-              Dropi ya te pagó la <strong className="text-foreground">Utilidad Total</strong> (lo realizado).
-              Lo <strong className="text-foreground">"Estimado"</strong> de Dropi es si lo pendiente
-              (preparación + tránsito + novedad) también entrega. Acá ves realizado vs pendiente vs
-              perdido. El <strong className="text-foreground">saldo del wallet</strong> es tu plata
-              disponible hoy, después de fletes, devoluciones y retiros.
+              La cascada de arriba es el valor de los pedidos que <strong className="text-foreground">creaste este mes</strong>,
+              por estado (realizado vs pendiente vs perdido). La <strong className="text-foreground">caja del wallet</strong> es
+              la plata que de verdad entró y salió este mes — va por <strong className="text-foreground">fecha de movimiento</strong>,
+              así que incluye entregas de pedidos de meses anteriores; por eso no cuadra 1:1 con la cascada ni con la
+              "Utilidad Total" de Dropi. Es <strong className="text-foreground">ganancia operativa</strong>: no descuenta
+              pauta ni costos fijos (eso lo ves en CFO). El <strong className="text-foreground">saldo</strong> del wallet es
+              tu plata disponible hoy, después de fletes, devoluciones y retiros.
             </p>
           </div>
         </div>
