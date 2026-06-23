@@ -2,3 +2,11 @@ project_id = "bokhlpfmttoizjaakntc"
 
 [functions.dropi-relay]
 verify_jwt = false
+
+# wa-webhook lo llama un gateway externo (Whapi) SIN JWT de Supabase; su
+# seguridad la maneja internamente con WA_WEBHOOK_SECRET (?secret= / header).
+# wa-send y wa-ai-responder quedan con verify_jwt = true (default): el primero
+# lo llama el browser con el JWT del usuario; el segundo, el webhook con la
+# service role key (que ES un JWT válido).
+[functions.wa-webhook]
+verify_jwt = false
