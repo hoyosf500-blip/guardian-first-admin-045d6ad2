@@ -2136,6 +2136,21 @@ export type Database = {
           valor: number
         }[]
       }
+      novedades_root_cause: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          address_kind: string
+          ciudad: string
+          confirmer_id: string
+          confirmer_name: string
+          novedad: string
+          order_id: string
+          tiene_novedad: boolean
+          transportadora: string
+          validation_decision: string
+          valor: number
+        }[]
+      }
       opening_report_status: {
         Args: never
         Returns: {
