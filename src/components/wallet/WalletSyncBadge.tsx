@@ -89,7 +89,7 @@ export default function WalletSyncBadge({ size = 'sm', showLabel = false, classN
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border tabular-nums ${STATUS_CLS[status]} ${padding} ${className}`}
-      title={q.data.lastSyncAt ? `Última sync: ${q.data.lastSyncAt.toLocaleString('es-CO')}` : 'Sin sincronizaciones'}
+      title={q.data.lastSyncAt ? `Última corrida del sync: ${q.data.lastSyncAt.toLocaleString('es-CO')}` : 'Sin corridas de sync'}
     >
       <Icon size={size === 'md' ? 12 : 10} />
       <span>

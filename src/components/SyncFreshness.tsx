@@ -43,6 +43,10 @@ export default function SyncFreshness({ onAuditClick }: Props) {
       .from('sync_logs')
       .select('status, synced_count, total_count, created_at, error_message')
       .eq('store_id', activeStoreId)
+      // Solo corridas del sync de ÓRDENES. sync_logs también guarda las del wallet
+      // (source='dropi-wallet-sync', cada 6h) → sin este filtro se colaban en el
+      // banner de pedidos y enturbiaban el color.
+      .eq('source', 'dropi')
       .order('created_at', { ascending: false })
       .limit(12);
     setLogs((data as LogRow[]) || []);
