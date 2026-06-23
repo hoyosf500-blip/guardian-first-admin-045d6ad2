@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { AlertTriangle, RefreshCw, Search, CheckCircle2, Truck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Search, CheckCircle2, Truck, ListChecks, BarChart3 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import NovedadView from '@/components/NovedadView';
+import NovedadesSeguimiento from '@/components/NovedadesSeguimiento';
+import { useSessionState } from '@/hooks/useSessionState';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -11,6 +13,7 @@ export default function NovedadesTab() {
   const { user } = useAuth();
   const { novedadesQueue, novedadesLoading, loadNovedades } = useOrders();
   const [search, setSearch] = useState('');
+  const [view, setView] = useSessionState<'pendientes' | 'seguimiento'>('novedades:view', 'pendientes');
 
   useEffect(() => {
     if (user) loadNovedades();
@@ -50,16 +53,42 @@ export default function NovedadesTab() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => loadNovedades(true)}
-          disabled={novedadesLoading}
-          className="h-9 px-3 rounded-lg border border-border bg-surface text-muted-foreground text-xs font-semibold flex items-center gap-1.5 hover:text-foreground hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer"
-        >
-          <RefreshCw size={13} className={novedadesLoading ? 'animate-spin' : ''} />
-          Recargar
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+            <button
+              onClick={() => setView('pendientes')}
+              className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                view === 'pendientes' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ListChecks size={13} /> Pendientes
+            </button>
+            <button
+              onClick={() => setView('seguimiento')}
+              className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                view === 'seguimiento' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <BarChart3 size={13} /> Seguimiento
+            </button>
+          </div>
+          {view === 'pendientes' && (
+            <button
+              onClick={() => loadNovedades(true)}
+              disabled={novedadesLoading}
+              className="h-9 px-3 rounded-lg border border-border bg-surface text-muted-foreground text-xs font-semibold flex items-center gap-1.5 hover:text-foreground hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw size={13} className={novedadesLoading ? 'animate-spin' : ''} />
+              Recargar
+            </button>
+          )}
+        </div>
       </div>
 
+      {view === 'seguimiento' && <NovedadesSeguimiento />}
+
+      {view === 'pendientes' && (
+       <>
       {/* KPIs — sistema unificado de tonos */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0 }} className="relative overflow-hidden bg-card rounded-xl border border-border p-4 shadow-ds-xs">
@@ -133,6 +162,8 @@ export default function NovedadesTab() {
 
       {/* Queue */}
       {novedadesQueue.length > 0 && <NovedadView items={filtered} />}
+       </>
+      )}
     </div>
   );
 }

@@ -4,13 +4,14 @@ import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/
 import { formatCOP } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
-import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
+import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
+import { NovedadResultTipo } from '@/lib/novedadGestion';
 import {
   CheckCircle2,
   AlertTriangle,
   Truck,
-  RotateCcw,
+  PhoneOff,
   Phone,
   MapPin,
   Package,
@@ -30,7 +31,8 @@ interface Props {
 }
 
 export default function NovedadView({ items }: Props) {
-  const { resolveNovedad } = useOrders();
+  const { loadNovedades } = useOrders();
+  const { markNovedad } = useMarkNovedadResolved();
   // BUG B fix: persist by *order id*, not array index. When the queue
   // reorders or the operator returns from the carrier tab we keep showing
   // the same customer instead of jumping to a random one at that index.
@@ -41,26 +43,31 @@ export default function NovedadView({ items }: Props) {
   const [solution, setSolution] = useState('');
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Descarte local: cuando marco resuelta/devolución la card desaparece al
+  // instante (sin tocar OrderContext); `loadNovedades(true)` reconcilia luego.
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
 
   const keyOf = (it: OrderData) => it.externalId || it.dbId || it.phone;
 
+  const visibleItems = items.filter((it) => !dismissed.has(keyOf(it)));
+
   // Derive index from the stored id every render.
-  let derivedIdx = callOrderId ? items.findIndex((it) => keyOf(it) === callOrderId) : -1;
+  let derivedIdx = callOrderId ? visibleItems.findIndex((it) => keyOf(it) === callOrderId) : -1;
   if (derivedIdx < 0) derivedIdx = 0;
 
   // Only re-seed when the stored customer is gone (or never set).
   useEffect(() => {
-    if (!items.length) return;
-    const exists = callOrderId && items.some((it) => keyOf(it) === callOrderId);
+    if (!visibleItems.length) return;
+    const exists = callOrderId && visibleItems.some((it) => keyOf(it) === callOrderId);
     if (!exists) {
-      const k = items[0] ? keyOf(items[0]) : null;
+      const k = visibleItems[0] ? keyOf(visibleItems[0]) : null;
       if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callOrderId, items]);
+  }, [callOrderId, visibleItems]);
 
-  const callIdx = Math.max(0, Math.min(derivedIdx, items.length - 1));
-  const o = items[callIdx];
+  const callIdx = Math.max(0, Math.min(derivedIdx, visibleItems.length - 1));
+  const o = visibleItems[callIdx];
 
   // Reset local state when the current order changes
   useEffect(() => {
@@ -69,7 +76,7 @@ export default function NovedadView({ items }: Props) {
     setSubmitting(false);
   }, [o?.dbId]);
 
-  if (!items.length || !o) {
+  if (!visibleItems.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
         <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
@@ -81,38 +88,40 @@ export default function NovedadView({ items }: Props) {
 
   const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
   const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
-  const isResolving = o.result === 'resolving';
 
   const copyPhone = () => {
     void copyToClipboard(o.phone, `${o.phone} copiado`);
   };
 
   const navCall = (dir: number) => {
-    const target = items[Math.max(0, Math.min(items.length - 1, callIdx + dir))];
+    const target = visibleItems[Math.max(0, Math.min(visibleItems.length - 1, callIdx + dir))];
     if (target) setCallOrderId(keyOf(target));
   };
 
-  const handleReoffer = async () => {
-    if (!solution.trim()) {
-      toast.error('Escribí la solución antes de continuar');
-      return;
-    }
+  // Marca local de gestión (no empuja a Dropi — ella ya resolvió allá).
+  //  - resuelta/devolución: descarta la card y reconcilia.
+  //  - sin respuesta: registra el intento y avanza (la novedad sigue en cola).
+  const doMark = async (tipo: NovedadResultTipo) => {
+    if (!o || submitting) return;
     setSubmitting(true);
     try {
-      await resolveNovedad(o, 'reoffer', solution);
+      const ok = await markNovedad(o, tipo, tipo === 'resuelta' ? solution : undefined);
+      if (!ok) return;
+      if (tipo === 'sin_respuesta') {
+        navCall(1);
+      } else {
+        const k = keyOf(o);
+        setDismissed((prev) => new Set(prev).add(k));
+        void loadNovedades(true);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleReturnConfirm = async () => {
+  const handleDevolucionConfirm = async () => {
     setShowReturnConfirm(false);
-    setSubmitting(true);
-    try {
-      await resolveNovedad(o, 'return');
-    } finally {
-      setSubmitting(false);
-    }
+    await doMark('devolucion');
   };
 
   const trackUrl = o.guia ? getTrackingUrl(o.transportadora, o.guia) : null;
@@ -131,7 +140,7 @@ export default function NovedadView({ items }: Props) {
         <span className="font-mono text-foreground">{formatPhone(o.phone)}</span>
       </div>
       <div className="flex justify-between items-center mb-2">
-        <span className="text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
+        <span className="text-xs text-muted-foreground">{callIdx + 1} / {visibleItems.length}</span>
         <div className="flex gap-1.5">
           <button
             onClick={() => navCall(-1)}
@@ -236,24 +245,24 @@ export default function NovedadView({ items }: Props) {
           </div>
         )}
 
-        {/* Resolving feedback */}
-        {isResolving ? (
+        {/* Gestión: marca local (la colaboradora ya resolvió en Dropi). */}
+        {submitting ? (
           <div className="text-center py-4 text-sm font-semibold inline-flex items-center gap-2 justify-center w-full text-green">
-            <CheckCircle2 size={18} className="text-green" />
-            Resuelta — avanzando a la siguiente...
+            <CheckCircle2 size={18} className="text-green animate-pulse" />
+            Marcando…
           </div>
         ) : (
           <>
-            {/* Solution textarea */}
+            {/* Nota opcional (solo aplica a "Resuelta") */}
             <div className="mb-4">
               <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">
-                Solución que diste al cliente
+                Nota de la gestión <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span>
               </label>
               <textarea
                 value={solution}
                 onChange={(e) => setSolution(e.target.value.slice(0, 500))}
                 placeholder="Ej: Cliente confirma estar en casa mañana entre 2-5pm. Barrio correcto: Chapinero."
-                rows={3}
+                rows={2}
                 disabled={submitting}
                 className="w-full rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none disabled:opacity-60"
               />
@@ -264,28 +273,38 @@ export default function NovedadView({ items }: Props) {
               </div>
             </div>
 
-            {/* Action buttons */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* 3 resultados: Resuelta / Devolución / Sin respuesta */}
+            <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={handleReoffer}
-                disabled={!solution.trim() || submitting}
-                className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-green/15 text-green border border-green/25 font-bold text-sm active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                onClick={() => doMark('resuelta')}
+                disabled={submitting}
+                className="inline-flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-green/15 text-green border border-green/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
-                <RotateCcw size={16} /> Volver a ofrecer
+                <CheckCircle2 size={16} /> Resuelta
               </button>
               <button
                 onClick={() => setShowReturnConfirm(true)}
                 disabled={submitting}
-                className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
-                <Truck size={16} /> Devolver
+                <Truck size={16} /> Devolución
+              </button>
+              <button
+                onClick={() => doMark('sin_respuesta')}
+                disabled={submitting}
+                className="inline-flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-yellow/15 text-yellow border border-yellow/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+              >
+                <PhoneOff size={16} /> Sin respuesta
               </button>
             </div>
+            <p className="text-[10px] text-muted-foreground mt-2 text-center">
+              "Sin respuesta" deja la novedad en la cola para reintentar.
+            </p>
           </>
         )}
       </div>
 
-      {/* Confirm modal for "Devolver al remitente" */}
+      {/* Confirm modal para "Devolución" */}
       {showReturnConfirm && (
         <div
           className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center"
@@ -300,13 +319,13 @@ export default function NovedadView({ items }: Props) {
                 <Truck size={18} className="text-red" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-base font-bold text-foreground">Devolver al remitente</h3>
+                <h3 className="text-base font-bold text-foreground">Marcar como devolución</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  La orden de <strong>{o.nombre}</strong> se reportará a Dropi como "DEVOLVER AL REMITENTE" y será regresada. Esta acción no se puede deshacer.
+                  La novedad de <strong>{o.nombre}</strong> se marcará como <strong>devolución</strong> y saldrá de la cola. Asegurate de haberla gestionado en Dropi.
                 </p>
                 {solution.trim() && (
                   <div className="mt-3 p-2.5 rounded-lg bg-yellow/10 border border-yellow/20 text-[11px] text-yellow-700 dark:text-yellow-400">
-                    <strong>Aviso:</strong> escribiste una solución (<em>"<TruncatedText text={solution} maxChars={60} />"</em>) que se va a descartar si devuelves.
+                    <strong>Aviso:</strong> la nota que escribiste (<em>"<TruncatedText text={solution} maxChars={60} />"</em>) no se guarda en una devolución.
                   </div>
                 )}
               </div>
@@ -325,10 +344,10 @@ export default function NovedadView({ items }: Props) {
                 Cancelar
               </button>
               <button
-                onClick={handleReturnConfirm}
+                onClick={handleDevolucionConfirm}
                 className="py-3 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97]"
               >
-                <Send size={14} className="inline mr-1" /> Sí, devolver
+                <Send size={14} className="inline mr-1" /> Sí, devolución
               </button>
             </div>
           </div>
