@@ -20,7 +20,8 @@ export type NovedadResultTipo = 'resuelta' | 'devolucion' | 'sin_respuesta';
 /** Outcome de entrega derivado del estado REAL sincronizado desde Dropi. */
 export type DeliveryOutcome = 'entregada' | 'devuelta' | 'en_proceso' | 'otro';
 
-function stripAccents(s: string): string {
+/** Normaliza quitando acentos (NFD + strip combining marks). Compartido con novedadTaxonomy. */
+export function stripAccents(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
