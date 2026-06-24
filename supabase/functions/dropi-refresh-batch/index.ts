@@ -1,18 +1,17 @@
-// dropi-refresh-batch: refresca VARIOS pedidos desde la API Dropi y los upsertea
-// en la tabla `orders` en una sola invocación. Es la versión por lotes de
-// dropi-refresh-order: el botón "Sincronizar con Dropi" / el auto-trigger de
-// Seguimiento manda los external_id VISIBLES y esta function trae su estado REAL
-// de Dropi AHORA (sin esperar al cron de 5 min, que con volumen se corta).
+// dropi-refresh-batch: sincroniza EN VIVO los pedidos recientes de una tienda
+// contra Dropi, on-demand (botón "Sincronizar Dropi" de Seguimiento).
 //
-// Auth: JWT del usuario (Authorization). Valida membresía de la tienda.
+// IMPORTANTE — estrategia anti rate-limit (corregido 2026-06-23): la primera
+// versión pedía UN request por pedido (40 requests) → Dropi tiraba 429 al toque
+// y sincronizaba 0. Ahora usa el endpoint de LISTA (igual que dropi-cron /
+// dropi-snapshot): ~1 request por cada 200 pedidos, con backoff exponencial.
+// Muchísimos menos requests = Dropi nos aguanta. Hace UPSERT (snapshot solo lee)
+// → el realtime ya existente mueve el tablero.
 //
-// Side effect: UPSERT por `external_id` → el realtime ya existente sobre `orders`
-// mueve las tarjetas del tablero en todos los clientes conectados.
+// Auth: JWT del usuario (Authorization) + isStoreMember (cualquier miembro).
 //
-// Anti-baneo / rate-limit: cap de ids por llamada, espaciado entre pedidos, un
-// reintento con backoff ante 429 y corte parcial (`partial`) si Dropi sigue
-// throttleando o si se agota el presupuesto de tiempo del edge. Un 429 en un
-// pedido NUNCA mata el lote entero.
+// Body: { store_id, days? } — ventana de días hacia atrás (default 10). Filtra
+// por "FECHA DE CAMBIO DE ESTATUS" (el winning filter) → trae lo que se MOVIÓ.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
@@ -21,13 +20,16 @@ import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
 
 interface BatchBody {
   store_id?: string;
-  external_ids?: Array<string | number>;
+  days?: number;
 }
 
-const MAX_IDS = 40;            // cap defensivo por llamada
-const SPACING_MS = 250;        // espaciado entre pedidos (anti rate-limit)
-const TIME_BUDGET_MS = 50_000; // corte de seguridad antes del techo del edge
-const RL_BACKOFF_MS = 2_000;   // espera tras un 429 antes del único reintento
+const PAGE_SIZE = 200;                 // máx por página (menos requests = menos 429)
+const RATE_LIMIT_MS = 1500;            // espera entre páginas OK (igual que cron/snapshot)
+const MAX_PAGES = 10;                  // cap: 10 × 200 = 2000 pedidos recientes
+const TIME_BUDGET_MS = 60_000;         // corte de seguridad < techo del edge
+const RL_BACKOFF_MS = [2000, 4000, 8000, 16000]; // backoff exponencial ante 429
+const DEFAULT_DAYS = 10;
+const FALLBACK_FILTER = "FECHA DE CAMBIO DE ESTATUS";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -38,16 +40,10 @@ function jsonResp(body: unknown, status = 200, headers: Record<string, string> =
   });
 }
 
-/** Extrae el objeto pedido del response Dropi ({object} | {objects:[...]} | obj). */
-function pickOrderObj(data: unknown): Record<string, unknown> | null {
-  const d = data as Record<string, unknown>;
-  const raw =
-    d?.object ??
-    (d?.objects as Array<Record<string, unknown>> | undefined)?.[0] ??
-    data;
-  const obj = raw as Record<string, unknown>;
-  if (!obj || (!obj.id && !obj.external_id)) return null;
-  return obj;
+/** YYYY-MM-DD para una fecha desplazada `daysBack` días respecto a hoy (UTC). */
+function ymd(daysBack: number): string {
+  const d = new Date(Date.now() - daysBack * 86_400_000);
+  return d.toISOString().split("T")[0];
 }
 
 Deno.serve(async (req) => {
@@ -69,11 +65,10 @@ Deno.serve(async (req) => {
 
     const body = (await req.json().catch(() => ({}))) as BatchBody;
     const storeId = String(body.store_id || "").trim();
-    const rawIds = Array.isArray(body.external_ids) ? body.external_ids : [];
-    // Normaliza, dedup y capea.
-    const ids = [...new Set(rawIds.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, MAX_IDS);
     if (!storeId) return jsonResp({ error: "store_id requerido" }, 400, corsHeaders);
-    if (ids.length === 0) return jsonResp({ ok: true, refreshed: 0, changed: 0, total: 0, partial: false }, 200, corsHeaders);
+    const days = Number.isFinite(body.days) && (body.days as number) > 0
+      ? Math.min(Math.floor(body.days as number), 60)
+      : DEFAULT_DAYS;
 
     const sbAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -86,78 +81,104 @@ Deno.serve(async (req) => {
     const cfg = await loadStoreConfig(sbAdmin, storeId);
     if (!cfg.apiKey) return jsonResp({ error: "tienda sin dropi_api_key configurada" }, 400, corsHeaders);
 
-    // Estados actuales para reportar cuántos CAMBIARON (1 query, no N).
-    const { data: existing } = await sbAdmin
-      .from("orders")
-      .select("external_id, estado")
-      .eq("store_id", storeId)
-      .in("external_id", ids);
-    const prevEstado = new Map(
-      (existing || []).map((r) => [String((r as { external_id: unknown }).external_id), String((r as { estado: unknown }).estado || "")]),
-    );
+    // Filtro dinámico — mismo patrón que cron/snapshot/health.
+    const { data: filterRow } = await sbAdmin.from("app_settings")
+      .select("value").eq("key", "dropi_winning_status_filter").maybeSingle();
+    const filterDateBy = (filterRow?.value as string) || FALLBACK_FILTER;
 
-    const origin = cfg.storeUrl || "";
+    const from = ymd(days);
+    const to = ymd(0);
     const headers: Record<string, string> = {
       "Accept": "application/json",
+      "Content-Type": "application/json",
       "dropi-integration-key": cfg.apiKey,
-      ...(origin ? { Origin: origin, Referer: origin.endsWith("/") ? origin : `${origin}/` } : {}),
+      ...(cfg.storeUrl ? { Origin: cfg.storeUrl } : {}),
     };
-    const today = new Date().toISOString().split("T")[0];
+    const today = ymd(0);
 
-    const rows: Record<string, unknown>[] = [];
-    let changed = 0;
-    let rateLimited = false;
+    let refreshed = 0;
+    let pages = 0;
+    let pagesFetched = 0;
+    let start = 0;
     let partial = false;
-    let processed = 0;
+    let rateLimited = false;
     const started = Date.now();
 
-    for (const extId of ids) {
+    pageLoop: while (pages < MAX_PAGES) {
       if (Date.now() - started > TIME_BUDGET_MS) { partial = true; break; }
-      if (processed > 0) await sleep(SPACING_MS);
-      processed++;
 
-      const url = `${cfg.base}/integrations/orders/myorders/${encodeURIComponent(extId)}`;
-      try {
-        let res = await fetch(url, { method: "GET", headers });
-        if (res.status === 429) {
-          // Único reintento con backoff. Si vuelve a 429, cortamos parcial.
-          await sleep(RL_BACKOFF_MS);
-          res = await fetch(url, { method: "GET", headers });
-          if (res.status === 429) { rateLimited = true; partial = true; break; }
-        }
-        if (!res.ok) continue; // 404 u otro → saltar ese pedido, seguir el lote
+      const params = new URLSearchParams({
+        result_number: String(PAGE_SIZE),
+        start: String(start),
+        date_from: from,
+        date_to: to,
+        filter_date_by: filterDateBy,
+        orderBy: "id",
+        orderDirection: "desc",
+      });
+      const url = `${cfg.base}/integrations/orders/myorders?${params.toString()}`;
 
-        const obj = pickOrderObj(await res.json().catch(() => null));
-        if (!obj) continue;
-
-        const dbRow = mapDropiOrderToRow(obj, user.id, today, storeId);
-        if (String(dbRow.estado || "") !== (prevEstado.get(extId) ?? "")) changed++;
-        rows.push(dbRow);
-      } catch (_e) {
-        // Falla de red de un pedido → no romper el lote.
-        continue;
+      // Backoff exponencial ante 429 antes de cortar parcial.
+      let res: Response | null = null;
+      let throttled = false;
+      for (let attempt = 0; attempt <= RL_BACKOFF_MS.length; attempt++) {
+        res = await fetch(url, { method: "GET", headers });
+        if (res.status !== 429) { throttled = false; break; }
+        throttled = true;
+        if (attempt < RL_BACKOFF_MS.length) await sleep(RL_BACKOFF_MS[attempt]);
       }
-    }
 
-    // Si quedaron ids sin procesar (corte por tiempo/throttle), es parcial.
-    if (processed < ids.length) partial = true;
+      if (throttled) {
+        rateLimited = true;
+        partial = true;
+        console.warn(`dropi-refresh-batch: 429 sostenido en página ${pages}, devolviendo ${refreshed} parciales`);
+        break pageLoop;
+      }
+      if (!res || !res.ok) {
+        const txt = res ? await res.text().catch(() => "") : "no-response";
+        // Si ya trajimos algo, devolvemos parcial en vez de fallar todo.
+        if (refreshed > 0) { partial = true; break; }
+        return jsonResp({ error: `Dropi HTTP ${res?.status ?? "?"}`, dropiBody: txt.slice(0, 200) }, 502, corsHeaders);
+      }
 
-    if (rows.length > 0) {
+      const data = await res.json().catch(() => ({}));
+      // Dropi puede responder 200 con isSuccess=false + objects vacío ante un
+      // error de su lado — tratarlo como error, no como fin de paginación (igual
+      // que dropi-cron). Si ya trajimos algo, devolvemos parcial.
+      if ((data as Record<string, unknown>)?.isSuccess === false) {
+        if (refreshed > 0) { partial = true; break; }
+        return jsonResp({ error: "Dropi respondió isSuccess=false", dropiBody: JSON.stringify(data).slice(0, 200) }, 502, corsHeaders);
+      }
+      const objs = Array.isArray((data as Record<string, unknown>)?.objects)
+        ? (data as { objects: Record<string, unknown>[] }).objects
+        : [];
+      if (objs.length === 0) break;
+
+      const rows = objs.map((o) => mapDropiOrderToRow(o, user.id, today, storeId));
       const { error: upErr } = await sbAdmin
         .from("orders")
         .upsert(rows, { onConflict: "external_id", ignoreDuplicates: false });
       if (upErr) {
-        return jsonResp({ error: `No se pudo guardar en DB: ${upErr.message}`, refreshed: 0, changed: 0, total: ids.length }, 500, corsHeaders);
+        if (refreshed > 0) { partial = true; break; }
+        return jsonResp({ error: `No se pudo guardar en DB: ${upErr.message}`, refreshed }, 500, corsHeaders);
       }
+      refreshed += rows.length;
+      pagesFetched++;
+
+      if (objs.length < PAGE_SIZE) break; // última página
+      start += PAGE_SIZE;
+      pages++;
+      if (pages >= MAX_PAGES) { partial = true; break; }
+      await sleep(RATE_LIMIT_MS);
     }
 
     return jsonResp({
       ok: true,
-      refreshed: rows.length,
-      changed,
-      total: ids.length,
-      rateLimited,
+      refreshed,
+      total: refreshed,
+      pages: pagesFetched,
       partial,
+      rateLimited,
       synced_at: new Date().toISOString(),
     }, 200, corsHeaders);
   } catch (err) {

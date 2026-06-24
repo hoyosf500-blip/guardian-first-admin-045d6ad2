@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -48,10 +48,6 @@ function getOrderAgeDays(order: OrderData): number {
 const MAX_ACTIONABLE_BY_COUNTRY: Record<string, number> = { CO: 21, EC: 60 };
 const DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS = 21;
 
-// Estados terminales (no cambian más en Dropi) → no se piden en el refresco en
-// vivo, para no gastar llamadas a Dropi. Categorías de classifySegEstado.
-const TERMINAL_CATS = new Set(['entregado', 'cancelado', 'devolucion', 'devolucion_transito', 'indemnizada', 'rechazado']);
-
 // Punto de color por urgencia para los chips de listas SLA (mapea SegListDef.tone).
 const LIST_TONE_DOT: Record<string, string> = {
   danger: 'bg-danger',
@@ -70,7 +66,7 @@ export default function SeguimientoTab() {
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId } = useStore();
-  const { refreshVisible, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
+  const { refreshNow, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
   const maxActionableDays =
     MAX_ACTIONABLE_BY_COUNTRY[activeStore?.country_code ?? 'CO'] ?? DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS;
 
@@ -192,32 +188,15 @@ export default function SeguimientoTab() {
     return dedupedByDate.filter((o) => listaActiva.matches(o));
   }, [dedupedByDate, listaActiva]);
 
-  // Pedidos VISIBLES no terminales → set para el refresco en vivo contra Dropi.
-  // El ref guarda el último valor para que el auto-trigger lo lea sin depender
-  // de él (evita re-disparar en cada cambio de segData → loop).
-  const visibleExternalIds = useMemo(() => {
-    const feed = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-    return feed
-      .filter((o) => !TERMINAL_CATS.has(classifySegEstado(o.estado)))
-      .map((o) => String(o.externalId ?? ''))
-      .filter(Boolean);
-  }, [listaActiva, filteredByList, dedupedByDate]);
-  const visibleIdsRef = useRef<string[]>([]);
-  visibleIdsRef.current = visibleExternalIds;
-
-  // Auto-sync suave: al entrar y al cambiar de lista activa, traé el estado REAL
-  // de Dropi de los pedidos visibles. El throttle de 3 min por pedido vive en el
-  // hook, así que disparar seguido no martilla Dropi. Silencioso (sin toasts).
+  // Auto-sync suave contra Dropi al entrar a Seguimiento. El throttle de 4 min
+  // vive en el hook (una sola query de lista con backoff), así no satura el
+  // rate-limit de Dropi. El botón "Sincronizar Dropi" fuerza una corrida.
   useEffect(() => {
     if (!activeStoreId) return;
-    const t = setTimeout(() => {
-      if (visibleIdsRef.current.length > 0) {
-        void refreshVisible(activeStoreId, visibleIdsRef.current, { silent: true });
-      }
-    }, 600);
+    const t = setTimeout(() => { void refreshNow(activeStoreId, { silent: true }); }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStoreId, listaSlug]);
+  }, [activeStoreId]);
 
   // Feed final que ven el tablero y la lista: feed de la lista SLA activa (o el
   // total deduplicado) con el toggle "Solo sin tocar" aplicado. Misma fuente
@@ -500,9 +479,9 @@ export default function SeguimientoTab() {
             {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
                 visibles ahora (vs "Actualizar" que solo re-lee la base). */}
             <button
-              onClick={() => refreshVisible(activeStoreId, visibleExternalIds, { force: true })}
-              disabled={isSyncingDropi || visibleExternalIds.length === 0}
-              title="Trae el estado real de Dropi de los pedidos visibles ahora mismo"
+              onClick={() => refreshNow(activeStoreId, { force: true })}
+              disabled={isSyncingDropi}
+              title="Trae el estado real de Dropi de los pedidos recientes ahora mismo"
               className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />
