@@ -3,11 +3,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useStore } from '@/contexts/StoreContext';
 
-// Sync REAL del resumen de Logística ("Cómo voy", MesActualResumen). A diferencia
-// de useWalletSync (wallet-only, lo usa WalletSyncButton en Billetera/Cfo), este
-// dispara ÓRDENES (dropi-sync) + WALLET (dropi-wallet-sync) y luego invalida TODAS
-// las query keys que consume MesActualResumen, para que el embudo, la ganancia
-// neta y el saldo se refresquen sin recargar la página.
+// Sync REAL del resumen de Logística. Lo usan DOS botones "Sincronizar":
+// MesActualResumen ("Cómo voy") y FinanzasTab. A diferencia de useWalletSync
+// (wallet-only, lo usa WalletSyncButton en Billetera/Cfo), este dispara ÓRDENES
+// (dropi-sync) + WALLET (dropi-wallet-sync) y luego invalida TODAS las query keys
+// que consumen ambas pantallas (embudo, ganancia neta, saldo, financial-summary y
+// operativo-cohorte de Finanzas), para que se refresquen sin recargar la página.
 //
 // NO reemplaza a useWalletSync: ese queda intacto para los botones solo-wallet.
 // El body de dropi-sync es el mismo shape verificado en los call-sites reales
@@ -37,6 +38,8 @@ const KEYS_TO_INVALIDATE: string[] = [
   'wallet_daily_series',     // useWalletMovements.ts:106
   'wallet_sync_health',      // useWalletSyncHealth.ts:47   → badge + walletStale
   'logistics',               // useLogisticsStats.ts:49     → fallback logistics_summary
+  'financial-summary',       // useFinancialSummary.ts:85   → ingresos/COGS/ticket (Finanzas)
+  'operativo-cohorte',       // useOperativoCohorte.ts      → hero Ganancia Neta cohorte (Finanzas)
 ];
 
 /** Parsea el detalle real de un error de functions.invoke (el body viene en
