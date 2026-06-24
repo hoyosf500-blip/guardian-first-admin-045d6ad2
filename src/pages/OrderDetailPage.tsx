@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { useWaChat } from '@/contexts/WaChatContext';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -97,6 +98,7 @@ export default function OrderDetailPage() {
   const location = useLocation();
   const { user } = useAuth();
   const { activeStoreId } = useStore();
+  const { openChat } = useWaChat();
   const { refresh: refreshOrder } = useRefreshOrder();
 
   // Navegación entre hermanos: la lista de external_ids de la carpeta de la que
@@ -509,23 +511,29 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <a
-              href={`https://wa.me/${getWhatsAppPhone(order.phone)}?text=${waMsg}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => logCommunication('WHATSAPP', 'Mensaje enviado al cliente')}
-              aria-label="Enviar WhatsApp al cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold py-2.5 hover:opacity-90 transition-opacity duration-200 no-underline cursor-pointer"
+            <button
+              type="button"
+              onClick={async () => {
+                const mode = await openChat({
+                  phone: order.phone,
+                  fallbackWaUrl: `https://wa.me/${getWhatsAppPhone(order.phone)}?text=${waMsg}`,
+                });
+                // Solo registramos "Mensaje enviado" cuando caemos a wa.me (WhatsApp
+                // personal). En el hilo in-app, el envío real lo registra wa-send.
+                if (mode === 'wa') logCommunication('WHATSAPP', 'Mensaje enviado al cliente');
+              }}
+              aria-label="Abrir chat de WhatsApp con el cliente"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold py-3 sm:py-2.5 hover:opacity-90 transition-opacity duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <MessageSquare size={13} aria-hidden="true" /> WhatsApp
-            </a>
+              <MessageSquare size={14} aria-hidden="true" /> WhatsApp
+            </button>
             <a
               href={`tel:${order.phone}`}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
               aria-label="Llamar al cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-card border border-border text-foreground text-xs font-bold py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-card border border-border text-foreground text-xs font-bold py-3 sm:py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <Phone size={13} aria-hidden="true" /> Llamar
+              <Phone size={14} aria-hidden="true" /> Llamar
             </a>
           </div>
         </motion.div>
