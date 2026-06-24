@@ -121,12 +121,34 @@ describe('buildMesResumenFromBreakdown', () => {
     expect(r.cancelados).toBe(31);
     expect(r.generadosSinCancel).toBe(175);
     expect(r.entregados).toBe(69);
-    // Total vendido = SUM(valor) sin cancelados (matchea "Total vendido" de Dropi)
+    // Total vendido ALINEADO a Dropi = despachado y NO rechazado: excluye cancelado
+    // (3.200.701) + pendiente (3.560.150) + preparación (GUIA_GENERADA 2M + CONFIRMADO
+    // 1.2M = 3.200.000) + rechazo (0). = entregado + devolución + tránsito + novedad.
     const totalValor = rows.reduce((a, x) => a + x.valor, 0);
-    expect(r.totalVendido).toBe(totalValor - 3_200_701);
+    expect(r.totalVendido).toBe(totalValor - 3_200_701 - 3_560_150 - 3_200_000);
     // Unidades vendidas = SUM(cantidad) sin cancelados
     const totalUnd = rows.reduce((a, x) => a + x.unidades, 0);
     expect(r.unidadesVendidas).toBe(totalUnd - 33);
+  });
+
+  it('RECHAZADO es bucket PROPIO (fuera de devueltos) y sale del "total vendido"', () => {
+    const conRechazo: EstadoRow[] = [
+      ...rows,
+      { estado: 'RECHAZADO', pedidos: 7, valor: 700_000, unidades: 8 },
+    ];
+    const r = buildMesResumenFromBreakdown(conRechazo)!;
+    // devueltos = SOLO DEVOLUCION (19), NO incluye los 7 rechazos
+    expect(r.devueltos).toBe(19);
+    expect(r.rechazados).toBe(7);
+    expect(r.valorRechazos).toBe(700_000);
+    // El embudo muestra "Rechazados" como bucket aparte de "Devueltos"
+    const rechazoBucket = r.buckets.find((b) => b.key === 'rechazado');
+    const devueltoBucket = r.buckets.find((b) => b.key === 'devuelto');
+    expect(rechazoBucket?.count).toBe(7);
+    expect(devueltoBucket?.count).toBe(19);
+    // Total vendido NO incluye los rechazos (700k extra fuera)
+    const totalValor = rows.reduce((a, x) => a + x.valor, 0);
+    expect(r.totalVendido).toBe(totalValor - 3_200_701 - 3_560_150 - 3_200_000);
   });
 
   it('SIN HUECOS: Σ counts de buckets === generadoTotal', () => {

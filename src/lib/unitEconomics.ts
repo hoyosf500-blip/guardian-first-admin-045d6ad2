@@ -21,30 +21,44 @@ function clamp01(x: number): number {
 export interface RealKpisInput {
   /** Pedidos generados sin cancelados (= "Pedidos generados" de Dropi). */
   generadosSinCancel: number;
-  /** Pedidos que salieron a la transportadora (entregado+devuelto+tránsito+novedad). */
+  /** Pedidos que salieron a la transportadora (entregado+devuelto+rechazado+tránsito+novedad). */
   despachados: number;
   entregados: number;
+  /** Devoluciones logísticas REALES (sin rechazos del cliente). */
   devueltos: number;
+  /** Rechazos del cliente — fuera de la tasa de entrega madura, métrica aparte. */
+  rechazados: number;
   /** SUM(valor) de los entregados (COP). */
   valorEntregado: number;
 }
 
 export interface RealKpis {
   tasaDespachos: number;     // 0-1: despachados / generados
-  tasaEntrega: number;       // 0-1: entregados / despachados
-  pctDevolucion: number;     // 0-1: devueltos / despachados
+  /** 0-1: entregados / RESUELTOS (entregados + devoluciones reales). "Madura sin
+   *  rechazos": no cuenta rechazos del cliente ni pedidos aún en tránsito. */
+  tasaEntrega: number;
+  pctDevolucion: number;     // 0-1: devoluciones reales / resueltos
+  pctRechazo: number;        // 0-1: rechazos / despachados (informativo)
   pctInefectividad: number;  // 0-1: 1 − entregados / generados
   ticketPromedio: number;    // COP: valorEntregado / entregados
+  /** 0-1: (devoluciones + rechazos) / despachados. Tasa de NO-entrega sobre lo
+   *  despachado — la que usa el simulador para proyectar (no la madura). */
+  pctNoEntregaSobreDespacho: number;
 }
 
 export function computeRealKpis(i: RealKpisInput): RealKpis {
+  // Resueltos = lo que ya concluyó su ciclo de entrega (entregado o devuelto),
+  // SIN rechazos ni pedidos aún en la calle. Es el denominador de la tasa madura.
+  const resueltos = i.entregados + i.devueltos;
   return {
     tasaDespachos: clamp01(safeDiv(i.despachados, i.generadosSinCancel)),
-    tasaEntrega: clamp01(safeDiv(i.entregados, i.despachados)),
-    pctDevolucion: clamp01(safeDiv(i.devueltos, i.despachados)),
+    tasaEntrega: clamp01(safeDiv(i.entregados, resueltos)),
+    pctDevolucion: clamp01(safeDiv(i.devueltos, resueltos)),
+    pctRechazo: clamp01(safeDiv(i.rechazados, i.despachados)),
     pctInefectividad:
       i.generadosSinCancel > 0 ? clamp01(1 - safeDiv(i.entregados, i.generadosSinCancel)) : 0,
     ticketPromedio: safeDiv(i.valorEntregado, i.entregados),
+    pctNoEntregaSobreDespacho: clamp01(safeDiv(i.devueltos + i.rechazados, i.despachados)),
   };
 }
 

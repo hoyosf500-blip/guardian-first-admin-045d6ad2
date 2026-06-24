@@ -19,6 +19,7 @@ export type BucketTone =
   | 'novedad'
   | 'entregado'
   | 'devuelto'
+  | 'rechazado'
   | 'cancelado'
   | 'otros';
 
@@ -185,11 +186,18 @@ export interface MesResumenFull extends MesResumen {
   generadosSinCancel: number;
   cancelados: number;          // conteo
   entregados: number;          // conteo
+  /** Devoluciones logísticas (SIN rechazos del cliente) — denominador de la tasa madura. */
+  devueltos: number;           // conteo
+  /** Rechazos del cliente — bucket propio, fuera de la tasa de entrega. */
+  rechazados: number;          // conteo
+  valorRechazos: number;       // COP
   /** % completado = entregados / generados sin cancelar. */
   pctCompletado: number;
   /** Unidades vendidas (SUM cantidad sin cancelados) = "Productos vendidos" Dropi. */
   unidadesVendidas: number;
-  /** SUM(valor) sin cancelados = "Total vendido" de Dropi. */
+  /** "Total vendido" ALINEADO a Dropi = despachado y NO rechazado (excluye
+   *  cancelados, pendientes, preparación y rechazos). Reconcilia al peso con el
+   *  dashboard de Dropi. Ver auditoría 2026-06-24. */
   totalVendido: number;
   valorPreparacion: number;
   /** En tránsito + novedad + preparación + pendientes = el "Estimado" de Dropi. */
@@ -205,6 +213,7 @@ const TONE_BY_BUCKET: Record<string, BucketTone> = {
   novedad: 'novedad',
   entregado: 'entregado',
   devuelto: 'devuelto',
+  rechazado: 'rechazado',
   cancelado: 'cancelado',
 };
 
@@ -214,7 +223,8 @@ const BUCKET_META: Array<{ key: string; label: string; sublabel?: string }> = [
   { key: 'en_transito', label: 'En tránsito',  sublabel: 'Plata en la calle, aún sin cobrar' },
   { key: 'novedad',     label: 'En novedad',   sublabel: 'En riesgo — requiere gestión' },
   { key: 'entregado',   label: 'Entregados',   sublabel: 'Realizado' },
-  { key: 'devuelto',    label: 'Devueltos',    sublabel: 'Perdido (flete + cargo)' },
+  { key: 'devuelto',    label: 'Devueltos',    sublabel: 'Devolución logística (flete + cargo)' },
+  { key: 'rechazado',   label: 'Rechazados',   sublabel: 'Cliente rechazó en la entrega' },
   { key: 'cancelado',   label: 'Cancelados',   sublabel: 'No se concretó' },
 ];
 
@@ -267,7 +277,15 @@ export function buildMesResumenFromBreakdown(rows: EstadoRow[] | null | undefine
   const valorPendientes = b.pendiente.valor;
   const valorPreparacion = b.preparacion.valor;
   const valorPerdido = b.devuelto.valor;
+  const valorRechazos = b.rechazado.valor;
   const valorCancelado = b.cancelado.valor;
+
+  // "Total vendido" alineado a Dropi: lo despachado y NO rechazado. Dropi excluye
+  // cancelados, pendientes (sin despachar), preparación (con guía pero sin salir) y
+  // rechazos. Lo que queda = entregados + devoluciones + tránsito + novedad + otros
+  // (indemnización, etc.). En mayo CO reconcilia al peso ($23.204.742 vs $23.204.743).
+  const totalVendido =
+    valorGenerado - valorCancelado - valorPendientes - valorPreparacion - valorRechazos;
 
   return {
     generadoTotal,
@@ -283,9 +301,12 @@ export function buildMesResumenFromBreakdown(rows: EstadoRow[] | null | undefine
     generadosSinCancel,
     cancelados,
     entregados,
+    devueltos: b.devuelto.pedidos,
+    rechazados: b.rechazado.pedidos,
+    valorRechazos,
     pctCompletado: pctOf(entregados, generadosSinCancel),
     unidadesVendidas: totals.unidades - b.cancelado.unidades,
-    totalVendido: totals.valor - valorCancelado,
+    totalVendido,
     valorPreparacion,
     valorPendienteUpside: valorEnTransito + valorNovedades + valorPreparacion + valorPendientes,
     valorOtros,

@@ -41,6 +41,7 @@ const TONE_BAR: Record<BucketTone, string> = {
   novedad:     'hsl(var(--warning))',
   entregado:   'hsl(var(--success))',
   devuelto:    'hsl(var(--danger))',
+  rechazado:   'hsl(var(--danger) / 0.6)',
   cancelado:   'hsl(var(--muted-foreground) / 0.6)',
   otros:       'hsl(var(--muted-foreground) / 0.4)',
 };
@@ -130,25 +131,34 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // "Pedidos en la calle" = lo que falta CERRAR = generado − (entregado + devuelto
   // + cancelado). Lo no-cerrado (pendiente + preparación + tránsito + novedad +
   // estados sin clasificar) es lo que el dueño mira primero.
-  const closedCount = ['entregado', 'devuelto', 'cancelado'].reduce(
+  // devuelto = devoluciones REALES (sin rechazos, que ahora son bucket propio).
+  const devueltoCount = resumen.buckets.find((b) => b.key === 'devuelto')?.count ?? 0;
+  const rechazadoCount = resumen.buckets.find((b) => b.key === 'rechazado')?.count ?? 0;
+  const valorRechazos = resumen.buckets.find((b) => b.key === 'rechazado')?.valor ?? 0;
+
+  // Cerrado = ciclo terminado (entregado + devuelto + rechazado + cancelado).
+  const closedCount = ['entregado', 'devuelto', 'rechazado', 'cancelado'].reduce(
     (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.count ?? 0), 0,
   );
   const enLaCalleCount = Math.max(0, resumen.generadoTotal - closedCount);
+  // Resta TODOS los cerrados (incluido rechazo) — si no, "en la calle" se infla por
+  // el valor de los rechazos (que ya salieron del ciclo). Cuadra con closedCount.
   const enLaCalleValor = Math.max(
     0,
-    resumen.valorGenerado - (resumen.valorEntregado + resumen.valorPerdido + resumen.valorCancelado),
+    resumen.valorGenerado
+      - (resumen.valorEntregado + resumen.valorPerdido + valorRechazos + resumen.valorCancelado),
   );
 
-  // Despachado = lo que salió a la transportadora (entregado + devuelto + tránsito
-  // + novedad). Excluye pendiente/preparación/cancelado. Alimenta el simulador.
-  const DISPATCHED_KEYS = ['entregado', 'devuelto', 'en_transito', 'novedad'];
+  // Despachado = lo que salió a la transportadora (entregado + devuelto + rechazado
+  // + tránsito + novedad). El rechazo SÍ se despachó (el cliente lo rechazó en la
+  // puerta). Excluye pendiente/preparación/cancelado. Alimenta el simulador.
+  const DISPATCHED_KEYS = ['entregado', 'devuelto', 'rechazado', 'en_transito', 'novedad'];
   const despachadosCount = DISPATCHED_KEYS.reduce(
     (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.count ?? 0), 0,
   );
   const despachadoValor = DISPATCHED_KEYS.reduce(
     (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.valor ?? 0), 0,
   );
-  const devueltoCount = resumen.buckets.find((b) => b.key === 'devuelto')?.count ?? 0;
   const facturadoValor = totalVendido ?? Math.max(0, resumen.valorGenerado - resumen.valorCancelado);
 
   // Detector de estados nuevos de Dropi sin clasificar: las barras `otros` del
@@ -156,6 +166,14 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // el dueño ve un aviso para mapearlo — así un estado nuevo no rompe los KPIs en
   // silencio. Solo con `full` (el fallback no itemiza por nombre).
   const sinMapear = full ? full.buckets.filter((b) => b.tone === 'otros') : [];
+
+  // Detalle por estado CRUDO (tabla dinámica): cada estado individual con su
+  // conteo, % y valor — sin agrupar en buckets. Reemplaza la tabla dinámica
+  // manual del dueño. Ordenado por cantidad desc.
+  const estadoDetalle = (breakdown ?? [])
+    .map((r) => ({ estado: r.estado, pedidos: r.pedidos, valor: r.valor }))
+    .sort((a, b) => b.pedidos - a.pedidos);
+  const estadoDetalleTotal = estadoDetalle.reduce((a, r) => a + r.pedidos, 0);
 
   return (
     <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
@@ -233,7 +251,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
           value={totalVendido != null ? formatCOP(totalVendido) : '—'}
           icon={DollarSign}
           tone="accent"
-          hint="sin cancelados · por fecha de creación"
+          hint="solo despachado (sin pend./prep./rechazo) · = Dropi"
         />
         <KpiCard
           label="Entregados"
@@ -312,6 +330,9 @@ export default function MesActualResumen({ summary, filters }: Props) {
               <WaterfallRow label="Otros estados" value={-valorOtros} tone="muted" />
             )}
             <WaterfallRow label="Devueltos (perdido)" value={-resumen.valorPerdido} tone="danger" />
+            {valorRechazos > 0 && (
+              <WaterfallRow label="Rechazados (cliente rechazó)" value={-valorRechazos} tone="danger" />
+            )}
             <WaterfallRow label="Cancelados" value={-resumen.valorCancelado} tone="muted" />
             <WaterfallRow label="Valor entregado (realizado)" value={resumen.valorEntregado} tone="success" emphasis />
           </div>
@@ -382,6 +403,56 @@ export default function MesActualResumen({ summary, filters }: Props) {
         </div>
       </div>
 
+      {/* ── Tabla dinámica · detalle por estado (todos los estados crudos) ── */}
+      {estadoDetalle.length > 0 && (
+        <div className="border-t border-border px-5 py-5">
+          <details className="group">
+            <summary className="flex items-center gap-2 cursor-pointer list-none select-none">
+              <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                Detalle por estado · tabla dinámica
+              </span>
+              <span className="text-[10px] text-muted-foreground group-open:hidden">▸ ver todos</span>
+              <span className="text-[10px] text-muted-foreground hidden group-open:inline">▾ ocultar</span>
+              <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+                {estadoDetalle.length} estados · {estadoDetalleTotal.toLocaleString('es-CO')} pedidos
+              </span>
+            </summary>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-xs tabular-nums">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground border-b border-border">
+                    <th className="text-left font-semibold py-1.5">Estado</th>
+                    <th className="text-right font-semibold py-1.5">Pedidos</th>
+                    <th className="text-right font-semibold py-1.5 w-16">%</th>
+                    <th className="text-right font-semibold py-1.5 w-32">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {estadoDetalle.map((r) => (
+                    <tr key={r.estado} className="border-b border-border/40">
+                      <td className="text-left py-1.5 text-foreground/90">{r.estado}</td>
+                      <td className="text-right py-1.5 font-semibold text-foreground">{r.pedidos.toLocaleString('es-CO')}</td>
+                      <td className="text-right py-1.5 text-muted-foreground">
+                        {estadoDetalleTotal > 0 ? ((r.pedidos / estadoDetalleTotal) * 100).toFixed(1) : '0.0'}%
+                      </td>
+                      <td className="text-right py-1.5 font-mono text-muted-foreground">{formatCOP(r.valor)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border font-semibold text-foreground">
+                    <td className="text-left py-1.5">Total</td>
+                    <td className="text-right py-1.5">{estadoDetalleTotal.toLocaleString('es-CO')}</td>
+                    <td className="text-right py-1.5">100%</td>
+                    <td className="text-right py-1.5 font-mono">{formatCOP(resumen.valorGenerado)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </details>
+        </div>
+      )}
+
       {/* Indicadores & Simulador de unit-economics (KPIs reales + what-if) */}
       <div className="border-t border-border px-5 py-5">
         <SimuladorUnitEconomics
@@ -393,6 +464,8 @@ export default function MesActualResumen({ summary, filters }: Props) {
           valorEntregado={resumen.valorEntregado}
           devueltosCount={devueltoCount}
           valorPerdido={resumen.valorPerdido}
+          rechazadosCount={rechazadoCount}
+          valorRechazos={valorRechazos}
           costBasis={costBasis.data ?? null}
           costBasisLoading={costBasis.isLoading}
           pautaTotal={(monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0)}
