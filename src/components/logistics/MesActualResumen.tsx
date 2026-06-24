@@ -15,6 +15,9 @@ import { Button } from '@/components/ui/button';
 import { useResumenSync } from '@/hooks/useResumenSync';
 import KpiCard from '@/components/logistics/finanzas/KpiCard';
 import NetoRealCard from '@/components/logistics/NetoRealCard';
+import SimuladorUnitEconomics from '@/components/logistics/SimuladorUnitEconomics';
+import { useLogisticsCostBasis } from '@/hooks/useLogisticsCostBasis';
+import { useLogisticaMonthlyCosts } from '@/hooks/useLogisticaMonthlyCosts';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 
@@ -84,6 +87,11 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // Se computa ACÁ (antes del early return) porque el hook de cohorte lo necesita.
   const yearMonth = filters.fromDate.slice(0, 7);
   const cohorte = useOperativoCohorte(yearMonth);
+  // Base de costos REAL (COGS + flete) + costos mensuales (pauta/admin) para el
+  // simulador de unit-economics. Ambos store-scoped; degradan a null/ceros si la
+  // migration no está aplicada (el simulador avisa, no rompe).
+  const costBasis = useLogisticsCostBasis(filters.fromDate, filters.toDate, filters.ciudad);
+  const monthlyCosts = useLogisticaMonthlyCosts(yearMonth);
 
   const title = rangeTitle(filters);
 
@@ -130,6 +138,18 @@ export default function MesActualResumen({ summary, filters }: Props) {
     0,
     resumen.valorGenerado - (resumen.valorEntregado + resumen.valorPerdido + resumen.valorCancelado),
   );
+
+  // Despachado = lo que salió a la transportadora (entregado + devuelto + tránsito
+  // + novedad). Excluye pendiente/preparación/cancelado. Alimenta el simulador.
+  const DISPATCHED_KEYS = ['entregado', 'devuelto', 'en_transito', 'novedad'];
+  const despachadosCount = DISPATCHED_KEYS.reduce(
+    (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.count ?? 0), 0,
+  );
+  const despachadoValor = DISPATCHED_KEYS.reduce(
+    (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.valor ?? 0), 0,
+  );
+  const devueltoCount = resumen.buckets.find((b) => b.key === 'devuelto')?.count ?? 0;
+  const facturadoValor = totalVendido ?? Math.max(0, resumen.valorGenerado - resumen.valorCancelado);
 
   // Detector de estados nuevos de Dropi sin clasificar: las barras `otros` del
   // desglose real (full) son estados que ningún bucket conoce. Si aparece alguno,
@@ -317,9 +337,9 @@ export default function MesActualResumen({ summary, filters }: Props) {
               <div className={walletStale ? 'opacity-60' : ''}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-muted-foreground">
-                    Ganancia neta operativa del mes
+                    Caja bruta del wallet · NO es ganancia
                     <span className="block text-[10px] text-muted-foreground/70">
-                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · caja del wallet por fecha de movimiento
+                      Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · por fecha de pago (mezcla meses)
                     </span>
                   </span>
                   <span className={`text-base font-bold tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
@@ -351,15 +371,33 @@ export default function MesActualResumen({ summary, filters }: Props) {
             <Info size={13} className="text-info shrink-0 mt-0.5" />
             <p>
               La cascada de arriba es el valor de los pedidos que <strong className="text-foreground">creaste este mes</strong>,
-              por estado (realizado vs pendiente vs perdido). La <strong className="text-foreground">caja del wallet</strong> es
-              la plata que de verdad entró y salió este mes — va por <strong className="text-foreground">fecha de movimiento</strong>,
-              así que incluye entregas de pedidos de meses anteriores; por eso no cuadra 1:1 con la cascada ni con la
-              "Utilidad Total" de Dropi. Es <strong className="text-foreground">ganancia operativa</strong>: no descuenta
-              pauta ni costos fijos (eso lo ves en CFO). El <strong className="text-foreground">saldo</strong> del wallet es
-              tu plata disponible hoy, después de fletes, devoluciones y retiros.
+              por estado. La <strong className="text-foreground">caja bruta del wallet</strong> es la plata que entró y salió
+              este mes — va por <strong className="text-foreground">fecha de pago</strong>, así que incluye pedidos de meses
+              anteriores y <strong className="text-foreground">NO es tu ganancia</strong>. Tu ganancia confiable es el
+              <strong className="text-foreground"> Operativo del mes</strong> (cohorte, arriba), que reconcilia con la
+              "Utilidad Total" de Dropi. El <strong className="text-foreground">saldo</strong> del wallet es tu plata
+              disponible hoy, después de fletes, devoluciones y retiros.
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Indicadores & Simulador de unit-economics (KPIs reales + what-if) */}
+      <div className="border-t border-border px-5 py-5">
+        <SimuladorUnitEconomics
+          generadosSinCancel={generadosSinCancel}
+          totalVendido={facturadoValor}
+          despachadosCount={despachadosCount}
+          despachadoValor={despachadoValor}
+          entregadosCount={entregadoCount}
+          valorEntregado={resumen.valorEntregado}
+          devueltosCount={devueltoCount}
+          valorPerdido={resumen.valorPerdido}
+          costBasis={costBasis.data ?? null}
+          costBasisLoading={costBasis.isLoading}
+          pautaTotal={(monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0)}
+          adminTotal={monthlyCosts.data?.costos_admin ?? 0}
+        />
       </div>
     </section>
   );
