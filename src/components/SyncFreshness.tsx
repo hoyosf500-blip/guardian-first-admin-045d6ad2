@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, AlertTriangle, WifiOff, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
@@ -32,6 +33,7 @@ interface Props {
 
 export default function SyncFreshness({ onAuditClick }: Props) {
   const { activeStoreId, isManagerOfActive } = useStore();
+  const qc = useQueryClient();
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -43,10 +45,11 @@ export default function SyncFreshness({ onAuditClick }: Props) {
       .from('sync_logs')
       .select('status, synced_count, total_count, created_at, error_message')
       .eq('store_id', activeStoreId)
-      // Solo corridas del sync de ÓRDENES. sync_logs también guarda las del wallet
-      // (source='dropi-wallet-sync', cada 6h) → sin este filtro se colaban en el
-      // banner de pedidos y enturbiaban el color.
-      .eq('source', 'dropi')
+      // Frescura del sync de ÓRDENES = cron automático (source='dropi-cron', cada
+      // 5 min) + syncs manuales (source='dropi'). ANTES filtraba solo 'dropi' →
+      // ignoraba el cron y mostraba rojo falso "Sin sync hace X min" aunque el cron
+      // corriera bien. Excluye wallet ('dropi-wallet-sync') y acciones por-pedido.
+      .in('source', ['dropi-cron', 'dropi'])
       .order('created_at', { ascending: false })
       .limit(12);
     setLogs((data as LogRow[]) || []);
@@ -60,16 +63,35 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   }, [load]);
 
   const handleRetry = async () => {
-    if (retrying) return;
+    if (retrying || !activeStoreId) return;
     setRetrying(true);
-    const t = toast.loading('Disparando sync manual…');
+    const t = toast.loading('Sincronizando pedidos…');
     try {
-      const { error } = await supabase.functions.invoke('dropi-cron', { body: {} });
-      if (error) throw error;
-      toast.success('Sync disparado — refrescando en 5s', { id: t });
-      setTimeout(() => { void load(); }, 5000);
+      // Mismo call que el botón "Sincronizar" (useResumenSync): dropi-sync para
+      // ESTA tienda, store-scoped (gate = dueño), rápido (1 tienda). Escribe
+      // sync_logs source='dropi' que ESTE banner sí lee → se actualiza al toque.
+      // ANTES pegaba a dropi-cron: global (todas las tiendas, ~2 min), exigía
+      // admin GLOBAL (los socios recibían 403 silencioso) y escribía
+      // source='dropi-cron' que el banner NO leía → "no pasaba nada".
+      const fmt = (d: Date) => d.toISOString().split('T')[0];
+      const to = new Date();
+      const from = new Date(to);
+      from.setDate(from.getDate() - 30);
+      const { data, error } = await supabase.functions.invoke('dropi-sync', {
+        body: { store_id: activeStoreId, from: fmt(from), untill: fmt(to) },
+      });
+      const d = data as { error?: string; rateLimited?: boolean; message?: string } | null;
+      if (error) throw new Error(error.message);
+      if (d?.rateLimited) throw new Error(d.message || 'Dropi está limitando (rate limit). Probá en un minuto.');
+      if (d?.error) throw new Error(d.error);
+      toast.success('Pedidos sincronizados.', { id: t });
+      // Refrescar el banner Y las cards del resumen (no solo la frescura).
+      for (const k of ['orders-estado-breakdown', 'logistics', 'orders-sync-health', 'ganancia-neta-dropi']) {
+        qc.invalidateQueries({ queryKey: [k] });
+      }
+      await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'No se pudo disparar', { id: t });
+      toast.error(err instanceof Error ? err.message : 'No se pudo sincronizar', { id: t });
     } finally {
       setRetrying(false);
     }
