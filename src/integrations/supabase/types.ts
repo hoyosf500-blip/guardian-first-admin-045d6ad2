@@ -377,6 +377,44 @@ export type Database = {
           },
         ]
       }
+      logistica_monthly_costs: {
+        Row: {
+          costos_admin: number
+          id: string
+          pauta_meta: number
+          pauta_tiktok: number
+          store_id: string
+          updated_at: string
+          year_month: string
+        }
+        Insert: {
+          costos_admin?: number
+          id?: string
+          pauta_meta?: number
+          pauta_tiktok?: number
+          store_id: string
+          updated_at?: string
+          year_month: string
+        }
+        Update: {
+          costos_admin?: number
+          id?: string
+          pauta_meta?: number
+          pauta_tiktok?: number
+          store_id?: string
+          updated_at?: string
+          year_month?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "logistica_monthly_costs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_ad_spend: {
         Row: {
           account_name: string
@@ -751,6 +789,44 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_status_history: {
+        Row: {
+          changed_at: string
+          created_at: string
+          external_id: string | null
+          id: number
+          order_id: string | null
+          status: string
+          store_id: string | null
+        }
+        Insert: {
+          changed_at?: string
+          created_at?: string
+          external_id?: string | null
+          id?: never
+          order_id?: string | null
+          status: string
+          store_id?: string | null
+        }
+        Update: {
+          changed_at?: string
+          created_at?: string
+          external_id?: string | null
+          id?: never
+          order_id?: string | null
+          status?: string
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_status_history_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]
@@ -1525,6 +1601,56 @@ export type Database = {
           },
         ]
       }
+      wa_bot_config: {
+        Row: {
+          agent_name: string | null
+          created_at: string
+          enabled: boolean
+          greeting: string | null
+          id: string
+          media: Json
+          model: string | null
+          notify: Json
+          store_id: string
+          system_prompt: string | null
+          updated_at: string
+        }
+        Insert: {
+          agent_name?: string | null
+          created_at?: string
+          enabled?: boolean
+          greeting?: string | null
+          id?: string
+          media?: Json
+          model?: string | null
+          notify?: Json
+          store_id: string
+          system_prompt?: string | null
+          updated_at?: string
+        }
+        Update: {
+          agent_name?: string | null
+          created_at?: string
+          enabled?: boolean
+          greeting?: string | null
+          id?: string
+          media?: Json
+          model?: string | null
+          notify?: Json
+          store_id?: string
+          system_prompt?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_bot_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wa_channels: {
         Row: {
           created_at: string
@@ -1716,6 +1842,50 @@ export type Database = {
           },
           {
             foreignKeyName: "wa_messages_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wa_order_notifications: {
+        Row: {
+          created_at: string
+          customer_phone: string | null
+          external_id: string
+          id: string
+          last_bucket: string | null
+          last_estado: string | null
+          notified_at: string | null
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_phone?: string | null
+          external_id: string
+          id?: string
+          last_bucket?: string | null
+          last_estado?: string | null
+          notified_at?: string | null
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_phone?: string | null
+          external_id?: string
+          id?: string
+          last_bucket?: string | null
+          last_estado?: string | null
+          notified_at?: string | null
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_order_notifications_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -2060,6 +2230,15 @@ export type Database = {
           valor_perdido: number
         }[]
       }
+      logistics_cost_basis: {
+        Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
+        Returns: {
+          cogs_entregados: number
+          entregados: number
+          flete_entregados: number
+          ingresos_entregados: number
+        }[]
+      }
       logistics_dashboard: { Args: { p_range?: string }; Returns: Json }
       logistics_recommendations: {
         Args: { p_from_date: string; p_min_orders?: number; p_to_date: string }
@@ -2156,6 +2335,15 @@ export type Database = {
         Returns: {
           has_closing: boolean
           has_opening: boolean
+        }[]
+      }
+      operativo_mes_cohorte: {
+        Args: { p_store_id: string; p_year_month: string }
+        Returns: {
+          movimientos_sin_link: number
+          operativo: number
+          total_entradas: number
+          total_salidas: number
         }[]
       }
       operator_activity_stats: {
@@ -2397,6 +2585,30 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      upsert_logistica_monthly_costs: {
+        Args: {
+          p_costos_admin: number
+          p_pauta_meta: number
+          p_pauta_tiktok: number
+          p_store_id: string
+          p_year_month: string
+        }
+        Returns: {
+          costos_admin: number
+          id: string
+          pauta_meta: number
+          pauta_tiktok: number
+          store_id: string
+          updated_at: string
+          year_month: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "logistica_monthly_costs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       upsert_monthly_ad_spend: {
         Args: {
           p_account_name: string
@@ -2525,6 +2737,21 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      upsert_wa_bot_config: {
+        Args: {
+          p_agent_name?: string
+          p_enabled: boolean
+          p_greeting?: string
+          p_model?: string
+          p_store_id: string
+          p_system_prompt?: string
+        }
+        Returns: string
+      }
+      upsert_wa_bot_notify: {
+        Args: { p_notify: Json; p_store_id: string }
+        Returns: string
       }
       upsert_wa_channel: {
         Args: {
