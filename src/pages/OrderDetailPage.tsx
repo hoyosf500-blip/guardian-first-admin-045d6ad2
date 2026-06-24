@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -11,10 +12,10 @@ import { copyToClipboard } from '@/lib/clipboard';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
   Package, Clock, Calendar, DollarSign, FileText, AlertTriangle, RefreshCw,
-  MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles,
+  MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { buildTimeline } from '@/lib/timelineBuilder';
+import { buildTimeline, type TimelineStatusChange } from '@/lib/timelineBuilder';
 import { sanitizeAction } from '@/lib/sanitize';
 import { bogotaToday } from '@/lib/utils';
 import { useAiInsight } from '@/hooks/useAiInsight';
@@ -93,14 +94,31 @@ const COMMUNICATION_DEBOUNCE_MS = 30_000;
 export default function OrderDetailPage() {
   const { externalId } = useParams<{ externalId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { activeStoreId } = useStore();
   const { refresh: refreshOrder } = useRefreshOrder();
+
+  // Navegación entre hermanos: la lista de external_ids de la carpeta de la que
+  // se vino (SegBoard la pasa por location.state), para ir al sig/ant con ↑/↓ sin
+  // volver al tablero.
+  const siblingIds = useMemo<string[]>(() => {
+    const s = location.state as { siblingIds?: string[] } | null;
+    return Array.isArray(s?.siblingIds) ? s!.siblingIds.filter(Boolean) : [];
+  }, [location.state]);
+  const sibIdx = useMemo(() => (externalId ? siblingIds.indexOf(externalId) : -1), [siblingIds, externalId]);
+  const goSibling = (delta: number) => {
+    if (sibIdx < 0) return;
+    const next = sibIdx + delta;
+    if (next < 0 || next >= siblingIds.length) return;
+    navigate(`/pedido/${siblingIds[next]}`, { state: { siblingIds } });
+  };
 
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [orderResults, setOrderResults] = useState<OrderResultRow[]>([]);
+  const [statusChanges, setStatusChanges] = useState<TimelineStatusChange[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   // `notes` solo se usa para el Timeline (read-only). El módulo de
   // escritura/recordatorios vive en <NotesPanel> con su propia carga + realtime.
@@ -138,17 +156,21 @@ export default function OrderDetailPage() {
       const o = orders[0] as OrderRow;
       setOrder(o);
 
-      // Load touchpoints, notes, order_results & profiles in parallel
-      const [tpRes, notesRes, orRes, profilesRes] = await Promise.all([
+      // Load touchpoints, notes, order_results, status history & profiles in parallel.
+      // order_status_history aún no está en los tipos generados → cast puntual.
+      const sbAny = supabase as unknown as SupabaseClient;
+      const [tpRes, notesRes, orRes, statusRes, profilesRes] = await Promise.all([
         supabase.from('touchpoints').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(100),
         supabase.from('notes').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(50),
         supabase.from('order_results').select('*').eq('order_id', o.id).order('created_at', { ascending: false }).limit(50),
+        sbAny.from('order_status_history').select('id, status, changed_at').eq('order_id', o.id).order('changed_at', { ascending: false }).limit(100),
         supabase.from('profiles').select('user_id, display_name'),
       ]);
 
       if (tpRes.data) setTouchpoints(tpRes.data as Touchpoint[]);
       if (notesRes.data) setNotes(notesRes.data as NoteRow[]);
       if (orRes.data) setOrderResults(orRes.data as OrderResultRow[]);
+      if (statusRes.data) setStatusChanges(statusRes.data as TimelineStatusChange[]);
       if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
       setLoading(false);
     };
@@ -170,6 +192,21 @@ export default function OrderDetailPage() {
     void refreshOrder(activeStoreId, order.external_id, { silent: true });
   }, [order?.external_id, order?.last_movement_at, order?.estado, order?.created_at, activeStoreId, refreshOrder]);
 
+  // Navegación con teclado ↑/↓ entre hermanos (cuando se vino de una carpeta).
+  useEffect(() => {
+    if (siblingIds.length < 2 || sibIdx < 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      if (e.key === 'ArrowUp') { e.preventDefault(); goSibling(-1); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); goSibling(1); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sibIdx, siblingIds]);
+
   // Map operator_id → display_name for the timeline
   const operatorNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -185,9 +222,10 @@ export default function OrderDetailPage() {
       touchpoints,
       notes,
       orderResults,
+      statusChanges,
       operatorNames,
     });
-  }, [order, touchpoints, notes, orderResults, operatorNames]);
+  }, [order, touchpoints, notes, orderResults, statusChanges, operatorNames]);
 
   // Derived OrderData shape for cards that expect it
   const orderData: OrderData | null = useMemo(
@@ -341,6 +379,31 @@ export default function OrderDetailPage() {
         <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="p-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
           <ArrowLeft size={18} />
         </button>
+
+        {/* Navegación entre pedidos de la misma carpeta (↑/↓) sin volver al tablero */}
+        {siblingIds.length > 1 && sibIdx >= 0 && (
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-0.5" role="group" aria-label="Navegar pedidos de la carpeta">
+            <button
+              onClick={() => goSibling(-1)}
+              disabled={sibIdx <= 0}
+              title="Pedido anterior (↑)"
+              aria-label="Pedido anterior"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronUp size={16} />
+            </button>
+            <span className="text-[11px] font-mono tabular-nums text-muted-foreground px-1">{sibIdx + 1}/{siblingIds.length}</span>
+            <button
+              onClick={() => goSibling(1)}
+              disabled={sibIdx >= siblingIds.length - 1}
+              title="Pedido siguiente (↓)"
+              aria-label="Pedido siguiente"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronDown size={16} />
+            </button>
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-bold text-foreground truncate">{order.nombre}</h2>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">

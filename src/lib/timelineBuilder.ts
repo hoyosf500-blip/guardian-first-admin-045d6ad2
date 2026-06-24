@@ -76,13 +76,54 @@ export interface TimelineOrderResult {
   created_at: string;             // ISO timestamp
 }
 
+/** Un cambio de estado de Dropi registrado en order_status_history. */
+export interface TimelineStatusChange {
+  id: string | number;
+  status: string;
+  changed_at: string;             // ISO timestamp
+}
+
 export interface TimelineSources {
   order: TimelineOrderRow;
   touchpoints: TimelineTouchpoint[];
   notes: TimelineNote[];
   orderResults: TimelineOrderResult[];
+  /** Historial de estados de Dropi (order_status_history) — el recorrido real. */
+  statusChanges?: TimelineStatusChange[];
   /** Map operator_id → display_name so we can show "por María" instead of a UUID. */
   operatorNames?: Record<string, string>;
+}
+
+/** Etiquetas humanas para los estados de Dropi en el timeline. */
+const STATUS_LABELS: Record<string, string> = {
+  'PENDIENTE CONFIRMACION': 'Pendiente de confirmación',
+  'PENDIENTE': 'Pendiente',
+  'CONFIRMADO': 'Confirmado',
+  'GUIA_GENERADA': 'Guía generada',
+  'GUIA GENERADA': 'Guía generada',
+  'ADMITIDA': 'Admitida por transportadora',
+  'PREPARADO PARA TRANSPORTADORA': 'Preparado para transportadora',
+  'ENTREGADO A TRANSPORTADORA': 'Entregado a transportadora',
+  'DESPACHADA': 'Despachada',
+  'DESPACHADO': 'Despachado',
+  'EN TRANSPORTE': 'En transporte',
+  'EN REPARTO': 'En reparto',
+  'EN OFICINA': 'En oficina',
+  'NOVEDAD': 'Novedad',
+  'INTENTO DE ENTREGA': 'Intento de entrega',
+  'ENTREGADO': 'Entregado',
+  'DEVOLUCION': 'Devolución',
+  'DEVOLUCION EN TRANSITO': 'Devolución en tránsito',
+  'RECHAZADO': 'Rechazado',
+  'CANCELADO': 'Cancelado',
+};
+
+/** Convierte un estado crudo de Dropi en una etiqueta legible. */
+export function prettyStatus(raw: string): string {
+  const up = (raw || '').toUpperCase().trim();
+  if (STATUS_LABELS[up]) return STATUS_LABELS[up];
+  // Fallback: title-case quitando guiones bajos.
+  return up.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ---- Internal helpers ---------------------------------------------------
@@ -180,8 +221,9 @@ export function parseTouchpointAction(action: string): ParsedTouchpoint {
  * sources provided. Every event is guaranteed to have a valid `timestamp`.
  */
 export function buildTimeline(sources: TimelineSources): TimelineEvent[] {
-  const { order, touchpoints, notes, orderResults, operatorNames = {} } = sources;
+  const { order, touchpoints, notes, orderResults, statusChanges = [], operatorNames = {} } = sources;
   const events: TimelineEvent[] = [];
+  const hasStatusHistory = statusChanges.length > 0;
 
   const actorFor = (operatorId: string | null | undefined): string | undefined => {
     if (!operatorId) return undefined;
@@ -217,8 +259,10 @@ export function buildTimeline(sources: TimelineSources): TimelineEvent[] {
     }
   }
 
-  // "Guía generada" — inferred from fecha_conf when guia exists
-  if (order.guia && order.fecha_conf) {
+  // "Guía generada" — inferido de fecha_conf cuando hay guía. Se OMITE si tenemos
+  // el historial real de estados (incluye GUIA_GENERADA con su timestamp exacto),
+  // para no duplicar. El número de guía se ve igual en "Envío y seguimiento".
+  if (!hasStatusHistory && order.guia && order.fecha_conf) {
     const guiaTs = parseDateTime(order.fecha_conf);
     if (guiaTs) {
       events.push({
@@ -231,6 +275,27 @@ export function buildTimeline(sources: TimelineSources): TimelineEvent[] {
       });
     }
   }
+
+  // --- 1b. Historial REAL de estados de Dropi (order_status_history) ---
+  // El recorrido completo: PENDIENTE → GUIA_GENERADA → PREPARADO → DESPACHADA → …
+  // Cada cambio que el sync detectó es un evento. Para GUIA_GENERADA enriquecemos
+  // con el número de guía si lo tenemos en la orden.
+  statusChanges.forEach((sc) => {
+    const ts = parseIso(sc.changed_at);
+    if (!ts) return;
+    const up = (sc.status || '').toUpperCase().trim();
+    const isGuia = up === 'GUIA_GENERADA' || up === 'GUIA GENERADA';
+    events.push({
+      id: `status-${sc.id}`,
+      timestamp: ts,
+      category: 'dropi',
+      title: prettyStatus(sc.status),
+      description: isGuia && order.guia
+        ? `Guía ${order.guia}${order.transportadora ? ` — ${order.transportadora}` : ''}`
+        : undefined,
+      actor: 'Dropi',
+    });
+  });
 
   // "Novedad reportada" — if the order has novedad text and is in novedad state
   if (order.novedad && order.estado && /NOVEDAD|INTENTO DE ENTREGA/i.test(order.estado)) {
