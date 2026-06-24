@@ -80,10 +80,11 @@ function freshnessDot(o: OrderData): { cls: string; title: string } {
   return { cls: 'bg-danger', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement> }) {
+const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpen }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
+  const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
 
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
   const carrierHome = getTrackingUrl(o.transportadora, '', countryCode);
@@ -100,8 +101,8 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef }: { o
       ref={cardRef}
       role="button"
       tabIndex={0}
-      onClick={() => o.externalId && navigate(`/pedido/${o.externalId}`)}
-      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && o.externalId) { e.preventDefault(); navigate(`/pedido/${o.externalId}`); } }}
+      onClick={open}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
       className={cn(
         'group bg-card rounded-lg border p-2.5 cursor-pointer transition-all duration-150 hover:border-border-strong hover:shadow-sm focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
         selected ? 'border-accent ring-2 ring-accent/60 shadow-md' : 'border-border/60',
@@ -210,8 +211,10 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
 function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; onBack: () => void }) {
+  const navigate = useNavigate();
   const t = TONE[col.tone];
   const orders = col.orders;
+  const siblingIds = useMemo(() => orders.map((x) => String(x.externalId ?? '')).filter(Boolean), [orders]);
   const [selIdx, setSelIdx] = useState(0);
   const selRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -293,6 +296,7 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
             tone={col.tone}
             selected={i === selIdx}
             cardRef={i === selIdx ? selRef : undefined}
+            onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds } })}
           />
         ))}
       </div>
@@ -310,6 +314,7 @@ interface SegBoardProps {
 }
 
 export default function SegBoard({ data, countryCode, statusFilter, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+  const navigate = useNavigate();
   const scrollRefs = useRef<Map<string, number>>(new Map());
   // Columna enfocada (carpeta). null = tablero completo.
   const [focusedKey, setFocusedKey] = useState<SegStatusKey | null>(null);
@@ -357,6 +362,7 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
     <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] snap-x">
       {columns.map((col) => {
         const t = TONE[col.tone];
+        const siblingIds = col.orders.map((x) => String(x.externalId ?? '')).filter(Boolean);
         return (
           <section
             key={col.key}
@@ -379,7 +385,13 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
             </button>
             <ColumnBody colKey={col.key} scrollRefs={scrollRefs}>
               {col.orders.map((o) => (
-                <SegCard key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`} o={o} countryCode={countryCode} tone={col.tone} />
+                <SegCard
+                  key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`}
+                  o={o}
+                  countryCode={countryCode}
+                  tone={col.tone}
+                  onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds } })}
+                />
               ))}
             </ColumnBody>
           </section>

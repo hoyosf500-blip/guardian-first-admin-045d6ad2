@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   parseTouchpointAction,
   buildTimeline,
+  prettyStatus,
   type TimelineSources,
   type TimelineOrderRow,
   type TimelineTouchpoint,
   type TimelineNote,
   type TimelineOrderResult,
+  type TimelineStatusChange,
 } from './timelineBuilder';
 
 describe('parseTouchpointAction', () => {
@@ -240,5 +242,47 @@ describe('buildTimeline', () => {
     };
     const events = buildTimeline({ order: emptyOrder, touchpoints: [], notes: [], orderResults: [] });
     expect(events).toHaveLength(0);
+  });
+
+  it('emits Dropi status-history events with friendly labels', () => {
+    const statusChanges: TimelineStatusChange[] = [
+      { id: 1, status: 'GUIA_GENERADA', changed_at: '2026-04-11T10:00:00Z' },
+      { id: 2, status: 'PREPARADO PARA TRANSPORTADORA', changed_at: '2026-04-11T16:00:00Z' },
+      { id: 3, status: 'DESPACHADA', changed_at: '2026-04-11T22:00:00Z' },
+    ];
+    const events = buildTimeline({ ...baseSources, statusChanges });
+    const titles = events.map(e => e.title);
+    expect(titles).toContain('Preparado para transportadora');
+    expect(titles).toContain('Despachada');
+    const guia = events.find(e => e.id === 'status-1');
+    expect(guia!.category).toBe('dropi');
+    expect(guia!.title).toBe('Guía generada');
+    expect(guia!.description).toContain('G999'); // enriquecido con el número de guía
+  });
+
+  it('suppresses the synthetic "Guía generada" milestone when status history exists', () => {
+    const statusChanges: TimelineStatusChange[] = [
+      { id: 1, status: 'GUIA_GENERADA', changed_at: '2026-04-11T10:00:00Z' },
+    ];
+    const events = buildTimeline({ ...baseSources, statusChanges });
+    expect(events.find(e => e.id === `order-guia-${baseOrder.id}`)).toBeUndefined();
+    expect(events.find(e => e.title === 'Pedido creado')).toBeDefined();
+  });
+
+  it('keeps the synthetic "Guía generada" when there is NO status history', () => {
+    const events = buildTimeline(baseSources);
+    expect(events.find(e => e.title === 'Guía generada — TCC')).toBeDefined();
+  });
+});
+
+describe('prettyStatus', () => {
+  it('maps known Dropi statuses to friendly labels', () => {
+    expect(prettyStatus('DESPACHADA')).toBe('Despachada');
+    expect(prettyStatus('PREPARADO PARA TRANSPORTADORA')).toBe('Preparado para transportadora');
+    expect(prettyStatus('GUIA_GENERADA')).toBe('Guía generada');
+  });
+
+  it('title-cases unknown statuses as a fallback', () => {
+    expect(prettyStatus('ALGO_RARO')).toBe('Algo Raro');
   });
 });
