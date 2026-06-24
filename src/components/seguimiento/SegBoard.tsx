@@ -1,8 +1,9 @@
-import { memo, useMemo, useRef, useLayoutEffect } from 'react';
+import { memo, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle,
+  ChevronUp, ChevronDown, ChevronLeft, Maximize2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
@@ -79,7 +80,7 @@ function freshnessDot(o: OrderData): { cls: string; title: string } {
   return { cls: 'bg-danger', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone }: { o: OrderData; countryCode?: string | null; tone: Tone }) {
+const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement> }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -96,11 +97,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone }: { o: OrderData; 
 
   return (
     <div
+      ref={cardRef}
       role="button"
       tabIndex={0}
       onClick={() => o.externalId && navigate(`/pedido/${o.externalId}`)}
       onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && o.externalId) { e.preventDefault(); navigate(`/pedido/${o.externalId}`); } }}
-      className="group bg-card rounded-lg border border-border/60 p-2.5 cursor-pointer transition-all duration-150 hover:border-border-strong hover:shadow-sm focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+      className={cn(
+        'group bg-card rounded-lg border p-2.5 cursor-pointer transition-all duration-150 hover:border-border-strong hover:shadow-sm focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        selected ? 'border-accent ring-2 ring-accent/60 shadow-md' : 'border-border/60',
+      )}
     >
       {/* Header: nombre + frescura + días */}
       <div className="flex items-start justify-between gap-2">
@@ -199,6 +204,102 @@ function ColumnBody({ colKey, scrollRefs, children }: {
   );
 }
 
+/**
+ * Modo ENFOQUE: una sola columna (carpeta) a lo ancho, con navegación ↑/↓
+ * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
+ * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
+ */
+function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; onBack: () => void }) {
+  const t = TONE[col.tone];
+  const orders = col.orders;
+  const [selIdx, setSelIdx] = useState(0);
+  const selRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Clamp si la columna cambia de tamaño en vivo (un pedido se movió de fase).
+  useEffect(() => {
+    setSelIdx((i) => Math.min(i, Math.max(0, orders.length - 1)));
+  }, [orders.length]);
+
+  // Scroll del seleccionado a la vista al moverse con ↑/↓.
+  useEffect(() => {
+    selRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selIdx]);
+
+  const move = (delta: number) => setSelIdx((i) => Math.min(orders.length - 1, Math.max(0, i + delta)));
+
+  return (
+    <div className="space-y-3">
+      {/* Barra de enfoque */}
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-surface/50 px-3 py-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-border-strong transition-colors"
+        >
+          <ChevronLeft size={14} aria-hidden="true" /> Tablero
+        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', t.dot)} aria-hidden="true" />
+          <span className="text-foreground/90">{col.icon}</span>
+          <h3 className="text-sm font-bold text-foreground truncate">{col.label}</h3>
+          <span className={cn('text-[11px] font-mono tabular-nums font-bold px-2 py-0.5 rounded-full', t.count)}>{orders.length}</span>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {orders.length ? `${selIdx + 1} / ${orders.length}` : '0 / 0'}
+          </span>
+          <button
+            type="button"
+            onClick={() => { move(-1); listRef.current?.focus(); }}
+            disabled={selIdx <= 0}
+            title="Anterior (↑)"
+            className="p-1.5 rounded-lg border border-border bg-card text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+          >
+            <ChevronUp size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => { move(1); listRef.current?.focus(); }}
+            disabled={selIdx >= orders.length - 1}
+            title="Siguiente (↓)"
+            className="p-1.5 rounded-lg border border-border bg-card text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+          >
+            <ChevronDown size={15} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {/* Lista de la columna enfocada (solo estos pedidos) */}
+      <div
+        ref={listRef}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+          else if (e.key === 'Escape') { e.preventDefault(); onBack(); }
+        }}
+        className="mx-auto max-w-xl space-y-2 max-h-[72vh] overflow-y-auto p-1 rounded-xl focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none [scrollbar-width:thin]"
+      >
+        {orders.length === 0 ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            No hay pedidos en <strong className="text-foreground">{col.label}</strong> ahora mismo.
+          </div>
+        ) : orders.map((o, i) => (
+          <SegCard
+            key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`}
+            o={o}
+            countryCode={countryCode}
+            tone={col.tone}
+            selected={i === selIdx}
+            cardRef={i === selIdx ? selRef : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface SegBoardProps {
   data: OrderData[];
   countryCode?: string | null;
@@ -210,6 +311,8 @@ interface SegBoardProps {
 
 export default function SegBoard({ data, countryCode, statusFilter, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const scrollRefs = useRef<Map<string, number>>(new Map());
+  // Columna enfocada (carpeta). null = tablero completo.
+  const [focusedKey, setFocusedKey] = useState<SegStatusKey | null>(null);
 
   // Agrupa por columna una sola vez. Cada tarjeta se re-renderiza sola cuando
   // su OrderData cambia de referencia (smartMerge en el padre).
@@ -230,6 +333,13 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
       .filter((c) => c.orders.length > 0),
     [byColumn, statusFilter],
   );
+
+  // Modo enfoque: una sola carpeta a lo ancho con navegación ↑/↓.
+  if (focusedKey) {
+    const def = BOARD_COLUMNS.find((c) => c.key === focusedKey)!;
+    const focusedCol = { ...def, orders: byColumn.get(focusedKey) ?? [] };
+    return <FocusedColumn col={focusedCol} countryCode={countryCode} onBack={() => setFocusedKey(null)} />;
+  }
 
   if (columns.length === 0) {
     return (
@@ -252,14 +362,21 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
             key={col.key}
             className={cn('snap-start shrink-0 w-[270px] flex flex-col rounded-xl border border-border bg-surface/40 border-t-[3px]', t.headBar)}
           >
-            <header className="flex items-center gap-2 px-3 py-2.5 border-b border-border/60">
+            {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓). */}
+            <button
+              type="button"
+              onClick={() => setFocusedKey(col.key)}
+              title={`Concentrarse solo en ${col.label}`}
+              className="group/h flex items-center gap-2 px-3 py-2.5 border-b border-border/60 text-left hover:bg-card/50 transition-colors"
+            >
               <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
               <span className="text-foreground/90">{col.icon}</span>
               <h3 className="text-[12px] font-bold text-foreground truncate flex-1">{col.label}</h3>
+              <Maximize2 size={12} className="text-muted-foreground opacity-0 group-hover/h:opacity-100 transition-opacity" aria-hidden="true" />
               <span className={cn('text-[11px] font-mono tabular-nums font-bold px-2 py-0.5 rounded-full', t.count)}>
                 {col.orders.length}
               </span>
-            </header>
+            </button>
             <ColumnBody colKey={col.key} scrollRefs={scrollRefs}>
               {col.orders.map((o) => (
                 <SegCard key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`} o={o} countryCode={countryCode} tone={col.tone} />
