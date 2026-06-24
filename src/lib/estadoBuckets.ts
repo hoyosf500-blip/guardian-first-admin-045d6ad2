@@ -109,6 +109,39 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'CANCELADO': 'cancelado',
 };
 
+// Fallback por CONTENIDO para estados de transportadoras de Ecuador (Servientrega
+// EC / Gintracom / Laar) que el lookup EXACTO no agarra porque traen sufijos de
+// ubicación variables (ej. "INGRESANDO OPERATIVO A BODEGA QUITO") y/o acentos.
+// Se evalúa SOLO si el lookup exacto falla, sobre el estado normalizado + sin
+// acentos. Lección del bug de categorías de wallet: el match exacto es frágil
+// con variantes de texto. Patrones específicos para no sobre-matchear. Ninguno es
+// terminal (entregado/devuelto/cancelado) → no altera tasas, solo llena "en la calle".
+const ESTADO_FALLBACK_PATTERNS: Array<[string, BucketKey]> = [
+  ['BODEGA ORIGEN', 'en_transito'],
+  ['RUTA A CONCESION', 'en_transito'],
+  ['INGRESANDO OPERATIVO', 'en_transito'],
+  ['DISTRIBUCION A CLIENTE', 'en_transito'],
+  ['DISTRIBUCION PARA ENTREGA', 'en_transito'],
+  ['ZONA DE ENTREGA', 'en_transito'],
+  ['RETIRO EN AGENCIA', 'novedad'], // cliente debe ir a recoger = riesgo no-entrega
+  ['SOLUCION APROBADA', 'novedad'], // lifecycle de novedad resuelta
+];
+
+/** Quita acentos para que el fallback matchee "CONCESIÓN"/"DISTRIBUCIÓN" con tilde. */
+function stripAccents(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+/** Resuelve el bucket de un estado: lookup exacto y, si falla, fallback por contenido. */
+function resolveBucket(estado: string): BucketKey | undefined {
+  const norm = normalizeEstado(estado);
+  const exact = ESTADO_TO_BUCKET[norm];
+  if (exact) return exact;
+  const bare = stripAccents(norm);
+  const hit = ESTADO_FALLBACK_PATTERNS.find(([pat]) => bare.includes(pat));
+  return hit?.[1];
+}
+
 function emptyBuckets(): Record<BucketKey, BucketTotals> {
   return {
     pendiente:   { pedidos: 0, valor: 0, unidades: 0 },
@@ -138,7 +171,7 @@ export function bucketizeEstados(rows: EstadoRow[]): BucketizeResult {
     totals.valor += valor;
     totals.unidades += unidades;
 
-    const key = ESTADO_TO_BUCKET[normalizeEstado(r.estado)];
+    const key = resolveBucket(r.estado);
     if (key) {
       buckets[key].pedidos += pedidos;
       buckets[key].valor += valor;

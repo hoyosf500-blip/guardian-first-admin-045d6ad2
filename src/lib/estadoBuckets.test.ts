@@ -102,4 +102,31 @@ describe('bucketizeEstados', () => {
     ]);
     expect(r.estadosSinMapear).toEqual(['ESTADO_NUEVO_DROPI']);
   });
+
+  it('mapea los 8 estados de transportadoras EC que estaban sin clasificar', () => {
+    const r = bucketizeEstados([
+      { estado: 'EN BODEGA ORIGEN',                       pedidos: 6, valor: 600, unidades: 6 },
+      { estado: 'EN RUTA A CONCESION',                    pedidos: 2, valor: 200, unidades: 2 },
+      { estado: 'INGRESANDO OPERATIVO A',                 pedidos: 2, valor: 200, unidades: 2 },
+      { estado: 'EN DISTRIBUCION A CLIENTE',              pedidos: 1, valor: 100, unidades: 1 },
+      { estado: 'EN DISTRIBUCION PARA ENTREGA EN AGENCIA', pedidos: 1, valor: 100, unidades: 1 },
+      { estado: 'ZONA DE ENTREGA',                        pedidos: 1, valor: 100, unidades: 1 },
+      { estado: 'PARA RETIRO EN AGENCIA SERVIENTREGA',    pedidos: 2, valor: 200, unidades: 2 },
+      { estado: 'SOLUCION APROBADA',                      pedidos: 3, valor: 300, unidades: 3 },
+    ]);
+    expect(r.buckets.en_transito.pedidos).toBe(13); // 6+2+2+1+1+1
+    expect(r.buckets.novedad.pedidos).toBe(5);      // 2 retiro agencia + 3 solucion aprobada
+    expect(r.otros).toHaveLength(0);
+    expect(r.estadosSinMapear).toEqual([]);
+  });
+
+  it('fallback es robusto a sufijos de ubicación y acentos (CONCESIÓN/DISTRIBUCIÓN)', () => {
+    const r = bucketizeEstados([
+      { estado: 'INGRESANDO OPERATIVO A BODEGA QUITO',   pedidos: 2, valor: 200, unidades: 2 },
+      { estado: 'EN RUTA A CONCESIÓN GUAYAQUIL',         pedidos: 1, valor: 100, unidades: 1 },
+      { estado: 'EN DISTRIBUCIÓN A CLIENTE',             pedidos: 1, valor: 100, unidades: 1 },
+    ]);
+    expect(r.buckets.en_transito.pedidos).toBe(4);
+    expect(r.otros).toHaveLength(0);
+  });
 });
