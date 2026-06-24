@@ -86,7 +86,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
-  const { openChat } = useWaChat();
+  const { openChat, waEnabled } = useWaChat();
   const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
 
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
@@ -159,7 +159,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
               <ExternalLink size={14} aria-hidden="true" />
             </a>
           )}
-          {waPhone && (
+          {waEnabled && waPhone && (
             <button
               type="button"
               onClick={(e) => {

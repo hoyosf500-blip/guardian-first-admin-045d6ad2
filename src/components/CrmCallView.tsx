@@ -98,7 +98,7 @@ export default function CrmCallView({
 }: Props) {
   const { isAdmin } = useAuth();
   const { activeStore, activeStoreId } = useStore();
-  const { openChat } = useWaChat();
+  const { openChat, waEnabled } = useWaChat();
   const countryCode = activeStore?.country_code;
   // Refresh on-demand desde la API de Dropi — la asesora no espera al cron
   // (que cada 5 min puede estar throttleado en EC). El realtime de orders
@@ -719,13 +719,15 @@ export default function CrmCallView({
               >
                 <PhoneIcon size={10} aria-hidden="true" /> Llamar
               </a>
-              <button
-                type="button"
-                onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
-              >
-                <MessageSquare size={10} /> WhatsApp
-              </button>
+              {waEnabled && (
+                <button
+                  type="button"
+                  onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+                >
+                  <MessageSquare size={10} /> WhatsApp
+                </button>
+              )}
             </div>
 
             {(o.ciudad || o.departamento) && (
