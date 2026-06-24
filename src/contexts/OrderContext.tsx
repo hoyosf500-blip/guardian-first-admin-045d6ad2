@@ -99,7 +99,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .ilike('estado', 'PENDIENTE CONFIRMACION');
     if (error || !dbOrders) return;
     const orders = (dbOrders as unknown as import('@/lib/orderUtils').DbOrderRow[]).map((o, idx) => dbToOrderData(o, idx));
-    setAllOrdersState(orders);
+    // smartMerge (no reemplazo directo): en un refresh de realtime que trae los
+    // MISMOS datos, devuelve el array previo intacto → `allOrders` no cambia de
+    // referencia → `ctxValue` no cambia → NINGÚN consumer de useOrders()
+    // (ConfirmarTab, CallView, CounterBar) re-renderiza. workQueue y counter ya
+    // usaban este patrón; allOrders era el único que churneaba en cada refresh
+    // y disparaba la cascada de re-render que reseteaba la pantalla.
+    setAllOrdersState(prev => smartMerge(prev, orders));
     buildWorkQueue(orders);
     setExcelLoaded(true);
     // Cobertura: cargar set de pedidos de confirmar que YO toqué HOY (Bogotá).

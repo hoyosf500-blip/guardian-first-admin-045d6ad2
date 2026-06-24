@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { findSupersededPendingConf, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,6 +58,20 @@ export default function ConfirmarTab({ profile }: Props) {
   const [progressedOrders, setProgressedOrders] = useState<ProgressedOrder[]>([]);
   const [dupExpanded, setDupExpanded] = useState(false);
   const today = bogotaToday();
+
+  // Preservación de scroll: cada refresh de realtime (cron Dropi cada 5 min,
+  // vuelta de pestaña, o la validación de dirección que escribe en `orders`)
+  // reconstruye la cola y el navegador resetea el scroll al tope → la operadora
+  // "salta de arriba abajo". Guardamos la última posición donde dejó el scroll
+  // y, si un re-render la tiró hacia arriba, la devolvemos ANTES del paint
+  // (useLayoutEffect → sin parpadeo). Mismo objetivo que la preservación de
+  // scroll de CrmTable en Seguimiento, que Confirmar no tenía.
+  const lastScrollY = useRef(0);
+  useEffect(() => {
+    const onScroll = () => { lastScrollY.current = window.scrollY; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Auto-load orders from DB on mount if not already loaded. Uses a strict
   // eq() match on PENDIENTE CONFIRMACION instead of ilike('%PENDIENTE%') —
@@ -234,6 +248,17 @@ export default function ConfirmarTab({ profile }: Props) {
     }
     return true;
   }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday]);
+
+  // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
+  // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente
+  // hacia arriba (firma del "salta al tope"); no pelea con el scroll normal ni
+  // con un scroll deliberado de la operadora.
+  useLayoutEffect(() => {
+    const saved = lastScrollY.current;
+    if (saved > 50 && window.scrollY < saved - 20) {
+      window.scrollTo(0, saved);
+    }
+  }, [filteredItems]);
 
   const total = counter.conf + counter.canc + counter.noresp;
   const pending = visibleQueue.filter(o => !o.result).length;
