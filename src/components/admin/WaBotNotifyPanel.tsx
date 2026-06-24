@@ -11,19 +11,23 @@ const sb = supabase as unknown as SupabaseClient;
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
-type Bucket = 'en_camino' | 'reparto' | 'novedad' | 'entregado';
+type Bucket = 'guia_generada' | 'en_camino' | 'reparto' | 'oficina' | 'novedad' | 'entregado';
 
 const BUCKETS: { key: Bucket; label: string; hint: string }[] = [
+  { key: 'guia_generada', label: 'Guía generada (manda número + link)', hint: 'Cuando Dropi genera la guía y prepara el pedido. Manda el número de guía real + link de rastreo.' },
   { key: 'en_camino', label: 'Va en camino / despachado', hint: 'Cuando el pedido sale de bodega y entra en tránsito.' },
   { key: 'reparto', label: 'Sale a reparto hoy', hint: 'Cuando el mensajero sale a entregarlo ese día.' },
+  { key: 'oficina', label: 'Disponible en oficina (recoger)', hint: 'Cuando el pedido queda en una oficina para que el cliente lo recoja. Clave para que no se devuelva.' },
   { key: 'novedad', label: 'Novedad / problema', hint: 'Cuando hay una novedad de entrega (dirección, no estaba, etc.).' },
   { key: 'entregado', label: 'Entregado', hint: 'Cuando el pedido se marca como entregado.' },
 ];
 
 // Deben coincidir con DEFAULT_TEMPLATES de la edge function wa-status-notifier.
 const DEFAULT_TEMPLATES: Record<Bucket, string> = {
+  guia_generada: '¡Buenas noticias {nombre}! 📦 Tu pedido de {producto} ya tiene guía y se está preparando con {transportadora}.\nTu número de guía es: {guia}\nLo podés rastrear acá: {link}\nCualquier cosa, acá estoy 💛 — {agente}',
   en_camino: '¡Hola {nombre}! 📦 Tu pedido de {producto} ya va en camino con {transportadora}. Lo podés seguir acá: {link}\nCualquier cosa me escribís, acá estoy 💛 — {agente}',
   reparto: '¡Hola {nombre}! 🚚 ¡Hoy sale tu pedido a entrega! Tené listo el pago contra entrega de {total}. Apenas llegue el mensajero te lo entrega. ¿Alguna duda? Acá estoy 💛 — {agente}',
+  oficina: 'Hola {nombre} 📍 ¡Tu pedido de {producto} ya llegó a tu ciudad y está en oficina de {transportadora} para que lo recojas! Llevá tu cédula y ten listo el pago de {total}. Tu guía es {guia}. ¿Necesitás algo más? Acá estoy 💛 — {agente}',
   novedad: 'Hola {nombre} 🙏 Tu pedido tuvo una novedad con la entrega. ¿Me confirmás tu dirección y un horario en que estés, así lo reprogramamos y te llega bien? 📦',
   entregado: '¡Llegó tu pedido, {nombre}! 🎉 Espero que lo disfrutes muchísimo. Si necesitás cualquier cosa, acá sigo para ayudarte 💛 — {agente}',
 };
@@ -36,8 +40,8 @@ interface NotifyState {
 
 const DEFAULT_STATE: NotifyState = {
   enabled: true,
-  buckets: { en_camino: true, reparto: true, novedad: true, entregado: true },
-  templates: { en_camino: '', reparto: '', novedad: '', entregado: '' },
+  buckets: { guia_generada: true, en_camino: true, reparto: true, oficina: true, novedad: true, entregado: true },
+  templates: { guia_generada: '', en_camino: '', reparto: '', oficina: '', novedad: '', entregado: '' },
 };
 
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {

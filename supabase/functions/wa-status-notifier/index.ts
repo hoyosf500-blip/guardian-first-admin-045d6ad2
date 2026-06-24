@@ -21,24 +21,60 @@ const MAX_SENDS_PER_RUN = 40; // pacing anti-baneo (gateway QR no oficial)
 const LOOKBACK_DAYS = 21; // solo pedidos movidos recientemente
 const ORDERS_PER_STORE = 600;
 
-type Bucket = "en_camino" | "reparto" | "novedad" | "entregado";
+type Bucket = "guia_generada" | "en_camino" | "reparto" | "oficina" | "novedad" | "entregado";
 
-/** Mapea el estado crudo de Dropi a un "bucket" de aviso (o null = no avisar). */
+// Taxonomía canónica de estados Dropi. Réplica server-side de src/lib/segLists.ts
+// (Deno no puede importar src/, igual que waTracking.ts). Si cambian los estados
+// en segLists.ts, actualizar también acá.
+const E = (s: string | null | undefined): string => (s || "").toUpperCase().trim();
+
+const ESTADOS_GUIA = new Set([
+  "GUIA_GENERADA", "GUIA GENERADA", "ADMITIDA",
+  "PREPARADO PARA TRANSPORTADORA", "ENTREGADO A TRANSPORTADORA",
+]);
+
+const ESTADOS_TRANSITO = new Set([
+  "EN TRANSPORTE", "EN DESPACHO", "EN TRASLADO NACIONAL", "EN TERMINAL ORIGEN",
+  "EN TERMINAL DESTINO", "EN DISTRIBUCION", "EN REEXPEDICION", "ENTREGADA A CONEXIONES",
+  "TELEMERCADEO", "REENVIO", "REENVÍO", "EN BODEGA TRANSPORTADORA", "EN BODEGA DROPI",
+  "EN BODEGA ORIGEN", "BODEGA DESTINO", "RECOGIDO POR DROPI", "DESPACHADA",
+  "EN ESPERA DE RUTA DOMESTICA",
+]);
+const matchTransito = (e: string): boolean =>
+  ESTADOS_TRANSITO.has(e) || e.startsWith("EN RUTA") || e.startsWith("INGRESANDO") || e.startsWith("ASIGNADO");
+
+const matchOficina = (e: string): boolean =>
+  e.includes("OFICINA") || e.includes("RECLAME") || e.includes("RECLAMAR") ||
+  e.includes("EN PUNTO") || e.startsWith("PARA RETIRO") || e.startsWith("RETIRO");
+
+const ESTADOS_NOVEDAD = new Set([
+  "NOVEDAD", "INTENTO DE ENTREGA", "RECHAZADO", "DEVUELTO",
+  "DEVOLUCION", "DEVOLUCION EN TRANSITO",
+]);
+
+/** Mapea el estado canónico de Dropi a un "bucket" de aviso (o null = no avisar). */
 function bucketOf(estadoRaw: string): Bucket | null {
-  const e = (estadoRaw || "").toUpperCase();
+  const e = E(estadoRaw);
   if (!e) return null;
-  if (e.includes("ENTREGADO")) return "entregado";
-  if (e.includes("NOVEDAD") || e.includes("DEVOLUC") || e.includes("RECHAZ") || e.includes("REEXP")) return "novedad";
-  if (e.includes("REPARTO") || e.includes("DISTRIBUC") || e.includes("EN RUTA") || e.includes("SALIO A") || e.includes("PARA ENTREGA")) return "reparto";
-  if (e.includes("TRANSITO") || e.includes("DESPACH") || e.includes("BODEGA TRANSPORTADORA") || e.includes("EN CAMINO")) return "en_camino";
-  return null;
+  if (e === "ENTREGADO") return "entregado";                       // terminal exacto
+  if (e === "NOVEDAD SOLUCIONADA") return null;                    // bueno, no es problema
+  if (ESTADOS_NOVEDAD.has(e) || e.includes("DEVOLUC")) return "novedad";
+  if (matchOficina(e)) return "oficina";                          // recoge en oficina
+  if (e === "EN REPARTO") return "reparto";
+  if (matchTransito(e)) return "en_camino";
+  if (ESTADOS_GUIA.has(e)) return "guia_generada";               // ya hay guía real
+  return null;                                                     // PENDIENTE/ALISTAMIENTO/etc.
 }
 
 const DEFAULT_TEMPLATES: Record<Bucket, string> = {
+  guia_generada:
+    "¡Buenas noticias {nombre}! 📦 Tu pedido de {producto} ya tiene guía y se está preparando con {transportadora}.\nTu número de guía es: {guia}\nLo podés rastrear acá: {link}\nCualquier cosa, acá estoy 💛 — {agente}",
   en_camino:
     "¡Hola {nombre}! 📦 Tu pedido de {producto} ya va en camino con {transportadora}. Lo podés seguir acá: {link}\nCualquier cosa me escribís, acá estoy 💛 — {agente}",
   reparto:
     "¡Hola {nombre}! 🚚 ¡Hoy sale tu pedido a entrega! Tené listo el pago contra entrega de {total}. Apenas llegue el mensajero te lo entrega. ¿Alguna duda? Acá estoy 💛 — {agente}",
+  oficina:
+    "Hola {nombre} 📍 ¡Tu pedido de {producto} ya llegó a tu ciudad y está en oficina de {transportadora} para que lo recojas! Llevá tu cédula y ten listo el pago de {total}. Tu guía es {guia}. ¿Necesitás algo más? Acá estoy 💛 — {agente}",
   novedad:
     "Hola {nombre} 🙏 Tu pedido tuvo una novedad con la entrega. ¿Me confirmás tu dirección y un horario en que estés, así lo reprogramamos y te llega bien? 📦",
   entregado:
@@ -111,8 +147,7 @@ async function processStore(
     const extId = o.external_id ? String(o.external_id) : "";
     const phone = o.phone ? String(o.phone) : "";
     if (!extId || !phone) continue;
-    const bucket = bucketOf(String(o.estado || ""));
-    if (!bucket) continue;
+    const bucket = bucketOf(String(o.estado || "")); // puede ser null (pre-guía)
 
     const { data: prev } = await sbAdmin
       .from("wa_order_notifications")
@@ -121,19 +156,23 @@ async function processStore(
       .eq("external_id", extId)
       .maybeSingle();
 
-    // Baseline silencioso: primera vez que vemos el pedido → registrar sin avisar.
+    // Baseline silencioso: PRIMERA vez que vemos el pedido → registrar sin avisar
+    // (no blastea el histórico). Sembramos también los pendientes (bucket null →
+    // "none") para que la PRIMERA transición real (p.ej. → guia_generada) cuente
+    // como cambio y SÍ dispare el aviso en pedidos nuevos.
     if (!prev) {
       await sbAdmin.from("wa_order_notifications").insert({
         store_id: storeId,
         external_id: extId,
         customer_phone: phone,
-        last_bucket: bucket,
+        last_bucket: bucket ?? "none",
         last_estado: String(o.estado || ""),
       });
       state.seeded++;
       continue;
     }
 
+    if (!bucket) continue;                     // sigue pre-guía, nada que avisar
     if (prev.last_bucket === bucket) continue; // sin cambio de bucket
 
     const bucketOn = notify.buckets?.[bucket] !== false; // default ON si no está
