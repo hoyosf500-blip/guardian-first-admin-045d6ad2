@@ -1023,7 +1023,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   // rompe el memo porque memo compara props (no contexts).
   const { activeStoreId: cardActiveStoreId } = useStore();
   const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
-  const { openChat } = useWaChat();
+  const { openChat, waEnabled } = useWaChat();
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
@@ -1370,12 +1370,14 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {/* Canales de contacto (solo abren la app — el registro de la
                   gestión va por "Gestioné hoy", abajo). */}
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-[#25D366] text-white font-semibold hover:bg-[#1ebe5b] inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]">
-                  <Send size={12} /> WhatsApp
-                </button>
+                {waEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                    className="flex-1 text-[11px] py-2.5 rounded-lg bg-[#25D366] text-white font-semibold hover:bg-[#1ebe5b] inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]">
+                    <Send size={12} /> WhatsApp
+                  </button>
+                )}
                 <a href={`tel:+57${o.phone}`}
                   className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
                   <PhoneIcon size={12} /> Llamar

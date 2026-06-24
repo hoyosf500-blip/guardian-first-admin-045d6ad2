@@ -34,7 +34,7 @@ interface Props {
 export default function NovedadView({ items }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
-  const { openChat } = useWaChat();
+  const { openChat, waEnabled } = useWaChat();
   // BUG B fix: persist by *order id*, not array index. When the queue
   // reorders or the operator returns from the carrier tab we keep showing
   // the same customer instead of jumping to a random one at that index.
@@ -189,13 +189,15 @@ export default function NovedadView({ items }: Props) {
             >
               <Phone size={10} /> Llamar
             </a>
-            <button
-              type="button"
-              onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
-            >
-              <MessageSquare size={10} /> WhatsApp
-            </button>
+            {waEnabled && (
+              <button
+                type="button"
+                onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+              >
+                <MessageSquare size={10} /> WhatsApp
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <MapPin size={12} /> {o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}
