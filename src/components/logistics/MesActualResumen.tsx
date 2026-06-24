@@ -131,6 +131,12 @@ export default function MesActualResumen({ summary, filters }: Props) {
     resumen.valorGenerado - (resumen.valorEntregado + resumen.valorPerdido + resumen.valorCancelado),
   );
 
+  // Detector de estados nuevos de Dropi sin clasificar: las barras `otros` del
+  // desglose real (full) son estados que ningún bucket conoce. Si aparece alguno,
+  // el dueño ve un aviso para mapearlo — así un estado nuevo no rompe los KPIs en
+  // silencio. Solo con `full` (el fallback no itemiza por nombre).
+  const sinMapear = full ? full.buckets.filter((b) => b.tone === 'otros') : [];
+
   return (
     <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
       {/* Header */}
@@ -173,6 +179,18 @@ export default function MesActualResumen({ summary, filters }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Detector de estados sin clasificar — se dispara con cualquier estado nuevo
+          de Dropi que aún no mapeamos. Solo el dueño lo ve. Ámbar informativo. */}
+      {isOwnerOfActive && sinMapear.length > 0 && (
+        <div className="px-5 py-2.5 border-b border-warning/30 bg-warning/8 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
+          <p className="text-[11px] text-warning leading-relaxed">
+            <strong>{sinMapear.length} estado{sinMapear.length === 1 ? '' : 's'} sin clasificar:</strong>{' '}
+            {sinMapear.map((b) => `${b.label} (${b.count})`).join(' · ')}. Avisá para mapearlos.
+          </p>
+        </div>
+      )}
 
       {/* ── Tiles Dropi-parity ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-5 border-b border-border">
