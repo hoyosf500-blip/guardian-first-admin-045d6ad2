@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useStore } from '@/contexts/StoreContext';
@@ -29,9 +29,16 @@ interface WaChatContextValue {
    * para ese teléfono en la tienda activa, abre ese hilo (historial + IA); si no,
    * abre un hilo NUEVO y la operadora escribe el primer mensaje (wa-send crea la
    * conversación y envía por el número del negocio). Devuelve 'thread' si abrió el
-   * panel, 'none' si faltaba teléfono o tienda.
+   * panel, 'none' si faltaba teléfono, tienda, o la tienda no tiene WhatsApp.
    */
   openChat: (args: OpenChatArgs) => Promise<OpenChatMode>;
+  /**
+   * true SOLO si la tienda activa tiene un canal de WhatsApp configurado (con
+   * número). Los botones de WhatsApp deben ocultarse cuando es false — ej.
+   * Ecuador, mientras no se cargue su número. Se auto-habilita en cuanto se
+   * configure el canal (vía RPC get_wa_channel_status), sin tocar código.
+   */
+  waEnabled: boolean;
 }
 
 const WaChatContext = createContext<WaChatContextValue | null>(null);
@@ -55,6 +62,25 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
   const { activeStoreId, activeStore } = useStore();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<WaConversation | null>(null);
+  // ¿La tienda activa tiene WhatsApp configurado? Arranca en false y se confirma
+  // por RPC al resolver la tienda. Default false = seguro: NO mostramos el botón
+  // hasta saber que hay canal (evita abrir un chat que no puede enviar, ej. EC
+  // sin número). get_wa_channel_status es member-safe (SECURITY DEFINER); RLS
+  // directo sobre wa_channels es owner-only, por eso va por RPC.
+  const [waEnabled, setWaEnabled] = useState(false);
+
+  useEffect(() => {
+    if (!activeStoreId) { setWaEnabled(false); return; }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await sb.rpc('get_wa_channel_status', { p_store_id: activeStoreId });
+      if (cancelled) return;
+      // Habilitado solo si hay al menos un canal con número cargado.
+      const rows = (Array.isArray(data) ? data : []) as Array<{ phone_number?: string | null }>;
+      setWaEnabled(!error && rows.some((r) => !!r.phone_number));
+    })();
+    return () => { cancelled = true; };
+  }, [activeStoreId]);
 
   // Resuelve la conversación de un teléfono en la tienda activa (match últimos 8
   // dígitos, robusto a prefijo país CO 57 / EC 593). Devuelve la fila o null.
@@ -75,6 +101,9 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
   const openChat = useCallback(async ({ phone, name }: OpenChatArgs): Promise<OpenChatMode> => {
     const digits = String(phone || '').replace(/[^0-9]/g, '');
     if (!activeStoreId || digits.length < 7) return 'none';
+    // Defensa: si la tienda no tiene WhatsApp configurado, no abrimos nada (los
+    // botones ya se ocultan con waEnabled; esto cubre llamadas programáticas).
+    if (!waEnabled) return 'none';
 
     const existing = await findByPhone(digits);
     if (existing) {
@@ -114,7 +143,7 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
     });
     setOpen(true);
     return 'thread';
-  }, [activeStoreId, activeStore?.country_code, findByPhone]);
+  }, [activeStoreId, activeStore?.country_code, findByPhone, waEnabled]);
 
   // Tras enviar el 1er mensaje de un chat nuevo, wa-send ya creó la conversación
   // → la cargamos por teléfono y reemplazamos el hilo sintético por el real (así
@@ -124,7 +153,7 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
     if (real) setSelected(real);
   }, [findByPhone]);
 
-  const value = useMemo<WaChatContextValue>(() => ({ openChat }), [openChat]);
+  const value = useMemo<WaChatContextValue>(() => ({ openChat, waEnabled }), [openChat, waEnabled]);
 
   return (
     <WaChatContext.Provider value={value}>

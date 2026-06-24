@@ -98,7 +98,7 @@ export default function OrderDetailPage() {
   const location = useLocation();
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { openChat } = useWaChat();
+  const { openChat, waEnabled } = useWaChat();
   const { refresh: refreshOrder } = useRefreshOrder();
 
   // Navegación entre hermanos: la lista de external_ids de la carpeta de la que
@@ -510,14 +510,16 @@ export default function OrderDetailPage() {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => { void openChat({ phone: order.phone, name: order.nombre }); }}
-              aria-label="Abrir chat de WhatsApp con el cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] text-white text-xs font-bold py-3 sm:py-2.5 hover:bg-[#1ebe5b] transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:outline-none"
-            >
-              <MessageSquare size={14} aria-hidden="true" /> WhatsApp
-            </button>
+            {waEnabled && (
+              <button
+                type="button"
+                onClick={() => { void openChat({ phone: order.phone, name: order.nombre }); }}
+                aria-label="Abrir chat de WhatsApp con el cliente"
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] text-white text-xs font-bold py-3 sm:py-2.5 hover:bg-[#1ebe5b] transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:outline-none"
+              >
+                <MessageSquare size={14} aria-hidden="true" /> WhatsApp
+              </button>
+            )}
             <a
               href={`tel:${order.phone}`}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
