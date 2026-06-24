@@ -13,6 +13,7 @@ import OrdersSyncBadge from '@/components/logistics/OrdersSyncBadge';
 import { Button } from '@/components/ui/button';
 import { useResumenSync } from '@/hooks/useResumenSync';
 import KpiCard from '@/components/logistics/finanzas/KpiCard';
+import NetoRealCard from '@/components/logistics/NetoRealCard';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 
@@ -105,6 +106,20 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const valorPreparacion = full?.valorPreparacion ?? 0;
   const valorOtros = full?.valorOtros ?? 0;
 
+  // "Pedidos en la calle" = lo que falta CERRAR = generado − (entregado + devuelto
+  // + cancelado). Lo no-cerrado (pendiente + preparación + tránsito + novedad +
+  // estados sin clasificar) es lo que el dueño mira primero.
+  const closedCount = ['entregado', 'devuelto', 'cancelado'].reduce(
+    (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.count ?? 0), 0,
+  );
+  const enLaCalleCount = Math.max(0, resumen.generadoTotal - closedCount);
+  const enLaCalleValor = Math.max(
+    0,
+    resumen.valorGenerado - (resumen.valorEntregado + resumen.valorPerdido + resumen.valorCancelado),
+  );
+  // Mes mostrado ('YYYY-MM'). El rango siempre arranca el 1ro del mes → slice OK.
+  const yearMonth = filters.fromDate.slice(0, 7);
+
   return (
     <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
       {/* Header */}
@@ -133,6 +148,20 @@ export default function MesActualResumen({ summary, filters }: Props) {
           )}
         </div>
       </header>
+
+      {/* ── Pedidos en la calle (lo que falta cerrar) — lo primero que mira el dueño ── */}
+      <div className="px-5 py-4 border-b border-border bg-accent/5 flex items-center gap-2.5">
+        <ArrowRight size={18} className="text-accent shrink-0" />
+        <div className="min-w-0">
+          <div className="text-2xl font-bold tabular-nums text-foreground leading-tight">
+            {enLaCalleCount.toLocaleString('es-CO')}
+            <span className="text-sm font-medium text-muted-foreground ml-1.5">pedidos en la calle</span>
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            {formatCOP(enLaCalleValor)} por definir · falta cerrar (sin contar entregados / devueltos / cancelados)
+          </div>
+        </div>
+      </div>
 
       {/* ── Tiles Dropi-parity ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-5 border-b border-border">
@@ -164,12 +193,15 @@ export default function MesActualResumen({ summary, filters }: Props) {
           tone="success"
           hint={`${pctCompletado.toFixed(0)}% completado`}
         />
+        {/* OPERATIVO_BASE: hoy = ganancia neta del wallet (useGananciaNetaDropi,
+            por fecha de movimiento). Punto único de cambio si se swappea a otra
+            fuente (p.ej. un operativo que reconcilie con la "Utilidad Total" de Dropi). */}
         <KpiCard
-          label="Ganancia neta real"
+          label="Operativo del mes"
           value={gananciaLoading ? '…' : formatCOP(gananciaNeta)}
           icon={Wallet}
           tone={walletStale ? 'warning' : gananciaNeta >= 0 ? 'success' : 'danger'}
-          hint={walletStale ? '⚠ wallet viejo, sincronizá' : 'caja neta del wallet · este mes'}
+          hint={walletStale ? '⚠ wallet viejo, sincronizá' : 'del wallet · realizado a hoy'}
         />
       </div>
 
@@ -275,6 +307,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
               </div>
             )}
           </div>
+
+          {/* Neto real = operativo − pauta − admin (inputs que persisten por mes,
+              solo el dueño edita). El operativo es el OPERATIVO_BASE de arriba. */}
+          <NetoRealCard operativo={gananciaNeta} yearMonth={yearMonth} canEdit={isOwnerOfActive} />
 
           {/* Explicación llana del gap */}
           <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
