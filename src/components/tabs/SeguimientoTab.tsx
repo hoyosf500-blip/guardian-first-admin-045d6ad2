@@ -1,12 +1,14 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
-import { Truck, RefreshCw, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink } from 'lucide-react';
+import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
+import SegBoard from '@/components/seguimiento/SegBoard';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
 import { Button } from '@/components/ui/button';
@@ -46,6 +48,10 @@ function getOrderAgeDays(order: OrderData): number {
 const MAX_ACTIONABLE_BY_COUNTRY: Record<string, number> = { CO: 21, EC: 60 };
 const DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS = 21;
 
+// Estados terminales (no cambian más en Dropi) → no se piden en el refresco en
+// vivo, para no gastar llamadas a Dropi. Categorías de classifySegEstado.
+const TERMINAL_CATS = new Set(['entregado', 'cancelado', 'devolucion', 'devolucion_transito', 'indemnizada', 'rechazado']);
+
 // Punto de color por urgencia para los chips de listas SLA (mapea SegListDef.tone).
 const LIST_TONE_DOT: Record<string, string> = {
   danger: 'bg-danger',
@@ -64,6 +70,7 @@ export default function SeguimientoTab() {
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId } = useStore();
+  const { refreshVisible, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
   const maxActionableDays =
     MAX_ACTIONABLE_BY_COUNTRY[activeStore?.country_code ?? 'CO'] ?? DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS;
 
@@ -92,6 +99,9 @@ export default function SeguimientoTab() {
   // touchpoint SEG:* hoy. Sirve para que la operadora vea solo lo que aún
   // tiene que llamar. mySegTouchedToday viene del OrderContext (set de phones).
   const [onlyUntouchedSeg, setOnlyUntouchedSeg] = useSessionState<boolean>('seg:onlyUntouched', false);
+  // Vista: tablero Kommo (default, tarjetas en vivo por columna) o lista (CrmTable
+  // clásico con búsqueda/owner/llamada). El tablero no quita features: es un toggle.
+  const [viewMode, setViewMode] = useSessionState<'board' | 'list'>('seg:viewMode', 'board');
 
   // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
   // y la sessionStorage se mantienen sincronizadas: ?lista=<slug> permite
@@ -181,6 +191,41 @@ export default function SeguimientoTab() {
     if (!listaActiva || listaActiva.externalRoute) return dedupedByDate;
     return dedupedByDate.filter((o) => listaActiva.matches(o));
   }, [dedupedByDate, listaActiva]);
+
+  // Pedidos VISIBLES no terminales → set para el refresco en vivo contra Dropi.
+  // El ref guarda el último valor para que el auto-trigger lo lea sin depender
+  // de él (evita re-disparar en cada cambio de segData → loop).
+  const visibleExternalIds = useMemo(() => {
+    const feed = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+    return feed
+      .filter((o) => !TERMINAL_CATS.has(classifySegEstado(o.estado)))
+      .map((o) => String(o.externalId ?? ''))
+      .filter(Boolean);
+  }, [listaActiva, filteredByList, dedupedByDate]);
+  const visibleIdsRef = useRef<string[]>([]);
+  visibleIdsRef.current = visibleExternalIds;
+
+  // Auto-sync suave: al entrar y al cambiar de lista activa, traé el estado REAL
+  // de Dropi de los pedidos visibles. El throttle de 3 min por pedido vive en el
+  // hook, así que disparar seguido no martilla Dropi. Silencioso (sin toasts).
+  useEffect(() => {
+    if (!activeStoreId) return;
+    const t = setTimeout(() => {
+      if (visibleIdsRef.current.length > 0) {
+        void refreshVisible(activeStoreId, visibleIdsRef.current, { silent: true });
+      }
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStoreId, listaSlug]);
+
+  // Feed final que ven el tablero y la lista: feed de la lista SLA activa (o el
+  // total deduplicado) con el toggle "Solo sin tocar" aplicado. Misma fuente
+  // para ambas vistas → cuentas idénticas.
+  const displayData = useMemo(() => {
+    const feed = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+    return onlyUntouchedSeg ? feed.filter((o) => !o.phone || !mySegTouchedToday.has(o.phone)) : feed;
+  }, [listaActiva, filteredByList, dedupedByDate, onlyUntouchedSeg, mySegTouchedToday]);
 
   const stats = useMemo(() => {
     const s = {
@@ -346,6 +391,31 @@ export default function SeguimientoTab() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {/* Toggle de vista: Tablero (Kommo, en vivo) ↔ Lista (CrmTable) */}
+            <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('board')}
+                aria-pressed={viewMode === 'board'}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors',
+                  viewMode === 'board' ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <LayoutGrid size={13} aria-hidden="true" /> Tablero
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors',
+                  viewMode === 'list' ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <List size={13} aria-hidden="true" /> Lista
+              </button>
+            </div>
             {/* Date range filter */}
             <div className={cn(
               "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
@@ -427,6 +497,17 @@ export default function SeguimientoTab() {
               )}
             </div>
             <WaInbox storeId={activeStoreId} />
+            {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
+                visibles ahora (vs "Actualizar" que solo re-lee la base). */}
+            <button
+              onClick={() => refreshVisible(activeStoreId, visibleExternalIds, { force: true })}
+              disabled={isSyncingDropi || visibleExternalIds.length === 0}
+              title="Trae el estado real de Dropi de los pedidos visibles ahora mismo"
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />
+              <span className="hidden sm:inline">{isSyncingDropi ? 'Sincronizando...' : 'Sincronizar Dropi'}</span>
+            </button>
             <button
               onClick={() => loadSegData(true)}
               disabled={segLoading}
@@ -649,20 +730,23 @@ export default function SeguimientoTab() {
         );
       })()}
 
-      <CrmTable
-        data={(() => {
-          const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-          return onlyUntouchedSeg
-            ? feedBase.filter(o => !o.phone || !mySegTouchedToday.has(o.phone))
-            : feedBase;
-        })()}
-        module="SEG"
-        emptyIcon={<Truck size={28} className="text-muted-foreground" />}
-        emptyTitle="Sin pedidos en seguimiento"
-        emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
-        controlledStatusFilter={statusFilter}
-        onControlledStatusFilterChange={setStatusFilter}
-      />
+      {viewMode === 'board' ? (
+        <SegBoard
+          data={displayData}
+          countryCode={activeStore?.country_code}
+          statusFilter={statusFilter}
+        />
+      ) : (
+        <CrmTable
+          data={displayData}
+          module="SEG"
+          emptyIcon={<Truck size={28} className="text-muted-foreground" />}
+          emptyTitle="Sin pedidos en seguimiento"
+          emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
+          controlledStatusFilter={statusFilter}
+          onControlledStatusFilterChange={setStatusFilter}
+        />
+      )}
     </div>
   );
 }
