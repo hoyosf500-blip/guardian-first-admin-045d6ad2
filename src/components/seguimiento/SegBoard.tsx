@@ -97,7 +97,6 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
   const pConfig = PRIORITY_CONFIG[pLevel];
   const fresh = freshnessDot(o);
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
-  const waMsg = encodeURIComponent(`Hola ${o.nombre || ''}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va su entrega?`);
 
   return (
     <div
@@ -165,7 +164,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                void openChat({ phone: o.phone, fallbackWaUrl: `https://wa.me/${waPhone}?text=${waMsg}` });
+                void openChat({ phone: o.phone, name: o.nombre });
               }}
               title="Abrir chat de WhatsApp (ver el bot / escribir)"
               aria-label="Abrir chat de WhatsApp"

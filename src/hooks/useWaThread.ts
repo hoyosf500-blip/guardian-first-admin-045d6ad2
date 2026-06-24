@@ -24,7 +24,7 @@ const COLS = 'id, direction, sender, body, status, ai_generated, created_at';
  * vivo. El envío va por la edge function wa-send (que registra + escribe el
  * touchpoint de cobertura).
  */
-export function useWaThread(conversationId: string | null, storeId: string | null | undefined) {
+export function useWaThread(conversationId: string | null, storeId: string | null | undefined, phone?: string | null) {
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -66,16 +66,21 @@ export function useWaThread(conversationId: string | null, storeId: string | nul
 
   const send = useCallback(async (text: string): Promise<boolean> => {
     const body = text.trim();
-    if (!conversationId || !storeId || !body) return false;
+    if (!storeId || !body) return false;
+    // Chat existente → por conversation_id. Chat NUEVO (sin conversación todavía)
+    // → por teléfono: wa-send crea la conversación del lado servidor y envía. Así
+    // la operadora inicia el chat desde el CRM sin abrir WhatsApp externo.
+    if (!conversationId && !phone) return false;
     setSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke('wa-send', {
-        body: { store_id: storeId, conversation_id: conversationId, body },
-      });
+      const sendBody = conversationId
+        ? { store_id: storeId, conversation_id: conversationId, body }
+        : { store_id: storeId, to: phone, body };
+      const { data, error } = await supabase.functions.invoke('wa-send', { body: sendBody });
       if (error) { toast.error(`No se pudo enviar: ${error.message}`); return false; }
       const r = data as { ok?: boolean; error?: string };
       if (!r?.ok) { toast.error(r?.error || 'No se pudo enviar'); return false; }
-      await load();
+      if (conversationId) await load();
       return true;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al enviar');
@@ -83,7 +88,7 @@ export function useWaThread(conversationId: string | null, storeId: string | nul
     } finally {
       setSending(false);
     }
-  }, [conversationId, storeId, load]);
+  }, [conversationId, storeId, phone, load]);
 
   return { messages, loading, sending, send, reload: load };
 }
