@@ -28,8 +28,10 @@ interface Props {
   despachadoValor: number;
   entregadosCount: number;
   valorEntregado: number;
-  devueltosCount: number;
+  devueltosCount: number;       // devoluciones reales (sin rechazos)
   valorPerdido: number;
+  rechazadosCount: number;      // rechazos del cliente (aparte)
+  valorRechazos: number;
   // Base de costos real (RPC) — puede ser null si la migration no está aplicada
   costBasis: LogisticsCostBasis | null;
   costBasisLoading: boolean;
@@ -56,6 +58,7 @@ function parsePct(v: string): number {
 export default function SimuladorUnitEconomics({
   generadosSinCancel, totalVendido, despachadosCount, despachadoValor,
   entregadosCount, valorEntregado, devueltosCount, valorPerdido,
+  rechazadosCount, valorRechazos,
   costBasis, costBasisLoading, pautaTotal, adminTotal,
 }: Props) {
   const kpis = useMemo(
@@ -64,10 +67,13 @@ export default function SimuladorUnitEconomics({
       despachados: despachadosCount,
       entregados: entregadosCount,
       devueltos: devueltosCount,
+      rechazados: rechazadosCount,
       valorEntregado,
     }),
-    [generadosSinCancel, despachadosCount, entregadosCount, devueltosCount, valorEntregado],
+    [generadosSinCancel, despachadosCount, entregadosCount, devueltosCount, rechazadosCount, valorEntregado],
   );
+  // Resueltos = entregados + devoluciones reales (denominador de la tasa madura).
+  const resueltos = entregadosCount + devueltosCount;
 
   // Base de ingresos para los % de costo: la del RPC si está, si no el valor del bucket.
   const ingresosBase = costBasis?.ingresos_entregados ?? valorEntregado;
@@ -82,7 +88,9 @@ export default function SimuladorUnitEconomics({
     pedidos: Math.round(generadosSinCancel),
     ticket: Math.round(kpis.ticketPromedio),
     tasaDespachos: kpis.tasaDespachos,
-    pctDevolucion: kpis.pctDevolucion,
+    // El simulador proyecta devoluciones SOBRE lo despachado, así que usa la tasa de
+    // NO-entrega total (devoluciones + rechazos) / despachado — no la madura del tile.
+    pctDevolucion: kpis.pctNoEntregaSobreDespacho,
     costoProductoPct: ingresosBase > 0 ? cogs / ingresosBase : 0,
     fletePct: ingresosBase > 0 ? flete / ingresosBase : 0,
     publicidadPct: ingresosBase > 0 ? pautaTotal / ingresosBase : 0,
@@ -113,13 +121,15 @@ export default function SimuladorUnitEconomics({
       </header>
 
       {/* KPIs reales */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 p-4">
         <KpiCard label="Tasa de despachos" value={pct1(kpis.tasaDespachos)} icon={Truck} tone="info"
           hint={`${despachadosCount} de ${generadosSinCancel} generados`} />
         <KpiCard label="Tasa de entrega" value={pct1(kpis.tasaEntrega)} icon={PackageCheck} tone="success"
-          hint={`${entregadosCount} de ${despachadosCount} despachados`} />
+          hint={`${entregadosCount} de ${resueltos} resueltos · sin rechazos`} />
         <KpiCard label="% Devolución" value={pct1(kpis.pctDevolucion)} icon={Undo2} tone="danger"
-          hint={`${devueltosCount} devueltos`} />
+          hint={`${devueltosCount} de ${resueltos} resueltos`} />
+        <KpiCard label="% Rechazo" value={pct1(kpis.pctRechazo)} icon={Undo2} tone="warning"
+          hint={`${rechazadosCount} rechazados / despachado`} />
         <KpiCard label="% Inefectividad" value={pct1(kpis.pctInefectividad)} icon={TrendingDown} tone="warning"
           hint="no entregado / generado" />
         <KpiCard label="Ticket promedio" value={formatCOP(kpis.ticketPromedio)} icon={Receipt} tone="accent"
@@ -132,7 +142,8 @@ export default function SimuladorUnitEconomics({
           <CascadaRow label="Facturado" sub="pedidos generados" count={generadosSinCancel} valor={totalVendido} tone="base" />
           <CascadaRow label="Despachado" sub="salió a la transportadora" count={Math.round(despachadosCount)} valor={despachadoValor} tone="muted" />
           <CascadaRow label="Entregado" sub="realizado" count={entregadosCount} valor={valorEntregado} tone="success" />
-          <CascadaRow label="Devolución" sub="perdido" count={devueltosCount} valor={valorPerdido} tone="danger" />
+          <CascadaRow label="Devolución" sub="devolución logística" count={devueltosCount} valor={valorPerdido} tone="danger" />
+          <CascadaRow label="Rechazo" sub="cliente rechazó" count={rechazadosCount} valor={valorRechazos} tone="danger" />
         </div>
       </div>
 

@@ -16,6 +16,7 @@ export type BucketKey =
   | 'novedad'
   | 'entregado'
   | 'devuelto'
+  | 'rechazado'
   | 'cancelado';
 
 export interface EstadoRow {
@@ -57,11 +58,14 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   // entregado
   'ENTREGADO': 'entregado',
   'ENTREGADO A DESTINO': 'entregado',
-  // devuelto
+  // devuelto (devolución logística — distinto de rechazo del cliente)
   'DEVOLUCION': 'devuelto',
   'DEVOLUCION EN TRANSITO': 'devuelto',
-  'RECHAZADO': 'devuelto',
   'DEVOLUCION A ORIGEN': 'devuelto',
+  // rechazado (el cliente rechazó en la entrega) — bucket PROPIO: no es una
+  // devolución logística y NO cuenta en la tasa de entrega madura (decisión del
+  // dueño 2026-06-24). Se muestra aparte en el embudo.
+  'RECHAZADO': 'rechazado',
   // en tránsito
   'EN TRANSPORTE': 'en_transito',
   'EN DESPACHO': 'en_transito',
@@ -85,6 +89,9 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'NOVEDAD SOLUCIONADA': 'novedad',
   'REPROGRAMADO': 'novedad',
   'RECLAME EN OFICINA': 'novedad', // riesgo de no-entrega, no tránsito normal
+  'EN PROCESO DE INDEMNIZACION': 'novedad', // pedido fallido en compensación — gestión, no sin-clasificar
+  'EN PROCESO DE INDEMNIZACIÓN': 'novedad',
+  'INDEMNIZADA': 'novedad',
   // pendiente (sin confirmar / sin despachar)
   'PENDIENTE': 'pendiente',
   'PENDIENTE CONFIRMACION': 'pendiente',
@@ -150,6 +157,7 @@ function emptyBuckets(): Record<BucketKey, BucketTotals> {
     novedad:     { pedidos: 0, valor: 0, unidades: 0 },
     entregado:   { pedidos: 0, valor: 0, unidades: 0 },
     devuelto:    { pedidos: 0, valor: 0, unidades: 0 },
+    rechazado:   { pedidos: 0, valor: 0, unidades: 0 },
     cancelado:   { pedidos: 0, valor: 0, unidades: 0 },
   };
 }

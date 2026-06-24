@@ -2,19 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { computeRealKpis, computeSimulation } from './unitEconomics';
 
 describe('computeRealKpis', () => {
-  it('calcula las tasas básicas (100 gen → 85 desp → 68 ent → 17 dev)', () => {
+  it('tasa de entrega MADURA = entregados / (entregados + devoluciones), sin rechazos ni en-tránsito', () => {
+    // 100 generados; despachados 90 = 68 entregados + 17 devoluciones + 5 rechazos.
     const k = computeRealKpis({
       generadosSinCancel: 100,
-      despachados: 85,
+      despachados: 90,
       entregados: 68,
       devueltos: 17,
+      rechazados: 5,
       valorEntregado: 4_073_200,
     });
-    expect(k.tasaDespachos).toBeCloseTo(0.85, 5);
-    expect(k.tasaEntrega).toBeCloseTo(68 / 85, 5);
-    expect(k.pctDevolucion).toBeCloseTo(17 / 85, 5);
-    expect(k.pctInefectividad).toBeCloseTo(0.32, 5); // 1 − 68/100
+    expect(k.tasaDespachos).toBeCloseTo(0.90, 5);                  // 90/100
+    expect(k.tasaEntrega).toBeCloseTo(68 / 85, 5);                 // ÷ resueltos (68+17), NO ÷ despachados
+    expect(k.pctDevolucion).toBeCloseTo(17 / 85, 5);              // devoluciones / resueltos
+    expect(k.pctRechazo).toBeCloseTo(5 / 90, 5);                  // rechazos / despachados
+    expect(k.pctNoEntregaSobreDespacho).toBeCloseTo(22 / 90, 5); // (dev+rech)/despachados (seed del simulador)
+    expect(k.pctInefectividad).toBeCloseTo(0.32, 5);             // 1 − 68/100
     expect(k.ticketPromedio).toBeCloseTo(4_073_200 / 68, 2);
+  });
+
+  it('los rechazos NO bajan la tasa de entrega madura', () => {
+    const base = { generadosSinCancel: 100, entregados: 68, devueltos: 17, valorEntregado: 0 };
+    const sinRech = computeRealKpis({ ...base, despachados: 85, rechazados: 0 });
+    const conRech = computeRealKpis({ ...base, despachados: 95, rechazados: 10 });
+    expect(conRech.tasaEntrega).toBeCloseTo(sinRech.tasaEntrega, 5); // 68/85 en ambos
+    expect(conRech.pctRechazo).toBeGreaterThan(sinRech.pctRechazo);
   });
 
   it('divisores en cero → 0 (no NaN/Infinity)', () => {
@@ -23,11 +35,14 @@ describe('computeRealKpis', () => {
       despachados: 0,
       entregados: 0,
       devueltos: 0,
+      rechazados: 0,
       valorEntregado: 0,
     });
     expect(k.tasaDespachos).toBe(0);
     expect(k.tasaEntrega).toBe(0);
     expect(k.pctDevolucion).toBe(0);
+    expect(k.pctRechazo).toBe(0);
+    expect(k.pctNoEntregaSobreDespacho).toBe(0);
     expect(k.pctInefectividad).toBe(0);
     expect(k.ticketPromedio).toBe(0);
   });
@@ -38,6 +53,7 @@ describe('computeRealKpis', () => {
       despachados: 10,
       entregados: 10,
       devueltos: 0,
+      rechazados: 0,
       valorEntregado: 1000,
     });
     expect(k.pctInefectividad).toBe(0); // 1 − 10/10
