@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
 import DailyReportsView from '@/components/admin/DailyReportsView';
 import WaBotConfigPanel from '@/components/admin/WaBotConfigPanel';
+import WaBotNotifyPanel from '@/components/admin/WaBotNotifyPanel';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -210,8 +211,9 @@ export default function AdminTab() {
           <DailyReportsView />
         </TabsContent>
 
-        <TabsContent value="bot" className="mt-0">
+        <TabsContent value="bot" className="mt-0 space-y-4">
           <WaBotConfigPanel />
+          <WaBotNotifyPanel />
         </TabsContent>
 
         <TabsContent value="config" className="mt-0 space-y-0">
