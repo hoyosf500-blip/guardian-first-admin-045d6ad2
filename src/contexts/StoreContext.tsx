@@ -162,9 +162,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return; // si no se sincronizó, no invalidamos (evita refetch a la vieja)
       }
       for (const key of [
-        'ganancia-neta-dropi', 'operativo-cohorte', 'financial-summary',
-        'wallet_daily_series', 'wallet_movements', 'logistics',
-        'logistics-cost-basis', 'product-profitability', 'logistics_dashboard',
+        'ganancia-neta-dropi', 'operativo-cohorte', 'orders-estado-breakdown',
+        'financial-summary', 'wallet_daily_series', 'wallet_movements',
+        'logistics', 'logistics-cost-basis', 'product-profitability',
+        'logistics_dashboard',
       ]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
