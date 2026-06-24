@@ -377,6 +377,66 @@ export type Database = {
           },
         ]
       }
+      dropi_wallet_movements_bak_20260624: {
+        Row: {
+          categoria: string | null
+          codigo: string | null
+          concepto_retiro: string | null
+          cuenta: string | null
+          descripcion: string | null
+          dropi_transaction_id: number | null
+          fecha: string | null
+          id: number | null
+          monto: number | null
+          monto_previo: number | null
+          raw: Json | null
+          related_order_id: string | null
+          saldo_despues: number | null
+          store_id: string | null
+          synced_at: string | null
+          synced_by: string | null
+          tipo: string | null
+        }
+        Insert: {
+          categoria?: string | null
+          codigo?: string | null
+          concepto_retiro?: string | null
+          cuenta?: string | null
+          descripcion?: string | null
+          dropi_transaction_id?: number | null
+          fecha?: string | null
+          id?: number | null
+          monto?: number | null
+          monto_previo?: number | null
+          raw?: Json | null
+          related_order_id?: string | null
+          saldo_despues?: number | null
+          store_id?: string | null
+          synced_at?: string | null
+          synced_by?: string | null
+          tipo?: string | null
+        }
+        Update: {
+          categoria?: string | null
+          codigo?: string | null
+          concepto_retiro?: string | null
+          cuenta?: string | null
+          descripcion?: string | null
+          dropi_transaction_id?: number | null
+          fecha?: string | null
+          id?: number | null
+          monto?: number | null
+          monto_previo?: number | null
+          raw?: Json | null
+          related_order_id?: string | null
+          saldo_despues?: number | null
+          store_id?: string | null
+          synced_at?: string | null
+          synced_by?: string | null
+          tipo?: string | null
+        }
+        Relationships: []
+      }
       logistica_monthly_costs: {
         Row: {
           costos_admin: number
@@ -797,6 +857,7 @@ export type Database = {
         Row: {
           changed_at: string
           created_at: string
+          dropi_history_id: number | null
           external_id: string | null
           id: number
           order_id: string | null
@@ -806,6 +867,7 @@ export type Database = {
         Insert: {
           changed_at?: string
           created_at?: string
+          dropi_history_id?: number | null
           external_id?: string | null
           id?: never
           order_id?: string | null
@@ -815,6 +877,7 @@ export type Database = {
         Update: {
           changed_at?: string
           created_at?: string
+          dropi_history_id?: number | null
           external_id?: string | null
           id?: never
           order_id?: string | null
