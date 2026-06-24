@@ -10,6 +10,7 @@ import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useStore } from '@/contexts/StoreContext';
+import { useWaChat } from '@/contexts/WaChatContext';
 import { cn } from '@/lib/utils';
 
 /**
@@ -84,6 +85,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
+  const { openChat } = useWaChat();
   const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
 
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
@@ -145,37 +147,40 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
           {o.transportadora ? <span className="font-medium text-foreground/80">{o.transportadora}</span> : 'Sin transportadora'}
           {o.guia ? <span className="font-mono"> · {o.guia}</span> : <span className="opacity-70"> · sin guía</span>}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           {(trackUrl || carrierHome) && (
             <a
               href={trackUrl || carrierHome || '#'}
               target="_blank" rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               title={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
-              className="p-1 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
+              className="p-2 -m-0.5 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
             >
-              <ExternalLink size={13} aria-hidden="true" />
+              <ExternalLink size={14} aria-hidden="true" />
             </a>
           )}
           {waPhone && (
-            <a
-              href={`https://wa.me/${waPhone}?text=${waMsg}`}
-              target="_blank" rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title="Escribir por WhatsApp"
-              className="p-1 rounded text-muted-foreground hover:text-[#25D366] hover:bg-[#25D366]/10 transition-colors"
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                void openChat({ phone: o.phone, fallbackWaUrl: `https://wa.me/${waPhone}?text=${waMsg}` });
+              }}
+              title="Abrir chat de WhatsApp (ver el bot / escribir)"
+              aria-label="Abrir chat de WhatsApp"
+              className="p-2 -m-0.5 rounded text-muted-foreground hover:text-[#25D366] hover:bg-[#25D366]/10 transition-colors"
             >
-              <MessageCircle size={13} aria-hidden="true" />
-            </a>
+              <MessageCircle size={14} aria-hidden="true" />
+            </button>
           )}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); void refresh(activeStoreId, o.externalId); }}
             disabled={isRefreshing || !o.externalId}
             title="Refrescar estado desde Dropi"
-            className="p-1 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+            className="p-2 -m-0.5 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
           >
-            <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
       </div>

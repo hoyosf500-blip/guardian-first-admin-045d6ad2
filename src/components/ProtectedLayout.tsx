@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useOperatorHeartbeat } from '@/hooks/useOperatorHeartbeat';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
+import { WaChatProvider } from '@/contexts/WaChatContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, useRef, Suspense } from 'react';
@@ -169,6 +170,7 @@ function ProtectedLayoutInner() {
 
   return (
     <OrderProvider>
+      <WaChatProvider>
       <div className="flex h-screen overflow-hidden bg-background">
         {isMobile && sidebarOpen && (
           <div
@@ -301,6 +303,7 @@ function ProtectedLayoutInner() {
           </main>
         </div>
       </div>
+      </WaChatProvider>
     </OrderProvider>
   );
 }

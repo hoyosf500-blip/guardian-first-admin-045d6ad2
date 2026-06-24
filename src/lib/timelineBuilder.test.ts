@@ -273,6 +273,32 @@ describe('buildTimeline', () => {
     const events = buildTimeline(baseSources);
     expect(events.find(e => e.title === 'Guía generada — TCC')).toBeDefined();
   });
+
+  it('collapses a duplicated current status (trigger row + Dropi entry)', () => {
+    // El trigger local grabó "DESPACHADA" (detección tardía) y Dropi también la trae
+    // (transición real, más temprana). Debe quedar UN solo evento "Despachada".
+    const statusChanges: TimelineStatusChange[] = [
+      { id: 'dropi-1', status: 'GUIA_GENERADA', changed_at: '2026-04-11T10:00:00Z' },
+      { id: 'dropi-2', status: 'DESPACHADA', changed_at: '2026-04-11T22:00:00Z' },     // entrada real Dropi
+      { id: 'trigger-9', status: 'DESPACHADA', changed_at: '2026-04-12T08:00:00Z' },   // fila tardía del trigger
+    ];
+    const events = buildTimeline({ ...baseSources, statusChanges });
+    const despachadas = events.filter(e => e.title === 'Despachada');
+    expect(despachadas).toHaveLength(1);
+    // Conserva el timestamp más temprano (la transición real de Dropi)
+    expect(despachadas[0].timestamp.toISOString()).toBe('2026-04-11T22:00:00.000Z');
+  });
+
+  it('preserves a non-consecutive repeated status (e.g. NOVEDAD que reaparece)', () => {
+    const statusChanges: TimelineStatusChange[] = [
+      { id: 1, status: 'NOVEDAD', changed_at: '2026-04-11T10:00:00Z' },
+      { id: 2, status: 'EN REPARTO', changed_at: '2026-04-12T10:00:00Z' },
+      { id: 3, status: 'NOVEDAD', changed_at: '2026-04-13T10:00:00Z' },
+    ];
+    const events = buildTimeline({ ...baseSources, statusChanges });
+    // Dos NOVEDAD separadas por EN REPARTO → ambas se conservan
+    expect(events.filter(e => e.title === 'Novedad')).toHaveLength(2);
+  });
 });
 
 describe('prettyStatus', () => {

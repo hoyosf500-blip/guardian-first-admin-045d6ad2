@@ -6,6 +6,55 @@
 // IMPORTANTE: Si Dropi cambia el shape del objeto orden, actualizar acá UNA
 // vez en lugar de en cada call-site.
 
+/** Una fila lista para upsert en order_status_history (historial real de Dropi). */
+export interface StatusHistoryRow {
+  dropi_history_id: number;
+  order_id: string;     // uuid de orders.id (FK)
+  store_id: string;
+  external_id: string;  // id de Dropi (texto)
+  status: string;
+  changed_at: string;   // ISO timestamp (created_at de la entrada en Dropi)
+}
+
+/**
+ * Extrae el historial de estados que Dropi devuelve en `o.history[]` y lo mapea
+ * a filas de order_status_history. Dropi entrega el recorrido COMPLETO del pedido
+ * (PENDIENTE → GUIA_GENERADA → PREPARADO → DESPACHADA → EN REPARTO → …) en la
+ * misma respuesta que el sync ya baja — ingerirlo da el timeline real sin pedir
+ * nada extra a Dropi.
+ *
+ * Defensivo: si `o.history` no viene (o no es array), devuelve []. El sync sigue
+ * funcionando igual (cero regresión). Cada entrada necesita id + status +
+ * created_at para ser válida; las incompletas se descartan.
+ *
+ * @param orderId uuid de orders.id (resuelto tras el upsert por external_id).
+ */
+export function extractStatusHistoryRows(
+  o: Record<string, unknown>,
+  orderId: string,
+  storeId: string,
+): StatusHistoryRow[] {
+  const hist = Array.isArray(o.history) ? (o.history as Array<Record<string, unknown>>) : [];
+  if (hist.length === 0) return [];
+  const externalId = String(o.id ?? "");
+  const rows: StatusHistoryRow[] = [];
+  for (const h of hist) {
+    const dropiHistoryId = Number(h?.id);
+    const status = String(h?.status ?? "").trim();
+    const changedAt = String(h?.created_at ?? "").trim();
+    if (!Number.isFinite(dropiHistoryId) || dropiHistoryId <= 0 || !status || !changedAt) continue;
+    rows.push({
+      dropi_history_id: dropiHistoryId,
+      order_id: orderId,
+      store_id: storeId,
+      external_id: externalId,
+      status,
+      changed_at: changedAt,
+    });
+  }
+  return rows;
+}
+
 /** Días calendario desde una fecha-string hasta hoy (server time). */
 export function calcDiasCal(dateStr: string): number {
   if (!dateStr) return 0;
