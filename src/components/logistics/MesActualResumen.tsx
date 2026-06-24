@@ -7,6 +7,7 @@ import { buildMesResumen, buildMesResumenFromBreakdown, type BucketTone } from '
 import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
 import { useEstadoBreakdown } from '@/hooks/useEstadoBreakdown';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
+import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletMovements } from '@/hooks/useWalletMovements';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import OrdersSyncBadge from '@/components/logistics/OrdersSyncBadge';
@@ -79,6 +80,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const { data: wallet, isLoading: walletLoading } = useWalletMovements({
     fromDate: filters.fromDate, toDate: filters.toDate, page: 1, pageSize: 1,
   });
+  // Mes mostrado ('YYYY-MM'); el rango siempre arranca el 1ro del mes → slice OK.
+  // Se computa ACÁ (antes del early return) porque el hook de cohorte lo necesita.
+  const yearMonth = filters.fromDate.slice(0, 7);
+  const cohorte = useOperativoCohorte(yearMonth);
 
   const title = rangeTitle(filters);
 
@@ -103,6 +108,14 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const totalEntradas = ganancia?.total_entradas ?? 0;
   const totalSalidas = ganancia?.total_salidas ?? 0;
   const saldoActual = wallet?.ultimoSaldo ?? null;
+
+  // OPERATIVO_BASE: utilidad de los pedidos CREADOS este mes (cohorte) — reconcilia
+  // con la "Utilidad Total" de Dropi (~$4.8M). Fallback al wallet (gananciaNeta, por
+  // fecha de movimiento, ~$7.2M) SOLO si el RPC operativo_mes_cohorte no está
+  // desplegado aún. Punto ÚNICO de cambio del operativo.
+  const operativoBase = cohorte.data?.operativo ?? gananciaNeta;
+  const operativoLoading = cohorte.isLoading || gananciaLoading;
+  const movimientosSinLink = cohorte.data?.movimientos_sin_link ?? 0;
   const valorPreparacion = full?.valorPreparacion ?? 0;
   const valorOtros = full?.valorOtros ?? 0;
 
@@ -117,8 +130,6 @@ export default function MesActualResumen({ summary, filters }: Props) {
     0,
     resumen.valorGenerado - (resumen.valorEntregado + resumen.valorPerdido + resumen.valorCancelado),
   );
-  // Mes mostrado ('YYYY-MM'). El rango siempre arranca el 1ro del mes → slice OK.
-  const yearMonth = filters.fromDate.slice(0, 7);
 
   return (
     <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
@@ -193,15 +204,14 @@ export default function MesActualResumen({ summary, filters }: Props) {
           tone="success"
           hint={`${pctCompletado.toFixed(0)}% completado`}
         />
-        {/* OPERATIVO_BASE: hoy = ganancia neta del wallet (useGananciaNetaDropi,
-            por fecha de movimiento). Punto único de cambio si se swappea a otra
-            fuente (p.ej. un operativo que reconcilie con la "Utilidad Total" de Dropi). */}
+        {/* OPERATIVO_BASE — ver const operativoBase arriba: cohorte de pedido
+            (reconcilia con la "Utilidad Total" de Dropi), con fallback al wallet. */}
         <KpiCard
           label="Operativo del mes"
-          value={gananciaLoading ? '…' : formatCOP(gananciaNeta)}
+          value={operativoLoading ? '…' : formatCOP(operativoBase)}
           icon={Wallet}
-          tone={walletStale ? 'warning' : gananciaNeta >= 0 ? 'success' : 'danger'}
-          hint={walletStale ? '⚠ wallet viejo, sincronizá' : 'del wallet · realizado a hoy'}
+          tone={walletStale ? 'warning' : operativoBase >= 0 ? 'success' : 'danger'}
+          hint={walletStale ? '⚠ wallet viejo, sincronizá' : 'pedidos del mes · realizado a hoy'}
         />
       </div>
 
@@ -310,7 +320,13 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
           {/* Neto real = operativo − pauta − admin (inputs que persisten por mes,
               solo el dueño edita). El operativo es el OPERATIVO_BASE de arriba. */}
-          <NetoRealCard operativo={gananciaNeta} yearMonth={yearMonth} canEdit={isOwnerOfActive} />
+          <NetoRealCard
+            operativo={operativoBase}
+            yearMonth={yearMonth}
+            canEdit={isOwnerOfActive}
+            pedidosEnCalle={enLaCalleCount}
+            movimientosSinLink={movimientosSinLink}
+          />
 
           {/* Explicación llana del gap */}
           <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
