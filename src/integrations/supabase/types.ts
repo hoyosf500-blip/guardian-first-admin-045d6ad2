@@ -932,6 +932,7 @@ export type Database = {
           novedad: string | null
           novedad_sol: boolean | null
           phone: string
+          product_ids: string | null
           producto: string | null
           store_id: string
           suggested_customer_message: string | null
@@ -980,6 +981,7 @@ export type Database = {
           novedad?: string | null
           novedad_sol?: boolean | null
           phone: string
+          product_ids?: string | null
           producto?: string | null
           store_id?: string
           suggested_customer_message?: string | null
@@ -1028,6 +1030,7 @@ export type Database = {
           novedad?: string | null
           novedad_sol?: boolean | null
           phone?: string
+          product_ids?: string | null
           producto?: string | null
           store_id?: string
           suggested_customer_message?: string | null
@@ -1140,6 +1143,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "personal_card_movements_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_knowledge: {
+        Row: {
+          active: boolean
+          created_at: string
+          dropi_product_id: number | null
+          id: string
+          image_url: string | null
+          knowledge: string
+          label: string
+          match_text: string | null
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          dropi_product_id?: number | null
+          id?: string
+          image_url?: string | null
+          knowledge: string
+          label: string
+          match_text?: string | null
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          dropi_product_id?: number | null
+          id?: string
+          image_url?: string | null
+          knowledge?: string
+          label?: string
+          match_text?: string | null
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_knowledge_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -2072,6 +2122,7 @@ export type Database = {
           novedad: string | null
           novedad_sol: boolean | null
           phone: string
+          product_ids: string | null
           producto: string | null
           store_id: string
           suggested_customer_message: string | null
@@ -2104,6 +2155,10 @@ export type Database = {
         Returns: string
       }
       delete_monthly_ad_spend: { Args: { p_id: string }; Returns: boolean }
+      delete_product_knowledge: {
+        Args: { p_id: string; p_store_id: string }
+        Returns: undefined
+      }
       delete_shopify_product_dropi_map: {
         Args: { p_shopify_product_id: number; p_store_id: string }
         Returns: undefined
@@ -2732,6 +2787,19 @@ export type Database = {
       upsert_personal_card_movements: {
         Args: { p_movements: Json }
         Returns: Json
+      }
+      upsert_product_knowledge: {
+        Args: {
+          p_active?: boolean
+          p_dropi_product_id?: number
+          p_id?: string
+          p_image_url?: string
+          p_knowledge: string
+          p_label: string
+          p_match_text?: string
+          p_store_id: string
+        }
+        Returns: string
       }
       upsert_shopify_product_dropi_map: {
         Args: {
