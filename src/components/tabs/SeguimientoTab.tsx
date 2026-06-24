@@ -5,9 +5,10 @@ import { useStore } from '@/contexts/StoreContext';
 import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
+import SegBoard from '@/components/seguimiento/SegBoard';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,9 @@ export default function SeguimientoTab() {
   // touchpoint SEG:* hoy. Sirve para que la operadora vea solo lo que aún
   // tiene que llamar. mySegTouchedToday viene del OrderContext (set de phones).
   const [onlyUntouchedSeg, setOnlyUntouchedSeg] = useSessionState<boolean>('seg:onlyUntouched', false);
+  // Vista: tablero Kommo (default, tarjetas en vivo por columna) o lista (CrmTable
+  // clásico con búsqueda/owner/llamada). El tablero no quita features: es un toggle.
+  const [viewMode, setViewMode] = useSessionState<'board' | 'list'>('seg:viewMode', 'board');
 
   // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
   // y la sessionStorage se mantienen sincronizadas: ?lista=<slug> permite
@@ -214,6 +218,14 @@ export default function SeguimientoTab() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStoreId, listaSlug]);
+
+  // Feed final que ven el tablero y la lista: feed de la lista SLA activa (o el
+  // total deduplicado) con el toggle "Solo sin tocar" aplicado. Misma fuente
+  // para ambas vistas → cuentas idénticas.
+  const displayData = useMemo(() => {
+    const feed = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+    return onlyUntouchedSeg ? feed.filter((o) => !o.phone || !mySegTouchedToday.has(o.phone)) : feed;
+  }, [listaActiva, filteredByList, dedupedByDate, onlyUntouchedSeg, mySegTouchedToday]);
 
   const stats = useMemo(() => {
     const s = {
@@ -379,6 +391,31 @@ export default function SeguimientoTab() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
+            {/* Toggle de vista: Tablero (Kommo, en vivo) ↔ Lista (CrmTable) */}
+            <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('board')}
+                aria-pressed={viewMode === 'board'}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors',
+                  viewMode === 'board' ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <LayoutGrid size={13} aria-hidden="true" /> Tablero
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-pressed={viewMode === 'list'}
+                className={cn(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors',
+                  viewMode === 'list' ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                <List size={13} aria-hidden="true" /> Lista
+              </button>
+            </div>
             {/* Date range filter */}
             <div className={cn(
               "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
@@ -693,20 +730,23 @@ export default function SeguimientoTab() {
         );
       })()}
 
-      <CrmTable
-        data={(() => {
-          const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-          return onlyUntouchedSeg
-            ? feedBase.filter(o => !o.phone || !mySegTouchedToday.has(o.phone))
-            : feedBase;
-        })()}
-        module="SEG"
-        emptyIcon={<Truck size={28} className="text-muted-foreground" />}
-        emptyTitle="Sin pedidos en seguimiento"
-        emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
-        controlledStatusFilter={statusFilter}
-        onControlledStatusFilterChange={setStatusFilter}
-      />
+      {viewMode === 'board' ? (
+        <SegBoard
+          data={displayData}
+          countryCode={activeStore?.country_code}
+          statusFilter={statusFilter}
+        />
+      ) : (
+        <CrmTable
+          data={displayData}
+          module="SEG"
+          emptyIcon={<Truck size={28} className="text-muted-foreground" />}
+          emptyTitle="Sin pedidos en seguimiento"
+          emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
+          controlledStatusFilter={statusFilter}
+          onControlledStatusFilterChange={setStatusFilter}
+        />
+      )}
     </div>
   );
 }
