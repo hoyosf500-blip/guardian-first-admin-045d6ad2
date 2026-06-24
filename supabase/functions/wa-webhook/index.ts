@@ -61,7 +61,9 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json().catch(() => ({}));
     const channel = await loadWaChannel(sbAdmin, storeId);
-    const inbound = channel.transport.parseInbound(payload).filter((m) => !m.fromMe && m.body);
+    // Ignoramos GRUPOS y listas de difusión: el bot no actúa ahí (ese número
+    // tiene grupos internos de la empresa). No se crea conversación ni se registra.
+    const inbound = channel.transport.parseInbound(payload).filter((m) => !m.fromMe && m.body && !m.isGroup);
 
     const triggers: Array<{ conversationId: string; messageId: string }> = [];
 
@@ -71,6 +73,10 @@ Deno.serve(async (req) => {
         channelId: channel.channelId,
         phone: m.fromPhone,
         name: m.fromName,
+        // El bot arranca ACTIVO en automático para todo cliente que escribe (chat
+        // individual). Solo aplica al CREAR la conversación: si una humana ya tomó
+        // el control (handoff) o la apagó, ese estado se respeta (no se pisa).
+        enableAiOnCreate: true,
       });
       const rec = await recordInbound(sbAdmin, {
         storeId,

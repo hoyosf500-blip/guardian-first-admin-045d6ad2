@@ -78,6 +78,10 @@ export default function ProductKnowledgePanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Al cambiar de tienda activa, cerrar cualquier editor abierto: su fila pertenece
+  // a la tienda anterior y quedaría huérfana (editor invisible + botón bloqueado).
+  useEffect(() => { setEdit(null); }, [activeStoreId]);
+
   async function remove(id: string) {
     if (!activeStoreId) return;
     const { error } = await rpc('delete_product_knowledge', { p_store_id: activeStoreId, p_id: id });

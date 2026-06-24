@@ -74,9 +74,19 @@ export async function findLinkedExternalId(
 /** Encuentra o crea la conversación de un teléfono dentro de una tienda. */
 export async function upsertConversation(
   sbAdmin: SupabaseClient,
-  args: { storeId: string; channelId: string; phone: string; name?: string | null },
+  args: {
+    storeId: string;
+    channelId: string;
+    phone: string;
+    name?: string | null;
+    /** Si true y la conversación NO existe, se crea con la IA ACTIVA (ai_enabled=true,
+     *  ai_state='auto'). Solo afecta el ALTA: una conversación existente conserva su
+     *  estado (respeta handoff / apagado manual). Lo usa el webhook entrante para que
+     *  el bot arranque solo con cada cliente nuevo. */
+    enableAiOnCreate?: boolean;
+  },
 ): Promise<{ id: string; aiEnabled: boolean; aiState: string }> {
-  const { storeId, channelId, phone, name } = args;
+  const { storeId, channelId, phone, name, enableAiOnCreate } = args;
 
   const existing = await sbAdmin
     .from("wa_conversations")
@@ -102,6 +112,9 @@ export async function upsertConversation(
       customer_phone: phone,
       customer_name: name ?? null,
       linked_external_id: linked,
+      // Auto-ON al crear (solo si lo pide el caller, ej. webhook entrante). El
+      // default de la tabla es OFF; los chats iniciados por operadora no lo pasan.
+      ...(enableAiOnCreate ? { ai_enabled: true, ai_state: "auto" } : {}),
     })
     .select("id, ai_enabled, ai_state")
     .single();
