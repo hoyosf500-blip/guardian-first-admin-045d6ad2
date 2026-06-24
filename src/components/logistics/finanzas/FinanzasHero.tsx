@@ -8,12 +8,16 @@ interface FinanzasHeroProps {
   ingresosBrutos: number;
   totalEntregadas: number;
   margenPct: number;
+  /** true = el valor es el operativo por cohorte (real); false = caja del wallet
+   *  por fecha de pago (mezcla meses). Cambia el subtítulo y la microcopy. */
+  cohorte?: boolean;
   isLoading?: boolean;
 }
 
 export default function FinanzasHero({
   gananciaNeta, totalEntradas, totalSalidas,
   ingresosBrutos, totalEntregadas, margenPct,
+  cohorte = false,
   isLoading = false,
 }: FinanzasHeroProps) {
   if (isLoading) {
@@ -44,7 +48,7 @@ export default function FinanzasHero({
       >
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
-            Ganancia Neta Dropi (real)
+            Ganancia Neta Dropi {cohorte ? '(cohorte del mes)' : '(caja · fecha de pago)'}
           </span>
           <div className={`h-9 w-9 rounded-lg flex items-center justify-center border ${
             isPositive ? 'bg-success/15 border-success/40' : 'bg-danger/15 border-danger/40'
@@ -73,7 +77,10 @@ export default function FinanzasHero({
           </span>
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground leading-snug">
-          Lo que Dropi te abonó realmente: entró {formatCOP(totalEntradas)} − te debitó {formatCOP(totalSalidas)}.
+          {cohorte
+            ? 'Operativo por cohorte (pedidos creados en el mes): '
+            : 'Caja del wallet por fecha de pago (mezcla meses): '}
+          entró {formatCOP(totalEntradas)} − te debitó {formatCOP(totalSalidas)}.
         </p>
       </div>
 
