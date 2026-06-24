@@ -25,66 +25,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
+// Clasificador robusto de categoría: matchea por contención sobre la descripción
+// COMPLETA normalizada (no el `codigo` truncado en el primer ":"). Ver el header de
+// _shared/walletCategoria.ts para el root cause del bug 2026-06-24.
+import { mapCategoria } from "../_shared/walletCategoria.ts";
 
 const EXPORT_PATH = "/api/wallet/exportexcel";
-
-/** Normaliza string: uppercase + sin acentos, para matchear códigos
- *  con/sin tildes (ej. "DEVOLUCIÓN" vs "DEVOLUCION") robustamente. */
-function normalizeCodigo(s: string | null | undefined): string {
-  return (s || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-
-function mapCategoria(codigo: string | null | undefined): string {
-  const c = normalizeCodigo(codigo);
-  if (!c) return "otro";
-
-  // Patrones existentes
-  if (c.includes("FLETE INICIAL"))                                 return "flete_inicial";
-  if (c.includes("NUEVA ORDEN"))                                   return "orden_sin_recaudo";
-  if (c.includes("CAMBIO DE ESTATUS"))                             return "cobro_entrega";
-  if (c.includes("GANANCIA") && c.includes("DROPSHIPPER"))         return "ganancia_dropshipper";
-  if (c.includes("GANANCIA") && c.includes("PROVEEDOR"))           return "ganancia_proveedor";
-  // Reembolso de flete cuando la orden SÍ se entregó (entrada de plata).
-  if (c.includes("DEVOLUCION") && c.includes("ORDEN ENTREGADA"))   return "reembolso_flete";
-  // Costo de devolución cuando la orden NO se entregó. Matchea tanto el
-  // texto viejo "DEVOLUCION DE FLETE NO EFECTIVA" como el actual
-  // "SALIDA DE COBRO DE DEVOLUCION POR ENTREGA NO EFECTIVA".
-  if (c.includes("DEVOLUCION") && c.includes("NO EFECTIV"))        return "costo_devolucion";
-  if (c.includes("COMISION DE REFERIDOS"))                         return "comision_referidos";
-
-  // Nuevos patrones (descubiertos en auditoría 2026-05-02)
-  // Mantenimiento mensual de tarjeta virtual de Dropi
-  if (c.includes("MANTENIMIENTO") && c.includes("TARJETA"))        return "mantenimiento_tarjeta";
-  // Indemnización por orden con problema (proveedor no despacha en 72h, etc)
-  if (c.includes("INDEMNIZACION"))                                 return "indemnizacion";
-
-  // Transferencias de wallet (entre usuarios Dropi):
-  // - SALIDA + TRANSFERENCIA + AL USUARIO = retiro a tu propio email O transferencia a tercero
-  // - ENTRADA + TRANSFERENCIA + DESDE EL USUARIO = depósito desde tu propio email O recarga
-  // El email del USER_OWNER se compara contra DROPI_OWNER_EMAIL si está seteado;
-  // sin esa env var, asumimos que TODA transferencia entrante es 'deposito' y SALIENTE es 'retiro'
-  // (criterio conservador: la mayoría de operadores solo se transfieren a sí mismos).
-  if (c.includes("TRANSFERENCIA") && c.includes("AL USUARIO")) {
-    // Si el código menciona el email del owner (heurística básica), es retiro propio.
-    // Si NO menciona el email del owner pero sí menciona OTRO email, es transferencia externa.
-    // Para ser conservador: si el codigo contiene "@" pero no el del owner -> externa.
-    const ownerEmail = (Deno.env.get("DROPI_OWNER_EMAIL") || "").toLowerCase();
-    const codigoLower = (codigo || "").toLowerCase();
-    if (ownerEmail && codigoLower.includes(ownerEmail)) {
-      return "retiro";
-    }
-    // Sin env var configurada: asumimos retiro (caso más común).
-    // Si en el futuro queremos distinguir, set DROPI_OWNER_EMAIL en Supabase.
-    return "retiro";
-  }
-  if (c.includes("TRANSFERENCIA") && c.includes("DESDE EL USUARIO"))     return "deposito";
-
-  // Patrones legacy (siguen funcionando con el text simplificado)
-  if (c.includes("RETIRO"))                                        return "retiro";
-  if (c.includes("DEPOSITO") || c.includes("RECARGA"))             return "deposito";
-
-  return "otro";
-}
 
 /** Convierte "29-04-2026 01:16" a ISO 8601 con TZ (asume horario de Bogotá -05:00). */
 function fechaToISO(s: string | undefined): string {
@@ -141,7 +87,10 @@ function mapRow(row: XlsxRow, syncedBy: string | null, storeId: string) {
     : null;
 
   const descripcion = str(row["DESCRIPCIÓN"]);
-  // Codigo: lo derivamos de la primera oración de la descripción (hasta los ":")
+  // Codigo: etiqueta corta de display (primera oración, hasta el primer ":").
+  // OJO: NO se usa para clasificar — `mapCategoria` recibe la descripción COMPLETA
+  // (este split truncaba el texto y mandaba a 'otro' lo que tenía la palabra clave
+  // después del ":"). Ver _shared/walletCategoria.ts.
   const codigo = descripcion
     ? descripcion.split(":")[0]?.trim() || null
     : null;
@@ -159,7 +108,7 @@ function mapRow(row: XlsxRow, syncedBy: string | null, storeId: string) {
     fecha: fechaToISO(str(row.FECHA) ?? undefined),
     tipo,
     codigo,
-    categoria: mapCategoria(codigo),
+    categoria: mapCategoria(descripcion),
     monto,
     monto_previo: montoPrevio,
     saldo_despues: saldoDespues,
