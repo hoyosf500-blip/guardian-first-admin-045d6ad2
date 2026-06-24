@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { setTrackingCountry } from '@/lib/orderUtils';
@@ -37,6 +38,7 @@ const ROLE_RANK: Record<StoreRole, number> = { owner: 3, supervisor: 2, operator
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [stores, setStores] = useState<StoreMembership[]>([]);
   const [activeStoreId, setActiveStoreIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,9 +139,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const setActiveStoreId = useCallback((id: string) => {
+    // Optimista: el UI cambia de inmediato, no bloqueamos la navegación.
     setActiveStoreIdState(id);
     try { localStorage.setItem(LS_KEY, id); } catch { /* noop */ }
-  }, []);
+
+    // Sincronizar la tienda activa SERVER-SIDE (profiles.active_store_id), igual
+    // que el load inicial (~:120). Sin esto, las RPCs que resuelven su alcance con
+    // _resolve_scope_store() seguían devolviendo la tienda VIEJA al cambiar de
+    // tienda en el selector (el load solo lo sincronizaba una vez) → un admin
+    // veía CO estando en EC. Tras confirmarse el cambio, invalidamos las queries
+    // que dependen del resolver para que refetcheen contra la tienda ya
+    // sincronizada (las de fecha-only no refetchean solas porque su key no tiene
+    // store; las de store-key podrían haber corrido contra la tienda vieja).
+    void (async () => {
+      try {
+        await (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>
+        ) => Promise<unknown>)('set_active_store', { p_store_id: id });
+      } catch (e) {
+        // No rompe la navegación; logueamos para diagnosticar desincronización.
+        console.warn('[StoreContext] set_active_store (cambio de tienda) falló:', e);
+        return; // si no se sincronizó, no invalidamos (evita refetch a la vieja)
+      }
+      for (const key of [
+        'ganancia-neta-dropi', 'operativo-cohorte', 'financial-summary',
+        'wallet_daily_series', 'wallet_movements', 'logistics',
+        'logistics-cost-basis', 'product-profitability', 'logistics_dashboard',
+      ]) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    })();
+  }, [queryClient]);
 
   const activeStore = stores.find(s => s.id === activeStoreId) ?? null;
   // Sincroniza el país del rastreo de transportadoras (getTrackingUrl) con la
