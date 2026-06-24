@@ -16,7 +16,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
-import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
+import { mapDropiOrderToRow, extractStatusHistoryRows } from "../_shared/dropiOrderMapper.ts";
 
 interface BatchBody {
   store_id?: string;
@@ -102,6 +102,7 @@ Deno.serve(async (req) => {
     let start = 0;
     let partial = false;
     let rateLimited = false;
+    let historyIngested = 0; // filas de order_status_history ingeridas desde Dropi
     const started = Date.now();
 
     pageLoop: while (pages < MAX_PAGES) {
@@ -155,15 +156,45 @@ Deno.serve(async (req) => {
       if (objs.length === 0) break;
 
       const rows = objs.map((o) => mapDropiOrderToRow(o, user.id, today, storeId));
-      const { error: upErr } = await sbAdmin
+      const { data: upData, error: upErr } = await sbAdmin
         .from("orders")
-        .upsert(rows, { onConflict: "external_id", ignoreDuplicates: false });
+        .upsert(rows, { onConflict: "external_id", ignoreDuplicates: false })
+        .select("id, external_id");
       if (upErr) {
         if (refreshed > 0) { partial = true; break; }
         return jsonResp({ error: `No se pudo guardar en DB: ${upErr.message}`, refreshed }, 500, corsHeaders);
       }
       refreshed += rows.length;
       pagesFetched++;
+
+      // Ingerir el historial REAL de Dropi (o.history[]) en order_status_history.
+      // Reconstruye el timeline completo del pedido. Necesita el uuid de orders.id
+      // → lo resolvemos del resultado del upsert (map external_id → id). Idempotente
+      // por dropi_history_id. Un fallo acá NO debe abortar el sync de estados.
+      try {
+        const idByExt = new Map<string, string>();
+        for (const r of (upData ?? []) as Array<{ id: string; external_id: string }>) {
+          idByExt.set(String(r.external_id), r.id);
+        }
+        const histRows = [] as ReturnType<typeof extractStatusHistoryRows>;
+        for (const o of objs) {
+          const uuid = idByExt.get(String((o as Record<string, unknown>).id ?? ""));
+          if (!uuid) continue;
+          for (const hr of extractStatusHistoryRows(o, uuid, storeId)) histRows.push(hr);
+        }
+        if (histRows.length > 0) {
+          const { error: histErr } = await sbAdmin
+            .from("order_status_history")
+            .upsert(histRows, { onConflict: "dropi_history_id", ignoreDuplicates: true });
+          if (histErr) {
+            console.warn(`dropi-refresh-batch: historial no ingerido (${histErr.message})`);
+          } else {
+            historyIngested += histRows.length;
+          }
+        }
+      } catch (hErr) {
+        console.warn(`dropi-refresh-batch: error ingiriendo historial: ${hErr instanceof Error ? hErr.message : String(hErr)}`);
+      }
 
       if (objs.length < PAGE_SIZE) break; // última página
       start += PAGE_SIZE;
@@ -179,6 +210,7 @@ Deno.serve(async (req) => {
       pages: pagesFetched,
       partial,
       rateLimited,
+      historyIngested, // >0 confirma que Dropi devolvió history vía la API de integraciones
       synced_at: new Date().toISOString(),
     }, 200, corsHeaders);
   } catch (err) {

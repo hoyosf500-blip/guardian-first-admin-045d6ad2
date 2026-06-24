@@ -25,7 +25,7 @@ export function useRefreshVisibleOrders() {
   const refreshNow = useCallback(async (
     storeId: string | null | undefined,
     opts: { silent?: boolean; force?: boolean; days?: number } = {},
-  ): Promise<{ ok: boolean; refreshed?: number; partial?: boolean; rateLimited?: boolean }> => {
+  ): Promise<{ ok: boolean; refreshed?: number; partial?: boolean; rateLimited?: boolean; historyIngested?: number }> => {
     if (!storeId) {
       if (!opts.silent) toast.error('Sin tienda activa');
       return { ok: false };
@@ -46,7 +46,7 @@ export function useRefreshVisibleOrders() {
         return { ok: false };
       }
       const result = (data || {}) as {
-        ok?: boolean; error?: string; refreshed?: number; partial?: boolean; rateLimited?: boolean;
+        ok?: boolean; error?: string; refreshed?: number; partial?: boolean; rateLimited?: boolean; historyIngested?: number;
       };
       if (!result.ok) {
         if (!opts.silent) toast.error(result.error || 'No se pudo sincronizar');
@@ -60,10 +60,11 @@ export function useRefreshVisibleOrders() {
         } else if (result.rateLimited) {
           toast.warning(`Dropi limitó las peticiones — alcancé a sincronizar ${refreshed}`, { duration: 6000 });
         } else {
-          toast.success(`Sincronizado · ${refreshed} pedido${refreshed === 1 ? '' : 's'} al día${result.partial ? ' (parcial)' : ''}`);
+          const histNote = result.historyIngested ? ` · ${result.historyIngested} estados de historial` : '';
+          toast.success(`Sincronizado · ${refreshed} pedido${refreshed === 1 ? '' : 's'} al día${histNote}${result.partial ? ' (parcial)' : ''}`);
         }
       }
-      return { ok: true, refreshed, partial: result.partial, rateLimited: result.rateLimited };
+      return { ok: true, refreshed, partial: result.partial, rateLimited: result.rateLimited, historyIngested: result.historyIngested };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!opts.silent) toast.error(`Error: ${msg}`);

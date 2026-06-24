@@ -280,10 +280,22 @@ export function buildTimeline(sources: TimelineSources): TimelineEvent[] {
   // El recorrido completo: PENDIENTE → GUIA_GENERADA → PREPARADO → DESPACHADA → …
   // Cada cambio que el sync detectó es un evento. Para GUIA_GENERADA enriquecemos
   // con el número de guía si lo tenemos en la orden.
-  statusChanges.forEach((sc) => {
-    const ts = parseIso(sc.changed_at);
-    if (!ts) return;
+  //
+  // Dedup: order_status_history puede tener filas del trigger local forward-only
+  // (estado ACTUAL) Y la entrada de Dropi para ESE MISMO estado → duplicado. Las
+  // ordenamos cronológicamente y colapsamos estados iguales CONSECUTIVOS, quedándonos
+  // con el timestamp más temprano (la transición real de Dropi, no la detección
+  // tardía del trigger). Estados iguales NO consecutivos (ej. NOVEDAD que reaparece)
+  // se conservan.
+  const sortedChanges = statusChanges
+    .map((sc) => ({ sc, ts: parseIso(sc.changed_at) }))
+    .filter((x): x is { sc: TimelineStatusChange; ts: Date } => x.ts !== null)
+    .sort((a, b) => a.ts.getTime() - b.ts.getTime());
+  let prevStatusUp: string | null = null;
+  sortedChanges.forEach(({ sc, ts }) => {
     const up = (sc.status || '').toUpperCase().trim();
+    if (up === prevStatusUp) return; // colapsa estado igual consecutivo (trigger + Dropi)
+    prevStatusUp = up;
     const isGuia = up === 'GUIA_GENERADA' || up === 'GUIA GENERADA';
     events.push({
       id: `status-${sc.id}`,
