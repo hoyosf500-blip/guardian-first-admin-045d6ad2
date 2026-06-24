@@ -5,6 +5,8 @@ import { useStore } from '@/contexts/StoreContext';
 import { Package, Save, Loader2, Trash2, Plus, X, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import DropiProductSearch from '@/components/DropiProductSearch';
+import type { DropiProductHit } from '@/hooks/usePushToDropi';
 
 // product_knowledge es nueva y aún no está en los tipos generados → cast sin `any`
 // (mismo patrón que WaBotConfigPanel / useWaConversations).
@@ -247,11 +249,44 @@ function ProductEditor({
     await onSaved();
   }
 
+  // Traer del catálogo de Dropi: autocompleta nombre + ID + foto, y (si está
+  // vacío) la descripción como conocimiento. El dueño edita después.
+  function onPickDropi(id: number, _variationId: number | null, lbl: string, hit?: DropiProductHit) {
+    const name = hit?.name || lbl;
+    setDropiId(String(id));
+    setLabel(name);
+    setMatchText(name); // así el match por NOMBRE funciona ya (antes del match por ID, Fase B)
+    if (hit?.image) setImageUrl(hit.image);
+    if (hit?.description && !knowledge.trim()) setKnowledge(hit.description);
+    toast.success(`Traído de Dropi: ${name} (#${id})`);
+  }
+
   return (
     <div className="rounded-lg border border-border bg-background p-4 space-y-3">
       <datalist id={dlistId}>
         {productNames.map((n) => <option key={n} value={n} />)}
       </datalist>
+
+      {/* Traer de Dropi (recomendado): autocompleta nombre + ID + foto */}
+      <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
+        <div className="text-[11px] font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
+          <Package size={12} className="text-accent" /> Traer de Dropi (recomendado)
+        </div>
+        <DropiProductSearch storeId={storeId} onSelect={onPickDropi} />
+        <div className="mt-2 flex items-center gap-3">
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt=""
+              className="h-14 w-14 rounded-lg object-cover border border-border shrink-0"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            Buscá el producto en tu Dropi y se autocompletan <strong className="text-foreground">nombre, ID y foto</strong>. Después editá lo que quieras abajo.
+          </p>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>

@@ -5,8 +5,10 @@ import { toast } from 'sonner';
 
 interface Props {
   storeId: string | null;
-  /** Se llama al elegir un producto (y variación si es VARIABLE) o al pegar un id directo. */
-  onSelect: (dropiProductId: number, dropiVariationId: number | null, label: string) => void;
+  /** Se llama al elegir un producto (y variación si es VARIABLE) o al pegar un id directo.
+   *  `hit` es el producto completo de Dropi (nombre, foto, descripción) cuando se eligió
+   *  de la búsqueda; es undefined si se pegó un id a ciegas. */
+  onSelect: (dropiProductId: number, dropiVariationId: number | null, label: string, hit?: DropiProductHit) => void;
   /** true mientras se guarda el vínculo (deshabilita los botones). */
   busy?: boolean;
 }
@@ -55,7 +57,7 @@ export default function DropiProductSearch({ storeId, onSelect, busy }: Props) {
 
   function pick(p: DropiProductHit) {
     if (p.type?.toUpperCase() === 'VARIABLE' && (p.variations?.length ?? 0) > 0) setPending(p);
-    else onSelect(p.id, null, p.name);
+    else onSelect(p.id, null, p.name, p);
   }
 
   return (
@@ -90,7 +92,7 @@ export default function DropiProductSearch({ storeId, onSelect, busy }: Props) {
           <div className="flex flex-wrap gap-1.5">
             {pending.variations!.map(v => (
               <button key={v.id} type="button" disabled={busy}
-                onClick={() => onSelect(pending.id, v.id, `${pending.name} · ${v.name}`)}
+                onClick={() => onSelect(pending.id, v.id, `${pending.name} · ${v.name}`, pending)}
                 className="h-7 px-2 rounded border border-border text-xs hover:border-primary hover:text-primary disabled:opacity-50">
                 {v.name}
               </button>

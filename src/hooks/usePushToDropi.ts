@@ -12,7 +12,7 @@ export interface PushProduct {
 export interface PushUnmapped { title: string; sku: string; product_id: number; reason?: string }
 
 export interface DropiVariationHit { id: number; name: string; sku?: string }
-export interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations?: DropiVariationHit[] }
+export interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations?: DropiVariationHit[]; image?: string; description?: string }
 export interface ShopifyProductLite { id: number; title: string; image: string | null; status?: string | null }
 
 export interface PushPreview {

@@ -192,7 +192,43 @@ function reasonMessage(reason: ResolveReason | undefined, status?: number): stri
 }
 
 interface DropiVariationHit { id: number; name: string; sku?: string }
-interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations: DropiVariationHit[] }
+interface DropiProductHit { id: number; name: string; type: string; sku?: string; price?: number; variations: DropiVariationHit[]; image?: string; description?: string }
+
+// Foto del producto: Dropi expone la galería bajo nombres variables según el
+// endpoint. Probamos defensivamente (gallery/images como array de strings u
+// objetos {url|urlS3|src}, o campos sueltos) y tomamos la primera URL http válida.
+function pickDropiImage(pr: Record<string, unknown>): string | undefined {
+  const fromArr = (g: unknown): string | undefined => {
+    if (!Array.isArray(g) || g.length === 0) return undefined;
+    const first = g[0];
+    if (typeof first === "string") return /^https?:\/\//.test(first) ? first : undefined;
+    if (first && typeof first === "object") {
+      const o = first as Record<string, unknown>;
+      for (const k of ["urlS3", "url", "src", "image", "s3_url"]) {
+        const v = o[k] ? String(o[k]) : "";
+        if (/^https?:\/\//.test(v)) return v;
+      }
+    }
+    return undefined;
+  };
+  const arrHit = fromArr(pr.gallery) || fromArr(pr.images);
+  if (arrHit) return arrHit;
+  for (const k of ["main_image", "image", "url_image", "photo", "thumbnail", "picture"]) {
+    const v = pr[k] ? String(pr[k]) : "";
+    if (/^https?:\/\//.test(v)) return v;
+  }
+  return undefined;
+}
+
+// Descripción del producto: limpia HTML y recorta (sirve para pre-cargar el
+// "qué es" en la ficha del bot; el dueño la edita).
+function pickDropiDescription(pr: Record<string, unknown>): string | undefined {
+  const raw = [pr.description, pr.short_description, pr.details]
+    .map((x) => (x ? String(x) : "")).find(Boolean);
+  if (!raw) return undefined;
+  const text = raw.replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 1500) : undefined;
+}
 
 /** Busca productos en el catálogo de Dropi (estilo Dropify) vía la API de
  *  integraciones: GET {base}/integrations/products/myproducts. Manda ambos sets
@@ -253,6 +289,8 @@ async function searchDropiProducts(
       sku: pr.sku ? String(pr.sku) : undefined,
       price: Number(pr.sale_price) || undefined,
       variations,
+      image: pickDropiImage(pr),
+      description: pickDropiDescription(pr),
     };
   }).filter((p) => Number.isFinite(p.id) && p.id > 0);
 }
