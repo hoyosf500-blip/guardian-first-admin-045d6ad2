@@ -35,6 +35,9 @@ export interface BucketizeResult {
   buckets: Record<BucketKey, BucketTotals>;
   /** Estados que no matchearon ningún bucket — itemizados por nombre (no ocultos). */
   otros: EstadoRow[];
+  /** Nombres CRUDOS de los estados sin mapear. Detector permanente: si Dropi manda
+   *  un estado nuevo, la UI lo puede avisar en vez de tragárselo y romper los KPIs. */
+  estadosSinMapear: string[];
   totals: BucketTotals;
 }
 
@@ -73,11 +76,15 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'REENVÍO': 'en_transito',
   'EN BODEGA TRANSPORTADORA': 'en_transito',
   'ADMITIDA': 'en_transito',
+  'DESPACHADA': 'en_transito',
+  'EN BODEGA DESTINO': 'en_transito',
+  'EN PUNTO DROOP': 'en_transito',
   // novedad
   'NOVEDAD': 'novedad',
   'INTENTO DE ENTREGA': 'novedad',
   'NOVEDAD SOLUCIONADA': 'novedad',
   'REPROGRAMADO': 'novedad',
+  'RECLAME EN OFICINA': 'novedad', // riesgo de no-entrega, no tránsito normal
   // pendiente (sin confirmar / sin despachar)
   'PENDIENTE': 'pendiente',
   'PENDIENTE CONFIRMACION': 'pendiente',
@@ -144,5 +151,9 @@ export function bucketizeEstados(rows: EstadoRow[]): BucketizeResult {
   // Orden estable de "otros": el más grande primero.
   otros.sort((a, b) => b.pedidos - a.pedidos);
 
-  return { buckets, otros, totals };
+  // Detector: nombres crudos de los estados sin bucket (los que Dropi inventó y
+  // todavía no mapeamos). La UI los muestra para que no rompan KPIs en silencio.
+  const estadosSinMapear = otros.map((o) => o.estado);
+
+  return { buckets, otros, estadosSinMapear, totals };
 }

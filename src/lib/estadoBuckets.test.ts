@@ -50,6 +50,8 @@ describe('bucketizeEstados', () => {
     const otro = r.otros.find((o) => o.estado === 'ESTADO_INVENTADO_XYZ');
     expect(otro).toBeDefined();
     expect(otro!.pedidos).toBe(3);
+    // el detector lo expone por nombre crudo
+    expect(r.estadosSinMapear).toContain('ESTADO_INVENTADO_XYZ');
     // sigue cuadrando con el total
     const sumaBuckets = Object.values(r.buckets).reduce((a, b) => a + b.pedidos, 0);
     const sumaOtros = r.otros.reduce((a, b) => a + b.pedidos, 0);
@@ -78,5 +80,26 @@ describe('bucketizeEstados', () => {
     expect(r.buckets.en_transito.pedidos).toBe(2);
     expect(r.buckets.devuelto.pedidos).toBe(1);
     expect(r.otros).toHaveLength(0);
+  });
+
+  it('mapea los 4 estados que antes caían en otros (3 tránsito + 1 novedad)', () => {
+    const r = bucketizeEstados([
+      { estado: 'DESPACHADA',         pedidos: 5, valor: 100, unidades: 5 },
+      { estado: 'EN BODEGA DESTINO',  pedidos: 3, valor: 60,  unidades: 3 },
+      { estado: 'EN PUNTO DROOP',     pedidos: 1, valor: 20,  unidades: 1 },
+      { estado: 'RECLAME EN OFICINA', pedidos: 4, valor: 80,  unidades: 4 },
+    ]);
+    expect(r.buckets.en_transito.pedidos).toBe(9); // 5 + 3 + 1
+    expect(r.buckets.novedad.pedidos).toBe(4);     // RECLAME EN OFICINA
+    expect(r.otros).toHaveLength(0);
+    expect(r.estadosSinMapear).toEqual([]);
+  });
+
+  it('estadosSinMapear lista el nombre CRUDO de los estados sin bucket', () => {
+    const r = bucketizeEstados([
+      { estado: 'ENTREGADO',          pedidos: 5, valor: 100, unidades: 5 },
+      { estado: 'ESTADO_NUEVO_DROPI', pedidos: 2, valor: 40,  unidades: 2 },
+    ]);
+    expect(r.estadosSinMapear).toEqual(['ESTADO_NUEVO_DROPI']);
   });
 });
