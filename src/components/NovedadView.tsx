@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
-import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
+import { useWaChat } from '@/contexts/WaChatContext';
+import { OrderData, formatPhone, getTrackingUrl } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -33,6 +34,7 @@ interface Props {
 export default function NovedadView({ items }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
+  const { openChat } = useWaChat();
   // BUG B fix: persist by *order id*, not array index. When the queue
   // reorders or the operator returns from the carrier tab we keep showing
   // the same customer instead of jumping to a random one at that index.
@@ -125,9 +127,6 @@ export default function NovedadView({ items }: Props) {
   };
 
   const trackUrl = o.guia ? getTrackingUrl(o.transportadora, o.guia) : null;
-  const waMsg = encodeURIComponent(
-    `Hola ${o.nombre.split(' ')[0]}, te escribo sobre tu pedido${o.guia ? ` (guía ${o.guia})` : ''}. Necesitamos coordinar la entrega.`,
-  );
 
   return (
     <>
@@ -190,14 +189,13 @@ export default function NovedadView({ items }: Props) {
             >
               <Phone size={10} /> Llamar
             </a>
-            <a
-              href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-green/10 text-green border border-green/20 hover:bg-green/20 no-underline"
+            <button
+              type="button"
+              onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
             >
               <MessageSquare size={10} /> WhatsApp
-            </a>
+            </button>
           </div>
           <div className="flex items-center gap-1.5">
             <MapPin size={12} /> {o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}

@@ -514,7 +514,7 @@ export default function OrderDetailPage() {
               type="button"
               onClick={() => { void openChat({ phone: order.phone, name: order.nombre }); }}
               aria-label="Abrir chat de WhatsApp con el cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold py-3 sm:py-2.5 hover:opacity-90 transition-opacity duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] text-white text-xs font-bold py-3 sm:py-2.5 hover:bg-[#1ebe5b] transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:outline-none"
             >
               <MessageSquare size={14} aria-hidden="true" /> WhatsApp
             </button>

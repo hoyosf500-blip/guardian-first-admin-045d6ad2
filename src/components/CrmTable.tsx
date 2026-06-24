@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, mem
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, getTrackingUrl, getWhatsAppPhone, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, getTrackingUrl, calcDias, calcBusinessDays } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
@@ -15,6 +15,7 @@ import {
   Send, Tag, CheckCircle, ChevronDown, Search, List, Bell,
 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
+import { useWaChat } from '@/contexts/WaChatContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { isReminderDue } from '@/lib/reminders';
@@ -1022,10 +1023,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   // rompe el memo porque memo compara props (no contexts).
   const { activeStoreId: cardActiveStoreId } = useStore();
   const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
+  const { openChat } = useWaChat();
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
-  const waMsg = encodeURIComponent(`Hola ${o.nombre}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va la entrega?`);
 
   const isDelayed = diasEnEstatus >= 2;
 
@@ -1369,10 +1370,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {/* Canales de contacto (solo abren la app — el registro de la
                   gestión va por "Gestioné hoy", abajo). */}
               <div className="flex gap-2">
-                <a href={`https://wa.me/${getWhatsAppPhone(o.phone)}?text=${waMsg}`} target="_blank" rel="noopener noreferrer"
-                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 no-underline inline-flex items-center justify-center gap-1.5 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-[#25D366] text-white font-semibold hover:bg-[#1ebe5b] inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]">
                   <Send size={12} /> WhatsApp
-                </a>
+                </button>
                 <a href={`tel:+57${o.phone}`}
                   className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
                   <PhoneIcon size={12} /> Llamar
