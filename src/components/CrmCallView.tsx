@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
-import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, calcBusinessDays } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
@@ -27,6 +27,7 @@ import { locationMatches } from '@/lib/locationGuard';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
+import { useWaChat } from '@/contexts/WaChatContext';
 import { supabase } from '@/integrations/supabase/client';
 
 // Validador-direcciones: guard fire-once-per-order-per-session — mismo
@@ -97,6 +98,7 @@ export default function CrmCallView({
 }: Props) {
   const { isAdmin } = useAuth();
   const { activeStore, activeStoreId } = useStore();
+  const { openChat } = useWaChat();
   const countryCode = activeStore?.country_code;
   // Refresh on-demand desde la API de Dropi — la asesora no espera al cron
   // (que cada 5 min puede estar throttleado en EC). El realtime de orders
@@ -554,10 +556,6 @@ export default function CrmCallView({
   const tps = phoneTouchpoints[o.phone] || [];
   const isDelayed = diasEnEstatus >= 2 && !isExcludedFromDelay(o.estado);
 
-  const waMsg = encodeURIComponent(
-    `Hola ${o.nombre.split(' ')[0]}, te escribo sobre tu pedido${o.guia ? ` (guía ${o.guia})` : ''}. Necesitamos coordinar la entrega.`,
-  );
-
   const goTo = (i: number) => {
     const target = items[Math.max(0, Math.min(items.length - 1, i))];
     if (target) setCallOrderId(keyOf(target));
@@ -721,14 +719,13 @@ export default function CrmCallView({
               >
                 <PhoneIcon size={10} aria-hidden="true" /> Llamar
               </a>
-              <a
-                href={`https://wa.me/${getWhatsAppPhone(o.phone, activeStore?.country_code)}?text=${waMsg}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/20 no-underline"
+              <button
+                type="button"
+                onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
               >
                 <MessageSquare size={10} /> WhatsApp
-              </a>
+              </button>
             </div>
 
             {(o.ciudad || o.departamento) && (
