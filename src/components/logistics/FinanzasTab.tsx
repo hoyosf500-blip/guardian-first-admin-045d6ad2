@@ -2,14 +2,17 @@ import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletDailySeries } from '@/hooks/useWalletMovements';
+import { useResumenSync } from '@/hooks/useResumenSync';
+import { useStore } from '@/contexts/StoreContext';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import { formatCOP } from '@/lib/utils';
 import {
   TrendingUp, TrendingDown, DollarSign, Truck, RotateCcw,
   Target, Package, CheckCircle2, AlertTriangle, Receipt, Wallet, Info,
-  Ban, Sparkles, ArrowDownToLine, ArrowUpFromLine,
+  Ban, Sparkles, ArrowDownToLine, ArrowUpFromLine, RefreshCw,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import KpiCard from './finanzas/KpiCard';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import FinanzasHero from './finanzas/FinanzasHero';
@@ -47,6 +50,13 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const yearMonth = fromDate.slice(0, 7);
   const isSingleMonth = yearMonth === toDate.slice(0, 7);
   const cohorte = useOperativoCohorte(isSingleMonth ? yearMonth : '');
+
+  // Botón "Sincronizar" (mismo hook + patrón que MesActualResumen): dispara
+  // dropi-sync + dropi-wallet-sync con el rango del filtro actual e invalida las
+  // queries de Finanzas (incluidas financial-summary y operativo-cohorte) → las
+  // cards se refrescan sin cambiar de tab. Solo el dueño sincroniza.
+  const { isOwnerOfActive } = useStore();
+  const resumenSync = useResumenSync();
 
   if (isError) {
     return (
@@ -130,9 +140,22 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               <h3 className="text-sm font-semibold text-foreground">
                 Fase A — Cash flow operativo Dropi
               </h3>
-              {/* Frescura del wallet (scopeada a la tienda activa): si está vieja,
-                  la Ganancia Neta de abajo no es de fiar. */}
-              <WalletSyncBadge size="sm" showLabel />
+              <div className="flex items-center gap-2">
+                {/* Frescura del wallet (scopeada a la tienda activa): si está vieja,
+                    la Ganancia Neta de abajo no es de fiar. */}
+                <WalletSyncBadge size="sm" showLabel />
+                {isOwnerOfActive && (
+                  <Button
+                    onClick={() => resumenSync.mutate({ from: fromDate, untill: toDate })}
+                    disabled={resumenSync.isPending}
+                    size="sm"
+                    variant="outline"
+                  >
+                    <RefreshCw size={14} className={`mr-1.5 ${resumenSync.isPending ? 'animate-spin' : ''}`} />
+                    {resumenSync.isPending ? 'Sincronizando…' : 'Sincronizar'}
+                  </Button>
+                )}
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               La <strong className="text-foreground">Ganancia Neta</strong> del hero es el <strong className="text-foreground">operativo por cohorte</strong> (pedidos creados en el mes, por fecha de pedido) — reconcilia con la Utilidad de Dropi y NO se infla por mezcla de meses. La composición y el wallet neto de abajo son la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes). En rangos multi-mes el hero cae a la caja.

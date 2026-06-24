@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import FinanzasTab from './FinanzasTab';
 import type { FinancialSummary } from '@/hooks/useFinancialSummary';
 
@@ -87,6 +87,20 @@ vi.mock('@/hooks/useWalletMovements', () => ({
 // en este render aislado. No es objeto de estos tests → lo mockeamos a nada.
 vi.mock('@/components/wallet/WalletSyncBadge', () => ({ default: () => null }));
 
+// El botón "Sincronizar" usa useResumenSync (mutation) + useStore (gate owner).
+// Render aislado sin QueryClientProvider/StoreProvider → mockeamos ambos. El
+// mutate es un spy para verificar que pasa el rango del filtro.
+const resumenSyncMock = { mutate: vi.fn(), isPending: false };
+vi.mock('@/hooks/useResumenSync', () => ({
+  useResumenSync: () => resumenSyncMock,
+}));
+
+const storeMock = vi.fn((): { isOwnerOfActive: boolean } => ({ isOwnerOfActive: true }));
+vi.mock('@/contexts/StoreContext', () => ({
+  useStore: () => storeMock(),
+  useActiveStoreId: () => 'test-store-id',
+}));
+
 const FILTERS = { fromDate: '2026-04-01', toDate: '2026-04-30' };
 
 const SAMPLE: FinancialSummary = {
@@ -140,6 +154,9 @@ describe('FinanzasTab', () => {
       },
       isLoading: false,
     });
+    resumenSyncMock.mutate.mockReset();
+    resumenSyncMock.isPending = false;
+    storeMock.mockReturnValue({ isOwnerOfActive: true });
   });
 
   it('renderiza la card hero "Ganancia Neta Dropi" con el valor del hook nuevo', () => {
@@ -242,6 +259,22 @@ describe('FinanzasTab', () => {
     expect(screen.queryByText(/\$\s?500\.000/)).not.toBeInTheDocument();
     // La caja operativa (18.432.571) aparece — hero (modo caja) + card wallet neto.
     expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('el dueño ve el botón Sincronizar y dispara órdenes+wallet con el rango del filtro', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    render(<FinanzasTab filters={FILTERS} />);
+    const btn = screen.getByRole('button', { name: /Sincronizar/i });
+    fireEvent.click(btn);
+    // Mismo shape que MesActualResumen: { from, untill } con el rango del filtro.
+    expect(resumenSyncMock.mutate).toHaveBeenCalledWith({ from: '2026-04-01', untill: '2026-04-30' });
+  });
+
+  it('un NO-dueño no ve el botón Sincronizar (gate isOwnerOfActive)', () => {
+    storeMock.mockReturnValue({ isOwnerOfActive: false });
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    render(<FinanzasTab filters={FILTERS} />);
+    expect(screen.queryByRole('button', { name: /Sincronizar/i })).not.toBeInTheDocument();
   });
 
   it('muestra KPI de Cancelados con valor potencial perdido y % cancelación', () => {
