@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
-import { dbToOrderData, OrderData, getTrackingUrl, getWhatsAppPhone, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
+import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -365,7 +365,6 @@ export default function OrderDetailPage() {
   }
 
   const trackUrl = getTrackingUrl(order.transportadora || '', order.guia || '');
-  const waMsg = encodeURIComponent(`Hola ${order.nombre}, le escribo sobre su pedido${order.guia ? ` (guía ${order.guia})` : ''}. ¿Cómo va la entrega?`);
   const valor = Number(order.valor) || 0;
   const flete = Number(order.flete) || 0;
   const costoProd = Number(order.costo_prod) || 0;
@@ -513,17 +512,9 @@ export default function OrderDetailPage() {
           <div className="flex gap-2 pt-1">
             <button
               type="button"
-              onClick={async () => {
-                const mode = await openChat({
-                  phone: order.phone,
-                  fallbackWaUrl: `https://wa.me/${getWhatsAppPhone(order.phone)}?text=${waMsg}`,
-                });
-                // Solo registramos "Mensaje enviado" cuando caemos a wa.me (WhatsApp
-                // personal). En el hilo in-app, el envío real lo registra wa-send.
-                if (mode === 'wa') logCommunication('WHATSAPP', 'Mensaje enviado al cliente');
-              }}
+              onClick={() => { void openChat({ phone: order.phone, name: order.nombre }); }}
               aria-label="Abrir chat de WhatsApp con el cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold py-3 sm:py-2.5 hover:opacity-90 transition-opacity duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] text-white text-xs font-bold py-3 sm:py-2.5 hover:bg-[#1ebe5b] transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:outline-none"
             >
               <MessageSquare size={14} aria-hidden="true" /> WhatsApp
             </button>

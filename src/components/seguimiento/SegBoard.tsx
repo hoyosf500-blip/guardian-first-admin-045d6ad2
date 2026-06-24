@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { memo, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
@@ -11,6 +11,7 @@ import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSyst
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
+import { useSessionState } from '@/hooks/useSessionState';
 import { cn } from '@/lib/utils';
 
 /**
@@ -96,7 +97,6 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
   const pConfig = PRIORITY_CONFIG[pLevel];
   const fresh = freshnessDot(o);
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
-  const waMsg = encodeURIComponent(`Hola ${o.nombre || ''}, le escribo sobre su pedido${o.guia ? ` (guía ${o.guia})` : ''}. ¿Cómo va su entrega?`);
 
   return (
     <div
@@ -164,7 +164,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                void openChat({ phone: o.phone, fallbackWaUrl: `https://wa.me/${waPhone}?text=${waMsg}` });
+                void openChat({ phone: o.phone, name: o.nombre });
               }}
               title="Abrir chat de WhatsApp (ver el bot / escribir)"
               aria-label="Abrir chat de WhatsApp"
@@ -194,11 +194,15 @@ function ColumnBody({ colKey, scrollRefs, children }: {
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  // Restaurar el scroll guardado es una operación de MONTAJE, no de cada render:
+  // con deps [] no pelea con el scroll en vivo del usuario (antes corría en cada
+  // re-render del realtime y podía dar micro-saltos hacia atrás al arrastrar).
   useLayoutEffect(() => {
     if (!ref.current) return;
     const saved = scrollRefs.current.get(colKey);
     if (saved !== undefined && ref.current.scrollTop !== saved) ref.current.scrollTop = saved;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div
       ref={ref}
@@ -220,21 +224,37 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
   const t = TONE[col.tone];
   const orders = col.orders;
   const siblingIds = useMemo(() => orders.map((x) => String(x.externalId ?? '')).filter(Boolean), [orders]);
-  const [selIdx, setSelIdx] = useState(0);
+  // Persistimos el EXTERNALID del pedido enfocado (no el índice) → el foco SIGUE
+  // al pedido aunque la carpeta se reordene o encoja en vivo, y la operadora
+  // vuelve EXACTO a su pedido tras entrar al detalle. selIdx se DERIVA del id →
+  // siempre en rango (sin clamp, sin flash off-by-one). Se monta con key={focusedKey}
+  // en el padre, así el key de sesión es estable durante la vida del componente.
+  const [focusedExtId, setFocusedExtId] = useSessionState<string | null>('seg:focusId:' + col.key, null);
+  const selIdx = useMemo(() => {
+    if (orders.length === 0) return 0;
+    if (focusedExtId) {
+      const i = orders.findIndex((o) => String(o.externalId ?? '') === focusedExtId);
+      if (i >= 0) return i;
+    }
+    return 0;
+  }, [orders, focusedExtId]);
   const selRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const firstScrollRef = useRef(true);
 
-  // Clamp si la columna cambia de tamaño en vivo (un pedido se movió de fase).
-  useEffect(() => {
-    setSelIdx((i) => Math.min(i, Math.max(0, orders.length - 1)));
-  }, [orders.length]);
+  // Ancla el foco al pedido que está en `idx` ahora (lo usan ↑/↓ y el click).
+  const focusByIndex = (idx: number) => {
+    const o = orders[idx];
+    if (o) setFocusedExtId(String(o.externalId ?? ''));
+  };
+  const move = (delta: number) => focusByIndex(Math.min(orders.length - 1, Math.max(0, selIdx + delta)));
 
-  // Scroll del seleccionado a la vista al moverse con ↑/↓.
+  // Scroll del seleccionado a la vista: instantáneo al montar/restaurar (no un
+  // barrido animado desde arriba), suave al navegar con ↑/↓.
   useEffect(() => {
-    selRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    selRef.current?.scrollIntoView({ block: 'nearest', behavior: firstScrollRef.current ? 'auto' : 'smooth' });
+    firstScrollRef.current = false;
   }, [selIdx]);
-
-  const move = (delta: number) => setSelIdx((i) => Math.min(orders.length - 1, Math.max(0, i + delta)));
 
   return (
     <div className="space-y-3">
@@ -301,12 +321,32 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
             tone={col.tone}
             selected={i === selIdx}
             cardRef={i === selIdx ? selRef : undefined}
-            onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds } })}
+            onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds } }); }}
           />
         ))}
       </div>
     </div>
   );
+}
+
+// Persistencia del scroll por columna (sessionStorage) — sobrevive el remount al
+// entrar/salir de un pedido. Mapa { colKey: scrollTop } serializado a JSON.
+const BOARD_SCROLL_KEY = 'seg:boardScroll';
+function loadBoardScroll(): Map<string, number> {
+  try {
+    const raw = sessionStorage.getItem(BOARD_SCROLL_KEY);
+    if (!raw) return new Map();
+    return new Map(Object.entries(JSON.parse(raw) as Record<string, number>));
+  } catch {
+    return new Map();
+  }
+}
+function saveBoardScroll(m: Map<string, number>): void {
+  try {
+    sessionStorage.setItem(BOARD_SCROLL_KEY, JSON.stringify(Object.fromEntries(m)));
+  } catch {
+    /* sessionStorage lleno/deshabilitado — no es crítico */
+  }
 }
 
 interface SegBoardProps {
@@ -320,9 +360,21 @@ interface SegBoardProps {
 
 export default function SegBoard({ data, countryCode, statusFilter, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const navigate = useNavigate();
+  // Scroll por columna persistido en sessionStorage → sobrevive el remount de
+  // entrar/salir de un pedido (y los discards de tab). Se inicializa UNA sola vez
+  // desde lo guardado (init-once con ref-guard, para no re-parsear sessionStorage
+  // en cada re-render del realtime); se reescribe al desmontar.
   const scrollRefs = useRef<Map<string, number>>(new Map());
-  // Columna enfocada (carpeta). null = tablero completo.
-  const [focusedKey, setFocusedKey] = useState<SegStatusKey | null>(null);
+  const scrollLoadedRef = useRef(false);
+  if (!scrollLoadedRef.current) {
+    scrollLoadedRef.current = true;
+    const saved = loadBoardScroll();
+    if (saved.size > 0) scrollRefs.current = saved;
+  }
+  useEffect(() => () => saveBoardScroll(scrollRefs.current), []);
+  // Columna enfocada (carpeta) PERSISTIDA → la operadora no pierde su carpeta al
+  // entrar a un pedido y volver. null = tablero completo.
+  const [focusedKey, setFocusedKey] = useSessionState<SegStatusKey | null>('seg:focusedKey', null);
 
   // Agrupa por columna una sola vez. Cada tarjeta se re-renderiza sola cuando
   // su OrderData cambia de referencia (smartMerge en el padre).
@@ -344,11 +396,28 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
     [byColumn, statusFilter],
   );
 
-  // Modo enfoque: una sola carpeta a lo ancho con navegación ↑/↓.
+  // Si al MONTAR la carpeta enfocada persistida quedó vacía (los pedidos cambiaron
+  // de fase, o cambió la tienda/rango), no dejamos a la operadora atascada en la
+  // pantalla "sin pedidos": caemos al tablero. Solo en el mount — si se vacía en
+  // vivo mientras está adentro, mostramos el vacío con su botón "Tablero".
+  const focusCheckedRef = useRef(false);
+  useEffect(() => {
+    if (focusCheckedRef.current) return;
+    focusCheckedRef.current = true;
+    if (focusedKey && (byColumn.get(focusedKey)?.length ?? 0) === 0) setFocusedKey(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Modo enfoque: una sola carpeta a lo ancho con navegación ↑/↓. Validamos el
+  // key (puede venir stale de sessionStorage tras un cambio de columnas) → si no
+  // existe, ignoramos y mostramos el tablero. `key={focusedKey}` remonta limpio
+  // al cambiar de carpeta (así el selIdx persistido se inicializa por columna).
   if (focusedKey) {
-    const def = BOARD_COLUMNS.find((c) => c.key === focusedKey)!;
-    const focusedCol = { ...def, orders: byColumn.get(focusedKey) ?? [] };
-    return <FocusedColumn col={focusedCol} countryCode={countryCode} onBack={() => setFocusedKey(null)} />;
+    const def = BOARD_COLUMNS.find((c) => c.key === focusedKey);
+    if (def) {
+      const focusedCol = { ...def, orders: byColumn.get(focusedKey) ?? [] };
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} onBack={() => setFocusedKey(null)} />;
+    }
   }
 
   if (columns.length === 0) {

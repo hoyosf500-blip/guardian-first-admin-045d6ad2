@@ -27,13 +27,20 @@ export default function WaThreadView({
   storeId,
   onBack,
   onToggleAi,
+  onSent,
 }: {
   conversation: WaConversation;
   storeId: string | null | undefined;
   onBack: () => void;
   onToggleAi: (enabled: boolean) => void;
+  /** Se llama tras enviar el PRIMER mensaje de un chat nuevo (sin conversación
+   *  previa) → el lanzador re-resuelve la conversación recién creada por teléfono. */
+  onSent?: () => void;
 }) {
-  const { messages, sending, send } = useWaThread(conversation.id, storeId);
+  // conversation.id vacío = chat NUEVO (todavía no existe la conversación). En ese
+  // caso enviamos por teléfono (wa-send la crea) en vez de por conversation_id.
+  const isNew = !conversation.id;
+  const { messages, sending, send } = useWaThread(conversation.id || null, storeId, conversation.customer_phone);
   const [draft, setDraft] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -45,7 +52,10 @@ export default function WaThreadView({
     const text = draft.trim();
     if (!text || sending) return;
     const ok = await send(text);
-    if (ok) setDraft('');
+    if (ok) {
+      setDraft('');
+      if (isNew) onSent?.(); // el chat se acaba de crear → que el lanzador lo cargue
+    }
   };
 
   return (
@@ -80,14 +90,17 @@ export default function WaThreadView({
         <button
           type="button"
           onClick={() => onToggleAi(!conversation.ai_enabled)}
+          disabled={isNew}
           aria-pressed={conversation.ai_enabled && conversation.ai_state !== 'handed_off'}
           className={cn(
-            'inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            'inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40 disabled:cursor-not-allowed',
             conversation.ai_enabled && conversation.ai_state !== 'handed_off'
               ? 'bg-accent/15 text-accent border-accent/40'
               : 'bg-card text-muted-foreground border-border hover:border-border-strong',
           )}
-          title={conversation.ai_state === 'handed_off'
+          title={isNew
+            ? 'La IA se activa una vez exista la conversación (después del primer mensaje)'
+            : conversation.ai_state === 'handed_off'
             ? 'Derivado a humano — tocá para reactivar la IA'
             : conversation.ai_enabled ? 'IA respondiendo sola — tocá para apagar' : 'IA apagada — tocá para encender'}
         >
@@ -105,7 +118,11 @@ export default function WaThreadView({
       {/* Mensajes */}
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-muted/10">
         {messages.length === 0 ? (
-          <p className="text-center text-xs text-muted-foreground py-8">Sin mensajes en este hilo.</p>
+          <p className="text-center text-xs text-muted-foreground py-8">
+            {isNew
+              ? 'Escribile el primer mensaje. Se envía desde el WhatsApp del negocio.'
+              : 'Sin mensajes en este hilo.'}
+          </p>
         ) : (
           messages.map((m) => {
             const isOut = m.direction === 'out';
