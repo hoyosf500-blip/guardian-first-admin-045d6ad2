@@ -85,11 +85,11 @@ export function useOrdersSyncHealth(storeId?: string | null) {
         .from('sync_logs')
         .select('status, synced_count, total_count, created_at, error_message')
         .eq('store_id', sid as string)
-        // sync_logs es compartida: source='dropi' = sync de ÓRDENES,
-        // source='dropi-wallet-sync' = wallet. Sin este filtro, una corrida del
-        // wallet (cada 6h) se colaba como si fuera de pedidos y contaminaba la
-        // señal de frescura del badge de órdenes.
-        .eq('source', 'dropi')
+        // Frescura del sync de ÓRDENES = cron automático (source='dropi-cron',
+        // cada 5 min) + syncs manuales (source='dropi'). Excluye el wallet
+        // (source='dropi-wallet-sync', cada 6h) y las acciones por-pedido. Antes
+        // filtraba solo 'dropi' → ignoraba el cron → frescura falsa "hace 1h".
+        .in('source', ['dropi-cron', 'dropi'])
         .order('created_at', { ascending: false })
         .limit(12);
       if (error) throw error;
