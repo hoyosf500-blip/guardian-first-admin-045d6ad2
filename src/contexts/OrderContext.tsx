@@ -289,7 +289,23 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       return true;
     });
 
-    setWorkQueue(prev => smartMerge(prev, dedupPendientes));
+    // Fase 1 (síncrona): mostrar la cola YA. Pero los pendientes frescos del DB
+    // NO traen `result`/`retryCount` (eso lo calcula la fase async de abajo desde
+    // order_results). Sin conservar el estado ya conocido de `prev`, esta fase
+    // "limpiaba" el result de los pedidos ya gestionados → el contador POR
+    // CONFIRMAR parpadeaba (7→8→7) en CADA refresh hasta que la fase async lo
+    // re-aplicaba. Carry-over: heredamos result/reason/retryCount de prev por
+    // dbId para que smartMerge no vea cambio y el conteo quede estable.
+    setWorkQueue(prev => {
+      const prevById = new Map(prev.filter(p => p.dbId).map(p => [p.dbId, p]));
+      const carried = dedupPendientes.map(o => {
+        const old = o.dbId ? prevById.get(o.dbId) : undefined;
+        return old && (old.result || old.retryCount)
+          ? { ...o, result: old.result, reason: old.reason, retryCount: old.retryCount }
+          : o;
+      });
+      return smartMerge(prev, carried);
+    });
     // ANTES: aquí setSegData(smartMerge(prev, segNext)) con la lista
     // PENDIENTE-only. Pero esa lista NO contiene Seguimiento (filtra
     // por isPendiente arriba), así que `segNext` era un subconjunto
