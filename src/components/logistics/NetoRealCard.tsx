@@ -14,12 +14,16 @@ import {
 // el hook devuelve ceros y el bloque NO rompe — solo no recalcula con basura.
 
 interface Props {
-  /** Operativo del mes (base del neto). Hoy = ganancia neta wallet. */
+  /** Operativo del mes (base del neto). Hoy = operativo por cohorte de pedido. */
   operativo: number;
   /** 'YYYY-MM' del mes mostrado. */
   yearMonth: string;
   /** Solo el dueño de la tienda edita/guarda los costos. */
   canEdit: boolean;
+  /** Pedidos sin cerrar — el neto sube cuando se entregan. */
+  pedidosEnCalle?: number;
+  /** Movimientos de wallet con related_order_id que no cruzó a un pedido (transparencia). */
+  movimientosSinLink?: number;
 }
 
 // COP son enteros — descartamos todo lo que no sea dígito o signo (acepta
@@ -29,7 +33,9 @@ function parseInput(v: string): number {
   return isFinite(n) ? n : 0;
 }
 
-export default function NetoRealCard({ operativo, yearMonth, canEdit }: Props) {
+export default function NetoRealCard({
+  operativo, yearMonth, canEdit, pedidosEnCalle, movimientosSinLink = 0,
+}: Props) {
   const { data: saved } = useLogisticaMonthlyCosts(yearMonth);
   const upsert = useUpsertLogisticaMonthlyCosts();
 
@@ -110,7 +116,14 @@ export default function NetoRealCard({ operativo, yearMonth, canEdit }: Props) {
       </div>
 
       <p className="text-[10px] text-muted-foreground">
-        Realizado a hoy. Sube cuando se entreguen los pedidos en la calle. No incluye deudas personales.
+        Realizado a hoy. Sube cuando se entreguen los{' '}
+        {pedidosEnCalle != null ? `${pedidosEnCalle.toLocaleString('es-CO')} ` : ''}pedidos en la calle.
+        No incluye deudas personales.
+        {movimientosSinLink > 0 && (
+          <span className="block text-muted-foreground/70">
+            {movimientosSinLink} movimiento{movimientosSinLink === 1 ? '' : 's'} del wallet sin pedido vinculado (no contados en el operativo).
+          </span>
+        )}
       </p>
     </div>
   );
