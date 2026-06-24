@@ -1,5 +1,6 @@
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
+import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletDailySeries } from '@/hooks/useWalletMovements';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
@@ -38,6 +39,14 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const { data, isLoading, isError, error } = useFinancialSummary(fromDate, toDate);
   const { data: gananciaNeta, isLoading: gananciaLoading } = useGananciaNetaDropi(fromDate, toDate);
   const { data: dailySeries, isLoading: seriesLoading } = useWalletDailySeries(fromDate, toDate);
+  // Bug 3: el hero usa el OPERATIVO POR COHORTE (pedidos creados en el mes; por
+  // fecha de pedido — reconcilia con la Utilidad de Dropi) en vez de la caja del
+  // wallet por fecha de movimiento (infla por mezcla de meses). Solo aplica si el
+  // rango es UN mes calendario; en rangos multi-mes el cohorte (1 solo mes) no
+  // representa el período → cae a la caja del wallet. Mismo patrón que MesActualResumen.
+  const yearMonth = fromDate.slice(0, 7);
+  const isSingleMonth = yearMonth === toDate.slice(0, 7);
+  const cohorte = useOperativoCohorte(isSingleMonth ? yearMonth : '');
 
   if (isError) {
     return (
@@ -55,7 +64,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
     );
   }
 
-  const loading = isLoading || gananciaLoading;
+  const loading = isLoading || gananciaLoading || (isSingleMonth && cohorte.isLoading);
 
   const fleteCombinado = (data?.flete_entregadas ?? 0) + (data?.flete_devoluciones ?? 0);
   const fleteDevs = data?.flete_devoluciones ?? 0;
@@ -76,7 +85,19 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const totalEntradas = gananciaNeta?.total_entradas ?? 0;
   const totalSalidas = gananciaNeta?.total_salidas ?? 0;
   const ingresosBrutos = data?.ingresos_brutos ?? 0;
-  const margenPct = ingresosBrutos > 0 ? (gn / ingresosBrutos) * 100 : 0;
+
+  // Hero "Ganancia Neta": cohorte si está disponible (operativo real del mes),
+  // si no la caja del wallet (gn). heroEntradas/heroSalidas siguen la misma base
+  // que el valor, para que el desglose in/out cuadre con la cifra mostrada.
+  const usingCohort = isSingleMonth && cohorte.data?.operativo != null;
+  const operativoReal = usingCohort ? cohorte.data!.operativo : gn;
+  const heroEntradas = usingCohort ? cohorte.data!.total_entradas : totalEntradas;
+  const heroSalidas = usingCohort ? cohorte.data!.total_salidas : totalSalidas;
+  // Margen aproximado: operativoReal / ingresosBrutos. OJO ventanas temporales:
+  // en modo cohorte el numerador va por fecha de PEDIDO (creados en el mes) y el
+  // denominador (ingresosBrutos de financial_summary) por entregados del período.
+  // No son la misma cohorte exacta — es un margen indicativo, no contable preciso.
+  const margenPct = ingresosBrutos > 0 ? (operativoReal / ingresosBrutos) * 100 : 0;
 
   const desglose = gananciaNeta?.desglose;
   const ingresosItems: ComposicionItem[] = [
@@ -114,7 +135,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               <WalletSyncBadge size="sm" showLabel />
             </div>
             <p className="text-xs text-muted-foreground">
-              La <strong className="text-foreground">Ganancia Neta</strong> es lo que Dropi te abonó al wallet menos lo que te debitó (flete, devoluciones, mantenimiento). Es plata REAL en tu wallet.
+              La <strong className="text-foreground">Ganancia Neta</strong> del hero es el <strong className="text-foreground">operativo por cohorte</strong> (pedidos creados en el mes, por fecha de pedido) — reconcilia con la Utilidad de Dropi y NO se infla por mezcla de meses. La composición y el wallet neto de abajo son la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes). En rangos multi-mes el hero cae a la caja.
               <strong className="text-foreground"> NO incluye gasto pauta</strong> (Meta / TikTok) — eso entra en Fase B.
             </p>
           </div>
@@ -142,12 +163,13 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
         <>
           {/* 1. Hero strip */}
           <FinanzasHero
-            gananciaNeta={gn}
-            totalEntradas={totalEntradas}
-            totalSalidas={totalSalidas}
+            gananciaNeta={operativoReal}
+            totalEntradas={heroEntradas}
+            totalSalidas={heroSalidas}
             ingresosBrutos={ingresosBrutos}
             totalEntregadas={data?.total_entregadas ?? 0}
             margenPct={margenPct}
+            cohorte={usingCohort}
           />
 
           {/* 2. Donut + Cash flow */}
@@ -319,16 +341,21 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                 <div>
                   <div className="text-sm font-semibold text-foreground">Wallet neto del período</div>
                   <div className="text-[11px] text-muted-foreground">
-                    Entradas − salidas en la billetera Dropi (informativo, no entra en utilidad bruta).
+                    Entradas − salidas operativas de Dropi — igual al neto de la composición de arriba (informativo, no entra en utilidad bruta).
                   </div>
                 </div>
               </div>
+              {/* Caja operativa real del wallet = gn (= totalEntradas − totalSalidas del
+                  hook useGananciaNetaDropi, mismo origen que la composición). NO usamos
+                  data.wallet_neto del RPC financial_summary: ese suma TODOS los movimientos
+                  (incluye tesorería: retiros/depósitos), así que no cuadra con la
+                  composición ni con el label de esta card. Ver review fix-first 2026-06-24. */}
               <div
                 className={`text-xl font-bold tabular-nums shrink-0 ${
-                  (data?.wallet_neto ?? 0) >= 0 ? 'text-success' : 'text-danger'
+                  gn >= 0 ? 'text-success' : 'text-danger'
                 }`}
               >
-                {formatCOP(data?.wallet_neto ?? 0)}
+                {formatCOP(gn)}
               </div>
             </div>
           </div>

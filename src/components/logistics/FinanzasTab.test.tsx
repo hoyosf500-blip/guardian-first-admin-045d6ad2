@@ -56,6 +56,18 @@ vi.mock('@/hooks/useGananciaNetaDropi', () => ({
   useGananciaNetaDropi: () => gananciaHookMock(),
 }));
 
+// Mock useOperativoCohorte — el hero usa el cohorte (operativo real) cuando está
+// disponible, con fallback a la caja del wallet (gananciaNeta). Por defecto null
+// → fallback, así los tests del valor de caja siguen valiendo. Un test lo anula.
+const cohorteHookMock = vi.fn((): { data: null | Record<string, number>; isLoading: boolean } => ({
+  data: null,
+  isLoading: false,
+}));
+
+vi.mock('@/hooks/useOperativoCohorte', () => ({
+  useOperativoCohorte: () => cohorteHookMock(),
+}));
+
 // Mock useWalletDailySeries — el rediseño usa este hook para alimentar
 // el CashFlowChart. Sin mock, React Query falla por falta de QueryClient
 // en jsdom. Los tests no validan el chart en sí, solo necesitamos que
@@ -104,6 +116,9 @@ const SAMPLE: FinancialSummary = {
 describe('FinanzasTab', () => {
   beforeEach(() => {
     hookMock.mockReset();
+    // Por defecto el cohorte no está disponible → el hero cae a la caja del wallet,
+    // así los tests del valor de caja (18.432.571) siguen valiendo.
+    cohorteHookMock.mockReturnValue({ data: null, isLoading: false });
     // Reset el mock de ganancia neta a su valor por defecto sintético
     gananciaHookMock.mockReturnValue({
       data: {
@@ -135,10 +150,30 @@ describe('FinanzasTab', () => {
     expect(screen.getByText(/Cash flow operativo Dropi/i)).toBeInTheDocument();
     // Card hero con el label nuevo
     expect(screen.getByText(/Ganancia Neta Dropi/i)).toBeInTheDocument();
-    // Valor formateado de 18.432.571
-    expect(screen.getByText(/\$\s?18\.432\.571/)).toBeInTheDocument();
+    // Valor formateado de 18.432.571 — sin cohorte el hero usa la caja (gn) y la
+    // card "Wallet neto" también muestra gn → aparece 2 veces (hero + card).
+    expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBeGreaterThanOrEqual(1);
     // Hint con desglose entradas vs salidas
     expect(screen.getByText(/entró.*23\.728\.183.*te debitó.*5\.295\.612/i)).toBeInTheDocument();
+    // Sin cohorte disponible (default null) el hero usa la CAJA del wallet.
+    expect(screen.getByText(/caja · fecha de pago/i)).toBeInTheDocument();
+  });
+
+  it('usa el OPERATIVO POR COHORTE en el hero cuando está disponible (no la caja inflada)', () => {
+    hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
+    cohorteHookMock.mockReturnValue({
+      data: { operativo: 4_800_000, total_entradas: 7_000_000, total_salidas: 2_200_000, movimientos_sin_link: 0 },
+      isLoading: false,
+    });
+    render(<FinanzasTab filters={FILTERS} />);
+    // El hero muestra el cohorte ($4.800.000). La caja del wallet ($18.432.571)
+    // ya NO infla el hero, pero SÍ aparece (una sola vez) en la card "Wallet neto
+    // del período" abajo — son dos perspectivas distintas y deliberadas.
+    expect(screen.getByText(/\$\s?4\.800\.000/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBe(1);
+    // El subtítulo del hero indica que es cohorte, no caja.
+    expect(screen.getByText(/cohorte del mes/i)).toBeInTheDocument();
+    expect(screen.queryByText(/caja · fecha de pago/i)).not.toBeInTheDocument();
   });
 
   it('renderiza la card hero en rojo cuando la ganancia neta es negativa', () => {
@@ -164,8 +199,9 @@ describe('FinanzasTab', () => {
       isLoading: false,
     });
     render(<FinanzasTab filters={FILTERS} />);
-    // formatCOP de un negativo en es-CO incluye el "-"
-    expect(screen.getByText(/-\$\s?500\.000/)).toBeInTheDocument();
+    // formatCOP de un negativo en es-CO incluye el "-". gn=-500.000 aparece en el
+    // hero (modo caja) y en la card "Wallet neto" → al menos una vez en rojo.
+    expect(screen.getAllByText(/-\$\s?500\.000/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('mantiene la "Utilidad bruta contable" como KPI secundario en el grid', () => {
@@ -194,11 +230,18 @@ describe('FinanzasTab', () => {
     expect(screen.getByText('100')).toBeInTheDocument();
   });
 
-  it('muestra wallet neto informativo', () => {
+  it('muestra wallet neto OPERATIVO (caja del wallet), no el wallet_neto contable', () => {
+    // SAMPLE.wallet_neto = 500.000 viene de financial_summary (suma TODOS los
+    // movimientos, incluye tesorería). La card debe mostrar la caja OPERATIVA
+    // (gananciaNeta.ganancia_neta = 18.432.571 = entradas − salidas operativas),
+    // consistente con la composición de arriba. Ver fix-first review 2026-06-24.
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
     expect(screen.getByText(/Wallet neto del período/i)).toBeInTheDocument();
-    expect(screen.getByText(/\$\s?500\.000/)).toBeInTheDocument();
+    // El valor contable (500.000) NO debe renderizarse en ningún lado.
+    expect(screen.queryByText(/\$\s?500\.000/)).not.toBeInTheDocument();
+    // La caja operativa (18.432.571) aparece — hero (modo caja) + card wallet neto.
+    expect(screen.getAllByText(/\$\s?18\.432\.571/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('muestra KPI de Cancelados con valor potencial perdido y % cancelación', () => {

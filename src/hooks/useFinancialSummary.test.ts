@@ -13,6 +13,13 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
+// El hook ahora lee la tienda activa (para la queryKey por tienda). En el test
+// no montamos StoreProvider → mockeamos useActiveStoreId a un id fijo, así
+// `enabled` es true y el RPC se dispara igual que antes.
+vi.mock('@/contexts/StoreContext', () => ({
+  useActiveStoreId: () => 'test-store-id',
+}));
+
 const wrapper = ({ children }: { children: React.ReactNode }) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return React.createElement(QueryClientProvider, { client: qc }, children);

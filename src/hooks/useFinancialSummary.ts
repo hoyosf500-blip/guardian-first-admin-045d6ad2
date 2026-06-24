@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 
 // Fase A del módulo financiero — utilidad bruta operativa.
 // Mapea 1:1 al RETURNS jsonb del RPC `financial_summary`
@@ -74,8 +75,14 @@ function parseFinancialSummary(raw: unknown): FinancialSummary {
 }
 
 export function useFinancialSummary(from: string, to: string) {
+  // El RPC `financial_summary` (v7) se scopea server-side por la tienda activa vía
+  // _resolve_scope_store(); no recibe store_id. Pero incluimos `storeId` en la
+  // queryKey para que React Query cachee POR TIENDA y refetchee al cambiar de
+  // tienda (antes la key era solo [from,to] → al cambiar de tienda servía el cache
+  // de la anterior). Ver StoreContext.setActiveStoreId + migration v7.
+  const storeId = useActiveStoreId();
   return useQuery<FinancialSummary>({
-    queryKey: ['financial-summary', from, to],
+    queryKey: ['financial-summary', storeId ?? 'all', from, to],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('financial_summary', {
         p_from_date: from,
@@ -85,6 +92,6 @@ export function useFinancialSummary(from: string, to: string) {
       return parseFinancialSummary(data);
     },
     staleTime: 60_000,
-    enabled: Boolean(from && to),
+    enabled: Boolean(from && to && storeId),
   });
 }
