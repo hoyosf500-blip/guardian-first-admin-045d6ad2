@@ -147,10 +147,35 @@ function norm(s: string): string {
   return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Match por nombre SEGURO (crítico: si matchea el producto equivocado, el bot da
+// info del producto que NO es). Reglas:
+//   1. Igualdad exacta normalizada → match (cubre el caso común: match_text es el
+//      nombre completo del pedido, elegido del datalist).
+//   2. Si no, substring pero con LÍMITE DE PALABRA y largo ≥ 4 → así "PRO" NO
+//      matchea dentro de "ANTIPROCELULAR", pero "NEURO ESTRES" sí matchea en
+//      "06I NEURO ESTRES" (pedidos multi-producto).
+function nameMatches(prodNorm: string, matchTextNorm: string): boolean {
+  if (!prodNorm || !matchTextNorm) return false;
+  if (prodNorm === matchTextNorm) return true;
+  if (matchTextNorm.length < 4) return false;
+  return new RegExp("(^|[^A-Z0-9])" + escapeRe(matchTextNorm) + "([^A-Z0-9]|$)").test(prodNorm);
+}
+
+// Anti tag-breakout: el texto de la ficha (editable por la tienda) NO debe poder
+// cerrar/abrir los bloques de datos del prompt. Se quitan esos tags literales.
+// (La regla de seguridad ya instruye a tratar el bloque como DATO, no órdenes.)
+function sanitizeKnowledge(s: string): string {
+  return (s || "").replace(/<\/?\s*(order_data|product_knowledge|customer_messages)\s*>/gi, "");
+}
+
 // Conocimiento del/los producto(s) del pedido (tabla product_knowledge, editable
 // en /admin → "Productos (bot)"). Match HÍBRIDO: prefiere por dropi_product_id si
-// el pedido trae product_ids (Fase B); si no, cae al match por nombre
-// (match_text ⊂ producto). Devuelve "" si no hay ficha que aplique.
+// el pedido trae product_ids (Fase B); si no, cae al match por nombre seguro.
+// Devuelve "" si no hay ficha que aplique.
 async function buildProductKnowledge(
   sbAdmin: SupabaseClient,
   storeId: string,
@@ -171,11 +196,12 @@ async function buildProductKnowledge(
   const idSet = new Set((productIds || "").split(",").map((s) => s.trim()).filter(Boolean));
   const matched = rows.filter((r) => {
     if (r.dropi_product_id != null && idSet.has(String(r.dropi_product_id))) return true; // id-first
-    const mt = norm(r.match_text || "");
-    return !!mt && !!prodNorm && prodNorm.includes(mt); // name fallback
+    return nameMatches(prodNorm, norm(r.match_text || "")); // name fallback seguro
   });
   if (!matched.length) return "";
-  return matched.map((r) => `## ${r.label}\n${r.knowledge}`).join("\n\n");
+  return matched
+    .map((r) => `## ${sanitizeKnowledge(r.label)}\n${sanitizeKnowledge(r.knowledge)}`)
+    .join("\n\n");
 }
 
 Deno.serve(async (req) => {

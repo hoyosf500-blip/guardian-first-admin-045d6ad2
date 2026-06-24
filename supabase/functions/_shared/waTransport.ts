@@ -22,6 +22,7 @@ export interface WaInboundMessage {
   media?: Record<string, unknown> | null;
   timestamp: number; // unix seconds
   fromMe: boolean; // true = eco de un saliente nuestro (se ignora como entrante)
+  isGroup: boolean; // true = mensaje de un GRUPO/lista de difusión → el bot NO actúa ahí
 }
 
 export interface WaSendResult {
@@ -90,6 +91,15 @@ function whapiMedia(m: WhapiRawMessage): Record<string, unknown> | null {
   return null;
 }
 
+// Grupo o lista de difusión: en WhatsApp el JID del grupo termina en "@g.us" y
+// el de status/broadcast en "@broadcast". El bot NO debe actuar ahí (el número
+// tiene grupos internos de la empresa). Se detecta por chat_id o from.
+function whapiIsGroup(m: WhapiRawMessage): boolean {
+  const chat = String(m.chat_id ?? "");
+  const from = String(m.from ?? "");
+  return /@g\.us/i.test(chat) || /@g\.us/i.test(from) || /@broadcast/i.test(chat) || /@broadcast/i.test(from);
+}
+
 class WhapiTransport implements WaTransport {
   readonly provider: WaProvider = "whapi";
   private token: string;
@@ -142,6 +152,7 @@ class WhapiTransport implements WaTransport {
       media: whapiMedia(m),
       timestamp: Number(m.timestamp ?? 0),
       fromMe: Boolean(m.from_me),
+      isGroup: whapiIsGroup(m),
     })).filter((m) => m.waMessageId && m.fromPhone);
   }
 }
