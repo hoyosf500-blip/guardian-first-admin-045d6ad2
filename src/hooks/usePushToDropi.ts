@@ -128,13 +128,15 @@ export function usePushToDropi(storeId: string | null) {
     const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
       body: { store_id: storeId, mode: 'get_product', dropi_product_id: dropiProductId },
     });
-    const r = await parseInvoke<{ ok: boolean; product?: DropiProductHit; error?: string; diag?: string[] }>(data, error);
+    const r = await parseInvoke<{ ok: boolean; product?: DropiProductHit; error?: string; diag?: string[]; reason?: string }>(data, error);
     // Diagnóstico (qué devolvió cada estrategia) → consola, para depurar un MISS
     // sin volver a adivinar el endpoint.
-    if (r.diag) console.debug('[getDropiProduct] diag', dropiProductId, r.diag.join(' '));
+    if (r.diag) console.debug('[getDropiProduct] diag', dropiProductId, r.reason, r.diag.join(' '));
     if (!r.ok) {
-      // 404 (no encontrado) NO es excepción: devolvemos null para vincular a ciegas.
-      if (/no se encontró|verificá el id/i.test(r.error || '')) return null;
+      // 'not_found' NO es excepción: devolvemos null para vincular a ciegas.
+      // Los demás motivos (token de sesión vencido/ausente, etc.) SÍ se muestran
+      // como aviso accionable al dueño.
+      if (r.reason === 'not_found' || /no se encontró|verificá el id/i.test(r.error || '')) return null;
       throw new Error(r.error || 'No se pudo traer el producto de Dropi');
     }
     return r.product ?? null;
