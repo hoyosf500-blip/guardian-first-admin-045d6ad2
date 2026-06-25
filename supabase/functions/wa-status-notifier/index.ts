@@ -21,6 +21,15 @@ const MAX_SENDS_PER_RUN = 40; // pacing anti-baneo (gateway QR no oficial)
 const LOOKBACK_DAYS = 21; // solo pedidos movidos recientemente
 const ORDERS_PER_STORE = 600;
 
+// Follow-up por SILENCIO: si el bot le escribió a un cliente y este no respondió
+// en FOLLOWUP_SILENCE_HOURS (pero la conversación no es más vieja que
+// FOLLOWUP_MAX_AGE_HOURS), el bot manda UN recordatorio suave. Una sola vez por
+// episodio (lo controla wa_conversations.last_followup_at).
+const FOLLOWUP_SILENCE_HOURS = 8;
+const FOLLOWUP_MAX_AGE_HOURS = 72;
+const FOLLOWUP_CANDIDATES = 80; // candidatos a revisar por tienda y corrida
+const ESTADOS_TERMINALES = new Set(["ENTREGADO", "CANCELADO", "ANULADO", "DEVUELTO", "DEVOLUCION"]);
+
 // Franja horaria de avisos PROACTIVOS (hora Bogotá/Quito = UTC-5, sin DST). Fuera
 // de esta ventana el cron corre pero NO manda nada (no molestar de madrugada).
 // OJO: esto solo afecta los avisos que el bot INICIA. Las respuestas reactivas
@@ -121,6 +130,8 @@ interface NotifyCfg {
   enabled?: boolean;
   buckets?: Partial<Record<Bucket, boolean>>;
   templates?: Partial<Record<Bucket, string>>;
+  followup?: boolean;          // recordatorio por silencio (default ON si enabled)
+  followupTemplate?: string;   // plantilla custom opcional ({nombre}, {agente})
 }
 
 async function processStore(
@@ -230,16 +241,124 @@ async function processStore(
     if (didSend) patch.notified_at = new Date().toISOString();
     await sbAdmin.from("wa_order_notifications").update(patch).eq("id", prev.id);
   }
+
+  // 2º pase: recordatorio a clientes que quedaron CALLADOS (mismo cron/horario/cap).
+  await processSilenceFollowups(sbAdmin, cfg, state, channel, agente);
+}
+
+/** Recordatorio suave a quien el bot le escribió y NO respondió en ~8h (y la
+ *  conversación no es más vieja que 72h). UNA vez por episodio de silencio. Respeta:
+ *  apagado humano (ai_state='auto' obligatorio), opt-out (handed_off), horario (ya
+ *  gateado en el handler), tope MAX_SENDS_PER_RUN, y NO pisa a un operador humano
+ *  (el último saliente debe ser del bot, no de una persona). */
+async function processSilenceFollowups(
+  sbAdmin: SupabaseClient,
+  cfg: { store_id: string; agent_name: string | null; notify: NotifyCfg },
+  state: { sent: number; seeded: number; scanned: number },
+  channel: Awaited<ReturnType<typeof loadWaChannel>>,
+  agente: string,
+): Promise<void> {
+  const notify = cfg.notify || {};
+  if (notify.followup === false) return; // sub-switch opcional (default ON si avisos ON)
+  if (state.sent >= MAX_SENDS_PER_RUN) return;
+  const storeId = String(cfg.store_id);
+  const now = Date.now();
+  const silentBefore = new Date(now - FOLLOWUP_SILENCE_HOURS * 3_600_000).toISOString();
+  const notOlderThan = new Date(now - FOLLOWUP_MAX_AGE_HOURS * 3_600_000).toISOString();
+
+  // Candidatos: hilos con IA en auto, último mensaje SALIENTE, callados 8–72h.
+  // El filtro "ya seguido este episodio" (last_followup_at >= last_message_at) se
+  // hace en código (PostgREST no compara dos columnas). Si la columna aún no existe
+  // (migración sin aplicar), data viene null y el pase no hace nada (degrada solo).
+  const { data: convs } = await sbAdmin
+    .from("wa_conversations")
+    .select("id, customer_phone, customer_name, linked_external_id, last_message_at, last_followup_at")
+    .eq("store_id", storeId)
+    .eq("ai_state", "auto")
+    .eq("ai_enabled", true)
+    .eq("last_direction", "out")
+    .lt("last_message_at", silentBefore)
+    .gt("last_message_at", notOlderThan)
+    .order("last_message_at", { ascending: false })
+    .limit(FOLLOWUP_CANDIDATES);
+
+  for (const c of (convs || []) as Array<Record<string, unknown>>) {
+    if (state.sent >= MAX_SENDS_PER_RUN) break;
+    const lastMsgAt = c.last_message_at ? Date.parse(String(c.last_message_at)) : 0;
+    const lastFup = c.last_followup_at ? Date.parse(String(c.last_followup_at)) : 0;
+    if (lastFup && lastFup >= lastMsgAt) continue; // ya seguimos este episodio
+    const phone = c.customer_phone ? String(c.customer_phone) : "";
+    const convId = String(c.id);
+    if (!phone) continue;
+
+    // El último saliente debe ser del BOT (ai/system), no de un operador humano que
+    // esté atendiendo el hilo → no lo pisamos.
+    const { data: lastMsg } = await sbAdmin
+      .from("wa_messages")
+      .select("direction, sender")
+      .eq("conversation_id", convId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lastMsg || lastMsg.direction !== "out") continue;
+    if (lastMsg.sender !== "ai" && lastMsg.sender !== "system") continue;
+
+    // Si hay pedido vinculado y ya está en estado terminal, no tiene sentido seguir
+    // (marcamos last_followup_at para no re-evaluarlo en cada corrida).
+    let nombre = c.customer_name ? String(c.customer_name) : "";
+    if (c.linked_external_id) {
+      const { data: ord } = await sbAdmin
+        .from("orders")
+        .select("estado, nombre")
+        .eq("store_id", storeId)
+        .eq("external_id", String(c.linked_external_id))
+        .maybeSingle();
+      const est = E(String(ord?.estado || ""));
+      if (est && (ESTADOS_TERMINALES.has(est) || est.includes("DEVOLUC"))) {
+        await sbAdmin.from("wa_conversations").update({ last_followup_at: new Date().toISOString() }).eq("id", convId);
+        continue;
+      }
+      if (!nombre && ord?.nombre) nombre = String(ord.nombre);
+    }
+
+    const firstName = nombre.trim().split(/\s+/)[0] || "";
+    let body: string;
+    if (notify.followupTemplate && String(notify.followupTemplate).trim()) {
+      body = String(notify.followupTemplate)
+        .replaceAll("{nombre}", firstName)
+        .replaceAll("{agente}", agente)
+        .trim();
+    } else {
+      const hola = firstName ? `Hola ${firstName}` : "¡Hola!";
+      body = `${hola} 💛 ¿Pudiste ver lo de tu pedido? Acá sigo para ayudarte con lo que necesites 😊`;
+    }
+
+    try {
+      const res = await sendAndRecord(sbAdmin, channel, {
+        conversationId: convId,
+        to: phone,
+        body,
+        sender: "system",
+      });
+      if (res.ok) state.sent++;
+    } catch (e) {
+      console.error("[wa-status-notifier] followup send failed", convId, e instanceof Error ? e.message : e);
+    }
+    // Marcamos el episodio como seguido pase lo que pase (evita reintentos en loop).
+    await sbAdmin.from("wa_conversations").update({ last_followup_at: new Date().toISOString() }).eq("id", convId);
+  }
 }
 
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
+  // Cast type-only (createClient esm.sh @2.49.1 vs tipo SupabaseClient @2 difieren
+  // en aridad de genéricos). Sin efecto runtime. Alinea las firmas de los helpers.
   const sbAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
+  ) as unknown as SupabaseClient;
 
   // Auth: x-cron-secret contra app_settings.cron_shared_secret (igual que dropi-cron).
   const provided = req.headers.get("x-cron-secret") || "";
