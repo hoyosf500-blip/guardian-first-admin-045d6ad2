@@ -1825,6 +1825,7 @@ export type Database = {
           customer_phone: string
           id: string
           last_direction: string | null
+          last_followup_at: string | null
           last_message_at: string | null
           last_message_preview: string | null
           linked_external_id: string | null
@@ -1844,6 +1845,7 @@ export type Database = {
           customer_phone: string
           id?: string
           last_direction?: string | null
+          last_followup_at?: string | null
           last_message_at?: string | null
           last_message_preview?: string | null
           linked_external_id?: string | null
@@ -1863,6 +1865,7 @@ export type Database = {
           customer_phone?: string
           id?: string
           last_direction?: string | null
+          last_followup_at?: string | null
           last_message_at?: string | null
           last_message_preview?: string | null
           linked_external_id?: string | null
