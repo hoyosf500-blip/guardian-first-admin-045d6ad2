@@ -1814,6 +1814,77 @@ export type Database = {
           },
         ]
       }
+      wa_conversation_insights: {
+        Row: {
+          analyzed_at: string
+          customer_name: string | null
+          fears: Json
+          id: string
+          linked_external_id: string | null
+          model: string | null
+          msg_count: number
+          no_purchase_reason: string | null
+          objections: Json
+          order_estado: string | null
+          outcome: string | null
+          phone: string
+          product_key: string | null
+          producto: string | null
+          questions: Json
+          sentiment: string | null
+          store_id: string
+          summary: string | null
+        }
+        Insert: {
+          analyzed_at?: string
+          customer_name?: string | null
+          fears?: Json
+          id?: string
+          linked_external_id?: string | null
+          model?: string | null
+          msg_count?: number
+          no_purchase_reason?: string | null
+          objections?: Json
+          order_estado?: string | null
+          outcome?: string | null
+          phone: string
+          product_key?: string | null
+          producto?: string | null
+          questions?: Json
+          sentiment?: string | null
+          store_id: string
+          summary?: string | null
+        }
+        Update: {
+          analyzed_at?: string
+          customer_name?: string | null
+          fears?: Json
+          id?: string
+          linked_external_id?: string | null
+          model?: string | null
+          msg_count?: number
+          no_purchase_reason?: string | null
+          objections?: Json
+          order_estado?: string | null
+          outcome?: string | null
+          phone?: string
+          product_key?: string | null
+          producto?: string | null
+          questions?: Json
+          sentiment?: string | null
+          store_id?: string
+          summary?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_conversation_insights_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wa_conversations: {
         Row: {
           ai_enabled: boolean
@@ -2002,6 +2073,94 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "wa_order_notifications_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wa_product_learnings: {
+        Row: {
+          active: boolean
+          evidence_count: number
+          id: string
+          learned: string
+          product_key: string
+          product_label: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          evidence_count?: number
+          id?: string
+          learned: string
+          product_key: string
+          product_label: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          evidence_count?: number
+          id?: string
+          learned?: string
+          product_key?: string
+          product_label?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_product_learnings_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wa_scraped_messages: {
+        Row: {
+          body: string | null
+          chat_id: string | null
+          created_at: string
+          customer_name: string | null
+          from_me: boolean
+          id: string
+          msg_ts: string | null
+          phone: string
+          store_id: string
+          wa_message_id: string
+        }
+        Insert: {
+          body?: string | null
+          chat_id?: string | null
+          created_at?: string
+          customer_name?: string | null
+          from_me?: boolean
+          id?: string
+          msg_ts?: string | null
+          phone: string
+          store_id: string
+          wa_message_id: string
+        }
+        Update: {
+          body?: string | null
+          chat_id?: string | null
+          created_at?: string
+          customer_name?: string | null
+          from_me?: boolean
+          id?: string
+          msg_ts?: string | null
+          phone?: string
+          store_id?: string
+          wa_message_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_scraped_messages_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -2899,6 +3058,18 @@ export type Database = {
         Returns: string
       }
       upsert_wallet_movements: { Args: { p_movements: Json }; Returns: number }
+      wa_product_insights: {
+        Args: { p_store_id: string }
+        Returns: {
+          active: boolean
+          conversations: number
+          evidence_count: number
+          learned: string
+          product_key: string
+          product_label: string
+          updated_at: string
+        }[]
+      }
       wallet_daily_series: {
         Args: { p_from: string; p_to: string }
         Returns: {
