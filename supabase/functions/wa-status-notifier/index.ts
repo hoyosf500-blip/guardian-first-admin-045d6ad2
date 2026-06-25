@@ -21,6 +21,17 @@ const MAX_SENDS_PER_RUN = 40; // pacing anti-baneo (gateway QR no oficial)
 const LOOKBACK_DAYS = 21; // solo pedidos movidos recientemente
 const ORDERS_PER_STORE = 600;
 
+// Franja horaria de avisos PROACTIVOS (hora Bogotá/Quito = UTC-5, sin DST). Fuera
+// de esta ventana el cron corre pero NO manda nada (no molestar de madrugada).
+// OJO: esto solo afecta los avisos que el bot INICIA. Las respuestas reactivas
+// (wa-ai-responder, cuando el cliente escribe) NO se tocan: contesta 24/7.
+const SEND_HOUR_START = 8;  // arranca 8:00 am
+const SEND_HOUR_END = 21;   // hasta las 9:00 pm (no incluido)
+function withinSendHours(): boolean {
+  const bogotaHour = (new Date().getUTCHours() - 5 + 24) % 24;
+  return bogotaHour >= SEND_HOUR_START && bogotaHour < SEND_HOUR_END;
+}
+
 type Bucket = "guia_generada" | "en_camino" | "reparto" | "oficina" | "novedad" | "entregado";
 
 // Taxonomía canónica de estados Dropi. Réplica server-side de src/lib/segLists.ts
@@ -187,21 +198,24 @@ async function processStore(
           phone,
           name: o.nombre ? String(o.nombre) : null,
         });
-        const res = await sendAndRecord(sbAdmin, channel, {
-          conversationId: conv.id,
-          to: phone,
-          body,
-          sender: "system",
-        });
-        // Que el bot pueda RESPONDER si el cliente contesta (amigo siempre disponible),
-        // salvo que un humano haya tomado el hilo.
+        // Si un humano TOMÓ/APAGÓ el hilo (ai_state='handed_off'), el bot NO manda
+        // proactivos NI se re-activa solo: lo maneja la persona. El apagado humano
+        // manda (requisito: "solo la operadora lo puede apagar"). Igual avanzamos
+        // el bucket abajo, así no reintenta en cada corrida.
         if (conv.aiState !== "handed_off") {
+          const res = await sendAndRecord(sbAdmin, channel, {
+            conversationId: conv.id,
+            to: phone,
+            body,
+            sender: "system",
+          });
+          // Que el bot pueda RESPONDER si el cliente contesta (amigo siempre disponible).
           await sbAdmin.from("wa_conversations")
             .update({ ai_enabled: true, ai_state: "auto" })
             .eq("id", conv.id);
+          didSend = res.ok;
+          if (res.ok) state.sent++;
         }
-        didSend = res.ok;
-        if (res.ok) state.sent++;
       } catch (e) {
         console.error("[wa-status-notifier] send failed", extId, e instanceof Error ? e.message : e);
       }
@@ -234,6 +248,15 @@ Deno.serve(async (req) => {
   if (!expected || provided !== expected) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
+  // Ventana horaria: los avisos PROACTIVOS solo salen 8am–9pm (Bogotá). Fuera de
+  // eso, el cron corre pero no manda nada (las respuestas reactivas siguen 24/7).
+  if (!withinSendHours()) {
+    return new Response(JSON.stringify({ ok: true, skipped: "fuera de horario (8am-9pm Bogota)" }), {
+      status: 200,
       headers: { ...cors, "Content-Type": "application/json" },
     });
   }

@@ -173,12 +173,17 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
                 // actualizar — un UPDATE con id='' rompe (uuid inválido). El toggle
                 // del hilo nuevo está deshabilitado en la UI; esto es defensa extra.
                 if (!selected.id) return;
+                // Apagar (humano) → ai_state='handed_off' para que sea STICKY: el
+                // notificador proactivo respeta handed_off y NO lo vuelve a prender.
+                // (Si solo bajáramos ai_enabled dejando 'auto', el próximo aviso lo
+                // re-activaba.) Prender → vuelve a 'auto'.
+                const nextState = enabled ? 'auto' : 'handed_off';
                 setSelected((prev) => (prev
-                  ? { ...prev, ai_enabled: enabled, ai_state: enabled ? 'auto' : prev.ai_state }
+                  ? { ...prev, ai_enabled: enabled, ai_state: nextState }
                   : prev));
-                const patch: Record<string, unknown> = { ai_enabled: enabled };
-                if (enabled) patch.ai_state = 'auto'; // re-activar tras un handoff
-                void sb.from('wa_conversations').update(patch).eq('id', selected.id);
+                void sb.from('wa_conversations')
+                  .update({ ai_enabled: enabled, ai_state: nextState })
+                  .eq('id', selected.id);
               }}
             />
           )}
