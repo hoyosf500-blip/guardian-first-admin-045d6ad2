@@ -335,26 +335,70 @@ function extractProductArray(txt: string): unknown[] {
   );
 }
 
+/** Motivo de un MISS — guía el mensaje accionable que ve el dueño. */
+type GetProductReason = "ok" | "not_found" | "sess_expired" | "sess_missing" | "int_denied" | "no_creds";
+
 /** Trae UN producto del catálogo de Dropi por su id (para el atajo "pegá el ID"
- *  en /admin → Productos del bot). Solo usa endpoints PROBADOS:
- *   1) Integraciones (integration-key PERMANENTE) = el MISMO endpoint que la
- *      búsqueda por nombre (`/integrations/products/myproducts`). Lo barremos
- *      PAGINADO (pageSize grande) y buscamos el id — porque el endpoint ignora un
- *      `?id=` y devuelve una página por defecto chica donde el producto no estaba
- *      (causa del MISS anterior). Primero un tiro por keyword=id (matchea id/sku).
- *   2) Panel web (session token, legacy) — endpoint VERIFICADO de detalle de
- *      producto (PASO A de la cotización: /api/products/productlist/v1/show/?id=).
- *  Devuelve { product, diag }. `diag` registra qué devolvió cada estrategia para
- *  diagnosticar un MISS sin volver a adivinar. Nunca tira — best-effort por ruta. */
+ *  en /admin → Productos del bot).
+ *
+ *  ⚠️ HALLAZGO (probado en vivo 2026-06-24, Rushmira CO): la integration-key
+ *  PERMANENTE sirve para ORDERS pero Dropi le NIEGA productos
+ *  (`/integrations/products/myproducts` → "No tiene permisos para ver este
+ *  producto"). El ÚNICO endpoint que devuelve detalle de producto es el WEB
+ *  (`/api/products/productlist/v1/show/?id=`) con el session token (aud:DROPI),
+ *  que vence ~12h. Por eso probamos:
+ *   1) WEB (session token) PRIMERO — el único que lee productos en esta cuenta.
+ *   2) Integraciones (key permanente) como best-effort — funciona en stores cuya
+ *      key SÍ tiene productos habilitados; acá cae en "int_denied".
+ *
+ *  Devuelve { product, diag, reason }. `reason` permite un toast accionable
+ *  ("tu sesión Dropi venció → refrescá el token") en vez de un MISS genérico. */
 async function fetchDropiProductById(
   cfg: { base: string; apiKey: string; sessionToken: string; storeUrl: string },
   id: number,
-): Promise<{ product: DropiProductHit | null; diag: string[] }> {
+): Promise<{ product: DropiProductHit | null; diag: string[]; reason: GetProductReason }> {
   const diag: string[] = [];
   const PAGE = 200;
   const MAX_PAGES = 8; // hasta 1600 productos del catálogo propio
+  let webExpired = false;   // session token vencido
+  let intDenied = false;    // Dropi negó productos a la integration-key
+  let sawCatalog = false;   // alguna ruta devolvió lista real (id simplemente no está)
 
-  // ── 1) Integraciones (key permanente) — endpoint probado, barrido paginado ──
+  // ── 1) Panel web (session token) — único camino que lee productos acá ───────
+  if (cfg.sessionToken) {
+    const webHeaders: Record<string, string> = {
+      "X-Authorization": "Bearer " + cfg.sessionToken,
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    };
+    if (cfg.storeUrl) webHeaders["Origin"] = cfg.storeUrl;
+    const r = await fetchWithTimeout(`${cfg.base}/api/products/productlist/v1/show/?id=${id}`, { headers: webHeaders }, 9000);
+    if (!r) {
+      diag.push("web:net");
+    } else {
+      const txt = await r.text();
+      let body: Record<string, unknown> = {};
+      try { body = txt ? JSON.parse(txt) : {}; } catch { /* noop */ }
+      diag.push(`web:${r.status}`);
+      const msg = String((body as { message?: string }).message || (body as { error?: string }).error || "");
+      if (r.status >= 200 && r.status < 300 && (body as { isSuccess?: boolean }).isSuccess !== false) {
+        // Consultamos por id explícito → el objeto devuelto ES ese producto.
+        const obj = (body.objects ?? body.data ?? null) as Record<string, unknown> | null;
+        if (obj && typeof obj === "object") {
+          const hit = mapDropiRaw(obj);
+          if (hit) return { product: hit, diag, reason: "ok" };
+        }
+        sawCatalog = true; // respondió OK pero sin producto usable → el id no existe/visible
+      } else if (/expir|vencid|token is expired/i.test(msg)) {
+        webExpired = true;
+        diag.push("web:expired");
+      }
+    }
+  } else {
+    diag.push("nosess");
+  }
+
+  // ── 2) Integraciones (key permanente) — best-effort (acá: denegado) ─────────
   if (cfg.apiKey) {
     const intHeaders: Record<string, string> = {
       "Content-Type": "application/json",
@@ -367,8 +411,14 @@ async function fetchDropiProductById(
     }
     const getPage = async (params: URLSearchParams) =>
       await fetchWithTimeout(`${cfg.base}/integrations/products/myproducts?${params.toString()}`, { headers: intHeaders }, 9000);
+    const denied = (txt: string) => {
+      let b: Record<string, unknown> = {};
+      try { b = txt ? JSON.parse(txt) : {}; } catch { return false; }
+      const m = String((b as { message?: string }).message || "");
+      return (b as { isSuccess?: boolean }).isSuccess === false && /permiso|denied|access/i.test(m);
+    };
 
-    // 1a) tiro directo por keyword=id (por si el buscador matchea id/sku).
+    // 2a) tiro directo por keyword=id (por si el buscador matchea id/sku).
     {
       const params = new URLSearchParams({
         keywords: String(id), textToSearch: String(id),
@@ -379,59 +429,49 @@ async function fetchDropiProductById(
         const txt = await res.text();
         const arr = extractProductArray(txt);
         diag.push(`kw:${res.status}/${arr.length}`);
+        if (denied(txt)) { intDenied = true; diag.push("int:denied"); }
+        if (arr.length > 0) sawCatalog = true;
         const hit = arr.map(mapDropiRaw).find((p): p is DropiProductHit => p != null && p.id === id);
-        if (hit) return { product: hit, diag };
+        if (hit) return { product: hit, diag, reason: "ok" };
       } else {
         diag.push("kw:net");
       }
     }
 
-    // 1b) barrido paginado SIN keyword (lista completa del catálogo propio).
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const start = String(page * PAGE);
-      const params = new URLSearchParams({
-        pageSize: String(PAGE), startData: start, result_number: String(PAGE), start,
-      });
-      const res = await getPage(params);
-      if (!res) { diag.push(`sweep${page}:net`); break; }
-      if (!res.ok) { diag.push(`sweep${page}:${res.status}`); break; }
-      const txt = await res.text();
-      const arr = extractProductArray(txt);
-      const hit = arr.map(mapDropiRaw).find((p): p is DropiProductHit => p != null && p.id === id);
-      if (hit) { diag.push(`sweep:hit@p${page}`); return { product: hit, diag }; }
-      if (arr.length < PAGE) { diag.push(`sweep:miss/${page * PAGE + arr.length}`); break; }
+    // 2b) barrido paginado SIN keyword (lista completa del catálogo propio).
+    if (!intDenied) {
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const start = String(page * PAGE);
+        const params = new URLSearchParams({
+          pageSize: String(PAGE), startData: start, result_number: String(PAGE), start,
+        });
+        const res = await getPage(params);
+        if (!res) { diag.push(`sweep${page}:net`); break; }
+        if (!res.ok) { diag.push(`sweep${page}:${res.status}`); break; }
+        const txt = await res.text();
+        if (denied(txt)) { intDenied = true; diag.push("int:denied"); break; }
+        const arr = extractProductArray(txt);
+        if (arr.length > 0) sawCatalog = true;
+        const hit = arr.map(mapDropiRaw).find((p): p is DropiProductHit => p != null && p.id === id);
+        if (hit) { diag.push(`sweep:hit@p${page}`); return { product: hit, diag, reason: "ok" }; }
+        if (arr.length < PAGE) { diag.push(`sweep:miss/${page * PAGE + arr.length}`); break; }
+      }
     }
   } else {
     diag.push("nokey");
   }
 
-  // ── 2) Panel web (session token, legacy) — endpoint verificado de detalle ───
-  if (cfg.sessionToken) {
-    try {
-      const { status, body } = await dropiWebFetch(
-        { base: cfg.base, sessionToken: cfg.sessionToken, storeUrl: cfg.storeUrl },
-        `/api/products/productlist/v1/show/?id=${id}`,
-        { method: "GET" },
-      );
-      diag.push(`web:${status}`);
-      if (status >= 200 && status < 300) {
-        // Consultamos por id explícito → el objeto devuelto ES ese producto;
-        // confiamos en el parseo (no exigimos re-match del id por si viene anidado).
-        const obj = (body?.objects ?? body?.data ?? null) as Record<string, unknown> | null;
-        if (obj && typeof obj === "object") {
-          const hit = mapDropiRaw(obj);
-          if (hit) return { product: hit, diag };
-        }
-      }
-    } catch (e) {
-      diag.push(`web:${e instanceof WebFallbackError ? "tok" : "err"}`);
-    }
-  } else {
-    diag.push("nosess");
-  }
+  // ── Reason: lo más accionable para el dueño ────────────────────────────────
+  let reason: GetProductReason = "not_found";
+  if (!cfg.apiKey && !cfg.sessionToken) reason = "no_creds";
+  else if (sawCatalog) reason = "not_found";          // vimos catálogo, el id no está/visible
+  else if (webExpired) reason = "sess_expired";       // hay que refrescar el token web
+  else if (!cfg.sessionToken && intDenied) reason = "sess_missing"; // integración negada y sin token web
+  else if (!cfg.sessionToken) reason = "sess_missing";
+  else reason = "not_found";
 
-  console.log("[shopify-push-dropi] get_product MISS", { id, diag });
-  return { product: null, diag };
+  console.log("[shopify-push-dropi] get_product MISS", { id, diag, reason });
+  return { product: null, diag, reason };
 }
 
 // ===========================================================================
@@ -598,11 +638,22 @@ Deno.serve(async (req: Request) => {
         return json({ ok: false, error: "La tienda no tiene credenciales de Dropi" }, 400, cors);
       }
       try {
-        const { product, diag } = await fetchDropiProductById(dropiCfgG, pid);
+        const { product, diag, reason } = await fetchDropiProductById(dropiCfgG, pid);
         if (!product) {
-          return json({ ok: false, error: "No se encontró ese producto en tu Dropi (verificá el ID).", diag }, 404, cors);
+          // Mensaje accionable según el motivo (token de sesión vencido/ausente
+          // vs producto inexistente). 422 = "arreglá la credencial"; 404 = "no está".
+          const tokenMsg = "Tu token de sesión de Dropi venció o falta. Refrescalo en Admin → Credenciales Dropi (vence ~12 h), o cargá el producto a mano.";
+          const map: Record<string, { status: number; error: string }> = {
+            sess_expired: { status: 422, error: tokenMsg },
+            sess_missing: { status: 422, error: tokenMsg },
+            no_creds: { status: 400, error: "La tienda no tiene credenciales de Dropi." },
+            int_denied: { status: 422, error: tokenMsg },
+            not_found: { status: 404, error: "No se encontró ese producto en tu Dropi (verificá el ID)." },
+          };
+          const m = map[reason] ?? map.not_found;
+          return json({ ok: false, error: m.error, reason, diag }, m.status, cors);
         }
-        return json({ ok: true, product, diag }, 200, cors);
+        return json({ ok: true, product, diag, reason }, 200, cors);
       } catch (e) {
         return json({ ok: false, error: e instanceof Error ? e.message : "No se pudo traer el producto de Dropi" }, 502, cors);
       }
