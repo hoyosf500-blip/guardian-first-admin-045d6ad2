@@ -196,16 +196,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResp({ error: "POST only" }, 405, CORS);
 
   try {
-    const authHeader = req.headers.get("Authorization") ?? "";
-    if (!authHeader) return jsonResp({ error: "Falta Authorization header" }, 401, CORS);
-
-    const sb = createClient(
+    const sbAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } },
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return jsonResp({ error: "no auth" }, 401, CORS);
 
     const body = (await req.json().catch(() => ({}))) as {
       store_id?: string; days?: number; offset?: number;
@@ -215,20 +209,35 @@ Deno.serve(async (req) => {
     const offset = Math.max(0, Number(body.offset) || 0);
     if (!storeId) return jsonResp({ error: "store_id requerido" }, 400, CORS);
 
-    const sbAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
-    // Gate: solo manager (owner/supervisor) — hay PII de clientes en juego.
-    const { data: membership } = await sbAdmin
-      .from("store_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("store_id", storeId)
-      .in("role", ["owner", "supervisor"])
-      .maybeSingle();
-    if (!membership) return jsonResp({ error: "Solo managers (owner/supervisor)" }, 403, CORS);
+    // Auth DUAL:
+    //  - CRON (aprende solo): x-cron-secret === app_settings.cron_shared_secret. Lo
+    //    dispara pg_cron sin JWT de usuario (mismo patrón que wa-status-notifier).
+    //  - USUARIO: JWT + gate manager (owner/supervisor) — hay PII de clientes en juego.
+    const cronSecret = req.headers.get("x-cron-secret") || "";
+    if (cronSecret) {
+      const { data: secretRow } = await sbAdmin
+        .from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
+      const expected = secretRow?.value ? String(secretRow.value) : "";
+      if (!expected || cronSecret !== expected) return jsonResp({ error: "unauthorized" }, 401, CORS);
+    } else {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      if (!authHeader) return jsonResp({ error: "Falta Authorization header" }, 401, CORS);
+      const sb = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return jsonResp({ error: "no auth" }, 401, CORS);
+      const { data: membership } = await sbAdmin
+        .from("store_members")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("store_id", storeId)
+        .in("role", ["owner", "supervisor"])
+        .maybeSingle();
+      if (!membership) return jsonResp({ error: "Solo managers (owner/supervisor)" }, 403, CORS);
+    }
 
     const apiKey = Deno.env.get("WA_AI_API_KEY") || Deno.env.get("KIE_API_KEY") ||
       Deno.env.get("ANTHROPIC_API_KEY") || "";
