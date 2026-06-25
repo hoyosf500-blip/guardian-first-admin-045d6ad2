@@ -16,11 +16,13 @@ const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
-const KNOWLEDGE_PLACEHOLDER = `Ej: ClearZal es una crema de crioterapia para dolor muscular y articular.
-- Para qué sirve: alivia dolor de espalda, rodillas, hombros y golpes.
-- Cómo se usa: aplicar una capa fina en la zona, masajear hasta absorber, 2-3 veces al día.
-- Dudas comunes: no mancha la ropa, apto para adultos, no usar en heridas abiertas.
-- Si preguntan por resultados: el alivio se siente a los pocos minutos por el efecto frío.`;
+const KNOWLEDGE_PLACEHOLDER = `Escribilo como si se lo explicaras a una asesora nueva — el bot lo usa tal cual.
+
+Ej (ClearZal, crema de crioterapia):
+- Qué es / para qué sirve: crema para dolor muscular y articular (espalda, rodillas, hombros, golpes).
+- Cómo se usa: una capa fina en la zona, masajear hasta absorber, 2-3 veces al día.
+- Preguntas frecuentes: ¿mancha la ropa? No. ¿Es para adultos? Sí. ¿En heridas abiertas? No.
+- Objeciones / cómo responder: "¿funciona?" → el alivio se siente a los pocos minutos por el efecto frío.`;
 
 interface PkRow {
   id: string;
@@ -116,7 +118,7 @@ export default function ProductKnowledgePanel() {
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Conocimiento de productos (bot) · {activeStore?.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Definí qué es cada producto. El bot lo usa para responderle al cliente (qué es, para qué sirve, cómo se usa).
+            El "cerebro" de cada producto: qué es, para qué sirve, preguntas frecuentes y objeciones. El bot lo suma a su personalidad (pestaña <span className="font-medium text-foreground">Bot WhatsApp</span>) SOLO cuando el cliente compró ese producto.
           </p>
         </div>
         {edit === null && (
@@ -195,7 +197,7 @@ export default function ProductKnowledgePanel() {
         )}
 
         <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-[11px] text-muted-foreground">
-          💡 El bot identifica el producto de cada pedido por su <strong className="text-foreground">nombre</strong> (lo que escribís en "coincide con"). El <strong>ID de Dropi</strong> es opcional hoy y se usará para un match exacto más adelante. Las reglas de seguridad del bot (no inventar guía/estado) siguen activas siempre.
+          💡 <strong className="text-foreground">Cómo se combinan:</strong> la <strong className="text-foreground">personalidad y reglas generales</strong> viven en la pestaña <strong className="text-foreground">Bot WhatsApp</strong> (valen para todo); <strong className="text-foreground">acá</strong> va lo específico de cada producto. El bot junta las dos cosas y usa la ficha SOLO del producto que el cliente compró (lo cruza por el <strong>nombre</strong> de "coincide con"). Las reglas de seguridad (no inventar guía/estado) siguen activas siempre.
         </div>
       </div>
     </motion.div>
@@ -318,14 +320,17 @@ function ProductEditor({
       </div>
 
       <div>
-        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">¿Qué es el producto? (lo que sabe el bot) *</label>
+        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">¿Qué sabe el bot de este producto? — su mini-prompt *</label>
         <textarea
           value={knowledge}
           onChange={(e) => setKnowledge(e.target.value)}
           placeholder={KNOWLEDGE_PLACEHOLDER}
-          rows={8}
+          rows={9}
           className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
         />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Poné acá <strong className="text-foreground">todo lo de ESTE producto</strong>: qué es, para qué sirve, cómo se usa, preguntas frecuentes y objeciones (con cómo responderlas). La personalidad y las reglas generales NO van acá — van en <strong className="text-foreground">Bot WhatsApp</strong>.
+        </p>
       </div>
 
       <details className="text-xs">

@@ -182,7 +182,7 @@ export default function WaBotConfigPanel() {
 
         {/* Prompt / personalidad */}
         <div>
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Personalidad e instrucciones (prompt)</label>
+          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Personalidad e instrucciones GENERALES (prompt)</label>
           <textarea
             value={systemPrompt}
             onChange={e => setSystemPrompt(e.target.value)}
@@ -194,6 +194,8 @@ export default function WaBotConfigPanel() {
             🔒 <strong className="text-foreground">Seguridad siempre activa:</strong> aunque dejes esto vacío o cambies todo, el bot
             <strong> nunca inventa</strong> estado/guía, <strong>escala a un humano</strong> ante enojo o reclamos de dinero, y <strong>no vende</strong> nada.
             Esas reglas se aplican solas. Acá definís tono y estilo. Vacío = usa la personalidad por defecto de seguimiento.
+            <br /><br />
+            👉 Esto es la <strong className="text-foreground">personalidad y reglas GENERALES</strong> (valen para todos los productos). Lo específico de cada producto —qué es, preguntas y objeciones— va en la pestaña <strong className="text-foreground">Productos (bot)</strong>; el bot lo suma solo cuando el cliente compró ese producto.
           </div>
         </div>
 
