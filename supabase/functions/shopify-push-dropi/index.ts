@@ -230,6 +230,36 @@ function pickDropiDescription(pr: Record<string, unknown>): string | undefined {
   return text ? text.slice(0, 1500) : undefined;
 }
 
+// Mapea un producto crudo de Dropi (cualquier endpoint) a DropiProductHit.
+// Devuelve null si la fila no tiene un id válido. Compartido por la búsqueda por
+// nombre (search_products) y la traída por ID (get_product).
+function mapDropiRaw(p: unknown): DropiProductHit | null {
+  const pr = p as Record<string, unknown>;
+  const id = Number(pr.id);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  const variations: DropiVariationHit[] = Array.isArray(pr.variations)
+    ? (pr.variations as Record<string, unknown>[]).map((v) => ({
+      id: Number(v.id),
+      name: String(
+        (Array.isArray(v.attribute_values)
+          ? (v.attribute_values as Record<string, unknown>[]).map((a) => a.value).filter(Boolean).join(" / ")
+          : "") || v.name || v.sku || `var ${v.id}`,
+      ),
+      sku: v.sku ? String(v.sku) : undefined,
+    })).filter((v) => Number.isFinite(v.id) && v.id > 0)
+    : [];
+  return {
+    id,
+    name: String(pr.name || pr.title || `Producto ${id}`),
+    type: String(pr.type || "SIMPLE"),
+    sku: pr.sku ? String(pr.sku) : undefined,
+    price: Number(pr.sale_price) || undefined,
+    variations,
+    image: pickDropiImage(pr),
+    description: pickDropiDescription(pr),
+  };
+}
+
 /** Busca productos en el catálogo de Dropi (estilo Dropify) vía la API de
  *  integraciones: GET {base}/integrations/products/myproducts. Manda ambos sets
  *  de params conocidos (pageSize/startData/keywords y result_number/start/
@@ -269,30 +299,102 @@ async function searchDropiProducts(
     Array.isArray(data) ? data :
     Array.isArray((data as { data?: unknown[] })?.data) ? (data as { data: unknown[] }).data :
     Array.isArray(raw) ? (raw as unknown[]) : [];
-  return arr.map((p) => {
-    const pr = p as Record<string, unknown>;
-    const variations: DropiVariationHit[] = Array.isArray(pr.variations)
-      ? (pr.variations as Record<string, unknown>[]).map((v) => ({
-        id: Number(v.id),
-        name: String(
-          (Array.isArray(v.attribute_values)
-            ? (v.attribute_values as Record<string, unknown>[]).map((a) => a.value).filter(Boolean).join(" / ")
-            : "") || v.name || v.sku || `var ${v.id}`,
-        ),
-        sku: v.sku ? String(v.sku) : undefined,
-      })).filter((v) => Number.isFinite(v.id) && v.id > 0)
-      : [];
-    return {
-      id: Number(pr.id),
-      name: String(pr.name || pr.title || `Producto ${pr.id}`),
-      type: String(pr.type || "SIMPLE"),
-      sku: pr.sku ? String(pr.sku) : undefined,
-      price: Number(pr.sale_price) || undefined,
-      variations,
-      image: pickDropiImage(pr),
-      description: pickDropiDescription(pr),
+  return arr.map(mapDropiRaw).filter((p): p is DropiProductHit => p != null);
+}
+
+/** fetch con timeout (AbortController) — para no colgar la función si un endpoint
+ *  de Dropi no responde mientras probamos varias rutas en get_product. */
+async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Trae UN producto del catálogo de Dropi por su id (para el atajo "pegá el ID"
+ *  en /admin → Productos del bot). Estrategia tolerante a fallos:
+ *   1) API de integraciones (integration-key PERMANENTE) — varias formas conocidas
+ *      del endpoint de productos (Dropi ignora params que no usa).
+ *   2) Panel web (session token, legacy) — endpoint VERIFICADO de detalle de
+ *      producto (PASO A de la cotización: /api/products/productlist/v1/show/?id=).
+ *  Devuelve null si ninguna ruta lo encuentra (el caller vincula el id "a ciegas"
+ *  para no bloquear). Nunca tira por una ruta caída — cada intento es best-effort. */
+async function fetchDropiProductById(
+  cfg: { base: string; apiKey: string; sessionToken: string; storeUrl: string },
+  id: number,
+): Promise<DropiProductHit | null> {
+  // Extrae el producto que matchea `id` de cualquier envelope (objects/data/array/objeto suelto).
+  const fromText = (txt: string): DropiProductHit | null => {
+    let body: Record<string, unknown> = {};
+    try { body = txt ? JSON.parse(txt) : {}; } catch { return null; }
+    const objects = body.objects as unknown;
+    const data = body.data as unknown;
+    const arr: unknown[] =
+      Array.isArray(objects) ? objects :
+      Array.isArray((objects as { data?: unknown[] })?.data) ? (objects as { data: unknown[] }).data :
+      Array.isArray(data) ? data :
+      Array.isArray((data as { data?: unknown[] })?.data) ? (data as { data: unknown[] }).data :
+      Array.isArray(body) ? (body as unknown[]) :
+      (objects && typeof objects === "object") ? [objects] :
+      (data && typeof data === "object") ? [data] :
+      (body.id != null) ? [body] : [];
+    const hits = arr.map(mapDropiRaw).filter((p): p is DropiProductHit => p != null);
+    return hits.find((h) => h.id === id) ?? (hits.length === 1 ? hits[0] : null);
+  };
+
+  // ── 1) Integraciones (key permanente) ──────────────────────────────────────
+  if (cfg.apiKey) {
+    const intHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "dropi-integration-key": cfg.apiKey,
     };
-  }).filter((p) => Number.isFinite(p.id) && p.id > 0);
+    if (cfg.storeUrl) {
+      intHeaders["Origin"] = cfg.storeUrl;
+      intHeaders["Referer"] = cfg.storeUrl.endsWith("/") ? cfg.storeUrl : `${cfg.storeUrl}/`;
+    }
+    for (const path of [
+      `/integrations/products/myproducts?id=${id}`,
+      `/integrations/products/myproducts?product_id=${id}`,
+      `/integrations/products/show/${id}`,
+      `/integrations/products/${id}`,
+    ]) {
+      const res = await fetchWithTimeout(`${cfg.base}${path}`, { headers: intHeaders }, 6000);
+      if (!res) continue;
+      const txt = await res.text();
+      console.log("[shopify-push-dropi] get_product(int)", { path, status: res.status, preview: txt.slice(0, 160) });
+      if (!res.ok) continue;
+      const hit = fromText(txt);
+      if (hit) return hit;
+    }
+  }
+
+  // ── 2) Panel web (session token, legacy) — endpoint verificado de detalle ───
+  if (cfg.sessionToken) {
+    try {
+      const { status, body } = await dropiWebFetch(
+        { base: cfg.base, sessionToken: cfg.sessionToken, storeUrl: cfg.storeUrl },
+        `/api/products/productlist/v1/show/?id=${id}`,
+        { method: "GET" },
+      );
+      if (status >= 200 && status < 300) {
+        const obj = (body?.objects ?? body?.data ?? null) as Record<string, unknown> | null;
+        if (obj && typeof obj === "object") {
+          const hit = mapDropiRaw(obj);
+          if (hit) return hit;
+        }
+      }
+    } catch {
+      // WebFallbackError (token vencido) o red caída → seguimos a null.
+    }
+  }
+
+  return null;
 }
 
 // ===========================================================================
@@ -419,6 +521,7 @@ Deno.serve(async (req: Request) => {
     const storeId = typeof body.store_id === "string" ? body.store_id.trim() : "";
     const mode = body.mode === "confirm" ? "confirm"
       : body.mode === "search_products" ? "search_products"
+      : body.mode === "get_product" ? "get_product"
       : body.mode === "list_shopify_products" ? "list_shopify_products"
       : body.mode === "audit" ? "audit"
       : "preview";
@@ -442,6 +545,29 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, products }, 200, cors);
       } catch (e) {
         return json({ ok: false, error: e instanceof Error ? e.message : "No se pudo buscar en Dropi" }, 502, cors);
+      }
+    }
+
+    // Modo traer UN producto por id (atajo "pegá el ID" en /admin → Productos del
+    // bot): devuelve nombre + foto + descripción para autocompletar la ficha. Si no
+    // se encuentra, responde 404 y el front vincula el id "a ciegas" (no bloquea).
+    if (mode === "get_product") {
+      const pid = Number(body.dropi_product_id ?? body.id);
+      if (!Number.isFinite(pid) || pid <= 0) {
+        return json({ ok: false, error: "ID de Dropi inválido" }, 400, cors);
+      }
+      const dropiCfgG = await loadStoreConfig(sb, storeId);
+      if (!dropiCfgG.apiKey && !dropiCfgG.sessionToken) {
+        return json({ ok: false, error: "La tienda no tiene credenciales de Dropi" }, 400, cors);
+      }
+      try {
+        const product = await fetchDropiProductById(dropiCfgG, pid);
+        if (!product) {
+          return json({ ok: false, error: "No se encontró ese producto en tu Dropi (verificá el ID)." }, 404, cors);
+        }
+        return json({ ok: true, product }, 200, cors);
+      } catch (e) {
+        return json({ ok: false, error: e instanceof Error ? e.message : "No se pudo traer el producto de Dropi" }, 502, cors);
       }
     }
 

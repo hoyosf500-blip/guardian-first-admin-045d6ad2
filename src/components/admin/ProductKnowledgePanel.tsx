@@ -287,7 +287,7 @@ function ProductEditor({
             />
           )}
           <p className="text-[11px] text-muted-foreground">
-            Buscá el producto en tu Dropi y se autocompletan <strong className="text-foreground">nombre, ID y foto</strong>. Después editá lo que quieras abajo.
+            Buscá por nombre <strong className="text-foreground">o pegá el ID de Dropi</strong> y se autocompletan <strong className="text-foreground">nombre, foto y descripción</strong>. Después editá lo que quieras abajo.
           </p>
         </div>
       </div>

@@ -24,9 +24,10 @@ interface Props {
  * rate-limit (429 "Too Many Attempts") cuando solo se quiere corregir un id.
  */
 export default function DropiProductSearch({ storeId, onSelect, busy }: Props) {
-  const { searchDropiProducts } = usePushToDropi(storeId);
+  const { searchDropiProducts, getDropiProduct } = usePushToDropi(storeId);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
+  const [linking, setLinking] = useState(false); // trayendo un producto por id pegado
   const [results, setResults] = useState<DropiProductHit[]>([]);
   const [searched, setSearched] = useState(false);
   const [pending, setPending] = useState<DropiProductHit | null>(null); // VARIABLE esperando variación
@@ -50,9 +51,36 @@ export default function DropiProductSearch({ storeId, onSelect, busy }: Props) {
     } finally { setLoading(false); }
   }
 
-  function linkDirect() {
-    if (asId == null) return;
-    onSelect(asId, null, `Dropi #${asId}`);
+  // Pegaron un ID: traemos el producto real de Dropi (nombre + foto + descripción)
+  // y autocompletamos. Si Dropi no lo devuelve, lo vinculamos igual "a ciegas"
+  // para no bloquear al dueño (nunca se queda colgado).
+  async function linkDirect() {
+    if (asId == null || linking) return;
+    setLinking(true);
+    try {
+      const hit = await getDropiProduct(asId);
+      if (hit) {
+        if (hit.type?.toUpperCase() === 'VARIABLE' && (hit.variations?.length ?? 0) > 0) {
+          setPending(hit); // pedimos la variación, igual que en la búsqueda por nombre
+          toast.success(`Encontrado: ${hit.name}. Elegí la variación.`);
+        } else {
+          onSelect(hit.id, null, hit.name, hit);
+          toast.success(`Traído de Dropi: ${hit.name}`);
+        }
+      } else {
+        onSelect(asId, null, `Dropi #${asId}`);
+        toast.warning(`Vinculé el ID #${asId}, pero Dropi no devolvió los datos. Completá nombre y descripción a mano.`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      const friendly = /too many|429|throttl|limit|límit/i.test(msg)
+        ? 'Dropi está limitando las consultas. Esperá ~1 min e intentá de nuevo.'
+        : (msg || `No se pudo traer el producto #${asId} de Dropi.`);
+      onSelect(asId, null, `Dropi #${asId}`);
+      toast.warning(`Vinculé el ID #${asId} sin datos. ${friendly} Completá nombre y descripción a mano.`);
+    } finally {
+      setLinking(false);
+    }
   }
 
   function pick(p: DropiProductHit) {
@@ -64,13 +92,13 @@ export default function DropiProductSearch({ storeId, onSelect, busy }: Props) {
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <input value={q} onChange={e => setQ(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (asId != null) linkDirect(); else void run(); } }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (asId != null) void linkDirect(); else void run(); } }}
           placeholder="Nombre del producto, o pegá el ID de Dropi…"
           className="h-8 flex-1 min-w-0 rounded border border-border bg-background px-2 text-sm" />
         {asId != null ? (
-          <button type="button" onClick={linkDirect} disabled={busy}
+          <button type="button" onClick={() => void linkDirect()} disabled={busy || linking}
             className="h-8 px-3 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
-            <Link2 size={12} /> Vincular #{asId}
+            {linking ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Traer #{asId}
           </button>
         ) : (
           <button type="button" onClick={() => void run()} disabled={loading || busy || trimmed.length < 2}
@@ -82,7 +110,9 @@ export default function DropiProductSearch({ storeId, onSelect, busy }: Props) {
 
       {asId != null && (
         <div className="text-[11px] text-muted-foreground">
-          Vas a vincular el <strong className="text-foreground">ID de Dropi #{asId}</strong> directo (sin verificar contra Dropi). Si no estás seguro de que sea el correcto, escribí el <strong>nombre</strong> del producto para buscarlo.
+          {linking
+            ? <>Trayendo el producto <strong className="text-foreground">#{asId}</strong> desde Dropi…</>
+            : <>Vas a traer el producto <strong className="text-foreground">#{asId}</strong> desde Dropi (nombre, foto y descripción). Si no aparece, lo vinculo igual por ID para que completes a mano.</>}
         </div>
       )}
 
