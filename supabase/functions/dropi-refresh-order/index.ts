@@ -118,11 +118,14 @@ Deno.serve(async (req) => {
     }
 
     const data = await res.json();
-    // El response puede venir como { object: {...} } o { objects: [{...}] } o
-    // directamente el objeto. Cubrimos los 3.
+    // El response puede venir como { objects: {OBJETO} } (objeto suelto — caso real
+    // verificado 2026-06-24), { object: {...} }, { objects: [{...}] }, o directo.
+    // Cubrimos los 4 (antes NO manejaba `objects` objeto-suelto → 502 "sin objeto
+    // pedido" sobre TODOS los refresh).
+    const objects = (data as Record<string, unknown>)?.objects;
     const raw =
       (data as Record<string, unknown>)?.object ??
-      ((data as Record<string, unknown>)?.objects as Array<Record<string, unknown>> | undefined)?.[0] ??
+      (Array.isArray(objects) ? objects[0] : objects) ??
       data;
     const orderObj = raw as Record<string, unknown>;
 

@@ -19,6 +19,8 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadWaChannel, sendAndRecord } from "../_shared/waChannel.ts";
 import { getTrackingUrl } from "../_shared/waTracking.ts";
+import { loadStoreConfig } from "../_shared/dropiStoreConfig.ts";
+import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
 
 // Proveedor LLM configurable por env. Por defecto kie.ai, cuyo endpoint de
 // Claude (/claude/v1/messages) es Anthropic-compatible (mismos `messages` +
@@ -139,6 +141,80 @@ async function buildOrderData(
     producto: data.producto != null ? String(data.producto) : "",
     productIds: data.product_ids != null ? String(data.product_ids) : "",
   };
+}
+
+// Estados FINALES: el pedido ya no se mueve → no gastamos una llamada a Dropi.
+const ESTADO_FINAL = new Set([
+  "ENTREGADO", "CANCELADO", "ANULADO", "DEVUELTO", "DEVOLUCION",
+]);
+
+/** Refresca EN VIVO desde Dropi el pedido vinculado, ANTES de que el bot responda,
+ *  para no darle al cliente un estado VIEJO si el cron se atrasó (escenario:
+ *  "guía generada" en la DB pero "en reparto" en Dropi → el cliente duda y se cae
+ *  la venta). Best-effort y silencioso: si el pedido ya está en estado final, si
+ *  Dropi limita (429) / no responde, o si algo falla, deja el dato actual de la DB
+ *  (el bot igual NO inventa). Reusa el endpoint probado de dropi-refresh-order
+ *  (`GET /integrations/orders/myorders/{id}` con la integration-key — los PEDIDOS
+ *  sí los lee el edge, a diferencia de los productos). Escribe SOLO los campos de
+ *  tracking vía UPDATE (no toca uploaded_by ni el resto). */
+async function refreshLinkedOrderLive(
+  sbAdmin: SupabaseClient,
+  storeId: string,
+  externalId: string,
+): Promise<{ refreshed: boolean; estado?: string }> {
+  try {
+    const cur = await sbAdmin
+      .from("orders")
+      .select("estado")
+      .eq("store_id", storeId)
+      .eq("external_id", externalId)
+      .maybeSingle();
+    const estadoActual = String(cur.data?.estado || "").toUpperCase().trim();
+    if (estadoActual && ESTADO_FINAL.has(estadoActual)) return { refreshed: false, estado: estadoActual };
+
+    const cfg = await loadStoreConfig(sbAdmin, storeId);
+    if (!cfg.apiKey) return { refreshed: false };
+
+    const origin = cfg.storeUrl || "";
+    const url = `${cfg.base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "dropi-integration-key": cfg.apiKey,
+        ...(origin ? { Origin: origin, Referer: origin.endsWith("/") ? origin : `${origin}/` } : {}),
+      },
+    });
+    if (!res.ok) return { refreshed: false, estado: estadoActual }; // 429/404/5xx → dato de la DB
+
+    const data = await res.json().catch(() => null);
+    if (!data) return { refreshed: false, estado: estadoActual };
+    // Dropi devuelve el pedido como { objects: {OBJETO} } (objeto suelto, no array)
+    // o, en otras rutas, { object: {...} } / { objects: [{...}] }. Cubrimos los 3.
+    const objects = (data as Record<string, unknown>)?.objects;
+    const raw =
+      (data as Record<string, unknown>)?.object ??
+      (Array.isArray(objects) ? objects[0] : objects) ??
+      data;
+    const orderObj = raw as Record<string, unknown>;
+    if (!orderObj || (!orderObj.id && !orderObj.external_id)) return { refreshed: false, estado: estadoActual };
+
+    const today = new Date().toISOString().split("T")[0];
+    const mapped = mapDropiOrderToRow(orderObj, "", today, storeId);
+    // Solo los campos de tracking que el bot le muestra al cliente (UPDATE, no
+    // upsert → no necesitamos uploaded_by ni pisamos otros campos).
+    const patch = {
+      estado: mapped.estado,
+      guia: mapped.guia,
+      transportadora: mapped.transportadora,
+      novedad: mapped.novedad,
+      last_movement_at: mapped.last_movement_at,
+    };
+    await sbAdmin.from("orders").update(patch).eq("store_id", storeId).eq("external_id", externalId);
+    return { refreshed: true, estado: String(mapped.estado || estadoActual) };
+  } catch {
+    return { refreshed: false }; // nunca romper la respuesta del bot por el refresh
+  }
 }
 
 // Normaliza para el match por nombre: mayúsculas + sin acentos (mismo criterio
@@ -303,6 +379,13 @@ Deno.serve(async (req) => {
     const storeRes = await sbAdmin.from("stores").select("name, country_code").eq("id", storeId).maybeSingle();
     const storeName = storeRes.data?.name || "la tienda";
     const countryCode = String(storeRes.data?.country_code || "CO");
+    // Antes de responder, traer el estado REAL del pedido desde Dropi (no esperar
+    // al cron) → el bot nunca da un estado viejo. Best-effort: si falla, sigue con
+    // el dato de la DB. Solo para pedidos no-finales.
+    if (conv.linked_external_id) {
+      const rf = await refreshLinkedOrderLive(sbAdmin, storeId, conv.linked_external_id);
+      if (rf.refreshed) console.log("[wa-ai-responder] live-refresh", conv.linked_external_id, "→", rf.estado);
+    }
     const order = await buildOrderData(sbAdmin, storeId, conv.linked_external_id, countryCode);
     const productKnowledge = await buildProductKnowledge(sbAdmin, storeId, order.producto, order.productIds);
 
