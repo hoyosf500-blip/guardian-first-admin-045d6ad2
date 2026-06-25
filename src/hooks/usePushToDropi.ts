@@ -120,6 +120,23 @@ export function usePushToDropi(storeId: string | null) {
     return r.products ?? [];
   }, [storeId]);
 
+  /** Trae UN producto de Dropi por su id (atajo "pegá el ID" en /admin →
+   *  Productos del bot). Devuelve el producto (nombre + foto + descripción) o
+   *  null si Dropi no lo encontró — el caller decide si vincula igual a ciegas. */
+  const getDropiProduct = useCallback(async (dropiProductId: number): Promise<DropiProductHit | null> => {
+    if (!storeId || !Number.isFinite(dropiProductId) || dropiProductId <= 0) return null;
+    const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
+      body: { store_id: storeId, mode: 'get_product', dropi_product_id: dropiProductId },
+    });
+    const r = await parseInvoke<{ ok: boolean; product?: DropiProductHit; error?: string }>(data, error);
+    if (!r.ok) {
+      // 404 (no encontrado) NO es excepción: devolvemos null para vincular a ciegas.
+      if (/no se encontró|verificá el id/i.test(r.error || '')) return null;
+      throw new Error(r.error || 'No se pudo traer el producto de Dropi');
+    }
+    return r.product ?? null;
+  }, [storeId]);
+
   /** Lista el catálogo de Shopify de la tienda (para el panel de vínculos en
    *  /admin: marcar qué productos ya están vinculados a Dropi). */
   const listShopifyProducts = useCallback(async (): Promise<ShopifyProductLite[]> => {
@@ -132,5 +149,5 @@ export function usePushToDropi(storeId: string | null) {
     return r.products ?? [];
   }, [storeId]);
 
-  return { preview, confirm, linkProduct, searchDropiProducts, listShopifyProducts };
+  return { preview, confirm, linkProduct, searchDropiProducts, getDropiProduct, listShopifyProducts };
 }
