@@ -142,7 +142,9 @@ class WhapiTransport implements WaTransport {
 
   parseInbound(payload: unknown): WaInboundMessage[] {
     const p = (payload ?? {}) as { messages?: WhapiRawMessage[] };
-    const raw = Array.isArray(p.messages) ? p.messages : [];
+    // Cap defensivo: el webhook es público (solo gateado por secreto). Un payload
+    // con un array enorme no debe poder reventar la función.
+    const raw = (Array.isArray(p.messages) ? p.messages : []).slice(0, 200);
     return raw.map((m) => ({
       waMessageId: String(m.id ?? ""),
       fromPhone: onlyDigits(m.from ?? m.chat_id ?? ""),
@@ -157,14 +159,135 @@ class WhapiTransport implements WaTransport {
   }
 }
 
+// ─── Evolution API (gateway open-source self-host: "tu propio Whapi") ─────────
+//
+// API v2: base = URL del server propio (ej. https://bot.tudominio.com), auth con
+// header `apikey` (API key global de Evolution), y se opera POR INSTANCIA (un
+// número = una instancia). El QR se escanea en el Manager propio de Evolution.
+//   - Enviar:  POST {base}/message/sendText/{instance}  { number, text } → { key:{ id } }
+//   - Webhook: POST { event:"messages.upsert", instance, data:{ key:{ remoteJid, fromMe,
+//              id }, pushName, message:{ conversation | extendedTextMessage:{text} |
+//              imageMessage:{caption} | ... }, messageTimestamp } }  (data: objeto o array)
+
+interface EvolutionRawMessage {
+  key?: { remoteJid?: string; fromMe?: boolean; id?: string };
+  pushName?: string;
+  messageTimestamp?: number | string;
+  messageType?: string;
+  message?: {
+    conversation?: string;
+    extendedTextMessage?: { text?: string };
+    imageMessage?: { caption?: string };
+    videoMessage?: { caption?: string };
+    documentMessage?: { caption?: string; fileName?: string };
+    audioMessage?: Record<string, unknown>;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}
+
+function evoBody(m: EvolutionRawMessage): string {
+  const msg = m.message || {};
+  return msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    msg.documentMessage?.caption ||
+    "";
+}
+
+function evoMedia(m: EvolutionRawMessage): Record<string, unknown> | null {
+  const msg = m.message || {};
+  for (const k of ["imageMessage", "videoMessage", "documentMessage", "audioMessage"] as const) {
+    if (msg[k]) return { kind: k, ...(msg[k] as Record<string, unknown>) };
+  }
+  return null;
+}
+
+// Grupo / difusión: el remoteJid de grupo termina en "@g.us" y el de status en
+// "@broadcast". El bot NO debe actuar ahí (mismo criterio que Whapi).
+function evoIsGroup(remoteJid: string): boolean {
+  return /@g\.us/i.test(remoteJid) || /@broadcast/i.test(remoteJid);
+}
+
+class EvolutionTransport implements WaTransport {
+  readonly provider: WaProvider = "evolution";
+  private token: string;
+  private base: string;
+  private instance: string;
+
+  constructor(cfg: WaTransportConfig) {
+    this.token = cfg.token;
+    this.base = (cfg.base || "").replace(/\/+$/, "");
+    this.instance = cfg.instanceName || "";
+  }
+
+  async sendText(to: string, body: string): Promise<WaSendResult> {
+    const phone = onlyDigits(to);
+    if (!phone) return { ok: false, error: "Teléfono inválido" };
+    if (!this.token) return { ok: false, error: "Canal sin token (apikey) configurado" };
+    if (!this.base) return { ok: false, error: "Canal sin URL del server (provider_base)" };
+    // Anti-SSRF: el provider_base lo escribe el dueño; exigimos https:// (el server
+    // de Evolution va detrás de HTTPS) para no permitir apuntar a hosts internos/http.
+    if (!/^https:\/\//i.test(this.base)) return { ok: false, error: "provider_base debe ser una URL https://" };
+    if (!this.instance) return { ok: false, error: "Canal sin instancia (instance_name)" };
+    try {
+      const res = await fetch(`${this.base}/message/sendText/${encodeURIComponent(this.instance)}`, {
+        method: "POST",
+        headers: { apikey: this.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ number: phone, text: body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data as { message?: unknown; error?: unknown; response?: { message?: unknown } };
+        const msg = (typeof d?.message === "string" && d.message) ||
+          (d?.response?.message && JSON.stringify(d.response.message)) ||
+          (typeof d?.error === "string" && d.error) ||
+          `Gateway respondió ${res.status}`;
+        return { ok: false, httpStatus: res.status, error: String(msg).slice(0, 200) };
+      }
+      const providerMessageId = (data as { key?: { id?: string } })?.key?.id;
+      return { ok: true, providerMessageId, httpStatus: res.status };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  parseInbound(payload: unknown): WaInboundMessage[] {
+    const p = (payload ?? {}) as { event?: string; data?: EvolutionRawMessage | EvolutionRawMessage[] };
+    // Solo mensajes nuevos. Si viene `event`, exigimos messages.upsert (Evolution
+    // manda muchos otros eventos: messages.update, connection.update, etc.). Si no
+    // viene, caemos a detección por forma (el filtro del webhook descarta vacíos).
+    const ev = String(p.event ?? "").toLowerCase().replace(/_/g, ".");
+    if (ev && ev !== "messages.upsert") return [];
+    // Cap defensivo (webhook público): no procesar arrays gigantes.
+    const raw = (Array.isArray(p.data) ? p.data : (p.data ? [p.data] : [])).slice(0, 200);
+    return raw.map((m) => {
+      const remoteJid = String(m.key?.remoteJid ?? "");
+      return {
+        waMessageId: String(m.key?.id ?? ""),
+        fromPhone: onlyDigits(remoteJid),
+        fromName: m.pushName,
+        type: String(m.messageType ?? "text"),
+        body: evoBody(m),
+        media: evoMedia(m),
+        timestamp: Number(m.messageTimestamp ?? 0) || 0,
+        fromMe: Boolean(m.key?.fromMe),
+        isGroup: evoIsGroup(remoteJid),
+      };
+    }).filter((m) => m.waMessageId && m.fromPhone);
+  }
+}
+
 // ─── Factory ───────────────────────────────────────────────────────────────
-// Hoy solo Whapi está implementado. evolution / cloud_api son el escape hatch
-// documentado: implementan la MISMA interfaz cuando se necesiten.
+// Whapi y Evolution implementados. cloud_api queda como escape hatch documentado
+// (implementa la MISMA interfaz cuando se necesite).
 export function getWaTransport(provider: WaProvider, cfg: WaTransportConfig): WaTransport {
   switch (provider) {
     case "whapi":
       return new WhapiTransport(cfg);
     case "evolution":
+      return new EvolutionTransport(cfg);
     case "cloud_api":
       throw new Error(
         `Transporte '${provider}' aún no implementado. Implementá WaTransport y agregalo al factory (escape hatch del Híbrido H2).`,

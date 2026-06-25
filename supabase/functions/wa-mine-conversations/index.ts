@@ -243,7 +243,9 @@ Deno.serve(async (req) => {
       Deno.env.get("ANTHROPIC_API_KEY") || "";
     if (!apiKey) return jsonResp({ error: "Falta WA_AI_API_KEY (key del proveedor de IA)" }, 500, CORS);
 
-    // Canal Whapi de la tienda (token + base). Solo 'whapi' tiene read API hoy.
+    // Canal de la tienda. 'whapi' lee el historial por su API; los demás proveedores
+    // (evolution/cloud_api) lo leen desde wa_messages (lo que el webhook/inbox ya
+    // guardó), 100% agnóstico al gateway.
     const { data: ch } = await sbAdmin
       .from("wa_channels")
       .select("provider, provider_token, provider_base")
@@ -253,103 +255,141 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!ch) return jsonResp({ error: "La tienda no tiene canal de WhatsApp configurado" }, 400, CORS);
     const provider = String(ch.provider || "whapi");
-    if (provider !== "whapi") {
-      return jsonResp({ error: `Lectura de historial solo implementada para 'whapi' (canal: ${provider})` }, 400, CORS);
-    }
     const token = String(ch.provider_token || "") || Deno.env.get("WHAPI_TOKEN") || "";
-    if (!token) return jsonResp({ error: "Canal sin token configurado" }, 400, CORS);
     const base = String(ch.provider_base || "") || WHAPI_DEFAULT_BASE;
 
     const timeFrom = Math.floor(Date.now() / 1000) - days * 86400;
     const model = DEFAULT_MODEL;
 
-    // ── COLLECT: página de chats desde `offset`, descartando grupos/difusión ──
-    const chatsData = await whapiGet(base, token, "/chats", { count: 100, offset });
-    const allChats = (chatsData.chats as WhapiChat[]) || [];
-    const pageFull = allChats.length >= 100;
-
-    // Recorremos la página EN ORDEN tomando contactos hasta MAX_CHATS_PER_RUN, y
-    // contamos cuántos chats de la API consumimos (incluyendo grupos saltados) para
-    // avanzar el offset EXACTAMENTE. Antes (filter + slice(0,25) + offset+100) se
-    // perdían los contactos 26-100 de una página con grupos intercalados.
-    const contactChats: WhapiChat[] = [];
-    let consumedApiChats = 0;
-    for (const c of allChats) {
-      consumedApiChats++;
-      const id = String(c.id || "");
-      if (!id || String(c.type || "") === "group" || isGroupId(id)) continue;
-      contactChats.push(c);
-      if (contactChats.length >= MAX_CHATS_PER_RUN) break;
-    }
-    // Hay más por procesar si quedaron chats sin mirar en esta página, o si la página
-    // vino llena (probable que haya otra). nextOffset salta SOLO lo consumido.
-    const moreInThisPage = consumedApiChats < allChats.length;
-    const hasMore = moreInThisPage || pageFull;
-    const nextOffset = hasMore ? offset + consumedApiChats : null;
-
+    // ── COLLECT: arma conversations[] (transcripts). 'whapi' lee su API; los demás
+    // proveedores leen de wa_messages (lo que el webhook/inbox ya guardó) → agnóstico.
     const conversations: Conversation[] = [];
     let scrapedCount = 0;
+    let processedChats = 0;
+    let hasMore = false;
+    let nextOffset: number | null = null;
+    const fromIso = new Date(timeFrom * 1000).toISOString();
 
-    for (const chat of contactChats) {
-      const chatId = String(chat.id || "");
-      if (!chatId) continue;
-      let msgs: WhapiMsg[] = [];
-      try {
-        const md = await whapiGet(base, token, `/messages/list/${encodeURIComponent(chatId)}`, {
-          count: MSGS_PER_CHAT, time_from: timeFrom,
-        });
-        msgs = (md.messages as WhapiMsg[]) || [];
-      } catch (e) {
-        console.error("whapi messages error", chatId, String(e));
+    if (provider === "whapi") {
+      if (!token) return jsonResp({ error: "Canal Whapi sin token configurado" }, 400, CORS);
+      // Página de chats desde `offset`, descartando grupos/difusión.
+      const chatsData = await whapiGet(base, token, "/chats", { count: 100, offset });
+      const allChats = (chatsData.chats as WhapiChat[]) || [];
+      const pageFull = allChats.length >= 100;
+      // Recorremos EN ORDEN tomando contactos hasta MAX_CHATS_PER_RUN, contando los
+      // chats de la API consumidos (incluidos grupos saltados) para avanzar el offset
+      // EXACTAMENTE (si no, los contactos 26-100 con grupos intercalados se perdían).
+      const contactChats: WhapiChat[] = [];
+      let consumedApiChats = 0;
+      for (const c of allChats) {
+        consumedApiChats++;
+        const id = String(c.id || "");
+        if (!id || String(c.type || "") === "group" || isGroupId(id)) continue;
+        contactChats.push(c);
+        if (contactChats.length >= MAX_CHATS_PER_RUN) break;
+      }
+      const moreInThisPage = consumedApiChats < allChats.length;
+      hasMore = moreInThisPage || pageFull;
+      nextOffset = hasMore ? offset + consumedApiChats : null;
+      processedChats = contactChats.length;
+
+      for (const chat of contactChats) {
+        const chatId = String(chat.id || "");
+        if (!chatId) continue;
+        let msgs: WhapiMsg[] = [];
+        try {
+          const md = await whapiGet(base, token, `/messages/list/${encodeURIComponent(chatId)}`, {
+            count: MSGS_PER_CHAT, time_from: timeFrom,
+          });
+          msgs = (md.messages as WhapiMsg[]) || [];
+        } catch (e) {
+          console.error("whapi messages error", chatId, String(e));
+          await sleep(WHAPI_RATE_MS);
+          continue;
+        }
         await sleep(WHAPI_RATE_MS);
-        continue;
+        if (!msgs.length) continue;
+
+        // Orden cronológico ascendente (Whapi suele devolver desc).
+        msgs.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+        const phone = onlyDigits(chatId);
+        if (phone.length < 7) continue;
+        const name = String(msgs.find((m) => !m.from_me && m.from_name)?.from_name || chat.name || "");
+
+        // Persistencia best-effort del crudo (dedup por wa_message_id).
+        const rows = msgs
+          .filter((m) => m.id && msgBody(m))
+          .map((m) => ({
+            store_id: storeId, chat_id: chatId, phone, customer_name: name || null,
+            wa_message_id: String(m.id), from_me: Boolean(m.from_me), body: msgBody(m),
+            msg_ts: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null,
+          }));
+        if (rows.length) {
+          const { error: insErr, count } = await sbAdmin
+            .from("wa_scraped_messages")
+            .upsert(rows, { onConflict: "store_id,wa_message_id", ignoreDuplicates: true, count: "exact" });
+          if (!insErr) scrapedCount += count ?? 0;
+          else console.error("scraped upsert error", insErr.message);
+        }
+
+        const customerMsgs = msgs.filter((m) => !m.from_me && msgBody(m));
+        if (!customerMsgs.length) continue;
+
+        let transcript = cleanForPrompt(
+          msgs.filter((m) => msgBody(m)).map((m) => `[${m.from_me ? "tienda" : "cliente"}]: ${msgBody(m)}`).join("\n"),
+        );
+        if (transcript.length > MAX_CONV_CHARS) transcript = transcript.slice(-MAX_CONV_CHARS);
+
+        const ord = await lookupOrder(sbAdmin, storeId, phone);
+        const producto = ord?.producto || "";
+        conversations.push({
+          phone, name, transcript, msgCount: customerMsgs.length,
+          producto, productKey: producto ? norm(producto) : "general",
+          externalId: ord?.external_id || null, estado: ord?.estado || null,
+        });
       }
-      await sleep(WHAPI_RATE_MS);
-      if (!msgs.length) continue;
+    } else {
+      // Evolution / cloud_api: el historial YA está en wa_messages (lo pobló el
+      // webhook/inbox). No se toca el gateway. Paginamos conversaciones por recencia.
+      const { data: convRows } = await sbAdmin
+        .from("wa_conversations")
+        .select("id, customer_phone, customer_name")
+        .eq("store_id", storeId)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .range(offset, offset + MAX_CHATS_PER_RUN - 1);
+      const pageRows = (convRows || []) as Array<{ id: string; customer_phone: string; customer_name: string | null }>;
+      processedChats = pageRows.length;
+      hasMore = pageRows.length >= MAX_CHATS_PER_RUN;
+      nextOffset = hasMore ? offset + pageRows.length : null;
 
-      // Orden cronológico ascendente (Whapi suele devolver desc).
-      msgs.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
-      const phone = onlyDigits(chatId);
-      if (phone.length < 7) continue;
-      const name = String(msgs.find((m) => !m.from_me && m.from_name)?.from_name || chat.name || "");
+      for (const cv of pageRows) {
+        const { data: mrows } = await sbAdmin
+          .from("wa_messages")
+          .select("body, direction, created_at")
+          .eq("store_id", storeId)
+          .eq("conversation_id", cv.id)
+          .gte("created_at", fromIso)
+          .order("created_at", { ascending: true })
+          .limit(MSGS_PER_CHAT);
+        const msgs = (mrows || []) as Array<{ body: string | null; direction: string }>;
+        const customerMsgs = msgs.filter((m) => m.direction === "in" && m.body);
+        if (!customerMsgs.length) continue;
 
-      // Persistencia best-effort del crudo (dedup por wa_message_id).
-      const rows = msgs
-        .filter((m) => m.id && msgBody(m))
-        .map((m) => ({
-          store_id: storeId, chat_id: chatId, phone, customer_name: name || null,
-          wa_message_id: String(m.id), from_me: Boolean(m.from_me), body: msgBody(m),
-          msg_ts: m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null,
-        }));
-      if (rows.length) {
-        // Upsert idempotente: ON CONFLICT (store_id, wa_message_id) DO NOTHING. Sin
-        // race (vs select+filter manual) y sin round-trip extra.
-        const { error: insErr, count } = await sbAdmin
-          .from("wa_scraped_messages")
-          .upsert(rows, { onConflict: "store_id,wa_message_id", ignoreDuplicates: true, count: "exact" });
-        if (!insErr) scrapedCount += count ?? 0;
-        else console.error("scraped upsert error", insErr.message);
+        let transcript = cleanForPrompt(
+          msgs.filter((m) => m.body).map((m) => `[${m.direction === "in" ? "cliente" : "tienda"}]: ${m.body}`).join("\n"),
+        );
+        if (transcript.length > MAX_CONV_CHARS) transcript = transcript.slice(-MAX_CONV_CHARS);
+
+        const phone = onlyDigits(cv.customer_phone);
+        if (phone.length < 7) continue;
+        const ord = await lookupOrder(sbAdmin, storeId, phone);
+        const producto = ord?.producto || "";
+        conversations.push({
+          phone, name: cv.customer_name || "", transcript, msgCount: customerMsgs.length,
+          producto, productKey: producto ? norm(producto) : "general",
+          externalId: ord?.external_id || null, estado: ord?.estado || null,
+        });
       }
-
-      // Solo conversaciones con participación REAL del cliente (no monólogos de la tienda).
-      const customerMsgs = msgs.filter((m) => !m.from_me && msgBody(m));
-      if (!customerMsgs.length) continue;
-
-      let transcript = cleanForPrompt(
-        msgs
-          .filter((m) => msgBody(m))
-          .map((m) => `[${m.from_me ? "tienda" : "cliente"}]: ${msgBody(m)}`)
-          .join("\n"),
-      );
-      if (transcript.length > MAX_CONV_CHARS) transcript = transcript.slice(-MAX_CONV_CHARS);
-
-      const ord = await lookupOrder(sbAdmin, storeId, phone);
-      const producto = ord?.producto || "";
-      conversations.push({
-        phone, name, transcript, msgCount: customerMsgs.length,
-        producto, productKey: producto ? norm(producto) : "general",
-        externalId: ord?.external_id || null, estado: ord?.estado || null,
-      });
     }
 
     // ── ENRICH: la IA analiza en lotes de BATCH_SIZE ──
@@ -438,7 +478,7 @@ Deno.serve(async (req) => {
 
     return jsonResp({
       ok: true,
-      processedChats: contactChats.length,
+      processedChats,
       scrapedMessages: scrapedCount,
       conversations: conversations.length,
       insights: insightsCount,

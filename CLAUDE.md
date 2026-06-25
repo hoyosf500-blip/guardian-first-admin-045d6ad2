@@ -173,6 +173,17 @@ Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_ke
 
 **Si Dropi cambia el texto de un código,** el regex falla y el movimiento cae en `otro`. Diagnóstico: `SELECT codigo, COUNT(*) FROM dropi_wallet_movements WHERE categoria='otro' GROUP BY codigo;`. Después agregar pattern a `mapCategoria` Y crear migration `UPDATE` para re-categorizar movimientos viejos (patrón `20260502000005_recategorize_wallet_movements.sql`).
 
+### Bot de WhatsApp & gateway (multi-proveedor: Whapi / Evolution)
+
+El bot "renta el caño, no el cerebro": el inbox + la IA viven en Guardian; el transporte (conexión a WhatsApp) lo provee un gateway QR detrás de **una sola interfaz agnóstica** `supabase/functions/_shared/waTransport.ts` (`WaTransport`: `sendText` + `parseInbound`). Implementados: **`WhapiTransport`** (Whapi.cloud, base `gate.whapi.cloud`, Bearer) y **`EvolutionTransport`** (Evolution API self-host: base = server propio, header `apikey`, opera por **instancia**; `POST /message/sendText/{instance}`, webhook `messages.upsert`). `cloud_api` queda como escape hatch. Swap de proveedor = registrar el canal con otro `provider` — **NO se toca** `wa-webhook`/`wa-send`/`wa-ai-responder`/inbox/realtime (todo agnóstico, store-scoped).
+
+- **Canal por tienda** en `wa_channels` (`provider`/`instance_name`/`provider_token`/`provider_base`/`status`). Se registra desde **`/admin → Canales WhatsApp`** (`WaChannelsPanel.tsx` → RPC `upsert_wa_channel`, owner-only). El token es secreto (lo lee la edge function con service role). `loadWaChannel` (`_shared/waChannel.ts`) arma el transporte y pasa `instanceName` (Evolution lo necesita). **Un canal = una tienda** (toma el más reciente por `updated_at`); si una tienda necesitara 2 números habría que pasar `?channel_id=` en el webhook.
+- **Contrato del webhook ENTRANTE** (`wa-webhook`, público, idempotente): el gateway debe POSTear a
+  `=<SUPABASE_URL>/functions/v1/wa-webhook?secret=<WA_WEBHOOK_SECRET>&store_id=<UUID tienda>`.
+  Secreto **global** (`WA_WEBHOOK_SECRET`, query `?secret=` o header `x-wa-secret`); el `store_id` resuelve la tienda → su provider → el `parseInbound` correcto. **Evolution:** configurar evento `messages.upsert` y **`webhookByEvents = false`** (si mete el nombre del evento en el path, rompe el query `?store_id=`). Grupos/difusión se ignoran.
+- **Minería agnóstica** (`wa-mine-conversations`): para `provider='whapi'` lee el historial de la API de Whapi (`/chats` + `/messages/list`); para los demás lee de **`wa_messages`** (lo que el webhook/inbox ya guardó). Cron diario re-agendado en `20260626130000` (filtra `provider IN ('whapi','evolution')`).
+- **Multi-número (CO + EC + personal):** cada número = su propia instancia Evolution en el server. CO/EC son **tiendas distintas** con su canal (bot activo). El número **personal** corre como instancia en el mismo server pero **fuera de Guardian** (no se registra como canal, sin bot).
+
 ### Key RPCs (Supabase DB Functions)
 
 - `get_daily_operator_stats(p_date)` — returns per-operator KPI counts for the dashboard (admin-only)
