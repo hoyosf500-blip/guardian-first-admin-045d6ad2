@@ -25,7 +25,7 @@ export async function loadWaChannel(
 ): Promise<LoadedWaChannel> {
   const { data, error } = await sbAdmin
     .from("wa_channels")
-    .select("id, store_id, provider, phone_number, provider_token, provider_base")
+    .select("id, store_id, provider, phone_number, provider_token, provider_base, instance_name")
     .eq("store_id", storeId)
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -39,6 +39,7 @@ export async function loadWaChannel(
   const transport = getWaTransport(provider, {
     token,
     base: data.provider_base || undefined,
+    instanceName: data.instance_name || undefined,
   });
 
   return {
