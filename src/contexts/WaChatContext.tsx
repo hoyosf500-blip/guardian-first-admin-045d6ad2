@@ -139,6 +139,7 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
       ai_enabled: false,
       ai_state: 'auto',
       status: 'open',
+      assigned_operator_id: null,
       linked_external_id: null,
     });
     setOpen(true);

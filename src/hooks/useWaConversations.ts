@@ -21,11 +21,12 @@ export interface WaConversation {
   ai_enabled: boolean;
   ai_state: string;
   status: string;
+  assigned_operator_id: string | null;
   linked_external_id: string | null;
 }
 
 const COLS =
-  'id, store_id, customer_phone, customer_name, last_message_at, last_message_preview, last_direction, unread_count, ai_enabled, ai_state, status, linked_external_id';
+  'id, store_id, customer_phone, customer_name, last_message_at, last_message_preview, last_direction, unread_count, ai_enabled, ai_state, status, assigned_operator_id, linked_external_id';
 
 /**
  * Conversaciones de WhatsApp de la tienda activa, ordenadas por último mensaje.
@@ -94,7 +95,21 @@ export function useWaConversations(storeId: string | null | undefined) {
     await sb.from('wa_conversations').update(patch).eq('id', conversationId);
   }, []);
 
+  /** Cambia el estado del hilo (open=Abierta · snoozed=Pendiente · closed=Resuelta).
+   *  RLS de miembro permite el UPDATE; realtime sincroniza a las demás asesoras. */
+  const setStatus = useCallback(async (conversationId: string, status: 'open' | 'snoozed' | 'closed') => {
+    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, status } : c)));
+    await sb.from('wa_conversations').update({ status }).eq('id', conversationId);
+  }, []);
+
+  /** Asigna (o libera con null) el hilo a una asesora — evita que dos respondan lo
+   *  mismo. assigned_operator_id existe en el schema; RLS de miembro permite el UPDATE. */
+  const setAssigned = useCallback(async (conversationId: string, operatorId: string | null) => {
+    setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, assigned_operator_id: operatorId } : c)));
+    await sb.from('wa_conversations').update({ assigned_operator_id: operatorId }).eq('id', conversationId);
+  }, []);
+
   const totalUnread = conversations.reduce((s, c) => s + (Number(c.unread_count) || 0), 0);
 
-  return { conversations, loading, reload: load, markRead, setAiEnabled, totalUnread };
+  return { conversations, loading, reload: load, markRead, setAiEnabled, setStatus, setAssigned, totalUnread };
 }
