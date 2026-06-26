@@ -15,6 +15,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadWaChannel, recordInbound, upsertConversation } from "../_shared/waChannel.ts";
+import { transcribeAudio } from "../_shared/waTranscribe.ts";
+import { isAudioKind, mediaKindOf, mediaMarker } from "../_shared/waMedia.ts";
 
 function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), {
@@ -61,13 +63,39 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json().catch(() => ({}));
     const channel = await loadWaChannel(sbAdmin, storeId);
-    // Ignoramos GRUPOS y listas de difusión: el bot no actúa ahí (ese número
-    // tiene grupos internos de la empresa). No se crea conversación ni se registra.
-    const inbound = channel.transport.parseInbound(payload).filter((m) => !m.fromMe && m.body && !m.isGroup);
+    const parsed = channel.transport.parseInbound(payload);
+
+    // Mensajes @lid sin resolver: onlyDigits(@lid) da dígitos basura → crearían una
+    // conversación fantasma y el bot respondería a un número inexistente, perdiendo
+    // EN SILENCIO al cliente real (ver auditoría 2026-06-26). Se omiten y se loguea
+    // para que sea VISIBLE si alguna vez empieza a pasar (no silencioso).
+    const lidSkipped = parsed.filter((m) => !m.fromMe && !m.isGroup && m.isLid).length;
+    if (lidSkipped) {
+      console.warn(`wa-webhook: ${lidSkipped} mensaje(s) @lid sin resolver omitidos (store=${storeId}). Revisar resolución LID→teléfono.`);
+    }
+
+    // Ignoramos GRUPOS / difusión y @lid. Dejamos pasar media SIN texto (audio/foto):
+    // antes el filtro `m.body` los descartaba y el bot quedaba MUDO ante una nota de voz.
+    const inbound = parsed.filter((m) => !m.fromMe && !m.isGroup && !m.isLid && (m.body || m.media));
 
     const triggers: Array<{ conversationId: string; messageId: string }> = [];
 
     for (const m of inbound) {
+      // Enriquecer media sin texto → nunca silencio: audio se TRANSCRIBE (OpenAI) y el
+      // texto queda como body (la asesora lo lee, el bot razona sobre él); otros media
+      // (foto/archivo/ubicación) reciben un marcador legible. Si la transcripción falla,
+      // cae al marcador y el bot igual responde.
+      let body = m.body;
+      if (!body && m.media) {
+        const kind = mediaKindOf(m);
+        let transcript: string | null = null;
+        if (isAudioKind(kind) && channel.transport.fetchMediaBase64) {
+          const media = await channel.transport.fetchMediaBase64(m.waMessageId).catch(() => null);
+          if (media?.base64) transcript = await transcribeAudio(media.base64, media.mimetype);
+        }
+        body = transcript ? `🎧 ${transcript}` : mediaMarker(kind);
+      }
+
       const conv = await upsertConversation(sbAdmin, {
         storeId,
         channelId: channel.channelId,
@@ -83,7 +111,7 @@ Deno.serve(async (req) => {
         conversationId: conv.id,
         channelId: channel.channelId,
         waMessageId: m.waMessageId,
-        body: m.body,
+        body,
         media: m.media,
         providerTs: m.timestamp,
       });
