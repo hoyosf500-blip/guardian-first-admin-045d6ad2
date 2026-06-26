@@ -22,9 +22,12 @@ export const COL_MAP: Record<string, string[]> = {
   TIENDA: ['TIENDA', 'Tienda', 'tienda', 'STORE'],
 };
 
+// Motivos de cancelación que ve la operadora en el modal de Confirmar (CallView).
+// Compartidos CO + EC. "Otro" es el sentinel: al elegirlo, el modal pide un texto
+// libre OBLIGATORIO en vez de cancelar de una (ver el modal en CallView).
 export const CANCEL_REASONS = [
-  'No contesta', '# equivocado', 'No quiere', 'No pedí',
-  'Cambió de opinión', 'Precio', 'Ya compré', 'Después', 'Otro'
+  'No contesta', 'Duplicado', 'Cambió de opinión', 'Cambio de transportadora',
+  'Mal historial', 'No pagó anticipo', 'Otro',
 ];
 
 // OLD-9: intervalo de polling fallback (cuando realtime falla o se cae el
