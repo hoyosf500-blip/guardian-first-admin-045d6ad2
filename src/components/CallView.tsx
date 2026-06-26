@@ -112,7 +112,19 @@ export default function CallView({ items }: Props) {
   }, [callOrderId, items]);
 
   const [showCancelModal, setShowCancelModal] = useState(false);
+  // Sub-estado del modal de cancelación: cuando la operadora elige "Otro",
+  // mostramos un campo de texto OBLIGATORIO en vez de cancelar de una.
+  const [cancelOtroMode, setCancelOtroMode] = useState(false);
+  const [cancelOtroText, setCancelOtroText] = useState('');
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
+  // El modal de cancelación es estado por-componente y CallView NO se re-monta
+  // al pasar de pedido (solo cambia `callOrderId`). Reseteamos al cambiar de
+  // pedido para que el texto de "Otro" no se filtre al siguiente pedido.
+  useEffect(() => {
+    setShowCancelModal(false);
+    setCancelOtroMode(false);
+    setCancelOtroText('');
+  }, [callOrderId]);
   const [carrierOrder, setCarrierOrder] = useState<OrderData | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
   // Validador-direcciones: override admin-only para destrabar el gate cuando
@@ -586,6 +598,8 @@ export default function CallView({ items }: Props) {
     // markResult ya libera el lock vía release_order RPC.
     // Llamarlo dos veces causaba un PATCH redundante a /orders.
     setShowCancelModal(false);
+    setCancelOtroMode(false);
+    setCancelOtroText('');
     // REG-1 / H9: Para `result === 'conf'` con externalId, el toast lo
     // maneja `markResult` (flujo unificado de Dropi sync: loading →
     // success/error con mismo toastId). Pero si el pedido NO tiene
@@ -897,19 +911,63 @@ export default function CallView({ items }: Props) {
       )}
 
       {showCancelModal && (
-        <div className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center" onClick={() => setShowCancelModal(false)}>
+        <div
+          className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center"
+          onClick={() => { setShowCancelModal(false); setCancelOtroMode(false); setCancelOtroText(''); }}
+        >
           <div className="bg-surface rounded-t-2xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-4 inline-flex items-center gap-2">
               <XCircle size={18} className="text-red" /> Motivo de cancelación
             </h3>
-            <div className="grid gap-2">
-              {CANCEL_REASONS.map(reason => (
-                <button key={reason} onClick={() => handleMark('canc', reason)}
-                  className="w-full text-left py-3 px-4 rounded-lg bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80 transition-colors">
-                  {reason}
-                </button>
-              ))}
-            </div>
+            {!cancelOtroMode ? (
+              <div className="grid gap-2">
+                {CANCEL_REASONS.map(reason => {
+                  // "Otro" no cancela de una: abre un campo de texto obligatorio
+                  // para que la operadora escriba el motivo real.
+                  const isOtro = reason.trim().toLowerCase() === 'otro';
+                  return (
+                    <button
+                      key={reason}
+                      onClick={() => (isOtro ? setCancelOtroMode(true) : handleMark('canc', reason))}
+                      className="w-full text-left py-3 px-4 rounded-lg bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80 transition-colors"
+                    >
+                      {reason}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                <label htmlFor="cancel-otro-text" className="text-sm font-semibold text-muted-foreground">
+                  Contanos el motivo
+                </label>
+                <textarea
+                  id="cancel-otro-text"
+                  autoFocus
+                  value={cancelOtroText}
+                  onChange={e => setCancelOtroText(e.target.value)}
+                  placeholder="Escribí el motivo de la cancelación…"
+                  rows={3}
+                  maxLength={200}
+                  className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setCancelOtroMode(false); setCancelOtroText(''); }}
+                    className="py-3 px-4 rounded-lg bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80 transition-colors"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    disabled={!cancelOtroText.trim()}
+                    onClick={() => handleMark('canc', cancelOtroText.trim())}
+                    className="py-3 px-4 rounded-lg bg-red/15 text-red border border-red/25 font-bold text-sm hover:bg-red/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Confirmar cancelación
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
