@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SEG_LISTS, findSegList, isValidSegListSlug } from './segLists';
+import { SEG_LISTS, findSegList, isValidSegListSlug, hasSeguimientoWork } from './segLists';
 import type { OrderData } from './orderUtils';
 
 /**
@@ -191,5 +191,50 @@ describe('helpers', () => {
     expect(isValidSegListSlug(null)).toBe(false);
     expect(isValidSegListSlug('')).toBe(false);
     expect(isValidSegListSlug(undefined)).toBe(false);
+  });
+});
+
+describe('hasSeguimientoWork — gate del guard de inactividad', () => {
+  it('false sin pedidos', () => {
+    expect(hasSeguimientoWork([])).toBe(false);
+  });
+
+  it('true con EN REPARTO / NOVEDAD (accionable)', () => {
+    expect(hasSeguimientoWork([{ ...baseOrder, estado: 'NOVEDAD' }])).toBe(true);
+    expect(hasSeguimientoWork([{ ...baseOrder, estado: 'EN REPARTO' }])).toBe(true);
+  });
+
+  it('true con cliente en oficina (accionable)', () => {
+    expect(hasSeguimientoWork([{ ...baseOrder, estado: 'RECLAMAR EN OFICINA' }])).toBe(true);
+  });
+
+  it('true con pendiente de guía sin guía (accionable)', () => {
+    expect(hasSeguimientoWork([{ ...baseOrder, estado: 'PENDIENTE', guia: '', dias: 1 }])).toBe(true);
+  });
+
+  it('FALSE con solo monitoreo (en tránsito) — no es trabajo accionable', () => {
+    expect(hasSeguimientoWork([
+      { ...baseOrder, estado: 'EN TRANSPORTE' },
+      { ...baseOrder, estado: 'EN DISTRIBUCION' },
+    ])).toBe(false);
+  });
+
+  it('FALSE con guía generada reciente (monitoreo, no accionable)', () => {
+    expect(hasSeguimientoWork([{ ...baseOrder, estado: 'GUIA GENERADA', dias: 1 }])).toBe(false);
+  });
+
+  it('FALSE con solo terminales (entregado/devuelto)', () => {
+    expect(hasSeguimientoWork([
+      { ...baseOrder, estado: 'ENTREGADO' },
+      { ...baseOrder, estado: 'DEVOLUCION' },
+    ])).toBe(false);
+  });
+
+  it('true si AL MENOS uno es accionable aunque el resto sea monitoreo', () => {
+    expect(hasSeguimientoWork([
+      { ...baseOrder, estado: 'EN TRANSPORTE' },
+      { ...baseOrder, estado: 'NOVEDAD' },
+      { ...baseOrder, estado: 'ENTREGADO' },
+    ])).toBe(true);
   });
 });

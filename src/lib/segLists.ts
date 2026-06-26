@@ -267,3 +267,28 @@ export function isValidSegListSlug(s: string | null | undefined): s is SegListSl
   if (!s) return false;
   return SEG_LISTS.some((l) => l.slug === s);
 }
+
+/**
+ * Listas de Seguimiento que representan TRABAJO ACCIONABLE — la operadora tiene
+ * que llamar/gestionar: cliente en oficina, en reparto/novedad, indemnizaciones
+ * vencidas y pendientes de guía. Las de MONITOREO (en tránsito, guía generada
+ * reciente, otros estados) NO cuentan como trabajo: solo se observan.
+ *
+ * Lo usa el guard de inactividad para NO penalizar cuando no hay nada que hacer
+ * en Seguimiento (si además Confirmar y Novedades están vacíos).
+ */
+export const ACTIONABLE_SEG_SLUGS: SegListSlug[] = [
+  'en_oficina',
+  'en_reparto_novedad',
+  'indem_guia_generada_5d',
+  'indem_pendientes_guia_4d',
+  'pendientes_guia',
+];
+
+// Pre-computado una sola vez (constantes de módulo) — se llama por render del guard.
+const ACTIONABLE_SEG_DEFS = SEG_LISTS.filter((l) => ACTIONABLE_SEG_SLUGS.includes(l.slug));
+
+/** ¿Hay al menos un pedido de Seguimiento en una lista accionable? */
+export function hasSeguimientoWork(orders: OrderData[]): boolean {
+  return orders.some((o) => ACTIONABLE_SEG_DEFS.some((d) => d.matches(o)));
+}
