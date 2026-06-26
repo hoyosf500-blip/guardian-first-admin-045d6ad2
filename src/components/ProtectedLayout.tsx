@@ -1,6 +1,8 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperatorHeartbeat } from '@/hooks/useOperatorHeartbeat';
+import { useInactivityGuard } from '@/hooks/useInactivityGuard';
+import InactivityWarningModal from '@/components/InactivityWarningModal';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
 import { WaChatProvider } from '@/contexts/WaChatContext';
@@ -69,6 +71,9 @@ function ProtectedLayoutInner() {
   // tiene sus propios gates: solo emite ping para no-admin con tienda activa.
   // Mantener acá (no en un sub-componente) para que viva toda la sesión.
   useOperatorHeartbeat();
+  // Alertas de inactividad (modal bloqueante). Gates propios en el hook: solo
+  // operadoras puras (no admin/manager), horario 9–17 Bogotá sin almuerzo.
+  const inactivity = useInactivityGuard();
 
   // Redención de invitación por link: si el usuario llegó por
   // /auth?invite=TOKEN, AuthPage guardó el token en localStorage. Apenas hay
@@ -303,6 +308,12 @@ function ProtectedLayoutInner() {
           </main>
         </div>
       </div>
+      {inactivity.warning && (
+        <InactivityWarningModal
+          warning={inactivity.warning}
+          onAcknowledge={inactivity.acknowledge}
+        />
+      )}
       </WaChatProvider>
     </OrderProvider>
   );
