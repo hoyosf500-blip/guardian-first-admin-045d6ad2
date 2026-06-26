@@ -4,6 +4,7 @@ import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
 import { confRateByCohort } from '@/lib/confirmationRate';
+import CancelledReasonsModal from '@/components/admin/CancelledReasonsModal';
 
 // Panel de "Reportes diarios" con DOS vistas:
 //
@@ -88,6 +89,8 @@ export default function DailyReportsView() {
   const [shifts, setShifts] = useState<ShiftRow[]>([]);
   const [actions, setActions] = useState<ActionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Popup de motivos de cancelación (celda "Cancelados" clickeable).
+  const [cancelDetail, setCancelDetail] = useState<{ operadora: string; fecha: string } | null>(null);
   // errMsg expone errores de RPC en pantalla. Antes solo iban a console.error
   // → el usuario veía "0 filas" sin pista de la causa real (Solo admins,
   // function does not exist, signature mismatch, etc.). Surface inline.
@@ -514,7 +517,18 @@ export default function DailyReportsView() {
                       <td className={`${cellBase} text-center`}>{r.pendientes_ayer ?? ''}</td>
                       <td className={`${cellBase} text-center`}>{r.confirmados ?? ''}</td>
                       <td className={`${cellBase} text-center`}>{r.noresp ?? ''}</td>
-                      <td className={`${cellBase} text-center`}>{r.cancelados ?? ''}</td>
+                      <td className={`${cellBase} text-center`}>
+                        {r.cancelados != null && r.cancelados > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setCancelDetail({ operadora: r.operadora, fecha: r.fecha })}
+                            className="text-red font-bold underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+                            title="Ver motivos de cancelación"
+                          >
+                            {r.cancelados}
+                          </button>
+                        ) : (r.cancelados ?? '')}
+                      </td>
                       <td className={`${cellBase} text-center font-bold`}>{r.total_gestionados ?? ''}</td>
                       <td className={`${cellBase} text-center`}>{r.pendientes_manana ?? ''}</td>
                       <td className={`${cellBase} font-sans text-muted-foreground max-w-[260px] truncate`} title={r.notas ?? ''}>
@@ -590,6 +604,14 @@ export default function DailyReportsView() {
             </div>
           )}
         </motion.div>
+      )}
+
+      {cancelDetail && (
+        <CancelledReasonsModal
+          operadora={cancelDetail.operadora}
+          fecha={cancelDetail.fecha}
+          onClose={() => setCancelDetail(null)}
+        />
       )}
     </div>
   );
