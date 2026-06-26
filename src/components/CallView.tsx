@@ -912,10 +912,12 @@ export default function CallView({ items }: Props) {
 
       {showCancelModal && (
         <div
-          className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center"
+          className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center sm:items-center"
           onClick={() => { setShowCancelModal(false); setCancelOtroMode(false); setCancelOtroText(''); }}
         >
-          <div className="bg-surface rounded-t-2xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up" onClick={e => e.stopPropagation()}>
+          {/* Bottom-sheet en mobile; centrado en PC (sm+), que es donde más
+              trabajan las operadoras. Mismo contenido, solo cambia el anclaje. */}
+          <div className="bg-surface rounded-t-2xl sm:rounded-2xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] sm:pb-6 w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up sm:animate-none" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-4 inline-flex items-center gap-2">
               <XCircle size={18} className="text-red" /> Motivo de cancelación
             </h3>
