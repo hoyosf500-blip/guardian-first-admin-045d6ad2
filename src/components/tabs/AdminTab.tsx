@@ -21,6 +21,7 @@ import WaBotConfigPanel from '@/components/admin/WaBotConfigPanel';
 import WaBotNotifyPanel from '@/components/admin/WaBotNotifyPanel';
 import ProductKnowledgePanel from '@/components/admin/ProductKnowledgePanel';
 import WaChannelsPanel from '@/components/admin/WaChannelsPanel';
+import WaQuickRepliesPanel from '@/components/admin/WaQuickRepliesPanel';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -222,6 +223,7 @@ export default function AdminTab() {
         <TabsContent value="bot" className="mt-0 space-y-4">
           <WaBotConfigPanel />
           <WaBotNotifyPanel />
+          <WaQuickRepliesPanel />
         </TabsContent>
 
         <TabsContent value="productos" className="mt-0">

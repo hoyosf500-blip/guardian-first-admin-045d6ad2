@@ -42,7 +42,7 @@ export default function WaChannelsPanel() {
   const [saving, setSaving] = useState(false);
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
 
-  const [provider, setProvider] = useState<'evolution' | 'whapi'>('evolution');
+  const [provider, setProvider] = useState<'evolution' | 'whapi' | 'waha'>('evolution');
   const [base, setBase] = useState('');
   const [token, setToken] = useState('');
   const [instance, setInstance] = useState('');
@@ -68,13 +68,17 @@ export default function WaChannelsPanel() {
     ? `${supaUrl}/functions/v1/wa-webhook?secret=<WA_WEBHOOK_SECRET>&store_id=${activeStoreId}`
     : '';
 
+  // Evolution y WAHA son gateways "server propio" (URL + sesión/instancia + token).
+  // Whapi es manejado (solo token). isServer agrupa los dos primeros para la UI.
+  const isServer = provider === 'evolution' || provider === 'waha';
+
   async function save() {
     if (!activeStoreId) return;
     const tk = token.trim();
     if (!tk) { toast.error('Falta el token / API key del gateway'); return; }
     if (!phone.trim()) { toast.error('Falta el número de teléfono del canal'); return; }
-    if (provider === 'evolution' && (!base.trim() || !instance.trim())) {
-      toast.error('Para Evolution: URL del server e instancia son obligatorios'); return;
+    if (isServer && (!base.trim() || !instance.trim())) {
+      toast.error('Para Evolution/WAHA: URL del server e instancia/sesión son obligatorios'); return;
     }
     setSaving(true);
     type RpcRes = { error: { message: string } | null };
@@ -168,7 +172,7 @@ export default function WaChannelsPanel() {
         {webhookUrl && (
           <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2.5">
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1">
-              <QrCode size={11} /> Webhook a configurar en el gateway (evento messages.upsert, webhookByEvents = false)
+              <QrCode size={11} /> Webhook a configurar en el gateway {provider === 'waha' ? '(WAHA: evento "message")' : '(evento messages.upsert, webhookByEvents = false)'}
             </div>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-[11px] text-foreground bg-background rounded px-2 py-1.5 border border-border break-all">{webhookUrl}</code>
@@ -194,9 +198,10 @@ export default function WaChannelsPanel() {
                 <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Proveedor</label>
                 <select
                   value={provider}
-                  onChange={e => setProvider(e.target.value as 'evolution' | 'whapi')}
+                  onChange={e => setProvider(e.target.value as 'evolution' | 'whapi' | 'waha')}
                   className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 >
+                  <option value="waha">WAHA (server propio · WhatsApp Web)</option>
                   <option value="evolution">Evolution (server propio)</option>
                   <option value="whapi">Whapi</option>
                 </select>
@@ -210,19 +215,25 @@ export default function WaChannelsPanel() {
               </div>
             </div>
 
-            {provider === 'evolution' && (
+            {isServer && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">URL del server Evolution</label>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    {provider === 'waha' ? 'URL del server WAHA' : 'URL del server Evolution'}
+                  </label>
                   <input
-                    type="text" value={base} onChange={e => setBase(e.target.value)} placeholder="https://bot.tudominio.com"
+                    type="text" value={base} onChange={e => setBase(e.target.value)}
+                    placeholder={provider === 'waha' ? 'https://tu-server/waha' : 'https://bot.tudominio.com'}
                     className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Instancia (instance name)</label>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    {provider === 'waha' ? 'Sesión (session name)' : 'Instancia (instance name)'}
+                  </label>
                   <input
-                    type="text" value={instance} onChange={e => setInstance(e.target.value)} placeholder="rushmira-co"
+                    type="text" value={instance} onChange={e => setInstance(e.target.value)}
+                    placeholder={provider === 'waha' ? 'default' : 'rushmira-co'}
                     className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                   />
                 </div>
@@ -231,7 +242,7 @@ export default function WaChannelsPanel() {
 
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                {provider === 'evolution' ? 'API key de Evolution (apikey)' : 'Token de Whapi (Bearer)'}
+                {provider === 'evolution' ? 'API key de Evolution (apikey)' : provider === 'waha' ? 'API key de WAHA (X-Api-Key)' : 'Token de Whapi (Bearer)'}
               </label>
               <input
                 type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="••••••••••••••••"
@@ -241,11 +252,21 @@ export default function WaChannelsPanel() {
               <p className="mt-1 text-[11px] text-muted-foreground">Se guarda como secreto (solo lo lee el servidor). No se vuelve a mostrar.</p>
             </div>
 
-            {provider === 'evolution' && (
+            {isServer && (
               <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-[11px] text-muted-foreground">
-                📲 <strong className="text-foreground">Para conectar el número:</strong> en el Manager de Evolution
-                (<code>{base.trim() ? `${base.trim().replace(/\/+$/, '')}/manager` : '<URL>/manager'}</code>) creá la instancia
-                <strong> "{instance.trim() || '...'}"</strong>, escaneá su QR con el WhatsApp del número, configurá el webhook de arriba, y registrá acá el canal.
+                {provider === 'waha' ? (
+                  <>
+                    📲 <strong className="text-foreground">Para conectar el número:</strong> en el dashboard de WAHA
+                    (<code>{base.trim() ? `${base.trim().replace(/\/+$/, '')}/dashboard` : '<URL>/dashboard'}</code>) usá la sesión
+                    <strong> "{instance.trim() || 'default'}"</strong>, escaneá su QR con el WhatsApp del número, configurá el webhook de arriba (evento <code>message</code>), y registrá acá el canal.
+                  </>
+                ) : (
+                  <>
+                    📲 <strong className="text-foreground">Para conectar el número:</strong> en el Manager de Evolution
+                    (<code>{base.trim() ? `${base.trim().replace(/\/+$/, '')}/manager` : '<URL>/manager'}</code>) creá la instancia
+                    <strong> "{instance.trim() || '...'}"</strong>, escaneá su QR con el WhatsApp del número, configurá el webhook de arriba, y registrá acá el canal.
+                  </>
+                )}
               </div>
             )}
 

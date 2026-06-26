@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Bot, ExternalLink, Send, User } from 'lucide-react';
+import { ArrowLeft, Bot, ExternalLink, Send, User, UserCheck, UserMinus, CheckCircle2, RotateCcw, Clock, Zap } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useWaThread } from '@/hooks/useWaThread';
+import { useWaQuickReplies } from '@/hooks/useWaQuickReplies';
 import type { WaConversation } from '@/hooks/useWaConversations';
 
 /** Hora corta (HH:MM) de un ISO, o '' si no parsea. Compartido por la lista y el hilo. */
@@ -25,14 +26,25 @@ export function waTimeLabel(iso: string | null): string {
 export default function WaThreadView({
   conversation,
   storeId,
+  currentUserId,
   onBack,
   onToggleAi,
+  onSetStatus,
+  onSetAssigned,
   onSent,
 }: {
   conversation: WaConversation;
   storeId: string | null | undefined;
+  /** Id del usuario actual (para asignación "a mí"). Opcional: si falta, no se
+   *  muestran los controles de asignación. */
+  currentUserId?: string | null;
   onBack: () => void;
   onToggleAi: (enabled: boolean) => void;
+  /** Cambiar estado del hilo (open/snoozed/closed). Opcional: el lanzador global
+   *  no lo pasa → la barra de gestión no se muestra ahí. */
+  onSetStatus?: (status: 'open' | 'snoozed' | 'closed') => void;
+  /** Asignar/liberar el hilo a una asesora. Opcional (ver onSetStatus). */
+  onSetAssigned?: (operatorId: string | null) => void;
   /** Se llama tras enviar el PRIMER mensaje de un chat nuevo (sin conversación
    *  previa) → el lanzador re-resuelve la conversación recién creada por teléfono. */
   onSent?: () => void;
@@ -40,9 +52,24 @@ export default function WaThreadView({
   // conversation.id vacío = chat NUEVO (todavía no existe la conversación). En ese
   // caso enviamos por teléfono (wa-send la crea) en vez de por conversation_id.
   const isNew = !conversation.id;
+  const assignedToMe = !!currentUserId && conversation.assigned_operator_id === currentUserId;
+  const assignedToOther = !!conversation.assigned_operator_id && !assignedToMe;
+  const st = (conversation.status || 'open') as 'open' | 'snoozed' | 'closed';
+  // Barra de gestión (asignación + estado): solo en el inbox (el lanzador global
+  // no pasa estos handlers) y solo en hilos existentes.
+  const showManageBar = !!onSetStatus && !!onSetAssigned && !isNew;
   const { messages, sending, send } = useWaThread(conversation.id || null, storeId, conversation.customer_phone);
+  const { items: quickReplies } = useWaQuickReplies(storeId);
   const [draft, setDraft] = useState('');
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Inserta una respuesta rápida en el borrador (la asesora puede editarla antes
+  // de enviar). Si ya hay texto, la agrega en una línea nueva.
+  const insertQuickReply = (body: string) => {
+    setDraft((d) => (d.trim() ? `${d}\n${body}` : body));
+    setShowQuickReplies(false);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -109,6 +136,61 @@ export default function WaThreadView({
         </button>
       </div>
 
+      {/* Barra de gestión del equipo: asignación + estado (Abierta/Pendiente/Resuelta) */}
+      {showManageBar && (
+        <div className="px-3 py-1.5 border-b border-border shrink-0 flex items-center gap-1.5 flex-wrap bg-muted/10">
+          {assignedToMe ? (
+            <button
+              type="button"
+              onClick={() => onSetAssigned?.(null)}
+              className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 text-success px-2 py-1 text-[11px] font-semibold hover:bg-success/15 transition-colors"
+            >
+              <UserMinus size={11} /> Liberar
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!currentUserId}
+              onClick={() => currentUserId && onSetAssigned?.(currentUserId)}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:border-accent/40 hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={assignedToOther ? 'Asignada a otra asesora — tocá para tomarla' : 'Asignarme este hilo'}
+            >
+              <UserCheck size={11} /> {assignedToOther ? 'Tomar' : 'Asignarme'}
+            </button>
+          )}
+          {st !== 'closed' ? (
+            <button
+              type="button"
+              onClick={() => onSetStatus?.('closed')}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:border-success/40 hover:text-success transition-colors"
+            >
+              <CheckCircle2 size={11} /> Resolver
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSetStatus?.('open')}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:border-accent/40 hover:text-accent transition-colors"
+            >
+              <RotateCcw size={11} /> Reabrir
+            </button>
+          )}
+          {st === 'open' && (
+            <button
+              type="button"
+              onClick={() => onSetStatus?.('snoozed')}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:border-warning/40 hover:text-warning transition-colors"
+            >
+              <Clock size={11} /> Pendiente
+            </button>
+          )}
+          <span className="ml-auto text-[10px] font-medium text-muted-foreground">
+            {st === 'closed' ? 'Resuelta' : st === 'snoozed' ? 'Pendiente' : 'Abierta'}
+            {assignedToOther ? ' · otra asesora' : ''}
+          </span>
+        </div>
+      )}
+
       {conversation.ai_state === 'handed_off' && (
         <div className="px-4 py-1.5 bg-warning/10 border-b border-warning/20 text-[11px] text-warning font-medium flex items-center gap-1.5 shrink-0">
           <User size={12} /> La IA derivó este hilo a un humano. Respondé vos o reactivá la IA.
@@ -154,7 +236,42 @@ export default function WaThreadView({
       </div>
 
       {/* Composer */}
-      <div className="border-t border-border p-2.5 shrink-0 flex items-end gap-2">
+      <div className="relative border-t border-border p-2.5 shrink-0 flex items-end gap-2">
+        {/* Panel de respuestas rápidas (se abre con el botón ⚡) */}
+        {showQuickReplies && quickReplies.length > 0 && (
+          <div className="absolute bottom-full left-2.5 right-2.5 mb-1 max-h-60 overflow-y-auto rounded-lg border border-border bg-card shadow-lg z-10">
+            <div className="px-3 py-2 border-b border-border text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              <Zap size={11} /> Respuestas rápidas
+            </div>
+            {quickReplies.map((q) => (
+              <button
+                key={q.id}
+                type="button"
+                onClick={() => insertQuickReply(q.body)}
+                className="w-full text-left px-3 py-2 border-b border-border/50 last:border-0 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:bg-muted/40"
+              >
+                <div className="text-xs font-semibold text-foreground truncate">{q.label}</div>
+                <div className="text-[11px] text-muted-foreground line-clamp-2">{q.body}</div>
+              </button>
+            ))}
+          </div>
+        )}
+        {quickReplies.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowQuickReplies((v) => !v)}
+            aria-label="Respuestas rápidas"
+            title="Respuestas rápidas"
+            className={cn(
+              'shrink-0 inline-flex items-center justify-center h-11 w-11 rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              showQuickReplies
+                ? 'border-accent/40 bg-accent/10 text-accent'
+                : 'border-border bg-card text-muted-foreground hover:text-accent hover:border-accent/40',
+            )}
+          >
+            <Zap size={16} />
+          </button>
+        )}
         <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

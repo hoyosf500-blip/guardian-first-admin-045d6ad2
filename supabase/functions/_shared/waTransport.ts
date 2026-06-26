@@ -10,7 +10,7 @@
 // Las edge functions NUNCA hardcodean el token: lo leen de wa_channels
 // (service role) o de un secreto de entorno.
 
-export type WaProvider = "whapi" | "evolution" | "cloud_api";
+export type WaProvider = "whapi" | "evolution" | "waha" | "cloud_api";
 
 /** Mensaje entrante ya normalizado, agnóstico del proveedor. */
 export interface WaInboundMessage {
@@ -279,15 +279,151 @@ class EvolutionTransport implements WaTransport {
   }
 }
 
+// ─── WAHA (devlikeapro/waha — motor WEBJS = WhatsApp Web real en Chromium) ────
+//
+// Self-host como Evolution, pero corre el CLIENTE WhatsApp Web real (más tolerante
+// que Baileys para envíos warm). base = URL del server propio detrás de HTTPS
+// (ej. https://mi-server/waha), auth con header `X-Api-Key`, y se opera POR SESIÓN
+// (instance_name = nombre de la sesión WAHA, ej. "default"). El QR se escanea en el
+// dashboard de WAHA.
+//   - Enviar:  POST {base}/api/sendText  { session, chatId:"<dígitos>@c.us", text }
+//              → { id, _data:{ id:{ _serialized } } }   (¡chatId @c.us, NUNCA @lid crudo!)
+//   - Webhook: POST { event:"message", session, payload:{ id, from, fromMe, to, body,
+//              hasMedia, type, timestamp, _data:{ notifyName } } }  (evento "message" = entrante)
+//
+// NOTA (verificar con payload real al reconectar el número a WAHA): se asume que el
+// `from` del webhook es el chatId "<teléfono>@c.us". Si una cuenta migrada a LID
+// entregara `from` como "@lid", el match por teléfono necesitaría resolver el
+// LID→teléfono (WAHA /api/contacts). El sendText SÍ está verificado en vivo (entrega
+// warm con ack DEVICE; mandar al @lid crudo falla, por eso forzamos @c.us).
+
+const WAHA_DEFAULT_SESSION = "default";
+
+interface WahaRawMessage {
+  id?: string;
+  timestamp?: number;
+  from?: string;
+  to?: string;
+  fromMe?: boolean;
+  body?: string;
+  hasMedia?: boolean;
+  type?: string;
+  media?: Record<string, unknown> | null;
+  notifyName?: string;
+  participant?: string;
+  _data?: { notifyName?: string; [k: string]: unknown };
+  [k: string]: unknown;
+}
+
+function wahaName(m: WahaRawMessage): string | undefined {
+  return m.notifyName || m._data?.notifyName || undefined;
+}
+
+// WAHA usa el `type` estilo whatsapp-web.js: 'chat' (texto), 'image', 'video',
+// 'document', 'audio', 'ptt', 'location', ... Normalizamos 'chat' → 'text'.
+function wahaType(m: WahaRawMessage): string {
+  const t = String(m.type ?? "chat");
+  return t === "chat" ? "text" : t;
+}
+
+function wahaMedia(m: WahaRawMessage): Record<string, unknown> | null {
+  if (m.hasMedia && m.media) return { kind: wahaType(m), ...(m.media as Record<string, unknown>) };
+  return null;
+}
+
+// Grupo / difusión: el JID de grupo termina en "@g.us" y el de status en
+// "@broadcast"; los grupos además traen `participant`. El bot NO actúa ahí.
+function wahaIsGroup(m: WahaRawMessage): boolean {
+  const from = String(m.from ?? "");
+  const to = String(m.to ?? "");
+  return /@g\.us/i.test(from) || /@broadcast/i.test(from) || /@g\.us/i.test(to) || Boolean(m.participant);
+}
+
+class WahaTransport implements WaTransport {
+  readonly provider: WaProvider = "waha";
+  private token: string;
+  private base: string;
+  private session: string;
+
+  constructor(cfg: WaTransportConfig) {
+    this.token = cfg.token;
+    this.base = (cfg.base || "").replace(/\/+$/, "");
+    this.session = cfg.instanceName || WAHA_DEFAULT_SESSION;
+  }
+
+  async sendText(to: string, body: string): Promise<WaSendResult> {
+    const phone = onlyDigits(to);
+    if (!phone) return { ok: false, error: "Teléfono inválido" };
+    if (!this.token) return { ok: false, error: "Canal sin token (X-Api-Key) configurado" };
+    if (!this.base) return { ok: false, error: "Canal sin URL del server (provider_base)" };
+    // Anti-SSRF: el provider_base lo escribe el dueño; exigimos https:// (WAHA va
+    // detrás de HTTPS) para no permitir apuntar a hosts internos/http.
+    if (!/^https:\/\//i.test(this.base)) return { ok: false, error: "provider_base debe ser una URL https://" };
+    try {
+      const res = await fetch(`${this.base}/api/sendText`, {
+        method: "POST",
+        headers: { "X-Api-Key": this.token, "Content-Type": "application/json" },
+        // chatId @c.us (NO @lid): WAHA/WEBJS resuelve el LID internamente. Mandar al
+        // @lid crudo rompe el envío (verificado en vivo).
+        body: JSON.stringify({ session: this.session, chatId: `${phone}@c.us`, text: body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data as { message?: unknown; error?: unknown };
+        const msg = (typeof d?.message === "string" && d.message) ||
+          (typeof d?.error === "string" && d.error) ||
+          `Gateway respondió ${res.status}`;
+        return { ok: false, httpStatus: res.status, error: String(msg).slice(0, 200) };
+      }
+      const d = data as { id?: string; _data?: { id?: { _serialized?: string } } };
+      const providerMessageId = d?._data?.id?._serialized || (typeof d?.id === "string" ? d.id : undefined);
+      return { ok: true, providerMessageId, httpStatus: res.status };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  parseInbound(payload: unknown): WaInboundMessage[] {
+    const p = (payload ?? {}) as { event?: string; payload?: WahaRawMessage; data?: WahaRawMessage };
+    // WAHA manda muchos eventos (session.status, message.ack, message.revoked, ...).
+    // Solo nos interesan los entrantes: "message" (incoming). "message.any" incluye
+    // también salientes → se acepta pero el `fromMe` lo filtra aguas abajo (igual
+    // que Whapi/Evolution, que devuelven el eco y el webhook lo descarta).
+    const ev = String(p.event ?? "").toLowerCase();
+    if (ev && ev !== "message" && ev !== "message.any") return [];
+    // El mensaje viene en `payload` (forma WAHA con wrapper); fallback a `data` o,
+    // si llega el objeto crudo sin wrapper, al payload entero (detección por forma).
+    const m = (p.payload || p.data || payload) as WahaRawMessage;
+    if (!m || typeof m !== "object") return [];
+    const from = String(m.from ?? "");
+    const msg: WaInboundMessage = {
+      waMessageId: String(m.id ?? ""),
+      // Se asume `from` = "<teléfono>@c.us" → onlyDigits descarta el sufijo. Ver la
+      // NOTA sobre LID arriba (verificar con un payload real al reconectar).
+      fromPhone: onlyDigits(from),
+      fromName: wahaName(m),
+      type: wahaType(m),
+      body: String(m.body ?? ""),
+      media: wahaMedia(m),
+      timestamp: Number(m.timestamp ?? 0) || 0,
+      fromMe: Boolean(m.fromMe),
+      isGroup: wahaIsGroup(m),
+    };
+    return [msg].filter((x) => x.waMessageId && x.fromPhone);
+  }
+}
+
 // ─── Factory ───────────────────────────────────────────────────────────────
-// Whapi y Evolution implementados. cloud_api queda como escape hatch documentado
-// (implementa la MISMA interfaz cuando se necesite).
+// Whapi, Evolution y WAHA implementados. cloud_api queda como escape hatch
+// documentado (implementa la MISMA interfaz cuando se necesite).
 export function getWaTransport(provider: WaProvider, cfg: WaTransportConfig): WaTransport {
   switch (provider) {
     case "whapi":
       return new WhapiTransport(cfg);
     case "evolution":
       return new EvolutionTransport(cfg);
+    case "waha":
+      return new WahaTransport(cfg);
     case "cloud_api":
       throw new Error(
         `Transporte '${provider}' aún no implementado. Implementá WaTransport y agregalo al factory (escape hatch del Híbrido H2).`,
