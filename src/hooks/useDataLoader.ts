@@ -1,5 +1,5 @@
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
@@ -78,6 +78,20 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
   const [segLoaded, setSegLoaded] = useState(false);
   const [segLoading, setSegLoading] = useState(false);
   const [segLastUpdate, setSegLastUpdate] = useState<Date | null>(null);
+
+  // MULTI-TENANT: useDataLoader es singleton bajo OrderProvider — su estado NO
+  // se remonta al cambiar de tienda. Sin esto, `segLoaded` sigue true y el
+  // `loadSegData()` (sin force) que dispara SeguimientoTab al cambiar de tienda
+  // hace no-op → quedan visibles los pedidos de la tienda ANTERIOR (mezcla).
+  // Reseteamos al cambiar storeId para forzar un refetch limpio de la nueva
+  // tienda. El ref-guard evita limpiar en el mount inicial (storeId estable).
+  const prevStoreRef = useRef<string | null>(storeId);
+  useEffect(() => {
+    if (prevStoreRef.current === storeId) return;
+    prevStoreRef.current = storeId;
+    setSegData([]);
+    setSegLoaded(false);
+  }, [storeId]);
 
   const loadSegData = useCallback(async (force = false) => {
     if (!user || !storeId) return;
