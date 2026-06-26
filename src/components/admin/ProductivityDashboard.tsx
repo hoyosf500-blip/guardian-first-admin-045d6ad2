@@ -14,6 +14,14 @@ interface ActivityRow {
   idle_seconds: number;
 }
 
+interface InactivityRow {
+  operator_id: string;
+  display_name: string;
+  warnings_count: number;
+  total_lost_seconds: number;
+  last_warning_at: string | null;
+}
+
 // Sin '24h' rodante: las ventanas se alinean a día-calendario Bogotá (igual que
 // el cohorte de Reportes Diarios) para que "entrantes" reconcilie entre vistas.
 type Range = 'today' | '7d' | '30d';
@@ -84,6 +92,7 @@ export default function ProductivityDashboard() {
   const [range, setRange] = useState<Range>('today');
   const [rows, setRows] = useState<Row[]>([]);
   const [activityRows, setActivityRows] = useState<ActivityRow[]>([]);
+  const [inactivityRows, setInactivityRows] = useState<InactivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Antes solo console.error → la UI mostraba "Sin actividad" indistinguible
@@ -98,12 +107,15 @@ export default function ProductivityDashboard() {
     // _resolve_scope_store() (admin → su tienda activa, profiles.active_store_id).
     // No pasamos p_store_id: así NO dependemos de que la migration del parámetro
     // esté aplicada (evita el PGRST202 "function ... does not exist").
-    const [productivity, activity] = await Promise.all([
+    const [productivity, activity, inactivity] = await Promise.all([
       supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never),
       // Jornada — RPC separada (migration 20260528200000). Si aún no se aplicó,
       // capturamos el PGRST202 silencioso y mostramos la sección vacía: el
       // dashboard principal sigue funcionando aunque jornada no exista.
       supabase.rpc('operator_activity_stats' as never, { p_range: range } as never),
+      // Advertencias de inactividad por operadora (operator_inactivity_stats).
+      // Mismo trato silencioso: si la migration no está, la columna muestra 0.
+      supabase.rpc('operator_inactivity_stats' as never, { p_range: range } as never),
     ]);
     const { data, error: rpcErr } = productivity;
     if (rpcErr) {
@@ -121,6 +133,12 @@ export default function ProductivityDashboard() {
       setActivityRows((activity.data as ActivityRow[] | null) ?? []);
     } else if (process.env.NODE_ENV !== 'production') {
       console.warn('[productivity] activity rpc error', activity.error);
+    }
+    // Advertencias de inactividad: idem, error silencioso (la columna cae a 0).
+    if (!inactivity.error) {
+      setInactivityRows((inactivity.data as InactivityRow[] | null) ?? []);
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.warn('[productivity] inactivity rpc error', inactivity.error);
     }
     setLoading(false);
     setRefreshing(false);
@@ -142,12 +160,15 @@ export default function ProductivityDashboard() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results' }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints' }, debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily' }, debounced)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'operator_inactivity_warnings' }, debounced)
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
   }, [load]);
+
+  const inactivityByOp = new Map(inactivityRows.map(r => [r.operator_id, r]));
 
   const chartData = rows.map(r => ({
     name: r.display_name,
@@ -257,6 +278,7 @@ export default function ProductivityDashboard() {
                       <th className="text-right" title="Tiempo total con actividad en los últimos 5 min">Activo</th>
                       <th className="text-right" title="Tiempo sin actividad > 5 min">Inactivo</th>
                       <th className="text-right" title="Activo ÷ (Activo + Inactivo)">% Activa</th>
+                      <th className="text-right" title="Veces que el sistema le bloqueó la pantalla por inactividad (5+ min en horario laboral 9-17). Entre paréntesis, tiempo total perdido.">Advert. inact.</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -291,6 +313,22 @@ export default function ProductivityDashboard() {
                             <span className={`font-mono tabular-nums font-bold text-${pctTone}`}>
                               {total > 0 ? `${pct}%` : '—'}
                             </span>
+                          </td>
+                          <td className="text-right">
+                            {(() => {
+                              const w = inactivityByOp.get(r.operator_id);
+                              const c = w?.warnings_count ?? 0;
+                              if (c === 0) return <span className="font-mono tabular-nums text-muted-foreground">0</span>;
+                              return (
+                                <span
+                                  className="font-mono tabular-nums font-bold text-danger"
+                                  title={`${formatDurationHM(w!.total_lost_seconds)} de tiempo perdido`}
+                                >
+                                  {c}
+                                  <span className="text-[10px] text-muted-foreground font-normal"> · {formatDurationHM(w!.total_lost_seconds)}</span>
+                                </span>
+                              );
+                            })()}
                           </td>
                         </tr>
                       );
