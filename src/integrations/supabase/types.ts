@@ -2159,6 +2159,44 @@ export type Database = {
           },
         ]
       }
+      wa_quick_replies: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          label: string
+          sort_order: number
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          label: string
+          sort_order?: number
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          label?: string
+          sort_order?: number
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wa_quick_replies_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wa_scraped_messages: {
         Row: {
           body: string | null
@@ -2385,6 +2423,7 @@ export type Database = {
         Args: { p_shopify_product_id: number; p_store_id: string }
         Returns: undefined
       }
+      delete_wa_quick_reply: { Args: { p_id: string }; Returns: undefined }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
         Args: { p_from_date: string; p_to_date: string }
@@ -3127,6 +3166,16 @@ export type Database = {
           p_provider: string
           p_provider_base?: string
           p_provider_token: string
+          p_store_id: string
+        }
+        Returns: string
+      }
+      upsert_wa_quick_reply: {
+        Args: {
+          p_body: string
+          p_id?: string
+          p_label: string
+          p_sort_order?: number
           p_store_id: string
         }
         Returns: string
