@@ -1,5 +1,5 @@
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
@@ -20,6 +20,17 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
   const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
   const [novedadesLoading, setNovedadesLoading] = useState(false);
   const [novedadesLoaded, setNovedadesLoaded] = useState(false);
+
+  // MULTI-TENANT: mismo patrón que useDataLoader — al cambiar de tienda hay que
+  // resetear, si no `novedadesLoaded` sigue true y el loadNovedades() sin force
+  // hace no-op → quedan las novedades de la tienda anterior (mezcla).
+  const prevStoreRef = useRef<string | null>(storeId);
+  useEffect(() => {
+    if (prevStoreRef.current === storeId) return;
+    prevStoreRef.current = storeId;
+    setNovedadesQueue([]);
+    setNovedadesLoaded(false);
+  }, [storeId]);
 
   const loadNovedades = useCallback(async (force = false) => {
     if (!user || !storeId) return;
