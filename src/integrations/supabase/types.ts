@@ -758,6 +758,44 @@ export type Database = {
           },
         ]
       }
+      operator_inactivity_warnings: {
+        Row: {
+          created_at: string
+          id: string
+          lost_seconds: number
+          operator_id: string
+          store_id: string
+          warning_date: string
+          warning_number: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lost_seconds?: number
+          operator_id: string
+          store_id: string
+          warning_date: string
+          warning_number: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lost_seconds?: number
+          operator_id?: string
+          store_id?: string
+          warning_date?: string
+          warning_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_inactivity_warnings_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operator_pool: {
         Row: {
           active: boolean
@@ -2174,6 +2212,19 @@ export type Database = {
     }
     Functions: {
       _resolve_scope_store: { Args: never; Returns: string }
+      admin_cancelled_details: {
+        Args: { p_fecha: string; p_operadora: string; p_store_id?: string }
+        Returns: {
+          dias: number
+          external_id: string
+          hora: string
+          module: string
+          nombre: string
+          order_fecha: string
+          phone: string
+          reason: string
+        }[]
+      }
       admin_daily_reports: {
         Args: { p_date: string }
         Returns: {
@@ -2204,6 +2255,15 @@ export type Database = {
           pct_cancelados: number
           pct_confirmacion: number
           pendientes: number
+        }[]
+      }
+      admin_inactivity_details: {
+        Args: { p_operadora: string; p_range?: string; p_store_id?: string }
+        Returns: {
+          hora: string
+          lost_seconds: number
+          numero: number
+          warning_date: string
         }[]
       }
       admin_operator_actions_per_day: {
@@ -2637,6 +2697,16 @@ export type Database = {
           operator_id: string
         }[]
       }
+      operator_inactivity_stats: {
+        Args: { p_range?: string }
+        Returns: {
+          display_name: string
+          last_warning_at: string
+          operator_id: string
+          total_lost_seconds: number
+          warnings_count: number
+        }[]
+      }
       operator_productivity_stats: {
         Args: { p_range?: string }
         Returns: {
@@ -2771,6 +2841,10 @@ export type Database = {
         }[]
       }
       recategorize_personal_movements: { Args: never; Returns: Json }
+      record_inactivity_warning: {
+        Args: { p_lost_seconds: number; p_store_id: string }
+        Returns: number
+      }
       record_operator_heartbeat: {
         Args: {
           p_active_seconds: number
