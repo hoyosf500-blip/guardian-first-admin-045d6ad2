@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lu
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { confRateBySample } from '@/lib/confirmationRate';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
+import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 
 interface ActivityRow {
   operator_id: string;
@@ -95,6 +96,8 @@ export default function ProductivityDashboard() {
   const [inactivityRows, setInactivityRows] = useState<InactivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Popup de detalle de avisos de inactividad (clic en la celda "Advert. inact.").
+  const [inactivityDetail, setInactivityDetail] = useState<{ operadora: string } | null>(null);
   // Antes solo console.error → la UI mostraba "Sin actividad" indistinguible
   // de un error silenciado vs cero filas reales. Ahora capturamos el mensaje
   // y lo renderizamos como banner visible para diagnóstico inmediato.
@@ -167,6 +170,10 @@ export default function ProductivityDashboard() {
       void supabase.removeChannel(channel);
     };
   }, [load]);
+
+  // Estable: evita re-registrar el Escape-handler del modal en cada refresh
+  // (el realtime debounced re-renderiza este componente cada ~1s).
+  const closeInactivityDetail = useCallback(() => setInactivityDetail(null), []);
 
   const inactivityByOp = new Map(inactivityRows.map(r => [r.operator_id, r]));
 
@@ -278,7 +285,7 @@ export default function ProductivityDashboard() {
                       <th className="text-right" title="Tiempo total con actividad en los últimos 5 min">Activo</th>
                       <th className="text-right" title="Tiempo sin actividad > 5 min">Inactivo</th>
                       <th className="text-right" title="Activo ÷ (Activo + Inactivo)">% Activa</th>
-                      <th className="text-right" title="Veces que el sistema le bloqueó la pantalla por inactividad (5+ min en horario laboral 9-17). Entre paréntesis, tiempo total perdido.">Advert. inact.</th>
+                      <th className="text-right" title="Avisos de inactividad (5+ min en horario laboral 9-17, excl. almuerzo). El tiempo entre paréntesis es tiempo LABORAL perdido — puede superar la columna Inactivo, que mide idle crudo sin distinción de hora. Clic para ver el detalle de cada aviso.">Advert. inact.</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -320,13 +327,15 @@ export default function ProductivityDashboard() {
                               const c = w?.warnings_count ?? 0;
                               if (c === 0) return <span className="font-mono tabular-nums text-muted-foreground">0</span>;
                               return (
-                                <span
-                                  className="font-mono tabular-nums font-bold text-danger"
-                                  title={`${formatDurationHM(w!.total_lost_seconds)} de tiempo perdido`}
+                                <button
+                                  type="button"
+                                  onClick={() => setInactivityDetail({ operadora: r.display_name })}
+                                  className="font-mono tabular-nums font-bold text-danger underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+                                  title={`Ver el detalle de ${c} aviso${c === 1 ? '' : 's'} · ${formatDurationHM(w!.total_lost_seconds)} de tiempo laboral perdido`}
                                 >
                                   {c}
                                   <span className="text-[10px] text-muted-foreground font-normal"> · {formatDurationHM(w!.total_lost_seconds)}</span>
-                                </span>
+                                </button>
                               );
                             })()}
                           </td>
@@ -616,6 +625,14 @@ export default function ProductivityDashboard() {
             </div>
           </div>
         </Section>
+      )}
+
+      {inactivityDetail && (
+        <InactivityDetailModal
+          operadora={inactivityDetail.operadora}
+          range={range}
+          onClose={closeInactivityDetail}
+        />
       )}
     </div>
   );
