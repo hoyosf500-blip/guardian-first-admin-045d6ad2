@@ -1,28 +1,32 @@
-// Transcripción de notas de voz de WhatsApp a texto vía kie.ai (modelo
-// `elevenlabs/speech-to-text`), reutilizando la MISMA key de kie del bot
-// (WA_AI_API_KEY) — sin key nueva ni proveedor extra. Claude NO procesa audio,
-// por eso el STT aparte; kie.ai lo expone por su job API async.
+// Transcripción de notas de voz de WhatsApp a texto vía Groq Whisper
+// (`whisper-large-v3-turbo`), endpoint compatible con OpenAI. Es el MISMO Whisper
+// que usa ChatGPT, pero el tier gratis de Groq lo hace sin costo y muy rápido.
 //
-// Flujo (kie.ai job API necesita el audio como URL pública, no base64):
-//   1. Sube el binario a Supabase Storage (bucket `wa-audio`, auto-creado) → signed URL.
-//   2. POST /api/v1/jobs/createTask { model, input: { <campo>: signedUrl, language_code } }.
-//   3. Poll GET /api/v1/jobs/recordInfo?taskId= hasta state=success → texto del resultJson.
-//   4. Borra el archivo temporal (best-effort).
+// POR QUÉ NO KIE (verificado en vivo 2026-06-27): kie.ai NO ofrece speech-to-text
+// — su catálogo (134 modelos) es GENERACIÓN (imagen/video/música/voz-TTS/chat).
+// El viejo `elevenlabs/speech-to-text` NO existía en kie → nunca pudo transcribir.
+// Por eso esto va contra Groq con su propia key (`GROQ_API_KEY`), separada de la
+// del bot (kie/Claude no procesan audio; transcribir es una capacidad aparte).
+//
+// Flujo (mucho más simple que el de kie: el endpoint Whisper recibe el binario
+// directo, NO necesita URL pública ni subir a Storage ni poll de job async):
+//   POST {base}/audio/transcriptions  (multipart/form-data)
+//     file=<audio>  model=<whisper>  language=es  response_format=json
+//   → 200 { text: "…" }
 //
 // Defensivo a propósito: devuelve null ante CUALQUIER fallo. El caller (wa-webhook)
-// deja el marcador "[nota de voz recibida]" y el bot igual responde — nunca silencio.
+// deja el marcador "🎧 [nota de voz recibida]" y el bot igual responde — nunca silencio.
 //
-// Config por env (todo opcional, con defaults):
-//   WA_AI_API_KEY / KIE_API_KEY  → Bearer de kie.ai (ya seteada para el bot)
-//   WA_STT_MODEL                  → default "elevenlabs/speech-to-text"
-//   WA_STT_INPUT_FIELD            → nombre del campo de audio en input (default "audio_url")
-//   WA_KIE_BASE                   → default "https://api.kie.ai"
+// Config por env (todo opcional menos la key):
+//   GROQ_API_KEY        → Bearer de Groq (crear gratis en console.groq.com). REQUERIDA.
+//   WA_STT_MODEL        → default "whisper-large-v3-turbo" (multilingüe). Alt: "whisper-large-v3".
+//   WA_STT_BASE         → default "https://api.groq.com/openai/v1" (endpoint OpenAI-compat).
+//   WA_STT_LANGUAGE     → default "es".
+//
+// `sbAdmin`/`storeId`/`messageId` se conservan en la firma por compatibilidad con
+// el caller (antes el flujo de kie los necesitaba para Storage); Groq no los usa.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const AUDIO_BUCKET = "wa-audio";
-const POLL_INTERVAL_MS = 2500;
-const POLL_MAX_ATTEMPTS = 24; // ~60s techo (una nota de voz se transcribe en segundos)
 
 /** Decodifica base64 (con o sin prefijo data:) a bytes. */
 function decodeBase64(b64: string): Uint8Array {
@@ -43,125 +47,48 @@ function audioMeta(mimetype?: string): { contentType: string; ext: string } {
   return { contentType: "audio/ogg", ext: "ogg" }; // default WhatsApp (OGG/Opus)
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Sube el audio a Storage y devuelve { path, signedUrl } o null. Auto-crea el bucket. */
-async function uploadAudio(
-  sbAdmin: SupabaseClient,
-  storeId: string,
-  messageId: string,
-  bytes: Uint8Array,
-  contentType: string,
-  ext: string,
-): Promise<{ path: string; signedUrl: string } | null> {
-  try {
-    // Idempotente: si el bucket ya existe, el error se ignora.
-    await sbAdmin.storage.createBucket(AUDIO_BUCKET, { public: false }).catch(() => {});
-    const safeId = messageId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 80) || `${Date.now()}`;
-    const path = `${storeId}/${safeId}.${ext}`;
-    const up = await sbAdmin.storage.from(AUDIO_BUCKET).upload(path, bytes, { contentType, upsert: true });
-    if (up.error) { console.error("[waTranscribe] upload", up.error.message); return null; }
-    const signed = await sbAdmin.storage.from(AUDIO_BUCKET).createSignedUrl(path, 600);
-    const signedUrl = signed.data?.signedUrl;
-    if (!signedUrl) { console.error("[waTranscribe] signedUrl vacío"); return null; }
-    return { path, signedUrl };
-  } catch (e) {
-    console.error("[waTranscribe] uploadAudio", e instanceof Error ? e.message : String(e));
-    return null;
-  }
-}
-
-/** Busca el texto transcrito en una estructura de resultado desconocida (defensivo:
- *  el contrato exacto del modelo no está en los docs públicos de kie.ai). */
-function extractText(obj: unknown, depth = 0): string | null {
-  if (!obj || depth > 4) return null;
-  if (typeof obj === "string") {
-    const s = obj.trim();
-    return s.length >= 1 ? s : null;
-  }
-  if (typeof obj !== "object") return null;
-  const rec = obj as Record<string, unknown>;
-  // Campos típicos de STT primero.
-  for (const k of ["text", "transcription", "transcript", "result_text"]) {
-    if (typeof rec[k] === "string" && (rec[k] as string).trim()) return (rec[k] as string).trim();
-  }
-  // Anidados comunes.
-  for (const k of ["resultObject", "result", "output", "data"]) {
-    if (rec[k]) { const t = extractText(rec[k], depth + 1); if (t) return t; }
-  }
-  return null;
-}
-
-/** Transcribe un audio (base64) a texto vía kie.ai. null en cualquier fallo. */
+/** Transcribe un audio (base64) a texto vía Groq Whisper. null en cualquier fallo. */
 export async function transcribeAudio(opts: {
-  sbAdmin: SupabaseClient;
-  storeId: string;
-  messageId: string;
+  sbAdmin?: SupabaseClient; // no usado por Groq (compat con el caller)
+  storeId?: string; // idem
+  messageId?: string; // idem (solo para logs)
   base64: string;
   mimetype?: string;
 }): Promise<string | null> {
-  const { sbAdmin, storeId, messageId, base64, mimetype } = opts;
-  const key = Deno.env.get("WA_AI_API_KEY") || Deno.env.get("KIE_API_KEY") || "";
+  const { base64, mimetype, messageId } = opts;
+  const key = Deno.env.get("GROQ_API_KEY") || "";
   if (!key || !base64) return null;
-  const base = (Deno.env.get("WA_KIE_BASE") || "https://api.kie.ai").replace(/\/+$/, "");
-  const model = Deno.env.get("WA_STT_MODEL") || "elevenlabs/speech-to-text";
-  const audioField = Deno.env.get("WA_STT_INPUT_FIELD") || "audio_url";
+  const base = (Deno.env.get("WA_STT_BASE") || "https://api.groq.com/openai/v1").replace(/\/+$/, "");
+  const model = Deno.env.get("WA_STT_MODEL") || "whisper-large-v3-turbo";
+  const language = Deno.env.get("WA_STT_LANGUAGE") || "es";
 
-  let uploadedPath: string | null = null;
   try {
     const bytes = decodeBase64(base64);
+    // Whisper acepta hasta ~25MB; una nota de voz son KB. Cota defensiva.
     if (!bytes.length || bytes.length > 24 * 1024 * 1024) return null;
     const { contentType, ext } = audioMeta(mimetype);
 
-    const up = await uploadAudio(sbAdmin, storeId, messageId, bytes, contentType, ext);
-    if (!up) return null;
-    uploadedPath = up.path;
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: contentType }), `audio.${ext}`);
+    form.append("model", model);
+    form.append("language", language);
+    form.append("response_format", "json");
+    form.append("temperature", "0");
 
-    // 1) createTask
-    const create = await fetch(`${base}/api/v1/jobs/createTask`, {
+    const res = await fetch(`${base}/audio/transcriptions`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input: { [audioField]: up.signedUrl, language_code: "es" } }),
+      headers: { Authorization: `Bearer ${key}` }, // multipart: NO setear Content-Type a mano
+      body: form,
     });
-    if (!create.ok) {
-      console.error("[waTranscribe] createTask", create.status, (await create.text().catch(() => "")).slice(0, 200));
+    if (!res.ok) {
+      console.error("[waTranscribe] groq", res.status, (await res.text().catch(() => "")).slice(0, 300), "msg", messageId);
       return null;
     }
-    const created = await create.json().catch(() => null) as
-      | { data?: { taskId?: string; task_id?: string }; taskId?: string }
-      | null;
-    const taskId = created?.data?.taskId || created?.data?.task_id || created?.taskId;
-    if (!taskId) { console.error("[waTranscribe] sin taskId", JSON.stringify(created).slice(0, 200)); return null; }
-
-    // 2) poll recordInfo
-    for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
-      await sleep(POLL_INTERVAL_MS);
-      const poll = await fetch(`${base}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (!poll.ok) continue;
-      const info = await poll.json().catch(() => null) as
-        | { data?: { state?: string; resultJson?: string; failMsg?: string } }
-        | null;
-      const state = String(info?.data?.state || "").toLowerCase();
-      if (state === "fail") { console.error("[waTranscribe] job fail", info?.data?.failMsg); return null; }
-      if (state === "success") {
-        const rj = info?.data?.resultJson;
-        let parsed: unknown = rj;
-        if (typeof rj === "string") { try { parsed = JSON.parse(rj); } catch { parsed = rj; } }
-        return extractText(parsed) || extractText(info?.data);
-      }
-      // waiting/queuing/generating → seguir esperando
-    }
-    console.error("[waTranscribe] timeout esperando el job");
-    return null;
+    const data = await res.json().catch(() => null) as { text?: string } | null;
+    const text = typeof data?.text === "string" ? data.text.trim() : "";
+    return text.length >= 1 ? text : null;
   } catch (e) {
     console.error("[waTranscribe] error", e instanceof Error ? e.message : String(e));
     return null;
-  } finally {
-    // Limpieza best-effort del audio temporal (no guardamos audio del cliente).
-    if (uploadedPath) {
-      sbAdmin.storage.from(AUDIO_BUCKET).remove([uploadedPath]).catch(() => {});
-    }
   }
 }
