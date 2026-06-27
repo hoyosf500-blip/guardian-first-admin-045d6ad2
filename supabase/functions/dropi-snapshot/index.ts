@@ -111,6 +111,7 @@ Deno.serve(async (req) => {
     let page = 0;
     let partial = false;
     let partialReason: string | null = null;
+    const deadline = Date.now() + 120_000;
 
     pageLoop: while (page < MAX_PAGES) {
       const params = new URLSearchParams({
