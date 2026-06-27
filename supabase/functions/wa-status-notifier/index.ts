@@ -18,6 +18,8 @@ import { loadWaChannel, sendAndRecord, upsertConversation } from "../_shared/waC
 import { getTrackingUrl } from "../_shared/waTracking.ts";
 import { phoneSuffix } from "../_shared/waPhone.ts";
 
+// redeploy warm-gate 2026-06-27
+
 const MAX_SENDS_PER_RUN = 40; // pacing anti-baneo (gateway QR no oficial)
 const LOOKBACK_DAYS = 21; // solo pedidos movidos recientemente
 const ORDERS_PER_STORE = 600;
