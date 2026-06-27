@@ -479,7 +479,10 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     });
 
     return () => { cancelled = true; };
-  }, [phonesKey, module]);
+    // activeStoreId en deps: la query de touchpoints filtra por store_id, así que
+    // al cambiar de tienda hay que re-fetchear (si no, snooze/owner quedan con la
+    // data de la tienda anterior cuando los phones coinciden).
+  }, [phonesKey, module, activeStoreId]);
 
   // C3: lista de admins. Pedidos con assigned_to apuntando a admin se
   // tratan como pool libre / sin asignar.
