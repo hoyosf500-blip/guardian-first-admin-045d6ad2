@@ -92,6 +92,20 @@ interface Profile {
 /** Minimum seconds between successive touchpoints of the same kind (debounce). */
 const COMMUNICATION_DEBOUNCE_MS = 30_000;
 
+// Botones de gestión de seguimiento. Cada uno registra un touchpoint `SEG: ...`
+// (la bitácora) → cuenta en productividad (operator_productivity_stats: seg_acciones
+// para cualquier 'SEG:%', seg_resueltos para los 4 strings exactos) y marca el
+// pedido como "tocado hoy" (mySegTouchedToday en OrderContext, vía realtime).
+// 'SEG: Resuelto' y 'SEG: Devolución' (con acento) están en la lista de resueltos
+// de la RPC — NO cambiar esos textos sin actualizar la migración.
+const SEG_ACTIONS: { label: string; action: string; tone: 'neutral' | 'success' | 'warn' }[] = [
+  { label: 'Contactado', action: 'SEG: Contactado', tone: 'neutral' },
+  { label: 'No contestó', action: 'SEG: No contestó', tone: 'neutral' },
+  { label: 'Coordinó entrega', action: 'SEG: Coordinó entrega', tone: 'neutral' },
+  { label: 'Resuelto', action: 'SEG: Resuelto', tone: 'success' },
+  { label: 'Devolución', action: 'SEG: Devolución', tone: 'warn' },
+];
+
 export default function OrderDetailPage() {
   const { externalId } = useParams<{ externalId: string }>();
   const navigate = useNavigate();
@@ -263,6 +277,39 @@ export default function OrderDetailPage() {
 
     if (!error && data) {
       setTouchpoints((prev) => [...(data as Touchpoint[]), ...prev]);
+    }
+  };
+
+  /**
+   * Registra una GESTIÓN de seguimiento como touchpoint `SEG: ...`. Es la acción
+   * manual de la operadora (sirve cuando el WhatsApp en frío falla o cuando gestiona
+   * por otro canal): queda en la bitácora, cuenta en productividad y marca el pedido
+   * como tocado hoy. Mismo patrón que logCommunication (store_id lo setea el trigger
+   * de la tabla; debounce 30s anti doble-clic de la MISMA acción).
+   */
+  const logSegAction = async (label: string, action: string) => {
+    if (!user || !order) return;
+    const now = Date.now();
+    const recent = touchpoints.find(
+      (tp) => tp.action === action && (now - new Date(tp.created_at).getTime()) < COMMUNICATION_DEBOUNCE_MS,
+    );
+    if (recent) { toast.info('Ya registraste esa gestión recién'); return; }
+
+    const today = bogotaToday();
+    const time = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const { data, error } = await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: sanitizeAction(action),
+      operator_id: user.id,
+      action_date: today,
+      action_time: time,
+    }).select();
+
+    if (!error && data) {
+      setTouchpoints((prev) => [...(data as Touchpoint[]), ...prev]);
+      toast.success(`Gestión registrada: ${label}`);
+    } else {
+      toast.error('No se pudo registrar la gestión', { description: error?.message });
     }
   };
 
@@ -528,6 +575,31 @@ export default function OrderDetailPage() {
             >
               <Phone size={14} aria-hidden="true" /> Llamar
             </a>
+          </div>
+
+          {/* Registrar gestión — queda en la bitácora + cuenta para productividad y
+              marca el pedido como tocado hoy. Sirve aunque el WhatsApp en frío falle. */}
+          <div className="pt-2 mt-1 border-t border-border/50">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Registrar gestión</p>
+            <div className="flex flex-wrap gap-1.5">
+              {SEG_ACTIONS.map((a) => (
+                <button
+                  key={a.action}
+                  type="button"
+                  onClick={() => void logSegAction(a.label, a.action)}
+                  className={
+                    'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+                    (a.tone === 'success'
+                      ? 'border-success/30 bg-success/10 text-success hover:bg-success/15'
+                      : a.tone === 'warn'
+                      ? 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/15'
+                      : 'border-border bg-card text-muted-foreground hover:text-accent hover:border-accent/40')
+                  }
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
           </div>
         </motion.div>
 

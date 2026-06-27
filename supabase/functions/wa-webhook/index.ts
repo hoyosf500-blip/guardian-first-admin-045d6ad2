@@ -15,6 +15,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadWaChannel, recordInbound, upsertConversation } from "../_shared/waChannel.ts";
+import { transcribeAudio } from "../_shared/waTranscribe.ts";
+import { isAudioKind, mediaKindOf, mediaMarker } from "../_shared/waMedia.ts";
 
 function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), {
@@ -61,13 +63,40 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json().catch(() => ({}));
     const channel = await loadWaChannel(sbAdmin, storeId);
-    // Ignoramos GRUPOS y listas de difusión: el bot no actúa ahí (ese número
-    // tiene grupos internos de la empresa). No se crea conversación ni se registra.
-    const inbound = channel.transport.parseInbound(payload).filter((m) => !m.fromMe && m.body && !m.isGroup);
+    const parsed = channel.transport.parseInbound(payload);
 
+    // Mensajes @lid sin resolver: onlyDigits(@lid) da dígitos basura → crearían una
+    // conversación fantasma y el bot respondería a un número inexistente, perdiendo
+    // EN SILENCIO al cliente real (ver auditoría 2026-06-26). Se omiten y se loguea
+    // para que sea VISIBLE si alguna vez empieza a pasar (no silencioso).
+    const lidSkipped = parsed.filter((m) => !m.fromMe && !m.isGroup && m.isLid).length;
+    if (lidSkipped) {
+      console.warn(`wa-webhook: ${lidSkipped} mensaje(s) @lid sin resolver omitidos (store=${storeId}). Revisar resolución LID→teléfono.`);
+    }
+
+    // Ignoramos GRUPOS / difusión y @lid. Dejamos pasar media SIN texto (audio/foto):
+    // antes el filtro `m.body` los descartaba y el bot quedaba MUDO ante una nota de voz.
+    const inbound = parsed.filter((m) => !m.fromMe && !m.isGroup && !m.isLid && (m.body || m.media));
+
+    // Texto → trigger inmediato; audio → transcribir en BACKGROUND (el job de kie es
+    // async, no debe colgar el webhook ni hacer reintentar al gateway).
     const triggers: Array<{ conversationId: string; messageId: string }> = [];
+    const audioJobs: Array<{
+      conversationId: string;
+      messageId: string;
+      waMessageId: string;
+      mimetype?: string;
+      aiAuto: boolean;
+    }> = [];
 
     for (const m of inbound) {
+      const kind = m.media ? mediaKindOf(m) : "";
+      const isAudio = !m.body && m.media != null && isAudioKind(kind);
+      // Body inicial: texto, o marcador legible para media (NUNCA vacío) → se persiste
+      // YA (la asesora lo ve, idempotencia). Para audio, el marcador se reemplaza por
+      // la transcripción en background.
+      const initialBody = m.body || (m.media ? mediaMarker(kind) : "");
+
       const conv = await upsertConversation(sbAdmin, {
         storeId,
         channelId: channel.channelId,
@@ -83,27 +112,68 @@ Deno.serve(async (req) => {
         conversationId: conv.id,
         channelId: channel.channelId,
         waMessageId: m.waMessageId,
-        body: m.body,
+        body: initialBody,
         media: m.media,
         providerTs: m.timestamp,
       });
-      if (rec.inserted && conv.aiEnabled && conv.aiState === "auto" && rec.messageId) {
+      if (!rec.inserted || !rec.messageId) continue;
+
+      const aiAuto = conv.aiEnabled && conv.aiState === "auto";
+      if (isAudio) {
+        const mt = m.media && typeof (m.media as { mimetype?: unknown }).mimetype === "string"
+          ? (m.media as { mimetype?: string }).mimetype
+          : undefined;
+        audioJobs.push({ conversationId: conv.id, messageId: rec.messageId, waMessageId: m.waMessageId, mimetype: mt, aiAuto });
+      } else if (aiAuto) {
         triggers.push({ conversationId: conv.id, messageId: rec.messageId });
       }
     }
 
-    // Dispara la IA sin bloquear la respuesta al gateway (waitUntil si existe).
-    for (const t of triggers) {
-      const p = triggerAiResponder(storeId, t.conversationId, t.messageId).catch((e) =>
-        console.error("trigger ai-responder failed:", e)
-      );
-      const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
-        .EdgeRuntime?.waitUntil;
-      if (typeof waitUntil === "function") waitUntil(p);
-      else await p;
-    }
+    // Background (no bloquea la respuesta al gateway): (1) IA de los mensajes de texto;
+    // (2) audios → transcribir (kie job async) → actualizar el body con el texto → recién
+    // ahí disparar la IA (así razona sobre lo que DIJO el cliente, no sobre el marcador).
+    const background = (async () => {
+      for (const t of triggers) {
+        await triggerAiResponder(storeId, t.conversationId, t.messageId)
+          .catch((e) => console.error("trigger ai-responder failed:", e));
+      }
+      for (const job of audioJobs) {
+        try {
+          const media = channel.transport.fetchMediaBase64
+            ? await channel.transport.fetchMediaBase64(job.waMessageId).catch(() => null)
+            : null;
+          const text = media?.base64
+            ? await transcribeAudio({
+              sbAdmin,
+              storeId,
+              messageId: job.waMessageId,
+              base64: media.base64,
+              mimetype: media.mimetype || job.mimetype,
+            })
+            : null;
+          if (text) {
+            const body = `🎧 ${text}`;
+            await sbAdmin.from("wa_messages").update({ body }).eq("id", job.messageId);
+            await sbAdmin.from("wa_conversations").update({ last_message_preview: body.slice(0, 200) }).eq("id", job.conversationId);
+          }
+        } catch (e) {
+          console.error("wa-webhook transcribe failed:", e);
+        }
+        // Disparar la IA tras la transcripción (con o sin texto: nunca silencio).
+        if (job.aiAuto) {
+          await triggerAiResponder(storeId, job.conversationId, job.messageId)
+            .catch((e) => console.error("trigger ai-responder (audio) failed:", e));
+        }
+      }
+    })();
 
-    return json({ ok: true, received: inbound.length, ai_triggered: triggers.length }, 200, corsHeaders);
+    const waitUntil = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+      .EdgeRuntime?.waitUntil;
+    if (typeof waitUntil === "function") waitUntil(background);
+    else await background;
+
+    const aiTriggered = triggers.length + audioJobs.filter((j) => j.aiAuto).length;
+    return json({ ok: true, received: inbound.length, ai_triggered: aiTriggered }, 200, corsHeaders);
   } catch (err) {
     console.error("wa-webhook error:", err);
     // 200 a propósito: si devolvemos error, el gateway reintenta en loop.

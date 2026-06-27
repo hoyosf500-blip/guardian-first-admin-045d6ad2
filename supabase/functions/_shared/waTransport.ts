@@ -23,6 +23,12 @@ export interface WaInboundMessage {
   timestamp: number; // unix seconds
   fromMe: boolean; // true = eco de un saliente nuestro (se ignora como entrante)
   isGroup: boolean; // true = mensaje de un GRUPO/lista de difusión → el bot NO actúa ahí
+  // true = el JID llegó como "@lid" (identificador de privacidad) SIN resolver al
+  // teléfono real. onlyDigits(@lid) da dígitos basura (truthy) → crearía una
+  // conversación FANTASMA y el bot le respondería a un número inexistente, perdiendo
+  // EN SILENCIO al cliente que sí escribió. El webhook los omite y loguea (ver
+  // auditoría 2026-06-26). Resolver LID→teléfono es trabajo aparte.
+  isLid: boolean;
 }
 
 export interface WaSendResult {
@@ -32,12 +38,27 @@ export interface WaSendResult {
   httpStatus?: number;
 }
 
+/** Binario de un media entrante, descargado del gateway (para transcribir/leer). */
+export interface WaMediaBase64 {
+  base64: string;
+  mimetype?: string;
+}
+
 export interface WaTransport {
   readonly provider: WaProvider;
   /** Envía un texto a un teléfono (dígitos con código país). */
   sendText(to: string, body: string): Promise<WaSendResult>;
   /** Parsea el payload crudo del webhook del proveedor → mensajes normalizados. */
   parseInbound(payload: unknown): WaInboundMessage[];
+  /** Descarga el binario de un media entrante (audio/imagen) por su messageId, para
+   *  transcribirlo o leerlo. Opcional: no todos los proveedores lo implementan.
+   *  Devuelve null si el proveedor no soporta o si la descarga falla. */
+  fetchMediaBase64?(messageId: string): Promise<WaMediaBase64 | null>;
+}
+
+/** ¿El JID crudo llegó como "@lid" (identificador de privacidad sin resolver)? */
+export function isLidJid(jid: unknown): boolean {
+  return /@lid\b/i.test(String(jid ?? ""));
 }
 
 export interface WaTransportConfig {
@@ -155,6 +176,7 @@ class WhapiTransport implements WaTransport {
       timestamp: Number(m.timestamp ?? 0),
       fromMe: Boolean(m.from_me),
       isGroup: whapiIsGroup(m),
+      isLid: isLidJid(m.from ?? m.chat_id),
     })).filter((m) => m.waMessageId && m.fromPhone);
   }
 }
@@ -274,8 +296,37 @@ class EvolutionTransport implements WaTransport {
         timestamp: Number(m.messageTimestamp ?? 0) || 0,
         fromMe: Boolean(m.key?.fromMe),
         isGroup: evoIsGroup(remoteJid),
+        isLid: isLidJid(remoteJid),
       };
     }).filter((m) => m.waMessageId && m.fromPhone);
+  }
+
+  /** Descarga + descifra el binario de un media entrante vía Evolution
+   *  (`POST /chat/getBase64FromMediaMessage/{instance}`). Evolution tiene el mensaje
+   *  en su store, así que basta el id de la key. Devuelve null en cualquier fallo
+   *  (el caller cae a un marcador → el bot igual responde). */
+  async fetchMediaBase64(messageId: string): Promise<WaMediaBase64 | null> {
+    if (!messageId || !this.token || !this.base || !this.instance) return null;
+    if (!/^https:\/\//i.test(this.base)) return null;
+    try {
+      const res = await fetch(
+        `${this.base}/chat/getBase64FromMediaMessage/${encodeURIComponent(this.instance)}`,
+        {
+          method: "POST",
+          headers: { apikey: this.token, "Content-Type": "application/json" },
+          body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
+        },
+      );
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null) as
+        | { base64?: string; mimetype?: string; media?: { base64?: string; mimetype?: string } }
+        | null;
+      const base64 = data?.base64 || data?.media?.base64;
+      if (!base64 || typeof base64 !== "string") return null;
+      return { base64, mimetype: data?.mimetype || data?.media?.mimetype };
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -408,8 +459,33 @@ class WahaTransport implements WaTransport {
       timestamp: Number(m.timestamp ?? 0) || 0,
       fromMe: Boolean(m.fromMe),
       isGroup: wahaIsGroup(m),
+      isLid: isLidJid(from),
     };
     return [msg].filter((x) => x.waMessageId && x.fromPhone);
+  }
+
+  /** Descarga el binario de un media entrante vía WAHA
+   *  (`GET /api/{session}/files?messageId=...` no es estable entre versiones; usamos
+   *  `POST /api/{session}/messages/{id}` no — el camino fiable es pedir el media por id).
+   *  WAHA CORE expone el media en el propio payload del webhook (downloadMedia) o por
+   *  `GET {base}/api/{session}/auth`... Para mantenerlo simple y robusto entre versiones,
+   *  intentamos el endpoint de descarga por id y devolvemos null si no aplica. */
+  async fetchMediaBase64(messageId: string): Promise<WaMediaBase64 | null> {
+    if (!messageId || !this.token || !this.base) return null;
+    if (!/^https:\/\//i.test(this.base)) return null;
+    try {
+      const url = `${this.base}/api/${encodeURIComponent(this.session)}/messages/${encodeURIComponent(messageId)}/download`;
+      const res = await fetch(url, { method: "POST", headers: { "X-Api-Key": this.token } });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null) as
+        | { data?: string; base64?: string; mimetype?: string }
+        | null;
+      const base64 = data?.base64 || data?.data;
+      if (!base64 || typeof base64 !== "string") return null;
+      return { base64, mimetype: data?.mimetype };
+    } catch {
+      return null;
+    }
   }
 }
 
