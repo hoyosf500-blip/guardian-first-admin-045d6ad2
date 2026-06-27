@@ -184,6 +184,10 @@ export default function SeguimientoTab() {
     [filteredByDate, supersededIds, segClosedPhones],
   );
   const hiddenSupersededCount = supersededIds.size;
+  const hiddenClosedCount = useMemo(
+    () => filteredByDate.filter(o => isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined)).length,
+    [filteredByDate, segClosedPhones],
+  );
 
   // Lista SLA filter — se aplica DESPUÉS del filtro de fecha y del dedup. Si
   // la lista seleccionada tiene externalRoute (ej. /confirmar), no filtramos
