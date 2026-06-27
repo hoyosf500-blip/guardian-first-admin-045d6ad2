@@ -204,6 +204,28 @@ export function isWithinLastDays(
 }
 
 /**
+ * ¿Este pedido fue CERRADO (Resuelto/Devolución) por el equipo y por lo tanto NO
+ * debe volver a aparecer en Seguimiento? "Si ya se entregó o se devolvió, no
+ * vuelve a salir" — el panel solo debe tener pedidos accionables.
+ *
+ * `closerMs` = timestamp (ms) del último cierre registrado para el TELÉFONO del
+ * pedido (team-wide; ver useSegClosedPhones). Como los touchpoints matchean por
+ * phone (no por order_id), exigimos que el cierre sea POSTERIOR a la creación del
+ * pedido: así un pedido NUEVO de un cliente que ya tuvo un cierre viejo NO se
+ * esconde por error. Sin `closerMs` → no está cerrado. Fecha sin parsear →
+ * favorecemos el panel limpio (lo escondemos).
+ */
+export function isClosedOutByCloser(
+  fecha: string | null | undefined,
+  closerMs: number | undefined,
+): boolean {
+  if (closerMs === undefined) return false;
+  const created = parseDate(fecha || '');
+  if (!created) return true;
+  return closerMs >= created.getTime();
+}
+
+/**
  * Colombian public holidays (Ley Emiliani + fixed).
  * Returns holidays for a given year as "YYYY-MM-DD" strings.
  */
