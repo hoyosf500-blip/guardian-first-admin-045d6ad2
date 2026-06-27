@@ -100,4 +100,30 @@ describe("parseInbound marca isLid (guard anti-fantasma)", () => {
     expect(isAudioKind(mediaKindOf(out[0]))).toBe(true); // …pero clasifica como audio
     expect(out[0].isLid).toBe(false);
   });
+
+  it("WAHA: nota de voz con type SOLO en _data ('ptt') → se detecta como audio", () => {
+    const out = waha.parseInbound({
+      event: "message",
+      payload: {
+        id: "A1", from: "59945345110108@lid", fromMe: false, body: "", hasMedia: true,
+        media: { url: "http://localhost:3000/api/files/default/A1.oga", mimetype: "audio/ogg; codecs=opus" },
+        _data: { type: "ptt", notifyName: "Felipe" },
+      },
+    });
+    expect(out).toHaveLength(1);
+    expect(isAudioKind(mediaKindOf(out[0]))).toBe(true); // antes caía a "text" → no transcribía
+    expect(out[0].body).toBe("");
+  });
+
+  it("WAHA: nota de voz SIN type ni _data → infiere audio por mimetype", () => {
+    const out = waha.parseInbound({
+      event: "message",
+      payload: {
+        id: "A2", from: "573001112233@c.us", fromMe: false, body: "", hasMedia: true,
+        media: { url: "http://localhost:3000/api/files/default/A2.oga", mimetype: "audio/ogg" },
+      },
+    });
+    expect(out).toHaveLength(1);
+    expect(isAudioKind(mediaKindOf(out[0]))).toBe(true);
+  });
 });

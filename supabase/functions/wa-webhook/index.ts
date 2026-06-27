@@ -87,6 +87,7 @@ Deno.serve(async (req) => {
       messageId: string;
       waMessageId: string;
       mimetype?: string;
+      mediaUrl?: string;
       aiAuto: boolean;
     }> = [];
 
@@ -132,10 +133,10 @@ Deno.serve(async (req) => {
 
       const aiAuto = conv.aiEnabled && conv.aiState === "auto";
       if (isAudio) {
-        const mt = m.media && typeof (m.media as { mimetype?: unknown }).mimetype === "string"
-          ? (m.media as { mimetype?: string }).mimetype
-          : undefined;
-        audioJobs.push({ conversationId: conv.id, messageId: rec.messageId, waMessageId: m.waMessageId, mimetype: mt, aiAuto });
+        const mo = (m.media ?? null) as { mimetype?: unknown; url?: unknown } | null;
+        const mt = mo && typeof mo.mimetype === "string" ? mo.mimetype : undefined;
+        const mu = mo && typeof mo.url === "string" ? mo.url : undefined;
+        audioJobs.push({ conversationId: conv.id, messageId: rec.messageId, waMessageId: m.waMessageId, mimetype: mt, mediaUrl: mu, aiAuto });
       } else if (aiAuto) {
         triggers.push({ conversationId: conv.id, messageId: rec.messageId });
       }
@@ -151,9 +152,13 @@ Deno.serve(async (req) => {
       }
       for (const job of audioJobs) {
         try {
-          const media = channel.transport.fetchMediaBase64
-            ? await channel.transport.fetchMediaBase64(job.waMessageId).catch(() => null)
-            : null;
+          // Descarga del binario: WAHA expone el media por URL (media.url) — el camino
+          // fiable; Evolution lo baja por messageId. Preferimos la URL si vino.
+          const media = (job.mediaUrl && channel.transport.fetchMediaByUrl)
+            ? await channel.transport.fetchMediaByUrl(job.mediaUrl).catch(() => null)
+            : (channel.transport.fetchMediaBase64
+              ? await channel.transport.fetchMediaBase64(job.waMessageId).catch(() => null)
+              : null);
           const text = media?.base64
             ? await transcribeAudio({
               sbAdmin,
