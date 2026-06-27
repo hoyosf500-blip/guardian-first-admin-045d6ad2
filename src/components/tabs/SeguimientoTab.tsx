@@ -184,9 +184,15 @@ export default function SeguimientoTab() {
     [filteredByDate, supersededIds, segClosedPhones],
   );
   const hiddenSupersededCount = supersededIds.size;
+  // Excluimos los superseded para que "N reemplazados" y "N cerrados" sean
+  // disjuntos (un pedido reemplazado Y cerrado no se cuenta en los dos) → la
+  // suma cuadra con lo realmente retirado de la vista.
   const hiddenClosedCount = useMemo(
-    () => filteredByDate.filter(o => isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined)).length,
-    [filteredByDate, segClosedPhones],
+    () => filteredByDate.filter(o =>
+      !supersededIds.has(String(o.externalId ?? '')) &&
+      isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined),
+    ).length,
+    [filteredByDate, supersededIds, segClosedPhones],
   );
 
   // Lista SLA filter — se aplica DESPUÉS del filtro de fecha y del dedup. Si
