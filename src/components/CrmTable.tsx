@@ -542,12 +542,13 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       // "Gestionado hoy" (vuelve mañana); cierre = sale (snooze 30d).
       const label = isSegCloser(action) ? cleanSegAction(action) : 'Gestionado hoy';
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
-      if (user) {
+      if (user && activeStoreId) {
         const now = new Date();
         const tp = {
           phone: order.phone,
           action: `${module}: ${action}`,
           operator_id: user.id,
+          store_id: activeStoreId,
           action_date: bogotaToday(),
           action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
         };
@@ -558,7 +559,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     } finally {
       markingInFlightRef.current.delete(order.dbId);
     }
-  }, [user, module]);
+  }, [user, module, activeStoreId]);
 
 
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
