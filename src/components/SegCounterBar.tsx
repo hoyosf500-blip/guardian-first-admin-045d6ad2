@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { CheckCircle2, ListChecks, Hourglass, Users } from 'lucide-react';
 import { bogotaToday } from '@/lib/utils';
 import { isSegCloser } from '@/lib/segDailyReview';
