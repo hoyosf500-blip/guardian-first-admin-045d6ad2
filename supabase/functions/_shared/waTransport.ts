@@ -59,6 +59,10 @@ export interface WaTransport {
    *  Permite keyear la conversación por NÚMERO real → la IA busca el pedido en Dropi
    *  por teléfono como siempre. Devuelve dígitos del teléfono o null si no aplica. */
   resolveLidToPhone?(lidJid: string): Promise<string | null>;
+  /** Descarga un media entrante por su URL (cuando el proveedor la incluye en el
+   *  payload — WAHA: `media.url`, que apunta a un host interno). Reescribe el host al
+   *  base público + auth. Opcional. Devuelve null en cualquier fallo. */
+  fetchMediaByUrl?(url: string): Promise<WaMediaBase64 | null>;
 }
 
 /** ¿El JID crudo llegó como "@lid" (identificador de privacidad sin resolver)? */
@@ -379,9 +383,19 @@ function wahaName(m: WahaRawMessage): string | undefined {
 
 // WAHA usa el `type` estilo whatsapp-web.js: 'chat' (texto), 'image', 'video',
 // 'document', 'audio', 'ptt', 'location', ... Normalizamos 'chat' → 'text'.
+// OJO (verificado 2026-06-27): WAHA NO siempre trae `type` a nivel raíz — la nota de
+// voz lo trae SOLO en `_data.type` ("ptt"). Si falta o es 'chat', inferimos por el
+// mimetype del media para no perder audios/imágenes (sin esto el audio caía a "text"
+// y no se transcribía).
 function wahaType(m: WahaRawMessage): string {
-  const t = String(m.type ?? "chat");
-  return t === "chat" ? "text" : t;
+  const raw = String(m.type ?? (m._data as { type?: string } | undefined)?.type ?? "");
+  if (raw && raw !== "chat") return raw;
+  const mime = String((m.media as { mimetype?: string } | null | undefined)?.mimetype ?? "");
+  if (/audio|ogg|opus/i.test(mime)) return "ptt";
+  if (/image/i.test(mime)) return "image";
+  if (/video/i.test(mime)) return "video";
+  if (mime) return "document";
+  return "text";
 }
 
 function wahaMedia(m: WahaRawMessage): Record<string, unknown> | null {
@@ -523,6 +537,30 @@ class WahaTransport implements WaTransport {
       const data = await res.json().catch(() => null) as { pn?: string } | null;
       const phone = onlyDigits(data?.pn ?? "");
       return phone || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Descarga el binario de un media de WAHA desde su `media.url` (el payload la trae
+   *  como host interno, ej. http://localhost:3000/api/files/...). Tomamos el PATH y lo
+   *  colgamos del base público (Caddy /waha → :3000) + X-Api-Key → bytes → base64. Es
+   *  el camino fiable: el POST /messages/{id}/download da 404 en esta versión (2026-06). */
+  async fetchMediaByUrl(url: string): Promise<WaMediaBase64 | null> {
+    if (!url || !this.token || !this.base) return null;
+    if (!/^https:\/\//i.test(this.base)) return null;
+    try {
+      let path = url;
+      try { path = new URL(url).pathname; } catch { /* ya es relativa */ }
+      if (!path.startsWith("/")) path = `/${path}`;
+      const res = await fetch(`${this.base}${path}`, { headers: { "X-Api-Key": this.token } });
+      if (!res.ok) return null;
+      const mimetype = res.headers.get("content-type") || undefined;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (!buf.length || buf.length > 24 * 1024 * 1024) return null;
+      let bin = "";
+      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+      return { base64: btoa(bin), mimetype };
     } catch {
       return null;
     }
