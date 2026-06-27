@@ -16,6 +16,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadWaChannel, sendAndRecord, upsertConversation } from "../_shared/waChannel.ts";
 import { getTrackingUrl } from "../_shared/waTracking.ts";
+import { phoneSuffix } from "../_shared/waPhone.ts";
 
 const MAX_SENDS_PER_RUN = 40; // pacing anti-baneo (gateway QR no oficial)
 const LOOKBACK_DAYS = 21; // solo pedidos movidos recientemente
@@ -132,6 +133,46 @@ interface NotifyCfg {
   templates?: Partial<Record<Bucket, string>>;
   followup?: boolean;          // recordatorio por silencio (default ON si enabled)
   followupTemplate?: string;   // plantilla custom opcional ({nombre}, {agente})
+  // Modo SOLO-WARM (default ON, anti-baneo): el bot solo INICIA avisos proactivos a
+  // clientes que YA escribieron al menos una vez (hay un mensaje entrante). Evita
+  // enviar en frío a contactos LID que WhatsApp bloquea + riesgo de baneo a volumen.
+  // Poné warmOnly:false para volver al comportamiento "avisar a todos los pedidos".
+  warmOnly?: boolean;
+}
+
+/** Conversación existente del cliente (match por SUFIJO de teléfono, formato-agnóstico)
+ *  + si está "warm" (≥1 mensaje entrante = el cliente escribió al menos una vez).
+ *  Devuelve null si no hay conversación. Para el modo solo-warm: el bot NO inicia
+ *  chats en frío. */
+async function findClientConversation(
+  sbAdmin: SupabaseClient,
+  storeId: string,
+  phone: string,
+): Promise<{ id: string; aiState: string; warm: boolean } | null> {
+  const suf = phoneSuffix(phone);
+  if (suf.length < 7) return null; // evita over-match con sufijos cortos
+  const { data: conv } = await sbAdmin
+    .from("wa_conversations")
+    .select("id, ai_state")
+    .eq("store_id", storeId)
+    .ilike("customer_phone", `%${suf}%`)
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!conv) return null;
+  return { id: String(conv.id), aiState: String(conv.ai_state || "auto"), warm: await hasInbound(sbAdmin, String(conv.id)) };
+}
+
+/** ¿La conversación tiene al menos un mensaje ENTRANTE? (= el cliente escribió). */
+async function hasInbound(sbAdmin: SupabaseClient, conversationId: string): Promise<boolean> {
+  const { data } = await sbAdmin
+    .from("wa_messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("direction", "in")
+    .limit(1)
+    .maybeSingle();
+  return !!data;
 }
 
 async function processStore(
@@ -142,6 +183,7 @@ async function processStore(
   const notify = cfg.notify || {};
   if (!notify.enabled) return;
   const storeId = String(cfg.store_id);
+  const warmOnly = notify.warmOnly !== false; // default ON (anti-baneo)
 
   let channel;
   try {
@@ -200,22 +242,31 @@ async function processStore(
     const bucketOn = notify.buckets?.[bucket] !== false; // default ON si no está
     let didSend = false;
     if (bucketOn && state.sent < MAX_SENDS_PER_RUN) {
-      const tpl = (notify.templates?.[bucket] && String(notify.templates[bucket]).trim()) || DEFAULT_TEMPLATES[bucket];
-      const body = render(tpl, o, agente, country);
       try {
-        const conv = await upsertConversation(sbAdmin, {
-          storeId,
-          channelId: channel.channelId,
-          phone,
-          name: o.nombre ? String(o.nombre) : null,
-        });
+        // Resolver la conversación destino. Modo SOLO-WARM (default): solo si el
+        // cliente YA escribió (conversación con inbound) → cero envíos en frío. Con
+        // warmOnly:false vuelve al legacy (upsert crea la conversación y avisa a
+        // todos). Si no hay destino válido, NO mandamos (pero avanzamos el bucket
+        // abajo igual, así no reintenta en cada corrida).
+        let convId: string | null = null;
+        let aiState = "auto";
+        if (warmOnly) {
+          const c = await findClientConversation(sbAdmin, storeId, phone);
+          if (c && c.warm) { convId = c.id; aiState = c.aiState; }
+        } else {
+          const conv = await upsertConversation(sbAdmin, {
+            storeId, channelId: channel.channelId, phone, name: o.nombre ? String(o.nombre) : null,
+          });
+          convId = conv.id;
+          aiState = conv.aiState;
+        }
         // Si un humano TOMÓ/APAGÓ el hilo (ai_state='handed_off'), el bot NO manda
-        // proactivos NI se re-activa solo: lo maneja la persona. El apagado humano
-        // manda (requisito: "solo la operadora lo puede apagar"). Igual avanzamos
-        // el bucket abajo, así no reintenta en cada corrida.
-        if (conv.aiState !== "handed_off") {
+        // proactivos NI se re-activa solo: lo maneja la persona.
+        if (convId && aiState !== "handed_off") {
+          const tpl = (notify.templates?.[bucket] && String(notify.templates[bucket]).trim()) || DEFAULT_TEMPLATES[bucket];
+          const body = render(tpl, o, agente, country);
           const res = await sendAndRecord(sbAdmin, channel, {
-            conversationId: conv.id,
+            conversationId: convId,
             to: phone,
             body,
             sender: "system",
@@ -223,7 +274,7 @@ async function processStore(
           // Que el bot pueda RESPONDER si el cliente contesta (amigo siempre disponible).
           await sbAdmin.from("wa_conversations")
             .update({ ai_enabled: true, ai_state: "auto" })
-            .eq("id", conv.id);
+            .eq("id", convId);
           didSend = res.ok;
           if (res.ok) state.sent++;
         }
@@ -262,6 +313,7 @@ async function processSilenceFollowups(
   if (notify.followup === false) return; // sub-switch opcional (default ON si avisos ON)
   if (state.sent >= MAX_SENDS_PER_RUN) return;
   const storeId = String(cfg.store_id);
+  const warmOnly = notify.warmOnly !== false; // default ON (anti-baneo)
   const now = Date.now();
   const silentBefore = new Date(now - FOLLOWUP_SILENCE_HOURS * 3_600_000).toISOString();
   const notOlderThan = new Date(now - FOLLOWUP_MAX_AGE_HOURS * 3_600_000).toISOString();
@@ -290,6 +342,14 @@ async function processSilenceFollowups(
     const phone = c.customer_phone ? String(c.customer_phone) : "";
     const convId = String(c.id);
     if (!phone) continue;
+
+    // Modo solo-warm: el recordatorio también es PROACTIVO → no seguir a quien nunca
+    // escribió (conversaciones creadas por avisos en frío previos). Marcamos el
+    // episodio como seguido para no re-evaluarlo en cada corrida.
+    if (warmOnly && !(await hasInbound(sbAdmin, convId))) {
+      await sbAdmin.from("wa_conversations").update({ last_followup_at: new Date().toISOString() }).eq("id", convId);
+      continue;
+    }
 
     // El último saliente debe ser del BOT (ai/system), no de un operador humano que
     // esté atendiendo el hilo → no lo pisamos.
