@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isSegCloser } from '@/lib/segDailyReview';
 
@@ -29,42 +29,47 @@ const CLOSER_LOOKBACK_DAYS = 90;
 export function useSegClosedPhones(storeId: string | null): Map<string, number> {
   const [closed, setClosed] = useState<Map<string, number>>(new Map());
 
-  const load = useCallback(async () => {
-    if (!storeId) { setClosed(new Map()); return; }
-    const cutoffIso = new Date(Date.now() - CLOSER_LOOKBACK_DAYS * 86400000).toISOString();
-    const { data, error } = await supabase
-      .from('touchpoints')
-      .select('phone, action, created_at')
-      .eq('store_id', storeId)
-      .ilike('action', 'SEG:%')
-      .gte('created_at', cutoffIso);
-    if (error || !data) return;
-    const map = new Map<string, number>();
-    for (const t of data as { phone: string; action: string; created_at: string }[]) {
-      if (!t.phone || !isSegCloser(t.action)) continue;
-      const ms = new Date(t.created_at).getTime();
-      const prev = map.get(t.phone);
-      if (prev === undefined || ms > prev) map.set(t.phone, ms);
-    }
-    setClosed(map);
-  }, [storeId]);
-
-  // Reset inmediato al cambiar de tienda + recarga. Sin el reset, el mapa de la
-  // tienda anterior seguiría escondiendo phones en la nueva (mezcla client-side).
+  // Carga inicial + reset al cambiar de tienda. La bandera `cancelled` evita que
+  // una query lenta de la tienda A pise el estado (ya en blanco) de la tienda B
+  // si la operadora cambió de tienda antes de que A resolviera (race multi-tienda).
   useEffect(() => {
     setClosed(new Map());
-    void load();
-  }, [load]);
+    if (!storeId) return;
+    let cancelled = false;
+    void (async () => {
+      const cutoffIso = new Date(Date.now() - CLOSER_LOOKBACK_DAYS * 86400000).toISOString();
+      const { data, error } = await supabase
+        .from('touchpoints')
+        .select('phone, action, created_at')
+        .eq('store_id', storeId)
+        .ilike('action', 'SEG:%')
+        .gte('created_at', cutoffIso);
+      if (cancelled || error || !data) return;
+      const map = new Map<string, number>();
+      for (const t of data as { phone: string; action: string; created_at: string }[]) {
+        if (!t.phone || !isSegCloser(t.action)) continue;
+        const ms = new Date(t.created_at).getTime();
+        const prev = map.get(t.phone);
+        if (prev === undefined || ms > prev) map.set(t.phone, ms);
+      }
+      if (!cancelled) setClosed(map);
+    })();
+    return () => { cancelled = true; };
+  }, [storeId]);
 
   // Realtime: un cierre nuevo de CUALQUIER operadora se refleja sin recargar.
-  // Postgres Realtime no soporta ILIKE → filtramos client-side (action SEG:* de
-  // cierre) + por store_id (multi-tenant). Mismo patrón que SegCounterBar.
+  // FILTRO SERVER-SIDE por store_id: sin él, el broker de Supabase entregaría a
+  // ESTE cliente los payloads (phone, action, operator_id) de TODAS las tiendas
+  // (la RLS de touchpoints no acota el realtime) → fuga cross-tenant de PII. El
+  // guard client-side de abajo es defensa en profundidad, pero el filtro es lo
+  // que evita que el dato cruce. Postgres Realtime no soporta ILIKE → el match de
+  // cierre (isSegCloser) se hace client-side.
   useEffect(() => {
     if (!storeId) return;
     const channel = supabase
       .channel(`seg-closed-${storeId}`)
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'touchpoints' },
+        { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: `store_id=eq.${storeId}` },
         (payload) => {
           const row = payload.new as { phone?: string; action?: string; store_id?: string; created_at?: string };
           if (row.store_id !== storeId) return;
