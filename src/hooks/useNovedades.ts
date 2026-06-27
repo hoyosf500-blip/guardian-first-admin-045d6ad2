@@ -168,7 +168,9 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
         setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
       }, 800);
     }
-  }, [user]);
+    // storeId va en deps: se usa para el store_id del touchpoint. Sin él, tras
+    // cambiar de tienda resolveNovedad escribiría con el store viejo.
+  }, [user, storeId]);
 
   // COST-1: pausa polling cuando la pestaña está oculta.
   useEffect(() => {

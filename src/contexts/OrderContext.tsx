@@ -632,7 +632,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // MED-1: timerStart NO se lee dentro del callback (solo se setea con
   // setter funcional). Tenerlo en deps invalidaba ctxValue cada confirmación
   // y disparaba re-render en cascada en todos los consumers.
-  }, [user, checkMilestone]);
+  // activeStoreId SÍ va: se usa para el store_id de order_results y del
+  // touchpoint. Sin él, tras cambiar de tienda markResult quedaría con el
+  // store viejo y escribiría a la tienda equivocada (mezcla CO/EC).
+  }, [user, checkMilestone, activeStoreId]);
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
