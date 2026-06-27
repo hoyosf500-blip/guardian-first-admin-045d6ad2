@@ -184,6 +184,10 @@ export default function SeguimientoTab() {
     [filteredByDate, supersededIds, segClosedPhones],
   );
   const hiddenSupersededCount = supersededIds.size;
+  const hiddenClosedCount = useMemo(
+    () => filteredByDate.filter(o => isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined)).length,
+    [filteredByDate, segClosedPhones],
+  );
 
   // Lista SLA filter — se aplica DESPUÉS del filtro de fecha y del dedup. Si
   // la lista seleccionada tiene externalRoute (ej. /confirmar), no filtramos
@@ -491,6 +495,14 @@ export default function SeguimientoTab() {
                   title={`${hiddenSupersededCount} pedido${hiddenSupersededCount > 1 ? 's' : ''} reemplazados por Dropi (mismo cliente + producto, nueva versión más reciente). Se ocultan para no duplicar la cola — el más reciente sí aparece.`}
                 >
                   · {hiddenSupersededCount} reemplazados Dropi
+                </span>
+              )}
+              {hiddenClosedCount > 0 && (
+                <span
+                  className="text-[10px] text-muted-foreground/70 font-mono"
+                  title={`${hiddenClosedCount} pedido${hiddenClosedCount > 1 ? 's' : ''} cerrados (Resuelto/Devolución) ocultos. No se borraron — aparecen en el histórico con un rango de fechas más amplio.`}
+                >
+                  · {hiddenClosedCount} resueltos/devueltos ocultos
                 </span>
               )}
             </div>
