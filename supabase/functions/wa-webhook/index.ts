@@ -17,6 +17,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadWaChannel, recordInbound, upsertConversation } from "../_shared/waChannel.ts";
 import { transcribeAudio } from "../_shared/waTranscribe.ts";
 import { isAudioKind, mediaKindOf, mediaMarker } from "../_shared/waMedia.ts";
+import { isLidJid } from "../_shared/waTransport.ts";
 
 function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), {
@@ -97,10 +98,21 @@ Deno.serve(async (req) => {
       // la transcripción en background.
       const initialBody = m.body || (m.media ? mediaMarker(kind) : "");
 
+      // LID → teléfono real: si el remitente entró como "@lid" (privacidad) y el
+      // proveedor expone el mapeo (WAHA: /lids/{id} → { pn }), resolvemos su teléfono
+      // real para keyear la conversación por NÚMERO → la IA encuentra el pedido en
+      // Dropi por teléfono, como siempre. Si no se resuelve, queda el @lid (igual
+      // responde — WAHA entrega al @lid — pero sin lookup automático por teléfono).
+      let phone = m.fromPhone;
+      if (isLidJid(phone) && channel.transport.resolveLidToPhone) {
+        const real = await channel.transport.resolveLidToPhone(phone).catch(() => null);
+        if (real) phone = real;
+      }
+
       const conv = await upsertConversation(sbAdmin, {
         storeId,
         channelId: channel.channelId,
-        phone: m.fromPhone,
+        phone,
         name: m.fromName,
         // El bot arranca ACTIVO en automático para todo cliente que escribe (chat
         // individual). Solo aplica al CREAR la conversación: si una humana ya tomó

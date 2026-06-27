@@ -74,13 +74,16 @@ describe("parseInbound marca isLid (guard anti-fantasma)", () => {
     expect(out[0].isLid).toBe(false);
   });
 
-  it("WAHA: from @lid → isLid true", () => {
+  it("WAHA: from @lid → NO se descarta (isLid false) y keyea por el @lid completo", () => {
     const out = waha.parseInbound({
       event: "message",
       payload: { id: "W1", from: "249553355121566@lid", body: "hola" },
     });
     expect(out).toHaveLength(1);
-    expect(out[0].isLid).toBe(true);
+    // WAHA (WhatsApp Web real) ENTREGA al @lid → no es fantasma: no se descarta y se
+    // keyea/responde por su JID @lid completo (el teléfono real está oculto por LID).
+    expect(out[0].isLid).toBe(false);
+    expect(out[0].fromPhone).toBe("249553355121566@lid");
   });
 
   it("audio entrante (Evolution) llega con body vacío y media de audio → el webhook lo enriquece", () => {

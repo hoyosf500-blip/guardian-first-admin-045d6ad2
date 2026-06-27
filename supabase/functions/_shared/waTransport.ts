@@ -54,6 +54,11 @@ export interface WaTransport {
    *  transcribirlo o leerlo. Opcional: no todos los proveedores lo implementan.
    *  Devuelve null si el proveedor no soporta o si la descarga falla. */
   fetchMediaBase64?(messageId: string): Promise<WaMediaBase64 | null>;
+  /** Resuelve un JID "@lid" (identidad de privacidad de WhatsApp) al TELÉFONO real,
+   *  si el proveedor expone el mapeo (WAHA: GET /api/{session}/lids/{id} → { pn }).
+   *  Permite keyear la conversación por NÚMERO real → la IA busca el pedido en Dropi
+   *  por teléfono como siempre. Devuelve dígitos del teléfono o null si no aplica. */
+  resolveLidToPhone?(lidJid: string): Promise<string | null>;
 }
 
 /** ¿El JID crudo llegó como "@lid" (identificador de privacidad sin resolver)? */
@@ -342,11 +347,13 @@ class EvolutionTransport implements WaTransport {
 //   - Webhook: POST { event:"message", session, payload:{ id, from, fromMe, to, body,
 //              hasMedia, type, timestamp, _data:{ notifyName } } }  (evento "message" = entrante)
 //
-// NOTA (verificar con payload real al reconectar el número a WAHA): se asume que el
-// `from` del webhook es el chatId "<teléfono>@c.us". Si una cuenta migrada a LID
-// entregara `from` como "@lid", el match por teléfono necesitaría resolver el
-// LID→teléfono (WAHA /api/contacts). El sendText SÍ está verificado en vivo (entrega
-// warm con ack DEVICE; mandar al @lid crudo falla, por eso forzamos @c.us).
+// LID (verificado en vivo 2026-06-27): para un contacto migrado a LID, el webhook
+// entrega `from` = "<id>@lid" y el teléfono real queda OCULTO (no está en el payload
+// ni en _data — es el punto de LID). WAHA (WhatsApp Web real) ENTREGA tanto a
+// "<id>@lid" como a "<tel>@c.us" (ack=2 DEVICE, AMBOS verificados). Por eso:
+// parseInbound keyea la conversación por el "<id>@lid" completo y sendText responde a
+// ese JID tal cual. (El viejo comentario "el @lid crudo rompe el envío" era de
+// Baileys/Evolution, NO de WAHA.)
 
 const WAHA_DEFAULT_SESSION = "default";
 
@@ -403,20 +410,24 @@ class WahaTransport implements WaTransport {
   }
 
   async sendText(to: string, body: string): Promise<WaSendResult> {
-    const phone = onlyDigits(to);
+    const raw = String(to ?? "").trim();
+    const phone = onlyDigits(raw);
     if (!phone) return { ok: false, error: "Teléfono inválido" };
     if (!this.token) return { ok: false, error: "Canal sin token (X-Api-Key) configurado" };
     if (!this.base) return { ok: false, error: "Canal sin URL del server (provider_base)" };
     // Anti-SSRF: el provider_base lo escribe el dueño; exigimos https:// (WAHA va
     // detrás de HTTPS) para no permitir apuntar a hosts internos/http.
     if (!/^https:\/\//i.test(this.base)) return { ok: false, error: "provider_base debe ser una URL https://" };
+    // chatId: si `to` ya trae un JID (@lid o @c.us) se usa TAL CUAL — caso del contacto
+    // migrado a LID, cuyo teléfono real está OCULTO: le respondemos a su "<id>@lid"
+    // (WAHA lo entrega, verificado ack=2 DEVICE). Si son solo dígitos (contacto normal),
+    // "<dígitos>@c.us" y WAHA resuelve el resto.
+    const chatId = raw.includes("@") ? raw : `${phone}@c.us`;
     try {
       const res = await fetch(`${this.base}/api/sendText`, {
         method: "POST",
         headers: { "X-Api-Key": this.token, "Content-Type": "application/json" },
-        // chatId @c.us (NO @lid): WAHA/WEBJS resuelve el LID internamente. Mandar al
-        // @lid crudo rompe el envío (verificado en vivo).
-        body: JSON.stringify({ session: this.session, chatId: `${phone}@c.us`, text: body }),
+        body: JSON.stringify({ session: this.session, chatId, text: body }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -447,11 +458,14 @@ class WahaTransport implements WaTransport {
     const m = (p.payload || p.data || payload) as WahaRawMessage;
     if (!m || typeof m !== "object") return [];
     const from = String(m.from ?? "");
+    const lid = isLidJid(from);
     const msg: WaInboundMessage = {
       waMessageId: String(m.id ?? ""),
-      // Se asume `from` = "<teléfono>@c.us" → onlyDigits descarta el sufijo. Ver la
-      // NOTA sobre LID arriba (verificar con un payload real al reconectar).
-      fromPhone: onlyDigits(from),
+      // Contacto LID (verificado 2026-06-27): el payload SOLO trae "<id>@lid" — el
+      // teléfono real queda OCULTO por diseño de LID. WAHA entrega al @lid nativo,
+      // así que keyeamos por el JID @lid COMPLETO y respondemos ahí (sendText lo usa
+      // tal cual). Contacto normal → dígitos del "<teléfono>@c.us".
+      fromPhone: lid ? from : onlyDigits(from),
       fromName: wahaName(m),
       type: wahaType(m),
       body: String(m.body ?? ""),
@@ -459,7 +473,10 @@ class WahaTransport implements WaTransport {
       timestamp: Number(m.timestamp ?? 0) || 0,
       fromMe: Boolean(m.fromMe),
       isGroup: wahaIsGroup(m),
-      isLid: isLidJid(from),
+      // WAHA entrega al @lid → NO es un fantasma irresoluble: NO marcamos isLid, para
+      // que wa-webhook NO lo descarte (a diferencia de Baileys/Evolution, que no
+      // pueden responderle al @lid). La identidad @lid viaja en fromPhone.
+      isLid: false,
     };
     return [msg].filter((x) => x.waMessageId && x.fromPhone);
   }
@@ -483,6 +500,29 @@ class WahaTransport implements WaTransport {
       const base64 = data?.base64 || data?.data;
       if (!base64 || typeof base64 !== "string") return null;
       return { base64, mimetype: data?.mimetype };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Resuelve "<id>@lid" → teléfono real vía WAHA (GET /api/{session}/lids/{id} →
+   *  { lid, pn }). Devuelve los dígitos del teléfono (de `pn` = "<tel>@c.us") o null.
+   *  Es lo que permite keyear la conversación de un cliente LID por su NÚMERO real y
+   *  que la IA le encuentre el pedido en Dropi (verificado en vivo 2026-06-27). */
+  async resolveLidToPhone(lidJid: string): Promise<string | null> {
+    if (!this.token || !this.base) return null;
+    if (!/^https:\/\//i.test(this.base)) return null;
+    const lidUser = onlyDigits(lidJid);
+    if (!lidUser) return null;
+    try {
+      const res = await fetch(
+        `${this.base}/api/${encodeURIComponent(this.session)}/lids/${encodeURIComponent(lidUser)}`,
+        { headers: { "X-Api-Key": this.token } },
+      );
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null) as { pn?: string } | null;
+      const phone = onlyDigits(data?.pn ?? "");
+      return phone || null;
     } catch {
       return null;
     }
