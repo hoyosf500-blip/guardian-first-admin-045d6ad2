@@ -2,8 +2,9 @@ import { useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
-import { OrderData, isWithinLastDays } from '@/lib/orderUtils';
+import { OrderData, isWithinLastDays, isClosedOutByCloser } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
+import { useSegClosedPhones } from '@/hooks/useSegClosedPhones';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -55,6 +56,9 @@ export default function SeguimientoTab() {
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId } = useStore();
   const { refreshNow, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
+  // Pedidos que el equipo ya CERRÓ (Resuelto/Devolución) → salen para siempre de
+  // Seguimiento. Team-wide (set de phones de la tienda activa). Ver hook.
+  const segClosedPhones = useSegClosedPhones(activeStoreId);
 
   // Filter state persisted to sessionStorage so it also survives tab
   // discards (Chrome Memory Saver) and internal route navigation.
@@ -164,10 +168,20 @@ export default function SeguimientoTab() {
     [filteredByDate],
   );
   const dedupedByDate = useMemo(
-    () => supersededIds.size === 0
-      ? filteredByDate
-      : filteredByDate.filter((o) => !supersededIds.has(String(o.externalId ?? ''))),
-    [filteredByDate, supersededIds],
+    () => {
+      const deduped = supersededIds.size === 0
+        ? filteredByDate
+        : filteredByDate.filter((o) => !supersededIds.has(String(o.externalId ?? '')));
+      // Saca PERMANENTEMENTE los pedidos que el equipo ya cerró (Resuelto/
+      // Devolución): "si ya se entregó o se devolvió, no vuelve a salir". El panel
+      // solo debe tener pedidos accionables → menos contaminación para las
+      // operadoras. Team-wide; el cruce por fecha (isClosedOutByCloser) evita
+      // esconder un pedido NUEVO de un cliente que ya tuvo un cierre viejo.
+      return deduped.filter(
+        (o) => !isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined),
+      );
+    },
+    [filteredByDate, supersededIds, segClosedPhones],
   );
   const hiddenSupersededCount = supersededIds.size;
 
