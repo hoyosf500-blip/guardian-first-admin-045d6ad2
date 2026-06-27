@@ -130,18 +130,29 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: `Pais no soportado: ${country}. Validos: ${Object.keys(DROPI_HOSTS).join(", ")}` }, 400, corsHeaders);
   }
 
-  // 2.5) Validar que el dropi_token corresponda al token autorizado en app_settings
+  // 2.5) Validar que el dropi_token corresponda a una key autorizada
+  //        (multi-tenant: store_dropi_config primero; fallback al app_settings viejo)
   try {
     const sb = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     );
-    const { data: keySetting } = await sb
-      .from("app_settings")
-      .select("value")
-      .eq("key", "dropi_api_key")
+    const { data: storeKey } = await sb
+      .from("store_dropi_config")
+      .select("store_id")
+      .eq("dropi_api_key", dropiToken)
+      .limit(1)
       .maybeSingle();
-    if (!keySetting || keySetting.value !== dropiToken) {
+    let authorized = !!storeKey;
+    if (!authorized) {
+      const { data: keySetting } = await sb
+        .from("app_settings")
+        .select("value")
+        .eq("key", "dropi_api_key")
+        .maybeSingle();
+      authorized = !!keySetting && keySetting.value === dropiToken;
+    }
+    if (!authorized) {
       return json({ ok: false, error: "Token Dropi no autorizado" }, 403, corsHeaders);
     }
   } catch (err) {
