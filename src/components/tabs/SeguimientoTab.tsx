@@ -497,6 +497,14 @@ export default function SeguimientoTab() {
                   · {hiddenSupersededCount} reemplazados Dropi
                 </span>
               )}
+              {hiddenClosedCount > 0 && (
+                <span
+                  className="text-[10px] text-muted-foreground/70 font-mono"
+                  title={`${hiddenClosedCount} pedido${hiddenClosedCount > 1 ? 's' : ''} cerrados (Resuelto/Devolución) ocultos. No se borraron — aparecen en el histórico con un rango de fechas más amplio.`}
+                >
+                  · {hiddenClosedCount} resueltos/devueltos ocultos
+                </span>
+              )}
             </div>
             <WaInbox storeId={activeStoreId} />
             {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
