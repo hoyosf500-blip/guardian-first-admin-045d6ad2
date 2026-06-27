@@ -23,9 +23,9 @@ interface BatchBody {
   days?: number;
 }
 
-const PAGE_SIZE = 200;                 // máx por página (menos requests = menos 429)
+const PAGE_SIZE = 100;                // máx por página (menos requests = menos 429)
 const RATE_LIMIT_MS = 1500;            // espera entre páginas OK (igual que cron/snapshot)
-const MAX_PAGES = 10;                  // cap: 10 × 200 = 2000 pedidos recientes
+const MAX_PAGES = 20;                  // cap: 20 × 100 = 2000 pedidos recientes
 const TIME_BUDGET_MS = 60_000;         // corte de seguridad < techo del edge
 const RL_BACKOFF_MS = [2000, 4000, 8000, 16000]; // backoff exponencial ante 429
 const DEFAULT_DAYS = 10;

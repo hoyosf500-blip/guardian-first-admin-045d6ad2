@@ -31,14 +31,13 @@ interface SnapshotOrder {
   name: string;
 }
 
-// 200 es el máximo que aceptamos por página — Dropi devuelve hasta 200 sin error
-// y reduce a la mitad la cantidad de requests vs 100. Menos requests = menos
-// chance de pegar el rate-limit (429) de la cuenta.
-const PAGE_SIZE = 200;
+// 100 es el máximo que acepta Dropi. Más requests = más chance de 429,
+// pero Dropi ahora rechaza pageSize > 100 con isSuccess=false.
+const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 1500;
-// Hard cap por seguridad: 30 páginas × 200 = 6000 órdenes. Una tienda grande
+// Hard cap por seguridad: 60 páginas × 100 = 6000 órdenes. Una tienda grande
 // con 14d de actividad suele estar en 500-2000, así que es holgado.
-const MAX_PAGES = 30;
+const MAX_PAGES = 60;
 // Backoff exponencial cuando Dropi tira 429: 2s, 4s, 8s. Después de 3 intentos
 // cortamos y devolvemos lo parcial. Antes (sin backoff) cortábamos inmediato
 // → cobertura baja, el modal mostraba "paridad perfecta" engañoso.

@@ -117,7 +117,7 @@ Deno.serve(async (req: Request) => {
   const country = String(body.country || "CO").toUpperCase();
   const endpoint = String(body.endpoint || "orders/myorders").replace(/^\/+/, "");
   const page = Math.max(1, Number(body.page) || 1);
-  const pageSize = Math.max(1, Math.min(500, Number(body.page_size) || 100));
+  const pageSize = Math.max(1, Math.min(100, Number(body.page_size) || 100));
   const dateFrom = body.date_from ? String(body.date_from) : "";
   const dateTo = body.date_to ? String(body.date_to) : "";
 
