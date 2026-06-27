@@ -3,6 +3,7 @@ import {
   dbToOrderData,
   parseDate,
   calcDias,
+  isWithinLastDays,
   cleanPhone,
   formatPhone,
   getWhatsAppPhone,
@@ -74,6 +75,40 @@ describe('calcDias', () => {
     const dias = calcDias(past);
     expect(dias).toBeGreaterThanOrEqual(4);
     expect(dias).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('isWithinLastDays', () => {
+  // nowMs fijo para que el test sea determinista (no depende del reloj real).
+  const NOW = Date.UTC(2026, 5, 26, 12, 0, 0); // 2026-06-26 mediodía UTC
+
+  it('incluye una fecha de hoy', () => {
+    expect(isWithinLastDays('2026-06-26', 45, NOW)).toBe(true);
+  });
+
+  it('incluye una fecha del mes anterior dentro de la ventana (cross-month)', () => {
+    // 2026-05-20 está a ~37 días → dentro de 45.
+    expect(isWithinLastDays('2026-05-20', 45, NOW)).toBe(true);
+    expect(isWithinLastDays('20/05/2026', 45, NOW)).toBe(true); // DD/MM/YYYY
+  });
+
+  it('excluye una fecha más vieja que la ventana', () => {
+    // 2026-04-01 está a ~86 días → fuera de 45.
+    expect(isWithinLastDays('2026-04-01', 45, NOW)).toBe(false);
+  });
+
+  it('incluye lo de hace 44 días y excluye lo de hace 46', () => {
+    const d44 = new Date(NOW - 44 * 86400000).toISOString().slice(0, 10);
+    const d46 = new Date(NOW - 46 * 86400000).toISOString().slice(0, 10);
+    expect(isWithinLastDays(d44, 45, NOW)).toBe(true);
+    expect(isWithinLastDays(d46, 45, NOW)).toBe(false);
+  });
+
+  it('una fecha sin parsear se incluye (no esconder por las dudas)', () => {
+    expect(isWithinLastDays('', 45, NOW)).toBe(true);
+    expect(isWithinLastDays('garbage', 45, NOW)).toBe(true);
+    expect(isWithinLastDays(null, 45, NOW)).toBe(true);
+    expect(isWithinLastDays(undefined, 45, NOW)).toBe(true);
   });
 });
 

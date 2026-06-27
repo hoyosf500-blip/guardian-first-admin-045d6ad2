@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
-import { OrderData, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, isWithinLastDays } from '@/lib/orderUtils';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List } from 'lucide-react';
@@ -26,27 +26,15 @@ import {
 import { classifySegEstado } from '@/lib/segStatus';
 import { findSupersededInSeg } from '@/lib/duplicateOrders';
 
-function getOrderAgeDays(order: OrderData): number {
-  const fechaConf = (order.fechaConf || '').trim();
-  if (fechaConf && fechaConf !== 'undefined') return calcBusinessDays(fechaConf);
-  return order.diasConf || 0;
-}
-
-// Más allá de esto, un pedido está MUERTO, no "atrasado": ningún reclamo a la
-// transportadora ni llamada al cliente lo rescata (la guía ya se devolvió hace
-// rato en la práctica). Seguimiento es para pedidos que SÍ pueden recibir
-// atención; los que no se mueven hace +1 mes solo son contaminación visual.
+// Ventana por defecto de Seguimiento: ÚLTIMOS 45 DÍAS (calendario), rodante.
+// Antes el default era el 1° del mes en curso y, al pasar de mes, los pedidos
+// del mes anterior que SEGUÍAN en ruta se "quedaban atrás" (desaparecían de la
+// vista hasta poner un rango manual). Una ventana rodante de 45 días arrastra el
+// mes previo. Aplica a CO y EC por igual (decisión del dueño, 2026-06-26).
 // OJO: esto solo OCULTA en la vista de operadora — la data sigue intacta en la
-// DB para Logística/Finanzas (ej. "ciudades con más entregas"), y se puede ver
-// poniendo un rango de fechas explícito.
-//
-// El cutoff es POR PAÍS: Colombia cicla rápido (21 días hábiles ~ 1 mes deja 3x
-// de margen sobre las listas SLA que llegan a ~7 días). Ecuador cicla MUCHO más
-// lento (las transportadoras EC tardan semanas), así que un cutoff de 21d
-// escondía operación EC legítimamente activa → "no me muestra toda mi
-// operación". EC usa una ventana más amplia.
-const MAX_ACTIONABLE_BY_COUNTRY: Record<string, number> = { CO: 21, EC: 60 };
-const DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS = 21;
+// DB para Logística/Finanzas, y se ve completa poniendo un rango de fechas
+// explícito (los pickers "Desde/Hasta").
+const DEFAULT_WINDOW_DAYS = 45;
 
 // Punto de color por urgencia para los chips de listas SLA (mapea SegListDef.tone).
 const LIST_TONE_DOT: Record<string, string> = {
@@ -67,23 +55,15 @@ export default function SeguimientoTab() {
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId } = useStore();
   const { refreshNow, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
-  const maxActionableDays =
-    MAX_ACTIONABLE_BY_COUNTRY[activeStore?.country_code ?? 'CO'] ?? DEFAULT_MAX_ACTIONABLE_BUSINESS_DAYS;
 
   // Filter state persisted to sessionStorage so it also survives tab
   // discards (Chrome Memory Saver) and internal route navigation.
-  // Default: primer día del mes en curso → la operadora ve SIEMPRE el mes
-  // actual al entrar. Si quiere más historia, expande el rango con el
-  // date picker. Antes el default era "" (todo) y mezclaba pedidos de
-  // hace 6 meses con la operación viva → ruido visual.
-  const currentMonthStart = (() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    return `${y}-${m}-01`;
-  })();
-  const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom', currentMonthStart);
-  const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo', '');
+  // Sin rango explícito por defecto (cadenas vacías) → aplica la ventana rodante
+  // de 45 días (ver actionableData). Keys bumpeadas a :v2 para que los valores
+  // viejos ("1° del mes") guardados en sessionStorage NO le ganen al nuevo
+  // default (si no, la operadora seguiría con el bug del cambio de mes).
+  const [dateFrom, setDateFrom] = useSessionState<string>('seg:dateFrom:v2', '');
+  const [dateTo, setDateTo] = useSessionState<string>('seg:dateTo:v2', '');
   // Resumen por estado (las 14 tarjetas) colapsado por defecto. La forma
   // principal de priorizar pasó a ser las listas SLA (chips arriba); estas
   // tarjetas quedan como vista secundaria opcional.
@@ -91,10 +71,14 @@ export default function SeguimientoTab() {
   // Owns the status filter so the stat cards act as the single source of truth
   // (no duplicate pill row below).
   const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
-  // Toggle "Solo sin tocar" — esconde los pedidos donde YO ya marqué un
-  // touchpoint SEG:* hoy. Sirve para que la operadora vea solo lo que aún
-  // tiene que llamar. mySegTouchedToday viene del OrderContext (set de phones).
-  const [onlyUntouchedSeg, setOnlyUntouchedSeg] = useSessionState<boolean>('seg:onlyUntouched', false);
+  // Contador diario: por defecto OCULTAMOS del tablero los pedidos que YO ya
+  // gestioné hoy (touchpoint SEG:* → mySegTouchedToday, set de phones del
+  // OrderContext). Al gestionar un pedido (Contactado/Llamé/WhatsApp/… desde la
+  // ficha o la lista) desaparece del tablero y "Te faltan N" baja, igual que la
+  // cola de Confirmar. Key :v2 para activar el nuevo default aunque hubiera un
+  // `false` viejo guardado. La LISTA (CrmTable) ya tiene su propio ocultado de
+  // gestionados, por eso este filtro aplica al TABLERO.
+  const [onlyUntouchedSeg, setOnlyUntouchedSeg] = useSessionState<boolean>('seg:autoHide:v2', true);
   // Vista: tablero Kommo (default, tarjetas en vivo por columna) o lista (CrmTable
   // clásico con búsqueda/owner/llamada). El tablero no quita features: es un toggle.
   const [viewMode, setViewMode] = useSessionState<'board' | 'list'>('seg:viewMode', 'board');
@@ -125,14 +109,22 @@ export default function SeguimientoTab() {
 
   useEffect(() => { loadSegData(); }, [loadSegData]);
 
-  // Pedidos accionables: ocultamos los "muertos" (sin movimiento hace +1 mes)
-  // SOLO en la vista por defecto. Si el operador pone un rango de fechas
+  // Pedidos accionables: por defecto mostramos los ÚLTIMOS 45 DÍAS (ventana
+  // rodante por fecha del pedido) → al pasar de mes, los pedidos del mes anterior
+  // que siguen en ruta NO se quedan atrás. Si el operador pone un rango de fechas
   // explícito, está explorando el histórico → mostramos todo lo de ese rango.
   // No se borra nada: la data vieja sigue en la DB para Logística/Finanzas.
+  // `windowNowMs` es estable por carga de datos (no por render) para que la
+  // ventana no "tiemble" en cada push de realtime, pero avance al entrar datos
+  // nuevos (cada refresh de segData recomputa el corte).
+  // `segData` en deps a propósito: queremos recomputar el corte cuando ENTRAN
+  // datos nuevos (cada refresh), no que Date.now() lo haga en cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const windowNowMs = useMemo(() => Date.now(), [segData]);
   const actionableData = useMemo(() => {
     if (dateFrom || dateTo) return segData;
-    return segData.filter(o => getOrderAgeDays(o) <= maxActionableDays);
-  }, [segData, dateFrom, dateTo, maxActionableDays]);
+    return segData.filter(o => isWithinLastDays(o.fecha, DEFAULT_WINDOW_DAYS, windowNowMs));
+  }, [segData, dateFrom, dateTo, windowNowMs]);
 
   // Cuántos pedidos viejos se ocultaron (solo en la vista por defecto), para
   // mostrar una nota sutil — transparencia: no desaparecen en silencio.
@@ -198,13 +190,26 @@ export default function SeguimientoTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStoreId]);
 
-  // Feed final que ven el tablero y la lista: feed de la lista SLA activa (o el
-  // total deduplicado) con el toggle "Solo sin tocar" aplicado. Misma fuente
-  // para ambas vistas → cuentas idénticas.
+  // Feed base que ve la LISTA (CrmTable): lista SLA activa (o el total
+  // deduplicado). CrmTable ya oculta los gestionados con su propia lógica
+  // (results + snooze 30d de cierres), así que NO lo pre-filtramos acá.
   const displayData = useMemo(() => {
-    const feed = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-    return onlyUntouchedSeg ? feed.filter((o) => !o.phone || !mySegTouchedToday.has(o.phone)) : feed;
-  }, [listaActiva, filteredByList, dedupedByDate, onlyUntouchedSeg, mySegTouchedToday]);
+    return listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+  }, [listaActiva, filteredByList, dedupedByDate]);
+
+  // Feed del TABLERO: contador diario. Oculta los pedidos que YO ya gestioné hoy
+  // (mySegTouchedToday). El tablero no tiene la lógica de ocultado de CrmTable,
+  // así que la aplicamos acá → al gestionar, la tarjeta desaparece y "Te faltan
+  // N" baja. El toggle "Ocultar gestionados" del contador lo controla.
+  const boardData = useMemo(() => {
+    if (!onlyUntouchedSeg) return displayData;
+    return displayData.filter((o) => !o.phone || !mySegTouchedToday.has(o.phone));
+  }, [displayData, onlyUntouchedSeg, mySegTouchedToday]);
+
+  // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay
+  // pedidos en el feed pero todos están gestionados). Para mostrar un vacío
+  // celebratorio en vez de "Sin pedidos".
+  const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayData.length > 0;
 
   const stats = useMemo(() => {
     const s = {
@@ -461,7 +466,7 @@ export default function SeguimientoTab() {
               {hiddenStaleCount > 0 && (
                 <span
                   className="text-[10px] text-muted-foreground/70 font-mono"
-                  title={`${hiddenStaleCount} pedidos sin movimiento hace +${maxActionableDays} días hábiles (muertos, no accionables). No se borraron — vé el histórico poniendo un rango de fechas.`}
+                  title={`${hiddenStaleCount} pedidos con más de ${DEFAULT_WINDOW_DAYS} días (fuera de la ventana por defecto de los últimos ${DEFAULT_WINDOW_DAYS} días). No se borraron — vé el histórico completo poniendo un rango de fechas.`}
                 >
                   · {hiddenStaleCount} viejos ocultos
                 </span>
@@ -658,62 +663,72 @@ export default function SeguimientoTab() {
         </motion.div>
       )}
 
-      {/* Chip "Tu cola de seguimiento hoy" — análogo al de ConfirmarTab.
-          La métrica se calcula sobre el feed actual (la lista SLA activa, o
-          el total deduplicado si no hay lista). touchpoints no tiene order_id,
-          por eso identificamos por phone (mismo patrón que classifySegOwnership-
-          FromTps en segOwnership.ts). El toggle aplica al CrmTable de abajo. */}
+      {/* Contador diario de seguimiento — análogo a la cola de Confirmar. "Te
+          faltan N" es el número grande que BAJA a medida que la operadora
+          gestiona pedidos (touchpoint SEG:* → mySegTouchedToday, por phone, mismo
+          patrón que classifySegOwnershipFromTps en segOwnership.ts). Con "Ocultar
+          gestionados" (default), cada pedido gestionado desaparece del tablero. */}
       {(() => {
         const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-        const tocadosFeed = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
-        const sinTocarFeed = Math.max(0, feedBase.length - tocadosFeed);
-        const tone = sinTocarFeed === 0
+        const total = feedBase.length;
+        if (total === 0) return null;
+        const gestionados = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
+        const faltan = Math.max(0, total - gestionados);
+        const pct = total > 0 ? Math.round((gestionados / total) * 100) : 0;
+        const done = faltan === 0;
+        const tone = done
           ? 'success'
-          : sinTocarFeed >= Math.max(1, Math.ceil(feedBase.length / 2))
-            ? 'danger'
-            : 'warning';
-        const dotTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
+          : faltan >= Math.max(1, Math.ceil(total / 2)) ? 'danger' : 'warning';
         const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
         const bgTone = tone === 'success' ? 'bg-success/5' : tone === 'warning' ? 'bg-warning/5' : 'bg-danger/5';
-        if (feedBase.length === 0) return null;
+        const barTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
+        const faltanTone = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : 'text-danger';
         return (
-          <div className={`mb-3 rounded-xl border ${borderTone} ${bgTone} px-4 py-3 flex items-center flex-wrap gap-x-4 gap-y-2`}>
-            <span className={`h-2 w-2 rounded-full shrink-0 ${dotTone}`} aria-hidden="true" />
-            <div className="text-sm font-semibold text-foreground">
-              {listaActiva && !listaActiva.externalRoute ? 'Esta lista' : 'Tu cola de seguimiento'} · hoy
+          <div className={`mb-3 rounded-xl border ${borderTone} ${bgTone} px-4 py-3`}>
+            <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className={`font-mono tabular-nums text-2xl font-extrabold leading-none ${faltanTone}`}>{faltan}</span>
+                <span className="text-sm font-semibold text-foreground">
+                  {done
+                    ? '¡Todo gestionado hoy! ✓'
+                    : `${faltan === 1 ? 'pedido' : 'pedidos'} por gestionar${listaActiva && !listaActiva.externalRoute ? ' en esta lista' : ''} hoy`}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground flex items-baseline gap-x-1.5">
+                <span>Gestionados</span>
+                <strong className="font-mono tabular-nums text-foreground">{gestionados}</strong>
+                <span>de</span>
+                <strong className="font-mono tabular-nums text-foreground">{total}</strong>
+              </div>
+              {viewMode === 'board' && (
+                <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={onlyUntouchedSeg}
+                    onChange={(e) => setOnlyUntouchedSeg(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
+                  />
+                  Ocultar gestionados
+                </label>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span>
-                <strong className="font-mono tabular-nums text-foreground">{feedBase.length}</strong> en total
-              </span>
-              <span className="opacity-50">·</span>
-              <span>
-                Has gestionado <strong className="font-mono tabular-nums text-foreground">{tocadosFeed}</strong>
-              </span>
-              <span className="opacity-50">·</span>
-              <span>
-                Te faltan <strong className={`font-mono tabular-nums text-${tone}`}>{sinTocarFeed}</strong>
-                {sinTocarFeed === 0 && <span className="text-success ml-1">✓</span>}
-              </span>
+            {/* Barra de progreso del día — se llena a medida que gestionás. */}
+            <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden" aria-hidden="true">
+              <div className={`h-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
             </div>
-            <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={onlyUntouchedSeg}
-                onChange={(e) => setOnlyUntouchedSeg(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
-              />
-              Solo sin tocar
-            </label>
           </div>
         );
       })()}
 
       {viewMode === 'board' ? (
         <SegBoard
-          data={displayData}
+          data={boardData}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}
+          emptyTitle={allManagedToday ? '¡Todo gestionado hoy! ✓' : undefined}
+          emptyDesc={allManagedToday
+            ? 'Ya gestionaste todos los pedidos de hoy. Destildá "Ocultar gestionados" en el contador para verlos de nuevo, o vuelve mañana para el próximo ciclo.'
+            : undefined}
         />
       ) : (
         <CrmTable

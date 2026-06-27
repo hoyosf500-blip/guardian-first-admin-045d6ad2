@@ -186,6 +186,24 @@ export function calcDias(dateStr: string): number {
 }
 
 /**
+ * ¿La fecha del pedido cae dentro de los últimos `days` días (calendario)?
+ * Es la ventana por defecto de Seguimiento ("últimos 45 días"): al pasar de mes,
+ * los pedidos del mes anterior que SIGUEN en ruta no se "quedan atrás" (antes el
+ * default era el 1° del mes en curso → al cambiar de mes desaparecían de la vista).
+ * Una fecha sin parsear devuelve `true` (no escondemos por las dudas: mejor mostrar
+ * de más que perder un pedido vivo por un formato de fecha raro).
+ */
+export function isWithinLastDays(
+  fecha: string | null | undefined,
+  days: number,
+  nowMs: number = Date.now(),
+): boolean {
+  const d = parseDate(fecha || '');
+  if (!d) return true;
+  return d.getTime() >= nowMs - days * 86400000;
+}
+
+/**
  * Colombian public holidays (Ley Emiliani + fixed).
  * Returns holidays for a given year as "YYYY-MM-DD" strings.
  */
