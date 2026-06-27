@@ -54,6 +54,11 @@ export interface WaTransport {
    *  transcribirlo o leerlo. Opcional: no todos los proveedores lo implementan.
    *  Devuelve null si el proveedor no soporta o si la descarga falla. */
   fetchMediaBase64?(messageId: string): Promise<WaMediaBase64 | null>;
+  /** Resuelve un JID "@lid" (identidad de privacidad de WhatsApp) al TELÉFONO real,
+   *  si el proveedor expone el mapeo (WAHA: GET /api/{session}/lids/{id} → { pn }).
+   *  Permite keyear la conversación por NÚMERO real → la IA busca el pedido en Dropi
+   *  por teléfono como siempre. Devuelve dígitos del teléfono o null si no aplica. */
+  resolveLidToPhone?(lidJid: string): Promise<string | null>;
 }
 
 /** ¿El JID crudo llegó como "@lid" (identificador de privacidad sin resolver)? */
@@ -495,6 +500,29 @@ class WahaTransport implements WaTransport {
       const base64 = data?.base64 || data?.data;
       if (!base64 || typeof base64 !== "string") return null;
       return { base64, mimetype: data?.mimetype };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Resuelve "<id>@lid" → teléfono real vía WAHA (GET /api/{session}/lids/{id} →
+   *  { lid, pn }). Devuelve los dígitos del teléfono (de `pn` = "<tel>@c.us") o null.
+   *  Es lo que permite keyear la conversación de un cliente LID por su NÚMERO real y
+   *  que la IA le encuentre el pedido en Dropi (verificado en vivo 2026-06-27). */
+  async resolveLidToPhone(lidJid: string): Promise<string | null> {
+    if (!this.token || !this.base) return null;
+    if (!/^https:\/\//i.test(this.base)) return null;
+    const lidUser = onlyDigits(lidJid);
+    if (!lidUser) return null;
+    try {
+      const res = await fetch(
+        `${this.base}/api/${encodeURIComponent(this.session)}/lids/${encodeURIComponent(lidUser)}`,
+        { headers: { "X-Api-Key": this.token } },
+      );
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null) as { pn?: string } | null;
+      const phone = onlyDigits(data?.pn ?? "");
+      return phone || null;
     } catch {
       return null;
     }
