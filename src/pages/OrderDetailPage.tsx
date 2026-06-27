@@ -273,6 +273,7 @@ export default function OrderDetailPage() {
       operator_id: user.id,
       action_date: today,
       action_time: time,
+      store_id: activeStoreId,
     }).select();
 
     if (!error && data) {
@@ -303,6 +304,7 @@ export default function OrderDetailPage() {
       operator_id: user.id,
       action_date: today,
       action_time: time,
+      store_id: activeStoreId,
     }).select();
 
     if (!error && data) {
@@ -338,6 +340,7 @@ export default function OrderDetailPage() {
       operator_id: user.id,
       action_date: today,
       action_time: time,
+      store_id: activeStoreId,
     }).select();
     if (tpData) setTouchpoints(prev => [...(tpData as Touchpoint[]), ...prev]);
 

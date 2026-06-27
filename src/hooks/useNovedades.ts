@@ -110,6 +110,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       operator_id: user.id,
       action_date: today,
       action_time: now,
+      store_id: storeId,
     });
 
     const rollbackNovedad = async () => {
