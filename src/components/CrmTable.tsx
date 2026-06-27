@@ -422,6 +422,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         const { data: tp } = await supabase.from('touchpoints')
           .select('id, phone, action, action_date, action_time, operator_id, created_at')
           .in('phone', batch)
+          .eq('store_id', activeStoreId)
           .order('created_at', { ascending: false })
           .limit(20 * batch.length);
         if (cancelled) return allTp;
