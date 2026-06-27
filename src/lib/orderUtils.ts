@@ -203,6 +203,9 @@ export function isWithinLastDays(
   return d.getTime() >= nowMs - days * 86400000;
 }
 
+/** Offset de Bogotá/Ecuador respecto a UTC (ambos UTC-5, sin DST), en ms. */
+const BOGOTA_OFFSET_MS = 5 * 3600 * 1000;
+
 /**
  * ¿Este pedido fue CERRADO (Resuelto/Devolución) por el equipo y por lo tanto NO
  * debe volver a aparecer en Seguimiento? "Si ya se entregó o se devolvió, no
@@ -212,8 +215,15 @@ export function isWithinLastDays(
  * pedido (team-wide; ver useSegClosedPhones). Como los touchpoints matchean por
  * phone (no por order_id), exigimos que el cierre sea POSTERIOR a la creación del
  * pedido: así un pedido NUEVO de un cliente que ya tuvo un cierre viejo NO se
- * esconde por error. Sin `closerMs` → no está cerrado. Fecha sin parsear →
- * favorecemos el panel limpio (lo escondemos).
+ * esconde por error.
+ *
+ * Sutilezas de zona horaria: `parseDate(o.fecha)` da MEDIANOCHE UTC, pero pedidos
+ * y cierres ocurren en hora local (CO y EC son UTC-5). Alineamos a medianoche
+ * LOCAL (+5h) para no esconder un pedido creado en la mañana por un cierre de la
+ * NOCHE anterior del mismo teléfono. Sin `closerMs` → no está cerrado. Fecha sin
+ * parsear → NO escondemos (preferimos mostrar un pedido que quizá siga vivo antes
+ * que ocultarlo para siempre por un formato de fecha raro; consistente con
+ * isWithinLastDays).
  */
 export function isClosedOutByCloser(
   fecha: string | null | undefined,
@@ -221,8 +231,8 @@ export function isClosedOutByCloser(
 ): boolean {
   if (closerMs === undefined) return false;
   const created = parseDate(fecha || '');
-  if (!created) return true;
-  return closerMs >= created.getTime();
+  if (!created) return false;
+  return closerMs >= created.getTime() + BOGOTA_OFFSET_MS;
 }
 
 /**

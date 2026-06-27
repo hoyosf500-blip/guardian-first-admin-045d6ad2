@@ -115,30 +115,35 @@ describe('isWithinLastDays', () => {
 
 describe('isClosedOutByCloser', () => {
   const creado = '2026-05-01';
-  const creadoMs = Date.UTC(2026, 4, 1);
+  const bogotaStart = Date.UTC(2026, 4, 1) + 5 * 3600 * 1000; // medianoche Bogotá del 2026-05-01
 
   it('sin cierre → no está cerrado (visible)', () => {
     expect(isClosedOutByCloser(creado, undefined)).toBe(false);
   });
 
-  it('cierre POSTERIOR a la creación → cerrado (se esconde para siempre)', () => {
-    expect(isClosedOutByCloser(creado, creadoMs + 3 * 86400000)).toBe(true); // cerrado 3 días después
-    expect(isClosedOutByCloser(creado, creadoMs)).toBe(true);                // mismo instante → cerrado
+  it('cierre en/después de la creación (hora Bogotá) → cerrado (se esconde)', () => {
+    expect(isClosedOutByCloser(creado, bogotaStart + 3 * 86400000)).toBe(true);       // 3 días después
+    expect(isClosedOutByCloser(creado, bogotaStart + 10 * 3600 * 1000)).toBe(true);   // mismo día, más tarde
+    expect(isClosedOutByCloser(creado, bogotaStart)).toBe(true);                      // justo a medianoche Bogotá
+  });
+
+  it('cierre de la NOCHE anterior (hora Bogotá) NO esconde un pedido del día siguiente', () => {
+    // 2h antes de la medianoche-Bogotá del día de creación = noche previa → no esconde.
+    expect(isClosedOutByCloser(creado, bogotaStart - 2 * 3600 * 1000)).toBe(false);
   });
 
   it('cierre ANTERIOR a la creación → NO cerrado (pedido nuevo de cliente repetido)', () => {
-    // El cliente tuvo un cierre viejo, pero ESTE pedido es más nuevo → no se esconde.
-    expect(isClosedOutByCloser(creado, creadoMs - 10 * 86400000)).toBe(false);
+    expect(isClosedOutByCloser(creado, bogotaStart - 10 * 86400000)).toBe(false);
   });
 
   it('acepta DD/MM/YYYY igual que ISO', () => {
-    expect(isClosedOutByCloser('01/05/2026', creadoMs + 86400000)).toBe(true);
+    expect(isClosedOutByCloser('01/05/2026', bogotaStart + 86400000)).toBe(true);
   });
 
-  it('fecha sin parsear con cierre → se esconde (favorece panel limpio)', () => {
-    expect(isClosedOutByCloser('', creadoMs)).toBe(true);
-    expect(isClosedOutByCloser('garbage', creadoMs)).toBe(true);
-    expect(isClosedOutByCloser(null, creadoMs)).toBe(true);
+  it('fecha sin parsear → NO se esconde (preferimos mostrar; consistente con isWithinLastDays)', () => {
+    expect(isClosedOutByCloser('', bogotaStart)).toBe(false);
+    expect(isClosedOutByCloser('garbage', bogotaStart)).toBe(false);
+    expect(isClosedOutByCloser(null, bogotaStart)).toBe(false);
   });
 });
 
