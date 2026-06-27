@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { OrderData } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
 import { buildNovedadAction, NovedadResultTipo } from '@/lib/novedadGestion';
@@ -23,6 +24,7 @@ import { toast } from 'sonner';
  */
 export function useMarkNovedadResolved() {
   const { user } = useAuth();
+  const { activeStoreId } = useStore();
   const [marking, setMarking] = useState<string | null>(null);
 
   const markNovedad = useCallback(
@@ -44,6 +46,7 @@ export function useMarkNovedadResolved() {
           operator_id: user.id,
           action_date: today,
           action_time: now,
+          store_id: activeStoreId,
         });
         if (tpError) {
           toast.error('No se pudo guardar la marca: ' + tpError.message);
@@ -68,7 +71,7 @@ export function useMarkNovedadResolved() {
         setMarking(null);
       }
     },
-    [user],
+    [user, activeStoreId],
   );
 
   return { markNovedad, marking };

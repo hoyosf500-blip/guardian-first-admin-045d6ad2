@@ -613,6 +613,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         operator_id: user.id,
         action_date: today,
         action_time: now,
+        store_id: activeStoreId,
       }).select('id').single();
 
       if (tpData?.id) {
