@@ -1,20 +1,31 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useStore } from '@/contexts/StoreContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useShopifyPending, useShopifyValueMismatches, type ShopifyPendingItem } from '@/hooks/useShopifyPending';
 import { usePushToDropi } from '@/hooks/usePushToDropi';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
+import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
+import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
+import { supabase } from '@/integrations/supabase/client';
+import { bogotaToday } from '@/lib/utils';
 import PushToDropiModal from './PushToDropiModal';
 import ShopifyMarksHistoryModal from './ShopifyMarksHistoryModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
 const DONE_KEY = (storeId: string) => `guardian.shopifyDone:${storeId}`;
+const DUP_OVERRIDE_KEY = (storeId: string) => `guardian.dupOverride:${storeId}`;
 const BOGOTA = 'America/Bogota'; // UTC-5 — sirve para Colombia y Ecuador
 
 function loadDone(storeId: string): Set<string> {
   try { return new Set(JSON.parse(sessionStorage.getItem(DONE_KEY(storeId)) || '[]')); }
+  catch { return new Set(); }
+}
+
+function loadOverrides(storeId: string): Set<string> {
+  try { return new Set(JSON.parse(sessionStorage.getItem(DUP_OVERRIDE_KEY(storeId)) || '[]')); }
   catch { return new Set(); }
 }
 
@@ -45,10 +56,13 @@ export default function ShopifyPendingPanel() {
   const { data: vmData } = useShopifyValueMismatches(activeStoreId);
   const { confirm: confirmPush } = usePushToDropi(activeStoreId);
   const { markEntered } = useShopifyManualMarks(activeStoreId);
+  const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [showMismatches, setShowMismatches] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
+  // "No es duplicado" por id de pedido (escape para recompra legítima).
+  const [dupOverrides, setDupOverrides] = useState<Set<string>>(() => activeStoreId ? loadOverrides(activeStoreId) : new Set());
   const [copied, setCopied] = useState<string | null>(null);
   // Bloqueo breve tras una marca: evita que un 2º click accidental caiga sobre
   // la fila que se corrió hacia arriba cuando la anterior desapareció.
@@ -59,7 +73,10 @@ export default function ShopifyPendingPanel() {
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
 
-  useEffect(() => { setDone(activeStoreId ? loadDone(activeStoreId) : new Set()); }, [activeStoreId]);
+  useEffect(() => {
+    setDone(activeStoreId ? loadDone(activeStoreId) : new Set());
+    setDupOverrides(activeStoreId ? loadOverrides(activeStoreId) : new Set());
+  }, [activeStoreId]);
 
   useEffect(() => {
     if (!activeStoreId) return;
@@ -67,6 +84,11 @@ export default function ShopifyPendingPanel() {
   }, [activeStoreId, refetch]);
 
   const pending: ShopifyPendingItem[] = useMemo(() => data?.pending ?? [], [data]);
+
+  // Anti-duplicados: teléfonos de los pendientes → pedidos Dropi NO cancelados
+  // que YA existen con ese mismo teléfono (regla "teléfono repetido siempre").
+  const pendingPhones = useMemo(() => uniquePhones(pending), [pending]);
+  const { dupMap } = useDuplicatePhones(activeStoreId, pendingPhones);
 
   // Limpieza del set local: si un pedido ya NO está pendiente (entró a Dropi),
   // lo sacamos del set para no inflar el "ya metidos".
@@ -96,12 +118,13 @@ export default function ShopifyPendingPanel() {
   // Guard anti-doble-click: ignora si ya está marcado o si hay un bloqueo activo.
   const handleYaLoMeti = useCallback(async (p: ShopifyPendingItem) => {
     if (!activeStoreId || lockMarks || done.has(p.id)) return;
+    if (isBlockedByDuplicate(p, dupMap, dupOverrides)) return;  // bloqueo anti-duplicado
     setLockMarks(true);
     markDone(p.id);
     const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
     if (!r.ok) toast.error('No se pudo guardar la marca: ' + (r.error || ''));
     setTimeout(() => setLockMarks(false), 600);
-  }, [activeStoreId, lockMarks, done, markDone, markEntered]);
+  }, [activeStoreId, lockMarks, done, dupMap, dupOverrides, markDone, markEntered]);
 
   // Revertir desde el historial: saca el pedido del `done` local y refetchea →
   // vuelve a aparecer en la cola de pendientes para meterlo bien.
@@ -119,6 +142,32 @@ export default function ShopifyPendingPanel() {
   // Ids de TODOS los pendientes (antes del filtro `done`) — el historial los usa
   // para marcar en rojo las marcas cuyo pedido sigue sin estar en Dropi.
   const pendingIdSet = useMemo(() => new Set(pending.map(p => p.id)), [pending]);
+
+  // "No es duplicado, enviar igual": destraba ESA fila y deja un touchpoint de
+  // auditoría (quién y cuándo) — escape para la recompra legítima.
+  const markNotDuplicate = useCallback((p: ShopifyPendingItem) => {
+    if (!activeStoreId) return;
+    setDupOverrides(prev => {
+      const next = new Set(prev).add(p.id);
+      try { sessionStorage.setItem(DUP_OVERRIDE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      return next;
+    });
+    if (user) {
+      void supabase.from('touchpoints').insert({
+        phone: p.phone,
+        action: `DUP_OVERRIDE: "No es duplicado", enviar igual (${p.name})`,
+        operator_id: user.id,
+        action_date: bogotaToday(),
+        action_time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: BOGOTA }),
+        store_id: activeStoreId,
+      });
+    }
+    toast.success('Marcado como no-duplicado — ya podés enviarlo');
+  }, [activeStoreId, user]);
+
+  // "Quitar del CRM": el pedido ya está en Dropi → solo lo escondemos local para
+  // que deje de molestar (NO crea nada). El sobrante en Dropi se borra a mano.
+  const quitarDelCrm = useCallback((id: string) => { markDone(id); }, [markDone]);
 
   const copyPhone = useCallback(async (phone: string) => {
     try { await navigator.clipboard.writeText(phone); setCopied(phone); setTimeout(() => setCopied(null), 1500); } catch { /* noop */ }
@@ -142,7 +191,9 @@ export default function ShopifyPendingPanel() {
   const runBulk = useCallback(async () => {
     if (!activeStoreId || bulkRunning) return;
     setBulkRunning(true); setBulkConfirm(false);
-    const targets = [...visible];
+    // Omite duplicados: nunca subir en lote algo que ya está en Dropi.
+    const skipped = visible.filter(p => isBlockedByDuplicate(p, dupMap, dupOverrides));
+    const targets = visible.filter(p => !isBlockedByDuplicate(p, dupMap, dupOverrides));
     let okCount = 0; const fails: string[] = [];
     for (const p of targets) {
       const r = await confirmPush(p.id);            // sin overrides = valores de Shopify
@@ -152,9 +203,16 @@ export default function ShopifyPendingPanel() {
     }
     setBulkRunning(false);
     if (okCount > 0) toast.success(`${okCount} pedido(s) subido(s) a Dropi`);
+    if (skipped.length > 0) toast.warning(`${skipped.length} omitido(s) por posible duplicado — revisalos en la lista`);
     if (fails.length > 0) toast.error(`${fails.length} no se pudieron subir`, { description: fails.slice(0, 4).join(' · ') });
     void refetch();
-  }, [activeStoreId, bulkRunning, visible, confirmPush, markDone, refetch]);
+  }, [activeStoreId, bulkRunning, visible, dupMap, dupOverrides, confirmPush, markDone, refetch]);
+
+  // Cuántos de los visibles están bloqueados por duplicado (para el banner).
+  const dupBlockedCount = useMemo(
+    () => visible.filter(p => isBlockedByDuplicate(p, dupMap, dupOverrides)).length,
+    [visible, dupMap, dupOverrides],
+  );
 
   // Guards: no estorbar la cola si no hay tienda / no cargó / no configurado.
   if (!activeStoreId) return null;
@@ -243,9 +301,32 @@ export default function ShopifyPendingPanel() {
     </div>
   ) : null;
 
+  // Banner anti-duplicados: avisa cuántos están bloqueados por teléfono repetido.
+  const dupBanner = dupBlockedCount > 0 ? (
+    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+        <Ban size={18} className="text-destructive" aria-hidden="true" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-2xl font-extrabold tabular-nums text-destructive">{dupBlockedCount}</span>
+          <span className="text-sm font-semibold text-foreground">posible(s) duplicado(s) — mismo teléfono ya en Dropi</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Bloqueé el envío de esos para que no se dupliquen. En la lista: «Quitar del CRM» si ya está en Dropi, o «No es duplicado» si es una recompra real. Si creaste 2 en Dropi, borrá el sobrante a mano en el panel de Dropi (el CRM no puede cancelarlo).
+        </p>
+      </div>
+      <button onClick={() => setExpanded(true)}
+        className="h-8 px-3 rounded-lg border border-destructive/40 bg-card text-xs font-medium text-destructive flex items-center gap-1 flex-shrink-0 hover:bg-destructive/10">
+        Revisar
+      </button>
+    </div>
+  ) : null;
+
   return (
     <>
     {mismatchBanner}
+    {dupBanner}
     {/* No `initial` animation: el panel se re-monta cada refetch (cuando
         `data` flipa momentáneamente, o cuando el guard `!data || configured`
         cambia), y `motion.div initial=opacity:0,y:8` re-disparaba la animación
@@ -335,41 +416,81 @@ export default function ShopifyPendingPanel() {
                   <span className="text-muted-foreground">· {items.length} sin pasar</span>
                 </div>
                 <div className="divide-y divide-border">
-                  {items.map(p => (
-                    <div key={p.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
-                      <span className="text-[10px] font-mono text-muted-foreground w-10 flex-shrink-0">{localTime(p.created_at)}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-foreground truncate">{p.customer}</span>
-                          <span className="text-[10px] font-mono text-muted-foreground">{p.name}</span>
-                          {p.sin_telefono && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/15 text-destructive">sin teléfono</span>
+                  {items.map(p => {
+                    const dupHits = dupMatchesFor(p.phone, dupMap);
+                    const overridden = dupOverrides.has(p.id);
+                    const blocked = dupHits.length > 0 && !overridden;
+                    return (
+                    <div key={p.id}>
+                      <div className={`px-4 py-2.5 flex items-center gap-3 text-sm ${blocked ? 'bg-destructive/5' : ''}`}>
+                        <span className="text-[10px] font-mono text-muted-foreground w-10 flex-shrink-0">{localTime(p.created_at)}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-foreground truncate">{p.customer}</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">{p.name}</span>
+                            {p.sin_telefono && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/15 text-destructive">sin teléfono</span>
+                            )}
+                            {dupHits.length > 0 && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded inline-flex items-center gap-1 ${blocked ? 'bg-destructive/15 text-destructive' : 'bg-muted text-muted-foreground'}`}>
+                                <Ban size={9} /> {blocked ? 'duplicado' : 'no es duplicado'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                            {p.phone
+                              ? <button onClick={() => copyPhone(p.phone)} className="font-mono hover:text-foreground flex items-center gap-1">
+                                  {p.phone} {copied === p.phone ? <Check size={11} className="text-success" /> : <Copy size={10} />}
+                                </button>
+                              : <span className="italic">—</span>}
+                            {p.city && <span>· {p.city}</span>}
+                            {p.total > 0 && <span>· ${p.total.toLocaleString()}</span>}
+                          </div>
+                        </div>
+                        <a href={p.admin_url} target="_blank" rel="noreferrer" title="Abrir en Shopify"
+                          className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
+                          <ExternalLink size={12} />
+                        </a>
+                        <button onClick={() => setPushItem(p)} disabled={blocked}
+                          title={blocked ? 'Bloqueado: ya hay un pedido en Dropi con este teléfono' : 'Subir este pedido a Dropi'}
+                          className="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 flex items-center gap-1 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                          <Truck size={12} /> Subir a Dropi
+                        </button>
+                        <button onClick={() => handleYaLoMeti(p)} disabled={lockMarks || blocked}
+                          title={blocked ? 'Bloqueado: posible duplicado' : 'Ya lo cargué manualmente'}
+                          className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                          Ya lo metí
+                        </button>
+                      </div>
+
+                      {dupHits.length > 0 && (
+                        <div className="ml-4 px-4 pb-2.5 pt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs border-l-2 border-destructive/40 bg-destructive/5">
+                          <span className="text-muted-foreground">
+                            Ya en Dropi:{' '}
+                            <span className="text-foreground font-medium">
+                              {dupHits.slice(0, 2).map(h => `#${h.external_id} · ${h.estado || '—'}${h.fecha ? ` · ${h.fecha}` : ''}`).join('   |   ')}
+                              {dupHits.length > 2 ? `  (+${dupHits.length - 2})` : ''}
+                            </span>
+                          </span>
+                          {blocked && (
+                            <span className="flex items-center gap-2 ml-auto">
+                              <button onClick={() => markNotDuplicate(p)}
+                                title="Es una recompra real — enviar igual (queda registrado)"
+                                className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:bg-muted/40 flex items-center gap-1">
+                                <ShieldCheck size={12} /> No es duplicado
+                              </button>
+                              <button onClick={() => quitarDelCrm(p.id)}
+                                title="Ya está en Dropi — sacarlo de esta cola"
+                                className="h-7 px-2.5 rounded-lg border border-destructive/40 bg-card text-xs font-medium text-destructive hover:bg-destructive/10 flex items-center gap-1">
+                                Quitar del CRM
+                              </button>
+                            </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                          {p.phone
-                            ? <button onClick={() => copyPhone(p.phone)} className="font-mono hover:text-foreground flex items-center gap-1">
-                                {p.phone} {copied === p.phone ? <Check size={11} className="text-success" /> : <Copy size={10} />}
-                              </button>
-                            : <span className="italic">—</span>}
-                          {p.city && <span>· {p.city}</span>}
-                          {p.total > 0 && <span>· ${p.total.toLocaleString()}</span>}
-                        </div>
-                      </div>
-                      <a href={p.admin_url} target="_blank" rel="noreferrer" title="Abrir en Shopify"
-                        className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
-                        <ExternalLink size={12} />
-                      </a>
-                      <button onClick={() => setPushItem(p)} title="Subir este pedido a Dropi"
-                        className="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 flex items-center gap-1 flex-shrink-0">
-                        <Truck size={12} /> Subir a Dropi
-                      </button>
-                      <button onClick={() => handleYaLoMeti(p)} disabled={lockMarks} title="Ya lo cargué manualmente"
-                        className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Ya lo metí
-                      </button>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}
