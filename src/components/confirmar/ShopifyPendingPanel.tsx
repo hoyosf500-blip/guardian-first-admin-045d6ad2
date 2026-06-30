@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useStore } from '@/contexts/StoreContext';
 import { useShopifyPending, useShopifyValueMismatches, type ShopifyPendingItem } from '@/hooks/useShopifyPending';
 import { usePushToDropi } from '@/hooks/usePushToDropi';
+import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import PushToDropiModal from './PushToDropiModal';
+import ShopifyMarksHistoryModal from './ShopifyMarksHistoryModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2 } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -42,10 +44,15 @@ export default function ShopifyPendingPanel() {
   const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
   const { data: vmData } = useShopifyValueMismatches(activeStoreId);
   const { confirm: confirmPush } = usePushToDropi(activeStoreId);
+  const { markEntered } = useShopifyManualMarks(activeStoreId);
   const [expanded, setExpanded] = useState(false);
   const [showMismatches, setShowMismatches] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
   const [copied, setCopied] = useState<string | null>(null);
+  // Bloqueo breve tras una marca: evita que un 2º click accidental caiga sobre
+  // la fila que se corrió hacia arriba cuando la anterior desapareció.
+  const [lockMarks, setLockMarks] = useState(false);
   // Pedido abierto en el modal "Subir a Dropi"
   const [pushItem, setPushItem] = useState<ShopifyPendingItem | null>(null);
   // Subida en lote
@@ -84,6 +91,34 @@ export default function ShopifyPendingPanel() {
       return next;
     });
   }, [activeStoreId]);
+
+  // "Ya lo metí": esconde local (snappy) + PERSISTE la marca (auditable + revertible).
+  // Guard anti-doble-click: ignora si ya está marcado o si hay un bloqueo activo.
+  const handleYaLoMeti = useCallback(async (p: ShopifyPendingItem) => {
+    if (!activeStoreId || lockMarks || done.has(p.id)) return;
+    setLockMarks(true);
+    markDone(p.id);
+    const r = await markEntered({ id: p.id, name: p.name, customer: p.customer, phone: p.phone, total: p.total, city: p.city });
+    if (!r.ok) toast.error('No se pudo guardar la marca: ' + (r.error || ''));
+    setTimeout(() => setLockMarks(false), 600);
+  }, [activeStoreId, lockMarks, done, markDone, markEntered]);
+
+  // Revertir desde el historial: saca el pedido del `done` local y refetchea →
+  // vuelve a aparecer en la cola de pendientes para meterlo bien.
+  const handleReverted = useCallback((orderId: string) => {
+    if (!activeStoreId) return;
+    setDone(prev => {
+      if (!prev.has(orderId)) return prev;
+      const next = new Set(prev); next.delete(orderId);
+      try { sessionStorage.setItem(DONE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      return next;
+    });
+    void refetch();
+  }, [activeStoreId, refetch]);
+
+  // Ids de TODOS los pendientes (antes del filtro `done`) — el historial los usa
+  // para marcar en rojo las marcas cuyo pedido sigue sin estar en Dropi.
+  const pendingIdSet = useMemo(() => new Set(pending.map(p => p.id)), [pending]);
 
   const copyPhone = useCallback(async (phone: string) => {
     try { await navigator.clipboard.writeText(phone); setCopied(phone); setTimeout(() => setCopied(null), 1500); } catch { /* noop */ }
@@ -248,6 +283,11 @@ export default function ShopifyPendingPanel() {
             {cancelled > 0 && <span className="opacity-70">· {cancelled} cancelados</span>}
           </div>
         </div>
+        <button onClick={() => setShowHistory(true)} aria-label="Ver historial de lo que metí"
+          title='Historial de "Ya lo metí" — verificá y revertí'
+          className="h-9 px-2.5 rounded-lg border border-border bg-card flex items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          <History size={14} aria-hidden="true" /> <span className="hidden sm:inline">Historial</span>
+        </button>
         <button onClick={() => refetch()} aria-label="Actualizar Shopify"
           className="h-9 w-9 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
           <RefreshCw size={14} className={isFetching ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
@@ -324,8 +364,8 @@ export default function ShopifyPendingPanel() {
                         className="h-7 px-2.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 flex items-center gap-1 flex-shrink-0">
                         <Truck size={12} /> Subir a Dropi
                       </button>
-                      <button onClick={() => markDone(p.id)} title="Ya lo cargué manualmente"
-                        className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex-shrink-0">
+                      <button onClick={() => handleYaLoMeti(p)} disabled={lockMarks} title="Ya lo cargué manualmente"
+                        className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
                         Ya lo metí
                       </button>
                     </div>
@@ -344,6 +384,15 @@ export default function ShopifyPendingPanel() {
           shopifyName={pushItem.name}
           onClose={() => setPushItem(null)}
           onSuccess={(/* dropiOrderId */) => { markDone(pushItem.id); setPushItem(null); void refetch(); }}
+        />
+      )}
+
+      {showHistory && activeStoreId && (
+        <ShopifyMarksHistoryModal
+          storeId={activeStoreId}
+          pendingIds={pendingIdSet}
+          onClose={() => setShowHistory(false)}
+          onReverted={handleReverted}
         />
       )}
     </div>
