@@ -1,12 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData, isWithinLastDays, isClosedOutByCloser } from '@/lib/orderUtils';
+import { matchesQuery } from '@/lib/textSearch';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useSegClosedPhones } from '@/hooks/useSegClosedPhones';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import SegBoard from '@/components/seguimiento/SegBoard';
@@ -86,6 +87,9 @@ export default function SeguimientoTab() {
   // Vista: tablero Kommo (default, tarjetas en vivo por columna) o lista (CrmTable
   // clásico con búsqueda/owner/llamada). El tablero no quita features: es un toggle.
   const [viewMode, setViewMode] = useSessionState<'board' | 'list'>('seg:viewMode', 'board');
+  // Buscador libre (nombre/teléfono/ciudad/guía/producto). Transitorio (no
+  // persiste) para que no quede un filtro pegado entre sesiones.
+  const [search, setSearch] = useState('');
 
   // Listas SLA estilo Boostec — selector de listas pre-clasificadas. La URL
   // y la sessionStorage se mantienen sincronizadas: ?lista=<slug> permite
@@ -215,8 +219,12 @@ export default function SeguimientoTab() {
   // deduplicado). CrmTable ya oculta los gestionados con su propia lógica
   // (results + snooze 30d de cierres), así que NO lo pre-filtramos acá.
   const displayData = useMemo(() => {
-    return listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
-  }, [listaActiva, filteredByList, dedupedByDate]);
+    const base = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+    if (!search.trim()) return base;
+    // Filtra tablero Y lista (ambos derivan de displayData). El contador diario
+    // usa su propio feedBase sin buscador → "Te faltan N" no se altera al buscar.
+    return base.filter(o => matchesQuery([o.nombre, o.phone, o.ciudad, o.guia, o.producto, o.externalId], search));
+  }, [listaActiva, filteredByList, dedupedByDate, search]);
 
   // Feed del TABLERO: contador diario. Oculta los pedidos que YO ya gestioné hoy
   // (mySegTouchedToday). El tablero no tiene la lógica de ocultado de CrmTable,
@@ -420,6 +428,24 @@ export default function SeguimientoTab() {
               >
                 <List size={13} aria-hidden="true" /> Lista
               </button>
+            </div>
+            {/* Buscador (nombre · teléfono · ciudad · guía · producto) */}
+            <div className="relative">
+              <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden="true" />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar…"
+                aria-label="Buscar en seguimiento"
+                className="h-8 w-36 sm:w-52 rounded-lg border border-border bg-card pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch('')} aria-label="Limpiar búsqueda"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X size={12} aria-hidden="true" />
+                </button>
+              )}
             </div>
             {/* Date range filter */}
             <div className={cn(
