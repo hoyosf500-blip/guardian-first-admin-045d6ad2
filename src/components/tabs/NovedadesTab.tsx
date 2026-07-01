@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { isWithinLastDays } from '@/lib/orderUtils';
 import { AlertTriangle, RefreshCw, Search, CheckCircle2, Truck, ListChecks, BarChart3, Lightbulb, Target } from 'lucide-react';
 import { motion } from 'framer-motion';
 import NovedadView from '@/components/NovedadView';
@@ -26,7 +27,18 @@ export default function NovedadesTab() {
     if (user) loadNovedades();
   }, [user, loadNovedades]);
 
-  const filtered = novedadesQueue.filter(o => {
+  // Ventana rodante de 60 días: ocultamos novedades cuyo pedido es más viejo que
+  // eso. Suelen ser FANTASMAS — el pedido ya se devolvió/cerró en Dropi hace
+  // meses pero quedó congelado en estado NOVEDAD acá (sync EC throttleado, ver
+  // ec_dropi_throttle_cascade). La asesora ni siquiera puede resolverlas (Dropi
+  // las rechaza porque ya no existen ahí). Mismo criterio que Seguimiento.
+  const NOVEDAD_WINDOW_DAYS = 60;
+  const actionable = novedadesQueue.filter(o =>
+    isWithinLastDays(o.fecha, NOVEDAD_WINDOW_DAYS) && (o.dias ?? 0) <= NOVEDAD_WINDOW_DAYS,
+  );
+  const hiddenOld = novedadesQueue.length - actionable.length;
+
+  const filtered = actionable.filter(o => {
     if (!search) return true;
     const s = search.toLowerCase();
     return (
@@ -39,10 +51,10 @@ export default function NovedadesTab() {
   });
 
   const stats = {
-    total: novedadesQueue.length,
-    urgentes: novedadesQueue.filter(o => o.dias >= 7).length,
-    warning: novedadesQueue.filter(o => o.dias >= 4 && o.dias < 7).length,
-    carriers: new Set(novedadesQueue.map(o => o.transportadora).filter(Boolean)).size,
+    total: actionable.length,
+    urgentes: actionable.filter(o => o.dias >= 7).length,
+    warning: actionable.filter(o => o.dias >= 4 && o.dias < 7).length,
+    carriers: new Set(actionable.map(o => o.transportadora).filter(Boolean)).size,
   };
 
   return (
@@ -145,7 +157,7 @@ export default function NovedadesTab() {
       </div>
 
       {/* Search */}
-      {novedadesQueue.length > 0 && (
+      {actionable.length > 0 && (
         <div className="bg-card rounded-xl border border-border p-3 mb-4 shadow-ds-xs">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -159,14 +171,14 @@ export default function NovedadesTab() {
           </div>
           {search && (
             <p className="text-xs text-muted-foreground mt-2 pl-1">
-              {filtered.length} de {novedadesQueue.length} coincidencias
+              {filtered.length} de {actionable.length} coincidencias
             </p>
           )}
         </div>
       )}
 
       {/* Loading state */}
-      {novedadesLoading && novedadesQueue.length === 0 && (
+      {novedadesLoading && actionable.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-4">
           <RefreshCw size={32} className="text-accent animate-spin" />
           <div className="text-center">
@@ -177,7 +189,7 @@ export default function NovedadesTab() {
       )}
 
       {/* Empty state */}
-      {!novedadesLoading && novedadesQueue.length === 0 && (
+      {!novedadesLoading && actionable.length === 0 && (
         <motion.div {...fadeUp} className="bg-card rounded-2xl border border-border p-12 flex flex-col items-center gap-4 shadow-ds-sm">
           <div className="w-16 h-16 rounded-2xl bg-success/10 border border-success/25 flex items-center justify-center">
             <CheckCircle2 size={28} className="text-success" />
@@ -189,8 +201,15 @@ export default function NovedadesTab() {
         </motion.div>
       )}
 
+      {/* Nota: novedades viejas ocultas (fantasmas ya cerradas en Dropi) */}
+      {hiddenOld > 0 && (
+        <p className="text-[11px] text-muted-foreground/80 mb-3 pl-1">
+          {hiddenOld} novedad{hiddenOld === 1 ? '' : 'es'} vieja{hiddenOld === 1 ? '' : 's'} oculta{hiddenOld === 1 ? '' : 's'} (más de {NOVEDAD_WINDOW_DAYS} días — normalmente ya devueltas/cerradas en Dropi).
+        </p>
+      )}
+
       {/* Queue */}
-      {novedadesQueue.length > 0 && <NovedadView items={filtered} />}
+      {actionable.length > 0 && <NovedadView items={filtered} />}
        </>
       )}
     </div>
