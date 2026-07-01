@@ -5,10 +5,13 @@
 // Secuencia (verificada en vivo, tienda EC, producto 155190 ALMAFIT, destino CUENCA/AZUAY):
 //   A) GET  /api/products/productlist/v1/show/?id={dropiId}      → supplier_id, type
 //   B) *** LA CIUDAD DESTINO YA NO SE RESUELVE ACÁ ***           → la trae el caller
-//      Antes: POST /api/locations { country }. Dropi responde 403 a ese endpoint
-//      desde la IP del datacenter de Supabase (funciona 200 desde un browser
-//      residencial). El caller ahora resuelve la ciudad destino contra la tabla
-//      Guardian `dropi_city_catalog` y pasa `destCity` ya armado.
+//      El caller resuelve la ciudad destino contra la tabla Guardian
+//      `dropi_city_catalog` y pasa `destCity` ya armado.
+//      NOTA (2026-07-01): el 403 de /api/locations NO era bloqueo de IP de datacenter
+//      (teoría vieja, FALSA). Era el WAF de Dropi rechazando fetches sin headers de
+//      navegador — arreglado en `dropiWebFetch` (User-Agent + Referer + Sec-Fetch-*).
+//      Con eso /api/locations también funcionaría desde el edge, pero el catálogo local
+//      ya resuelve el destino sin depender de Dropi, así que se mantiene.
 //   C) POST /api/orders/getOriginCityForCalculateShipping        → ciudad_remitente, warehouse
 //      (destination = STRING "city, state", NO un cityId)
 //   D) POST /api/orders/cotizaEnvioTransportadoraV2              → transportadoras + precio
@@ -67,12 +70,25 @@ export async function dropiWebFetch(
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;
+  // El WAF de Dropi (Cloudflare-like) rechaza con 403 los requests que NO parecen
+  // venir del navegador — NO es un bloqueo de IP de datacenter (esa teoría era falsa,
+  // ver dropi-change-carrier). Firma mínima verificada en vivo 2026-07-01 (misma IP,
+  // 200 vs 403): User-Agent de navegador + Referer/Origin de app.dropi.* + Sec-Fetch-Dest.
+  // El fetch server-side de Deno manda "User-Agent: Deno/..." y omite sec-fetch-*, por eso
+  // getOriginCity/cotiza/locations daban 403 desde el edge y 200 desde el browser.
+  const appOrigin = cfg.base.replace("://api.", "://app."); // https://api.dropi.ec → https://app.dropi.ec
   const headers: Record<string, string> = {
     "X-Authorization": "Bearer " + cfg.sessionToken,
     "Content-Type": "application/json",
-    "Accept": "application/json",
+    "Accept": "application/json, text/plain, */*",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    "Origin": cfg.storeUrl || appOrigin,
+    "Referer": `${appOrigin}/`,
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-site",
   };
-  if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
   const res = await fetch(url, {
     method: init.method,
     headers,
