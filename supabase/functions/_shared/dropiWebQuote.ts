@@ -1,6 +1,13 @@
-// Cotización de envío contra el panel WEB de Dropi (session token, no la
-// integration-key). Extraído de shopify-push-dropi para reusarlo en
-// dropi-change-carrier sin duplicar la secuencia probada.
+// Cotización de envío contra el panel WEB de Dropi. Extraído de
+// shopify-push-dropi para reusarlo en dropi-change-carrier sin duplicar la
+// secuencia probada.
+//
+// AUTH (corregido 2026-07-01): usa `apiKey || sessionToken` con el header
+// `X-Authorization: Bearer`, igual que dropi-wallet-sync. La integration-key
+// permanente (exp 2126) SÍ sirve para los endpoints web /api/* (probado en
+// vivo con wallet /api/wallet/exportexcel y fingerprint /bff/...). Antes esto
+// exigía el `dropi_session_token` (vence ~1h) → el cambio de transportadora
+// se caía siempre. El session token queda como fallback legacy.
 //
 // Secuencia (verificada en vivo, tienda Rushmira Ecuador, FrescoMax id 115864):
 //   A) GET  /api/products/productlist/v1/show/?id={dropiId}      → supplier_id, type
@@ -15,6 +22,10 @@
 /** Config mínima para hablar con el panel web de Dropi. */
 export interface DropiWebCfg {
   base: string;
+  /** INTEGRATIONS permanente (exp 2126). PREFERIDA: sirve para /api/* con el
+   *  header x-authorization (probado en wallet/fingerprint). */
+  apiKey?: string;
+  /** JWT de sesión web (app.dropi.co), vence ~1h. Fallback legacy si no hay apiKey. */
   sessionToken: string;
   storeUrl: string;
 }
@@ -60,8 +71,11 @@ export async function dropiWebFetch(
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;
+  // api_key permanente PRIMERO (funciona para /api/*, igual que wallet); el
+  // session token es el fallback legacy.
+  const authToken = cfg.apiKey || cfg.sessionToken;
   const headers: Record<string, string> = {
-    "X-Authorization": "Bearer " + cfg.sessionToken,
+    "X-Authorization": "Bearer " + authToken,
     "Content-Type": "application/json",
     "Accept": "application/json",
   };
@@ -81,7 +95,7 @@ export async function dropiWebFetch(
     const msg = String(body?.message || body?.error || text || "");
     if (/not issued to this api|could not be parsed|unauthenticated|token/i.test(msg) || !msg) {
       throw new WebFallbackError(
-        "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para cotizar en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+        "Dropi rechazó la credencial al cotizar (401). Revisá la Clave API de Dropi en Admin → Credenciales Dropi.",
         422,
       );
     }
@@ -287,9 +301,9 @@ export async function quoteCarriers(
   cfg: DropiWebCfg,
   args: { country: string; city: string; state: string; lines: QuoteLine[]; total: number },
 ): Promise<QuoteContext> {
-  if (!cfg.sessionToken) {
+  if (!cfg.apiKey && !cfg.sessionToken) {
     throw new WebFallbackError(
-      "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para cotizar en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+      "La tienda no tiene credenciales Dropi para cotizar. Cargá la Clave API en Admin → Credenciales Dropi.",
       422,
     );
   }
