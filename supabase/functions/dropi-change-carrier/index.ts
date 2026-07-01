@@ -185,7 +185,7 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // 2) Cotizar en vivo (panel web — session token).
+      // 2) Cotizar en vivo (panel web — api_key permanente; session token = fallback).
       const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
       const total = Number(orderRow.valor) || lines.reduce((s, l) => s + l.price * l.quantity, 0);
       try {
