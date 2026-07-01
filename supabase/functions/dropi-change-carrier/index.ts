@@ -203,8 +203,9 @@ Deno.serve(async (req: Request) => {
         });
       } catch (e) {
         if (e instanceof WebFallbackError) {
-          // Token de sesión vencido / sin opciones: mensaje accionable, no rompe la card.
-          return jsonOk({ ok: false, error: e.message });
+          // Credenciales vencidas / sin opciones: mensaje accionable + body crudo de
+          // Dropi (si lo hay) para diagnosticar sin ir a los logs. No rompe la card.
+          return jsonOk({ ok: false, error: e.message, dropiBody: (e as WebFallbackError).body });
         }
         throw e;
       }
