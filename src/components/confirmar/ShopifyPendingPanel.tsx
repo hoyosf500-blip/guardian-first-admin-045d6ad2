@@ -6,17 +6,19 @@ import { usePushToDropi } from '@/hooks/usePushToDropi';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
+import { matchesQuery } from '@/lib/textSearch';
 import { supabase } from '@/integrations/supabase/client';
 import { bogotaToday } from '@/lib/utils';
 import PushToDropiModal from './PushToDropiModal';
 import ShopifyMarksHistoryModal from './ShopifyMarksHistoryModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck, Search, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
 const DONE_KEY = (storeId: string) => `guardian.shopifyDone:${storeId}`;
 const DUP_OVERRIDE_KEY = (storeId: string) => `guardian.dupOverride:${storeId}`;
+const MISMATCH_FIXED_KEY = (storeId: string) => `guardian.mismatchFixed:${storeId}`;
 const BOGOTA = 'America/Bogota'; // UTC-5 — sirve para Colombia y Ecuador
 
 function loadDone(storeId: string): Set<string> {
@@ -26,6 +28,11 @@ function loadDone(storeId: string): Set<string> {
 
 function loadOverrides(storeId: string): Set<string> {
   try { return new Set(JSON.parse(sessionStorage.getItem(DUP_OVERRIDE_KEY(storeId)) || '[]')); }
+  catch { return new Set(); }
+}
+
+function loadMismatchFixed(storeId: string): Set<string> {
+  try { return new Set(JSON.parse(sessionStorage.getItem(MISMATCH_FIXED_KEY(storeId)) || '[]')); }
   catch { return new Set(); }
 }
 
@@ -53,7 +60,7 @@ function dayLabel(date: string, today?: string): string {
 export default function ShopifyPendingPanel() {
   const { activeStoreId } = useStore();
   const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
-  const { data: vmData } = useShopifyValueMismatches(activeStoreId);
+  const { data: vmData, refetch: vmRefetch } = useShopifyValueMismatches(activeStoreId);
   const { confirm: confirmPush } = usePushToDropi(activeStoreId);
   const { markEntered } = useShopifyManualMarks(activeStoreId);
   const { user } = useAuth();
@@ -63,6 +70,10 @@ export default function ShopifyPendingPanel() {
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
   // "No es duplicado" por id de pedido (escape para recompra legítima).
   const [dupOverrides, setDupOverrides] = useState<Set<string>>(() => activeStoreId ? loadOverrides(activeStoreId) : new Set());
+  // "Ya lo corregí" en valor-distinto: ids que la operadora ya resolvió a mano.
+  const [mismatchFixed, setMismatchFixed] = useState<Set<string>>(() => activeStoreId ? loadMismatchFixed(activeStoreId) : new Set());
+  // Buscador de la lista de pendientes (no toca el contador ni "Subir todos").
+  const [pendingSearch, setPendingSearch] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   // Bloqueo breve tras una marca: evita que un 2º click accidental caiga sobre
   // la fila que se corrió hacia arriba cuando la anterior desapareció.
@@ -76,12 +87,15 @@ export default function ShopifyPendingPanel() {
   useEffect(() => {
     setDone(activeStoreId ? loadDone(activeStoreId) : new Set());
     setDupOverrides(activeStoreId ? loadOverrides(activeStoreId) : new Set());
+    setMismatchFixed(activeStoreId ? loadMismatchFixed(activeStoreId) : new Set());
   }, [activeStoreId]);
 
   useEffect(() => {
     if (!activeStoreId) return;
-    return pollWhenVisible(() => { void refetch(); }, 120000, { runOnVisible: false });
-  }, [activeStoreId, refetch]);
+    // Refresca pendientes Y valor-distinto → el panel de mismatches se actualiza
+    // solo (un pedido corregido/cancelado en Dropi cae de la lista al re-sincar).
+    return pollWhenVisible(() => { void refetch(); void vmRefetch(); }, 120000, { runOnVisible: false });
+  }, [activeStoreId, refetch, vmRefetch]);
 
   const pending: ShopifyPendingItem[] = useMemo(() => data?.pending ?? [], [data]);
 
@@ -169,20 +183,40 @@ export default function ShopifyPendingPanel() {
   // que deje de molestar (NO crea nada). El sobrante en Dropi se borra a mano.
   const quitarDelCrm = useCallback((id: string) => { markDone(id); }, [markDone]);
 
+  // "Ya lo corregí" (valor distinto): la operadora ya ajustó el precio en Dropi →
+  // lo sacamos de la lista (dismiss local por tienda). Al re-sincar con el valor
+  // corregido, tampoco reaparece.
+  const markMismatchFixed = useCallback((id: string) => {
+    if (!activeStoreId) return;
+    setMismatchFixed(prev => {
+      const next = new Set(prev).add(id);
+      try { sessionStorage.setItem(MISMATCH_FIXED_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      return next;
+    });
+  }, [activeStoreId]);
+
   const copyPhone = useCallback(async (phone: string) => {
     try { await navigator.clipboard.writeText(phone); setCopied(phone); setTimeout(() => setCopied(null), 1500); } catch { /* noop */ }
   }, []);
 
   const visible = useMemo(() => pending.filter(p => !done.has(p.id)), [pending, done]);
+  // La lista MOSTRADA aplica el buscador; el contador, el banner y "Subir todos"
+  // siguen sobre `visible` (el total real, no lo filtrado por búsqueda).
+  const searchedVisible = useMemo(
+    () => pendingSearch.trim()
+      ? visible.filter(p => matchesQuery([p.customer, p.phone, p.name, p.city], pendingSearch))
+      : visible,
+    [visible, pendingSearch],
+  );
   const groups = useMemo(() => {
     const byDay = new Map<string, ShopifyPendingItem[]>();
-    for (const p of visible) {
+    for (const p of searchedVisible) {
       const d = localDay(p.created_at);
       if (!byDay.has(d)) byDay.set(d, []);
       byDay.get(d)!.push(p);
     }
     return [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [visible]);
+  }, [searchedVisible]);
 
   // Subir TODOS los pendientes visibles a Dropi (datos auto de Shopify). Los que
   // fallen (productos sin vínculo, ciudad rara, etc.) NO se marcan y quedan en
@@ -249,7 +283,13 @@ export default function ShopifyPendingPanel() {
 
   // Aviso de pedidos YA en Dropi con valor distinto al de Shopify (cobro de más).
   // Independiente de la cola de pendientes; le ahorra al operador revisar a mano.
-  const mismatches = vmData?.valueMismatches ?? [];
+  // Excluye los CANCELADOS en Dropi (no se despachan → no hay cobro de más) y los
+  // que la operadora ya marcó "Ya lo corregí". El filtro es client-side para que
+  // haga efecto ya, sin esperar redeploy del edge (que aún los incluye).
+  const mismatches = (vmData?.valueMismatches ?? []).filter(m => {
+    if (/CANCEL/i.test(String(m.estado ?? ''))) return false;
+    return !mismatchFixed.has(String(m.external_id || m.shopify_name || ''));
+  });
   const mismatchBanner = mismatches.length > 0 ? (
     <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3">
@@ -293,6 +333,11 @@ export default function ShopifyPendingPanel() {
                   className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
                   <ExternalLink size={12} />
                 </a>
+                <button onClick={() => markMismatchFixed(String(m.external_id || m.shopify_name || ''))}
+                  title="Ya ajusté el valor en Dropi — sacarlo de la lista"
+                  className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 flex-shrink-0">
+                  <Check size={12} /> Ya lo corregí
+                </button>
               </div>
             ))}
           </motion.div>
@@ -409,6 +454,31 @@ export default function ShopifyPendingPanel() {
         {expanded && count > 0 && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             className="border-t border-warning/30 max-h-[28rem] overflow-y-auto bg-card/50">
+            {/* Buscador de la lista (no afecta el contador ni "Subir todos") */}
+            <div className="sticky top-0 z-20 px-3 py-2 bg-card/95 backdrop-blur border-b border-border">
+              <div className="relative">
+                <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={pendingSearch}
+                  onChange={(e) => setPendingSearch(e.target.value)}
+                  placeholder="Buscar por nombre, teléfono, #pedido o ciudad…"
+                  aria-label="Buscar en pendientes de Dropi"
+                  className="h-8 w-full rounded-lg border border-border bg-background pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                {pendingSearch && (
+                  <button type="button" onClick={() => setPendingSearch('')} aria-label="Limpiar búsqueda"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X size={12} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {groups.length === 0 && (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                Sin resultados para "{pendingSearch}".
+              </div>
+            )}
             {groups.map(([date, items]) => (
               <div key={date}>
                 <div className="sticky top-0 z-10 px-4 py-1.5 bg-card/95 backdrop-blur border-b border-border flex items-center gap-2 text-xs">
