@@ -2,12 +2,15 @@
 // shopify-push-dropi para reusarlo en dropi-change-carrier sin duplicar la
 // secuencia probada.
 //
-// AUTH (corregido 2026-07-01): usa `apiKey || sessionToken` con el header
-// `X-Authorization: Bearer`, igual que dropi-wallet-sync. La integration-key
-// permanente (exp 2126) SÍ sirve para los endpoints web /api/* (probado en
-// vivo con wallet /api/wallet/exportexcel y fingerprint /bff/...). Antes esto
-// exigía el `dropi_session_token` (vence ~1h) → el cambio de transportadora
-// se caía siempre. El session token queda como fallback legacy.
+// AUTH (revisado 2026-07-01, 2º intento): probamos AMBOS tokens con el header
+// `X-Authorization: Bearer` — session token PRIMERO, api_key como respaldo.
+// Contra lo que asumió el primer intento (PR #78), la integration-key permanente
+// NO autentica estos endpoints de cotización (/api/products, /api/locations,
+// /api/orders/*): Dropi la limita a wallet (/api/wallet/exportexcel) y fingerprint
+// (/bff/...). La cotización exige el JWT de sesión web (app.dropi.co, vence ~1h),
+// que es el que usa el panel real. Verificado en vivo: la api_key da 401 acá
+// (tienda EC Rushmira, GINTRACOM). Por eso: session token primero (el que sirve),
+// api_key de respaldo (para no romper stores que sí funcionen con ella).
 //
 // Secuencia (verificada en vivo, tienda Rushmira Ecuador, FrescoMax id 115864):
 //   A) GET  /api/products/productlist/v1/show/?id={dropiId}      → supplier_id, type
@@ -33,10 +36,15 @@ export interface DropiWebCfg {
 /** Error tipado del flujo web para distinguir "abortar con 422" del resto. */
 export class WebFallbackError extends Error {
   status: number;
-  constructor(message: string, status = 422) {
+  /** Body crudo de Dropi (cuando aplica) para diagnosticar sin adivinar. */
+  // deno-lint-ignore no-explicit-any
+  body?: any;
+  // deno-lint-ignore no-explicit-any
+  constructor(message: string, status = 422, body?: any) {
     super(message);
     this.name = "WebFallbackError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -61,8 +69,9 @@ export function decodeJwtSub(token: string): string {
   }
 }
 
-/** fetch a /api/* con session token + log [dropi-web]. Tira WebFallbackError(422)
- *  si el endpoint responde 401 con mensaje típico de token inválido para /api/*. */
+/** fetch a /api/* probando ambos tokens (session primero, api_key de respaldo) +
+ *  log [dropi-web]. Si TODOS los tokens dan 401, tira WebFallbackError(422) con el
+ *  body crudo de Dropi para diagnosticar. */
 export async function dropiWebFetch(
   cfg: DropiWebCfg,
   path: string,
@@ -71,36 +80,49 @@ export async function dropiWebFetch(
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;
-  // api_key permanente PRIMERO (funciona para /api/*, igual que wallet); el
-  // session token es el fallback legacy.
-  const authToken = cfg.apiKey || cfg.sessionToken;
-  const headers: Record<string, string> = {
-    "X-Authorization": "Bearer " + authToken,
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-  };
-  if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
-  const res = await fetch(url, {
-    method: init.method,
-    headers,
-    body: init.body != null ? JSON.stringify(init.body) : undefined,
-  });
-  const text = await res.text();
-  console.log("[dropi-web]", { url, status: res.status, body: text.slice(0, 400) });
-  // deno-lint-ignore no-explicit-any
-  let body: any = {};
-  try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+  const bodyStr = init.body != null ? JSON.stringify(init.body) : undefined;
 
-  if (res.status === 401) {
-    const msg = String(body?.message || body?.error || text || "");
-    if (/not issued to this api|could not be parsed|unauthenticated|token/i.test(msg) || !msg) {
-      throw new WebFallbackError(
-        "Dropi rechazó la credencial al cotizar (401). Revisá la Clave API de Dropi en Admin → Credenciales Dropi.",
-        422,
-      );
-    }
+  // Estos endpoints de cotización exigen el JWT de sesión web; la integration-key
+  // permanente NO los autentica (da 401), a diferencia de wallet/fingerprint. Por
+  // eso probamos session token PRIMERO y api_key como respaldo. Nos quedamos con la
+  // primera respuesta que NO sea 401 (éxito o error de negocio).
+  const candidates: Array<{ kind: string; token: string }> = [];
+  if (cfg.sessionToken) candidates.push({ kind: "session", token: cfg.sessionToken });
+  if (cfg.apiKey && cfg.apiKey !== cfg.sessionToken) candidates.push({ kind: "apiKey", token: cfg.apiKey });
+  if (candidates.length === 0) {
+    throw new WebFallbackError(
+      "La tienda no tiene credenciales Dropi para cotizar. Cargá la Clave API o el token de sesión en Admin → Credenciales Dropi.",
+      422,
+    );
   }
-  return { status: res.status, body, text };
+
+  // deno-lint-ignore no-explicit-any
+  let last: { status: number; body: any; text: string } | null = null;
+  for (const cand of candidates) {
+    const headers: Record<string, string> = {
+      "X-Authorization": "Bearer " + cand.token,
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    };
+    if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
+    const res = await fetch(url, { method: init.method, headers, body: bodyStr });
+    const text = await res.text();
+    console.log("[dropi-web]", { url, kind: cand.kind, status: res.status, body: text.slice(0, 400) });
+    // deno-lint-ignore no-explicit-any
+    let body: any = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+    last = { status: res.status, body, text };
+    if (res.status !== 401) return last;
+  }
+
+  // Todos los tokens dieron 401 → credenciales inválidas/vencidas. Mensaje claro +
+  // body crudo de Dropi (para verlo en la respuesta, sin ir a los logs).
+  const msg = String(last?.body?.message || last?.body?.error || last?.text || "");
+  throw new WebFallbackError(
+    `Dropi rechazó las credenciales al cotizar (401)${msg ? `: ${msg.slice(0, 180)}` : ""}. El token de sesión web de Dropi pudo haber vencido (dura ~1h) — pegá uno nuevo en Admin → Credenciales Dropi.`,
+    422,
+    last?.body,
+  );
 }
 
 export interface WebProductInfo {
