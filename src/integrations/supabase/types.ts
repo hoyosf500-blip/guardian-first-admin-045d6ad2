@@ -1262,6 +1262,59 @@ export type Database = {
         }
         Relationships: []
       }
+      shopify_manual_marks: {
+        Row: {
+          city: string | null
+          customer: string | null
+          id: string
+          marked_at: string
+          operator_id: string
+          phone: string | null
+          reverted_at: string | null
+          reverted_by: string | null
+          shopify_name: string | null
+          shopify_order_id: string
+          store_id: string
+          total: number | null
+        }
+        Insert: {
+          city?: string | null
+          customer?: string | null
+          id?: string
+          marked_at?: string
+          operator_id: string
+          phone?: string | null
+          reverted_at?: string | null
+          reverted_by?: string | null
+          shopify_name?: string | null
+          shopify_order_id: string
+          store_id: string
+          total?: number | null
+        }
+        Update: {
+          city?: string | null
+          customer?: string | null
+          id?: string
+          marked_at?: string
+          operator_id?: string
+          phone?: string | null
+          reverted_at?: string | null
+          reverted_by?: string | null
+          shopify_name?: string | null
+          shopify_order_id?: string
+          store_id?: string
+          total?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shopify_manual_marks_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shopify_product_dropi_map: {
         Row: {
           created_at: string
@@ -2428,6 +2481,17 @@ export type Database = {
       financial_summary: {
         Args: { p_from_date: string; p_to_date: string }
         Returns: Json
+      }
+      find_duplicate_phones: {
+        Args: { p_phones: string[]; p_store_id: string }
+        Returns: {
+          created_at: string
+          estado: string
+          external_id: string
+          fecha: string
+          nombre: string
+          phone_norm: string
+        }[]
       }
       get_cfo_retrospective: {
         Args: { p_year_month: string }
