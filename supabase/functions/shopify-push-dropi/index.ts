@@ -17,7 +17,45 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
-import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers } from "../_shared/dropiWebQuote.ts";
+import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers, type DestCity } from "../_shared/dropiWebQuote.ts";
+
+/** Resuelve la ciudad destino contra `dropi_city_catalog` (reemplaza /api/locations,
+ *  que Dropi bloquea 403 desde la IP del datacenter). Match por (country, city_norm,
+ *  dept_norm) con fallback a solo city_norm. Null si no está en el catálogo. */
+// deno-lint-ignore no-explicit-any
+async function resolveDestCity(
+  sbAdmin: any,
+  countryCode: string,
+  city: string,
+  state: string,
+): Promise<DestCity | null> {
+  const country = countryCode === "EC" ? "EC" : "CO";
+  const cityNorm = normUp(city);
+  const deptNorm = normUp(state);
+  if (!cityNorm) return null;
+  const withDept = await sbAdmin
+    .from("dropi_city_catalog")
+    .select("city_id, name, department_id, cod_dane")
+    .eq("country_code", country).eq("city_norm", cityNorm).eq("dept_norm", deptNorm)
+    .limit(1).maybeSingle();
+  // deno-lint-ignore no-explicit-any
+  let row: any = withDept?.data ?? null;
+  if (!row) {
+    const cityOnly = await sbAdmin
+      .from("dropi_city_catalog")
+      .select("city_id, name, department_id, cod_dane")
+      .eq("country_code", country).eq("city_norm", cityNorm)
+      .order("id", { ascending: true }).limit(1).maybeSingle();
+    row = cityOnly?.data ?? null;
+  }
+  if (!row) return null;
+  return {
+    cityId: Number(row.city_id),
+    name: String(row.name),
+    departmentId: row.department_id != null ? Number(row.department_id) : null,
+    codDane: String(row.cod_dane),
+  };
+}
 import { allocateOrderDiscount, isCodOvercharge } from "./discount.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
@@ -493,6 +531,8 @@ async function fetchDropiProductById(
  *  WebFallbackError (que el caller convierte en status "error"). La secuencia
  *  A–D (cotización) vive en ../_shared/dropiWebQuote.ts y la reusa dropi-change-carrier. */
 async function createOrderViaWeb(
+  // deno-lint-ignore no-explicit-any
+  sbAdmin: any,
   cfg: { base: string; sessionToken: string; storeUrl: string },
   args: {
     country: string;
@@ -506,11 +546,22 @@ async function createOrderViaWeb(
     throw new WebFallbackError("No hay productos con id de Dropi para crear la orden por el panel web.", 422);
   }
 
-  // PASOS A–D — info de productos + ciudad destino + origen/bodega + cotización.
+  // Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
+  const countryCode = args.country === "ECUADOR" ? "EC" : "CO";
+  const destCity = await resolveDestCity(sbAdmin, countryCode, args.client.city, args.client.state);
+  if (!destCity) {
+    throw new WebFallbackError(
+      `No pude resolver la ciudad destino "${args.client.city}, ${args.client.state}" en el catálogo (dropi_city_catalog).`,
+      422,
+    );
+  }
+
+  // PASOS A, C, D — info de productos + origen/bodega + cotización (destino ya resuelto).
   const ctx = await quoteCarriers(cfg, {
     country: args.country,
     city: args.client.city,
     state: args.client.state,
+    destCity,
     lines: lines.map((l) => ({ dropiId: Number(l.dropiId), quantity: l.quantity, price: l.price })),
     total: args.total,
   });
@@ -1058,7 +1109,7 @@ Deno.serve(async (req: Request) => {
         // desde los precios YA con envío incluido.
         const webTotal = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
         try {
-          const webOrderId = await createOrderViaWeb(dropiCfg, {
+          const webOrderId = await createOrderViaWeb(sb, dropiCfg, {
             country: DROPI_COUNTRY,
             client,
             resolved,

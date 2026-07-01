@@ -32,9 +32,59 @@ import {
   quoteCarriers,
   dropiWebFetch,
   decodeJwtSub,
+  normUp,
   WebFallbackError,
   type QuoteLine,
+  type DestCity,
 } from "../_shared/dropiWebQuote.ts";
+
+/** Resuelve la ciudad destino contra `dropi_city_catalog` (reemplaza /api/locations,
+ *  que Dropi bloquea con 403 desde la IP del datacenter de Supabase). Busca por
+ *  (country_code, city_norm, dept_norm); si el dept no matchea, reintenta solo por
+ *  city_norm. Devuelve null si la ciudad no está en el catálogo. */
+// deno-lint-ignore no-explicit-any
+async function resolveDestCity(
+  sbAdmin: any,
+  countryCode: string,
+  city: string,
+  state: string,
+): Promise<DestCity | null> {
+  const country = countryCode === "EC" ? "EC" : "CO";
+  const cityNorm = normUp(city);
+  const deptNorm = normUp(state);
+  if (!cityNorm) return null;
+
+  const withDept = await sbAdmin
+    .from("dropi_city_catalog")
+    .select("city_id, name, department_id, cod_dane")
+    .eq("country_code", country)
+    .eq("city_norm", cityNorm)
+    .eq("dept_norm", deptNorm)
+    .limit(1)
+    .maybeSingle();
+  // deno-lint-ignore no-explicit-any
+  let row: any = withDept?.data ?? null;
+
+  if (!row) {
+    const cityOnly = await sbAdmin
+      .from("dropi_city_catalog")
+      .select("city_id, name, department_id, cod_dane")
+      .eq("country_code", country)
+      .eq("city_norm", cityNorm)
+      .order("id", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    row = cityOnly?.data ?? null;
+  }
+
+  if (!row) return null;
+  return {
+    cityId: Number(row.city_id),
+    name: String(row.name),
+    departmentId: row.department_id != null ? Number(row.department_id) : null,
+    codDane: String(row.cod_dane),
+  };
+}
 
 interface ChangeCarrierBody {
   externalId?: string;
@@ -264,14 +314,27 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // 2) Cotizar en vivo (panel web — api_key permanente; session token = fallback).
+      // 2) Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
       const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const destCity = await resolveDestCity(
+        sbAdmin, cfg.countryCode, String(orderRow.ciudad || ""), String(orderRow.departamento || ""),
+      );
+      if (!destCity) {
+        return jsonOk({
+          ok: false,
+          error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+          city: String(orderRow.ciudad || ""), state: String(orderRow.departamento || ""),
+        });
+      }
+
+      // 3) Cotizar en vivo (panel web — session token; destino ya resuelto del catálogo).
       const total = Number(orderRow.valor) || lines.reduce((s, l) => s + l.price * l.quantity, 0);
       try {
         const ctx = await quoteCarriers(cfg, {
           country,
           city: String(orderRow.ciudad || ""),
           state: String(orderRow.departamento || ""),
+          destCity,
           lines,
           total,
         });
@@ -361,8 +424,18 @@ Deno.serve(async (req: Request) => {
       };
     }
 
-    // 2) Cotizar (reusa quoteCarriers) para obtener origin.warehouseId, supplierId,
-    //    dest.stateName/cityName normalizados y el productType por producto.
+    // 2) Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
+    const destCity = await resolveDestCity(sbAdmin, cfg.countryCode, client.city, client.state);
+    if (!destCity) {
+      return jsonOk({
+        ok: false,
+        error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+        city: client.city, state: client.state,
+      });
+    }
+
+    // 3) Cotizar (reusa quoteCarriers) para obtener origin.warehouseId, supplierId,
+    //    dest.stateName/cityName y el productType por producto. destino ya resuelto.
     const total = Number(orderRow.valor) || lines.reduce((s, l) => s + l.price * l.quantity, 0);
     let ctx;
     try {
@@ -370,6 +443,7 @@ Deno.serve(async (req: Request) => {
         country,
         city: client.city,
         state: client.state,
+        destCity,
         lines,
         total,
       });

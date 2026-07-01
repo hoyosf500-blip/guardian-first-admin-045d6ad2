@@ -1,34 +1,27 @@
-// Cotización de envío contra el panel WEB de Dropi. Extraído de
-// shopify-push-dropi para reusarlo en dropi-change-carrier sin duplicar la
-// secuencia probada.
+// Cotización de envío contra el panel WEB de Dropi (session token, no la
+// integration-key). Extraído de shopify-push-dropi para reusarlo en
+// dropi-change-carrier sin duplicar la secuencia probada.
 //
-// AUTH (revisado 2026-07-01, 2º intento): probamos AMBOS tokens con el header
-// `X-Authorization: Bearer` — session token PRIMERO, api_key como respaldo.
-// Contra lo que asumió el primer intento (PR #78), la integration-key permanente
-// NO autentica estos endpoints de cotización (/api/products, /api/locations,
-// /api/orders/*): Dropi la limita a wallet (/api/wallet/exportexcel) y fingerprint
-// (/bff/...). La cotización exige el JWT de sesión web (app.dropi.co, vence ~1h),
-// que es el que usa el panel real. Verificado en vivo: la api_key da 401 acá
-// (tienda EC Rushmira, GINTRACOM). Por eso: session token primero (el que sirve),
-// api_key de respaldo (para no romper stores que sí funcionen con ella).
-//
-// Secuencia (verificada en vivo, tienda Rushmira Ecuador, FrescoMax id 115864):
+// Secuencia (verificada en vivo, tienda EC, producto 155190 ALMAFIT, destino CUENCA/AZUAY):
 //   A) GET  /api/products/productlist/v1/show/?id={dropiId}      → supplier_id, type
-//   B) POST /api/locations { country }                           → cityId, stateName
+//   B) *** LA CIUDAD DESTINO YA NO SE RESUELVE ACÁ ***           → la trae el caller
+//      Antes: POST /api/locations { country }. Dropi responde 403 a ese endpoint
+//      desde la IP del datacenter de Supabase (funciona 200 desde un browser
+//      residencial). El caller ahora resuelve la ciudad destino contra la tabla
+//      Guardian `dropi_city_catalog` y pasa `destCity` ya armado.
 //   C) POST /api/orders/getOriginCityForCalculateShipping        → ciudad_remitente, warehouse
+//      (destination = STRING "city, state", NO un cityId)
 //   D) POST /api/orders/cotizaEnvioTransportadoraV2              → transportadoras + precio
+//      (ciudad_destino = { id, name, department_id, cod_dane } — cod_dane REQUERIDO)
 //
-// `quoteCarriers` corre A–D y devuelve TODAS las transportadoras válidas
-// (sin colapsar a la más barata) + los datos intermedios (dest/origin/products)
-// para que el caller pueda crear la orden (PASO E) o solo mostrar opciones.
+// `quoteCarriers` corre A, C, D (B lo hace el caller) y devuelve TODAS las
+// transportadoras válidas (sin colapsar a la más barata) + los datos intermedios
+// (dest/origin/products) para que el caller pueda crear la orden (PASO E) o solo
+// mostrar opciones.
 
 /** Config mínima para hablar con el panel web de Dropi. */
 export interface DropiWebCfg {
   base: string;
-  /** INTEGRATIONS permanente (exp 2126). PREFERIDA: sirve para /api/* con el
-   *  header x-authorization (probado en wallet/fingerprint). */
-  apiKey?: string;
-  /** JWT de sesión web (app.dropi.co), vence ~1h. Fallback legacy si no hay apiKey. */
   sessionToken: string;
   storeUrl: string;
 }
@@ -36,15 +29,10 @@ export interface DropiWebCfg {
 /** Error tipado del flujo web para distinguir "abortar con 422" del resto. */
 export class WebFallbackError extends Error {
   status: number;
-  /** Body crudo de Dropi (cuando aplica) para diagnosticar sin adivinar. */
-  // deno-lint-ignore no-explicit-any
-  body?: any;
-  // deno-lint-ignore no-explicit-any
-  constructor(message: string, status = 422, body?: any) {
+  constructor(message: string, status = 422) {
     super(message);
     this.name = "WebFallbackError";
     this.status = status;
-    this.body = body;
   }
 }
 
@@ -69,9 +57,8 @@ export function decodeJwtSub(token: string): string {
   }
 }
 
-/** fetch a /api/* probando ambos tokens (session primero, api_key de respaldo) +
- *  log [dropi-web]. Si TODOS los tokens dan 401, tira WebFallbackError(422) con el
- *  body crudo de Dropi para diagnosticar. */
+/** fetch a /api/* con session token + log [dropi-web]. Tira WebFallbackError(422)
+ *  si el endpoint responde 401 con mensaje típico de token inválido para /api/*. */
 export async function dropiWebFetch(
   cfg: DropiWebCfg,
   path: string,
@@ -80,49 +67,33 @@ export async function dropiWebFetch(
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;
-  const bodyStr = init.body != null ? JSON.stringify(init.body) : undefined;
-
-  // Estos endpoints de cotización exigen el JWT de sesión web; la integration-key
-  // permanente NO los autentica (da 401), a diferencia de wallet/fingerprint. Por
-  // eso probamos session token PRIMERO y api_key como respaldo. Nos quedamos con la
-  // primera respuesta que NO sea 401 (éxito o error de negocio).
-  const candidates: Array<{ kind: string; token: string }> = [];
-  if (cfg.sessionToken) candidates.push({ kind: "session", token: cfg.sessionToken });
-  if (cfg.apiKey && cfg.apiKey !== cfg.sessionToken) candidates.push({ kind: "apiKey", token: cfg.apiKey });
-  if (candidates.length === 0) {
-    throw new WebFallbackError(
-      "La tienda no tiene credenciales Dropi para cotizar. Cargá la Clave API o el token de sesión en Admin → Credenciales Dropi.",
-      422,
-    );
-  }
-
+  const headers: Record<string, string> = {
+    "X-Authorization": "Bearer " + cfg.sessionToken,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+  };
+  if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
+  const res = await fetch(url, {
+    method: init.method,
+    headers,
+    body: init.body != null ? JSON.stringify(init.body) : undefined,
+  });
+  const text = await res.text();
+  console.log("[dropi-web]", { url, status: res.status, body: text.slice(0, 400) });
   // deno-lint-ignore no-explicit-any
-  let last: { status: number; body: any; text: string } | null = null;
-  for (const cand of candidates) {
-    const headers: Record<string, string> = {
-      "X-Authorization": "Bearer " + cand.token,
-      "Content-Type": "application/json",
-      "Accept": "application/json",
-    };
-    if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
-    const res = await fetch(url, { method: init.method, headers, body: bodyStr });
-    const text = await res.text();
-    console.log("[dropi-web]", { url, kind: cand.kind, status: res.status, body: text.slice(0, 400) });
-    // deno-lint-ignore no-explicit-any
-    let body: any = {};
-    try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
-    last = { status: res.status, body, text };
-    if (res.status !== 401) return last;
-  }
+  let body: any = {};
+  try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
 
-  // Todos los tokens dieron 401 → credenciales inválidas/vencidas. Mensaje claro +
-  // body crudo de Dropi (para verlo en la respuesta, sin ir a los logs).
-  const msg = String(last?.body?.message || last?.body?.error || last?.text || "");
-  throw new WebFallbackError(
-    `Dropi rechazó las credenciales al cotizar (401)${msg ? `: ${msg.slice(0, 180)}` : ""}. El token de sesión web de Dropi pudo haber vencido (dura ~1h) — pegá uno nuevo en Admin → Credenciales Dropi.`,
-    422,
-    last?.body,
-  );
+  if (res.status === 401) {
+    const msg = String(body?.message || body?.error || text || "");
+    if (/not issued to this api|could not be parsed|unauthenticated|token/i.test(msg) || !msg) {
+      throw new WebFallbackError(
+        "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para cotizar en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+        422,
+      );
+    }
+  }
+  return { status: res.status, body, text };
 }
 
 export interface WebProductInfo {
@@ -138,6 +109,15 @@ export interface QuoteLine {
   dropiId: number;
   quantity: number;
   price: number;
+}
+
+/** Ciudad destino ya resuelta por el caller (desde `dropi_city_catalog`).
+ *  Reemplaza al viejo PASO B (/api/locations). */
+export interface DestCity {
+  cityId: number;
+  name: string;
+  departmentId: number | null;
+  codDane: string;
 }
 
 /** Una transportadora cotizada por Dropi para esta ruta. */
@@ -179,79 +159,27 @@ export async function fetchWebProductInfo(
     }
   } catch (e) {
     // Un 401 acá NO aborta (a diferencia del resto): seguimos con fallback de supplier.
-    // Pero si el session token es inválido de plano, los pasos B-D también fallarán.
+    // Pero si el session token es inválido de plano, los pasos C-D también fallarán.
     if (e instanceof WebFallbackError && e.status === 422) throw e;
   }
   return { dropiId, quantity, price, productType, supplierId };
 }
 
-/** PASO B — resuelve la ciudad destino contra el catálogo de Dropi del país.
- *  ⚠️ country DEBE ser exactamente "ECUADOR"/"COLOMBIA" (sino data:[] vacío). */
-export async function resolveDestinationCity(
-  cfg: DropiWebCfg,
-  country: string,
-  clientCity: string,
-  clientState: string,
-): Promise<{ cityId: number; idState: number; stateName: string; cityName: string }> {
-  const { status, body } = await dropiWebFetch(cfg, `/api/locations`, { method: "POST", body: { country } });
-  if (status < 200 || status >= 300) {
-    throw new WebFallbackError(`Dropi /api/locations respondió ${status} al resolver la ciudad destino.`, 422);
-  }
-  // deno-lint-ignore no-explicit-any
-  const states: any[] = Array.isArray(body?.data) ? body.data : [];
-  if (states.length === 0) {
-    throw new WebFallbackError(`Dropi devolvió un catálogo de ubicaciones vacío para ${country}.`, 422);
-  }
-  const wantState = normUp(clientState);
-  const wantCity = normUp(clientCity);
-
-  // Buscar el estado/departamento (exacto, luego por inclusión).
-  let state =
-    states.find((st) => normUp(st?.label) === wantState) ??
-    (wantState ? states.find((st) => normUp(st?.label).includes(wantState) || wantState.includes(normUp(st?.label))) : undefined);
-
-  // Si no matchea por departamento, buscar la ciudad en TODOS los estados.
-  // deno-lint-ignore no-explicit-any
-  const findCityIn = (st: any) => {
-    // deno-lint-ignore no-explicit-any
-    const items: any[] = Array.isArray(st?.items) ? st.items : [];
-    return (
-      items.find((c) => normUp(c?.label) === wantCity) ??
-      (wantCity ? items.find((c) => normUp(c?.label).includes(wantCity) || wantCity.includes(normUp(c?.label))) : undefined)
-    );
-  };
-
-  // deno-lint-ignore no-explicit-any
-  let city: any | undefined;
-  if (state) city = findCityIn(state);
-  if (!city) {
-    for (const st of states) {
-      const hit = findCityIn(st);
-      if (hit) { state = st; city = hit; break; }
-    }
-  }
-  if (!state || !city) {
-    throw new WebFallbackError(`Ciudad/Departamento no está en el catálogo Dropi: ${clientCity}/${clientState}`, 422);
-  }
-  return {
-    cityId: Number(city.id_city),
-    idState: Number(state.id_state),
-    stateName: String(state.label),
-    cityName: String(city.label),
-  };
-}
-
-/** PASO C — origen/bodega para un producto dado. */
+/** PASO C — origen/bodega para un producto dado.
+ *  ⚠️ `destination` es un STRING "city, state" (minúsculas ok), NO un cityId.
+ *  Verificado en vivo 2026-07-01: getOriginCityForCalculateShipping espera el
+ *  string; el cityId numérico NO resuelve el remitente. `data.city_dropi` es el
+ *  OBJETO ciudad remitente (id, name, department_id, cod_dane, rate_type, ...). */
 export async function getOriginCity(
   cfg: DropiWebCfg,
   dropiId: number,
-  cityId: number,
+  destination: string,
   productType: string,
   // deno-lint-ignore no-explicit-any
 ): Promise<{ cityRemitente: any; warehouse: any; warehouseId: number }> {
   const { status, body } = await dropiWebFetch(cfg, `/api/orders/getOriginCityForCalculateShipping`, {
     method: "POST",
-    body: { id: dropiId, destination: cityId, type: productType },
+    body: { id: dropiId, destination, type: productType },
   });
   if (status < 200 || status >= 300) {
     throw new WebFallbackError(`Dropi /api/orders/getOriginCityForCalculateShipping respondió ${status}.`, 422);
@@ -266,15 +194,16 @@ export async function getOriginCity(
 }
 
 /** PASO D — cotiza envío y devuelve TODAS las transportadoras válidas (asc por precio).
- *  NO filtra VELOCES: cada caller decide (shopify-push la excluye, change-carrier las muestra). */
+ *  NO filtra VELOCES: cada caller decide (shopify-push la excluye, change-carrier las muestra).
+ *  ⚠️ ciudad_destino DEBE incluir cod_dane: con solo {id,name,department_id} Dropi
+ *  responde "no se encontro ciudad remitente". El mínimo verificado es
+ *  {id, name, department_id, cod_dane}. */
 export async function cotizaEnvioOptions(
   cfg: DropiWebCfg,
   args: {
     // deno-lint-ignore no-explicit-any
     cityRemitente: any;
-    cityId: number;
-    cityName: string;
-    idState: number;
+    destCity: DestCity;
     total: number;
     products: WebProductInfo[];
     // deno-lint-ignore no-explicit-any
@@ -285,7 +214,12 @@ export async function cotizaEnvioOptions(
   const reqBody = {
     peso: 1, largo: 1, ancho: 1, alto: 1,
     ciudad_remitente: args.cityRemitente,
-    ciudad_destino: { id: args.cityId, name: args.cityName, department_id: args.idState },
+    ciudad_destino: {
+      id: args.destCity.cityId,
+      name: args.destCity.name,
+      department_id: args.destCity.departmentId,
+      cod_dane: args.destCity.codDane,
+    },
     EnvioConCobro: true,
     ValorDeclarado: args.total,
     insurance: false,
@@ -318,14 +252,23 @@ export async function cotizaEnvioOptions(
   }));
 }
 
-/** Orquesta A–D y devuelve opciones + contexto (dest/origin/products) para reusar. */
+/** Orquesta A, C, D y devuelve opciones + contexto (dest/origin/products) para reusar.
+ *  La ciudad destino (PASO B) la resuelve el caller contra `dropi_city_catalog` y la
+ *  pasa como `destCity` — así evitamos /api/locations (403 desde la IP del edge). */
 export async function quoteCarriers(
   cfg: DropiWebCfg,
-  args: { country: string; city: string; state: string; lines: QuoteLine[]; total: number },
+  args: {
+    country: string;
+    city: string;
+    state: string;
+    destCity: DestCity;
+    lines: QuoteLine[];
+    total: number;
+  },
 ): Promise<QuoteContext> {
-  if (!cfg.apiKey && !cfg.sessionToken) {
+  if (!cfg.sessionToken) {
     throw new WebFallbackError(
-      "La tienda no tiene credenciales Dropi para cotizar. Cargá la Clave API en Admin → Credenciales Dropi.",
+      "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para cotizar en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
       422,
     );
   }
@@ -341,11 +284,14 @@ export async function quoteCarriers(
   }
   const primary = products[0]; // el primer producto manda para el cálculo de origen.
 
-  // PASO B — ciudad destino.
-  const dest = await resolveDestinationCity(cfg, args.country, args.city, args.state);
+  // PASO B — ciudad destino: ya resuelta por el caller (dropi_city_catalog).
+  const destCity = args.destCity;
 
   // PASO C — origen/bodega (asume proveedor compartido entre líneas).
-  const origin = await getOriginCity(cfg, primary.dropiId, dest.cityId, primary.productType);
+  //  destination = STRING "city, state" (minúsculas ok, verificado en vivo).
+  const destinationStr = `${String(args.city || "").trim()}, ${String(args.state || "").trim()}`
+    .toLowerCase();
+  const origin = await getOriginCity(cfg, primary.dropiId, destinationStr, primary.productType);
 
   // supplier_id: el del PASO A; fallback = warehouse.user_id del PASO C.
   const supplierId =
@@ -355,14 +301,20 @@ export async function quoteCarriers(
   // PASO D — cotización (todas las líneas en products).
   const options = await cotizaEnvioOptions(cfg, {
     cityRemitente: origin.cityRemitente,
-    cityId: dest.cityId,
-    cityName: dest.cityName,
-    idState: dest.idState,
+    destCity,
     total: args.total,
     products,
     warehouse: origin.warehouse,
     warehouseId: origin.warehouseId,
   });
+
+  // dest: stateName/cityName vienen del pedido (string original); ids del catálogo.
+  const dest = {
+    cityId: destCity.cityId,
+    idState: destCity.departmentId ?? 0,
+    stateName: String(args.state || ""),
+    cityName: destCity.name || String(args.city || ""),
+  };
 
   return { options, dest, origin, products, supplierId };
 }
