@@ -309,6 +309,42 @@ export type Database = {
           },
         ]
       }
+      dropi_city_catalog: {
+        Row: {
+          city_id: number
+          city_norm: string
+          cod_dane: string
+          country_code: string
+          created_at: string
+          department_id: number | null
+          dept_norm: string
+          id: number
+          name: string
+        }
+        Insert: {
+          city_id: number
+          city_norm: string
+          cod_dane: string
+          country_code: string
+          created_at?: string
+          department_id?: number | null
+          dept_norm?: string
+          id?: never
+          name: string
+        }
+        Update: {
+          city_id?: number
+          city_norm?: string
+          cod_dane?: string
+          country_code?: string
+          created_at?: string
+          department_id?: number | null
+          dept_norm?: string
+          id?: never
+          name?: string
+        }
+        Relationships: []
+      }
       dropi_wallet_movements: {
         Row: {
           categoria: string | null
