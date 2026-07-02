@@ -294,40 +294,54 @@ Deno.serve(async (req: Request) => {
     if (!cfg.apiKey) return jsonOk({ ok: false, error: "La tienda no tiene Clave API de Dropi configurada" });
 
     // =========================== MODE: DEBUG ===========================
-    // Diagnóstico temporal: ¿qué headers salen REALMENTE del edge? (forbidden-header
-    // check). Deno/Supabase Edge Runtime puede descartar Sec-Fetch-*/Referer/Origin.
-    // httpbin.org/headers devuelve lo que RECIBIÓ → prueba si sobreviven al runtime.
+    // Diagnóstico A/B para CONFIRMAR el root cause del 401 del edge (2026-07-01):
+    // el 401 no era WAF (403) ni token (limpio, mismo que el panel #102) — era el
+    // header Origin. El edge mandaba Origin=cfg.storeUrl (rushmira.com) y Dropi lo
+    // rechazaba; con Origin=app.dropi.ec (como el panel) da 200. Este branch prueba
+    // getOriginCity con AMBOS Origins usando el MISMO token limpio → un solo deploy
+    // confirma cuál Origin pasa. También reporta el estado del token (comillas/len).
     if (body.mode === "debug") {
       const appOrigin = cfg.base.replace("://api.", "://app.");
-      const browserHeaders: Record<string, string> = {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-        "Origin": cfg.storeUrl || appOrigin,
-        "Referer": `${appOrigin}/`,
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site",
-        "Accept": "application/json, text/plain, */*",
+      const rawTok = String(cfg.sessionToken || "");
+      const cleanTok = rawTok.replace(/^"+|"+$/g, "");
+      const ocFetch = async (origin: string) => {
+        try {
+          const r = await fetch(`${cfg.base}/api/orders/getOriginCityForCalculateShipping`, {
+            method: "POST",
+            headers: {
+              "X-Authorization": "Bearer " + cleanTok,
+              "Content-Type": "application/json",
+              "Accept": "application/json, text/plain, */*",
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+              "Origin": origin,
+              "Referer": `${appOrigin}/`,
+              "Sec-Fetch-Dest": "empty",
+              "Sec-Fetch-Mode": "cors",
+              "Sec-Fetch-Site": "same-site",
+            },
+            body: JSON.stringify({ id: 155190, destination: "machala, el oro", type: "SIMPLE" }),
+          });
+          return { origin, status: r.status, body: (await r.text()).slice(0, 160) };
+        } catch (e) { return { origin, status: 0, body: "throw: " + String(e) }; }
       };
-      let echo: unknown = null, echoErr: string | null = null;
-      try {
-        const er = await fetch("https://httpbin.org/headers", { headers: browserHeaders });
-        echo = await er.json();
-      } catch (e) { echoErr = String(e); }
-      let ocStatus = 0, ocBody = "";
+      const withAppOrigin = await ocFetch(appOrigin);
+      const withStoreOrigin = await ocFetch(cfg.storeUrl || appOrigin);
+      // La ruta compartida (ya arreglada a Origin=appOrigin) debe coincidir con withAppOrigin.
+      let sharedStatus = 0, sharedBody = "";
       try {
         const oc = await dropiWebFetch(cfg, "/api/orders/getOriginCityForCalculateShipping", {
           method: "POST", body: { id: 155190, destination: "machala, el oro", type: "SIMPLE" },
         });
-        ocStatus = oc.status; ocBody = String(oc.text || "").slice(0, 200);
-      } catch (e) { ocBody = "throw: " + String(e); }
+        sharedStatus = oc.status; sharedBody = String(oc.text || "").slice(0, 160);
+      } catch (e) { sharedBody = "throw: " + String(e); }
       return jsonOk({
         ok: true, debug: true,
-        sentBrowserHeaders: Object.keys(browserHeaders),
-        httpbinReceived: (echo as { headers?: unknown })?.headers ?? echo,
-        echoErr,
-        getOriginCityStatus: ocStatus,
-        getOriginCityBody: ocBody,
+        appOrigin, storeUrl: cfg.storeUrl,
+        tokenLen: rawTok.length, tokenHadQuotes: rawTok !== cleanTok,
+        tokenTail: cleanTok.slice(-8),
+        withAppOrigin, withStoreOrigin,
+        sharedPath: { status: sharedStatus, body: sharedBody },
       });
     }
 
