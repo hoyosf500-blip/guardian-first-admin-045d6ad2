@@ -77,13 +77,20 @@ export async function dropiWebFetch(
   // El fetch server-side de Deno manda "User-Agent: Deno/..." y omite sec-fetch-*, por eso
   // getOriginCity/cotiza/locations daban 403 desde el edge y 200 desde el browser.
   const appOrigin = cfg.base.replace("://api.", "://app."); // https://api.dropi.ec → https://app.dropi.ec
+  // Origin DEBE ser el dominio de Dropi (app.dropi.*), NO la URL pública de la tienda
+  // (cfg.storeUrl, ej. rushmira.com). Verificado en vivo 2026-07-01 (getOriginCity #96 vs
+  // #102, MISMO token limpio): con Origin=app.dropi.ec → 200; el edge mandaba
+  // Origin=rushmira.com y Dropi lo rechazaba con 401 (pasa el WAF pero la capa de auth
+  // valida el Origin contra sus dominios). El panel real siempre manda Origin=app.dropi.ec.
+  // El token se limpia de comillas por si un paste dejó `"eyJ..."` (también da 401).
+  const cleanToken = String(cfg.sessionToken || "").replace(/^"+|"+$/g, "");
   const headers: Record<string, string> = {
-    "X-Authorization": "Bearer " + cfg.sessionToken,
+    "X-Authorization": "Bearer " + cleanToken,
     "Content-Type": "application/json",
     "Accept": "application/json, text/plain, */*",
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-    "Origin": cfg.storeUrl || appOrigin,
+    "Origin": appOrigin,
     "Referer": `${appOrigin}/`,
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
