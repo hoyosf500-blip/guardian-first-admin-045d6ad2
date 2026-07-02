@@ -4,6 +4,7 @@ import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lu
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { confRateBySample } from '@/lib/confirmationRate';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
+import { computeJornadaReal, shouldAlertSinConfirmar, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 
 interface ActivityRow {
@@ -131,17 +132,27 @@ export default function ProductivityDashboard() {
       setRows(arr);
       setError(null);
     }
-    // Jornada: ignoramos error silenciosamente (la migration puede no estar).
+    // Jornada: error silencioso (la migration puede no estar) pero LIMPIANDO
+    // el estado — antes se retenían las filas del range anterior y, si solo
+    // fallaba la RPC de un range, se cruzaba startedAt de 'today' contra
+    // productividad de 7d (o al revés) en los chips.
     if (!activity.error) {
       setActivityRows((activity.data as ActivityRow[] | null) ?? []);
-    } else if (process.env.NODE_ENV !== 'production') {
-      console.warn('[productivity] activity rpc error', activity.error);
+    } else {
+      setActivityRows([]);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[productivity] activity rpc error', activity.error);
+      }
     }
-    // Advertencias de inactividad: idem, error silencioso (la columna cae a 0).
+    // Advertencias de inactividad: idem, error silencioso + limpieza (la
+    // columna cae a 0 en vez de mostrar datos stale de otro range).
     if (!inactivity.error) {
       setInactivityRows((inactivity.data as InactivityRow[] | null) ?? []);
-    } else if (process.env.NODE_ENV !== 'production') {
-      console.warn('[productivity] inactivity rpc error', inactivity.error);
+    } else {
+      setInactivityRows([]);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[productivity] inactivity rpc error', inactivity.error);
+      }
     }
     setLoading(false);
     setRefreshing(false);
@@ -176,6 +187,20 @@ export default function ProductivityDashboard() {
   const closeInactivityDetail = useCallback(() => setInactivityDetail(null), []);
 
   const inactivityByOp = new Map(inactivityRows.map(r => [r.operator_id, r]));
+  // Cruce jornada ↔ productividad por operadora (para la alerta "sin confirmar"
+  // en la tabla Confirmar). Si no hay fila de actividad, no se alerta.
+  const activityByOp = new Map(activityRows.map(r => [r.operator_id, r]));
+  // Un solo "ahora" por render: el realtime debounced re-renderiza cada ~1s,
+  // así que los chips (hueco / desconectada / sin confirmar) se mantienen frescos.
+  const nowMs = Date.now();
+  // La matemática de ventana real (computeJornadaReal / shouldAlertSinConfirmar)
+  // SOLO es válida en 'today': para 7d/30d la RPC operator_activity_stats
+  // devuelve MIN(first_action_at) / MAX(last_active_at) / SUM(seconds) sobre
+  // TODO el rango (migration 20260626233822, líneas 92-93), así que la
+  // "ventana" incluiría noches y días libres → hueco ≈ 100h+ en todas las
+  // filas, % real ≈ 5-20% y "⚠ 167h sin confirmar". En multi-día caemos al
+  // cálculo viejo (activo ÷ (activo + inactivo)) y ocultamos los chips.
+  const isToday = range === 'today';
 
   const chartData = rows.map(r => ({
     name: r.display_name,
@@ -272,7 +297,9 @@ export default function ProductivityDashboard() {
             <Section
               title="Jornada"
               dotClass="bg-info"
-              note="Cuándo empezó cada operadora y cuánto tiempo estuvo activa (mouse/teclado idle > 5 min cuenta como muerto)"
+              note={isToday
+                ? 'Cuándo empezó cada operadora y cuánto tiempo estuvo activa (mouse/teclado idle > 5 min cuenta como muerto; el % es sobre el tiempo transcurrido e incluye ratos sin el CRM abierto)'
+                : 'Suma de todos los días del rango (idle > 5 min cuenta como muerto; el % es sobre el tiempo con el CRM abierto — la ventana real y sus alertas solo aplican en Hoy)'}
             >
               <div className="overflow-x-auto">
                 <table className="data-table">
@@ -280,19 +307,39 @@ export default function ProductivityDashboard() {
                     <tr>
                       <th className="w-10">#</th>
                       <th>Operadora</th>
-                      <th className="text-right" title="Primer movimiento de mouse o teclado del día (zona Bogotá)">Empezó</th>
+                      <th className="text-right" title={isToday ? 'Primer movimiento de mouse o teclado del día (zona Bogotá)' : 'Primer movimiento de mouse o teclado del rango (zona Bogotá)'}>Empezó</th>
                       <th className="text-right" title="Último movimiento detectado">Última act.</th>
                       <th className="text-right" title="Tiempo total con actividad en los últimos 5 min">Activo</th>
                       <th className="text-right" title="Tiempo sin actividad > 5 min">Inactivo</th>
-                      <th className="text-right" title="Activo ÷ (Activo + Inactivo)">% Activa</th>
+                      <th className="text-right" title={isToday
+                        ? 'Activo ÷ tiempo desde que empezó (incluye ratos sin el CRM abierto). Antes se calculaba solo sobre los ratos con la pestaña abierta y escondía los huecos.'
+                        : 'Activo ÷ (activo + inactivo) — solo sobre el tiempo con el CRM abierto. La ventana real (que incluye ratos sin CRM) solo aplica en Hoy: en rangos multi-día incluiría noches y días libres.'}>% Activa</th>
                       <th className="text-right" title="Avisos de inactividad (5+ min en horario laboral 9-17, excl. almuerzo). El tiempo entre paréntesis es tiempo LABORAL perdido — puede superar la columna Inactivo, que mide idle crudo sin distinción de hora. Clic para ver el detalle de cada aviso.">Advert. inact.</th>
                     </tr>
                   </thead>
                   <tbody>
                     {activityRows.map((r, idx) => {
-                      const total = r.active_seconds + r.idle_seconds;
-                      const pct = total > 0 ? Math.round((r.active_seconds / total) * 100) : 0;
-                      const pctTone = pct >= 70 ? 'success' : pct >= 50 ? 'warning' : 'danger';
+                      // % Activa REAL: sobre la ventana transcurrida (última act.
+                      // − empezó), no solo sobre los segundos que el heartbeat
+                      // registró. Ver src/lib/jornadaMath.ts (caso producción:
+                      // 99% viejo vs 41% real por 58 min con el CRM cerrado).
+                      // SOLO en 'today': en 7d/30d la ventana MIN/MAX incluye
+                      // noches y días libres → j = null y caemos al cálculo
+                      // viejo sobre heartbeat (chips ocultos automáticamente).
+                      const j = isToday
+                        ? computeJornadaReal({
+                            startedAt: r.first_action_at,
+                            lastActivityAt: r.last_active_at,
+                            activeSeconds: r.active_seconds,
+                            idleSeconds: r.idle_seconds,
+                            nowMs,
+                          })
+                        : null;
+                      const heartbeatS = (r.active_seconds ?? 0) + (r.idle_seconds ?? 0);
+                      const pct = isToday
+                        ? (j?.pctActivaReal == null ? null : Math.round(j.pctActivaReal * 100))
+                        : (heartbeatS > 0 ? Math.round(((r.active_seconds ?? 0) / heartbeatS) * 100) : null);
+                      const pctTone = pct == null ? 'muted' : pct >= 70 ? 'success' : pct >= 50 ? 'warning' : 'danger';
                       return (
                         <tr key={r.operator_id}>
                           <td>
@@ -308,7 +355,17 @@ export default function ProductivityDashboard() {
                             </span>
                           </td>
                           <td className="text-right font-mono tabular-nums text-muted-foreground">
-                            {formatTimeBogota(r.last_active_at)}
+                            <span className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                              {j?.desconectadaMin != null && j.desconectadaMin >= UMBRAL_DESCONECTADA_MIN && (
+                                <span
+                                  className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground whitespace-nowrap"
+                                  title="Sin ninguna señal de actividad desde la última acción — probablemente ya no está en el CRM."
+                                >
+                                  desconectada hace {formatDurationHM(j.desconectadaMin * 60)}
+                                </span>
+                              )}
+                              {formatTimeBogota(r.last_active_at)}
+                            </span>
                           </td>
                           <td className="text-right font-mono tabular-nums text-success font-semibold">
                             {formatDurationHM(r.active_seconds)}
@@ -317,27 +374,46 @@ export default function ProductivityDashboard() {
                             {formatDurationHM(r.idle_seconds)}
                           </td>
                           <td className="text-right">
-                            <span className={`font-mono tabular-nums font-bold text-${pctTone}`}>
-                              {total > 0 ? `${pct}%` : '—'}
+                            <span
+                              className={`font-mono tabular-nums font-bold ${pct == null ? 'text-muted-foreground' : `text-${pctTone}`}`}
+                              title={isToday
+                                ? 'Activo ÷ tiempo desde que empezó (incluye ratos sin el CRM abierto)'
+                                : 'Activo ÷ (activo + inactivo) — solo tiempo con el CRM abierto'}
+                            >
+                              {pct == null ? '—' : `${pct}%`}
                             </span>
                           </td>
                           <td className="text-right">
-                            {(() => {
-                              const w = inactivityByOp.get(r.operator_id);
-                              const c = w?.warnings_count ?? 0;
-                              if (c === 0) return <span className="font-mono tabular-nums text-muted-foreground">0</span>;
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => setInactivityDetail({ operadora: r.display_name })}
-                                  className="font-mono tabular-nums font-bold text-danger underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
-                                  title={`Ver el detalle de ${c} aviso${c === 1 ? '' : 's'} · ${formatDurationHM(w!.total_lost_seconds)} de tiempo laboral perdido`}
+                            <span className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                              {/* Hueco = minutos de la ventana SIN heartbeat (pestaña
+                                  del CRM cerrada). Distinto de los avisos de
+                                  inactividad: acá directamente no hubo registro.
+                                  Solo en 'today' (j === null en 7d/30d). */}
+                              {j?.huecoMin != null && j.huecoMin >= UMBRAL_HUECO_MIN && (
+                                <span
+                                  className="inline-flex items-center rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[10px] font-bold text-warning tabular-nums whitespace-nowrap"
+                                  title="Tiempo sin la pestaña del CRM abierta — no se registró actividad ni inactividad."
                                 >
-                                  {c}
-                                  <span className="text-[10px] text-muted-foreground font-normal"> · {formatDurationHM(w!.total_lost_seconds)}</span>
-                                </button>
-                              );
-                            })()}
+                                  ⚠ {formatDurationHM(j.huecoMin * 60)} sin CRM abierto
+                                </span>
+                              )}
+                              {(() => {
+                                const w = inactivityByOp.get(r.operator_id);
+                                const c = w?.warnings_count ?? 0;
+                                if (c === 0) return <span className="font-mono tabular-nums text-muted-foreground">0</span>;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setInactivityDetail({ operadora: r.display_name })}
+                                    className="font-mono tabular-nums font-bold text-danger underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+                                    title={`Ver el detalle de ${c} aviso${c === 1 ? '' : 's'} · ${formatDurationHM(w!.total_lost_seconds)} de tiempo laboral perdido`}
+                                  >
+                                    {c}
+                                    <span className="text-[10px] text-muted-foreground font-normal"> · {formatDurationHM(w!.total_lost_seconds)}</span>
+                                  </button>
+                                );
+                              })()}
+                            </span>
                           </td>
                         </tr>
                       );
@@ -458,7 +534,38 @@ export default function ProductivityDashboard() {
                           {String(idx + 1).padStart(2, '0')}
                         </span>
                       </td>
-                      <td className="font-semibold text-foreground">{r.display_name}</td>
+                      <td className="font-semibold text-foreground">
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          {r.display_name}
+                          {/* Alerta de gestión: lleva 2h+ de jornada con CERO
+                              confirmaciones y hay cola. Cruza con la fila de
+                              actividad (startedAt) — sin dato de jornada para
+                              esta operadora, no se alerta. SOLO en 'today':
+                              en 7d/30d startedAt es MIN() del rango y conf es
+                              multi-día → daría "⚠ 167h sin confirmar". */}
+                          {(() => {
+                            if (!isToday) return null;
+                            const act = activityByOp.get(r.operator_id);
+                            const started = act?.first_action_at ?? null;
+                            if (!shouldAlertSinConfirmar({
+                              conf: r.confirmados,
+                              entrantes,
+                              pendientesSinTocar: r.pendientes_sin_tocar,
+                              startedAt: started,
+                              nowMs,
+                            })) return null;
+                            const horas = Math.floor((nowMs - Date.parse(started as string)) / 3600000);
+                            return (
+                              <span
+                                className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger tabular-nums whitespace-nowrap"
+                                title="0 confirmaciones desde que empezó, con pedidos en cola"
+                              >
+                                ⚠ {horas}h sin confirmar
+                              </span>
+                            );
+                          })()}
+                        </span>
+                      </td>
                       <td className="text-right font-mono tabular-nums text-success font-semibold">{r.confirmados}</td>
                       <td className="text-right font-mono tabular-nums text-danger font-semibold">{r.cancelados}</td>
                       {/* Intentos N/R — si la migration v4 no se aplicó vendrá
