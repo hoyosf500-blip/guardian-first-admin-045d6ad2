@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Loader2, Truck, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
-import { usePushToDropi, type PushClient, type PushProduct, type PushUnmapped } from '@/hooks/usePushToDropi';
+import { usePushToDropi, type PushClient, type PushProduct, type PushUnmapped, type PushDuplicate } from '@/hooks/usePushToDropi';
 import DropiProductSearch from '@/components/DropiProductSearch';
 import { toast } from 'sonner';
 
@@ -35,6 +35,9 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const [codMismatch, setCodMismatch] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Bloqueo server-side por teléfono duplicado (guard de la edge). Guarda los
+  // pedidos Dropi que ya existen con ese teléfono → el operador decide "subir igual".
+  const [dupBlock, setDupBlock] = useState<PushDuplicate[] | null>(null);
   // Vinculación manual (estilo Dropify): por product_id, el id de Dropi que el
   // operador pega para productos sin metafield (catálogo cargado a mano).
   const [linkInputs, setLinkInputs] = useState<Record<number, { dropiId: string; variationId: string }>>({});
@@ -104,14 +107,22 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     : !client.name || !client.dir || !client.city || !client.state || !client.phone ? 'Faltan datos del cliente (nombre, dirección, ciudad, departamento, teléfono).'
     : null;
 
-  async function doConfirm() {
+  async function doConfirm(allowDuplicate = false) {
     setSubmitting(true); setSubmitError(null);
+    if (allowDuplicate) setDupBlock(null);
     const overrides = {
       client,
       lines: Object.fromEntries(lines.map((l, i) => [String(i), { price: Number(l.price), quantity: Number(l.quantity) }])),
     };
-    const r = await confirm(shopifyOrderId, overrides);
+    const r = await confirm(shopifyOrderId, overrides, allowDuplicate);
     setSubmitting(false);
+    // Guard server-side: el teléfono ya está en Dropi. Mostramos los pedidos que
+    // existen y dejamos "subir igual" (recompra real) sin cerrar el modal.
+    if (!r.ok && r.blocked === 'duplicate_phone') {
+      setDupBlock(r.duplicates ?? []);
+      setSubmitError(null);
+      return;
+    }
     if (!r.ok) { setSubmitError(r.error || 'Dropi rechazó el pedido'); return; }
     toast.success(`Subido a Dropi${r.dropi_order_id ? ` (orden ${r.dropi_order_id})` : ''}`);
     onSuccess(r.dropi_order_id ?? null);
@@ -244,9 +255,34 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
               </div>
             )}
 
+            {/* Bloqueo por teléfono duplicado (guard server-side). Muestra los pedidos
+                que YA existen en Dropi con este teléfono y deja "subir igual" para
+                recompra real. */}
+            {dupBlock && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>
+                    Este teléfono ya tiene {dupBlock.length > 0 ? 'un pedido' : 'pedidos'} en Dropi:
+                    <span className="block mt-1 font-medium text-foreground">
+                      {dupBlock.slice(0, 3).map(d => `#${d.external_id}${d.estado ? ` · ${d.estado}` : ''}${d.fecha ? ` · ${d.fecha}` : ''}`).join('   |   ')}
+                      {dupBlock.length > 3 ? `  (+${dupBlock.length - 3})` : ''}
+                    </span>
+                    Podría ser un duplicado. Si es una recompra real, subilo igual.
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => doConfirm(true)} disabled={submitting}
+                    className="h-8 px-3 rounded-lg border border-destructive/40 bg-card text-xs font-medium text-destructive hover:bg-destructive/10 flex items-center gap-1 disabled:opacity-50">
+                    {submitting ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />} Subir igual (no es duplicado)
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-1">
               <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted/40">Cancelar</button>
-              <button onClick={doConfirm} disabled={submitting || !!blockedReason} title={blockedReason || undefined}
+              <button onClick={() => doConfirm()} disabled={submitting || !!blockedReason} title={blockedReason || undefined}
                 className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} Confirmar y crear en Dropi
               </button>

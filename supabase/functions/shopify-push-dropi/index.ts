@@ -643,6 +643,13 @@ Deno.serve(async (req: Request) => {
     const anonClient = createClient(supabaseUrl, anonKey);
     const { data: { user }, error: authError } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
     if (authError || !user) return json({ ok: false, error: "Token inválido" }, 401, cors);
+    // Cliente CON el JWT del usuario: necesario para la RPC find_duplicate_phones,
+    // que usa is_store_member(auth.uid()) → con el service role (auth.uid() NULL)
+    // haría hard-stop y devolvería vacío (no detectaría duplicados). La membresía
+    // del usuario ya se valida abajo, así que este cliente pasa el guard de la RPC.
+    const sbUser = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* noop */ }
@@ -654,6 +661,9 @@ Deno.serve(async (req: Request) => {
       : body.mode === "audit" ? "audit"
       : "preview";
     const overrides = (body.overrides ?? {}) as Overrides;
+    // Escape del guard anti-duplicados: el operador marcó "No es duplicado"
+    // (recompra legítima). Solo entonces se permite crear con teléfono repetido.
+    const allowDuplicate = body.allow_duplicate === true;
     if (!storeId) return json({ ok: false, error: "Falta store_id" }, 400, cors);
 
     if (!(await isStoreMember(sb, user.id, storeId))) {
@@ -1023,6 +1033,36 @@ Deno.serve(async (req: Request) => {
     }
     if (!client.name || !client.dir || !client.city || !client.state || !client.phone) {
       return json({ ok: false, error: "Faltan datos del cliente (nombre, dirección, ciudad, departamento o teléfono)" }, 422, cors);
+    }
+
+    // GUARD ANTI-DUPLICADOS (server-side). El panel ya filtra duplicados por
+    // teléfono client-side, pero eso se puede saltar (request directo, doble-tab,
+    // race con el cron de 5 min). Acá REVALIDAMOS antes de crear en Dropi: si el
+    // teléfono ya tiene un pedido NO cancelado en Dropi (misma tienda) → bloqueamos,
+    // salvo que el operador haya marcado "No es duplicado" (allow_duplicate). Usa la
+    // MISMA RPC que el front (find_duplicate_phones, normaliza a últimos 9 dígitos)
+    // vía el cliente con JWT del usuario. Cubre AMBOS caminos de creación
+    // (integraciones y fallback web, que vienen después). Degrada sin bloquear si la
+    // RPC no está desplegada o falla por infra (no rompe el push honesto).
+    const phoneNorm = String(client.phone || "").replace(/\D/g, "").slice(-9);
+    if (!allowDuplicate && phoneNorm.length >= 7) {
+      try {
+        const { data: dups, error: dupErr } = await sbUser.rpc("find_duplicate_phones", {
+          p_store_id: storeId, p_phones: [phoneNorm],
+        });
+        if (!dupErr && Array.isArray(dups) && dups.length > 0) {
+          const list = (dups as Array<{ external_id?: string; estado?: string; fecha?: string }>).slice(0, 5);
+          const preview = list.slice(0, 3)
+            .map((d) => `#${d.external_id}${d.estado ? ` (${d.estado})` : ""}`).join(", ");
+          return json({
+            ok: false,
+            blocked: "duplicate_phone",
+            error: `Ya hay un pedido en Dropi con este teléfono: ${preview}. ` +
+              `Si es una recompra real, subilo con "No es duplicado".`,
+            duplicates: list,
+          }, 409, cors);
+        }
+      } catch { /* fallo de infra del guard → no bloquear el push honesto */ }
     }
 
     // Sumar el envío prioritario al COD: Dropi cobra el total por los productos,

@@ -3,6 +3,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useShopifyPending, useShopifyValueMismatches, type ShopifyPendingItem } from '@/hooks/useShopifyPending';
 import { usePushToDropi } from '@/hooks/usePushToDropi';
+import DropiProductSearch from '@/components/DropiProductSearch';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
@@ -12,7 +13,7 @@ import { bogotaToday } from '@/lib/utils';
 import PushToDropiModal from './PushToDropiModal';
 import ShopifyMarksHistoryModal from './ShopifyMarksHistoryModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
-import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck, Search, X } from 'lucide-react';
+import { ShoppingBag, RefreshCw, Copy, Check, ExternalLink, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, Truck, Loader2, History, Ban, ShieldCheck, Search, X, Link2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -61,7 +62,7 @@ export default function ShopifyPendingPanel() {
   const { activeStoreId } = useStore();
   const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
   const { data: vmData, refetch: vmRefetch } = useShopifyValueMismatches(activeStoreId);
-  const { confirm: confirmPush } = usePushToDropi(activeStoreId);
+  const { confirm: confirmPush, linkProduct } = usePushToDropi(activeStoreId);
   const { markEntered } = useShopifyManualMarks(activeStoreId);
   const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
@@ -83,6 +84,11 @@ export default function ShopifyPendingPanel() {
   // Subida en lote
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [bulkRunning, setBulkRunning] = useState(false);
+  // Productos sin vínculo detectados durante el último bulk (para vincular UNA vez
+  // desde el panel y desbloquear todos los pedidos con ese producto de golpe).
+  const [unmappedProducts, setUnmappedProducts] = useState<Array<{ product_id: number; title: string; count: number }>>([]);
+  const [linkingId, setLinkingId] = useState<number | null>(null);
+  const [manualLink, setManualLink] = useState<Record<number, string>>({});
 
   useEffect(() => {
     setDone(activeStoreId ? loadDone(activeStoreId) : new Set());
@@ -229,18 +235,45 @@ export default function ShopifyPendingPanel() {
     const skipped = visible.filter(p => isBlockedByDuplicate(p, dupMap, dupOverrides));
     const targets = visible.filter(p => !isBlockedByDuplicate(p, dupMap, dupOverrides));
     let okCount = 0; const fails: string[] = [];
+    // Recolecta los productos sin vínculo que hicieron fallar pedidos: se muestran
+    // abajo para vincularlos UNA vez (el mapeo es por producto/tienda → desbloquea
+    // todos los pedidos con ese producto). Clave = shopify product_id.
+    const unmap = new Map<number, { product_id: number; title: string; count: number }>();
     for (const p of targets) {
-      const r = await confirmPush(p.id);            // sin overrides = valores de Shopify
+      // allow_duplicate solo si la operadora marcó "No es duplicado" en ESE pedido
+      // (los otros duplicados ya se excluyeron arriba). El guard server-side revalida.
+      const r = await confirmPush(p.id, undefined, dupOverrides.has(p.id));
       if (r.ok) { okCount++; markDone(p.id); }
-      else fails.push(`${p.name}: ${r.error || 'error'}`);
+      else {
+        fails.push(`${p.name}: ${r.error || 'error'}`);
+        for (const u of (r.unmapped ?? [])) {
+          if (typeof u.product_id !== 'number' || u.product_id <= 0) continue;
+          const e = unmap.get(u.product_id) || { product_id: u.product_id, title: u.title || `Producto ${u.product_id}`, count: 0 };
+          e.count++; unmap.set(u.product_id, e);
+        }
+      }
       await new Promise(res => setTimeout(res, 400)); // pacing suave
     }
     setBulkRunning(false);
+    setUnmappedProducts([...unmap.values()].sort((a, b) => b.count - a.count));
     if (okCount > 0) toast.success(`${okCount} pedido(s) subido(s) a Dropi`);
     if (skipped.length > 0) toast.warning(`${skipped.length} omitido(s) por posible duplicado — revisalos en la lista`);
-    if (fails.length > 0) toast.error(`${fails.length} no se pudieron subir`, { description: fails.slice(0, 4).join(' · ') });
+    if (unmap.size > 0) toast.warning(`${unmap.size} producto(s) sin vincular — vinculalos abajo y reintentá`);
+    else if (fails.length > 0) toast.error(`${fails.length} no se pudieron subir`, { description: fails.slice(0, 4).join(' · ') });
     void refetch();
   }, [activeStoreId, bulkRunning, visible, dupMap, dupOverrides, confirmPush, markDone, refetch]);
+
+  // Vincula un producto Shopify→Dropi (una vez por tienda) y lo saca de la lista de
+  // sin-vínculo. Después basta "Reintentar faltantes" para subir los que dependían de él.
+  const doLinkProduct = useCallback(async (shopifyProductId: number, dropiId: number, variationId: number | null) => {
+    if (!Number.isInteger(dropiId) || dropiId <= 0) { toast.error('Poné un id de Dropi válido (números).'); return; }
+    setLinkingId(shopifyProductId);
+    const r = await linkProduct(shopifyProductId, dropiId, variationId);
+    setLinkingId(null);
+    if (!r.ok) { toast.error(r.error || 'No se pudo vincular'); return; }
+    setUnmappedProducts(prev => prev.filter(u => u.product_id !== shopifyProductId));
+    toast.success('Producto vinculado ✓ — tocá "Reintentar faltantes"');
+  }, [linkProduct]);
 
   // Cuántos de los visibles están bloqueados por duplicado (para el banner).
   const dupBlockedCount = useMemo(
@@ -447,6 +480,53 @@ export default function ShopifyPendingPanel() {
           <button onClick={runBulk} className="h-7 px-3 rounded-lg bg-primary text-primary-foreground font-medium flex items-center gap-1 hover:bg-primary/90">
             <Truck size={12} /> Sí, subir {count}
           </button>
+        </div>
+      )}
+
+      {/* Productos sin vincular detectados en el último bulk. Vinculá cada uno UNA
+          vez (el mapeo es por producto/tienda) → desbloquea todos los pedidos con
+          ese producto. Después "Reintentar faltantes" los sube. */}
+      {unmappedProducts.length > 0 && (
+        <div className="px-4 py-3 border-t border-warning/30 bg-warning/5 space-y-3">
+          <div className="flex items-center gap-2">
+            <Link2 size={14} className="text-warning flex-shrink-0" />
+            <span className="text-xs font-semibold text-foreground flex-1">
+              {unmappedProducts.length} producto(s) sin vincular a Dropi — vinculá una vez y desbloqueás todos sus pedidos
+            </span>
+            <button onClick={runBulk} disabled={bulkRunning}
+              className="h-7 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-1 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
+              {bulkRunning ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />} Reintentar faltantes
+            </button>
+          </div>
+          <div className="space-y-2">
+            {unmappedProducts.map(u => (
+              <div key={u.product_id} className="rounded-lg border border-border bg-card p-2.5 space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-foreground truncate flex-1">{u.title}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning flex-shrink-0">{u.count} pedido(s)</span>
+                </div>
+                {activeStoreId && (
+                  <DropiProductSearch storeId={activeStoreId} busy={linkingId === u.product_id}
+                    onSelect={(dropiId, varId) => doLinkProduct(u.product_id, dropiId, varId)} />
+                )}
+                <details className="text-[11px]">
+                  <summary className="cursor-pointer text-muted-foreground select-none">o pegá el id de Dropi manual</summary>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <input inputMode="numeric" placeholder="ID producto Dropi"
+                      value={manualLink[u.product_id] ?? ''}
+                      onChange={e => setManualLink(s => ({ ...s, [u.product_id]: e.target.value }))}
+                      className="h-8 flex-1 min-w-0 rounded border border-border bg-background px-2 text-sm" />
+                    <button type="button"
+                      onClick={() => doLinkProduct(u.product_id, Number((manualLink[u.product_id] ?? '').trim()), null)}
+                      disabled={linkingId === u.product_id || !(manualLink[u.product_id] ?? '').trim()}
+                      className="h-8 px-3 rounded bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-1 hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
+                      {linkingId === u.product_id ? <Loader2 size={12} className="animate-spin" /> : <Link2 size={12} />} Vincular
+                    </button>
+                  </div>
+                </details>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
