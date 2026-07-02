@@ -1009,6 +1009,7 @@ export type Database = {
           product_ids: string | null
           producto: string | null
           store_id: string
+          suggested_address: string | null
           suggested_customer_message: string | null
           tags: string | null
           tienda: string | null
@@ -1058,6 +1059,7 @@ export type Database = {
           product_ids?: string | null
           producto?: string | null
           store_id?: string
+          suggested_address?: string | null
           suggested_customer_message?: string | null
           tags?: string | null
           tienda?: string | null
@@ -1107,6 +1109,7 @@ export type Database = {
           product_ids?: string | null
           producto?: string | null
           store_id?: string
+          suggested_address?: string | null
           suggested_customer_message?: string | null
           tags?: string | null
           tienda?: string | null
@@ -2474,6 +2477,7 @@ export type Database = {
           product_ids: string | null
           producto: string | null
           store_id: string
+          suggested_address: string | null
           suggested_customer_message: string | null
           tags: string | null
           tienda: string | null
