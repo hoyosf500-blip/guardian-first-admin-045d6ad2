@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useWaChat } from '@/contexts/WaChatContext';
-import { OrderData, formatPhone, getTrackingUrl } from '@/lib/orderUtils';
+import { useStore } from '@/contexts/StoreContext';
+import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -35,6 +36,8 @@ export default function NovedadView({ items }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
   const { openChat, waEnabled } = useWaChat();
+  const { activeStore } = useStore();
+  const countryCode = activeStore?.country_code;
   // BUG B fix: persist by *order id*, not array index. When the queue
   // reorders or the operator returns from the carrier tab we keep showing
   // the same customer instead of jumping to a random one at that index.
@@ -184,7 +187,7 @@ export default function NovedadView({ items }: Props) {
             <Phone size={12} />
             <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button>
             <a
-              href={`tel:${o.phone}`}
+              href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
               className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue/10 text-blue border border-blue/20 hover:bg-blue/20 no-underline"
             >
               <Phone size={10} /> Llamar

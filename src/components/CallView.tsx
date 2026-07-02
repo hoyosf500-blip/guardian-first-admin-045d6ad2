@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
-import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidPhoneForCountry } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidPhoneForCountry, getWhatsAppPhone } from '@/lib/orderUtils';
 import { useStore } from '@/contexts/StoreContext';
+import { useWaChat } from '@/contexts/WaChatContext';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -12,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
@@ -75,6 +76,7 @@ export default function CallView({ items }: Props) {
   const { user, isAdmin } = useAuth();
   const { activeStore } = useStore();
   const countryCode = activeStore?.country_code;
+  const { openChat, waEnabled } = useWaChat();
   const { claimOrder, releaseOrder } = useOrderLock();
   // BUG B fix: persist the customer's stable identifier (externalId or dbId),
   // not the array index. Indexes break when items reorder due to refresh/sync.
@@ -179,9 +181,34 @@ export default function CallView({ items }: Props) {
     if (!o?.dbId || !user || o.result) return;
     const orderId = o.dbId;
     let cancelled = false;
-    claimOrder(orderId).then(claimed => {
-      if (cancelled) return;
-      if (!claimed) {
+    // BUG 3 fix: NO confundir un error de red/RPC con "pedido lockeado".
+    // Antes, claimOrder devolvía null tanto si el lock era ajeno como si el RPC
+    // fallaba (500/timeout/RLS), y este efecto saltaba al siguiente en AMBOS
+    // casos — con operadora única el toast "en uso por otra operadora" era
+    // SIEMPRE falso y un 500 la sacaba del cliente a mitad de llamada.
+    // Ahora `claimOrder` devuelve un resultado discriminado:
+    //   - locked / no-elegible → saltar al siguiente (el pedido no es nuestro).
+    //   - error                → QUEDARSE en el pedido, reintentar 1 vez.
+    // El re-claim por churn de la cola sigue actuando de keep-alive del lock
+    // (expira 15 min server-side); no lo tocamos.
+    const attemptClaim = (retriesLeft: number) => {
+      claimOrder(orderId).then(res => {
+        if (cancelled) return;
+        if (res.ok) return; // lock nuestro, keep-alive OK
+        // `'reason' in res` en vez de mirar solo `res.ok`: con strictNullChecks
+        // apagado (tsconfig no estricto) el narrowing por el booleano `ok` no
+        // descarta el miembro `{ ok: true }`, así que discriminamos por la
+        // propiedad presente en la rama de error.
+        if ('reason' in res && res.reason === 'error') {
+          // Error transitorio del RPC: NO saltar. Reintentar una vez y si vuelve
+          // a fallar, quedarse en el pedido (el cron limpia locks huérfanos).
+          if (retriesLeft > 0) {
+            toast.error('Error de conexión — reintentando…', { id: 'lock-retry' });
+            setTimeout(() => { if (!cancelled) attemptClaim(retriesLeft - 1); }, 1_200);
+          }
+          return;
+        }
+        // reason === 'locked' | 'no-elegible': el pedido no es nuestro, saltar.
         const next = items.find((it, i) => i > callIdx && !it.result);
         const k = orderKey(next);
         if (k) {
@@ -197,8 +224,9 @@ export default function CallView({ items }: Props) {
             id: 'lock-skip',
           });
         }
-      }
-    });
+      });
+    };
+    attemptClaim(1);
     return () => { cancelled = true; };
   }, [o?.dbId, user, claimOrder, callIdx, items, setCallOrderId, o?.result]);
 
@@ -632,6 +660,21 @@ export default function CallView({ items }: Props) {
     void copyToClipboard(o.phone, `${o.phone} copiado`);
   };
 
+  // Contacto de 1 click. `getWhatsAppPhone` es country-aware (57 CO / 593 EC,
+  // strip del 0 en EC) — mismo helper que usa el canal in-app.
+  const waPhone = getWhatsAppPhone(o.phone, countryCode);
+  const handleWhatsApp = () => {
+    // Canal in-app (estilo Chatea Pro, anti-baneo) si la tienda lo tiene
+    // configurado. Si no (ej. EC sin número), FALLBACK consciente a wa.me
+    // externo — relajación del diseño anti-baneo SOLO para Confirmar, donde
+    // hoy no hay segundo canal y el contacto está por el piso. Ver concerns.
+    if (waEnabled) {
+      void openChat({ phone: o.phone, name: o.nombre });
+    } else {
+      window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <>
       {!o.result && (
@@ -687,8 +730,23 @@ export default function CallView({ items }: Props) {
         <div className="text-xl font-bold mb-1">{o.nombre}</div>
 
         <div className="text-sm text-muted-foreground mb-4 leading-relaxed space-y-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <Phone size={12} /> <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button>
+            {/* Contacto de 1 click — antes el teléfono SOLO se copiaba. */}
+            <a
+              href={`tel:+${waPhone}`}
+              className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
+            >
+              <Phone size={10} aria-hidden="true" /> Llamar
+            </a>
+            <button
+              type="button"
+              onClick={handleWhatsApp}
+              title={waEnabled ? 'Abrir WhatsApp del cliente' : 'Abrir WhatsApp (canal externo)'}
+              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+            >
+              <MessageSquare size={10} aria-hidden="true" /> WhatsApp
+            </button>
             <span className="mx-2" />
             <MapPin size={12} /> {o.ciudad || '—'}
           </div>

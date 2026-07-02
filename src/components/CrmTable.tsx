@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, mem
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { OrderData, getTrackingUrl, calcDias, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, getTrackingUrl, calcDias, calcBusinessDays, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { getAlertLevel } from '@/lib/alertSystem';
@@ -1383,7 +1383,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                     <Send size={12} /> WhatsApp
                   </button>
                 )}
-                <a href={`tel:+57${o.phone}`}
+                <a href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
                   className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
                   <PhoneIcon size={12} /> Llamar
                 </a>

@@ -314,6 +314,17 @@ export default function ShopifyPendingPanel() {
 
   const accent = allClear ? 'success' : 'warning';
 
+  // Fuera de ventana: ventas de +7 días que SIGUEN sin pasar a Dropi. Se deriva
+  // del reconcile de 30d (vmData, staleTime 10 min — ya cargado para los
+  // value-mismatches) menos los pendientes de la ventana de 7d (data). No hace
+  // llamadas de red extra ni duplica la cola: es solo un aviso para que no se
+  // pierdan confirmaciones en silencio cuando una venta se cae de la ventana.
+  // Si vmData todavía no cargó, no calculamos (mostramos "…" en el banner).
+  const vmPendingLoaded = typeof vmData?.pendingCount === 'number';
+  const outOfWindowCount = vmPendingLoaded
+    ? Math.max(0, (vmData!.pendingCount ?? 0) - (data.pendingCount ?? 0))
+    : null;
+
   // Aviso de pedidos YA en Dropi con valor distinto al de Shopify (cobro de más).
   // Independiente de la cola de pendientes; le ahorra al operador revisar a mano.
   // Excluye los CANCELADOS en Dropi (no se despachan → no hay cobro de más) y los
@@ -401,8 +412,33 @@ export default function ShopifyPendingPanel() {
     </div>
   ) : null;
 
+  // Banner "fuera de ventana": ventas de +7 días que siguen sin pasar a Dropi y
+  // ya NO aparecen en la cola (la cola solo muestra la ventana de 7d). Es un aviso
+  // — no duplica la data en la lista — para que el operador las revise a mano en
+  // el admin de Shopify antes de que se pierda la confirmación por completo.
+  // Mientras vmData no cargó (outOfWindowCount === null) mostramos "…".
+  const outOfWindowBanner = (outOfWindowCount === null || outOfWindowCount > 0) ? (
+    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+        <AlertTriangle size={18} className="text-destructive" aria-hidden="true" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-2xl font-extrabold tabular-nums text-destructive">
+            {outOfWindowCount === null ? '…' : outOfWindowCount}
+          </span>
+          <span className="text-sm font-semibold text-foreground">venta(s) de +{days} días sin pasar a Dropi</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Están fuera de la ventana de la cola (últimos {days}d) — revisalas en el admin de Shopify antes de que se pierda la confirmación.
+        </p>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <>
+    {outOfWindowBanner}
     {mismatchBanner}
     {dupBanner}
     {/* No `initial` animation: el panel se re-monta cada refetch (cuando
