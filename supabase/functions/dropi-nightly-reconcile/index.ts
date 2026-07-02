@@ -25,8 +25,52 @@ const TERMINAL_STATES = new Set([
   "DEVOLUCIÓN", "ENTREGADA", "CANCELADA",
 ]);
 const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo
+// FIX 2026-07-02 (fantasmas de pedidos BORRADOS en Dropi): los huérfanos con id
+// >= 5M antes se ignoraban ("podrían ser muy recientes"), pero Dropi permite
+// ELIMINAR pedidos y esos quedan para siempre no-terminales en Guardian (mayo EC:
+// 9 fantasmas, 4 de ellos "pendientes" que ensuciaban el embudo y la cola de
+// Confirmar). Ahora se verifica su EXISTENCIA real una por una con el GET de
+// detalle de integraciones y solo se cancela ante el "no existe" EXPLÍCITO.
+const EXISTENCE_CHECK_MAX = 20;          // cap por tienda por corrida (rate-limit friendly)
+const EXISTENCE_CHECK_MIN_AGE_MS = 48 * 3600 * 1000; // no tocar pedidos de <48h (lag de sync)
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Consulta el detalle de UN pedido por integraciones para saber si sigue
+ *  existiendo en Dropi. Devuelve:
+ *  - 'exists'  → Dropi devolvió el pedido (el miss del rango fue por filtro/fecha)
+ *  - 'deleted' → Dropi dijo explícitamente que no existe (fue eliminado)
+ *  - 'unknown' → error de red/401/429/respuesta rara → NO tocar (fail-safe) */
+async function checkOrderExistence(
+  base: string,
+  apiKey: string,
+  origin: string,
+  externalId: string,
+): Promise<"exists" | "deleted" | "unknown"> {
+  try {
+    const res = await fetch(
+      `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+      {
+        headers: {
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          ...(origin ? { Origin: origin } : {}),
+        },
+      },
+    );
+    const raw = await res.text();
+    let body: Record<string, unknown> = {};
+    try { body = raw ? JSON.parse(raw) : {}; } catch { return "unknown"; }
+    const obj = body.objects as Record<string, unknown> | undefined;
+    if (res.ok && body.isSuccess !== false && obj && obj.id != null) return "exists";
+    const msg = String(body.message || "");
+    // Mismo mensaje verificado en vivo (2026-07-02): "Esta guia no existe en nuestro sistema"
+    if (body.isSuccess === false && /no existe|not found/i.test(msg)) return "deleted";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 async function fetchDropiRange(
   base: string,
@@ -70,6 +114,7 @@ interface GuardianRow {
   guia: string | null;
   transportadora: string | null;
   last_movement_at: string | null;
+  created_at: string | null;
 }
 
 interface Divergence {
@@ -81,6 +126,7 @@ interface Divergence {
 
 async function reconcileStore(
   // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,
   storeId: string,
   countryCode: string,
@@ -88,7 +134,7 @@ async function reconcileStore(
   storeUrl: string,
   ownerId: string,
   statusFilter: string,
-): Promise<{ divergent: number; applied: number; orphanCancelled: number; error?: string }> {
+): Promise<{ divergent: number; applied: number; orphanCancelled: number; deletedCancelled: number; error?: string }> {
   try {
     const today = new Date();
     const to = today.toISOString().split("T")[0];
@@ -98,7 +144,7 @@ async function reconcileStore(
 
     const { data: guardianRows } = await sb
       .from("orders")
-      .select("id, external_id, estado, guia, transportadora, last_movement_at")
+      .select("id, external_id, estado, guia, transportadora, last_movement_at, created_at")
       .eq("store_id", storeId)
       .not("external_id", "is", null)
       .gte("upload_date", from);
@@ -107,7 +153,7 @@ async function reconcileStore(
       return !TERMINAL_STATES.has(e);
     });
     if (guardianNonTerminal.length === 0) {
-      return { divergent: 0, applied: 0, orphanCancelled: 0 };
+      return { divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0 };
     }
 
     const base = dropiHostFor(countryCode);
@@ -119,6 +165,7 @@ async function reconcileStore(
 
     const divergences: Divergence[] = [];
     const orphans: GuardianRow[] = [];
+    const existenceCandidates: GuardianRow[] = [];
     const todayStr = to;
     const upsertBatch: Record<string, unknown>[] = [];
 
@@ -126,11 +173,17 @@ async function reconcileStore(
       const ext = String(g.external_id);
       const d = dropiMap.get(ext);
       if (!d) {
-        // Huérfano: existe en Guardian no-terminal pero no en Dropi.
-        // Solo cancelar pre-backfill (id < 5M); los nuevos podrían ser muy recientes.
+        // Huérfano: existe en Guardian no-terminal pero no en el pull por rango
+        // de Dropi. Pre-backfill (id < 5M) → cancelar directo (comportamiento
+        // original). Post-backfill (id >= 5M) → candidato a verificación de
+        // existencia uno-por-uno (puede haber sido ELIMINADO en Dropi, o solo
+        // no entrar al rango por el filter_date_by — el GET de detalle decide).
         const extNum = Number(ext);
         if (Number.isFinite(extNum) && extNum < ORPHAN_THRESHOLD) {
           orphans.push(g);
+        } else if (Number.isFinite(extNum)) {
+          const ageMs = g.created_at ? Date.now() - new Date(g.created_at).getTime() : 0;
+          if (ageMs >= EXISTENCE_CHECK_MIN_AGE_MS) existenceCandidates.push(g);
         }
         continue;
       }
@@ -174,10 +227,30 @@ async function reconcileStore(
       }
     }
 
-    return { divergent: divergences.length, applied, orphanCancelled };
+    // Verificación de existencia de huérfanos post-backfill (borrados en Dropi).
+    // Cap por corrida + rate-limit; solo cancela ante el "no existe" EXPLÍCITO —
+    // 'exists' y 'unknown' se dejan intactos (el próximo nightly reintenta).
+    let deletedCancelled = 0;
+    const toCheck = existenceCandidates.slice(0, EXISTENCE_CHECK_MAX);
+    for (const g of toCheck) {
+      const verdict = await checkOrderExistence(base, apiKey, storeUrl, String(g.external_id));
+      if (verdict === "deleted") {
+        const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).eq("id", g.id);
+        if (!error) {
+          deletedCancelled++;
+          console.log(`reconcile ${storeId}: ${g.external_id} ELIMINADO en Dropi (era ${g.estado}) → CANCELADO local`);
+        }
+      }
+      await sleep(RATE_LIMIT_MS);
+    }
+    if (existenceCandidates.length > toCheck.length) {
+      console.log(`reconcile ${storeId}: ${existenceCandidates.length - toCheck.length} huérfanos post-backfill quedan para la próxima corrida (cap ${EXISTENCE_CHECK_MAX})`);
+    }
+
+    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled };
   } catch (err) {
     return {
-      divergent: 0, applied: 0, orphanCancelled: 0,
+      divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -233,11 +306,13 @@ Deno.serve(async (req) => {
       store_id: cfg.store_id,
       divergent_count: r.divergent,
       applied_count: r.applied,
-      orphan_cancelled: r.orphanCancelled,
+      // orphan_cancelled agrega ambos tipos de limpieza (pre-backfill + borrados
+      // en Dropi) para no cambiar el esquema de la tabla; el desglose va en logs.
+      orphan_cancelled: r.orphanCancelled + r.deletedCancelled,
       error_message: r.error || null,
     });
     summary.push({ store_id: cfg.store_id, ...r });
-    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled}`);
+    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled}`);
   }
 
   return new Response(JSON.stringify({ ok: true, summary }), {

@@ -220,10 +220,13 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
     (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
     0,
   );
+  // FIX 2026-07-02: × quantity (igual que _shared/dropiOrderMapper.ts) — sin esto
+  // el COGS de pedidos multi-unidad quedaba subcontado (31.3% vs 37.3% real en mayo EC).
   const costoProd = products.reduce((sum, p) => {
     const supplierPrice = parseFloat(String(p.supplier_price || "0")) || 0;
     const salePrice = parseFloat(String((p.product as Record<string, unknown>)?.sale_price || "0")) || 0;
-    return sum + (supplierPrice || salePrice);
+    const qty = parseFloat(String(p.quantity || "1")) || 1;
+    return sum + (supplierPrice || salePrice) * qty;
   }, 0);
 
   const createdAt = String(o.created_at || "");

@@ -83,12 +83,16 @@ export function mapDropiOrderToRow(
     (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
     0,
   );
-  // Product cost = sum of supplier_price or sale_price from products
+  // Product cost = Σ (supplier_price o sale_price) × CANTIDAD por línea.
+  // FIX 2026-07-02: antes NO multiplicaba por quantity → en pedidos multi-unidad
+  // costo_prod quedaba subcontado (mayo EC: $639 vs $761 reales = COGS 31.3% vs
+  // 37.3%) e inflaba la ganancia del simulador y product_profitability.
   const costoProd = products.reduce((sum, p) => {
     const supplierPrice = parseFloat(String(p.supplier_price || "0")) || 0;
     const salePrice =
       parseFloat(String((p.product as Record<string, unknown>)?.sale_price || "0")) || 0;
-    return sum + (supplierPrice || salePrice);
+    const qty = parseFloat(String(p.quantity || "1")) || 1;
+    return sum + (supplierPrice || salePrice) * qty;
   }, 0);
 
   const createdAt = String(o.created_at || "");
