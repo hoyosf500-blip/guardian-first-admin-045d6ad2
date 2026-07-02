@@ -33,6 +33,11 @@ export interface PushPreview {
   error?: string;
 }
 
+/** Pedido de Dropi que YA existe con el mismo teléfono (guard server-side). */
+export interface PushDuplicate {
+  external_id?: string; estado?: string | null; fecha?: string | null; nombre?: string | null;
+}
+
 export interface PushResult {
   ok: boolean;
   dropi_order_id?: string | null;
@@ -40,6 +45,10 @@ export interface PushResult {
   error?: string;
   unmapped?: PushUnmapped[];
   diagnostic?: string | null;
+  // Bloqueo por teléfono duplicado (server-side). El caller puede reintentar con
+  // allowDuplicate=true si es una recompra legítima.
+  blocked?: string;              // 'duplicate_phone' cuando el teléfono ya está en Dropi
+  duplicates?: PushDuplicate[];  // pedidos Dropi existentes con ese teléfono
 }
 
 export interface PushOverrides {
@@ -84,10 +93,15 @@ export function usePushToDropi(storeId: string | null) {
     return await parseInvoke<PushPreview>(data, error);
   }, [storeId]);
 
-  const confirm = useCallback(async (shopifyOrderId: string, overrides?: PushOverrides): Promise<PushResult> => {
+  const confirm = useCallback(async (
+    shopifyOrderId: string, overrides?: PushOverrides, allowDuplicate?: boolean,
+  ): Promise<PushResult> => {
     if (!storeId) return { ok: false, error: 'Sin tienda activa' };
     const { data, error } = await supabase.functions.invoke('shopify-push-dropi', {
-      body: { store_id: storeId, shopify_order_id: shopifyOrderId, mode: 'confirm', overrides: overrides ?? {} },
+      body: {
+        store_id: storeId, shopify_order_id: shopifyOrderId, mode: 'confirm',
+        overrides: overrides ?? {}, allow_duplicate: allowDuplicate === true,
+      },
     });
     return await parseInvoke<PushResult>(data, error);
   }, [storeId]);
