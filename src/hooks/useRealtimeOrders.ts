@@ -8,6 +8,19 @@ interface RealtimeCallbacks {
   onOrderChange?: () => void;
   /** Fires when an operator inserts an order_result (confirma/cancela/noresp). */
   onResultChange?: () => void;
+  /** Fires ONCE cuando la pestaña vuelve a estar visible, después de drenar el
+   *  burst de reconexión. Hallazgo 6: mientras la pestaña estaba oculta,
+   *  `shouldSuppress` DESCARTABA los eventos realtime sin recargar; al volver
+   *  se perdían para siempre y la cola quedaba congelada. Este catch-up dispara
+   *  un refresh explícito para recuperar lo perdido. Si no se pasa, cae a
+   *  `onOrderChange`. */
+  onVisibleCatchUp?: () => void;
+  /** Fires en cada INSERT de un pedido nuevo en `orders` (Hallazgo 7). Recibe
+   *  la fila cruda del payload. A diferencia de onOrderChange, NO se suprime
+   *  con la pestaña oculta: justamente sirve para avisar a la operadora
+   *  (notificación + badge en el título) que llegó un pedido y hay que llamar
+   *  ahora, mientras la intención de compra está caliente. */
+  onOrderInsert?: (row: Record<string, unknown>) => void;
 }
 
 /**
@@ -24,13 +37,17 @@ interface RealtimeCallbacks {
  */
 export function useRealtimeOrders(
   user: User | null,
-  { onOrderChange, onResultChange }: RealtimeCallbacks,
+  { onOrderChange, onResultChange, onVisibleCatchUp, onOrderInsert }: RealtimeCallbacks,
   storeId?: string | null,
 ) {
   const orderCb = useRef(onOrderChange);
   const resultCb = useRef(onResultChange);
+  const catchUpCb = useRef(onVisibleCatchUp);
+  const insertCb = useRef(onOrderInsert);
   orderCb.current = onOrderChange;
   resultCb.current = onResultChange;
+  catchUpCb.current = onVisibleCatchUp;
+  insertCb.current = onOrderInsert;
 
   // FIX "se reinicia al volver de la pestaña": mientras la pestaña está oculta,
   // los cambios (sobre todo del cron cada 5 min) se encolan y al volver disparan
@@ -40,14 +57,31 @@ export function useRealtimeOrders(
   // (drena el burst de reconexión). Los eventos nuevos en vivo siguen fluyendo;
   // si se pierde alguno, el poll de 15 min y el botón "Actualizar" lo recuperan.
   const suppressUntilRef = useRef(0);
+  const catchUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    const DRAIN_MS = 2500;
     const onVis = () => {
       if (document.visibilityState === 'visible') {
-        suppressUntilRef.current = Date.now() + 2500;
+        suppressUntilRef.current = Date.now() + DRAIN_MS;
+        // Hallazgo 6: tras drenar el burst de reconexión, disparamos UN
+        // catch-up explícito. Los eventos que llegaron con la pestaña oculta
+        // fueron descartados por `shouldSuppress`; sin este refresh la cola se
+        // quedaría con datos viejos hasta el próximo poll. Debounce simple: si
+        // el usuario alterna visibilidad varias veces, solo corre el último.
+        if (catchUpTimerRef.current) clearTimeout(catchUpTimerRef.current);
+        catchUpTimerRef.current = setTimeout(() => {
+          catchUpTimerRef.current = null;
+          // Solo si seguimos visibles (no re-ocultó durante el drain).
+          if (document.visibilityState !== 'visible') return;
+          (catchUpCb.current ?? orderCb.current)?.();
+        }, DRAIN_MS);
       }
     };
     document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      if (catchUpTimerRef.current) clearTimeout(catchUpTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -75,7 +109,15 @@ export function useRealtimeOrders(
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'orders', filter: `store_id=eq.${storeId}` },
-          () => { fireOrder(); },
+          (payload) => {
+            fireOrder();
+            // Hallazgo 7: en INSERT de un pedido nuevo, avisamos SIEMPRE (aunque
+            // la pestaña esté oculta — ese es el punto: traer de vuelta a la
+            // operadora). El consumer filtra por estado PENDIENTE CONFIRMACION.
+            if (payload.eventType === 'INSERT' && payload.new) {
+              insertCb.current?.(payload.new as Record<string, unknown>);
+            }
+          },
         )
         .on(
           'postgres_changes',

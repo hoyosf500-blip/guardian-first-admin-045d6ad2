@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
-import { OrderData, formatPhone, getTrackingUrl, calcBusinessDays } from '@/lib/orderUtils';
+import { OrderData, formatPhone, getTrackingUrl, calcBusinessDays, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { getAlertLevel } from '@/lib/alertSystem';
 import FingerprintBadge from '@/components/FingerprintBadge';
@@ -714,7 +714,7 @@ export default function CrmCallView({
                 <Copy size={10} />
               </button>
               <a
-                href={`tel:+57${o.phone}`}
+                href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
                 className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
               >
                 <PhoneIcon size={10} aria-hidden="true" /> Llamar

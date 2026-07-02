@@ -14,7 +14,7 @@ describe('useOrderLock', () => {
     rpcMock.mockReset();
   });
 
-  it('claimOrder returns mapped OrderData when claim succeeds', async () => {
+  it('claimOrder returns { ok: true, order } when claim succeeds', async () => {
     rpcMock.mockResolvedValueOnce({
       data: [{
         id: 'order-1',
@@ -28,40 +28,42 @@ describe('useOrderLock', () => {
     });
 
     const { result } = renderHook(() => useOrderLock());
-    let claimed: Awaited<ReturnType<typeof result.current.claimOrder>> = null;
+    let claimed: Awaited<ReturnType<typeof result.current.claimOrder>> | undefined;
     await act(async () => {
       claimed = await result.current.claimOrder('order-1');
     });
 
     expect(rpcMock).toHaveBeenCalledWith('claim_order', { p_order_id: 'order-1' });
-    expect(claimed).not.toBeNull();
-    expect(claimed?.dbId).toBe('order-1');
-    expect(claimed?.lockedBy).toBe('user-1');
+    expect(claimed?.ok).toBe(true);
+    if (claimed?.ok) {
+      expect(claimed.order.dbId).toBe('order-1');
+      expect(claimed.order.lockedBy).toBe('user-1');
+    }
   });
 
-  it('claimOrder returns null when order is locked by another operator (empty result)', async () => {
+  it("claimOrder returns { ok: false, reason: 'locked' } when order is locked by another operator (empty result)", async () => {
     rpcMock.mockResolvedValueOnce({ data: [], error: null });
 
     const { result } = renderHook(() => useOrderLock());
-    let claimed: Awaited<ReturnType<typeof result.current.claimOrder>> = null;
+    let claimed: Awaited<ReturnType<typeof result.current.claimOrder>> | undefined;
     await act(async () => {
       claimed = await result.current.claimOrder('order-2');
     });
 
-    expect(claimed).toBeNull();
+    expect(claimed).toEqual({ ok: false, reason: 'locked' });
   });
 
-  it('claimOrder returns null and warns when RPC errors', async () => {
+  it("claimOrder returns { ok: false, reason: 'error' } and warns when RPC errors", async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'RLS denied' } });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const { result } = renderHook(() => useOrderLock());
-    let claimed: Awaited<ReturnType<typeof result.current.claimOrder>> = null;
+    let claimed: Awaited<ReturnType<typeof result.current.claimOrder>> | undefined;
     await act(async () => {
       claimed = await result.current.claimOrder('order-3');
     });
 
-    expect(claimed).toBeNull();
+    expect(claimed).toEqual({ ok: false, reason: 'error' });
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

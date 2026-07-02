@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
-import { confRateBySample } from '@/lib/confirmationRate';
+import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { computeJornadaReal, shouldAlertSinConfirmar, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
@@ -77,11 +77,13 @@ const RANGE_LABELS: Record<Range, string> = {
   '30d': 'Últimos 30 días',
 };
 
-/** Bullet-style data bar para tasas. Tono semántico vs benchmark
- *  (70% target estándar COD Colombia). */
-function RateBar({ value }: { value: number }) {
+/** Bullet-style data bar para tasas. Tono semántico vs `target`. Para la tasa de
+ *  CONFIRMACIÓN el target es la meta oficial del dueño (CONF_TARGET_PCT = 85%); la
+ *  tasa de RESOLUCIÓN (Seguimiento/Novedades) es otra métrica y pasa su propio
+ *  benchmark operativo. Verde >= target; ámbar en la banda "cerca" (5 pts). */
+function RateBar({ value, target = CONF_TARGET_PCT }: { value: number; target?: number }) {
   const pct = Math.max(0, Math.min(100, value));
-  const tone = pct >= 70 ? 'success' : pct >= 60 ? 'warning' : 'danger';
+  const tone = pct >= target ? 'success' : pct >= target - 5 ? 'warning' : 'danger';
   return (
     <div className={`data-bar tone-${tone}`}>
       <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
@@ -814,7 +816,10 @@ function ResolutionTable({
                 </td>
                 <td className="text-right font-mono tabular-nums text-success font-semibold">{res}</td>
                 <td className="text-right font-mono tabular-nums text-muted-foreground">{pendientes}</td>
-                <td className="text-right"><RateBar value={tasa} /></td>
+                {/* Tasa de RESOLUCIÓN (Seguimiento/Novedades) — NO es la
+                    confirmación; mantiene su benchmark operativo (70%), no la
+                    meta oficial de confirmación (CONF_TARGET_PCT). */}
+                <td className="text-right"><RateBar value={tasa} target={70} /></td>
               </tr>
             );
           })}

@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
 import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
-import { confRateBySample } from '@/lib/confirmationRate';
+import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -353,9 +353,11 @@ export default function DashboardTab() {
   const CHART_GRID    = hsl('--border');
   const COLORS = [CHART_ACCENT, CHART_INFO, CHART_SUCCESS, CHART_DANGER, CHART_AI, '#06b6d4', CHART_MUTED];
 
-  const tasaColor  = tasa >= 80 ? 'text-success' : tasa >= 60 ? 'text-warning' : 'text-danger';
-  const tasaStroke = tasa >= 80 ? CHART_SUCCESS : tasa >= 60 ? CHART_WARNING : CHART_DANGER;
-  const tasaBg     = tasa >= 80 ? 'bg-success/10 border border-success/25' : tasa >= 60 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
+  // Meta oficial del dueño = CONF_TARGET_PCT (85%), fuente única. Verde en meta;
+  // ámbar en la banda "cerca" (5 pts por debajo); rojo debajo de eso.
+  const tasaColor  = tasa >= CONF_TARGET_PCT ? 'text-success' : tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
+  const tasaStroke = tasa >= CONF_TARGET_PCT ? CHART_SUCCESS : tasa >= CONF_TARGET_PCT - 5 ? CHART_WARNING : CHART_DANGER;
+  const tasaBg     = tasa >= CONF_TARGET_PCT ? 'bg-success/10 border border-success/25' : tasa >= CONF_TARGET_PCT - 5 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
 
   function TrendBadge({ current, previous, suffix = '' }: { current: number; previous: number; suffix?: string }) {
     const diff = current - previous;
@@ -518,7 +520,7 @@ export default function DashboardTab() {
                   Tasa personal
                 </div>
                 <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold ${tasaBg} ${tasaColor}`}>
-                  {tasa >= 80 ? 'Excelente' : tasa >= 60 ? 'Aceptable' : 'Necesita mejorar'}
+                  {tasa >= CONF_TARGET_PCT ? `En meta (${CONF_TARGET_PCT}%)` : tasa >= CONF_TARGET_PCT - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
                 </div>
                 <div className="mt-1.5">
                   <TrendBadge current={tasa} previous={yesterdayData.tasa} suffix="%" />
@@ -640,7 +642,7 @@ export default function DashboardTab() {
                   <tbody>
                     {operatorRanking.map((op, idx) => {
                       const isMe = op.operatorId === user?.id;
-                      const tasaC = op.tasa >= 80 ? 'text-success' : op.tasa >= 60 ? 'text-warning' : 'text-danger';
+                      const tasaC = op.tasa >= CONF_TARGET_PCT ? 'text-success' : op.tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
                       return (
                         <tr key={op.operatorId} className={`border-b border-border last:border-0 transition-colors duration-200 ${isMe ? 'bg-accent/8' : 'hover:bg-card'}`}>
                           <td className="px-5 py-2.5 font-mono font-bold">

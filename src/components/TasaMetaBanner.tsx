@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrders } from '@/contexts/OrderContext';
 import { TrendingUp, TrendingDown, Target } from 'lucide-react';
-import { confRateBySample } from '@/lib/confirmationRate';
+import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
 interface TasaRow {
   confirmados: number;
@@ -46,19 +46,21 @@ export default function TasaMetaBanner() {
   let Icon = Target;
   let label = 'Calentando — aún no hay datos suficientes';
 
+  // Meta oficial del dueño = CONF_TARGET_PCT (85%), fuente única. Verde en meta;
+  // ámbar en la banda "cerca" (5 pts por debajo); rojo debajo de eso.
   if (hasSample) {
-    if (tasa >= 70) {
+    if (tasa >= CONF_TARGET_PCT) {
       bg = 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30';
       Icon = TrendingUp;
       label = 'En meta';
-    } else if (tasa >= 65) {
+    } else if (tasa >= CONF_TARGET_PCT - 5) {
       bg = 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/30';
       Icon = TrendingDown;
       label = 'Cerca de la meta — subí el ritmo';
     } else {
       bg = 'bg-destructive/10 text-destructive border-destructive/30';
       Icon = TrendingDown;
-      label = 'Por debajo de la meta (70%)';
+      label = `Por debajo de la meta (${CONF_TARGET_PCT}%)`;
     }
   }
 
@@ -77,7 +79,7 @@ export default function TasaMetaBanner() {
           >
             {tasa}%
           </span>
-          <span className="text-xs opacity-70">tasa personal · meta 70%</span>
+          <span className="text-xs opacity-70">tasa personal · meta {CONF_TARGET_PCT}%</span>
         </div>
       </div>
       <span className="text-xs font-medium">{label}</span>

@@ -14,10 +14,28 @@
 //     COBERTURA (resueltos÷entrantes) es métrica de equipo, aparte.
 // Funciones puras, sin red, country-agnostic.
 
+/**
+ * META OFICIAL de confirmación (%). FUENTE ÚNICA DE VERDAD — decisión del dueño,
+ * exigida por escrito varias veces: la meta es 85%. Antes cada pantalla usaba su
+ * propio umbral (70, 70/50, 80, 80/60) y todas le decían a la operadora que iba
+ * bien estando por DEBAJO de meta. Toda pantalla que pinte "en meta / por debajo"
+ * DEBE comparar contra esta constante — no hardcodear números.
+ */
+export const CONF_TARGET_PCT = 85;
+
 /** Muestra mínima para que una tasa por-operadora/personal sea concluyente. */
 export const MATURITY_MIN_RESUELTOS = 5;
 /** % del inflow que debe estar resuelto para que el cohorte (día) sea concluyente. */
 export const COHORTE_MATURITY_PCT = 90;
+
+/**
+ * ¿La tasa está por DEBAJO de la meta oficial? null (sin datos) → false: no se
+ * penaliza una muestra vacía. Respetá aparte el estado "inmaduro" (gris) de
+ * confRateBySample/confRateByCohort: una muestra chica NO se pinta roja.
+ */
+export function isBelowTarget(tasa: number | null | undefined): boolean {
+  return tasa != null && tasa < CONF_TARGET_PCT;
+}
 
 export interface SampleRate {
   /** confirmados ÷ (confirmados + cancelados). null si no hay resueltos aún. */

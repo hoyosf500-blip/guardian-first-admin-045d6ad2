@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ClipboardList, Download, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
 interface ReportRow {
   fecha: string;
@@ -174,9 +175,12 @@ export default function ReportsTable() {
                   <td className={`${cellBase} text-center`}>{r.no_respondio ?? ''}</td>
                   <td className={`${cellBase} text-center`}>{r.cancelados ?? ''}</td>
                   <td className={`${cellBase} text-center font-bold`}>{r.total_gestionados ?? ''}</td>
+                  {/* Color de la tasa de confirmación vs la meta oficial del
+                      dueño (CONF_TARGET_PCT = 85%, fuente única). Verde en meta;
+                      ámbar en la banda "cerca" (5 pts); rojo debajo. */}
                   <td className={`${cellBase} text-center font-bold ${
                     r.tasa_confirmacion != null
-                      ? r.tasa_confirmacion >= 80 ? 'text-green' : r.tasa_confirmacion >= 60 ? 'text-orange' : 'text-red'
+                      ? r.tasa_confirmacion >= CONF_TARGET_PCT ? 'text-green' : r.tasa_confirmacion >= CONF_TARGET_PCT - 5 ? 'text-orange' : 'text-red'
                       : ''
                   }`}>
                     {r.tasa_confirmacion != null ? `${r.tasa_confirmacion}%` : ''}

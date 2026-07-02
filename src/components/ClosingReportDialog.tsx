@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Moon, PhoneCall, PhoneOff, Package, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { confRateBySample, contactRate } from '@/lib/confirmationRate';
 
 interface Props { open: boolean; onClose: () => void }
 
@@ -161,17 +162,43 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                     tone="orange"
                   />
                 </div>
-                <div className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2 text-xs">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <PhoneCall size={12} /> Total gestionados
-                  </div>
-                  <div
-                    className="font-mono font-semibold text-foreground"
-                    title="Tasa personal: confirmados / lo gestionado por vos. NO incluye pedidos del inflow del día que no tocaste."
-                  >
-                    {stats?.total ?? 0} <span className="text-muted-foreground font-normal">· {stats?.tasa_conf ?? 0}% personal</span>
-                  </div>
-                </div>
+                {/* HALLAZGO 14: el cierre usaba `tasa_conf` del RPC (conf ÷
+                    gestionados, con noresp adentro) → daba un número DISTINTO al
+                    banner del día. Ahora la "% Confirmación" se calcula
+                    client-side con confRateBySample (MADURA: conf ÷ resueltos),
+                    la MISMA fórmula que TasaMetaBanner / Dashboard, así el cierre
+                    cuadra con el banner. `tasa_conf` del RPC se ignora. Aparte se
+                    muestra "Contacto" (contactabilidad = qué % de lo gestionado
+                    contestó) para no perder ese dato. */}
+                {(() => {
+                  const conf = stats?.confirmados ?? 0;
+                  const canc = stats?.cancelados ?? 0;
+                  const atendidos = stats?.total ?? 0;
+                  const confMadura = confRateBySample(conf, canc).tasa;
+                  const contacto = contactRate(conf, canc, atendidos);
+                  return (
+                    <div className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2 text-xs">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <PhoneCall size={12} /> Total gestionados
+                      </div>
+                      <div className="flex items-center gap-3 font-mono font-semibold text-foreground">
+                        <span>{atendidos}</span>
+                        <span
+                          title="% Confirmación MADURA: confirmados ÷ (confirmados + cancelados). Los no-contesta NO cuentan acá. Misma fórmula que el banner del día."
+                        >
+                          {confMadura == null ? '—' : `${confMadura}%`}
+                          <span className="text-muted-foreground font-normal"> confirmación</span>
+                        </span>
+                        <span
+                          className="text-muted-foreground font-normal"
+                          title="Contacto: de lo que gestionaste, qué % contestó (confirmó o canceló, vs no respondió)."
+                        >
+                          · {contacto}% contacto
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center justify-between bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 text-xs">
                   <div className="flex items-center gap-2 text-accent">
                     <Package size={12} /> Pendientes para mañana

@@ -1,5 +1,6 @@
 import { useOrders } from '@/contexts/OrderContext';
 import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
+import { CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
 export default function CounterBar() {
   const { workQueue, counter } = useOrders();
@@ -10,9 +11,12 @@ export default function CounterBar() {
 
   if (workQueue.length === 0) return null;
 
+  // Color de la tasa de confirmación vs la meta oficial del dueño
+  // (CONF_TARGET_PCT = 85%, fuente única). Verde en meta; ámbar en la banda
+  // "cerca" (5 pts por debajo); rojo debajo de eso.
   const barTone =
-    tasa >= 80 ? 'bg-gradient-to-r from-success to-success/75'
-    : tasa >= 60 ? 'bg-gradient-to-r from-warning to-warning/75'
+    tasa >= CONF_TARGET_PCT ? 'bg-gradient-to-r from-success to-success/75'
+    : tasa >= CONF_TARGET_PCT - 5 ? 'bg-gradient-to-r from-warning to-warning/75'
     : 'bg-gradient-to-r from-danger to-danger/75';
 
   const pctBadge =
