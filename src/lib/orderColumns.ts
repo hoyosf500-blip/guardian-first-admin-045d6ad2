@@ -7,12 +7,4 @@ export const ORDER_COLUMNS =
   'cantidad, direccion, novedad, guia, transportadora, tags, tienda, ' +
   'novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by, ' +
   'validation_decision, address_kind, missing_fields, suggested_customer_message, ' +
-  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed, last_movement_at';
-// (last_movement_at ya está aplicada en DB — migración 20260526120000 viva.)
-
-// HOTFIX 2026-04-30: 'suggested_address' temporalmente fuera del SELECT.
-// La migration 20260502000000_add_suggested_address.sql aún no fue aplicada
-// en la DB de producción y el SELECT explotaba con
-// "column orders.suggested_address does not exist" rompiendo el load de
-// pedidos en /confirmar. Re-introducir esta columna apenas Lovable o el
-// usuario corra `supabase db push`.
+  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed, last_movement_at, suggested_address';

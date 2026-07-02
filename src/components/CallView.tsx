@@ -480,10 +480,7 @@ export default function CallView({ items }: Props) {
               address_kind: data.address_kind ?? null,
               missing_fields: final_missing_fields,
               suggested_customer_message: final_suggested_message,
-              // HOTFIX 2026-04-30: 'suggested_address' temporalmente comentado.
-              // La columna aún no existe en DB de producción (migration
-              // 20260502000000 pendiente). Re-habilitar cuando se aplique.
-              // suggested_address: data.suggested_address ?? null,
+              suggested_address: data.suggested_address ?? null,
             })
             .eq('id', orderId);
           dbWritten = true;
