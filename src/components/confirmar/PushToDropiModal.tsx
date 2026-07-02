@@ -38,6 +38,10 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   // Bloqueo server-side por teléfono duplicado (guard de la edge). Guarda los
   // pedidos Dropi que ya existen con ese teléfono → el operador decide "subir igual".
   const [dupBlock, setDupBlock] = useState<PushDuplicate[] | null>(null);
+  // Bloqueo server-side por intento previo indeterminado (murió a mitad / error de
+  // red): { reason, msg }. 'in_progress' = otro intento en curso (solo esperar);
+  // 'stale_pending'/'needs_verify' = verificar en Dropi y reintentar con force.
+  const [verifyBlock, setVerifyBlock] = useState<{ reason: string; msg: string } | null>(null);
   // Vinculación manual (estilo Dropify): por product_id, el id de Dropi que el
   // operador pega para productos sin metafield (catálogo cargado a mano).
   const [linkInputs, setLinkInputs] = useState<Record<number, { dropiId: string; variationId: string }>>({});
@@ -107,14 +111,15 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     : !client.name || !client.dir || !client.city || !client.state || !client.phone ? 'Faltan datos del cliente (nombre, dirección, ciudad, departamento, teléfono).'
     : null;
 
-  async function doConfirm(allowDuplicate = false) {
+  async function doConfirm(allowDuplicate = false, force = false) {
     setSubmitting(true); setSubmitError(null);
     if (allowDuplicate) setDupBlock(null);
+    if (force) setVerifyBlock(null);
     const overrides = {
       client,
       lines: Object.fromEntries(lines.map((l, i) => [String(i), { price: Number(l.price), quantity: Number(l.quantity) }])),
     };
-    const r = await confirm(shopifyOrderId, overrides, allowDuplicate);
+    const r = await confirm(shopifyOrderId, overrides, allowDuplicate, force);
     setSubmitting(false);
     // Guard server-side: el teléfono ya está en Dropi. Mostramos los pedidos que
     // existen y dejamos "subir igual" (recompra real) sin cerrar el modal.
@@ -123,8 +128,18 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
       setSubmitError(null);
       return;
     }
+    // Intento previo indeterminado o en curso (idempotencia). No es un rechazo de
+    // datos: mostramos el aviso y (salvo 'in_progress') dejamos "Forzar" tras verificar.
+    if (!r.ok && (r.blocked === 'in_progress' || r.blocked === 'stale_pending' || r.blocked === 'needs_verify')) {
+      setVerifyBlock({ reason: r.blocked, msg: r.error || 'Un intento anterior quedó sin confirmar.' });
+      setSubmitError(null);
+      return;
+    }
     if (!r.ok) { setSubmitError(r.error || 'Dropi rechazó el pedido'); return; }
-    toast.success(`Subido a Dropi${r.dropi_order_id ? ` (orden ${r.dropi_order_id})` : ''}`);
+    // `already` = el pedido ya estaba en Dropi (idempotente, no se recreó): igual es éxito.
+    toast.success(r.already
+      ? `Ya estaba en Dropi${r.dropi_order_id ? ` (orden ${r.dropi_order_id})` : ''}`
+      : `Subido a Dropi${r.dropi_order_id ? ` (orden ${r.dropi_order_id})` : ''}`);
     onSuccess(r.dropi_order_id ?? null);
   }
 
@@ -277,6 +292,26 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                     {submitting ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />} Subir igual (no es duplicado)
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Bloqueo por intento previo indeterminado / en curso (idempotencia
+                server-side). Evita el duplicado con doble guía. Salvo 'in_progress',
+                deja "Forzar" para reintentar DESPUÉS de verificar en Dropi. */}
+            {verifyBlock && (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>{verifyBlock.msg}</span>
+                </div>
+                {verifyBlock.reason !== 'in_progress' && (
+                  <div className="flex justify-end">
+                    <button onClick={() => doConfirm(false, true)} disabled={submitting}
+                      className="h-8 px-3 rounded-lg border border-warning/40 bg-card text-xs font-medium text-warning hover:bg-warning/10 flex items-center gap-1 disabled:opacity-50">
+                      {submitting ? <Loader2 size={12} className="animate-spin" /> : <Truck size={12} />} Forzar (ya verifiqué en Dropi)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

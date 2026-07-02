@@ -664,6 +664,10 @@ Deno.serve(async (req: Request) => {
     // Escape del guard anti-duplicados: el operador marcó "No es duplicado"
     // (recompra legítima). Solo entonces se permite crear con teléfono repetido.
     const allowDuplicate = body.allow_duplicate === true;
+    // Escape para reintentar un pedido cuyo intento anterior quedó indeterminado
+    // (murió a mitad / error de red): el operador verifica en Dropi que NO existe
+    // y reintenta con force. NO saltea el guard de duplicados por teléfono.
+    const forcePush = body.force === true;
     if (!storeId) return json({ ok: false, error: "Falta store_id" }, 400, cors);
 
     if (!(await isStoreMember(sb, user.id, storeId))) {
@@ -1107,17 +1111,92 @@ Deno.serve(async (req: Request) => {
       }),
     };
 
-    const dropiRes = await fetch(`${dropiCfg.base}/integrations/orders/myorders`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "dropi-integration-key": dropiCfg.apiKey,
-        "Origin": dropiCfg.storeUrl,
-      },
-      body: JSON.stringify(dropiPayload),
-    });
-    const rawText = await dropiRes.text();
+    // CLAIM ATÓMICO antes de crear en Dropi. El UNIQUE(store_id, shopify_order_id)
+    // convierte este INSERT en un candado: si dos requests concurrentes (doble-click,
+    // doble-tab, race con el cron) llegan acá, SOLO uno gana el 'pending' y hace el
+    // POST — el otro rebota SIN crear nada. Antes el registro se insertaba DESPUÉS del
+    // POST, así que dos concurrentes (o un retry tras error) creaban una orden real
+    // cada uno = doble guía = doble flete.
+    const STALE_PENDING_MS = 3 * 60 * 1000; // un push tarda segundos; +3min = intento muerto
+    let claimId: string | null = null;
+    {
+      const ins = await sb.from("shopify_pushed_orders")
+        .insert({ store_id: storeId, shopify_order_id: shopifyOrderId, status: "pending", payload: dropiPayload, pushed_by: user.id })
+        .select("id").maybeSingle();
+      if (!ins.error) {
+        claimId = (ins.data as { id?: string } | null)?.id ?? null;
+      } else {
+        const isUnique = (ins.error as { code?: string }).code === "23505" || /duplicate key|unique/i.test(ins.error.message || "");
+        if (!isUnique) {
+          return json({ ok: false, error: `No se pudo registrar el intento: ${ins.error.message}` }, 500, cors);
+        }
+        // Ya existe una fila para este pedido → decidir según su estado.
+        const { data: ex } = await sb.from("shopify_pushed_orders")
+          .select("id, status, dropi_order_id, pushed_at")
+          .eq("store_id", storeId).eq("shopify_order_id", shopifyOrderId).maybeSingle();
+        if (!ex) {
+          return json({ ok: false, error: "Conflicto transitorio al registrar el intento, reintentá" }, 409, cors);
+        }
+        if (ex.status === "created") {
+          // Idempotente: ya está en Dropi. NO se vuelve a crear.
+          return json({ ok: true, mode: "confirm", already: true, dropi_order_id: ex.dropi_order_id ?? null, shopify_name: ord.name }, 200, cors);
+        }
+        const ageMs = Date.now() - new Date(String(ex.pushed_at)).getTime();
+        if (ex.status === "pending" && ageMs < STALE_PENDING_MS) {
+          return json({ ok: false, blocked: "in_progress", error: "Este pedido se está subiendo ahora mismo (otro intento en curso). Esperá unos segundos y recargá." }, 409, cors);
+        }
+        // 'error' = Dropi rechazó el intento anterior → seguro reintentar sin forzar.
+        // 'pending' viejo / 'unknown' = no sabemos si Dropi llegó a crear la orden →
+        // exigimos que el operador verifique en Dropi y confirme con force.
+        const safeToRetry = ex.status === "error";
+        if (!safeToRetry && !forcePush) {
+          const reason = ex.status === "pending" ? "stale_pending" : "needs_verify";
+          return json({ ok: false, blocked: reason, error: "Un intento anterior quedó sin confirmar. Verificá en Dropi si el pedido ya existe. Si NO existe, reintentá con \"Forzar\".", dropi_order_id: ex.dropi_order_id ?? null }, 409, cors);
+        }
+        // RECLAIM ATÓMICO (compare-and-swap): reusar la MISMA fila (no romper el
+        // UNIQUE) y volver a 'pending', PERO condicionando el UPDATE al snapshot
+        // (status + pushed_at) que acabamos de leer. Si dos requests concurrentes
+        // (doble-click, doble-tab, "Forzar" + "Subir") pasan el INSERT-conflict y
+        // ven el MISMO estado, SOLO uno gana el swap: el otro no matchea el WHERE
+        // (status/pushed_at ya cambiaron) y `upd.data` viene null → rebota como
+        // 'in_progress' SIN hacer el POST. Sin esto, ambos hacían el POST = doble
+        // orden real en Dropi = doble guía = doble flete. El candado UNIQUE solo
+        // serializa el PRIMER INSERT, no dos UPDATE sobre una fila ya existente.
+        const upd = await sb.from("shopify_pushed_orders")
+          .update({ status: "pending", payload: dropiPayload, pushed_by: user.id, pushed_at: new Date().toISOString(), dropi_order_id: null, error_message: null })
+          .eq("id", ex.id).eq("status", ex.status).eq("pushed_at", ex.pushed_at)
+          .select("id").maybeSingle();
+        if (upd.error || !upd.data) {
+          // Otro request ganó el swap (o error transitorio) → tratar como intento
+          // en curso: reintentable, pero NO hacemos POST ahora.
+          return json({ ok: false, blocked: "in_progress", error: "Este pedido se está subiendo ahora mismo (otro intento en curso). Esperá unos segundos y recargá." }, 409, cors);
+        }
+        claimId = ex.id as string;
+      }
+    }
+
+    let dropiRes: Response;
+    let rawText: string;
+    try {
+      dropiRes = await fetch(`${dropiCfg.base}/integrations/orders/myorders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "dropi-integration-key": dropiCfg.apiKey,
+          "Origin": dropiCfg.storeUrl,
+        },
+        body: JSON.stringify(dropiPayload),
+      });
+      rawText = await dropiRes.text();
+    } catch (netErr) {
+      // Error de RED: NO sabemos si Dropi recibió/creó la orden. Marcamos 'unknown'
+      // para BLOQUEAR el reintento hasta que alguien verifique en Dropi (mejor
+      // bloquear que arriesgar un duplicado con doble flete).
+      const nm = netErr instanceof Error ? netErr.message : String(netErr);
+      if (claimId) await sb.from("shopify_pushed_orders").update({ status: "unknown", error_message: `Red: ${nm}`.slice(0, 500) }).eq("id", claimId);
+      return json({ ok: false, blocked: "needs_verify", error: "No se pudo confirmar con Dropi (error de red). Verificá en Dropi si el pedido se creó antes de reintentar." }, 502, cors);
+    }
     let dBody: Record<string, unknown> = {};
     try { dBody = rawText ? JSON.parse(rawText) : {}; } catch { dBody = { raw: rawText }; }
     const dropiOk = dropiRes.ok && dBody.isSuccess !== false;
@@ -1138,8 +1217,13 @@ Deno.serve(async (req: Request) => {
       // integraciones no puede crearlo, pero el panel web SÍ. Disparamos el
       // FALLBACK WEB (/api/* con session token). Productos públicos / Colombia
       // que fallan por otra razón NO entran acá (mensaje claro de id inválido).
-      const isPrivateProductSignal =
-        dropiRes.status === 404 || /\$type|Undefined property|no encontr|not found/i.test(detail);
+      //
+      // EXIGIMOS `!dropiOk`: la señal de producto privado es un RECHAZO de Dropi.
+      // Si Dropi respondió 2xx + isSuccess!==false (dropiOk===true) pero no pudimos
+      // leer el id, la orden PROBABLEMENTE ya se creó — NO debemos dispararle un
+      // fallback web que la crearía DE NUEVO. Ese caso cae al bloque B (needs_verify).
+      const isPrivateProductSignal = !dropiOk &&
+        (dropiRes.status === 404 || /\$type|Undefined property|no encontr|not found/i.test(detail));
 
       if (isPrivateProductSignal) {
         const DROPI_COUNTRY = dropiCfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
@@ -1155,34 +1239,68 @@ Deno.serve(async (req: Request) => {
             resolved,
             total: webTotal,
           });
-          await sb.from("shopify_pushed_orders").insert({
-            store_id: storeId, shopify_order_id: shopifyOrderId, status: "created",
-            dropi_order_id: webOrderId, payload: dropiPayload, pushed_by: user.id,
-          });
+          await sb.from("shopify_pushed_orders").update({
+            status: "created", dropi_order_id: webOrderId, payload: dropiPayload, error_message: null,
+          }).eq("id", claimId);
           return json({ ok: true, mode: "confirm", dropi_order_id: webOrderId, shopify_name: ord.name, via: "web" }, 200, cors);
         } catch (webErr) {
           const webMsg = webErr instanceof Error ? webErr.message : String(webErr);
           const webStatus = webErr instanceof WebFallbackError ? webErr.status : 502;
-          await sb.from("shopify_pushed_orders").insert({
-            store_id: storeId, shopify_order_id: shopifyOrderId, status: "error",
-            payload: dropiPayload, error_message: `Fallback web [${webStatus}]: ${webMsg}`, pushed_by: user.id,
-          });
+          // WebFallbackError = falla CONTROLADA (producto/ciudad/cotización sin
+          // resolver, o Dropi rechazó el POST): la orden NO se creó → 'error'
+          // (reintento seguro). Un throw CRUDO (ej. red durante el POST) es
+          // indeterminado → 'unknown' para exigir verificación antes de reintentar.
+          const webFinalStatus = webErr instanceof WebFallbackError ? "error" : "unknown";
+          await sb.from("shopify_pushed_orders").update({
+            status: webFinalStatus, error_message: `Fallback web [${webStatus}]: ${webMsg}`.slice(0, 500),
+          }).eq("id", claimId);
           return json({ ok: false, error: webMsg, dropiBody: dBody }, webStatus, cors);
         }
       }
 
-      // Falla NO atribuible a producto privado → registrar error y devolver el motivo.
-      await sb.from("shopify_pushed_orders").insert({
-        store_id: storeId, shopify_order_id: shopifyOrderId, status: "error",
-        payload: dropiPayload, error_message: `Dropi [${dropiRes.status}]: ${detail}`, pushed_by: user.id,
-      });
-      return json({ ok: false, error: `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`, dropiBody: dBody }, 502, cors);
+      // Falla NO atribuible a producto privado. Hay que distinguir DOS casos con
+      // consecuencias opuestas para el reintento:
+      //
+      //  A) `!dropiOk` → Dropi RECHAZÓ de verdad (HTTP 4xx/5xx o isSuccess=false):
+      //     la orden NO se creó → 'error' (seguro reintentar SIN force).
+      //
+      //  B) `dropiOk===true` pero no pudimos extraer el id (respuesta 2xx +
+      //     isSuccess!==false con el id en una clave desconocida / formato nuevo):
+      //     la orden PROBABLEMENTE SÍ EXISTE en Dropi. Marcar 'error' acá dispararía
+      //     un reintento automático (safeToRetry) = SEGUNDA orden real = doble guía.
+      //     Por eso lo marcamos 'unknown' y exigimos verificación humana (needs_verify),
+      //     igual que un error de red. Logueamos el body crudo para poder ampliar el
+      //     extractor de id si aparece una forma nueva.
+      if (!dropiOk) {
+        await sb.from("shopify_pushed_orders").update({
+          status: "error", error_message: `Dropi [${dropiRes.status}]: ${detail}`,
+        }).eq("id", claimId);
+        return json({ ok: false, error: `Dropi rechazó el pedido [${dropiRes.status}]: ${detail}`, dropiBody: dBody }, 502, cors);
+      }
+      // Caso B: Dropi aceptó pero no encontramos el id → indeterminado.
+      console.error("shopify-push-dropi: Dropi 2xx isSuccess!=false pero id no parseable. Body crudo:", rawText.slice(0, 1000));
+      await sb.from("shopify_pushed_orders").update({
+        status: "unknown", error_message: `Dropi aceptó pero sin id parseable [${dropiRes.status}]: ${detail}`.slice(0, 500),
+      }).eq("id", claimId);
+      return json({ ok: false, blocked: "needs_verify", error: "Dropi respondió OK pero no pudimos leer el número de orden. Verificá en Dropi si el pedido se creó antes de reintentar.", dropiBody: dBody }, 502, cors);
     }
 
-    await sb.from("shopify_pushed_orders").insert({
-      store_id: storeId, shopify_order_id: shopifyOrderId, status: "created",
-      dropi_order_id: String(dropiOrderId), payload: dropiPayload, pushed_by: user.id,
-    });
+    // La orden YA existe en Dropi. Persistir 'created' es crítico: si este UPDATE
+    // falla (blip a Supabase), la fila queda 'pending' y un reintento futuro podría
+    // duplicar. Reintentamos el UPDATE una vez (reintentar un update idempotente NO
+    // puede crear otra orden). Si aun así falla, logueamos fuerte con el id ya creado
+    // para reconciliar a mano; igual devolvemos ok:true con el id (la orden es real).
+    const persisted = await sb.from("shopify_pushed_orders").update({
+      status: "created", dropi_order_id: String(dropiOrderId), payload: dropiPayload, error_message: null,
+    }).eq("id", claimId).select("id").maybeSingle();
+    if (persisted.error || !persisted.data) {
+      const retry = await sb.from("shopify_pushed_orders").update({
+        status: "created", dropi_order_id: String(dropiOrderId), payload: dropiPayload, error_message: null,
+      }).eq("id", claimId).select("id").maybeSingle();
+      if (retry.error || !retry.data) {
+        console.error(`shopify-push-dropi: orden ${dropiOrderId} creada en Dropi pero NO se pudo marcar 'created' (claim ${claimId}, shopify ${shopifyOrderId}). Reconciliar a mano.`);
+      }
+    }
 
     return json({ ok: true, mode: "confirm", dropi_order_id: String(dropiOrderId), shopify_name: ord.name }, 200, cors);
   } catch (err) {
