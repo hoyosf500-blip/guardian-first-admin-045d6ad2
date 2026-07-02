@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  confRateBySample, confRateByCohort, contactRate,
-  MATURITY_MIN_RESUELTOS, COHORTE_MATURITY_PCT,
+  confRateBySample, confRateByCohort, contactRate, isBelowTarget,
+  MATURITY_MIN_RESUELTOS, COHORTE_MATURITY_PCT, CONF_TARGET_PCT,
 } from './confirmationRate';
 
 describe('confRateBySample (tasa madura por operadora/personal)', () => {
@@ -85,5 +85,27 @@ describe('constantes', () => {
   it('umbrales esperados', () => {
     expect(MATURITY_MIN_RESUELTOS).toBe(5);
     expect(COHORTE_MATURITY_PCT).toBe(90);
+  });
+
+  it('meta oficial de confirmación = 85% (fuente única)', () => {
+    expect(CONF_TARGET_PCT).toBe(85);
+  });
+});
+
+describe('isBelowTarget (por debajo de la meta oficial 85%)', () => {
+  it('true cuando tasa < 85', () => {
+    expect(isBelowTarget(84)).toBe(true);
+    expect(isBelowTarget(70)).toBe(true);
+    expect(isBelowTarget(0)).toBe(true);
+  });
+
+  it('false cuando tasa >= 85 (en meta)', () => {
+    expect(isBelowTarget(85)).toBe(false);
+    expect(isBelowTarget(100)).toBe(false);
+  });
+
+  it('null/undefined (sin datos) → false, no penaliza muestra vacía', () => {
+    expect(isBelowTarget(null)).toBe(false);
+    expect(isBelowTarget(undefined)).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
-import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad, getErrorMessage } from '@/lib/orderUtils';
+import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad, getErrorMessage, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -111,7 +111,8 @@ export default function OrderDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
+  const countryCode = activeStore?.country_code;
   const { openChat, waEnabled } = useWaChat();
   const { refresh: refreshOrder } = useRefreshOrder();
 
@@ -571,7 +572,7 @@ export default function OrderDetailPage() {
               </button>
             )}
             <a
-              href={`tel:${order.phone}`}
+              href={'tel:+' + getWhatsAppPhone(order.phone, countryCode)}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
               aria-label="Llamar al cliente"
               className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-card border border-border text-foreground text-xs font-bold py-3 sm:py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"

@@ -3,7 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { useStore } from './StoreContext';
 import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
-import { calcPriority } from '@/lib/alertSystem';
+import { compareConfirmar, cooldownHoursForAttempt } from '@/lib/confirmarQueue';
+import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useCelebration } from '@/hooks/useCelebration';
@@ -167,13 +168,70 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // COST-2: auto-sync deshabilitado. Admin usa botón manual o cron server-side.
   // useAutoDropiSync(isAdmin, user?.id, debouncedRefreshAll);
 
+  // Hallazgo 7: aviso de pedido nuevo para atacar los huecos muertos. Cuando
+  // llega un INSERT de un PENDIENTE CONFIRMACION nuevo, disparamos una
+  // Notification (si hay permiso) y prendemos un "flash" en el título de la
+  // pestaña. notifiedOrderIdsRef deduplica para no re-notificar el mismo
+  // pedido si realtime reenvía el evento.
+  const notifiedOrderIdsRef = useRef<Set<string>>(new Set());
+  const [newOrderFlash, setNewOrderFlash] = useState(0);
+  const handleOrderInsert = useCallback((row: Record<string, unknown>) => {
+    const estado = String(row.estado ?? '').toUpperCase();
+    if (estado !== 'PENDIENTE CONFIRMACION') return;
+    if (activeStoreId && row.store_id && row.store_id !== activeStoreId) return;
+    const oid = String(row.id ?? row.external_id ?? '');
+    if (oid && notifiedOrderIdsRef.current.has(oid)) return;
+    if (oid) notifiedOrderIdsRef.current.add(oid);
+    // Badge en el título de la pestaña — se recalcula en el effect de abajo.
+    setNewOrderFlash(v => v + 1);
+    // Notificación nativa (guard de permiso). El aviso trae de vuelta a la
+    // operadora cuando la pestaña está en background.
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Nuevo pedido — llamar ahora', {
+          body: String(row.nombre ?? '') || 'Un cliente acaba de comprar',
+          tag: oid || 'nuevo-pedido', // colapsa avisos repetidos del mismo pedido
+        });
+      }
+    } catch {
+      // Notification puede lanzar en contextos no seguros — no romper la app.
+    }
+  }, [activeStoreId]);
+
   // Realtime: cuando cualquier operadora cambia orders o inserta un
   // order_result, todos los caches se refrescan vía el mismo timer
   // debounced para evitar el ráfaga de fetches duplicados.
   useRealtimeOrders(user, {
     onOrderChange: debouncedRefreshAll,
     onResultChange: debouncedRefreshAll,
+    // Hallazgo 6: al volver la pestaña visible, los eventos que se descartaron
+    // mientras estaba oculta se recuperan con un catch-up explícito (mismo
+    // refresh debounced que usan orders/results).
+    onVisibleCatchUp: debouncedRefreshAll,
+    // Hallazgo 7: aviso de pedido nuevo (notificación + badge en el título).
+    onOrderInsert: handleOrderInsert,
   }, activeStoreId);
+
+  // Hallazgo 7: badge "(N) Confirmar" en el título de la pestaña. N = pendientes
+  // sin gestionar en la cola (result vacío). Se recalcula cuando cambia la cola
+  // o llega un pedido nuevo (newOrderFlash). Al desmontar restaura el título.
+  useEffect(() => {
+    const original = document.title.replace(/^\(\d+\)\s*/, '');
+    const sinGestionar = workQueue.filter(o => !o.result).length;
+    document.title = sinGestionar > 0 ? `(${sinGestionar}) ${original}` : original;
+    return () => { document.title = document.title.replace(/^\(\d+\)\s*/, ''); };
+  }, [workQueue, newOrderFlash]);
+
+  // Hallazgo 6 (poll de respaldo): la cola de Confirmar dependía 100% de
+  // realtime. Un hueco de red o un evento perdido dejaba la cola congelada
+  // indefinidamente. Igual que seg/novedades, agregamos un poll cada 5 min
+  // (solo con la pestaña visible) que recarga el workQueue como red de
+  // seguridad. loadWorkQueue ya hace smartMerge → sin datos nuevos no
+  // re-renderiza (no hay parpadeo ni costo de churn).
+  useEffect(() => {
+    if (!user || !activeStoreId) return;
+    return pollWhenVisible(() => { void loadWorkQueue(); }, 5 * 60 * 1000, { runOnVisible: false });
+  }, [user, activeStoreId, loadWorkQueue]);
 
   // Cobertura del día (mySegTouchedToday inicial + realtime de los 2 sets).
   // Por qué un effect separado: estos sets son `myConfirmTouchedToday` y
@@ -185,6 +243,28 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || !activeStoreId) return;
     const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
+
+    // Hallazgo "cola-hoy": la carga inicial de myConfirmTouchedToday vivía SOLO
+    // dentro de loadWorkQueue. Tras recargar la página en una ruta que no lo
+    // dispara (o antes de que corra), el chip "Tu cola hoy" mostraba
+    // "Has llamado a 0" hasta que llegara un evento realtime. Cargándolo también
+    // aquí (mismo effect de cobertura que corre al montar) el chip arranca con
+    // el número correcto. Query barato: solo order_id filtrado por mí + hoy.
+    void supabase
+      .from('order_results')
+      .select('order_id')
+      .eq('store_id', activeStoreId)
+      .eq('operator_id', user.id)
+      .eq('module', 'confirmar')
+      .gte('created_at', todayStartIso)
+      .then(({ data: mine }) => {
+        if (!mine) return;
+        const ids = (mine as { order_id: string | null }[])
+          .map(r => r.order_id)
+          .filter((id): id is string => !!id);
+        setMyConfirmTouchedToday(new Set(ids));
+      });
+
     // Carga inicial del set de seguimiento (touchpoints SEG:* del día).
     // touchpoints no tiene order_id, el match contra segData es por phone.
     void supabase
@@ -277,7 +357,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const buildWorkQueue = useCallback((orders: OrderData[]) => {
     const buildId = ++lastBuildIdRef.current;
     const pendientes = orders.filter(o => isPendiente(o.estado));
-    pendientes.sort((a, b) => calcPriority(b) - calcPriority(a) || b.dias - a.dias);
+    // Hallazgo 4: la cola de Confirmar NO usa calcPriority (compartido con
+    // Seguimiento y que para un PENDIENTE fresco da ~0 → desempataba por
+    // b.dias-a.dias = MÁS VIEJO primero, hundiendo al comprador de hace 5 min).
+    // compareConfirmar prioriza recordatorio vencido → reintento listo →
+    // FRESCOS de hoy (más nuevo primero) → viejos → D4+ "por cancelar" al fondo.
+    pendientes.sort((a, b) => compareConfirmar(a, b));
 
     const seen = new Set<string>();
     const dedupPendientes = pendientes.filter(o => {
@@ -338,7 +423,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // counter de "no respondió".
             const isCallOutcome = (r: string) => r === 'conf' || r === 'canc' || r === 'noresp';
             const todayLocal = bogotaToday();
-            const COOLDOWN_HOURS = 2;
+            // Hallazgo "N/R escalera": el cooldown ya NO es plano de 2h. Ahora
+            // escala por número de intento vía cooldownHoursForAttempt (1er
+            // reintento ~0.4h, 2do 1h, 3ro 2h). El cap de 3 intentos/día SE
+            // MANTIENE (alineado con la RPC pending_retry_list, que asume cap 3).
             const MAX_DAILY_ATTEMPTS = 3;
 
             type ResultRow = {
@@ -360,8 +448,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               todayNoresp.get(r.phone)!.push(r);
             });
 
-            // resultMap: conf/canc siempre; noresp solo si alcanzó cap de hoy o sigue
-            // en cooldown de 2h
+            // resultMap: conf/canc siempre; noresp solo si alcanzó cap de hoy o
+            // sigue en cooldown. El cooldown es ESCALERA por número de intento
+            // de hoy (cooldownHoursForAttempt): con 1 intento se re-habilita a
+            // los ~25 min, con 2 a la hora, con 3 a las 2h.
             const resultMap = new Map<string, { result: string; reason: string }>();
             (data as ResultRow[]).forEach(r => {
               if (!isCallOutcome(r.result)) return;
@@ -376,13 +466,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
                 resultMap.set(r.order_id, { result: 'noresp', reason: r.reason || '' });
                 return;
               }
+              const cooldownHours = cooldownHoursForAttempt(todayCount);
               const hoursElapsed = (now - new Date(r.created_at).getTime()) / (1000 * 60 * 60);
-              if (hoursElapsed < COOLDOWN_HOURS) {
+              if (hoursElapsed < cooldownHours) {
                 resultMap.set(r.order_id, { result: 'noresp', reason: r.reason || '' });
               }
             });
 
-            // retryPhones: solo noresps de HOY con <3 intentos Y última hace >=2h
+            // retryPhones: noresps de HOY con <3 intentos cuya última llamada ya
+            // cumplió el cooldown escalonado del intento actual (ver arriba).
             const retryPhones = new Map<string, number>();
             todayNoresp.forEach((results, phone) => {
               const count = results.length;
@@ -390,7 +482,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               const latest = results.reduce((max, r) =>
                 Math.max(max, new Date(r.created_at).getTime()), 0);
               const hoursSinceLatest = (now - latest) / (1000 * 60 * 60);
-              if (hoursSinceLatest >= COOLDOWN_HOURS) {
+              if (hoursSinceLatest >= cooldownHoursForAttempt(count)) {
                 retryPhones.set(phone, count);
               }
             });

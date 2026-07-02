@@ -69,7 +69,7 @@ export function useShopifyPending(storeId: string | null) {
     staleTime: 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('shopify-reconcile', {
-        body: { store_id: storeId, days: 3 },
+        body: { store_id: storeId, days: 7 },
       });
       if (error) {
         // La edge function puede devolver el detalle en context.body.
@@ -88,7 +88,7 @@ export function useShopifyPending(storeId: string | null) {
  * Pedidos que YA están en Dropi con valor distinto (cobro de más) al de Shopify.
  * Usa la MISMA edge function `shopify-reconcile` pero con una ventana más amplia
  * (30 días) para cubrir el backlog, y solo lee `valueMismatches`. Aparte del hook
- * de pendientes (ventana 3d) para no inflar la cola ni el poll frecuente.
+ * de pendientes (ventana 7d) para no inflar la cola ni el poll frecuente.
  */
 export function useShopifyValueMismatches(storeId: string | null) {
   return useQuery<ShopifyReconcileResult>({

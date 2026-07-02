@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
-import { confRateByCohort } from '@/lib/confirmationRate';
+import { confRateByCohort, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 import CancelledReasonsModal from '@/components/admin/CancelledReasonsModal';
 
 // Panel de "Reportes diarios" con DOS vistas:
@@ -277,9 +277,12 @@ export default function DailyReportsView() {
 
   const cellBase = 'px-3 py-2 text-xs font-mono whitespace-nowrap';
 
+  // Color de la tasa de confirmación vs la meta oficial del dueño
+  // (CONF_TARGET_PCT = 85%, fuente única). Verde en meta; ámbar en la banda
+  // "cerca" (5 pts por debajo); rojo debajo de eso.
   function pctConfClass(p: number) {
-    if (p >= 70) return 'text-green';
-    if (p >= 50) return 'text-orange';
+    if (p >= CONF_TARGET_PCT) return 'text-green';
+    if (p >= CONF_TARGET_PCT - 5) return 'text-orange';
     return 'text-red';
   }
 

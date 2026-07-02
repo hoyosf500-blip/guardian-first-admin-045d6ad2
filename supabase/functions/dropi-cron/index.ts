@@ -293,7 +293,9 @@ interface StoreSync {
 /** Una "pasada" de sync: un rango de fechas con un criterio de filtrado.
  *  Corremos 2 por tienda: cambio de estatus (refresca guías que se movieron,
  *  sin importar antigüedad) + creado reciente (red de seguridad para nuevas). */
-interface SyncPass { from: string; to: string; filterDateBy: string }
+// `role` marca cual pasada es la de estatus, para atribuir su conteo por
+// separado (winner filter + deteccion zombie miran SOLO el pase de estatus).
+interface SyncPass { from: string; to: string; filterDateBy: string; role?: "created" | "status" }
 
 // Sincroniza UNA tienda con varias pasadas. Devuelve {synced, total}. No lanza:
 // captura su propio error para que una tienda caída no frene a las demás. El
@@ -301,13 +303,14 @@ interface SyncPass { from: string; to: string; filterDateBy: string }
 // solapan no duplican ni spamean realtime.
 async function syncStore(
   // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any,
   store: StoreSync,
   passes: SyncPass[],
   todayStr: string,
   globalDeadline: number,
   perStoreBudgetMs: number,
-): Promise<{ synced: number; total: number; error?: string; throttled?: boolean }> {
+): Promise<{ synced: number; total: number; statusTotal: number; error?: string; throttled?: boolean }> {
   const base = dropiHostFor(store.country_code);
   // El más cercano gana: la rebanada JUSTA de esta tienda (presupuesto global /
   // nº de tiendas, con techo STORE_TIME_BUDGET_MS) o lo que quede del global.
@@ -319,6 +322,11 @@ async function syncStore(
   );
   let synced = 0;
   let total = 0;
+  // Conteo SOLO del pase de cambio de estatus. El winner-filter y la deteccion
+  // zombie miran este numero, NO el total (que ahora incluye el pase de CREADO
+  // que corre primero y casi siempre trae ordenes nuevas -> enmascararia un
+  // filter_date_by roto, el bug zombie del 21-28/05).
+  let statusTotal = 0;
 
   try {
     for (const pass of passes) {
@@ -326,10 +334,11 @@ async function syncStore(
       for (const chunk of chunks) {
         if (Date.now() > deadline) {
           console.warn(`[store ${store.store_id}] presupuesto agotado, corte parcial`);
-          return { synced, total, throttled: true };
+          return { synced, total, statusTotal, throttled: true };
         }
         const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline);
         total += dropiOrders.length;
+        if (pass.role === "status") statusTotal += dropiOrders.length;
         if (dropiOrders.length === 0) continue;
 
         const dbOrders = dropiOrders.map((o) => mapOrder(o, store.owner_id, todayStr, store.store_id));
@@ -348,18 +357,18 @@ async function syncStore(
         await sleep(RATE_LIMIT_MS);
       }
     }
-    return { synced, total };
+    return { synced, total, statusTotal };
   } catch (err) {
     // 429 sostenido NO es un fallo: la tienda sincronizó lo que pudo y el próximo
     // tick reintenta. Se devuelve como throttled (parcial) para loguear 'success'
     // y NO pintar el banner de rojo. Cualquier otra excepción sí es error duro.
     if (err instanceof DropiRateLimitError) {
       console.warn(`[store ${store.store_id}] throttled por Dropi (429) — sync parcial: ${synced}/${total}`);
-      return { synced, total, throttled: true };
+      return { synced, total, statusTotal, throttled: true };
     }
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[store ${store.store_id}] sync failed:`, msg);
-    return { synced, total, error: msg };
+    return { synced, total, statusTotal, error: msg };
   }
 }
 
@@ -506,9 +515,16 @@ Deno.serve(async (req: Request) => {
     } catch (e) {
       console.warn("dropi-cron: no se pudo leer dropi_winning_status_filter previo:", e);
     }
+    // ORDEN CRITICO: el pase BARATO de CREADO (3d, ordenes nuevas -> /confirmar)
+    // corre PRIMERO; el pase PESADO de CAMBIO DE ESTATUS (21d) va DESPUES.
+    // syncStore itera este array en orden, asi que si el presupuesto se agota o
+    // Dropi throttlea (429) durante el pase pesado, los pedidos NUEVOS ya
+    // entraron. Antes iba al reves y el pase pesado (~21d) se comia el
+    // presupuesto/deadline -> las ordenes nuevas de Ecuador eran el sacrificio
+    // sistematico y no aparecian en /confirmar (fuga de inflow).
     const buildPasses = (statusFilter: string): SyncPass[] => ([
-      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter },
-      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO" },
+      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO", role: "created" },
+      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter, role: "status" },
     ]);
     const from = dateBack(STATUS_CHANGE_DAYS_BACK); // para logs
 
@@ -546,19 +562,19 @@ Deno.serve(async (req: Request) => {
 
       // Fallback: si la 1ª variante devolvió 0/0 SIN error/throttle, probamos el resto.
       // Solo aplicamos fallback si aún no tenemos winner (evita penalizar a las tiendas siguientes).
-      if (!winningStatusFilter && r.total === 0 && !r.error && !r.throttled) {
+      if (!winningStatusFilter && r.statusTotal === 0 && !r.error && !r.throttled) {
         for (const variant of STATUS_FILTER_VARIANTS.slice(1)) {
           if (Date.now() > globalDeadline) break;
           console.warn(`dropi-cron: tienda ${storeId} — filter_date_by="${chosenFilter}" dio 0. Probando "${variant}"`);
           chosenFilter = variant;
           r = await syncStore(sb, store, buildPasses(variant), todayStr, globalDeadline, perStoreBudget);
-          if (r.total > 0) {
-            console.log(`dropi-cron: filter_date_by GANADOR="${variant}" (devolvió ${r.total} pedidos)`);
+          if (r.statusTotal > 0) {
+            console.log(`dropi-cron: filter_date_by GANADOR="${variant}" (pase de estatus devolvio ${r.statusTotal} pedidos)`);
             winningStatusFilter = variant;
             break;
           }
         }
-      } else if (r.total > 0 && !winningStatusFilter) {
+      } else if (r.statusTotal > 0 && !winningStatusFilter) {
         winningStatusFilter = chosenFilter;
       }
 
@@ -566,18 +582,21 @@ Deno.serve(async (req: Request) => {
       grandTotal += r.total;
       perStore.push({ store_id: storeId, country: store.country_code, filter: chosenFilter, ...r });
 
-      // Detección de estado zombie: sync corrió sin error/throttle pero Dropi
-      // devolvió 0 pedidos en TODAS las pasadas. Eso es lo que pasó del 21/05 al
-      // 28/05 — invisible con status='success'. Ahora se loguea como 'warn' con
-      // mensaje explícito para que el banner SyncFreshness lo detecte.
-      const isZombie = !r.error && !r.throttled && r.synced === 0 && r.total === 0;
+      // Detección de estado zombie: sync corrió sin error/throttle pero el pase
+      // de CAMBIO DE ESTATUS devolvió 0 pedidos. Eso es lo que pasó del 21/05 al
+      // 28/05 — invisible con status='success'. Miramos statusTotal (NO total)
+      // igual que el winner-filter: el pase de CREADO casi siempre trae ordenes
+      // nuevas y enmascararía un filter_date_by roto (el bug zombie exacto).
+      // Ahora se loguea como 'warn' con mensaje explícito para que el banner
+      // SyncFreshness lo detecte.
+      const isZombie = !r.error && !r.throttled && r.synced === 0 && r.statusTotal === 0;
       const logStatus = r.error ? "error" : (isZombie ? "warn" : "success");
       const logMsg = r.error
         ? r.error
         : r.throttled
           ? "Dropi throttle (429) — sincronización parcial"
           : isZombie
-            ? `Dropi devolvió 0 pedidos en ambas ventanas (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o cuenta vacía`
+            ? `Dropi devolvió 0 pedidos en el pase de cambio de estatus (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o filter_date_by roto`
             : null;
       await sb.from("sync_logs").insert({
         source: "dropi-cron",
