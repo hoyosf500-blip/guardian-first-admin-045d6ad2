@@ -67,6 +67,7 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   // dueño 2026-06-24). Se muestra aparte en el embudo.
   'RECHAZADO': 'rechazado',
   // en tránsito
+  'EN TRANSITO': 'en_transito', // EC lo manda con tilde ("EN TRÁNSITO") — lo cubre el lookup sin acentos
   'EN TRANSPORTE': 'en_transito',
   'EN DESPACHO': 'en_transito',
   'EN TRASLADO NACIONAL': 'en_transito',
@@ -112,6 +113,7 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'EN ALISTAMIENTO': 'preparacion',
   'EN BODEGA DROPI': 'preparacion',
   'RECOGIDO POR DROPI': 'preparacion',
+  'POR RECOLECTAR': 'preparacion', // EC: guía generada, la transportadora aún no recogió el paquete
   // cancelado
   'CANCELADO': 'cancelado',
 };
@@ -127,6 +129,7 @@ const ESTADO_FALLBACK_PATTERNS: Array<[string, BucketKey]> = [
   ['BODEGA ORIGEN', 'en_transito'],
   ['RUTA A CONCESION', 'en_transito'],
   ['INGRESANDO OPERATIVO', 'en_transito'],
+  ['INGRESANDO A', 'en_transito'], // EC: "INGRESANDO A <bodega/ciudad>" — en bodega de transportadora
   ['DISTRIBUCION A CLIENTE', 'en_transito'],
   ['DISTRIBUCION PARA ENTREGA', 'en_transito'],
   ['ZONA DE ENTREGA', 'en_transito'],
@@ -144,7 +147,11 @@ function resolveBucket(estado: string): BucketKey | undefined {
   const norm = normalizeEstado(estado);
   const exact = ESTADO_TO_BUCKET[norm];
   if (exact) return exact;
+  // Segundo intento sin acentos: "EN TRÁNSITO" (EC) debe matchear la key
+  // 'EN TRANSITO' sin duplicar cada entrada del mapa con su variante con tilde.
   const bare = stripAccents(norm);
+  const exactBare = ESTADO_TO_BUCKET[bare];
+  if (exactBare) return exactBare;
   const hit = ESTADO_FALLBACK_PATTERNS.find(([pat]) => bare.includes(pat));
   return hit?.[1];
 }

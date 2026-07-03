@@ -86,3 +86,26 @@ describe('deriveCarrierRecommendations', () => {
     expect(recs.map(r => r.ciudad)).toEqual(['Grande', 'Chica']);
   });
 });
+
+describe('mínimo de resueltos para rankear (auditoría 2026-07-02)', () => {
+  it('un carrier con 1 solo resuelto (100%) NO le gana al establecido con muestra real', () => {
+    // Carrier NUEVO: 5 pedidos, 1 entregado, 0 devueltos → 100% sobre n=1 (ruido).
+    // Carrier ESTABLECIDO: 50 pedidos, 30 entregados, 10 devueltos → 75% sobre n=40.
+    const rows = [
+      row({ ciudad: 'Quito', transportadora: 'NUEVO', total_pedidos: 5, entregados: 1, devueltos: 0, ciudad_total: 55 }),
+      row({ ciudad: 'Quito', transportadora: 'ESTABLECIDO', total_pedidos: 50, entregados: 30, devueltos: 10, ciudad_total: 55 }),
+    ];
+    const recs = deriveCarrierRecommendations(rows, 20);
+    expect(recs).toHaveLength(1);
+    expect(recs[0].mejor_transportadora).toBe('ESTABLECIDO');
+    expect(recs[0].mejor_resueltos).toBe(40);
+  });
+
+  it('si NINGÚN carrier llega al mínimo de resueltos, la ciudad no genera recomendación', () => {
+    const rows = [
+      row({ ciudad: 'Loja', transportadora: 'A', total_pedidos: 15, entregados: 2, devueltos: 1, ciudad_total: 30 }),
+      row({ ciudad: 'Loja', transportadora: 'B', total_pedidos: 15, entregados: 1, devueltos: 0, ciudad_total: 30 }),
+    ];
+    expect(deriveCarrierRecommendations(rows, 20)).toHaveLength(0);
+  });
+});

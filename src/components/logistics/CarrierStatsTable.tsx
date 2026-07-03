@@ -231,7 +231,11 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
               </div>
 
               <div className="col-span-3">
-                <DeliveryBullet rate={row.tasa_entrega} />
+                {(row.entregados + row.devueltos) === 0 ? (
+                  <span className="text-xs text-muted-foreground" title="Sin pedidos concluidos aún">— sin concluidos</span>
+                ) : (
+                  <DeliveryBullet rate={row.tasa_entrega} />
+                )}
               </div>
             </div>
           ))}
@@ -284,8 +288,19 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
                   <td className="text-right font-mono tabular-nums">{r.total_pedidos.toLocaleString('es-CO')}</td>
                   <td className="text-right font-mono tabular-nums text-[hsl(var(--success))] font-semibold">{r.entregados.toLocaleString('es-CO')}</td>
                   <td className="text-right font-mono tabular-nums text-[hsl(var(--danger))] font-semibold">{r.devueltos.toLocaleString('es-CO')}</td>
-                  <td className="text-right"><DataBar value={r.tasa_entrega} tone="success" /></td>
-                  <td className="text-right"><DataBar value={r.tasa_devolucion} tone="danger" /></td>
+                  {/* Sin desenlaces (0 entregados+devueltos) la tasa NO es 0% — no hay dato.
+                      Mostrar 0.0% en rojo hacía ver "pésima" a una transportadora recién usada. */}
+                  {(r.entregados + r.devueltos) === 0 ? (
+                    <>
+                      <td className="text-right text-xs text-muted-foreground" title="Sin pedidos concluidos aún">—</td>
+                      <td className="text-right text-xs text-muted-foreground" title="Sin pedidos concluidos aún">—</td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="text-right"><DataBar value={r.tasa_entrega} tone="success" /></td>
+                      <td className="text-right"><DataBar value={r.tasa_devolucion} tone="danger" /></td>
+                    </>
+                  )}
                   <td className="text-right font-mono tabular-nums text-muted-foreground">{r.avg_dias_entrega != null ? `${r.avg_dias_entrega}d` : '—'}</td>
                   <td className="text-right font-mono tabular-nums text-xs text-foreground">{formatCOP(r.valor_entregado)}</td>
                 </tr>

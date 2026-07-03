@@ -130,3 +130,31 @@ describe('bucketizeEstados', () => {
     expect(r.otros).toHaveLength(0);
   });
 });
+
+describe('estados EC (auditoría 2026-07-02)', () => {
+  it('EN TRÁNSITO con tilde (como lo manda Dropi EC) va a en_transito', () => {
+    const r = bucketizeEstados([{ estado: 'EN TRÁNSITO', pedidos: 3, valor: 100, unidades: 3 }]);
+    expect(r.buckets.en_transito.pedidos).toBe(3);
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('EN TRANSITO sin tilde también', () => {
+    const r = bucketizeEstados([{ estado: 'EN TRANSITO', pedidos: 2, valor: 50, unidades: 2 }]);
+    expect(r.buckets.en_transito.pedidos).toBe(2);
+  });
+
+  it('POR RECOLECTAR (guía generada, sin recoger) va a preparacion', () => {
+    const r = bucketizeEstados([{ estado: 'POR RECOLECTAR', pedidos: 5, valor: 150, unidades: 5 }]);
+    expect(r.buckets.preparacion.pedidos).toBe(5);
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('INGRESANDO A <bodega> va a en_transito por fallback', () => {
+    const r = bucketizeEstados([
+      { estado: 'INGRESANDO A BODEGA QUITO', pedidos: 2, valor: 60, unidades: 2 },
+      { estado: 'INGRESANDO A', pedidos: 1, valor: 30, unidades: 1 },
+    ]);
+    expect(r.buckets.en_transito.pedidos).toBe(3);
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+});

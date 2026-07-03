@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { setTrackingCountry } from '@/lib/orderUtils';
+import { setCurrencyCountry } from '@/lib/utils';
 
 export type StoreRole = 'owner' | 'supervisor' | 'operator';
 
@@ -175,7 +176,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const activeStore = stores.find(s => s.id === activeStoreId) ?? null;
   // Sincroniza el país del rastreo de transportadoras (getTrackingUrl) con la
   // tienda activa: EC usa GINTRACOM/LAAR/Servientrega-EC, CO sus propias URLs.
-  useEffect(() => { setTrackingCountry(activeStore?.country_code); }, [activeStore?.country_code]);
+  useEffect(() => {
+    setTrackingCountry(activeStore?.country_code);
+    // Misma sincronización para la MONEDA: EC muestra USD con centavos en
+    // formatCOP (los montos EC como COP sin decimales perdían los centavos).
+    setCurrencyCountry(activeStore?.country_code);
+  }, [activeStore?.country_code]);
   const isOwnerOfActive = activeStore?.role === 'owner';
   const isManagerOfActive = activeStore?.role === 'owner' || activeStore?.role === 'supervisor';
   // needsSetup solo es relevante para owners; operadoras no manejan credenciales.

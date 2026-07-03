@@ -289,10 +289,12 @@ describe('FinanzasTab', () => {
     ).toBeInTheDocument();
   });
 
-  it('NO muestra "Comisión Referidos" en la UI (sale por confirmación del cliente)', () => {
+  it('la composición de gastos SÍ lista "Comisión referidos" cuando es > 0 (auditoría 2026-07-02: el total Salidas la incluye, sin el ítem la composición no sumaba)', () => {
     hookMock.mockReturnValue({ data: SAMPLE, isLoading: false, isError: false });
     render(<FinanzasTab filters={FILTERS} />);
-    expect(screen.queryByText(/Comisión referidos/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Comisión referidos/i)).toBeInTheDocument();
+    // La CARD vieja "Comisión Referidos" (hint "Descontado de utilidad") sigue
+    // eliminada — esto es solo el ítem de la composición para que Σ = Salidas.
     expect(screen.queryByText(/Descontado de utilidad/i)).not.toBeInTheDocument();
   });
 

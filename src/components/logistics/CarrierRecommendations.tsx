@@ -64,7 +64,7 @@ export default memo(function CarrierRecommendations({
     <div className="space-y-3">
       {/* Stats banner — resumen accionable arriba de la tabla */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Δ ≥ 20 puntos vs actual" />
+        <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Δ ≥ 20 puntos mejor vs peor" />
         <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="Δ entre 10 y 20 puntos" />
         <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
       </div>
@@ -192,16 +192,16 @@ function RecommendationRow({ row, filters }: RowProps) {
         <div className="font-semibold text-foreground text-xs truncate max-w-[140px]" title={row.mejor_transportadora}>
           {row.mejor_transportadora}
         </div>
-        <div className="font-mono tabular-nums text-success text-[11px]">
-          {row.mejor_tasa_entrega.toFixed(1)}% · {row.mejor_pedidos}p
+        <div className="font-mono tabular-nums text-success text-[11px]" title={`${row.mejor_resueltos} pedidos concluidos de ${row.mejor_pedidos} totales`}>
+          {row.mejor_tasa_entrega.toFixed(1)}% · {row.mejor_resueltos}r/{row.mejor_pedidos}p
         </div>
       </td>
       <td className="px-3 py-2.5">
         <div className="font-semibold text-foreground text-xs truncate max-w-[140px]" title={row.peor_transportadora}>
           {row.peor_transportadora}
         </div>
-        <div className="font-mono tabular-nums text-danger text-[11px]">
-          {row.peor_tasa_entrega.toFixed(1)}% · {row.peor_pedidos}p
+        <div className="font-mono tabular-nums text-danger text-[11px]" title={`${row.peor_resueltos} pedidos concluidos de ${row.peor_pedidos} totales`}>
+          {row.peor_tasa_entrega.toFixed(1)}% · {row.peor_resueltos}r/{row.peor_pedidos}p
         </div>
       </td>
       <td className="px-3 py-2.5 text-center">
@@ -255,8 +255,8 @@ function buildWhatsAppMessage(row: CarrierRecommendation, filters: LogisticsFilt
   return [
     `📦 Recomendación de transportadora — ${row.ciudad}${row.departamento ? `, ${row.departamento}` : ''}`,
     ``,
-    `🟢 Mejor: ${row.mejor_transportadora} (${row.mejor_tasa_entrega.toFixed(1)}% entrega · ${row.mejor_pedidos} pedidos)`,
-    `🔴 Peor: ${row.peor_transportadora} (${row.peor_tasa_entrega.toFixed(1)}% entrega · ${row.peor_pedidos} pedidos)`,
+    `🟢 Mejor: ${row.mejor_transportadora} (${row.mejor_tasa_entrega.toFixed(1)}% entrega sobre ${row.mejor_resueltos} concluidos · ${row.mejor_pedidos} pedidos totales)`,
+    `🔴 Peor: ${row.peor_transportadora} (${row.peor_tasa_entrega.toFixed(1)}% entrega sobre ${row.peor_resueltos} concluidos · ${row.peor_pedidos} pedidos totales)`,
     `Δ: ${row.delta_puntos.toFixed(1)} puntos de diferencia`,
     ``,
     `✅ Acción: ${action}`,

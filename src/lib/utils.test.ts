@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { bogotaToday, formatCOP, cn } from './utils';
+import { describe, it, expect, afterEach } from 'vitest';
+import { bogotaToday, formatCOP, setCurrencyCountry, cn } from './utils';
 
 describe('formatCOP', () => {
   it('formatea entero como peso colombiano', () => {
@@ -65,5 +65,28 @@ describe('cn (clsx + tailwind-merge)', () => {
 
   it('ignora valores falsy', () => {
     expect(cn('px-4', false, null, undefined, 'py-2')).toBe('px-4 py-2');
+  });
+});
+
+describe('formatCOP multi-país (EC = USD con centavos)', () => {
+  afterEach(() => setCurrencyCountry('CO'));
+
+  it('con tienda EC activa formatea USD con 2 decimales', () => {
+    setCurrencyCountry('EC');
+    const s = formatCOP(4734.53);
+    expect(s).toContain('4');
+    expect(s).toMatch(/53/); // conserva los centavos que COP entero borraba
+  });
+
+  it('EC: null/NaN devuelven $0,00', () => {
+    setCurrencyCountry('EC');
+    expect(formatCOP(null)).toBe('$0,00');
+    expect(formatCOP(NaN)).toBe('$0,00');
+  });
+
+  it('al volver a CO se restaura el formato COP entero', () => {
+    setCurrencyCountry('EC');
+    setCurrencyCountry('CO');
+    expect(formatCOP(null)).toBe('$0');
   });
 });
