@@ -17,7 +17,7 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useWalletMovements, useWalletDailySeries } from '@/hooks/useWalletMovements';
+import { useWalletMovements, useWalletDailySeries, useWalletSaldoHoy } from '@/hooks/useWalletMovements';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import type { LogisticsFilters } from '@/lib/logistics.types';
@@ -96,6 +96,9 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
 
   const movQ = useWalletMovements({ fromDate, toDate, tipo, categoria, page, pageSize: PAGE_SIZE });
   const seriesQ = useWalletDailySeries(fromDate, toDate);
+  // Saldo real de HOY (último movimiento, sin filtro de rango) — el ultimoSaldo
+  // de movQ hereda el rango de la vista y mostraba el saldo al cierre del período.
+  const saldoHoyQ = useWalletSaldoHoy();
 
   const totalPages = Math.max(1, Math.ceil((movQ.data?.total ?? 0) / PAGE_SIZE));
   const neto = (movQ.data?.totalEntradas ?? 0) - (movQ.data?.totalSalidas ?? 0);
@@ -115,7 +118,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
             <p className="text-xs text-muted-foreground">
               Saldo actual:{' '}
               <span className="font-semibold tabular-nums text-foreground">
-                {movQ.isLoading ? '…' : COP(movQ.data?.ultimoSaldo)}
+                {saldoHoyQ.isLoading ? '…' : COP(saldoHoyQ.data)}
               </span>
             </p>
             <WalletSyncBadge size="md" showLabel />

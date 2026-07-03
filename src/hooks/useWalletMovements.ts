@@ -100,6 +100,33 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
   });
 }
 
+/** Saldo REAL del wallet HOY = saldo_despues del último movimiento registrado,
+ *  SIN filtro de rango. Existe porque `ultimoSaldo` de useWalletMovements hereda
+ *  el rango de fechas de la vista: mirando mayo devolvía el saldo al 31/mayo bajo
+ *  el label "Saldo disponible hoy" (bug detectado 2026-07-02: $7.568 vs $4.734
+ *  reales). Va por el RPC wallet_summary (SECURITY DEFINER, store-scoped) y no
+ *  por select directo porque la RLS de dropi_wallet_movements es admin-only —
+ *  con select directo los socios verían saldo vacío. */
+export function useWalletSaldoHoy() {
+  const storeId = useActiveStoreId();
+  return useQuery<number | null>({
+    queryKey: ['wallet_saldo_hoy', storeId],
+    queryFn: async () => {
+      const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const { data, error } = await supabase.rpc('wallet_summary', {
+        p_from: '2020-01-01T00:00:00Z',
+        p_to: `${manana}T23:59:59Z`,
+      });
+      if (error) throw error;
+      const agg = (data?.[0] ?? {}) as { ultimo_saldo?: number | null };
+      return agg.ultimo_saldo ?? null;
+    },
+    enabled: Boolean(storeId),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
 /** Series por día para la gráfica de barras apiladas — agregada server-side. */
 export function useWalletDailySeries(fromDate: string, toDate: string) {
   return useQuery({
