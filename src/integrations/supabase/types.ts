@@ -608,11 +608,8 @@ export type Database = {
       nightly_reconcile_results: {
         Row: {
           applied_count: number
-          cancelled_external_ids: Json | null
           created_at: string
-          deleted_check_complete: boolean | null
           divergent_count: number
-          dropi_created_count: number | null
           error_message: string | null
           id: string
           orphan_cancelled: number
@@ -620,11 +617,8 @@ export type Database = {
         }
         Insert: {
           applied_count?: number
-          cancelled_external_ids?: Json | null
           created_at?: string
-          deleted_check_complete?: boolean | null
           divergent_count?: number
-          dropi_created_count?: number | null
           error_message?: string | null
           id?: string
           orphan_cancelled?: number
@@ -632,11 +626,8 @@ export type Database = {
         }
         Update: {
           applied_count?: number
-          cancelled_external_ids?: Json | null
           created_at?: string
-          deleted_check_complete?: boolean | null
           divergent_count?: number
-          dropi_created_count?: number | null
           error_message?: string | null
           id?: string
           orphan_cancelled?: number
