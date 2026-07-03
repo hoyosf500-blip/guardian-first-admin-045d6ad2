@@ -143,7 +143,13 @@ export default memo(function CityReturnsTable({ rows }: Props) {
                   <td className="text-muted-foreground text-xs">{r.departamento || '—'}</td>
                   <td className="text-right font-mono tabular-nums">{r.total_pedidos.toLocaleString('es-CO')}</td>
                   <td className="text-right font-mono tabular-nums text-[hsl(var(--danger))] font-semibold">{r.devueltos.toLocaleString('es-CO')}</td>
-                  <td className="text-right"><ReturnRateBar value={r.tasa_devolucion} /></td>
+                  {/* Sin desenlaces no hay tasa: "0.0%" hacía ver perfecta a una
+                      ciudad donde simplemente no concluyó ningún pedido todavía. */}
+                  <td className="text-right">
+                    {(r.entregados + r.devueltos) === 0
+                      ? <span className="text-xs text-muted-foreground" title="Sin pedidos concluidos aún">—</span>
+                      : <ReturnRateBar value={r.tasa_devolucion} />}
+                  </td>
                   <td className="text-right font-mono tabular-nums text-xs text-[hsl(var(--danger))]">{formatCOP(r.valor_perdido)}</td>
                 </tr>
               ))}

@@ -113,9 +113,12 @@ export interface CarrierRecommendation {
   mejor_transportadora: string;
   mejor_tasa_entrega: number;
   mejor_pedidos: number;
+  /** Pedidos RESUELTOS (entregados+devueltos) del mejor — el n real detrás de la tasa. */
+  mejor_resueltos: number;
   peor_transportadora: string;
   peor_tasa_entrega: number;
   peor_pedidos: number;
+  peor_resueltos: number;
   delta_puntos: number;
   carrier_actual_top: string;
   recomendacion: string;       // "Mantener X" | "Cambiar a X"

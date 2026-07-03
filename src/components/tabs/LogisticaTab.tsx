@@ -86,7 +86,7 @@ function carrierColorAt(index: number): string {
 
 // ── Helpers ─────────────────────────────────────────────────────
 function fmtDate(s: string): string {
-  const d = new Date(s);
+  const d = parseLocalDate(s); // no new Date('YYYY-MM-DD'): eso es UTC y corre el label -1 día en Bogotá
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 function pct(n: number, total: number): string {
@@ -161,9 +161,17 @@ function defaultRange(): LogisticsFilters {
   };
 }
 
+// new Date('YYYY-MM-DD') interpreta el string como MEDIANOCHE UTC; al renderizar
+// en Bogotá (UTC-5) el label retrocedía un día ("01/06→30/06" se pintaba
+// "31 may → 29 jun"). Parsear siempre con componentes locales.
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
 function formatRange(filters: LogisticsFilters): string {
-  const f = new Date(filters.fromDate);
-  const t = new Date(filters.toDate);
+  const f = parseLocalDate(filters.fromDate);
+  const t = parseLocalDate(filters.toDate);
   const fmt = (d: Date) => d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
   return `${fmt(f)} → ${fmt(t)}`;
 }
@@ -174,8 +182,8 @@ function formatRange(filters: LogisticsFilters): string {
  * Útil como default razonable cuando el admin activa el modo comparación.
  */
 function prevPeriod(filters: LogisticsFilters): LogisticsFilters {
-  const from = new Date(filters.fromDate);
-  const to = new Date(filters.toDate);
+  const from = parseLocalDate(filters.fromDate);
+  const to = parseLocalDate(filters.toDate);
   const days = Math.round((to.getTime() - from.getTime()) / (24 * 3600 * 1000));
   const newTo = new Date(from);
   newTo.setDate(newTo.getDate() - 1);

@@ -27,6 +27,10 @@ interface CarrierAgg {
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
+/** Mínimo de pedidos RESUELTOS (entregados+devueltos) para que una transportadora
+ *  compita en el ranking. Debajo de esto la tasa es ruido (1 entrega = "100%"). */
+export const MIN_RESUELTOS_RANK = 5;
+
 export function deriveCarrierRecommendations(
   rows: CityCarrierMatrix[],
   minOrders = 20,
@@ -60,9 +64,12 @@ export function deriveCarrierRecommendations(
     // current_top = transportadora con más volumen (incluye las sin resueltos).
     const currentTop = [...city.carriers].sort((a, b) => b.pedidos - a.pedidos)[0];
 
-    // Ranking de calidad SOLO sobre transportadoras con desenlace (resueltos>0);
-    // una con todo en tránsito no tiene tasa probada → no compite.
-    const rankeable = city.carriers.filter(c => c.tasaMadura != null);
+    // Ranking de calidad SOLO sobre transportadoras con muestra real de desenlaces.
+    // Con resueltos>0 bastaba 1 solo pedido concluido para "ganar" con 100% y
+    // disparar "Cambiar urgente" sobre ruido estadístico (bug auditoría 2026-07-02).
+    const rankeable = city.carriers.filter(
+      c => c.tasaMadura != null && c.resueltos >= MIN_RESUELTOS_RANK,
+    );
     if (rankeable.length === 0) continue;
 
     const best = [...rankeable].sort(
@@ -83,9 +90,11 @@ export function deriveCarrierRecommendations(
       mejor_transportadora: best.transportadora,
       mejor_tasa_entrega: mejorTasa,
       mejor_pedidos: best.pedidos,
+      mejor_resueltos: best.resueltos,
       peor_transportadora: worst.transportadora,
       peor_tasa_entrega: peorTasa,
       peor_pedidos: worst.pedidos,
+      peor_resueltos: worst.resueltos,
       delta_puntos: round1(mejorTasa - peorTasa),
       carrier_actual_top: currentTop.transportadora,
       recomendacion: esMantener

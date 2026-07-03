@@ -31,7 +31,10 @@ const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo
 // 9 fantasmas, 4 de ellos "pendientes" que ensuciaban el embudo y la cola de
 // Confirmar). Ahora se verifica su EXISTENCIA real una por una con el GET de
 // detalle de integraciones y solo se cancela ante el "no existe" EXPLÍCITO.
-const EXISTENCE_CHECK_MAX = 20;          // cap por tienda por corrida (rate-limit friendly)
+// 2026-07-03: 20→40. Junio EC dejó 42 fantasmas de una (LucidBot duplica → los
+// borran en Dropi a mano); con cap 20 tardaban 3 noches en limpiarse. A las 3am
+// UTC la cuenta EC está tranquila y el check tiene backoff — 40 es seguro.
+const EXISTENCE_CHECK_MAX = 40;          // cap por tienda por corrida (rate-limit friendly)
 const EXISTENCE_CHECK_MIN_AGE_MS = 48 * 3600 * 1000; // no tocar pedidos de <48h (lag de sync)
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }

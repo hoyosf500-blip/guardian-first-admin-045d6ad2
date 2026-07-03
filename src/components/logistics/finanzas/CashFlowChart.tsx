@@ -27,7 +27,9 @@ const TOOLTIP_STYLE = {
 
 function fmtDay(s: string): string {
   const d = new Date(s + 'T00:00:00Z');
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+  // timeZone UTC obligatorio: el string se parsea como UTC; sin esto el render
+  // en Bogotá (UTC-5) rotula el bucket del 1 de junio como "31 may.".
+  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
 
 function fmtCompact(v: number): string {

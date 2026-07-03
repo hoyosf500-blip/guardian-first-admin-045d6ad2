@@ -17,6 +17,7 @@ import {
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { formatCOP } from '@/lib/utils';
 import { useWalletMovements, useWalletDailySeries, useWalletSaldoHoy } from '@/hooks/useWalletMovements';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
@@ -28,8 +29,9 @@ import {
 
 const PAGE_SIZE = 20;
 
-const COP = (n: number | null | undefined) =>
-  n == null ? '—' : new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n);
+// Delegado a formatCOP para que la tienda EC formatee USD con centavos
+// (el formateador local fijo en COP borraba los decimales de los montos EC).
+const COP = (n: number | null | undefined) => (n == null ? '—' : formatCOP(n));
 
 function fmtFecha(s: string): string {
   const d = new Date(s);

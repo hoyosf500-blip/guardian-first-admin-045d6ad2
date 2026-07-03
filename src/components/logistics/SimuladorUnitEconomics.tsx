@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Calculator, Truck, PackageCheck, Undo2, TrendingDown, Receipt, RefreshCw,
 } from 'lucide-react';
-import { formatCOP } from '@/lib/utils';
+import { formatCOP, getCurrencyCountry } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import KpiCard from '@/components/logistics/finanzas/KpiCard';
 import {
@@ -44,11 +44,21 @@ function pct1(x: number): string {
   return `${(x * 100).toFixed(1)}%`;
 }
 
-// COP enteros: descartamos todo lo que no sea dígito (acepta "1.000.000").
+// Montos: en CO son COP enteros (descartamos todo lo no-dígito, acepta
+// "1.000.000" donde el punto es separador de miles). En EC son USD con
+// decimales: "6.49" debe ser 6.49, NO 649 — el punto/coma es decimal.
 function parseCop(v: string): number {
+  if (getCurrencyCountry() === 'EC') {
+    const n = Number(v.replace(/[^\d.,-]/g, '').replace(',', '.'));
+    return isFinite(n) ? n : 0;
+  }
   const n = Number(v.replace(/[^\d]/g, ''));
   return isFinite(n) ? n : 0;
 }
+
+// Redondeo a centavos (no a enteros): en EC un ticket de $32.48 o un flete de
+// $6.49 redondeados a entero distorsionan toda la simulación.
+const round2 = (n: number) => Math.round(n * 100) / 100;
 // % editable: acepta coma o punto decimal, devuelve 0-1.
 function parsePct(v: string): number {
   const n = Number(v.replace(/[^\d.,]/g, '').replace(',', '.'));
@@ -86,7 +96,7 @@ export default function SimuladorUnitEconomics({
   // Seeds reales para el simulador (0-1 para %, COP para montos).
   const seed = useMemo<SimulationInput>(() => ({
     pedidos: Math.round(generadosSinCancel),
-    ticket: Math.round(kpis.ticketPromedio),
+    ticket: round2(kpis.ticketPromedio),
     tasaDespachos: kpis.tasaDespachos,
     // El simulador proyecta devoluciones SOBRE lo despachado, así que usa la tasa de
     // NO-entrega total (devoluciones + rechazos) / despachado — no la madura del tile.
@@ -95,7 +105,7 @@ export default function SimuladorUnitEconomics({
     fletePct: ingresosBase > 0 ? flete / ingresosBase : 0,
     publicidadPct: ingresosBase > 0 ? pautaTotal / ingresosBase : 0,
     adminPct: ingresosBase > 0 ? adminTotal / ingresosBase : 0,
-    costoDevolucionUnit: Math.round(fleteUnit),
+    costoDevolucionUnit: round2(fleteUnit),
   }), [generadosSinCancel, kpis, ingresosBase, cogs, flete, pautaTotal, adminTotal, fleteUnit]);
 
   const [sim, setSim] = useState<SimulationInput>(seed);

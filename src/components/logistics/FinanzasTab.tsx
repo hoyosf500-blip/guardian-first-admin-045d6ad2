@@ -117,14 +117,16 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
     { label: 'Indemnizaciones',    value: desglose?.indemnizacion ?? 0,        color: 'hsl(var(--accent))' },
   ];
 
-  // Nota: 'Comisión referidos' fue removida de la UI por decisión del cliente
-  // (no es relevante para el operador). 'Cargo extra Dropi' representa el
-  // costo_devolucion del wallet (~$22k típico cuando NO entrega) — se nombra
-  // así para evitar confusión con la KPI "Pérdida por devoluciones" que
-  // suma flete_devs + cargo_extra.
+  // 'Cargo extra Dropi' representa el costo_devolucion del wallet (~$22k típico
+  // cuando NO entrega) — se nombra así para evitar confusión con la KPI "Pérdida
+  // por devoluciones" que suma flete_devs + cargo_extra.
+  // 'Comisión referidos' vuelve a la lista (auditoría 2026-07-02): el total
+  // "Salidas" SÍ la incluye, y sin el ítem la composición no sumaba el total.
+  // ComposicionList filtra los <= 0, así que en tiendas sin referidos no aparece.
   const gastosItems: ComposicionItem[] = [
     { label: 'Flete inicial',          value: desglose?.flete_inicial ?? 0,         color: 'hsl(var(--warning))' },
     { label: 'Cargo extra Dropi',      value: desglose?.costo_devolucion ?? 0,      color: 'hsl(var(--danger))', sublabel: 'Por entregas fallidas' },
+    { label: 'Comisión referidos',     value: desglose?.comision_referidos ?? 0,    color: 'hsl(var(--muted-foreground))' },
     { label: 'Mantenimiento tarjeta',  value: desglose?.mantenimiento_tarjeta ?? 0, color: 'hsl(var(--muted-foreground))' },
     { label: 'Orden sin recaudo',      value: desglose?.orden_sin_recaudo ?? 0,     color: 'hsl(var(--danger))' },
   ];
