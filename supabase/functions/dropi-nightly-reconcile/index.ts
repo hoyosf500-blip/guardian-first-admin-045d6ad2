@@ -4,11 +4,13 @@
 //
 // Algoritmo por tienda:
 //   1. Pull no-terminales de Guardian (últimos 30d)
-//   2. Pull rango 30d de Dropi vía integrations
+//   2. Pull rango 30d de Dropi vía integrations (por fecha de cambio de estatus)
 //   3. Cross-reference: diff de estado/guia/transportadora
 //   4. UPDATE divergencias (idempotente vía upsert_orders_from_dropi)
-//   5. Marcar huérfanos pre-backfill (external_id numérico < 5000000) como CANCELADO
-//   6. INSERT log en nightly_reconcile_results
+//   5. Marcar huérfanos pre-backfill (external_id < 5M) como CANCELADO
+//   6. Detectar BORRADOS en Dropi (id >= 5M): 2do pull por FECHA DE CREADO; si
+//      vino COMPLETO, todo huérfano ausente de él (y >=48h) → CANCELADO
+//   7. INSERT log en nightly_reconcile_results
 //
 // Auth: x-cron-secret o service-role.
 
@@ -25,56 +27,22 @@ const TERMINAL_STATES = new Set([
   "DEVOLUCIÓN", "ENTREGADA", "CANCELADA",
 ]);
 const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo
-// FIX 2026-07-02 (fantasmas de pedidos BORRADOS en Dropi): los huérfanos con id
-// >= 5M antes se ignoraban ("podrían ser muy recientes"), pero Dropi permite
-// ELIMINAR pedidos y esos quedan para siempre no-terminales en Guardian (mayo EC:
-// 9 fantasmas, 4 de ellos "pendientes" que ensuciaban el embudo y la cola de
-// Confirmar). Ahora se verifica su EXISTENCIA real una por una con el GET de
-// detalle de integraciones y solo se cancela ante el "no existe" EXPLÍCITO.
-// 2026-07-03: 20→40. Junio EC dejó 42 fantasmas de una (LucidBot duplica → los
-// borran en Dropi a mano); con cap 20 tardaban 3 noches en limpiarse. A las 3am
-// UTC la cuenta EC está tranquila y el check tiene backoff — 40 es seguro.
-const EXISTENCE_CHECK_MAX = 40;          // cap por tienda por corrida (rate-limit friendly)
+// FIX 2026-07-03 (fantasmas de pedidos BORRADOS en Dropi): Dropi permite ELIMINAR
+// pedidos y esos quedan para siempre no-terminales en Guardian (LucidBot duplica,
+// el dueño los borra a mano en Dropi → mayo=9, junio=42, julio ~27). El chequeo
+// anterior (GET de detalle uno-por-uno) lo tumbaba el rate-limit de Dropi EC →
+// cancelaba 0 SIEMPRE (verificado: nightly_reconcile_results.orphan_cancelled=0).
+// Ahora la baja se detecta por un BARRIDO COMPLETO por FECHA DE CREADO: si el pull
+// vino completo, todo huérfano id>=5M / >=48h ausente de él fue eliminado (ver
+// reconcileStore). Auto-reversible: si se equivoca, el cron de 5min lo restaura.
 const EXISTENCE_CHECK_MIN_AGE_MS = 48 * 3600 * 1000; // no tocar pedidos de <48h (lag de sync)
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
-/** Consulta el detalle de UN pedido por integraciones para saber si sigue
- *  existiendo en Dropi. Devuelve:
- *  - 'exists'  → Dropi devolvió el pedido (el miss del rango fue por filtro/fecha)
- *  - 'deleted' → Dropi dijo explícitamente que no existe (fue eliminado)
- *  - 'unknown' → error de red/401/429/respuesta rara → NO tocar (fail-safe) */
-async function checkOrderExistence(
-  base: string,
-  apiKey: string,
-  origin: string,
-  externalId: string,
-): Promise<"exists" | "deleted" | "unknown"> {
-  try {
-    const res = await fetch(
-      `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
-      {
-        headers: {
-          "Accept": "application/json",
-          "dropi-integration-key": apiKey,
-          ...(origin ? { Origin: origin } : {}),
-        },
-      },
-    );
-    const raw = await res.text();
-    let body: Record<string, unknown> = {};
-    try { body = raw ? JSON.parse(raw) : {}; } catch { return "unknown"; }
-    const obj = body.objects as Record<string, unknown> | undefined;
-    if (res.ok && body.isSuccess !== false && obj && obj.id != null) return "exists";
-    const msg = String(body.message || "");
-    // Mismo mensaje verificado en vivo (2026-07-02): "Esta guia no existe en nuestro sistema"
-    if (body.isSuccess === false && /no existe|not found/i.test(msg)) return "deleted";
-    return "unknown";
-  } catch {
-    return "unknown";
-  }
-}
-
+/** Baja un rango de Dropi paginado. Devuelve los pedidos Y un flag `complete`:
+ *  `true` SOLO si paginó hasta un page corto sin ningún error HTTP. Si Dropi
+ *  throttlea (429) a mitad, corta y `complete=false` → el llamador NO debe
+ *  concluir "borrado" a partir de un pull parcial. */
 async function fetchDropiRange(
   base: string,
   apiKey: string,
@@ -82,9 +50,10 @@ async function fetchDropiRange(
   from: string,
   to: string,
   statusFilter: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<{ orders: Record<string, unknown>[]; complete: boolean }> {
   const out: Record<string, unknown>[] = [];
   let start = 0;
+  let complete = false;
   const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
   while (true) {
     const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}${filterParam}&orderBy=id&orderDirection=desc`;
@@ -96,18 +65,17 @@ async function fetchDropiRange(
       },
     });
     if (!res.ok) {
-      console.warn(`reconcile: HTTP ${res.status} at start=${start}`);
-      break;
+      console.warn(`reconcile: HTTP ${res.status} at start=${start} (pull INCOMPLETO)`);
+      break; // complete queda false
     }
     const data = await res.json().catch(() => ({}));
     const objs = Array.isArray(data?.objects) ? data.objects : [];
-    if (objs.length === 0) break;
     out.push(...objs);
-    if (objs.length < PAGE_SIZE) break;
+    if (objs.length < PAGE_SIZE) { complete = true; break; } // último page → pull completo
     start += PAGE_SIZE;
     await sleep(RATE_LIMIT_MS);
   }
-  return out;
+  return { orders: out, complete };
 }
 
 interface GuardianRow {
@@ -160,9 +128,9 @@ async function reconcileStore(
     }
 
     const base = dropiHostFor(countryCode);
-    const dropiList = await fetchDropiRange(base, apiKey, storeUrl, from, to, statusFilter);
+    const statusPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, statusFilter);
     const dropiMap = new Map<string, Record<string, unknown>>();
-    for (const o of dropiList) {
+    for (const o of statusPull.orders) {
       dropiMap.set(String(o.id), o);
     }
 
@@ -178,9 +146,9 @@ async function reconcileStore(
       if (!d) {
         // Huérfano: existe en Guardian no-terminal pero no en el pull por rango
         // de Dropi. Pre-backfill (id < 5M) → cancelar directo (comportamiento
-        // original). Post-backfill (id >= 5M) → candidato a verificación de
-        // existencia uno-por-uno (puede haber sido ELIMINADO en Dropi, o solo
-        // no entrar al rango por el filter_date_by — el GET de detalle decide).
+        // original). Post-backfill (id >= 5M, >=48h) → candidato: puede haber sido
+        // ELIMINADO en Dropi, o solo no entrar al pull por status-filter. Lo decide
+        // el barrido COMPLETO por FECHA DE CREADO más abajo (ausente = eliminado).
         const extNum = Number(ext);
         if (Number.isFinite(extNum) && extNum < ORPHAN_THRESHOLD) {
           orphans.push(g);
@@ -230,24 +198,27 @@ async function reconcileStore(
       }
     }
 
-    // Verificación de existencia de huérfanos post-backfill (borrados en Dropi).
-    // Cap por corrida + rate-limit; solo cancela ante el "no existe" EXPLÍCITO —
-    // 'exists' y 'unknown' se dejan intactos (el próximo nightly reintenta).
+    // Detección de BORRADOS en Dropi por BARRIDO COMPLETO (reemplaza el GET
+    // uno-por-uno que el rate-limit de Dropi EC tumbaba → cancelaba 0). Segundo
+    // pull por FECHA DE CREADO (fecha estable: todo pedido creado en la ventana
+    // vuelve, no importa su estado). Si el pull vino COMPLETO, cualquier huérfano
+    // id>=5M / >=48h ausente de él fue ELIMINADO. Si vino incompleto (throttle) o
+    // vacío → NO se cancela nada esta corrida (fail-safe).
     let deletedCancelled = 0;
-    const toCheck = existenceCandidates.slice(0, EXISTENCE_CHECK_MAX);
-    for (const g of toCheck) {
-      const verdict = await checkOrderExistence(base, apiKey, storeUrl, String(g.external_id));
-      if (verdict === "deleted") {
-        const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).eq("id", g.id);
-        if (!error) {
-          deletedCancelled++;
-          console.log(`reconcile ${storeId}: ${g.external_id} ELIMINADO en Dropi (era ${g.estado}) → CANCELADO local`);
+    if (existenceCandidates.length > 0) {
+      const createdPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, "FECHA DE CREADO");
+      if (createdPull.complete && createdPull.orders.length > 0) {
+        const createdSet = new Set(createdPull.orders.map((o) => String(o.id)));
+        const deleted = existenceCandidates.filter((g) => !createdSet.has(String(g.external_id)));
+        for (let i = 0; i < deleted.length; i += 50) {
+          const batch = deleted.slice(i, i + 50).map((g) => g.id);
+          const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch);
+          if (!error) deletedCancelled += batch.length;
         }
+        console.log(`reconcile ${storeId}: barrido creación COMPLETO (${createdPull.orders.length} pedidos); ${deleted.length} huérfanos ELIMINADOS en Dropi → CANCELADO`);
+      } else {
+        console.warn(`reconcile ${storeId}: barrido por creación NO confiable (complete=${createdPull.complete}, n=${createdPull.orders.length}) → 0 cancelados esta corrida (fail-safe)`);
       }
-      await sleep(RATE_LIMIT_MS);
-    }
-    if (existenceCandidates.length > toCheck.length) {
-      console.log(`reconcile ${storeId}: ${existenceCandidates.length - toCheck.length} huérfanos post-backfill quedan para la próxima corrida (cap ${EXISTENCE_CHECK_MAX})`);
     }
 
     return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled };
