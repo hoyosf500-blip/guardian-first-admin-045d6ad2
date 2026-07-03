@@ -8,7 +8,7 @@ import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
 import { useEstadoBreakdown } from '@/hooks/useEstadoBreakdown';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
-import { useWalletMovements } from '@/hooks/useWalletMovements';
+import { useWalletSaldoHoy } from '@/hooks/useWalletMovements';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import OrdersSyncBadge from '@/components/logistics/OrdersSyncBadge';
 import { Button } from '@/components/ui/button';
@@ -81,9 +81,9 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const { data: ganancia, isLoading: gananciaLoading } = useGananciaNetaDropi(
     filters.fromDate, filters.toDate,
   );
-  const { data: wallet, isLoading: walletLoading } = useWalletMovements({
-    fromDate: filters.fromDate, toDate: filters.toDate, page: 1, pageSize: 1,
-  });
+  // Saldo real de HOY (último movimiento, sin filtro de mes) — la card decía
+  // "Saldo disponible hoy" pero mostraba el saldo al cierre del mes filtrado.
+  const { data: saldoHoy, isLoading: walletLoading } = useWalletSaldoHoy();
   // Mes mostrado ('YYYY-MM'); el rango siempre arranca el 1ro del mes → slice OK.
   // Se computa ACÁ (antes del early return) porque el hook de cohorte lo necesita.
   const yearMonth = filters.fromDate.slice(0, 7);
@@ -116,7 +116,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const gananciaNeta = ganancia?.ganancia_neta ?? 0;
   const totalEntradas = ganancia?.total_entradas ?? 0;
   const totalSalidas = ganancia?.total_salidas ?? 0;
-  const saldoActual = wallet?.ultimoSaldo ?? null;
+  const saldoActual = saldoHoy ?? null;
 
   // OPERATIVO_BASE: utilidad de los pedidos CREADOS este mes (cohorte) — reconcilia
   // con la "Utilidad Total" de Dropi (~$4.8M). Fallback al wallet (gananciaNeta, por
