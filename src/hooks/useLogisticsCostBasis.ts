@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveStoreId } from '@/contexts/StoreContext';
+import { isRpcMissing } from '@/lib/rpcError';
 
 // Base de costos REAL (COGS + flete + ingresos de los entregados) de la tienda
 // activa, para el simulador de unit-economics de "/logistica → Cómo voy".
@@ -40,8 +41,14 @@ export function useLogisticsCostBasis(from: string, to: string, ciudad?: string)
         p_to_date: to,
         p_ciudad: ciudadKey,
       });
-      // RPC no desplegado / sin permiso → null → el simulador degrada.
-      if (error) return null;
+      // RPC no desplegado → null → el simulador avisa "aplicá la migration" y
+      // degrada a inputs en cero (intencional). Un error transitorio se re-lanza
+      // → React Query reintenta, en vez de sembrar COGS/flete en 0 (proyección
+      // optimista falsa) y culpar a la migration. Ver [[rpcError]].
+      if (error) {
+        if (isRpcMissing(error)) return null;
+        throw error;
+      }
       // El RPC devuelve TABLE (1 fila) → el cliente lo entrega como array.
       const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
       if (!row) return null;

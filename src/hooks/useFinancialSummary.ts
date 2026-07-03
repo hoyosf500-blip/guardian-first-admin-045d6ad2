@@ -89,6 +89,12 @@ export function useFinancialSummary(from: string, to: string) {
         p_to_date: to,
       });
       if (error) throw error;
+      // El RPC hace `IF v_store IS NULL THEN RETURN` → jsonb NULL (sin error)
+      // cuando no hay tienda activa resuelta (admin con active_store_id
+      // desincronizado). Sin este guard, parseFinancialSummary coerce null→{}→
+      // TODO en $0 y la pestaña Finanzas se ve en ceros indistinguible de "no
+      // hubo ventas". Lanzamos → FinanzasTab pinta su banner de error (isError).
+      if (data == null) throw new Error('Sin tienda activa: no se pudo calcular el resumen financiero. Recargá la página.');
       return parseFinancialSummary(data);
     },
     staleTime: 60_000,

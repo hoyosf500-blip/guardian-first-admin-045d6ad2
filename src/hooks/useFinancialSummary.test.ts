@@ -160,24 +160,18 @@ describe('useFinancialSummary', () => {
     expect(result.current.fetchStatus).toBe('idle');
   });
 
-  it('parsea payload nulo / vacío sin romper', async () => {
+  it('payload NULL (RPC sin scope de tienda) → isError, NO $0 silencioso', async () => {
+    // El RPC hace `IF v_store IS NULL THEN RETURN` → jsonb NULL sin error cuando
+    // no hay tienda activa resuelta (admin con active_store_id desincronizado).
+    // ANTES esto se coercionaba a TODO en $0 y la pestaña Finanzas se veía en
+    // ceros indistinguible de "no hubo ventas". Ahora se propaga como error para
+    // que FinanzasTab pinte su banner (auditoría de confianza 2026-07-03).
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
     const { result } = renderHook(
       () => useFinancialSummary('2026-04-01', '2026-04-30'),
       { wrapper },
     );
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.utilidad_bruta).toBe(0);
-    expect(result.current.data?.ingresos_brutos).toBe(0);
-    expect(result.current.data?.comision_referidos).toBe(0);
-    expect(result.current.data?.ganancia_markup).toBe(0);
-    expect(result.current.data?.valor_cancelado).toBe(0);
-    expect(result.current.data?.total_cancelados).toBe(0);
-    expect(result.current.data?.tasa_cancelacion_pct).toBe(0);
-    // RPC v6 fields default to 0 when payload is empty
-    expect(result.current.data?.perdida_total_devoluciones).toBe(0);
-    expect(result.current.data?.costo_promedio_devolucion).toBe(0);
-    expect(result.current.data?.mantenimiento_tarjeta).toBe(0);
-    expect(result.current.data?.indemnizaciones).toBe(0);
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
   });
 });
