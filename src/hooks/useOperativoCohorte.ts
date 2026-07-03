@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveStoreId } from '@/contexts/StoreContext';
+import { isRpcMissing } from '@/lib/rpcError';
 
 // Operativo del mes por COHORTE de pedido: utilidad operativa del wallet atribuida
 // por la fecha de CREACIÓN del pedido asociado (related_order_id → orders.external_id),
@@ -38,8 +39,14 @@ export function useOperativoCohorte(yearMonth: string) {
         p_store_id: storeId,
         p_year_month: yearMonth,
       });
-      // RPC no desplegado / sin permiso → null → el call-site usa el fallback wallet.
-      if (error) return null;
+      // RPC no desplegado → null → el call-site usa el fallback wallet (degradación
+      // intencional). PERO un error transitorio (throttle, 500, permiso) se re-lanza
+      // → React Query reintenta → el operativo real vuelve, en vez de quedar pegado
+      // al fallback wallet inflado (~$7.2M vs ~$4.8M) sin señal. Ver [[rpcError]].
+      if (error) {
+        if (isRpcMissing(error)) return null;
+        throw error;
+      }
       // El RPC devuelve TABLE (1 fila) → el cliente lo entrega como array.
       const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined;
       if (!row) return null;

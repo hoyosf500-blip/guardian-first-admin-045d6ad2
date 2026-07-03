@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveStoreId } from '@/contexts/StoreContext';
+import { isRpcMissing } from '@/lib/rpcError';
 import { toast } from 'sonner';
 
 // Costos mensuales de logística (pauta Meta/TikTok + costos admin) que alimentan
@@ -55,7 +56,12 @@ export function useLogisticaMonthlyCosts(yearMonth: string) {
         .eq('store_id', storeId as string)
         .eq('year_month', yearMonth)
         .maybeSingle();
-      if (error || !data) return ZERO; // tabla no aplicada / sin fila / sin permiso → ceros
+      // Tabla no aplicada → ZERO (intencional). Sin fila → ZERO (el dueño aún no
+      // cargó costos, válido). PERO un error REAL (permiso/500 transitorio) se
+      // re-lanza → React Query reintenta, en vez de mostrar los costos guardados
+      // en 0 e inflar el Neto Real sin señal. Ver [[rpcError]].
+      if (error && !isRpcMissing(error)) throw error;
+      if (error || !data) return ZERO;
       return {
         pauta_meta: num(data.pauta_meta),
         pauta_tiktok: num(data.pauta_tiktok),
