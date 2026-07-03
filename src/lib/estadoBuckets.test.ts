@@ -158,3 +158,32 @@ describe('estados EC (auditoría 2026-07-02)', () => {
     expect(r.estadosSinMapear).toHaveLength(0);
   });
 });
+
+describe('estados EC nuevos de julio (auditoría 2026-07-03)', () => {
+  it('los 4 estados nuevos de julio van a en_transito, ninguno queda sin clasificar', () => {
+    const r = bucketizeEstados([
+      { estado: 'EN CAMINO', pedidos: 2, valor: 40, unidades: 2 },
+      { estado: 'INGRESANDO DE RECOLECCION A GUAYAQUIL', pedidos: 5, valor: 150, unidades: 5 },
+      { estado: 'EN RUTA A CENTRO LOGISTICO', pedidos: 1, valor: 30, unidades: 1 },
+      { estado: 'EN BODEGA', pedidos: 6, valor: 180, unidades: 6 },
+    ]);
+    expect(r.buckets.en_transito.pedidos).toBe(14); // 2 + 5 + 1 + 6
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('EN BODEGA DROPI (preparación) sigue en preparacion, no lo pisa el fallback de EN BODEGA', () => {
+    const r = bucketizeEstados([
+      { estado: 'EN BODEGA DROPI', pedidos: 3, valor: 90, unidades: 3 },
+      { estado: 'EN BODEGA', pedidos: 2, valor: 60, unidades: 2 },
+    ]);
+    expect(r.buckets.preparacion.pedidos).toBe(3); // EN BODEGA DROPI = exact match, gana antes del fallback
+    expect(r.buckets.en_transito.pedidos).toBe(2); // EN BODEGA bare
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('un estado GENUINAMENTE desconocido sigue cayendo en otros (no lo traga el fallback transit)', () => {
+    const r = bucketizeEstados([{ estado: 'ESTADO_RARISIMO_NUEVO', pedidos: 1, valor: 10, unidades: 1 }]);
+    expect(r.buckets.en_transito.pedidos).toBe(0);
+    expect(r.estadosSinMapear).toEqual(['ESTADO_RARISIMO_NUEVO']);
+  });
+});

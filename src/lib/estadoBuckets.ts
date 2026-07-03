@@ -68,6 +68,8 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'RECHAZADO': 'rechazado',
   // en tránsito
   'EN TRANSITO': 'en_transito', // EC lo manda con tilde ("EN TRÁNSITO") — lo cubre el lookup sin acentos
+  'EN CAMINO': 'en_transito',   // EC
+  'EN BODEGA': 'en_transito',   // EC: bodega de la transportadora (las de Dropi 'EN BODEGA DROPI' son exact-match aparte)
   'EN TRANSPORTE': 'en_transito',
   'EN DESPACHO': 'en_transito',
   'EN TRASLADO NACIONAL': 'en_transito',
@@ -127,7 +129,9 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
 // terminal (entregado/devuelto/cancelado) → no altera tasas, solo llena "en la calle".
 const ESTADO_FALLBACK_PATTERNS: Array<[string, BucketKey]> = [
   ['BODEGA ORIGEN', 'en_transito'],
-  ['RUTA A CONCESION', 'en_transito'],
+  ['RUTA A', 'en_transito'],           // EC: "EN RUTA A CENTRO LOGISTICO", "RUTA A CONCESION" — cualquier "ruta a X" es tránsito
+  ['CENTRO LOGISTICO', 'en_transito'], // EC
+  ['RECOLECCION', 'en_transito'],      // EC: "INGRESANDO DE RECOLECCION A <ciudad>"
   ['INGRESANDO OPERATIVO', 'en_transito'],
   ['INGRESANDO A', 'en_transito'], // EC: "INGRESANDO A <bodega/ciudad>" — en bodega de transportadora
   ['DISTRIBUCION A CLIENTE', 'en_transito'],
