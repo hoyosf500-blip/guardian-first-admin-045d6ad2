@@ -40,9 +40,11 @@ const EXISTENCE_CHECK_MIN_AGE_MS = 48 * 3600 * 1000; // no tocar pedidos de <48h
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 /** Baja un rango de Dropi paginado. Devuelve los pedidos Y un flag `complete`:
- *  `true` SOLO si paginó hasta un page corto sin ningún error HTTP. Si Dropi
- *  throttlea (429) a mitad, corta y `complete=false` → el llamador NO debe
- *  concluir "borrado" a partir de un pull parcial. */
+ *  `true` SOLO si paginó hasta un page corto sin ningún error HTTP definitivo.
+ *  Cada page reintenta hasta 3 veces con backoff (2s/4s/8s, mismo patrón que
+ *  dropi-snapshot) — sin esto la cuenta EC casi nunca lograba un pull completo
+ *  y el fail-safe dejaba los fantasmas para siempre. Si aun con backoff un page
+ *  falla, corta y `complete=false` → el llamador NO debe concluir "borrado". */
 async function fetchDropiRange(
   base: string,
   apiKey: string,
@@ -57,15 +59,21 @@ async function fetchDropiRange(
   const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
   while (true) {
     const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}${filterParam}&orderBy=id&orderDirection=desc`;
-    const res = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-        "dropi-integration-key": apiKey,
-        ...(origin ? { Origin: origin } : {}),
-      },
-    });
-    if (!res.ok) {
-      console.warn(`reconcile: HTTP ${res.status} at start=${start} (pull INCOMPLETO)`);
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await sleep(2000 * Math.pow(2, attempt - 1)); // 2s/4s/8s
+      res = await fetch(url, {
+        headers: {
+          "Accept": "application/json",
+          "dropi-integration-key": apiKey,
+          ...(origin ? { Origin: origin } : {}),
+        },
+      }).catch(() => null);
+      if (res?.ok) break;
+      console.warn(`reconcile: HTTP ${res?.status ?? "fetch-fail"} at start=${start} (intento ${attempt + 1}/4)`);
+    }
+    if (!res?.ok) {
+      console.warn(`reconcile: page start=${start} agotó reintentos (pull INCOMPLETO)`);
       break; // complete queda false
     }
     const data = await res.json().catch(() => ({}));
@@ -86,6 +94,7 @@ interface GuardianRow {
   transportadora: string | null;
   last_movement_at: string | null;
   created_at: string | null;
+  fecha: string | null;
 }
 
 interface Divergence {
@@ -105,7 +114,11 @@ async function reconcileStore(
   storeUrl: string,
   ownerId: string,
   statusFilter: string,
-): Promise<{ divergent: number; applied: number; orphanCancelled: number; deletedCancelled: number; error?: string }> {
+): Promise<{
+  divergent: number; applied: number; orphanCancelled: number; deletedCancelled: number;
+  deletedCheckComplete: boolean | null; dropiCreatedCount: number | null;
+  cancelledIds: { orphans: string[]; deleted: string[] }; error?: string;
+}> {
   try {
     const today = new Date();
     const to = today.toISOString().split("T")[0];
@@ -115,7 +128,7 @@ async function reconcileStore(
 
     const { data: guardianRows } = await sb
       .from("orders")
-      .select("id, external_id, estado, guia, transportadora, last_movement_at, created_at")
+      .select("id, external_id, estado, guia, transportadora, last_movement_at, created_at, fecha")
       .eq("store_id", storeId)
       .not("external_id", "is", null)
       .gte("upload_date", from);
@@ -123,8 +136,9 @@ async function reconcileStore(
       const e = (o.estado || "").toUpperCase();
       return !TERMINAL_STATES.has(e);
     });
+    const emptyIds = { orphans: [] as string[], deleted: [] as string[] };
     if (guardianNonTerminal.length === 0) {
-      return { divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0 };
+      return { divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0, deletedCheckComplete: null, dropiCreatedCount: null, cancelledIds: emptyIds };
     }
 
     const base = dropiHostFor(countryCode);
@@ -149,12 +163,19 @@ async function reconcileStore(
         // original). Post-backfill (id >= 5M, >=48h) → candidato: puede haber sido
         // ELIMINADO en Dropi, o solo no entrar al pull por status-filter. Lo decide
         // el barrido COMPLETO por FECHA DE CREADO más abajo (ausente = eliminado).
+        //
+        // GUARD CRÍTICO (2026-07-03): el candidato exige `fecha` (creación en
+        // Dropi) DENTRO de la ventana del barrido. Sin esto, un pedido viejo cuyo
+        // upload_date se re-bumpeó (re-sync) entra al set de Guardian, pero un pull
+        // "creados en [from,to]" jamás lo va a traer → se cancelaba por una
+        // inferencia inválida (pasó en la 1ra corrida: 24 pedidos CO de abr/may).
         const extNum = Number(ext);
         if (Number.isFinite(extNum) && extNum < ORPHAN_THRESHOLD) {
           orphans.push(g);
         } else if (Number.isFinite(extNum)) {
           const ageMs = g.created_at ? Date.now() - new Date(g.created_at).getTime() : 0;
-          if (ageMs >= EXISTENCE_CHECK_MIN_AGE_MS) existenceCandidates.push(g);
+          const fechaEnVentana = !!g.fecha && g.fecha >= from && g.fecha <= to;
+          if (ageMs >= EXISTENCE_CHECK_MIN_AGE_MS && fechaEnVentana) existenceCandidates.push(g);
         }
         continue;
       }
@@ -188,13 +209,16 @@ async function reconcileStore(
       }
     }
 
+    const cancelledIds = { orphans: [] as string[], deleted: [] as string[] };
     let orphanCancelled = 0;
     if (orphans.length > 0) {
-      const ids = orphans.map(o => o.id);
-      for (let i = 0; i < ids.length; i += 50) {
-        const batch = ids.slice(i, i + 50);
-        const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch);
-        if (!error) orphanCancelled += batch.length;
+      for (let i = 0; i < orphans.length; i += 50) {
+        const batch = orphans.slice(i, i + 50);
+        const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch.map(o => o.id));
+        if (!error) {
+          orphanCancelled += batch.length;
+          cancelledIds.orphans.push(...batch.map(o => String(o.external_id)));
+        }
       }
     }
 
@@ -205,15 +229,23 @@ async function reconcileStore(
     // id>=5M / >=48h ausente de él fue ELIMINADO. Si vino incompleto (throttle) o
     // vacío → NO se cancela nada esta corrida (fail-safe).
     let deletedCancelled = 0;
+    let deletedCheckComplete: boolean | null = null;
+    let dropiCreatedCount: number | null = null;
     if (existenceCandidates.length > 0) {
+      await sleep(5000); // pausa entre los dos pulls — le da aire al rate-limit EC
       const createdPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, "FECHA DE CREADO");
-      if (createdPull.complete && createdPull.orders.length > 0) {
+      deletedCheckComplete = createdPull.complete && createdPull.orders.length > 0;
+      dropiCreatedCount = createdPull.orders.length;
+      if (deletedCheckComplete) {
         const createdSet = new Set(createdPull.orders.map((o) => String(o.id)));
         const deleted = existenceCandidates.filter((g) => !createdSet.has(String(g.external_id)));
         for (let i = 0; i < deleted.length; i += 50) {
-          const batch = deleted.slice(i, i + 50).map((g) => g.id);
-          const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch);
-          if (!error) deletedCancelled += batch.length;
+          const batch = deleted.slice(i, i + 50);
+          const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch.map(g => g.id));
+          if (!error) {
+            deletedCancelled += batch.length;
+            cancelledIds.deleted.push(...batch.map(g => String(g.external_id)));
+          }
         }
         console.log(`reconcile ${storeId}: barrido creación COMPLETO (${createdPull.orders.length} pedidos); ${deleted.length} huérfanos ELIMINADOS en Dropi → CANCELADO`);
       } else {
@@ -221,10 +253,12 @@ async function reconcileStore(
       }
     }
 
-    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled };
+    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds };
   } catch (err) {
     return {
       divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0,
+      deletedCheckComplete: null, dropiCreatedCount: null,
+      cancelledIds: { orphans: [], deleted: [] },
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -276,17 +310,35 @@ Deno.serve(async (req) => {
       cfg.dropi_api_key, cfg.dropi_store_url || "",
       ownerId, STATUS_FILTER,
     );
-    await sb.from("nightly_reconcile_results").insert({
+    // Requiere migration 20260703190000 (columnas de observabilidad):
+    // deleted_check_complete = ¿el barrido de borrados fue confiable esta noche?
+    //   true=verificado · false=fail-safe por throttle (¡NO es "todo limpio"!) ·
+    //   null=no hubo candidatos que verificar.
+    // cancelled_external_ids = auditoría de QUÉ se canceló (sin esto los cancels
+    //   del nightly son irrastreables — orders no tiene updated_at).
+    const baseLog = {
       store_id: cfg.store_id,
       divergent_count: r.divergent,
       applied_count: r.applied,
       // orphan_cancelled agrega ambos tipos de limpieza (pre-backfill + borrados
-      // en Dropi) para no cambiar el esquema de la tabla; el desglose va en logs.
+      // en Dropi); el desglose exacto va en cancelled_external_ids.
       orphan_cancelled: r.orphanCancelled + r.deletedCancelled,
       error_message: r.error || null,
+    };
+    const { error: logErr } = await sb.from("nightly_reconcile_results").insert({
+      ...baseLog,
+      deleted_check_complete: r.deletedCheckComplete,
+      dropi_created_count: r.dropiCreatedCount,
+      cancelled_external_ids: (r.cancelledIds.orphans.length + r.cancelledIds.deleted.length) > 0 ? r.cancelledIds : null,
     });
+    if (logErr) {
+      // Migration 20260703190000 aún no aplicada → reintentar con el esquema viejo
+      // para no perder el log de la corrida.
+      console.warn(`reconcile log insert falló (${logErr.message}); reintento legacy`);
+      await sb.from("nightly_reconcile_results").insert(baseLog);
+    }
     summary.push({ store_id: cfg.store_id, ...r });
-    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled}`);
+    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled} checkComplete=${r.deletedCheckComplete}`);
   }
 
   return new Response(JSON.stringify({ ok: true, summary }), {
