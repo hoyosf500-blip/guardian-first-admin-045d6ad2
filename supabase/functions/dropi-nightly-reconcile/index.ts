@@ -25,6 +25,12 @@ const RECONCILE_DAYS_BACK = 30;
 const TERMINAL_STATES = new Set([
   "ENTREGADO", "CANCELADO", "DEVOLUCION", "DEVUELTO",
   "DEVOLUCIÓN", "ENTREGADA", "CANCELADA",
+  // RECHAZADO es final (el cliente rechazó en la puerta): NO es un fantasma
+  // pendiente. Sin esto, un RECHAZADO viejo (cambio de estado hace meses) no
+  // aparece en el pull por FECHA DE CAMBIO DE ESTATUS y el nightly lo cancelaba
+  // → distorsiona la tasa de rechazo (RECHAZADO=despachado, CANCELADO=no). Caso
+  // real: 4 pedidos EC id~4.3M en ping-pong nightly↔cron el 2026-07-03.
+  "RECHAZADO", "RECHAZADA",
 ]);
 const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo
 // FIX 2026-07-03 (fantasmas de pedidos BORRADOS en Dropi): Dropi permite ELIMINAR
@@ -40,11 +46,21 @@ const EXISTENCE_CHECK_MIN_AGE_MS = 48 * 3600 * 1000; // no tocar pedidos de <48h
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 /** Baja un rango de Dropi paginado. Devuelve los pedidos Y un flag `complete`:
- *  `true` SOLO si paginó hasta un page corto sin ningún error HTTP definitivo.
+ *  `true` SOLO si paginó hasta el final del rango sin ningún error HTTP definitivo.
  *  Cada page reintenta hasta 3 veces con backoff (2s/4s/8s, mismo patrón que
  *  dropi-snapshot) — sin esto la cuenta EC casi nunca lograba un pull completo
  *  y el fail-safe dejaba los fantasmas para siempre. Si aun con backoff un page
- *  falla, corta y `complete=false` → el llamador NO debe concluir "borrado". */
+ *  falla, corta y `complete=false` → el llamador NO debe concluir "borrado".
+ *
+ *  `stopBeforeDate` (corte temprano, 2026-07-03): Dropi EC IGNORA date_from/
+ *  date_to en este endpoint (verificado: pull "30 días" devolvió 2100 pedidos =
+ *  la cuenta entera, y el throttle lo mataba antes de terminar → nunca complete).
+ *  Como viene orderBy=id desc (≈ creación desc), cuando el pedido más viejo del
+ *  page ya es anterior a la ventana, TODO lo que falta es más viejo → ya tenemos
+ *  el superset completo de la ventana → complete=true y paramos. MAX_PAGES es el
+ *  freno de mano si ni eso corta. */
+const MAX_PAGES = 40;
+
 async function fetchDropiRange(
   base: string,
   apiKey: string,
@@ -52,12 +68,14 @@ async function fetchDropiRange(
   from: string,
   to: string,
   statusFilter: string,
+  stopBeforeDate?: string,
 ): Promise<{ orders: Record<string, unknown>[]; complete: boolean }> {
   const out: Record<string, unknown>[] = [];
   let start = 0;
+  let pages = 0;
   let complete = false;
   const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
-  while (true) {
+  while (pages < MAX_PAGES) {
     const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}${filterParam}&orderBy=id&orderDirection=desc`;
     let res: Response | null = null;
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -79,10 +97,16 @@ async function fetchDropiRange(
     const data = await res.json().catch(() => ({}));
     const objs = Array.isArray(data?.objects) ? data.objects : [];
     out.push(...objs);
+    pages++;
     if (objs.length < PAGE_SIZE) { complete = true; break; } // último page → pull completo
+    if (stopBeforeDate && objs.length > 0) {
+      const oldest = String((objs[objs.length - 1] as Record<string, unknown>).created_at || "");
+      if (oldest && oldest.split("T")[0] < stopBeforeDate) { complete = true; break; }
+    }
     start += PAGE_SIZE;
     await sleep(RATE_LIMIT_MS);
   }
+  if (pages >= MAX_PAGES) console.warn(`reconcile: MAX_PAGES (${MAX_PAGES}) alcanzado sin cerrar el rango (pull INCOMPLETO)`);
   return { orders: out, complete };
 }
 
@@ -211,6 +235,14 @@ async function reconcileStore(
 
     const cancelledIds = { orphans: [] as string[], deleted: [] as string[] };
     let orphanCancelled = 0;
+    // GATE (2026-07-03): si el pull por status vino INCOMPLETO (throttle), "no
+    // está en el pull" no prueba nada — sin este gate 4 pedidos <5M vivos en
+    // Dropi entraban en ping-pong (nightly cancela ↔ cron restaura, 2 veces el
+    // mismo día, ver cancelled_external_ids 19:12 y 20:01 del 2026-07-03).
+    if (!statusPull.complete && orphans.length > 0) {
+      console.warn(`reconcile ${storeId}: pull por status INCOMPLETO → ${orphans.length} huérfanos <5M NO se cancelan (fail-safe)`);
+      orphans.length = 0;
+    }
     if (orphans.length > 0) {
       for (let i = 0; i < orphans.length; i += 50) {
         const batch = orphans.slice(i, i + 50);
@@ -233,7 +265,9 @@ async function reconcileStore(
     let dropiCreatedCount: number | null = null;
     if (existenceCandidates.length > 0) {
       await sleep(5000); // pausa entre los dos pulls — le da aire al rate-limit EC
-      const createdPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, "FECHA DE CREADO");
+      // stopBeforeDate=from: EC ignora date_from/date_to → sin corte temprano
+      // paginaría la cuenta entera y el throttle lo mataría antes de completar.
+      const createdPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, "FECHA DE CREADO", from);
       deletedCheckComplete = createdPull.complete && createdPull.orders.length > 0;
       dropiCreatedCount = createdPull.orders.length;
       if (deletedCheckComplete) {
