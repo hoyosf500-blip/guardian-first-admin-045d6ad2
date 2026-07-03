@@ -11,6 +11,7 @@ import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletSaldoHoy } from '@/hooks/useWalletMovements';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import OrdersSyncBadge from '@/components/logistics/OrdersSyncBadge';
+import NightlyCheckBadge from '@/components/logistics/NightlyCheckBadge';
 import { Button } from '@/components/ui/button';
 import { useResumenSync } from '@/hooks/useResumenSync';
 import KpiCard from '@/components/logistics/finanzas/KpiCard';
@@ -190,6 +191,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
             {resumen.generadoTotal.toLocaleString('es-CO')} pedidos generados
           </span>
           <OrdersSyncBadge size="sm" />
+          <NightlyCheckBadge size="sm" />
           {isOwnerOfActive && (
             <Button
               onClick={() => resumenSync.mutate({ from: filters.fromDate, untill: filters.toDate })}
