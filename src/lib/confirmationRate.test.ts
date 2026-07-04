@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  confRateBySample, confRateByCohort, contactRate, isBelowTarget,
-  MATURITY_MIN_RESUELTOS, COHORTE_MATURITY_PCT, CONF_TARGET_PCT,
+  confRateBySample, confRateByCohort, contactRate, isBelowTarget, isBelowDailyTarget,
+  MATURITY_MIN_RESUELTOS, COHORTE_MATURITY_PCT, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT,
 } from './confirmationRate';
 
 describe('confRateBySample (tasa madura por operadora/personal)', () => {
@@ -65,6 +65,26 @@ describe('confRateByCohort (día con inflow conocido)', () => {
     expect(r.pctProcesado).toBe(0);
     expect(r.inmaduro).toBe(true);
   });
+
+  it('tasaDia = confirmados ÷ ENTRANTES (la "confirmación del día"), distinta de tasa ÷resueltos', () => {
+    // Caso real María José: 26 entraron, 14 conf, 5 canc, 3 no contestaron.
+    const r = confRateByCohort(14, 5, 26);
+    expect(r.tasaDia).toBe(54);       // 14/26 = 53.8 → 54 (cómo va el día, NO infla)
+    expect(r.tasa).toBe(74);          // 14/19 efectividad de cierre (÷resueltos, la vieja)
+    expect(r.pctProcesado).toBe(73);  // 19/26 trabajado
+    expect(r.inmaduro).toBe(true);    // 73 < 90 → el día no terminó → provisional, NO rojo
+  });
+
+  it('tasaDia null cuando no hay entrantes', () => {
+    expect(confRateByCohort(0, 0, 0).tasaDia).toBeNull();
+  });
+
+  it('tasaDia siempre <= tasa (÷entrantes nunca infla sobre ÷resueltos)', () => {
+    const r = confRateByCohort(8, 1, 20); // 9 resueltos de 20
+    expect(r.tasaDia).toBe(40);  // 8/20
+    expect(r.tasa).toBe(89);     // 8/9
+    expect(r.tasaDia! <= r.tasa!).toBe(true);
+  });
 });
 
 describe('contactRate (contactabilidad)', () => {
@@ -89,6 +109,28 @@ describe('constantes', () => {
 
   it('meta oficial de confirmación = 85% (fuente única)', () => {
     expect(CONF_TARGET_PCT).toBe(85);
+  });
+
+  it('meta del día (÷inflow) = 55%, distinta del 85% (÷resueltos)', () => {
+    expect(CONF_DIA_TARGET_PCT).toBe(55);
+    expect(CONF_DIA_TARGET_PCT).toBeLessThan(CONF_TARGET_PCT);
+  });
+});
+
+describe('isBelowDailyTarget (por debajo de la meta del día ~55% ÷inflow)', () => {
+  it('true cuando tasaDia < 55', () => {
+    expect(isBelowDailyTarget(54)).toBe(true);
+    expect(isBelowDailyTarget(20)).toBe(true);
+  });
+
+  it('false cuando tasaDia >= 55 (en meta del día)', () => {
+    expect(isBelowDailyTarget(55)).toBe(false);
+    expect(isBelowDailyTarget(60)).toBe(false);
+  });
+
+  it('null/undefined → false (no penaliza sin datos)', () => {
+    expect(isBelowDailyTarget(null)).toBe(false);
+    expect(isBelowDailyTarget(undefined)).toBe(false);
   });
 });
 

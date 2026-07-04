@@ -23,6 +23,15 @@
  */
 export const CONF_TARGET_PCT = 85;
 
+/**
+ * META del DÍA sobre INFLOW (%). Es la "confirmación del día" = confirmados ÷ lo
+ * que ENTRÓ en el período (no ÷resueltos). Distinta de CONF_TARGET_PCT: aquí la
+ * meta es ~55%, NO 85%, porque confirmar 85 de cada 100 que entran es imposible
+ * (los que no contestan el teléfono bajan el techo real a ~50-60%). Es el número
+ * de "cómo va el día" del manager. VALOR INICIAL a calibrar tras ver datos reales.
+ */
+export const CONF_DIA_TARGET_PCT = 55;
+
 /** Muestra mínima para que una tasa por-operadora/personal sea concluyente. */
 export const MATURITY_MIN_RESUELTOS = 5;
 /** % del inflow que debe estar resuelto para que el cohorte (día) sea concluyente. */
@@ -35,6 +44,15 @@ export const COHORTE_MATURITY_PCT = 90;
  */
 export function isBelowTarget(tasa: number | null | undefined): boolean {
   return tasa != null && tasa < CONF_TARGET_PCT;
+}
+
+/**
+ * ¿La confirmación del día (÷inflow) está por DEBAJO de la meta del día (~55%)?
+ * null → false. Igual que isBelowTarget pero contra CONF_DIA_TARGET_PCT. NO
+ * pintes rojo un cohorte inmaduro (día en curso) — respetá `inmaduro` aparte.
+ */
+export function isBelowDailyTarget(tasaDia: number | null | undefined): boolean {
+  return tasaDia != null && tasaDia < CONF_DIA_TARGET_PCT;
 }
 
 export interface SampleRate {
@@ -51,6 +69,10 @@ export interface CohortRate extends SampleRate {
   tasaCanc: number | null;
   /** (conf + canc) ÷ entrantes — qué tan trabajado está el cohorte. */
   pctProcesado: number;
+  /** confirmados ÷ ENTRANTES (0-100). La "confirmación del día": de todo lo que
+   *  entró, cuánto quedó confirmado. Distinta de `tasa` (÷resueltos). null si no
+   *  hay entrantes. Se juzga contra CONF_DIA_TARGET_PCT (~55%), no contra 85%. */
+  tasaDia: number | null;
 }
 
 function round(n: number): number {
@@ -91,6 +113,7 @@ export function confRateByCohort(conf: number, canc: number, entrantes: number):
   return {
     tasa: resueltos > 0 ? round((c / resueltos) * 100) : null,
     tasaCanc: resueltos > 0 ? round((x / resueltos) * 100) : null,
+    tasaDia: e > 0 ? round((c / e) * 100) : null,
     resueltos,
     pctProcesado,
     inmaduro: pctProcesado < COHORTE_MATURITY_PCT,
