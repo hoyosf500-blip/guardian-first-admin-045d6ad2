@@ -22,6 +22,7 @@ function normalizePhone(p: unknown): string {
 }
 
 interface ShopifyAddress { phone?: string; name?: string; city?: string }
+interface ShopifyLineItem { title?: string; name?: string; quantity?: number; product_id?: number | null }
 interface ShopifyOrder {
   id: number;
   name: string;            // "#1234"
@@ -33,6 +34,18 @@ interface ShopifyOrder {
   customer?: { first_name?: string; last_name?: string; phone?: string } | null;
   shipping_address?: ShopifyAddress | null;
   billing_address?: ShopifyAddress | null;
+  line_items?: ShopifyLineItem[]; // productos de la orden (para el reporte de fuga por producto)
+}
+
+/** Producto principal de la orden (el de mayor cantidad) + su product_id, para
+ *  agrupar la fuga por producto. Devuelve título legible aunque falte el resto. */
+function mainProduct(o: ShopifyOrder): { producto: string; product_id: number | null } {
+  const items = Array.isArray(o.line_items) ? o.line_items : [];
+  if (items.length === 0) return { producto: "", product_id: null };
+  const top = [...items].sort((a, b) => (b.quantity ?? 0) - (a.quantity ?? 0))[0];
+  const producto = (top.title || top.name || "").trim() || "(sin título)";
+  const extra = items.length > 1 ? ` +${items.length - 1}` : "";
+  return { producto: producto + extra, product_id: typeof top.product_id === "number" ? top.product_id : null };
 }
 
 /** Zona horaria IANA de la tienda Shopify (para que "hoy" coincida con el
@@ -64,7 +77,7 @@ function orderCustomer(o: ShopifyOrder): string {
 
 /** Fetch de pedidos de Shopify (paginado por header Link, cap defensivo). */
 async function fetchShopifyOrders(domain: string, token: string, sinceISO: string): Promise<ShopifyOrder[]> {
-  const fields = "id,name,phone,customer,shipping_address,billing_address,created_at,cancelled_at,test,financial_status,total_price";
+  const fields = "id,name,phone,customer,shipping_address,billing_address,created_at,cancelled_at,test,financial_status,total_price,line_items";
   let url: string | null =
     `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/orders.json?status=any&created_at_min=${encodeURIComponent(sinceISO)}&limit=250&fields=${fields}`;
   const all: ShopifyOrder[] = [];
@@ -188,17 +201,22 @@ Deno.serve(async (req: Request) => {
     //    [shopify-1d, shopify+6d]. Si lo hay → emparejado; si no → pendiente.
     //    Así un pedido nuevo NO se "matchea" contra una orden vieja del mismo
     //    cliente (eso escondería una fuga).
-    const toCard = (o: ShopifyOrder, sinTel = false) => ({
-      id: String(o.id),
-      name: o.name,
-      customer: orderCustomer(o),
-      phone: o.phone || o.customer?.phone || o.shipping_address?.phone || "",
-      total: o.total_price ? Number(o.total_price) : 0,
-      created_at: o.created_at,
-      city: o.shipping_address?.city || "",
-      sin_telefono: sinTel,
-      admin_url: `https://${cfg.shopDomain}/admin/orders/${o.id}`,
-    });
+    const toCard = (o: ShopifyOrder, sinTel = false) => {
+      const mp = mainProduct(o);
+      return {
+        id: String(o.id),
+        name: o.name,
+        customer: orderCustomer(o),
+        phone: o.phone || o.customer?.phone || o.shipping_address?.phone || "",
+        total: o.total_price ? Number(o.total_price) : 0,
+        created_at: o.created_at,
+        city: o.shipping_address?.city || "",
+        sin_telefono: sinTel,
+        admin_url: `https://${cfg.shopDomain}/admin/orders/${o.id}`,
+        producto: mp.producto,       // producto principal — reporte de fuga por producto
+        product_id: mp.product_id,   // id Shopify del producto (agrupación estable)
+      };
+    };
 
     const usedDropi = new Set<number>();
     function matchDropi(tel: string, shopT: number): number {

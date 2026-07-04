@@ -11,6 +11,10 @@ export interface ShopifyPendingItem {
   city: string;
   sin_telefono?: boolean;
   admin_url: string;
+  // Producto principal de la orden — para el reporte "productos que más se fugan".
+  // Opcionales: vienen vacíos hasta redeployar shopify-reconcile (2026-07-04).
+  producto?: string;
+  product_id?: number | null;
 }
 
 export interface ShopifyDayBreakdown {

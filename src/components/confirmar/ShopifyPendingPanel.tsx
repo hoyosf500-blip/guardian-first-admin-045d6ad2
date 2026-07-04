@@ -281,6 +281,23 @@ export default function ShopifyPendingPanel() {
     [visible, dupMap, dupOverrides],
   );
 
+  // CAUSA RAÍZ: qué productos se fugan más (agrupa los pendientes por producto).
+  // Vincular UNA vez ese producto Shopify→Dropi corta la fuga de raíz. `producto`
+  // viene del reconcile (vacío hasta redeployar shopify-reconcile) → si está vacío,
+  // no mostramos el resumen (no rompe).
+  const topLeakProducts = useMemo(() => {
+    const byProd = new Map<string, number>();
+    for (const p of visible) {
+      const key = (p.producto || '').trim();
+      if (!key) continue;
+      byProd.set(key, (byProd.get(key) || 0) + 1);
+    }
+    return [...byProd.entries()]
+      .map(([producto, count]) => ({ producto, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [visible]);
+
   // Guards: no estorbar la cola si no hay tienda / no cargó / no configurado.
   if (!activeStoreId) return null;
   if (isLoading && !data) return null;
@@ -570,6 +587,25 @@ export default function ShopifyPendingPanel() {
         {expanded && count > 0 && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             className="border-t border-warning/30 max-h-[28rem] overflow-y-auto bg-card/50">
+            {/* CAUSA RAÍZ: productos que más se fugan. Vincular ese producto una vez
+                (Shopify→Dropi) corta la fuga; si no, se auto-suben a mano cada día. */}
+            {topLeakProducts.length > 0 && (
+              <div className="px-4 py-2.5 border-b border-border bg-warning/5">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground mb-1.5">
+                  <Link2 size={12} className="text-warning" aria-hidden="true" />
+                  Productos que más se fugan — vinculá una vez para cortar la fuga de raíz
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {topLeakProducts.map((t) => (
+                    <span key={t.producto}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[11px]">
+                      <span className="text-foreground truncate max-w-[16rem]">{t.producto}</span>
+                      <span className="tabular-nums font-bold text-warning">{t.count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Buscador de la lista (no afecta el contador ni "Subir todos") */}
             <div className="sticky top-0 z-20 px-3 py-2 bg-card/95 backdrop-blur border-b border-border">
               <div className="relative">
@@ -631,6 +667,7 @@ export default function ShopifyPendingPanel() {
                               : <span className="italic">—</span>}
                             {p.city && <span>· {p.city}</span>}
                             {p.total > 0 && <span>· ${p.total.toLocaleString()}</span>}
+                            {p.producto && <span className="truncate max-w-[12rem]" title={p.producto}>· {p.producto}</span>}
                           </div>
                         </div>
                         <a href={p.admin_url} target="_blank" rel="noreferrer" title="Abrir en Shopify"
