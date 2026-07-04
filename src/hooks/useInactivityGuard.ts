@@ -6,8 +6,12 @@ import {
   isWithinAlertWindow,
   workingSecondsLost,
   bogotaDateKey,
+  scheduleFromMinutes,
+  DEFAULT_SCHEDULE,
   IDLE_THRESHOLD_SECONDS,
+  type WorkSchedule,
 } from '@/lib/inactivityWindow';
+import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 
 /**
  * Alertas de inactividad (presión psicológica de no perder tiempo).
@@ -52,6 +56,9 @@ function lockKey(storeId: string): string {
 export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean }) {
   const { user, isAdmin, loading: authLoading } = useAuth();
   const { activeStoreId, isManagerOfActive } = useStore();
+  // Horario laboral de la tienda (configurable). Default 9–17 si no está cargado
+  // o la migration no se aplicó — el guard nunca depende de que exista.
+  const scheduleQuery = useStoreSchedule(activeStoreId);
 
   const [warning, setWarning] = useState<InactivityWarning | null>(null);
   const lastActivityRef = useRef<number | null>(null);
@@ -64,6 +71,10 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
   // del render) para decidir si penalizar. Se actualiza en cada render.
   const hasWorkRef = useRef(hasPendingWork);
   hasWorkRef.current = hasPendingWork;
+  // Horario en un ref (el handler/tick corren fuera del render). Se actualiza en
+  // cada render con el último dato del hook.
+  const scheduleRef = useRef<WorkSchedule>(DEFAULT_SCHEDULE);
+  scheduleRef.current = scheduleQuery.data ? scheduleFromMinutes(scheduleQuery.data) : DEFAULT_SCHEDULE;
 
   // Solo operadoras puras con tienda activa.
   const enabled =
@@ -117,8 +128,8 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
       if (last === null) return;                 // primer evento de la sesión
       if (!hasWorkRef.current) return;           // sin trabajo → no penalizar
       const nowDate = new Date(now);
-      if (!isWithinAlertWindow(nowDate)) return; // fuera de horario / almuerzo
-      const lost = workingSecondsLost(new Date(last), nowDate);
+      if (!isWithinAlertWindow(nowDate, scheduleRef.current)) return; // fuera de horario / almuerzo
+      const lost = workingSecondsLost(new Date(last), nowDate, scheduleRef.current);
       if (lost < IDLE_THRESHOLD_SECONDS) return;
       // Volvió tras >=5 min de inactividad laboral CON trabajo pendiente.
       pendingRef.current = true;

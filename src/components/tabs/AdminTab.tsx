@@ -16,6 +16,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
+import WorkSchedulePanel from '@/components/admin/WorkSchedulePanel';
 import DailyReportsView from '@/components/admin/DailyReportsView';
 import WaBotConfigPanel from '@/components/admin/WaBotConfigPanel';
 import WaBotNotifyPanel from '@/components/admin/WaBotNotifyPanel';
@@ -208,7 +209,8 @@ export default function AdminTab() {
           <TabsTrigger value="reportes">Reportes diarios</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="productividad" className="mt-0">
+        <TabsContent value="productividad" className="mt-0 space-y-4">
+          <WorkSchedulePanel />
           <ProductivityDashboard />
         </TabsContent>
 
