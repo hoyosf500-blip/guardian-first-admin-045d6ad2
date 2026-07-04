@@ -3,10 +3,13 @@ import { Download, Truck } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
-import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
+import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { CarrierStats } from '@/lib/logistics.types';
 
 interface Props { rows: CarrierStats[]; }
+
+// Fila enriquecida con la madurez de la tasa (para atenuar/marcar prelim.).
+type CarrierRow = CarrierStats & { _prelim: boolean; _resueltos: number };
 
 type Key = keyof CarrierStats;
 
@@ -18,13 +21,17 @@ const DELIVERY_TARGET = 70;
 // Sub-components — pequeños, sin estado, solo presentación.
 // ──────────────────────────────────────────────────────────────
 
-/** Inline data bar usando .data-bar utility del DS. */
-function DataBar({ value, tone }: { value: number; tone: 'success' | 'danger' | 'warning' | 'info' | 'neutral' }) {
+/** Inline data bar usando .data-bar utility del DS. Si la tasa es PRELIMINAR
+ *  (muestra chica / cohorte inmaduro) se atenúa a gris + sufijo, para no pintar
+ *  100% verde sobre 1 pedido concluido. */
+function DataBar({ value, tone, prelim }: { value: number; tone: 'success' | 'danger' | 'warning' | 'info' | 'neutral'; prelim?: boolean }) {
   const pct = Math.max(0, Math.min(100, value));
+  const t = prelim ? 'neutral' : tone;
   return (
-    <div className={`data-bar tone-${tone}`}>
+    <div className={`data-bar tone-${t}`} style={prelim ? { opacity: 0.55 } : undefined}
+      title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos — la tasa aún no es confiable` : undefined}>
       <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
-      <span className="data-bar-value">{value.toFixed(1)}%</span>
+      <span className="data-bar-value">{value.toFixed(1)}%{prelim ? ' ·prelim.' : ''}</span>
     </div>
   );
 }
@@ -99,23 +106,24 @@ function CompositionBar({ row, maxVolume }: { row: CarrierStats; maxVolume: numb
 }
 
 /** Bullet horizontal mini con target line — tasa de entrega vs
- *  meta 70%. Patrón Stephen Few. */
-function DeliveryBullet({ rate }: { rate: number }) {
+ *  meta 70%. Patrón Stephen Few. Prelim → gris (no verde/rojo sobre muestra chica). */
+function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
   const fill = Math.max(0, Math.min(100, rate));
   const meets = rate >= DELIVERY_TARGET;
-  const fillColor = meets ? 'hsl(var(--success))' : rate >= 50 ? 'hsl(var(--warning))' : 'hsl(var(--danger))';
+  const fillColor = prelim ? 'hsl(var(--muted-foreground))'
+    : meets ? 'hsl(var(--success))' : rate >= 50 ? 'hsl(var(--warning))' : 'hsl(var(--danger))';
 
   return (
-    <div className="flex items-center gap-2 min-w-[140px]">
-      <div className="bullet flex-1" role="img" aria-label={`${rate.toFixed(1)}% vs meta ${DELIVERY_TARGET}%`}>
-        <div className="bullet-fill" style={{ width: `${fill}%`, background: fillColor }} aria-hidden="true" />
+    <div className="flex items-center gap-2 min-w-[140px]" title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos` : undefined}>
+      <div className="bullet flex-1" role="img" aria-label={`${rate.toFixed(1)}% vs meta ${DELIVERY_TARGET}%${prelim ? ' (preliminar)' : ''}`}>
+        <div className="bullet-fill" style={{ width: `${fill}%`, background: fillColor, opacity: prelim ? 0.6 : 1 }} aria-hidden="true" />
         <div className="bullet-target" style={{ left: `${DELIVERY_TARGET}%` }} aria-hidden="true" />
       </div>
       <span
-        className="font-mono text-xs font-bold tabular-nums w-12 text-right"
+        className="font-mono text-xs font-bold tabular-nums w-16 text-right"
         style={{ color: fillColor }}
       >
-        {rate.toFixed(1)}%
+        {rate.toFixed(1)}%{prelim ? '·pr' : ''}
       </span>
     </div>
   );
@@ -133,16 +141,22 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
   // devueltos). Así el sort, los bullets, los DataBar y el CSV usan la tasa
   // madura sin tocar nada más. Los conteos crudos (entregados/devueltos/total)
   // quedan intactos → la CompositionBar sigue mostrando composición real.
-  const matureRows = useMemo<CarrierStats[]>(() => rows.map(r => {
+  const matureRows = useMemo<CarrierRow[]>(() => rows.map(r => {
     const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
-    return { ...r, tasa_entrega: m.tasaEntregaMadura ?? 0, tasa_devolucion: m.tasaDevolucionMadura ?? 0 };
+    return {
+      ...r,
+      tasa_entrega: m.tasaEntregaMadura ?? 0,
+      tasa_devolucion: m.tasaDevolucionMadura ?? 0,
+      _prelim: isRatePreliminary(m),
+      _resueltos: m.resueltos,
+    };
   }), [rows]);
 
   const sorted = useMemo(() => {
     const out = [...matureRows];
     out.sort((a, b) => {
-      const av = a[sortKey] ?? 0;
-      const bv = b[sortKey] ?? 0;
+      const av = a[sortKey as keyof CarrierStats] ?? 0;
+      const bv = b[sortKey as keyof CarrierStats] ?? 0;
       if (typeof av === 'number' && typeof bv === 'number') {
         return sortDir === 'asc' ? av - bv : bv - av;
       }
@@ -231,10 +245,10 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
               </div>
 
               <div className="col-span-3">
-                {(row.entregados + row.devueltos) === 0 ? (
+                {row._resueltos === 0 ? (
                   <span className="text-xs text-muted-foreground" title="Sin pedidos concluidos aún">— sin concluidos</span>
                 ) : (
-                  <DeliveryBullet rate={row.tasa_entrega} />
+                  <DeliveryBullet rate={row.tasa_entrega} prelim={row._prelim} />
                 )}
               </div>
             </div>
@@ -272,7 +286,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
                 <th className="text-right"><SortableHeader<Key> label="Devueltos" sortKey="devueltos" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="text-right"><SortableHeader<Key> label="Entrega %" sortKey="tasa_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="text-right"><SortableHeader<Key> label="Devol %" sortKey="tasa_devolucion" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
-                <th className="text-right"><SortableHeader<Key> label="Días promedio" sortKey="avg_dias_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
+                <th className="text-right" title="Antigüedad promedio desde el último cambio de estado de los entregados — NO es el tiempo de tránsito despacho→entrega"><SortableHeader<Key> label="Antigüedad prom." sortKey="avg_dias_entrega" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
                 <th className="text-right"><SortableHeader<Key> label="Valor entregado" sortKey="valor_entregado" activeKey={sortKey} activeDir={sortDir} onSort={onSort} /></th>
               </tr>
             </thead>
@@ -290,15 +304,15 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
                   <td className="text-right font-mono tabular-nums text-[hsl(var(--danger))] font-semibold">{r.devueltos.toLocaleString('es-CO')}</td>
                   {/* Sin desenlaces (0 entregados+devueltos) la tasa NO es 0% — no hay dato.
                       Mostrar 0.0% en rojo hacía ver "pésima" a una transportadora recién usada. */}
-                  {(r.entregados + r.devueltos) === 0 ? (
+                  {r._resueltos === 0 ? (
                     <>
                       <td className="text-right text-xs text-muted-foreground" title="Sin pedidos concluidos aún">—</td>
                       <td className="text-right text-xs text-muted-foreground" title="Sin pedidos concluidos aún">—</td>
                     </>
                   ) : (
                     <>
-                      <td className="text-right"><DataBar value={r.tasa_entrega} tone="success" /></td>
-                      <td className="text-right"><DataBar value={r.tasa_devolucion} tone="danger" /></td>
+                      <td className="text-right"><DataBar value={r.tasa_entrega} tone="success" prelim={r._prelim} /></td>
+                      <td className="text-right"><DataBar value={r.tasa_devolucion} tone="danger" prelim={r._prelim} /></td>
                     </>
                   )}
                   <td className="text-right font-mono tabular-nums text-muted-foreground">{r.avg_dias_entrega != null ? `${r.avg_dias_entrega}d` : '—'}</td>

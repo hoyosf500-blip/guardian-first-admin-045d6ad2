@@ -672,7 +672,7 @@ function EstadoDonutAndDailyStack({
         )}
       </ChartCard>
 
-      <ChartCard title="Estados por día">
+      <ChartCard title="Estados por día de creación">
         {stackRows.length === 0 ? <EmptyChart /> : (
           <div className="h-[280px]">
             <ResponsiveContainer>

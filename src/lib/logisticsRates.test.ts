@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveDeliveryMaturity, DELIVERY_MATURITY_THRESHOLD } from './logisticsRates';
+import { deriveDeliveryMaturity, DELIVERY_MATURITY_THRESHOLD, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from './logisticsRates';
 
 describe('deriveDeliveryMaturity', () => {
   it('cohorte maduro: tasa sobre (entregados+devueltos), no sobre total', () => {
@@ -50,5 +50,35 @@ describe('deriveDeliveryMaturity', () => {
     const m = deriveDeliveryMaturity(undefined as unknown as number, null as unknown as number, 0);
     expect(m.resueltos).toBe(0);
     expect(m.tasaEntregaMadura).toBeNull();
+  });
+});
+
+describe('isRatePreliminary (auditoría de confianza 2026-07-03)', () => {
+  it('true con muestra chica (< MIN concluidos): 1 entregado de 80 → 100% pero NO confiable', () => {
+    const m = deriveDeliveryMaturity(1, 0, 80);
+    expect(m.tasaEntregaMadura).toBe(100);
+    expect(m.resueltos).toBeLessThan(MIN_RESUELTOS_CONFIABLE);
+    expect(isRatePreliminary(m)).toBe(true);
+  });
+
+  it('true con cohorte inmaduro aunque haya >=5 resueltos: 2+2 de 100 → 50% devol sobre 4% concluido', () => {
+    const m = deriveDeliveryMaturity(2, 2, 100);
+    expect(m.tasaDevolucionMadura).toBe(50);
+    expect(m.inmaduro).toBe(true);
+    expect(isRatePreliminary(m)).toBe(true);
+  });
+
+  it('false con muestra suficiente Y cohorte maduro: 80+10 de 100', () => {
+    const m = deriveDeliveryMaturity(80, 10, 100);
+    expect(m.inmaduro).toBe(false);
+    expect(m.resueltos).toBeGreaterThanOrEqual(MIN_RESUELTOS_CONFIABLE);
+    expect(isRatePreliminary(m)).toBe(false);
+  });
+
+  it('true en el borde: 4 resueltos (< umbral) aun con cohorte maduro — la muestra chica manda', () => {
+    const m = deriveDeliveryMaturity(4, 0, 5);
+    expect(m.inmaduro).toBe(false);
+    expect(m.resueltos).toBe(4);
+    expect(isRatePreliminary(m)).toBe(true);
   });
 });

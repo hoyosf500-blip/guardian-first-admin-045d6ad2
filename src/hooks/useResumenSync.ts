@@ -35,11 +35,13 @@ const KEYS_TO_INVALIDATE: string[] = [
   'orders-sync-health',      // useOrdersSyncHealth.ts      → badge de frescura de pedidos (header)
   'ganancia-neta-dropi',     // useGananciaNetaDropi.ts:134 → ganancia neta real
   'wallet_movements',        // useWalletMovements.ts:52    → saldo
+  'wallet_saldo_hoy',        // useWalletSaldoHoy           → "Saldo disponible hoy" (quedaba congelado tras Sincronizar)
   'wallet_daily_series',     // useWalletMovements.ts:106
   'wallet_sync_health',      // useWalletSyncHealth.ts:47   → badge + walletStale
   'logistics',               // useLogisticsStats.ts:49     → fallback logistics_summary
   'financial-summary',       // useFinancialSummary.ts:85   → ingresos/COGS/ticket (Finanzas)
   'operativo-cohorte',       // useOperativoCohorte.ts      → hero Ganancia Neta cohorte (Finanzas)
+  'product-profitability',   // useProductProfitability.ts  → tabla Rentabilidad (quedaba stale 5min tras Sincronizar)
 ];
 
 /** Parsea el detalle real de un error de functions.invoke (el body viene en

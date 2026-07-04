@@ -21,6 +21,19 @@
 /** % concluido mínimo para tratar la tasa de entrega como concluyente. */
 export const DELIVERY_MATURITY_THRESHOLD = 70;
 
+/** Mínimo de pedidos RESUELTOS (entregados+devueltos) para que una tasa sea
+ *  estadísticamente confiable. Mismo umbral que carrierRecommendations
+ *  (MIN_RESUELTOS_RANK). Debajo de esto, una ciudad/carrier/producto con 1-4
+ *  concluidos puede dar 0%/100% y NO debe pintarse con confianza. */
+export const MIN_RESUELTOS_CONFIABLE = 5;
+
+/** true cuando la tasa madura NO es confiable: cohorte inmaduro (pocos
+ *  concluidos vs total) O muestra chica (< MIN_RESUELTOS_CONFIABLE resueltos).
+ *  La UI debe atenuar (gris) + marcar "prelim." en vez de pintar verde/rojo. */
+export function isRatePreliminary(m: DeliveryMaturity): boolean {
+  return m.inmaduro || m.resueltos < MIN_RESUELTOS_CONFIABLE;
+}
+
 export interface DeliveryMaturity {
   /** entregados + devueltos (pedidos con desenlace logístico final). */
   resueltos: number;

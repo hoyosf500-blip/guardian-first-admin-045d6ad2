@@ -38,6 +38,21 @@ interface Props {
   // Costos mensuales ya cargados (NetoRealCard los persiste)
   pautaTotal: number;         // pauta_meta + pauta_tiktok
   adminTotal: number;         // costos_admin
+  // Rango activo — para prorratear pauta/admin (MENSUALES) a la ventana visible.
+  fromDate: string;           // 'YYYY-MM-DD'
+  toDate: string;             // 'YYYY-MM-DD'
+}
+
+/** Fracción del mes que cubre el rango [from,to] (0-1). pauta/admin son costos
+ *  MENSUALES; sin prorratear, a día 3 del mes el gasto entero se dividía entre 3
+ *  días de ingresos → publicidad% inflado ~10x. Prorratea por días cubiertos. */
+function fraccionMesCubierta(from: string, to: string): number {
+  const f = new Date(`${from}T00:00:00`);
+  const t = new Date(`${to}T00:00:00`);
+  if (isNaN(f.getTime()) || isNaN(t.getTime()) || t < f) return 1;
+  const diasRango = Math.round((t.getTime() - f.getTime()) / 86400000) + 1;
+  const diasEnMes = new Date(f.getFullYear(), f.getMonth() + 1, 0).getDate();
+  return Math.max(0, Math.min(1, diasRango / diasEnMes));
 }
 
 function pct1(x: number): string {
@@ -70,7 +85,13 @@ export default function SimuladorUnitEconomics({
   entregadosCount, valorEntregado, devueltosCount, valorPerdido,
   rechazadosCount, valorRechazos,
   costBasis, costBasisLoading, pautaTotal, adminTotal,
+  fromDate, toDate,
 }: Props) {
+  // pauta/admin son mensuales; prorrateamos al rango para que numerador (costo) y
+  // denominador (ingresos del rango) cubran la misma ventana.
+  const fracMes = useMemo(() => fraccionMesCubierta(fromDate, toDate), [fromDate, toDate]);
+  const pautaProrateada = pautaTotal * fracMes;
+  const adminProrateado = adminTotal * fracMes;
   const kpis = useMemo(
     () => computeRealKpis({
       generadosSinCancel,
@@ -103,10 +124,10 @@ export default function SimuladorUnitEconomics({
     pctDevolucion: kpis.pctNoEntregaSobreDespacho,
     costoProductoPct: ingresosBase > 0 ? cogs / ingresosBase : 0,
     fletePct: ingresosBase > 0 ? flete / ingresosBase : 0,
-    publicidadPct: ingresosBase > 0 ? pautaTotal / ingresosBase : 0,
-    adminPct: ingresosBase > 0 ? adminTotal / ingresosBase : 0,
+    publicidadPct: ingresosBase > 0 ? pautaProrateada / ingresosBase : 0,
+    adminPct: ingresosBase > 0 ? adminProrateado / ingresosBase : 0,
     costoDevolucionUnit: round2(fleteUnit),
-  }), [generadosSinCancel, kpis, ingresosBase, cogs, flete, pautaTotal, adminTotal, fleteUnit]);
+  }), [generadosSinCancel, kpis, ingresosBase, cogs, flete, pautaProrateada, adminProrateado, fleteUnit]);
 
   const [sim, setSim] = useState<SimulationInput>(seed);
   // Re-seedear cuando llegan/cambian los datos reales (el usuario edita por encima
