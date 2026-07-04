@@ -1607,8 +1607,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          lunch_end_min: number
+          lunch_start_min: number
           name: string
           status: string
+          work_end_min: number
+          work_start_min: number
         }
         Insert: {
           brand_logo_url?: string | null
@@ -1616,8 +1620,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          lunch_end_min?: number
+          lunch_start_min?: number
           name: string
           status?: string
+          work_end_min?: number
+          work_start_min?: number
         }
         Update: {
           brand_logo_url?: string | null
@@ -1625,8 +1633,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          lunch_end_min?: number
+          lunch_start_min?: number
           name?: string
           status?: string
+          work_end_min?: number
+          work_start_min?: number
         }
         Relationships: []
       }
@@ -2895,6 +2907,18 @@ export type Database = {
           total: number
         }[]
       }
+      operator_worked_blocks: {
+        Args: { p_range?: string }
+        Returns: {
+          block_count: number
+          blocks: Json
+          display_name: string
+          first_event: string
+          last_event: string
+          operator_id: string
+          worked_seconds: number
+        }[]
+      }
       orders_estado_breakdown: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -3059,6 +3083,16 @@ export type Database = {
       }
       update_store_branding: {
         Args: { p_brand_logo_url: string; p_name: string; p_store_id: string }
+        Returns: undefined
+      }
+      update_store_schedule: {
+        Args: {
+          p_lunch_end_min: number
+          p_lunch_start_min: number
+          p_store_id: string
+          p_work_end_min: number
+          p_work_start_min: number
+        }
         Returns: undefined
       }
       upsert_cfo_retrospective: {
