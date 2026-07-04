@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
-import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
+import { confRateBySample, confRateByCohort, isBelowDailyTarget, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { computeJornadaReal, shouldAlertSinConfirmar, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
@@ -215,13 +215,16 @@ export default function ProductivityDashboard() {
     ? [...rows].sort((a, b) => b.confirmados - a.confirmados)[0]
     : null;
 
-  // Cobertura del EQUIPO: cuánto del inflow del período alcanzó a resolver el
-  // equipo. `entrantes` es global (no por operadora) → va en el header de la
-  // sección, NO en la columna por-operadora (eso confundía: numerador por-op /
-  // denominador de equipo daba el viejo 83%).
+  // Embudo del DÍA a nivel EQUIPO (el header de la sección). `entrantes` es global
+  // del store (cola compartida, no hay inflow por-operadora). El número que el
+  // dueño quiere ver ("cómo va el día") es teamTasaDia = confirmados ÷ lo que
+  // entró — NO ÷resueltos (eso es efectividad de cierre, va en el tooltip de cada
+  // celda). Cobertura = lo GESTIONADO ÷ entró (¿trabajó todo o dejó pedidos?).
   const entrantes = rows[0]?.total_entrantes ?? 0;
-  const teamResueltos = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
-  const teamCobertura = entrantes > 0 ? Math.round((teamResueltos / entrantes) * 100) : 0;
+  const teamConf = rows.reduce((a, r) => a + r.confirmados, 0);
+  const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
+  const teamCobertura = entrantes > 0 ? Math.round((Math.min(teamAtendidos, entrantes) / entrantes) * 100) : 0;
+  const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
 
   return (
     <div className="space-y-5">
@@ -474,7 +477,7 @@ export default function ProductivityDashboard() {
             dotClass="bg-success"
             note={
               entrantes > 0
-                ? `${entrantes} entrante${entrantes === 1 ? '' : 's'} al período · el equipo resolvió ${teamResueltos} (${teamCobertura}% cobertura)`
+                ? `Entraron ${entrantes} → gestionó ${teamAtendidos} (${teamCobertura}% cobertura) → confirmó ${teamConf} = ${teamTasaDia}% del día`
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
@@ -490,8 +493,8 @@ export default function ProductivityDashboard() {
               <span><strong className="text-foreground">Intentos N/R</strong>: no contestaron al menos 1 vez (aunque después confirmó)</span>
               <span><strong className="text-foreground">N/R abiertos</strong>: sigue sin contestar al cierre del período</span>
               <span><strong className="text-foreground">Contacto</strong>: % de lo atendido que contestó</span>
-              <span><strong className="text-foreground">% Confirmación</strong>: confirmados ÷ (confirmados + cancelados)</span>
-              <span className="opacity-70">gris* = pocos datos, preliminar</span>
+              <span><strong className="text-foreground">Confirmación del día</strong>: confirmados ÷ lo que entró · meta ~{CONF_DIA_TARGET_PCT}%</span>
+              <span className="opacity-70">gris "· en curso" = el día aún no se trabajó completo, provisional</span>
             </div>
             <div className="overflow-x-auto">
               <table className="data-table">
@@ -522,9 +525,9 @@ export default function ProductivityDashboard() {
                     </th>
                     <th
                       className="text-right"
-                      title="Confirmados ÷ (confirmados + cancelados) — tasa MADURA, solo sobre pedidos ya resueltos. Gris* = pocos datos, preliminar."
+                      title="Confirmados ÷ lo que ENTRÓ en el período — cómo va el día. Meta ~55% (confirmar 85 de cada 100 que entran es imposible: los que no contestan bajan el techo). Gris '· en curso' = el día aún no se trabajó completo, no concluyente. La efectividad de cierre (÷ resueltos, meta 85%) está en el tooltip de cada celda."
                     >
-                      % Confirmación
+                      Confirmación del día
                     </th>
                   </tr>
                 </thead>
@@ -583,14 +586,26 @@ export default function ProductivityDashboard() {
                         <span className="font-mono tabular-nums text-xs text-muted-foreground">{r.tasa_contacto}%</span>
                       </td>
                       <td className="text-right">{(() => {
-                        const cr = confRateBySample(r.confirmados, r.cancelados);
-                        if (cr.tasa == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>;
-                        if (cr.inmaduro) return (
-                          <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Pocos resueltos — preliminar">
-                            {cr.tasa}% *
+                        // "Confirmación del día" = confirmados ÷ lo que ENTRÓ (÷inflow),
+                        // NO ÷resueltos. Es "cómo va el día" y no infla: los que no
+                        // contestó / no tocó tiran la tasa abajo. La efectividad de
+                        // cierre (÷resueltos, la vieja) queda en el tooltip.
+                        const cd = confRateByCohort(r.confirmados, r.cancelados, entrantes);
+                        const ef = confRateBySample(r.confirmados, r.cancelados);
+                        const tip = ef.tasa != null
+                          ? `Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que decidieron). ${cd.pctProcesado}% del día trabajado.`
+                          : 'Sin pedidos resueltos aún.';
+                        if (cd.tasaDia == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title={tip}>—</span>;
+                        // SOLO en 'today' (día vivo) y con < 90% trabajado → provisional
+                        // gris, NUNCA rojo: temprano en la jornada la tasa ÷inflow es baja
+                        // solo porque falta trabajar. En 7d/30d es una ventana ya cerrada
+                        // (la cola reciente pendiente es normal) → número firme vs meta.
+                        if (isToday && cd.inmaduro) return (
+                          <span className="font-mono tabular-nums text-xs text-muted-foreground" title={`Día en curso (${cd.pctProcesado}% trabajado) — provisional. ${tip}`}>
+                            {cd.tasaDia}% <span className="opacity-70">· en curso</span>
                           </span>
                         );
-                        return <RateBar value={cr.tasa} />;
+                        return <span title={tip}><RateBar value={cd.tasaDia} target={CONF_DIA_TARGET_PCT} /></span>;
                       })()}</td>
                     </tr>
                   ))}
@@ -613,6 +628,15 @@ export default function ProductivityDashboard() {
                     // Si total_entrantes está disponible y > 0, mostramos.
                     const faltan = Math.max(0, entrantes - totAt);
                     const faltanTone = faltan === 0 ? 'success' : faltan < entrantes / 2 ? 'warning' : 'danger';
+                    // Confirmación del día del EQUIPO = confirmados ÷ entrantes,
+                    // con la misma madurez que las filas (día en curso → provisional).
+                    const cdTeam = confRateByCohort(totConf, totCanc, entrantes);
+                    // "en curso" gris solo en 'today' (día vivo); en 7d/30d firme.
+                    const teamEnCurso = isToday && cdTeam.inmaduro;
+                    const diaTone = teamEnCurso ? 'muted-foreground'
+                      : cdTeam.tasaDia == null ? 'muted-foreground'
+                      : isBelowDailyTarget(cdTeam.tasaDia) ? (cdTeam.tasaDia >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger')
+                      : 'success';
                     return (
                       <tr className="border-t-2 border-border bg-muted/30 font-bold">
                         <td></td>
@@ -624,13 +648,29 @@ export default function ProductivityDashboard() {
                         </td>
                         <td className="text-right font-mono tabular-nums text-muted-foreground">{totNoresp}</td>
                         <td className="text-right font-mono tabular-nums">{totAt}</td>
-                        <td colSpan={2} className="text-right">
+                        {/* Contacto → chip de cobertura "Faltan: N" (¿el equipo tocó todo?) */}
+                        <td className="text-right">
                           <span
                             className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums border-${faltanTone}/30 bg-${faltanTone}/10 text-${faltanTone}`}
                             title={`Pedidos del período (${entrantes} entrantes) que NADIE del equipo ha tocado todavía. Cero = cobertura 100%.`}
                           >
                             Faltan: {faltan}{faltan === 0 ? ' ✓' : ''}
                           </span>
+                        </td>
+                        {/* Confirmación del día del equipo = confirmados ÷ entrantes vs meta ~55% */}
+                        <td className="text-right">
+                          {cdTeam.tasaDia == null
+                            ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
+                            : (
+                              <span
+                                className={`font-mono tabular-nums text-sm text-${diaTone}`}
+                                title={teamEnCurso
+                                  ? `Día en curso (${cdTeam.pctProcesado}% trabajado) — provisional. Meta del día ~${CONF_DIA_TARGET_PCT}%.`
+                                  : `${totConf} confirmados de ${entrantes} que entraron. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
+                              >
+                                {cdTeam.tasaDia}%{teamEnCurso ? ' ·en curso' : ''}
+                              </span>
+                            )}
                         </td>
                       </tr>
                     );
