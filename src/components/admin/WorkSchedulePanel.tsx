@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Clock, Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -35,14 +35,20 @@ export default function WorkSchedulePanel() {
   const update = useUpdateStoreSchedule();
 
   const [form, setForm] = useState<StoreScheduleMinutes>(DEFAULT_SCHEDULE_MINUTES);
+  // ¿El usuario tiene ediciones sin guardar? Evita que un refetch del server
+  // (o el sync inicial tras editar) pise lo que está tipeando. Se limpia al
+  // guardar con éxito (ahí sí queremos que el form refleje lo persistido).
+  const dirtyRef = useRef(false);
 
-  // Sincroniza el form cuando llega/cambia el dato del server.
+  // Sincroniza el form con el server SOLO si el usuario no está editando.
   useEffect(() => {
-    if (data) setForm(data);
+    if (data && !dirtyRef.current) setForm(data);
   }, [data]);
 
-  const set = (k: keyof StoreScheduleMinutes) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof StoreScheduleMinutes) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    dirtyRef.current = true;
     setForm((f) => ({ ...f, [k]: toMin(e.target.value) }));
+  };
 
   const dirty = !!data && (
     form.work_start_min !== data.work_start_min ||
@@ -60,6 +66,9 @@ export default function WorkSchedulePanel() {
     if (invalidLunch) { toast.error('El inicio del almuerzo debe ser antes del fin.'); return; }
     try {
       await update.mutateAsync({ storeId, ...form });
+      // Guardado OK: soltamos el "dirty" para que el próximo sync del server
+      // (invalidate → refetch) refleje lo persistido sin considerarse pisón.
+      dirtyRef.current = false;
       toast.success('Horario guardado.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'No se pudo guardar el horario.');
