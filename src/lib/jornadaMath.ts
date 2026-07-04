@@ -116,6 +116,68 @@ export function computeJornadaReal(input: JornadaRealInput): JornadaReal {
   return { elapsedMin, activoMin, inactivoMin, huecoMin, pctActivaReal, desconectadaMin };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HORAS REALES por evidencia de trabajo (RPC operator_worked_blocks).
+// La Jornada dejó de liderar con el heartbeat de mouse (que subcuenta el trabajo
+// telefónico) y ahora muestra "Trabajó Xh" = suma de los bloques donde la
+// operadora registró acciones reales (order_results + touchpoints). Estas
+// funciones puras parsean/formatean lo que devuelve el RPC.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface WorkedBlock {
+  /** ISO del primer evento del bloque. */
+  start: string;
+  /** ISO del último evento del bloque. */
+  end: string;
+  /** Cantidad de acciones (order_results + touchpoints) dentro del bloque. */
+  events: number;
+  /** Duración del bloque en segundos (>= c_min_block_sec del RPC). */
+  sec: number;
+}
+
+function isWorkedBlock(v: unknown): v is WorkedBlock {
+  if (v == null || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.start === 'string' &&
+    typeof o.end === 'string' &&
+    typeof o.events === 'number' &&
+    typeof o.sec === 'number' &&
+    Number.isFinite(o.events) &&
+    Number.isFinite(o.sec)
+  );
+}
+
+/**
+ * Parseo DEFENSIVO del jsonb `blocks` de operator_worked_blocks. Nunca tira:
+ * si el input no es un array (o viene null porque la migration no se aplicó
+ * todavía), devuelve []; filtra entradas con forma inválida. Así un cambio de
+ * shape del RPC degrada a "sin bloques", nunca rompe el dashboard.
+ */
+export function asWorkedBlocks(raw: unknown): WorkedBlock[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isWorkedBlock);
+}
+
+/**
+ * Suma de segundos trabajados a partir de los bloques. Se usa como fallback si
+ * `worked_seconds` del RPC viniera null/negativo — el número debe salir de la
+ * misma fuente que los bloques que se muestran, para que "Trabajó" y el detalle
+ * de bloques SIEMPRE reconcilien.
+ */
+export function sumWorkedSeconds(blocks: WorkedBlock[]): number {
+  return blocks.reduce((acc, b) => acc + Math.max(0, b.sec), 0);
+}
+
+/**
+ * Etiqueta compacta de los bloques del día, usando un formateador de hora
+ * INYECTADO (para testear sin depender de Intl/zona horaria del runner).
+ * Ej con fmt = hora Bogotá: "9:12 a. m.–1:40 p. m. · 6:30 p. m.–8:18 p. m.".
+ */
+export function blockRangeLabel(blocks: WorkedBlock[], fmt: (iso: string) => string): string {
+  return blocks.map((b) => `${fmt(b.start)}–${fmt(b.end)}`).join(' · ');
+}
+
 export interface SinConfirmarInput {
   /** Confirmados del período (columna `confirmados` de operator_productivity_stats). */
   conf: number | null | undefined;

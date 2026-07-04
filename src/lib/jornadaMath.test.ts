@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   computeJornadaReal,
   shouldAlertSinConfirmar,
+  asWorkedBlocks,
+  sumWorkedSeconds,
+  blockRangeLabel,
   UMBRAL_HUECO_MIN,
   UMBRAL_DESCONECTADA_MIN,
   UMBRAL_SIN_CONF_MIN,
@@ -204,6 +207,45 @@ describe('shouldAlertSinConfirmar', () => {
     const started = Date.parse(STARTED);
     expect(shouldAlertSinConfirmar({ ...base, umbralMin: 30, nowMs: started + 31 * 60 * 1000 })).toBe(true);
     expect(shouldAlertSinConfirmar({ ...base, umbralMin: 30, nowMs: started + 29 * 60 * 1000 })).toBe(false);
+  });
+});
+
+describe('worked blocks (horas reales por evidencia)', () => {
+  const B1 = { start: '2026-07-03T14:12:00Z', end: '2026-07-03T18:40:00Z', events: 22, sec: 16080 };
+  const B2 = { start: '2026-07-03T23:30:00Z', end: '2026-07-04T01:18:00Z', events: 9, sec: 6480 };
+
+  it('asWorkedBlocks: array válido pasa tal cual', () => {
+    expect(asWorkedBlocks([B1, B2])).toEqual([B1, B2]);
+  });
+
+  it('asWorkedBlocks: null/undefined/no-array → [] (migration no aplicada, sin romper)', () => {
+    expect(asWorkedBlocks(null)).toEqual([]);
+    expect(asWorkedBlocks(undefined)).toEqual([]);
+    expect(asWorkedBlocks('nope')).toEqual([]);
+    expect(asWorkedBlocks({})).toEqual([]);
+  });
+
+  it('asWorkedBlocks: filtra entradas con shape inválida, conserva las buenas', () => {
+    const mixed = [
+      B1,
+      { start: 'x' },                                   // faltan campos
+      { start: 1, end: 2, events: 3, sec: 4 },          // tipos malos
+      { start: 'a', end: 'b', events: NaN, sec: 5 },    // NaN
+      B2,
+    ];
+    expect(asWorkedBlocks(mixed)).toEqual([B1, B2]);
+  });
+
+  it('sumWorkedSeconds: suma segundos e ignora negativos', () => {
+    expect(sumWorkedSeconds([B1, B2])).toBe(22560);
+    expect(sumWorkedSeconds([])).toBe(0);
+    expect(sumWorkedSeconds([{ ...B1, sec: -100 }])).toBe(0);
+  });
+
+  it('blockRangeLabel: usa el formateador inyectado y une con " · "', () => {
+    const fmt = (iso: string) => iso.slice(11, 16); // HH:MM del ISO (determinístico)
+    expect(blockRangeLabel([B1, B2], fmt)).toBe('14:12–18:40 · 23:30–01:18');
+    expect(blockRangeLabel([], fmt)).toBe('');
   });
 });
 
