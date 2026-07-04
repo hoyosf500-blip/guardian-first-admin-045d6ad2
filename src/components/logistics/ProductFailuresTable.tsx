@@ -141,7 +141,7 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
             </div>
             <div className="min-w-0">
               <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
-                Valor perdido · top {sorted.length} productos
+                Valor perdido · {sorted.length} productos con peor entrega
               </div>
               <div className="font-extrabold text-3xl text-warning tabular-nums leading-none mt-1.5">
                 {formatCOP(totalLost)}

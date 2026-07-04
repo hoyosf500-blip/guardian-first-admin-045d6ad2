@@ -106,9 +106,13 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
   const totalActivos = summary.total_pedidos ?? 0;
   const totalEntrados = totalActivos + cancelados;
 
-  // Sanity check: si cuadra, despachadas + pendientes ≈ activos.
-  // Diferencia probable = estados raros no clasificados.
-  const sinClasificar = Math.max(0, totalActivos - despachadasReales - totalPendientes);
+  // Pre-despacho = lo que ya se confirmó pero AÚN no salió al carrier: guía
+  // generada, CONFIRMADO, PREPARANDO, ALISTAMIENTO, POR RECOLECTAR (EC). Es
+  // inventario operativo NORMAL, no un estado "sin clasificar" ni un bug de datos.
+  // logistics_summary no tiene un bucket propio para esto, así que sale por resta:
+  // activos − despachadas − pendientes. (Antes se rotulaba "sin clasificar" y
+  // culpaba a una migration inexistente — auditoría 2026-07-03.)
+  const enPreparacion = Math.max(0, totalActivos - despachadasReales - totalPendientes);
 
   // ── Valores ─────────────────────────────────────────────────
   const valorEntregado    = summary.valor_entregado    ?? 0;
@@ -285,10 +289,10 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         </div>
       </section>
 
-      {sinClasificar > 0 && (
+      {enPreparacion > 0 && (
         <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-2.5 text-xs text-muted-foreground">
-          <span className="font-mono tabular-nums text-foreground">{sinClasificar.toLocaleString('es-CO')}</span>
-          {' '}pedidos activos no caen en ninguna categoría conocida (estados sin clasificar). Verificá la migration esté actualizada.
+          <span className="font-mono tabular-nums text-foreground">{enPreparacion.toLocaleString('es-CO')}</span>
+          {' '}pedidos en preparación (confirmados con guía generada / en alistamiento, todavía no salieron al transportador). Es inventario normal previo al despacho.
         </div>
       )}
 

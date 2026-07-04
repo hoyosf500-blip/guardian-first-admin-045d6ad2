@@ -64,7 +64,7 @@ export default memo(function CarrierRecommendations({
     <div className="space-y-3">
       {/* Stats banner — resumen accionable arriba de la tabla */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Δ ≥ 20 puntos mejor vs peor" />
+        <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Spread ≥ 20 pts entre el mejor y el peor carrier de la ciudad" />
         <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="Δ entre 10 y 20 puntos" />
         <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
       </div>
@@ -91,7 +91,7 @@ export default memo(function CarrierRecommendations({
               <th className="text-right px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Vol.</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mejor carrier</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Peor carrier</th>
-              <th className="text-center px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Δ pts</th>
+              <th className="text-center px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground" title="Diferencia de puntos entre el MEJOR y el PEOR carrier de la ciudad (el spread), no la ganancia exacta de cambiar desde tu carrier actual.">Δ pts</th>
               <th className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Acción</th>
               <th className="text-right px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"></th>
             </tr>

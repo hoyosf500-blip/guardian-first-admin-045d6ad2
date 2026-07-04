@@ -3,22 +3,28 @@ import { Download, MapPin, AlertTriangle } from 'lucide-react';
 import { formatCOP } from '@/lib/utils';
 import { rowsToCsv, downloadCsv } from '@/lib/csvExport';
 import { SortableHeader, type SortDir } from './SortableHeader';
-import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
+import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { CityReturns } from '@/lib/logistics.types';
 
 interface Props { rows: CityReturns[]; }
 
+// Fila enriquecida con la madurez para que el render decida atenuar/marcar prelim.
+type CityRow = CityReturns & { _prelim: boolean; _resueltos: number };
+
 type Key = keyof CityReturns;
 
 /** Heat-map data bar para tasa de devolución. Tono escala según
- *  severidad: <15% neutral, 15-30% warning, ≥30% danger. */
-function ReturnRateBar({ value }: { value: number }) {
+ *  severidad: <15% neutral, 15-30% warning, ≥30% danger. Si la tasa es
+ *  PRELIMINAR (muestra chica / cohorte inmaduro) se pinta gris + sufijo,
+ *  para no gritar rojo sobre 1-4 pedidos concluidos. */
+function ReturnRateBar({ value, prelim }: { value: number; prelim?: boolean }) {
   const pct = Math.max(0, Math.min(100, value));
-  const tone = pct >= 30 ? 'danger' : pct >= 15 ? 'warning' : 'neutral';
+  const tone = prelim ? 'neutral' : pct >= 30 ? 'danger' : pct >= 15 ? 'warning' : 'neutral';
   return (
-    <div className={`data-bar tone-${tone}`}>
+    <div className={`data-bar tone-${tone}`} style={prelim ? { opacity: 0.55 } : undefined}
+      title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos — la tasa aún no es confiable` : undefined}>
       <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
-      <span className="data-bar-value">{value.toFixed(1)}%</span>
+      <span className="data-bar-value">{value.toFixed(1)}%{prelim ? ' ·prelim.' : ''}</span>
     </div>
   );
 }
@@ -29,16 +35,23 @@ export default memo(function CityReturnsTable({ rows }: Props) {
 
   // tasa_entrega/tasa_devolucion → maduras (÷ entregados+devueltos). Conteos
   // crudos intactos. Sort/bars/CSV usan la tasa madura automáticamente.
-  const matureRows = useMemo<CityReturns[]>(() => rows.map(r => {
+  // `_prelim` marca las tasas de muestra chica / cohorte inmaduro para atenuarlas.
+  const matureRows = useMemo<CityRow[]>(() => rows.map(r => {
     const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
-    return { ...r, tasa_entrega: m.tasaEntregaMadura ?? 0, tasa_devolucion: m.tasaDevolucionMadura ?? 0 };
+    return {
+      ...r,
+      tasa_entrega: m.tasaEntregaMadura ?? 0,
+      tasa_devolucion: m.tasaDevolucionMadura ?? 0,
+      _prelim: isRatePreliminary(m),
+      _resueltos: m.resueltos,
+    };
   }), [rows]);
 
   const sorted = useMemo(() => {
     const out = [...matureRows];
     out.sort((a, b) => {
-      const av = a[sortKey] ?? 0;
-      const bv = b[sortKey] ?? 0;
+      const av = a[sortKey as keyof CityReturns] ?? 0;
+      const bv = b[sortKey as keyof CityReturns] ?? 0;
       if (typeof av === 'number' && typeof bv === 'number') {
         return sortDir === 'asc' ? av - bv : bv - av;
       }
@@ -76,7 +89,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
         </div>
         <p className="text-sm font-semibold text-foreground mb-1">Sin datos de ciudades</p>
         <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-          No hay ciudades con suficientes pedidos en este rango. Probá con un rango más amplio.
+          No hay ciudades con devoluciones en este rango. Probá con un rango más amplio o quitá el filtro de ciudad.
         </p>
       </div>
     );
@@ -92,7 +105,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
           </div>
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
-              Valor perdido total · top {sorted.length} ciudades
+              Valor perdido · {sorted.length} ciudades con mayor tasa de devolución
             </div>
             <div className="font-extrabold text-3xl text-danger tabular-nums leading-none mt-1.5">
               {formatCOP(totalLost)}
@@ -144,11 +157,12 @@ export default memo(function CityReturnsTable({ rows }: Props) {
                   <td className="text-right font-mono tabular-nums">{r.total_pedidos.toLocaleString('es-CO')}</td>
                   <td className="text-right font-mono tabular-nums text-[hsl(var(--danger))] font-semibold">{r.devueltos.toLocaleString('es-CO')}</td>
                   {/* Sin desenlaces no hay tasa: "0.0%" hacía ver perfecta a una
-                      ciudad donde simplemente no concluyó ningún pedido todavía. */}
+                      ciudad donde simplemente no concluyó ningún pedido todavía.
+                      Con muestra chica se marca prelim. (gris) en vez de rojo. */}
                   <td className="text-right">
-                    {(r.entregados + r.devueltos) === 0
+                    {r._resueltos === 0
                       ? <span className="text-xs text-muted-foreground" title="Sin pedidos concluidos aún">—</span>
-                      : <ReturnRateBar value={r.tasa_devolucion} />}
+                      : <ReturnRateBar value={r.tasa_devolucion} prelim={r._prelim} />}
                   </td>
                   <td className="text-right font-mono tabular-nums text-xs text-[hsl(var(--danger))]">{formatCOP(r.valor_perdido)}</td>
                 </tr>

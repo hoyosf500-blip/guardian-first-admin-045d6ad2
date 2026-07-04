@@ -3,7 +3,19 @@ import { TrendingUp, TrendingDown, Minus, GitCompare, Package, CheckCircle2, Rot
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
 import { formatCOP } from '@/lib/utils';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { LogisticsFilters, LogisticsSummary } from '@/lib/logistics.types';
+
+// Tasa MADURA (÷ entregados+devueltos) desde los conteos del summary. Antes esta
+// vista usaba summary.tasa_entrega/tasa_devolucion CRUDAS (÷ total, con
+// pendientes/tránsito en el denominador), así que el período en curso (inmaduro,
+// medio cohorte en camino) siempre parecía "empeorar" vs un período pasado ya
+// concluido. Era el único de los 7 componentes de /logística sin madurez.
+function maduras(s: LogisticsSummary | null): { entrega: number; devolucion: number } {
+  if (!s) return { entrega: 0, devolucion: 0 };
+  const m = deriveDeliveryMaturity(s.entregados ?? 0, s.devueltos ?? 0, s.total_pedidos ?? 0);
+  return { entrega: m.tasaEntregaMadura ?? 0, devolucion: m.tasaDevolucionMadura ?? 0 };
+}
 
 interface Props {
   periodA: LogisticsFilters;
@@ -106,8 +118,12 @@ function PeriodColumn({ label, accent, summary, isLoading, compareTo }: PeriodCo
   const entregados = summary.entregados ?? 0;
   const devueltos = summary.devueltos ?? 0;
   const enTransito = summary.en_transito ?? 0;
-  const tasaEntrega = summary.tasa_entrega ?? 0;
-  const tasaDevolucion = summary.tasa_devolucion ?? 0;
+  // Tasas MADURAS (÷ concluidos), no las crudas del RPC, para no comparar
+  // manzanas (período inmaduro) con peras (período concluido).
+  const mThis = maduras(summary);
+  const mCompare = maduras(compareTo);
+  const tasaEntrega = mThis.entrega;
+  const tasaDevolucion = mThis.devolucion;
   const valorEntregado = summary.valor_entregado ?? 0;
 
   return (
@@ -124,8 +140,8 @@ function PeriodColumn({ label, accent, summary, isLoading, compareTo }: PeriodCo
         <KpiLine icon={TruckIcon}    label="En tránsito"   value={enTransito.toLocaleString('es-CO')} rawValue={enTransito} rawCompare={compareTo?.en_transito ?? 0}   format="absolute" />
 
         <div className="pt-3 mt-3 border-t border-border/60 space-y-3">
-          <KpiLine label="Tasa de entrega"     value={`${tasaEntrega.toFixed(1)}%`}    rawValue={tasaEntrega}     rawCompare={compareTo?.tasa_entrega ?? 0}    format="points"   tone="success" />
-          <KpiLine label="Tasa de devolución"  value={`${tasaDevolucion.toFixed(1)}%`} rawValue={tasaDevolucion}  rawCompare={compareTo?.tasa_devolucion ?? 0} format="points"   tone="danger" inverseDelta />
+          <KpiLine label="Tasa de entrega"     value={`${tasaEntrega.toFixed(1)}%`}    rawValue={tasaEntrega}     rawCompare={mCompare.entrega}    format="points"   tone="success" />
+          <KpiLine label="Tasa de devolución"  value={`${tasaDevolucion.toFixed(1)}%`} rawValue={tasaDevolucion}  rawCompare={mCompare.devolucion} format="points"   tone="danger" inverseDelta />
           <KpiLine label="Valor entregado"     value={formatCOP(valorEntregado)}       rawValue={valorEntregado}  rawCompare={compareTo?.valor_entregado ?? 0} format="absolute" tone="success" />
         </div>
       </div>
@@ -201,12 +217,15 @@ function KpiLine({ icon: Icon, label, value, rawValue, rawCompare, format, tone,
 }
 
 function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB: LogisticsSummary }) {
-  const tasaA = periodA.tasa_entrega ?? 0;
-  const tasaB = periodB.tasa_entrega ?? 0;
+  // Tasas MADURAS (÷ concluidos) para el resumen del delta también.
+  const mA = maduras(periodA);
+  const mB = maduras(periodB);
+  const tasaA = mA.entrega;
+  const tasaB = mB.entrega;
   const deltaTasa = tasaB - tasaA;
 
-  const devA = periodA.tasa_devolucion ?? 0;
-  const devB = periodB.tasa_devolucion ?? 0;
+  const devA = mA.devolucion;
+  const devB = mB.devolucion;
   const deltaDev = devB - devA;
 
   const isPositive = deltaTasa > 0 && deltaDev <= 0;

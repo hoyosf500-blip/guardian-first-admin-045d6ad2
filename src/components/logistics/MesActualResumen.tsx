@@ -472,6 +472,8 @@ export default function MesActualResumen({ summary, filters }: Props) {
           costBasisLoading={costBasis.isLoading}
           pautaTotal={(monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0)}
           adminTotal={monthlyCosts.data?.costos_admin ?? 0}
+          fromDate={filters.fromDate}
+          toDate={filters.toDate}
         />
       </div>
     </section>

@@ -118,6 +118,10 @@ export function useLogisticsStats(
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(() => {
             queryClient.invalidateQueries({ queryKey: ['logistics'] });
+            // product-profitability NO comparte el prefijo 'logistics' → sin esto
+            // la tabla de Rentabilidad quedaba stale hasta 5min mientras el resto
+            // de /logística se refrescaba solo con cada sync del cron.
+            queryClient.invalidateQueries({ queryKey: ['product-profitability'] });
             debounceRef.current = null;
           }, 5000);
         },

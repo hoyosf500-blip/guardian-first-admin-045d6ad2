@@ -160,7 +160,11 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              La <strong className="text-foreground">Ganancia Neta</strong> del hero es el <strong className="text-foreground">operativo por cohorte</strong> (pedidos creados en el mes, por fecha de pedido) — reconcilia con la Utilidad de Dropi y NO se infla por mezcla de meses. La composición y el wallet neto de abajo son la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes). En rangos multi-mes el hero cae a la caja.
+              {usingCohort ? (
+                <>La <strong className="text-foreground">Ganancia Neta</strong> del hero es el <strong className="text-foreground">operativo por cohorte</strong> (pedidos creados en el mes, por fecha de pedido) — reconcilia con la Utilidad de Dropi y NO se infla por mezcla de meses. La composición y el wallet neto de abajo son la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes).</>
+              ) : (
+                <>La <strong className="text-foreground">Ganancia Neta</strong> del hero es la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes de varios meses) — en este rango no hay operativo por cohorte disponible, así que puede estar inflada. Elegí un solo mes calendario para ver el operativo reconciliado con Dropi.</>
+              )}
               <strong className="text-foreground"> NO incluye gasto pauta</strong> (Meta / TikTok) — eso entra en Fase B.
             </p>
           </div>

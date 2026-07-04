@@ -77,6 +77,10 @@ export default function ProductProfitabilityTable({ filters }: Props) {
   const [sortBy, setSortBy] = useState<SortBy>('utilidad');
   const sortedRows = useMemo(() => applySort(rows ?? [], sortBy), [rows, sortBy]);
   const totals = useMemo(() => aggregateProductTotals(rows ?? []), [rows]);
+  // El RPC devuelve las 100 de MAYOR utilidad (ORDER BY utilidad DESC LIMIT 100).
+  // Si llegaron exactamente 100, probablemente hay más productos y los KPIs/total
+  // de abajo (sumados sobre estas 100) SUBESTIMAN la pérdida real — avisamos.
+  const truncated = (rows?.length ?? 0) >= 100;
 
   if (isLoading) {
     return (
@@ -113,6 +117,11 @@ export default function ProductProfitabilityTable({ filters }: Props) {
 
   return (
     <section className="space-y-4">
+      {truncated && (
+        <div className="rounded-lg border border-warning/30 bg-warning/8 px-4 py-2.5 text-[11px] text-warning">
+          Mostrando los <strong>100 productos de mayor utilidad</strong>. Si tenés más productos, los KPIs y el total de abajo pueden <strong>subestimar la pérdida real</strong> (los mayores perdedores quedan fuera del corte). Afiná el rango para ver menos productos.
+        </div>
+      )}
       {/* KPI agregados */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard

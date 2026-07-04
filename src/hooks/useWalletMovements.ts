@@ -127,10 +127,15 @@ export function useWalletSaldoHoy() {
   });
 }
 
-/** Series por día para la gráfica de barras apiladas — agregada server-side. */
+/** Series por día para la gráfica de barras apiladas — agregada server-side.
+ *  wallet_daily_series se scopea por tienda server-side; storeId en la queryKey
+ *  hace que al cambiar de tienda la gráfica refetchee sola (antes era el único
+ *  hook de wallet sin storeId → mostraba la caja de la tienda anterior). */
 export function useWalletDailySeries(fromDate: string, toDate: string) {
+  const storeId = useActiveStoreId();
   return useQuery({
-    queryKey: ['wallet_daily_series', fromDate, toDate],
+    queryKey: ['wallet_daily_series', storeId ?? 'all', fromDate, toDate],
+    enabled: Boolean(storeId),
     queryFn: async () => {
       const fromTs = `${fromDate}T00:00:00Z`;
       const toTs = `${toDate}T23:59:59Z`;
