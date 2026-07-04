@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
-import { confRateByCohort, CONF_TARGET_PCT } from '@/lib/confirmationRate';
+import { confRateByCohort, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
 import CancelledReasonsModal from '@/components/admin/CancelledReasonsModal';
 
 // Panel de "Reportes diarios" con DOS vistas:
@@ -60,21 +60,27 @@ function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
 interface DayMetrics {
   resueltos: number;        // confirmados + cancelados
   pctProcesado: number;     // (conf + canc) ÷ entrantes — qué tan trabajado está el día
-  tasaConf: number | null;  // conf ÷ (conf + canc) — tasa MADURA; null si no hay resueltos
+  // Tasas del DÍA sobre lo que ENTRÓ (÷inflow) — así %PROC = %CONF + %CANC y todo
+  // reconcilia sobre el mismo denominador (decisión del dueño 2026-07-03: no inflar).
+  tasaConfDia: number | null;  // conf ÷ entrantes — "confirmación del día", meta ~55%
+  tasaCancDia: number | null;  // canc ÷ entrantes
+  // Efectividad de cierre (÷resueltos) — se muestra en el tooltip, meta 85%.
+  tasaConf: number | null;  // conf ÷ (conf + canc)
   tasaCanc: number | null;  // canc ÷ (conf + canc)
   inmaduro: boolean;        // pctProcesado < umbral → no concluyente
 }
 
 // Delegamos en la fuente ÚNICA de la tasa (src/lib/confirmationRate.ts) para que
-// la fórmula no vuelva a divergir entre pantallas. Mantenemos el shape DayMetrics
-// (campo `tasaConf`) para no tocar los call-sites de esta vista.
+// la fórmula no vuelva a divergir entre pantallas.
 function deriveDayMetrics(conf: number, canc: number, entrantes: number): DayMetrics {
   const r = confRateByCohort(conf, canc, entrantes);
   return {
     resueltos: r.resueltos,
     pctProcesado: r.pctProcesado,
-    tasaConf: r.tasa,
-    tasaCanc: r.tasaCanc,
+    tasaConfDia: r.tasaDia,                                        // conf ÷ entrantes
+    tasaCancDia: entrantes > 0 ? Math.round((Math.max(0, canc) / entrantes) * 100) : null, // canc ÷ entrantes
+    tasaConf: r.tasa,                                             // conf ÷ resueltos (efectividad)
+    tasaCanc: r.tasaCanc,                                         // canc ÷ resueltos
     inmaduro: r.inmaduro,
   };
 }
@@ -209,9 +215,9 @@ export default function DailyReportsView() {
       }),
       { entrantes: 0, confirmados: 0, cancelados: 0, noresp: 0, pendientes: 0 },
     );
-    // Tasas maduras del agregado (÷ resueltos, igual que cada fila). El total
-    // siempre se pinta con color normal: es un KPI agregado robusto, el gris de
-    // "inmaduro" es una señal por-día.
+    // Tasas del agregado. %Conf/%Canc se muestran ÷inflow (sobre lo que entró);
+    // la efectividad ÷resueltos queda en el tooltip. El total se pinta con color
+    // normal: es un KPI agregado robusto (el gris "inmaduro" es señal por-día).
     const m = deriveDayMetrics(t.confirmados, t.cancelados, t.entrantes);
     return { ...t, ...m };
   }, [days]);
@@ -223,7 +229,8 @@ export default function DailyReportsView() {
     const headers = [
       'Fecha', 'Entrantes', 'Confirmados', 'Cancelados',
       'No Respondió', 'Pendientes', '% Procesado',
-      '% Confirmación (madura)', '% Cancelación (madura)', 'Concluyente',
+      '% Confirmación del día (÷entró)', '% Cancelación del día (÷entró)',
+      '% Efectividad cierre (÷resueltos)', 'Concluyente',
     ];
     const escape = (v: unknown) => {
       if (v === null || v === undefined) return '';
@@ -236,8 +243,9 @@ export default function DailyReportsView() {
         r.fecha,
         r.entrantes, r.confirmados, r.cancelados, r.noresp, r.pendientes,
         `${m.pctProcesado}%`,
+        m.tasaConfDia == null ? 'N/A' : `${m.tasaConfDia}%`,
+        m.tasaCancDia == null ? 'N/A' : `${m.tasaCancDia}%`,
         m.tasaConf == null ? 'N/A' : `${m.tasaConf}%`,
-        m.tasaCanc == null ? 'N/A' : `${m.tasaCanc}%`,
         m.inmaduro ? 'no' : 'sí',
       ].map(escape).join(',');
     });
@@ -277,12 +285,12 @@ export default function DailyReportsView() {
 
   const cellBase = 'px-3 py-2 text-xs font-mono whitespace-nowrap';
 
-  // Color de la tasa de confirmación vs la meta oficial del dueño
-  // (CONF_TARGET_PCT = 85%, fuente única). Verde en meta; ámbar en la banda
-  // "cerca" (5 pts por debajo); rojo debajo de eso.
+  // %CONF es ÷inflow (confirmación del día) → se compara contra la meta del día
+  // (~55%), NO contra el 85% (esa es la efectividad ÷resueltos, va en el tooltip).
+  // Verde en meta; ámbar en la banda "cerca" (5 pts por debajo); rojo debajo.
   function pctConfClass(p: number) {
-    if (p >= CONF_TARGET_PCT) return 'text-green';
-    if (p >= CONF_TARGET_PCT - 5) return 'text-orange';
+    if (p >= CONF_DIA_TARGET_PCT) return 'text-green';
+    if (p >= CONF_DIA_TARGET_PCT - 5) return 'text-orange';
     return 'text-red';
   }
 
@@ -377,13 +385,13 @@ export default function DailyReportsView() {
                     </th>
                     <th
                       className="px-3 py-2 font-semibold text-center"
-                      title="Confirmados ÷ (Confirmados + Cancelados) — tasa MADURA, solo sobre pedidos ya resueltos. Gris = día inmaduro / no concluyente."
+                      title="Confirmados ÷ lo que ENTRÓ ese día — confirmación del día. Meta ~55% (%Proc = %Conf + %Canc: todo sobre lo que entró). La efectividad de cierre (÷ resueltos, meta 85%) está en el tooltip de cada celda. Gris = día en curso / no concluyente."
                     >
                       % Conf
                     </th>
                     <th
                       className="px-3 py-2 font-semibold text-center"
-                      title="Cancelados ÷ (Confirmados + Cancelados) — tasa madura"
+                      title="Cancelados ÷ lo que ENTRÓ ese día (mismo denominador que %Conf)"
                     >
                       % Canc
                     </th>
@@ -392,18 +400,18 @@ export default function DailyReportsView() {
                 <tbody className="divide-y divide-border">
                   {days.map((r) => {
                     const m = deriveDayMetrics(r.confirmados, r.cancelados, r.entrantes);
-                    // Color de la tasa de confirmación:
-                    //  - sin resueltos → "—" gris (N/A, no es 0% rojo)
-                    //  - inmaduro (proc < 90%) → tasa en gris "no concluyente"
-                    //  - maduro → color semántico por umbral
-                    const confClass = m.tasaConf == null || m.inmaduro
+                    // %CONF/%CANC ahora son ÷inflow (sobre lo que entró). Color:
+                    //  - sin entrantes → "—"; inmaduro (día en curso) → gris no concluyente;
+                    //  - maduro → color vs meta del día (~55%).
+                    const confClass = m.tasaConfDia == null || m.inmaduro
                       ? 'text-muted-foreground'
-                      : pctConfClass(m.tasaConf);
-                    const confTitle = m.tasaConf == null
-                      ? 'Sin pedidos resueltos todavía'
+                      : pctConfClass(m.tasaConfDia);
+                    // Tooltip: la efectividad de cierre (÷resueltos, meta 85%) — el otro ángulo.
+                    const confTitle = m.tasaConfDia == null
+                      ? 'Sin pedidos que entraran todavía'
                       : m.inmaduro
-                        ? `Inmaduro / no concluyente — solo ${m.pctProcesado}% del día procesado`
-                        : undefined;
+                        ? `Día en curso — solo ${m.pctProcesado}% procesado, provisional. Efectividad de cierre: ${m.tasaConf == null ? 'N/A' : m.tasaConf + '%'} (÷ resueltos).`
+                        : `${r.confirmados} confirmados de ${r.entrantes} que entraron. Efectividad de cierre: ${m.tasaConf == null ? 'N/A' : m.tasaConf + '%'} (÷ resueltos, meta 85%).`;
                     return (
                       <tr key={r.fecha} className="hover:bg-muted/30 transition-colors">
                         <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
@@ -416,10 +424,10 @@ export default function DailyReportsView() {
                           {m.pctProcesado}%
                         </td>
                         <td className={`${cellBase} text-center font-bold ${confClass}`} title={confTitle}>
-                          {m.tasaConf == null ? '—' : `${m.tasaConf}%`}
+                          {m.tasaConfDia == null ? '—' : `${m.tasaConfDia}%`}
                         </td>
-                        <td className={`${cellBase} text-center ${m.tasaCanc == null || m.inmaduro ? 'text-muted-foreground' : (m.tasaCanc > 0 ? 'text-red' : 'text-muted-foreground')}`}>
-                          {m.tasaCanc == null ? '—' : `${m.tasaCanc}%`}
+                        <td className={`${cellBase} text-center ${m.tasaCancDia == null ? 'text-muted-foreground' : (m.tasaCancDia > 0 ? 'text-red' : 'text-muted-foreground')}`}>
+                          {m.tasaCancDia == null ? '—' : `${m.tasaCancDia}%`}
                         </td>
                       </tr>
                     );
@@ -435,11 +443,12 @@ export default function DailyReportsView() {
                       <td className={`${cellBase} text-center text-muted-foreground font-bold`}>{totals.noresp}</td>
                       <td className={`${cellBase} text-center text-orange font-bold`}>{totals.pendientes}</td>
                       <td className={`${cellBase} text-center font-bold text-foreground`}>{totals.pctProcesado}%</td>
-                      <td className={`${cellBase} text-center font-bold ${totals.tasaConf == null ? 'text-muted-foreground' : pctConfClass(totals.tasaConf)}`}>
-                        {totals.tasaConf == null ? '—' : `${totals.tasaConf}%`}
+                      <td className={`${cellBase} text-center font-bold ${totals.tasaConfDia == null ? 'text-muted-foreground' : pctConfClass(totals.tasaConfDia)}`}
+                        title={`${totals.confirmados} confirmados de ${totals.entrantes} que entraron. Efectividad de cierre: ${totals.tasaConf == null ? 'N/A' : totals.tasaConf + '%'} (÷ resueltos, meta 85%).`}>
+                        {totals.tasaConfDia == null ? '—' : `${totals.tasaConfDia}%`}
                       </td>
-                      <td className={`${cellBase} text-center font-bold ${totals.tasaCanc != null && totals.tasaCanc > 0 ? 'text-red' : 'text-muted-foreground'}`}>
-                        {totals.tasaCanc == null ? '—' : `${totals.tasaCanc}%`}
+                      <td className={`${cellBase} text-center font-bold ${totals.tasaCancDia != null && totals.tasaCancDia > 0 ? 'text-red' : 'text-muted-foreground'}`}>
+                        {totals.tasaCancDia == null ? '—' : `${totals.tasaCancDia}%`}
                       </td>
                     </tr>
                   </tfoot>
