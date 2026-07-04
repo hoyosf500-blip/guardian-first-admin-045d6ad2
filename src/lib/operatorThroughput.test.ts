@@ -8,6 +8,7 @@ import {
   ritmoTone,
   MIN_WORK_SECONDS_TO_JUDGE,
   MIN_GESTIONES_POR_HORA,
+  MIN_INTENTOS_POR_HORA,
   UMBRAL_ACTIVA_FLAG_SEG,
   TIEMPO_CLIENTE_META_SEG,
 } from './operatorThroughput';
@@ -92,5 +93,13 @@ describe('ritmoEsJuzgable / ritmoTone', () => {
     expect(ritmoTone(12)).toBe('warning');   // 10..15
     expect(ritmoTone(15)).toBe('success');
     expect(ritmoTone(null)).toBe('muted');
+  });
+
+  it('umbral de intentos (esfuerzo) = 10/hora — el 🔴 vive sobre marcadas, no clientes', () => {
+    expect(MIN_INTENTOS_POR_HORA).toBe(10);
+    // Día de muchos no-contesta: 40 intentos en 4h = 10/h → NO rojo (siguió marcando).
+    expect(ritmoTone(gestionesPorHora(40, 4 * 3600), MIN_INTENTOS_POR_HORA)).not.toBe('danger');
+    // Casi no marca: 20 intentos en 6h = 3.3/h → rojo.
+    expect(ritmoTone(gestionesPorHora(20, 6 * 3600), MIN_INTENTOS_POR_HORA)).toBe('danger');
   });
 });

@@ -10,8 +10,13 @@
 /** Debajo de este trabajo (30 min) NO juzgamos el ritmo: muy poca muestra →
  *  evita falsos "está lenta" a las 9 a. m. con 3 pedidos. */
 export const MIN_WORK_SECONDS_TO_JUDGE = 30 * 60;
-/** Umbral del dueño: menos de esto = 🔴 lenta / mamando gallo. Calibrable. */
+/** Umbral genérico de ritmo (gestiones/hora). Calibrable. */
 export const MIN_GESTIONES_POR_HORA = 10;
+/** Umbral del 🔴 sobre INTENTOS por hora (esfuerzo de marcado). Decisión del
+ *  dueño 2026-07-04: el rojo se pinta sobre el esfuerzo (todas las marcadas,
+ *  incl. "no contestó" = llamadas en frío), NO sobre clientes cerrados — así un
+ *  día de muchos no-contesta no la castiga; solo cae la que casi no marca. */
+export const MIN_INTENTOS_POR_HORA = 10;
 /** El mouse tiene que estar "alto" (2h+) para que la bandera mouse-vivo aplique. */
 export const UMBRAL_ACTIVA_FLAG_SEG = 2 * 3600;
 /** Tiempo/cliente meta = inverso exacto del umbral (10/h ⟺ 6 min por pedido). */

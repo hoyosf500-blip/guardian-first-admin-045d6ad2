@@ -8,7 +8,7 @@ import { useShopifyPending } from '@/hooks/useShopifyPending';
 import { ShoppingBag } from 'lucide-react';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { computeJornadaReal, shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, blockRangeLabel, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
-import { gestionesPorHora, tiempoPorClienteSeg, densidadTurno, esMouseVivoNoProduce, ritmoTone, MIN_GESTIONES_POR_HORA, TIEMPO_CLIENTE_META_SEG } from '@/lib/operatorThroughput';
+import { gestionesPorHora, densidadTurno, esMouseVivoNoProduce, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 
 interface ActivityRow {
@@ -93,14 +93,6 @@ const RANGE_LABELS: Record<Range, string> = {
   '7d': 'Últimos 7 días',
   '30d': 'Últimos 30 días',
 };
-
-/** Formatea segundos como "Mm Ss" (o "Ss" si < 1 min) para el tiempo por cliente. */
-function fmtPorCliente(sec: number): string {
-  const s = Math.max(0, Math.round(sec));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return m > 0 ? `${m}m ${rem}s` : `${rem}s`;
-}
 
 /** Bullet-style data bar para tasas. Tono semántico vs `target`. Para la tasa de
  *  CONFIRMACIÓN el target es la meta oficial del dueño (CONF_TARGET_PCT = 85%); la
@@ -434,15 +426,22 @@ export default function ProductivityDashboard() {
                         ? Math.max(0, Math.floor((nowMs - lastSignalMs) / 60000))
                         : null;
                       // Señales anti-"mama gallo" (solo 'today', sobre evidencia):
-                      // densidad del turno + bandera mouse-vivo-no-produce.
-                      const atendidos = prodByOp.get(op.id)?.total_atendidos ?? null;
+                      // densidad del turno + bandera mouse-vivo-no-produce. La
+                      // bandera se mide sobre INTENTOS (marcadas, esfuerzo), no
+                      // sobre clientes: un día de muchos no-contesta no la dispara.
+                      const prod = prodByOp.get(op.id);
+                      const intentos = prod?.intentos_total ?? prod?.total_atendidos ?? null;
                       const startMs = Date.parse(turnoStart ?? '');
                       const endMs = Date.parse(turnoEnd ?? '');
                       const turnoSpanSec = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
                         ? (endMs - startMs) / 1000
                         : null;
                       const densidad = isToday ? densidadTurno(workedSec, turnoSpanSec) : null;
-                      const mouseVivo = isToday && esMouseVivoNoProduce({ activeSeconds: a?.active_seconds, atendidos });
+                      const mouseVivo = isToday && esMouseVivoNoProduce({
+                        activeSeconds: a?.active_seconds,
+                        atendidos: intentos,
+                        umbralGestionesHora: MIN_INTENTOS_POR_HORA,
+                      });
                       return (
                         <tr key={op.id}>
                           <td>
@@ -504,7 +503,7 @@ export default function ProductivityDashboard() {
                                 {mouseVivo && (
                                   <span
                                     className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger whitespace-nowrap"
-                                    title="El mouse figura muy activa (2h+) pero gestiona muy poco por hora de mouse — patrón de menear el mouse para figurar sin trabajar. Contrastá con 'Pedidos/hora' en Confirmar."
+                                    title="El mouse figura muy activa (2h+) pero MARCA muy poco por hora de mouse — patrón de menear el mouse para figurar sin trabajar. Contrastá con 'Intentos/h' en Confirmar."
                                   >
                                     🚩 mouse vivo, poco trabajo
                                   </span>
@@ -627,8 +626,8 @@ export default function ProductivityDashboard() {
               <span><strong className="text-foreground">N/R abiertos</strong>: sigue sin contestar al cierre del período</span>
               <span><strong className="text-foreground">Contactó del día</strong>: de lo que entró, a cuántos contactó · faltan = por contactar</span>
               <span><strong className="text-foreground">Confirmación del día</strong>: confirmados ÷ lo que entró · meta ~{CONF_DIA_TARGET_PCT}%</span>
-              <span><strong className="text-foreground">Pedidos/hora</strong>: gestiones ÷ horas TRABAJADAS (real) · 🔴 debajo de {MIN_GESTIONES_POR_HORA}/h</span>
-              <span><strong className="text-foreground">Tiempo/cliente</strong>: horas trabajadas ÷ gestiones (ya no el mouse)</span>
+              <span><strong className="text-foreground">Clientes/h</strong>: clientes reales (contestaron) ÷ horas trabajadas · producción</span>
+              <span><strong className="text-foreground">Intentos/h</strong>: TODAS las marcadas (incl. no-contestó) ÷ horas · esfuerzo · 🔴 debajo de {MIN_INTENTOS_POR_HORA}/h</span>
               <span className="opacity-70">gris "· en curso" = el día aún no se trabajó completo, provisional</span>
             </div>
 
@@ -683,15 +682,15 @@ export default function ProductivityDashboard() {
                     </th>
                     <th
                       className="text-right"
-                      title={`Pedidos gestionados por HORA TRABAJADA (por evidencia de acciones, NO por el mouse que es inflable). La señal más clara de producción real: 🔴 si baja de ${MIN_GESTIONES_POR_HORA}/hora. '—' si trabajó menos de 30 min (muestra insuficiente para juzgar).`}
+                      title="Clientes REALES atendidos por hora trabajada (confirmados + cancelados ÷ horas). Es la PRODUCCIÓN real — los que sí contestaron. No cuenta los 'no contestó' (llamadas en frío, rápidas). Informativo: un día malo de no-contesta baja esto sin ser su culpa, por eso no se pinta rojo."
                     >
-                      Pedidos/hora
+                      Clientes/h
                     </th>
                     <th
                       className="text-right"
-                      title={`Tiempo REAL por pedido gestionado (horas trabajadas por evidencia ÷ atendidos). Antes usaba el mouse (inflable); ahora el trabajo real. 🔴 si supera ~${Math.round(TIEMPO_CLIENTE_META_SEG / 60)} min/pedido. '—' si no hay trabajo/gestiones.`}
+                      title={`Intentos de marcado por hora trabajada (TODAS las llamadas, incl. 'no contestó'). Es el ESFUERZO: aunque no le contesten, si sigue marcando el número se mantiene alto. 🔴 solo si baja de ${MIN_INTENTOS_POR_HORA}/hora = casi no marca. '—' si trabajó menos de 30 min.`}
                     >
-                      Tiempo/cliente
+                      Intentos/h
                     </th>
                   </tr>
                 </thead>
@@ -785,35 +784,36 @@ export default function ProductivityDashboard() {
                         );
                         return <span title={tip}><RateBar value={cd.tasaDia} target={CONF_DIA_TARGET_PCT} /></span>;
                       })()}</td>
-                      {/* Pedidos por HORA TRABAJADA — señal anti-"mama gallo". */}
+                      {/* Clientes REALES por hora (conf+canc ÷ horas) — producción,
+                          informativo (sin rojo: un día malo de no-contesta no es su culpa). */}
                       <td className="text-right">{(() => {
                         const worked = workedByOp.get(r.operator_id)?.worked_seconds;
-                        const gph = gestionesPorHora(r.total_atendidos, worked);
-                        if (gph == null) {
-                          return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin suficiente trabajo registrado (30 min+) para medir el ritmo">—</span>;
+                        const clientes = r.confirmados + r.cancelados;
+                        const cph = gestionesPorHora(clientes, worked);
+                        if (cph == null) {
+                          return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin suficiente trabajo (30 min+) para medir">—</span>;
                         }
-                        const tone = ritmoTone(gph);
-                        const toneClass = tone === 'muted' ? 'text-muted-foreground' : `text-${tone}`;
                         return (
-                          <span className={`font-mono tabular-nums text-xs font-semibold ${toneClass}`}
-                            title={`${r.total_atendidos} gestiones ÷ ${formatDurationHM(worked)} trabajadas. Meta: ${MIN_GESTIONES_POR_HORA}+/hora.`}>
-                            {gph.toFixed(1)}/h
+                          <span className="font-mono tabular-nums text-xs text-foreground"
+                            title={`${clientes} clientes atendidos (contestaron) ÷ ${formatDurationHM(worked)} trabajadas`}>
+                            {cph.toFixed(1)}/h
                           </span>
                         );
                       })()}</td>
-                      {/* Tiempo/cliente = TRABAJO REAL (evidencia) ÷ gestiones.
-                          Antes usaba el mouse (inflable); ahora horas trabajadas. */}
+                      {/* Intentos por hora (esfuerzo, incl. no-contestó) — acá vive el 🔴. */}
                       <td className="text-right">{(() => {
                         const worked = workedByOp.get(r.operator_id)?.worked_seconds;
-                        const per = tiempoPorClienteSeg(worked, r.total_atendidos);
-                        if (per == null) {
-                          return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin trabajo/gestiones para calcular el tiempo por cliente">—</span>;
+                        const intentos = r.intentos_total ?? r.total_atendidos;
+                        const iph = gestionesPorHora(intentos, worked);
+                        if (iph == null) {
+                          return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin suficiente trabajo (30 min+) para medir el ritmo">—</span>;
                         }
-                        const slow = per > TIEMPO_CLIENTE_META_SEG;
+                        const tone = ritmoTone(iph, MIN_INTENTOS_POR_HORA);
+                        const toneClass = tone === 'muted' ? 'text-muted-foreground' : `text-${tone}`;
                         return (
-                          <span className={`font-mono tabular-nums text-xs ${slow ? 'text-danger font-semibold' : 'text-foreground'}`}
-                            title={`${fmtPorCliente(worked ?? 0)} trabajadas ÷ ${r.total_atendidos} gestiones. Meta ~${Math.round(TIEMPO_CLIENTE_META_SEG / 60)} min/pedido.`}>
-                            {fmtPorCliente(per)}
+                          <span className={`font-mono tabular-nums text-xs font-semibold ${toneClass}`}
+                            title={`${intentos} intentos de marcado ÷ ${formatDurationHM(worked)} trabajadas. 🔴 debajo de ${MIN_INTENTOS_POR_HORA}/hora (casi no marca). Incluye los 'no contestó', así un día duro no te castiga.`}>
+                            {iph.toFixed(1)}/h
                           </span>
                         );
                       })()}</td>
@@ -842,11 +842,14 @@ export default function ProductivityDashboard() {
                     const pctContactoTeam = entrantes > 0 ? Math.round((totContactados / entrantes) * 100) : null;
                     const faltanContactar = Math.max(0, entrantes - totContactados);
                     const contactoTone = faltanContactar === 0 ? 'success' : faltanContactar < entrantes / 2 ? 'warning' : 'danger';
-                    // Ritmo del EQUIPO = gestiones ÷ horas TRABAJADAS (evidencia).
+                    // Ritmo del EQUIPO sobre horas TRABAJADAS (evidencia): clientes
+                    // reales (info) + intentos (esfuerzo, donde vive el 🔴).
                     const totWorked = rows.reduce((a, r) => a + (workedByOp.get(r.operator_id)?.worked_seconds ?? 0), 0);
-                    const gphTeam = gestionesPorHora(totAt, totWorked);
-                    const gphTeamTone = gphTeam == null ? 'muted-foreground' : ritmoTone(gphTeam) === 'muted' ? 'muted-foreground' : `${ritmoTone(gphTeam)}`;
-                    const perTeam = tiempoPorClienteSeg(totWorked, totAt);
+                    const totClientes = totConf + totCanc;
+                    const totIntentosMarcado = rows.reduce((a, r) => a + (r.intentos_total ?? r.total_atendidos), 0);
+                    const cphTeam = gestionesPorHora(totClientes, totWorked);
+                    const iphTeam = gestionesPorHora(totIntentosMarcado, totWorked);
+                    const iphTeamTone = iphTeam == null ? 'muted-foreground' : ritmoTone(iphTeam, MIN_INTENTOS_POR_HORA) === 'muted' ? 'muted-foreground' : ritmoTone(iphTeam, MIN_INTENTOS_POR_HORA);
                     // Confirmación del día del EQUIPO = confirmados ÷ entrantes,
                     // con la misma madurez que las filas (día en curso → provisional).
                     const cdTeam = confRateByCohort(totConf, totCanc, entrantes);
@@ -895,22 +898,22 @@ export default function ProductivityDashboard() {
                               </span>
                             )}
                         </td>
-                        {/* Pedidos/hora del equipo = gestiones ÷ horas trabajadas. */}
+                        {/* Clientes reales/hora del equipo (info). */}
                         <td className="text-right">
-                          {gphTeam == null
+                          {cphTeam == null
                             ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
-                            : <span className={`font-mono tabular-nums text-sm font-semibold text-${gphTeamTone}`}
-                                title={`${totAt} gestiones del equipo ÷ ${formatDurationHM(totWorked)} trabajadas. Meta ${MIN_GESTIONES_POR_HORA}+/hora.`}>
-                                {gphTeam.toFixed(1)}/h
+                            : <span className="font-mono tabular-nums text-sm text-foreground"
+                                title={`${totClientes} clientes atendidos del equipo ÷ ${formatDurationHM(totWorked)} trabajadas`}>
+                                {cphTeam.toFixed(1)}/h
                               </span>}
                         </td>
-                        {/* Tiempo/cliente del equipo = horas trabajadas ÷ gestiones (real). */}
+                        {/* Intentos/hora del equipo (esfuerzo, donde vive el 🔴). */}
                         <td className="text-right">
-                          {perTeam == null
+                          {iphTeam == null
                             ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
-                            : <span className={`font-mono tabular-nums text-sm ${perTeam > TIEMPO_CLIENTE_META_SEG ? 'text-danger' : 'text-foreground'}`}
-                                title={`${fmtPorCliente(totWorked)} trabajadas del equipo ÷ ${totAt} gestiones. Meta ~${Math.round(TIEMPO_CLIENTE_META_SEG / 60)} min/pedido.`}>
-                                {fmtPorCliente(perTeam)}
+                            : <span className={`font-mono tabular-nums text-sm font-semibold text-${iphTeamTone}`}
+                                title={`${totIntentosMarcado} intentos del equipo ÷ ${formatDurationHM(totWorked)} trabajadas. 🔴 debajo de ${MIN_INTENTOS_POR_HORA}/hora.`}>
+                                {iphTeam.toFixed(1)}/h
                               </span>}
                         </td>
                       </tr>
