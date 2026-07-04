@@ -77,6 +77,14 @@ const RANGE_LABELS: Record<Range, string> = {
   '30d': 'Últimos 30 días',
 };
 
+/** Formatea segundos como "Mm Ss" (o "Ss" si < 1 min) para el tiempo por cliente. */
+function fmtPorCliente(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return m > 0 ? `${m}m ${rem}s` : `${rem}s`;
+}
+
 /** Bullet-style data bar para tasas. Tono semántico vs `target`. Para la tasa de
  *  CONFIRMACIÓN el target es la meta oficial del dueño (CONF_TARGET_PCT = 85%); la
  *  tasa de RESOLUCIÓN (Seguimiento/Novedades) es otra métrica y pasa su propio
@@ -222,8 +230,8 @@ export default function ProductivityDashboard() {
   // celda). Cobertura = lo GESTIONADO ÷ entró (¿trabajó todo o dejó pedidos?).
   const entrantes = rows[0]?.total_entrantes ?? 0;
   const teamConf = rows.reduce((a, r) => a + r.confirmados, 0);
+  const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
   const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
-  const teamCobertura = entrantes > 0 ? Math.round((Math.min(teamAtendidos, entrantes) / entrantes) * 100) : 0;
   const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
 
   return (
@@ -477,7 +485,7 @@ export default function ProductivityDashboard() {
             dotClass="bg-success"
             note={
               entrantes > 0
-                ? `Entraron ${entrantes} → gestionó ${teamAtendidos} (${teamCobertura}% cobertura) → confirmó ${teamConf} = ${teamTasaDia}% del día`
+                ? `Entraron ${entrantes} → gestionó ${teamAtendidos} → contactó ${teamContactados} → confirmó ${teamConf} = ${teamTasaDia}% del día`
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
@@ -492,8 +500,9 @@ export default function ProductivityDashboard() {
               <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que gestionó</span>
               <span><strong className="text-foreground">Intentos N/R</strong>: no contestaron al menos 1 vez (aunque después confirmó)</span>
               <span><strong className="text-foreground">N/R abiertos</strong>: sigue sin contestar al cierre del período</span>
-              <span><strong className="text-foreground">Contacto</strong>: % de lo atendido que contestó</span>
+              <span><strong className="text-foreground">Contactó del día</strong>: de lo que entró, a cuántos contactó · faltan = por contactar</span>
               <span><strong className="text-foreground">Confirmación del día</strong>: confirmados ÷ lo que entró · meta ~{CONF_DIA_TARGET_PCT}%</span>
+              <span><strong className="text-foreground">Tiempo/cliente</strong>: tiempo activo ÷ pedidos gestionados</span>
               <span className="opacity-70">gris "· en curso" = el día aún no se trabajó completo, provisional</span>
             </div>
             <div className="overflow-x-auto">
@@ -519,15 +528,21 @@ export default function ProductivityDashboard() {
                     <th className="text-right">Atendidos</th>
                     <th
                       className="text-right"
-                      title="De los pedidos que atendió, % que contestó (confirmó o canceló). Los pendientes que aún no tocó NO cuentan."
+                      title="De TODO lo que entró en el período, a cuántos logró contactar (contestaron: confirmaron o cancelaron). El resto son los que faltan por contactar (no contestaron + sin tocar). Sobre lo que entró, no sobre lo que atendió."
                     >
-                      Contacto
+                      Contactó del día
                     </th>
                     <th
                       className="text-right"
                       title="Confirmados ÷ lo que ENTRÓ en el período — cómo va el día. Meta ~55% (confirmar 85 de cada 100 que entran es imposible: los que no contestan bajan el techo). Gris '· en curso' = el día aún no se trabajó completo, no concluyente. La efectividad de cierre (÷ resueltos, meta 85%) está en el tooltip de cada celda."
                     >
                       Confirmación del día
+                    </th>
+                    <th
+                      className="text-right"
+                      title="Tiempo activo promedio por pedido gestionado (tiempo activo total ÷ atendidos). Aproximado: si además hizo seguimiento/novedades, incluye ese tiempo. '—' si no hay jornada registrada."
+                    >
+                      Tiempo/cliente
                     </th>
                   </tr>
                 </thead>
@@ -582,9 +597,23 @@ export default function ProductivityDashboard() {
                       </td>
                       <td className="text-right font-mono tabular-nums text-muted-foreground">{r.noresp}</td>
                       <td className="text-right font-mono tabular-nums">{r.total_atendidos}</td>
-                      <td className="text-right">
-                        <span className="font-mono tabular-nums text-xs text-muted-foreground">{r.tasa_contacto}%</span>
-                      </td>
+                      <td className="text-right">{(() => {
+                        // "Contactó del día" = contactados ÷ lo que ENTRÓ (÷inflow), no
+                        // ÷atendidos. Contactados = confirmados + cancelados (contestaron
+                        // y decidieron). Faltan por contactar = entrantes − contactados
+                        // (= no contestaron + sin tocar). Misma lógica que confirmación.
+                        const contactados = r.confirmados + r.cancelados;
+                        const pct = entrantes > 0 ? Math.round((contactados / entrantes) * 100) : null;
+                        const faltan = Math.max(0, entrantes - contactados);
+                        const sinTocar = Math.max(0, entrantes - r.total_atendidos);
+                        const tip = `Contactó a ${contactados} de ${entrantes} que entraron · faltan ${faltan} por contactar (${r.noresp} no contestaron + ${sinTocar} sin tocar)`;
+                        if (pct == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>;
+                        return (
+                          <span className="font-mono tabular-nums text-xs text-muted-foreground" title={tip}>
+                            {pct}% <span className="opacity-70">· faltan {faltan}</span>
+                          </span>
+                        );
+                      })()}</td>
                       <td className="text-right">{(() => {
                         // "Confirmación del día" = confirmados ÷ lo que ENTRÓ (÷inflow),
                         // NO ÷resueltos. Es "cómo va el día" y no infla: los que no
@@ -607,6 +636,21 @@ export default function ProductivityDashboard() {
                         );
                         return <span title={tip}><RateBar value={cd.tasaDia} target={CONF_DIA_TARGET_PCT} /></span>;
                       })()}</td>
+                      {/* Tiempo/cliente = tiempo activo (jornada) ÷ pedidos gestionados. */}
+                      <td className="text-right">{(() => {
+                        const act = activityByOp.get(r.operator_id);
+                        const activeSec = act?.active_seconds ?? 0;
+                        if (!act || r.total_atendidos <= 0 || activeSec <= 0) {
+                          return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin jornada registrada para calcular el tiempo por cliente">—</span>;
+                        }
+                        const perClient = activeSec / r.total_atendidos;
+                        return (
+                          <span className="font-mono tabular-nums text-xs text-foreground"
+                            title={`${fmtPorCliente(activeSec)} de trabajo activo ÷ ${r.total_atendidos} pedidos gestionados`}>
+                            {fmtPorCliente(perClient)}
+                          </span>
+                        );
+                      })()}</td>
                     </tr>
                   ))}
                   {/* Fila TOTAL del equipo. `pendientes_sin_tocar` es GLOBAL
@@ -627,7 +671,13 @@ export default function ProductivityDashboard() {
                     // usamos la fórmula directa: entrantes − sum(atendidos).
                     // Si total_entrantes está disponible y > 0, mostramos.
                     const faltan = Math.max(0, entrantes - totAt);
-                    const faltanTone = faltan === 0 ? 'success' : faltan < entrantes / 2 ? 'warning' : 'danger';
+                    // Contactó del día del EQUIPO = contactados ÷ entrantes.
+                    const totContactados = totConf + totCanc;
+                    const pctContactoTeam = entrantes > 0 ? Math.round((totContactados / entrantes) * 100) : null;
+                    const faltanContactar = Math.max(0, entrantes - totContactados);
+                    const contactoTone = faltanContactar === 0 ? 'success' : faltanContactar < entrantes / 2 ? 'warning' : 'danger';
+                    // Tiempo/cliente del EQUIPO = tiempo activo total ÷ pedidos gestionados.
+                    const totActive = rows.reduce((a, r) => a + (activityByOp.get(r.operator_id)?.active_seconds ?? 0), 0);
                     // Confirmación del día del EQUIPO = confirmados ÷ entrantes,
                     // con la misma madurez que las filas (día en curso → provisional).
                     const cdTeam = confRateByCohort(totConf, totCanc, entrantes);
@@ -648,14 +698,18 @@ export default function ProductivityDashboard() {
                         </td>
                         <td className="text-right font-mono tabular-nums text-muted-foreground">{totNoresp}</td>
                         <td className="text-right font-mono tabular-nums">{totAt}</td>
-                        {/* Contacto → chip de cobertura "Faltan: N" (¿el equipo tocó todo?) */}
+                        {/* Contactó del día del equipo = contactados ÷ entrantes + faltan por contactar. */}
                         <td className="text-right">
-                          <span
-                            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums border-${faltanTone}/30 bg-${faltanTone}/10 text-${faltanTone}`}
-                            title={`Pedidos del período (${entrantes} entrantes) que NADIE del equipo ha tocado todavía. Cero = cobertura 100%.`}
-                          >
-                            Faltan: {faltan}{faltan === 0 ? ' ✓' : ''}
-                          </span>
+                          {pctContactoTeam == null
+                            ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
+                            : (
+                              <span
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-bold tabular-nums border-${contactoTone}/30 bg-${contactoTone}/10 text-${contactoTone}`}
+                                title={`Contactó a ${totContactados} de ${entrantes} que entraron · faltan ${faltanContactar} por contactar (${faltan} de ellos sin tocar todavía).`}
+                              >
+                                {pctContactoTeam}% · faltan {faltanContactar}
+                              </span>
+                            )}
                         </td>
                         {/* Confirmación del día del equipo = confirmados ÷ entrantes vs meta ~55% */}
                         <td className="text-right">
@@ -671,6 +725,15 @@ export default function ProductivityDashboard() {
                                 {cdTeam.tasaDia}%{teamEnCurso ? ' ·en curso' : ''}
                               </span>
                             )}
+                        </td>
+                        {/* Tiempo/cliente del equipo = tiempo activo total ÷ pedidos gestionados. */}
+                        <td className="text-right">
+                          {totActive > 0 && totAt > 0
+                            ? <span className="font-mono tabular-nums text-sm text-foreground"
+                                title={`${fmtPorCliente(totActive)} de trabajo activo del equipo ÷ ${totAt} pedidos gestionados`}>
+                                {fmtPorCliente(totActive / totAt)}
+                              </span>
+                            : <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>}
                         </td>
                       </tr>
                     );
