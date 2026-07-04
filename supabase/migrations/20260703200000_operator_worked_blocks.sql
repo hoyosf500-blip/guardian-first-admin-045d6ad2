@@ -63,11 +63,13 @@ BEGIN
     SELECT r.operator_id AS op, r.created_at AS ts
     FROM public.order_results r
     WHERE r.store_id = v_store
+      AND r.operator_id IS NOT NULL   -- blindaje: un op NULL fusionaría distintas operadoras en PARTITION BY
       AND (r.created_at AT TIME ZONE 'America/Bogota')::date >= v_since
     UNION ALL
     SELECT t.operator_id AS op, t.created_at AS ts
     FROM public.touchpoints t
     WHERE t.store_id = v_store
+      AND t.operator_id IS NOT NULL
       AND (t.created_at AT TIME ZONE 'America/Bogota')::date >= v_since
   ),
   ev2 AS (
