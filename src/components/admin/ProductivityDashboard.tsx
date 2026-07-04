@@ -3,6 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 import { confRateBySample, confRateByCohort, isBelowDailyTarget, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
+import { useActiveStoreId } from '@/contexts/StoreContext';
+import { useShopifyPending } from '@/hooks/useShopifyPending';
+import { ShoppingBag } from 'lucide-react';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { computeJornadaReal, shouldAlertSinConfirmar, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
@@ -113,6 +116,13 @@ export default function ProductivityDashboard() {
   // de un error silenciado vs cero filas reales. Ahora capturamos el mensaje
   // y lo renderizamos como banner visible para diagnóstico inmediato.
   const [error, setError] = useState<string | null>(null);
+
+  // Fuga Shopify→Dropi: ventas que entraron a Shopify pero NUNCA pasaron a Dropi
+  // (no entran al flujo de confirmación → plata que se pierde en silencio). Es
+  // responsabilidad del turno dejarla en 0. Store-scoped, cacheado 60s. Si no hay
+  // Shopify configurado, el hook devuelve configured:false → no mostramos nada.
+  const activeStoreId = useActiveStoreId();
+  const shopifyPending = useShopifyPending(activeStoreId);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -505,6 +515,23 @@ export default function ProductivityDashboard() {
               <span><strong className="text-foreground">Tiempo/cliente</strong>: tiempo activo ÷ pedidos gestionados</span>
               <span className="opacity-70">gris "· en curso" = el día aún no se trabajó completo, provisional</span>
             </div>
+
+            {/* Alerta de FUGA Shopify→Dropi: ventas que nunca entraron al flujo de
+                confirmación. Es un llamado de atención del turno (debería ser 0). */}
+            {shopifyPending.data?.configured !== false && (shopifyPending.data?.pendingCount ?? 0) > 0 && (
+              <div className="px-4 py-2.5 border-b border-danger/30 bg-danger/8 flex items-center gap-3">
+                <ShoppingBag size={16} className="text-danger shrink-0" aria-hidden="true" />
+                <div className="flex-1 min-w-0 text-xs">
+                  <span className="font-bold text-danger tabular-nums">{shopifyPending.data!.pendingCount}</span>
+                  <span className="text-foreground font-semibold"> venta{shopifyPending.data!.pendingCount === 1 ? '' : 's'} sin pasar a Dropi</span>
+                  <span className="text-muted-foreground">
+                    {' '}(últimos {shopifyPending.data!.days ?? 7}d
+                    {typeof shopifyPending.data!.todayPending === 'number' ? ` · ${shopifyPending.data!.todayPending} hoy` : ''})
+                    {' '}— entraron a Shopify pero nunca llegaron al flujo de confirmación. Deberían estar en 0: subilas desde <strong className="text-foreground">Confirmar → "Subir todos"</strong>.
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
