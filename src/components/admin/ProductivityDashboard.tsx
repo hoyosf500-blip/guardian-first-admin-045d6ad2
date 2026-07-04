@@ -253,9 +253,15 @@ export default function ProductivityDashboard() {
       return { id, w, a, name: w?.display_name ?? a?.display_name ?? 'Sin nombre' };
     })
     .sort((x, y) => {
-      const sx = Date.parse(x.w?.first_event ?? x.a?.first_action_at ?? '') || Infinity;
-      const sy = Date.parse(y.w?.first_event ?? y.a?.first_action_at ?? '') || Infinity;
-      return sx - sy;
+      // Ordena por la señal MÁS TEMPRANA del día (acción de trabajo o mouse, la
+      // que haya sido primero), no solo por la acción — así la fila no se
+      // "adelanta" ni "atrasa" según qué fuente miremos.
+      const key = (o: { w?: WorkedRow; a?: ActivityRow }) =>
+        Math.min(
+          Date.parse(o.w?.first_event ?? '') || Infinity,
+          Date.parse(o.a?.first_action_at ?? '') || Infinity,
+        );
+      return key(x) - key(y);
     });
   // Un solo "ahora" por render: el realtime debounced re-renderiza cada ~1s,
   // así que los chips (hueco / desconectada / sin confirmar) se mantienen frescos.
@@ -392,10 +398,13 @@ export default function ProductivityDashboard() {
                       // los bloques que se muestran, para que titular y detalle
                       // SIEMPRE reconcilien. null si no hay evidencia de trabajo.
                       const blocks = w ? asWorkedBlocks(w.blocks) : [];
+                      // worked_seconds es bigint del RPC → coerce con Number (defensivo:
+                      // aunque PostgREST devuelve int8 como número, un futuro RPC podría
+                      // mandarlo como string). Fallback a la suma de bloques para que
+                      // titular y detalle SIEMPRE reconcilien. null si no hay evidencia.
+                      const wsNum = w ? Number(w.worked_seconds) : NaN;
                       const workedSec = w
-                        ? (Number.isFinite(w.worked_seconds) && w.worked_seconds > 0
-                            ? w.worked_seconds
-                            : sumWorkedSeconds(blocks))
+                        ? (Number.isFinite(wsNum) && wsNum > 0 ? wsNum : sumWorkedSeconds(blocks))
                         : null;
                       // "En/Fuera del CRM": SOLO del heartbeat, SOLO en 'today' (en
                       // 7d/30d la ventana MIN/MAX incluiría noches → hueco absurdo).

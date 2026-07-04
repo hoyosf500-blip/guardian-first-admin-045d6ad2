@@ -36,6 +36,10 @@ export function useStoreSchedule(storeId: string | null) {
     queryKey: ['store_schedule', storeId],
     enabled: !!storeId,
     staleTime: 5 * 60 * 1000,
+    // No refetchear al volver a la pestaña: el form de horario se edita a mano y
+    // un refetch en segundo plano pisaría las ediciones sin guardar (el effect de
+    // sync se protege con dirtyRef, esto es el cinturón).
+    refetchOnWindowFocus: false,
     queryFn: async () => {
       try {
         const res = await supabase
