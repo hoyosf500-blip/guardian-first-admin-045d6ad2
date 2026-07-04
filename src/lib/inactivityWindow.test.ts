@@ -4,6 +4,8 @@ import {
   workingSecondsLost,
   bogotaMinutesOfDay,
   formatLostTime,
+  scheduleFromMinutes,
+  DEFAULT_SCHEDULE,
 } from './inactivityWindow';
 
 // Bogotá = UTC-5 (sin DST). Una hora wall-clock Bogotá T equivale a UTC T+5.
@@ -68,6 +70,46 @@ describe('workingSecondsLost', () => {
   it('precisión de SEGUNDOS: 10:04:59 → 10:09:01 son 242 s (NO 5 min)', () => {
     // Antes (precisión de minuto) esto daba 5 min = 300 s y disparaba falso.
     expect(workingSecondsLost(bogS(10, 4, 59), bogS(10, 9, 1))).toBe(242);
+  });
+});
+
+describe('horario configurable por tienda', () => {
+  // Turno nocturno 14:00–22:00 con almuerzo/cena 18:00–19:00.
+  const noche = scheduleFromMinutes({
+    work_start_min: 14 * 60,
+    work_end_min: 22 * 60,
+    lunch_start_min: 18 * 60,
+    lunch_end_min: 19 * 60,
+  });
+
+  it('scheduleFromMinutes convierte minutos → segundos', () => {
+    expect(noche).toEqual({
+      workStartSec: 14 * 3600,
+      workEndSec: 22 * 3600,
+      lunchStartSec: 18 * 3600,
+      lunchEndSec: 19 * 3600,
+    });
+  });
+
+  it('DEFAULT_SCHEDULE = 9–17 / 12:30–13:30 (histórico)', () => {
+    expect(DEFAULT_SCHEDULE).toEqual({
+      workStartSec: 9 * 3600,
+      workEndSec: 17 * 3600,
+      lunchStartSec: 12 * 3600 + 30 * 60,
+      lunchEndSec: 13 * 3600 + 30 * 60,
+    });
+  });
+
+  it('con horario nocturno, las 8 p. m. cuentan y las 10 a. m. NO', () => {
+    expect(isWithinAlertWindow(bog(20, 0), noche)).toBe(true);   // dentro del turno noche
+    expect(isWithinAlertWindow(bog(10, 0), noche)).toBe(false);  // fuera (era laboral con 9–17)
+    expect(isWithinAlertWindow(bog(18, 30), noche)).toBe(false); // cena excluida
+  });
+
+  it('tiempo perdido se mide contra el horario de la tienda, no contra 9–17', () => {
+    // 19:00 → 20:10 dentro del turno noche = 70 min; con el default (fin 17) daría 0.
+    expect(workingSecondsLost(bog(19, 0), bog(20, 10), noche)).toBe(70 * 60);
+    expect(workingSecondsLost(bog(19, 0), bog(20, 10))).toBe(0); // default 9–17
   });
 });
 
