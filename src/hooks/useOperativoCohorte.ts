@@ -30,6 +30,9 @@ export function useOperativoCohorte(yearMonth: string) {
     queryKey: ['operativo-cohorte', storeId ?? 'all', yearMonth],
     enabled: Boolean(storeId && yearMonth),
     staleTime: 60_000,
+    // Frescura del hero "Cómo voy": refresco al volver a la pestaña + poll 5 min.
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
     queryFn: async () => {
       // .bind(supabase) preserva el `this` (mismo patrón que useMonthlyAdSpend).
       const rpc = supabase.rpc.bind(supabase) as unknown as (

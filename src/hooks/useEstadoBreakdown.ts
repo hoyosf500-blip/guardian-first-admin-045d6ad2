@@ -45,6 +45,10 @@ export function useEstadoBreakdown(from: string, to: string) {
       }));
     },
     staleTime: 60_000,
+    // Frescura del hero "Cómo voy": refrescar al volver a la pestaña + poll de
+    // 5 min (el default global es refetchOnWindowFocus:false → se congelaba).
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
     enabled: Boolean(from && to && storeId),
   });
 }

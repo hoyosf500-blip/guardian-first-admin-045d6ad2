@@ -170,6 +170,12 @@ export function useGananciaNetaDropi(from: string, to: string) {
       return aggregateMovements(movs || []);
     },
     staleTime: 60_000,
+    // Frescura: el hero "Cómo voy"/Finanzas se quedaba fotografiado al abrir la
+    // pantalla (el default global es refetchOnWindowFocus:false). Acá lo activamos
+    // selectivo + poll suave de 5 min mientras la pantalla esté abierta, para que
+    // el número no quede viejo con el badge de frescura en verde al lado.
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
     enabled: Boolean(from && to && storeId),
   });
 }
