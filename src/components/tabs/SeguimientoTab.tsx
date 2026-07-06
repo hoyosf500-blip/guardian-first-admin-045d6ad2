@@ -794,6 +794,9 @@ export default function SeguimientoTab() {
           emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
           controlledStatusFilter={statusFilter}
           onControlledStatusFilterChange={setStatusFilter}
+          // Vista del operador = Lista SLA activa + búsqueda. Al cambiarla, la
+          // tabla se actualiza al instante (sin banner de "N cambios").
+          viewKey={`${listaSlug ?? 'all'}|${search}`}
         />
       )}
     </div>
