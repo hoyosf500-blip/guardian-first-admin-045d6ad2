@@ -79,7 +79,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const walletHealth = useWalletSyncHealth(activeStoreId);
   const walletStale = walletHealth.data?.status === 'stale' || walletHealth.data?.status === 'critical';
 
-  const { data: ganancia, isLoading: gananciaLoading } = useGananciaNetaDropi(
+  const { data: ganancia, isLoading: gananciaLoading, isError: gananciaError } = useGananciaNetaDropi(
     filters.fromDate, filters.toDate,
   );
   // Saldo real de HOY (último movimiento, sin filtro de mes) — la card decía
@@ -356,6 +356,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
             </div>
             {(gananciaLoading || walletLoading) ? (
               <div className="h-12 animate-pulse bg-muted/30 rounded" />
+            ) : gananciaError ? (
+              <div className="text-xs text-danger">
+                No se pudo cargar la ganancia del wallet (error temporal, reintentando). Recargá o tocá Sincronizar — el número puede no ser real.
+              </div>
             ) : (
               <div className={walletStale ? 'opacity-60' : ''}>
                 <div className="flex items-center justify-between gap-2">

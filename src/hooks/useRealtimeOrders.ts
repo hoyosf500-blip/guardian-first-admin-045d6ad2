@@ -102,8 +102,11 @@ export function useRealtimeOrders(
         await supabase.realtime.setAuth(session.access_token);
       }
 
-      // Multi-tienda: filtramos orders por store_id activo. order_results
-      // no tiene filter (RLS de operator_id ya lo limita al user).
+      // Multi-tienda: filtramos AMBAS tablas por store_id activo. Antes
+      // order_results iba sin filtro (se confiaba en RLS), así que un INSERT en
+      // OTRA tienda de la que el user es miembro disparaba un refetch inútil de
+      // la tienda activa. Con el filtro, el trigger queda scopeado a la tienda
+      // que se está viendo — mismo patrón que `orders`.
       channel = supabase
         .channel(`realtime-orders-${user.id}-${storeId}`)
         .on(
@@ -121,7 +124,7 @@ export function useRealtimeOrders(
         )
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'order_results' },
+          { event: 'INSERT', schema: 'public', table: 'order_results', filter: `store_id=eq.${storeId}` },
           () => { fireResult(); },
         )
         .subscribe((status) => {

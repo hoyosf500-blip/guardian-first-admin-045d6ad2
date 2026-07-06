@@ -72,6 +72,13 @@ interface CrmTableProps {
    */
   controlledStatusFilter?: string | null;
   onControlledStatusFilterChange?: (key: string | null) => void;
+  /**
+   * Identifica la VISTA que el operador eligió (ej. Lista SLA activa + búsqueda).
+   * Cuando cambia, el nuevo `data` se aplica AL INSTANTE (sin banner): es una
+   * acción propia del operador, no un push de realtime. El banner "N cambios"
+   * queda SOLO para cambios que llegan por realtime dentro de la MISMA vista.
+   */
+  viewKey?: string;
 }
 
 /**
@@ -264,7 +271,7 @@ function ColumnBody({
   );
 }
 
-export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange }: CrmTableProps) {
+export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange, viewKey }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const { activeStoreId, activeStore } = useStore();
   // countryCode pasa a cada OrderCard como prop para que `getTrackingUrl`
@@ -339,6 +346,8 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   const dataRef = useRef<OrderData[]>(data);
   dataRef.current = data;
 
+  const viewKeyRef = useRef(viewKey);
+
   const applyPendingNow = useCallback(() => {
     if (pendingDataRef.current) {
       setData(pendingDataRef.current);
@@ -348,6 +357,20 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   }, []);
 
   useEffect(() => {
+    // Cambio de VISTA del operador (eligió otra Lista SLA / buscó): NO es
+    // realtime, es su propia acción → aplicar AL INSTANTE, sin banner. Sin
+    // esto, cambiar de lista quedaba atrás de un "N cambios — clic para
+    // actualizar" y exigía un segundo clic para ver lo que la operadora
+    // acababa de pedir. El banner queda solo para pushes de realtime en la
+    // misma vista.
+    if (viewKey !== viewKeyRef.current) {
+      viewKeyRef.current = viewKey;
+      pendingDataRef.current = null;
+      setPendingChanges(0);
+      setData(dataProp);
+      return;
+    }
+
     // Short-circuit: misma referencia = nada cambió de verdad → no tocar.
     // smartMerge en useDataLoader devuelve `prev` cuando ningún campo
     // relevante cambió, entonces `dataProp === dataRef.current` significa
@@ -375,7 +398,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       if (!nextById.has(id)) diffCount++;
     });
     if (diffCount > 0) setPendingChanges(diffCount);
-  }, [dataProp]);
+  }, [dataProp, viewKey]);
 
   // Sync with parent initialDelayed prop
   useEffect(() => {
