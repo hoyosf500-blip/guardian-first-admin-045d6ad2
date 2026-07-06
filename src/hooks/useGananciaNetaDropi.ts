@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveStoreId } from '@/contexts/StoreContext';
+import { isRpcMissing } from '@/lib/rpcError';
 
 // Categorías OPERATIVAS de la wallet de Dropi — son las que sí mueven la
 // ganancia real del cliente. El resto (retiros, depósitos, transferencias)
@@ -140,8 +141,22 @@ export function useGananciaNetaDropi(from: string, to: string) {
       const { data, error } = await supabase.rpc('wallet_ganancia_neta', {
         p_from: fromTs, p_to: toTs,
       });
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return mapRpcRow(data[0] as Record<string, unknown>);
+      if (!error) {
+        // RPC corrió OK. Data con filas → resultado real. Data vacía (sin error)
+        // = no hubo movimientos en el rango = $0 REAL → devolver ceros, NO caer
+        // al fallback (que para un socio también daría 0, pero sin la certeza).
+        if (Array.isArray(data) && data.length > 0) {
+          return mapRpcRow(data[0] as Record<string, unknown>);
+        }
+        return aggregateMovements([]);
+      }
+
+      // El RPC dio error. SOLO si es "función no desplegada" (pre-db push) caemos
+      // al fallback. Un error TRANSITORIO (throttle/timeout/permiso) NO debe
+      // mostrar $0 falso — se propaga para que React Query marque isError y la
+      // card avise en vez de inventar un cero (un socio creería que no ganó nada).
+      if (!isRpcMissing(error)) {
+        throw error;
       }
 
       // 2. Fallback: select directo (RPC no desplegado aún). Admin OK; socio → 0.

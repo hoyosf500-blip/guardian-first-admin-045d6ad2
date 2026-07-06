@@ -146,4 +146,34 @@ describe('useGananciaNetaDropi', () => {
     expect(result.current.data?.ganancia_neta).toBe(92000);
     expect((supabase as unknown as { from: ReturnType<typeof vi.fn> }).from).toHaveBeenCalled();
   });
+
+  it('error TRANSITORIO (no PGRST202) → isError, NO muestra $0 falso del fallback', async () => {
+    // Un timeout/throttle/permiso NO debe degradar al fallback admin-only (que a
+    // un socio le da $0). Debe propagar → React Query isError → la card avisa.
+    mockRpc(null, { code: '57014', message: 'canceling statement due to statement timeout' });
+    const fromSpy = vi.fn();
+    (supabase as unknown as { from: typeof fromSpy }).from = fromSpy;
+    const { result } = renderHook(
+      () => useGananciaNetaDropi('2026-04-01', '2026-04-30'),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
+    expect(fromSpy).not.toHaveBeenCalled(); // no cayó al fallback → no $0 falso
+  });
+
+  it('RPC OK pero vacío (sin movimientos) → ceros REALES, sin tocar el fallback', async () => {
+    (supabase as unknown as { rpc: ReturnType<typeof vi.fn> }).rpc = vi.fn(() =>
+      Promise.resolve({ data: [], error: null }),
+    );
+    const fromSpy = vi.fn();
+    (supabase as unknown as { from: typeof fromSpy }).from = fromSpy;
+    const { result } = renderHook(
+      () => useGananciaNetaDropi('2026-04-01', '2026-04-30'),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data?.ganancia_neta).toBe(0);
+    expect(fromSpy).not.toHaveBeenCalled();
+  });
 });

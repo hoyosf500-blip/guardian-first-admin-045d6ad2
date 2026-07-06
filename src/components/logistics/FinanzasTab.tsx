@@ -40,7 +40,7 @@ import ComposicionList, { type ComposicionItem } from './finanzas/ComposicionLis
 export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) {
   const { fromDate, toDate } = filters;
   const { data, isLoading, isError, error } = useFinancialSummary(fromDate, toDate);
-  const { data: gananciaNeta, isLoading: gananciaLoading } = useGananciaNetaDropi(fromDate, toDate);
+  const { data: gananciaNeta, isLoading: gananciaLoading, isError: gananciaError } = useGananciaNetaDropi(fromDate, toDate);
   const { data: dailySeries, isLoading: seriesLoading } = useWalletDailySeries(fromDate, toDate);
   // Bug 3: el hero usa el OPERATIVO POR COHORTE (pedidos creados en el mes; por
   // fecha de pedido — reconcilia con la Utilidad de Dropi) en vez de la caja del
@@ -170,6 +170,18 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
           </div>
         </div>
       </div>
+
+      {/* Aviso: la Ganancia Neta falló al cargar (error transitorio, NO "sin datos").
+          Sin esto un socio veía $0 en silencio, indistinguible de un mes real sin
+          ganancia. El hook ya distingue error de "función no desplegada". */}
+      {gananciaError && !gananciaLoading && (
+        <div className="rounded-xl border border-danger/30 bg-danger/5 p-3 flex items-center gap-2 text-xs">
+          <Info size={14} className="text-danger shrink-0" aria-hidden="true" />
+          <span className="text-foreground">
+            No se pudo cargar la <strong>Ganancia Neta</strong> (error temporal, reintentando). El número de abajo puede no ser real — tocá <strong>Sincronizar</strong> o recargá.
+          </span>
+        </div>
+      )}
 
       {loading ? (
         <>
