@@ -297,7 +297,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               value={formatCOP(utilidad)}
               icon={utilidad >= 0 ? TrendingUp : TrendingDown}
               tone="neutral"
-              hint="Ingresos − COGS − flete − devs (incluye COGS aunque Dropi lo pague directo al proveedor)"
+              hint="Ingresos − COGS − flete − devs (incluye COGS aunque Dropi lo pague directo al proveedor). OJO: devoluciones/comisiones se cuentan por fecha de PAGO del wallet e ingresos por fecha de CREACIÓN del pedido → en bordes de mes (fin/inicio) puede quedar inflada o subestimada."
             />
             <KpiCard
               label="Ganancia markup"

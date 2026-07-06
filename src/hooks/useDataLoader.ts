@@ -35,6 +35,12 @@ export function smartMerge(prev: OrderData[], next: OrderData[]): OrderData[] {
       old.novedadSol !== n.novedadSol ||
       old.guia !== n.guia ||
       old.transportadora !== n.transportadora ||
+      // Seguimiento: cuando Dropi "mueve" un pedido sin cambiar el TEXTO del
+      // estado, solo cambia last_movement_at. Sin compararlo, smartMerge
+      // preservaba la fila vieja y el conteo de "días sin movimiento" (y la
+      // re-clasificación de listas SLA que depende de él) quedaba congelado
+      // hasta recargar. Solo cambia en movimientos reales → no genera parpadeo.
+      old.lastMovementAt !== n.lastMovementAt ||
       // Confirmar: el branch async de buildWorkQueue (order_results) marca
       // result/reason/retryCount sobre la cola. Sin estos campos, smartMerge
       // preservaría la fila vieja (sin el resultado nuevo) Y, al revés, no
