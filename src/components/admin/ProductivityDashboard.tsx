@@ -427,10 +427,18 @@ export default function ProductivityDashboard() {
                         : null;
                       // Señales anti-"mama gallo" (solo 'today', sobre evidencia):
                       // densidad del turno + bandera mouse-vivo-no-produce. La
-                      // bandera se mide sobre INTENTOS (marcadas, esfuerzo), no
-                      // sobre clientes: un día de muchos no-contesta no la dispara.
+                      // bandera se mide sobre el ESFUERZO TOTAL (marcadas de
+                      // Confirmar + acciones de Seguimiento + Rescate), NO solo
+                      // Confirmar: si repartió el día entre colas, su esfuerzo de
+                      // confirmar es bajo pero SÍ trabajó → no la acusamos falso.
+                      // El heartbeat de mouse cubre todas las colas, así que el
+                      // numerador también debe cubrirlas.
                       const prod = prodByOp.get(op.id);
-                      const intentos = prod?.intentos_total ?? prod?.total_atendidos ?? null;
+                      const esfuerzoTotal = prod
+                        ? (prod.intentos_total ?? prod.total_atendidos ?? 0)
+                          + (prod.seg_acciones ?? 0)
+                          + (prod.rescate_acciones ?? 0)
+                        : null;
                       const startMs = Date.parse(turnoStart ?? '');
                       const endMs = Date.parse(turnoEnd ?? '');
                       const turnoSpanSec = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
@@ -439,7 +447,7 @@ export default function ProductivityDashboard() {
                       const densidad = isToday ? densidadTurno(workedSec, turnoSpanSec) : null;
                       const mouseVivo = isToday && esMouseVivoNoProduce({
                         activeSeconds: a?.active_seconds,
-                        atendidos: intentos,
+                        atendidos: esfuerzoTotal,
                         umbralGestionesHora: MIN_INTENTOS_POR_HORA,
                       });
                       return (
@@ -503,7 +511,7 @@ export default function ProductivityDashboard() {
                                 {mouseVivo && (
                                   <span
                                     className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger whitespace-nowrap"
-                                    title="El mouse figura muy activa (2h+) pero MARCA muy poco por hora de mouse — patrón de menear el mouse para figurar sin trabajar. Contrastá con 'Intentos/h' en Confirmar."
+                                    title="El mouse figura muy activa (2h+) pero registra muy poco trabajo por hora de mouse — sumando TODAS las colas (Confirmar + Seguimiento + Rescate), no solo una. Patrón de menear el mouse para figurar sin trabajar."
                                   >
                                     🚩 mouse vivo, poco trabajo
                                   </span>
