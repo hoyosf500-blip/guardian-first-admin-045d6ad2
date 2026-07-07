@@ -49,6 +49,17 @@ function parseRow(raw: unknown): StoreAdSpendRow | null {
   };
 }
 
+// Builder chainable mínimo para el .from() de una tabla aún no incluida en los
+// tipos autogenerados de Supabase. Tipado explícito (sin `any`) para pasar lint.
+interface AdSpendQuery {
+  select: (cols: string) => AdSpendQuery;
+  eq: (col: string, val: unknown) => AdSpendQuery;
+  gte: (col: string, val: unknown) => AdSpendQuery;
+  lte: (col: string, val: unknown) => AdSpendQuery;
+  order: (col: string, opts: { ascending: boolean }) =>
+    Promise<{ data: unknown; error: { message?: string } | null }>;
+}
+
 export interface AdSpendTotals { meta: number; tiktok: number; other: number; total: number; }
 
 /** Suma pura por canal + total. */
@@ -72,10 +83,9 @@ export function useStoreAdSpendRange(fromDate: string, toDate: string) {
   return useQuery<StoreAdSpendRow[]>({
     queryKey: ['store-ad-spend', storeId, fromDate, toDate],
     queryFn: async () => {
-      // tabla nueva, aún no en los tipos autogenerados → cast a any para el .from()
-      const { data, error } = await (supabase as unknown as {
-        from: (t: string) => any;
-      }).from('store_ad_spend_daily')
+      // .bind(supabase): preserva el `this` del método (mismo motivo que en las mutations).
+      const sbFrom = supabase.from.bind(supabase) as unknown as (table: string) => AdSpendQuery;
+      const { data, error } = await sbFrom('store_ad_spend_daily')
         .select('*')
         .eq('store_id', storeId)
         .gte('spend_date', fromDate)
