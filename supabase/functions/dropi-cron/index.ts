@@ -164,8 +164,20 @@ async function fetchAllPages(
       if (res.status !== 429) { rateLimited = false; break; }
       rateLimited = true;
       lastTxt = await res.text();
-      // Backoff corto (1s, 2s, 4s). No reintentar tras el último: fail-fast.
-      if (attempt < RL_MAX_ATTEMPTS - 1) await sleep(1000 * Math.pow(2, attempt));
+      // Backoff corto (1s, 2s). No reintentar tras el último: fail-fast.
+      if (attempt < RL_MAX_ATTEMPTS - 1) {
+        const backoffMs = 1000 * Math.pow(2, attempt);
+        // Anti-throttle 2026-07-07: honrar Retry-After (segundos). Guardia
+        // Number.isFinite: si viene como HTTP-date, Number() da NaN → sin
+        // guardia sería un retry inmediato sin backoff.
+        const raRaw = Number(res.headers.get("retry-after"));
+        const raMs = Number.isFinite(raRaw) && raRaw > 0 ? raRaw * 1000 : 0;
+        const waitMs = Math.max(raMs, backoffMs);
+        // Si la espera no cabe en el presupuesto de la tienda, cortar YA en vez
+        // de quemar el deadline durmiendo (syncStore rescata como parcial).
+        if (Date.now() + waitMs > deadline) throw new DropiRateLimitError();
+        await sleep(waitMs);
+      }
     }
 
     // 429 sostenido: cortar la tienda YA en vez de seguir paginando hacia más
@@ -311,18 +323,14 @@ async function syncStore(
   store: StoreSync,
   passes: SyncPass[],
   todayStr: string,
-  globalDeadline: number,
-  perStoreBudgetMs: number,
+  deadline: number,
 ): Promise<{ synced: number; total: number; statusTotal: number; error?: string; throttled?: boolean }> {
   const base = dropiHostFor(store.country_code);
-  // El más cercano gana: la rebanada JUSTA de esta tienda (presupuesto global /
-  // nº de tiendas, con techo STORE_TIME_BUDGET_MS) o lo que quede del global.
-  // Esto GARANTIZA que cada tienda —incluida la que corre primero— deje tiempo
-  // para las demás: una tienda pesada/throttleada ya no se come toda la corrida.
-  const deadline = Math.min(
-    Date.now() + Math.min(STORE_TIME_BUDGET_MS, perStoreBudgetMs),
-    globalDeadline,
-  );
+  // Anti-throttle 2026-07-07: el deadline viene PRE-calculado por el caller
+  // (rebanada justa de la tienda ∩ global) y es EL MISMO para la invocación
+  // inicial y las re-invocaciones del fallback de filter_date_by. Antes cada
+  // re-invocación obtenía deadline fresco → una tienda probeando variantes
+  // podía devorar los 120s globales y dejar a EC con 0s de paginación.
   let synced = 0;
   let total = 0;
   // Conteo SOLO del pase de cambio de estatus. El winner-filter y la deteccion
@@ -559,18 +567,40 @@ Deno.serve(async (req: Request) => {
       };
       console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) — cambio_estatus ${from}→${to} + creado ${dateBack(CREATED_DAYS_BACK)}→${to}`);
 
+      // Rebanada de ESTA tienda: se calcula UNA vez y se comparte con las
+      // re-invocaciones del fallback — el probing ya no obtiene presupuesto
+      // fresco ni puede starvear a las tiendas siguientes (EC sin sync).
+      const storeDeadline = Math.min(
+        Date.now() + Math.min(STORE_TIME_BUDGET_MS, perStoreBudget),
+        globalDeadline,
+      );
+
       // Si ya sabemos qué filter_date_by funciona (de una tienda previa), arrancamos con ese.
       let chosenFilter = winningStatusFilter ?? STATUS_FILTER_VARIANTS[0];
-      let r = await syncStore(sb, store, buildPasses(chosenFilter), todayStr, globalDeadline, perStoreBudget);
+      let r = await syncStore(sb, store, buildPasses(chosenFilter), todayStr, storeDeadline);
 
       // Fallback: si la 1ª variante devolvió 0/0 SIN error/throttle, probamos el resto.
       // Solo aplicamos fallback si aún no tenemos winner (evita penalizar a las tiendas siguientes).
+      // Anti-throttle 2026-07-07: cada probe re-corre SOLO el pase de estatus
+      // ([1]) — el pase de CREADO ya corrió en la invocación inicial y es
+      // idéntico entre variantes (re-correrlo duplicaba la paginación de 3d
+      // por cada variante probada). role:"status" se preserva → statusTotal
+      // sigue alimentando winner/zombie igual que antes.
       if (!winningStatusFilter && r.statusTotal === 0 && !r.error && !r.throttled) {
         for (const variant of STATUS_FILTER_VARIANTS.slice(1)) {
-          if (Date.now() > globalDeadline) break;
+          if (Date.now() > storeDeadline) break;
           console.warn(`dropi-cron: tienda ${storeId} — filter_date_by="${chosenFilter}" dio 0. Probando "${variant}"`);
           chosenFilter = variant;
-          r = await syncStore(sb, store, buildPasses(variant), todayStr, globalDeadline, perStoreBudget);
+          const probe = await syncStore(sb, store, [buildPasses(variant)[1]], todayStr, storeDeadline);
+          // Acumular lo que el probe haya traído sobre el resultado inicial
+          // (synced/total del pase de creado inicial + estatus del probe).
+          r = {
+            synced: r.synced + probe.synced,
+            total: r.total + probe.total,
+            statusTotal: probe.statusTotal,
+            error: probe.error,
+            throttled: probe.throttled,
+          };
           if (r.statusTotal > 0) {
             console.log(`dropi-cron: filter_date_by GANADOR="${variant}" (pase de estatus devolvio ${r.statusTotal} pedidos)`);
             winningStatusFilter = variant;
@@ -690,13 +720,40 @@ Deno.serve(async (req: Request) => {
         (ordersForRetry || []).forEach((o: { id: string; external_id: string | null; store_id: string }) => {
           orderById.set(o.id, { external_id: o.external_id, store_id: o.store_id });
         });
-        let retryOk = 0, retryFail = 0;
+        // Anti-throttle 2026-07-07: antes este loop re-PUTeaba hasta 50 filas
+        // cada 5 min PARA SIEMPRE, a 2 req/s, sin mirar 429 ni deadline — el
+        // mayor desperdicio sostenido del inventario (~600 PUTs/h bajo throttle)
+        // y un feedback loop: el throttle marca confirmaciones como failed → la
+        // cola crece → el retry perpetúa el 429 que la creó.
+        // Tiendas que ESTA corrida ya vio throttleadas: ni intentar sus PUTs.
+        const throttled429 = new Set<string>(
+          perStore.filter((p) => p.throttled === true).map((p) => String(p.store_id)),
+        );
+        // Gracia de +20s sobre el deadline global: el crudo suele estar vencido
+        // tras dos tiendas pesadas (el retry se saltearía TODA corrida pesada
+        // aunque no haya throttle); +20s cabe en el wall limit (~150s).
+        const postDeadline = globalDeadline + 20_000;
+        let retryOk = 0, retryFail = 0, retryDeferred = 0;
         for (const row of failedRows as Array<{ id: string; order_id: string }>) {
+          if (Date.now() > postDeadline) break;
           const ord = orderById.get(row.order_id);
           if (!ord || !ord.external_id) continue;
-          const cfg = cfgByStore.get(String(ord.store_id));
+          const sid = String(ord.store_id);
+          if (throttled429.has(sid)) { retryDeferred++; continue; }
+          const cfg = cfgByStore.get(sid);
           if (!cfg) continue;
           const r = await dropiPutOrderRetry(cfg.base, cfg.apiKey, cfg.storeUrl, ord.external_id, "PENDIENTE");
+          if (r.httpStatus === 429) {
+            // 429 → posponer los retries de ESA tienda (no abortar el loop:
+            // un 429 de EC no debe starvear los retries de CO). El próximo
+            // tick reintenta; la fila queda failed, no se pierde nada.
+            throttled429.add(sid);
+            retryDeferred++;
+            await sb.from("order_results").update({
+              result_notes: "Reintento pospuesto: Dropi throttled (429)",
+            }).eq("id", row.id);
+            continue;
+          }
           if (r.ok) {
             retryOk++;
             await sb.from("order_results").update({
@@ -709,9 +766,11 @@ Deno.serve(async (req: Request) => {
               result_notes: `Reintento dropi-cron falló [${r.httpStatus}]: ${r.error || ""}`.slice(0, 500),
             }).eq("id", row.id);
           }
-          await sleep(500);
+          // Mismo espaciado que el resto del cron (antes 500ms = 2 req/s,
+          // por encima del ~1 req/s que tolera Dropi).
+          await sleep(RATE_LIMIT_MS);
         }
-        console.log(`dropi-cron: retry confirmaciones failed → ${retryOk} OK / ${retryFail} aún fallan`);
+        console.log(`dropi-cron: retry confirmaciones failed → ${retryOk} OK / ${retryFail} aún fallan / ${retryDeferred} pospuestos por throttle`);
       }
     } catch (err) {
       console.warn("dropi-cron retry-failed exception:", err);
