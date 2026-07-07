@@ -1442,6 +1442,50 @@ export type Database = {
           },
         ]
       }
+      store_ad_spend_daily: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          id: string
+          notas: string | null
+          platform: string
+          spend_date: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notas?: string | null
+          platform: string
+          spend_date: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notas?: string | null
+          platform?: string
+          spend_date?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_ad_spend_daily_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_dropi_config: {
         Row: {
           country_code: string
@@ -2551,6 +2595,7 @@ export type Database = {
         Args: { p_shopify_product_id: number; p_store_id: string }
         Returns: undefined
       }
+      delete_store_ad_spend_daily: { Args: { p_id: string }; Returns: boolean }
       delete_wa_quick_reply: { Args: { p_id: string }; Returns: undefined }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       financial_summary: {
@@ -3257,6 +3302,32 @@ export type Database = {
           p_store_id: string
         }
         Returns: undefined
+      }
+      upsert_store_ad_spend_daily: {
+        Args: {
+          p_amount: number
+          p_notas: string
+          p_platform: string
+          p_spend_date: string
+          p_store_id: string
+        }
+        Returns: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          id: string
+          notas: string | null
+          platform: string
+          spend_date: string
+          store_id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "store_ad_spend_daily"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       upsert_store_dropi_config: {
         Args: {
