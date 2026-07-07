@@ -148,7 +148,10 @@ export default function DashboardTab() {
       .from('sync_logs')
       .select('status, created_at, synced_count, error_message, source')
       .eq('store_id', activeStoreId)
-      .in('source', ['dropi-cron', 'dropi-sync'])
+      // 'dropi' (no 'dropi-sync'): la edge function dropi-sync escribe
+      // source:'dropi' — NADA escribe 'dropi-sync'. El filtro viejo hacía
+      // invisibles los syncs/fallos manuales para este chip de salud.
+      .in('source', ['dropi-cron', 'dropi'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();

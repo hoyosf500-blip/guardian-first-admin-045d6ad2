@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -18,9 +18,16 @@ import { toast } from 'sonner';
  */
 const THROTTLE_MS = 4 * 60 * 1000; // 4 min entre sincronizaciones automáticas
 
+// Anti-throttle 2026-07-07: el timestamp vive a NIVEL MÓDULO (antes era un
+// useRef POR INSTANCIA — el doc-comment prometía "GLOBAL" pero cada navegación
+// Confirmar↔Seguimiento remontaba el tab, reseteaba el ref y el auto-trigger
+// del mount re-disparaba dropi-refresh-batch (hasta 20 páginas) dentro de la
+// ventana de 4 min). Map por tienda: cada cuenta Dropi tiene su propio
+// rate-limit — mismo patrón módulo-level que el cache de useOpenIncidences.
+const lastRunByStore = new Map<string, number>();
+
 export function useRefreshVisibleOrders() {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const lastRunRef = useRef<number>(0);
 
   const refreshNow = useCallback(async (
     storeId: string | null | undefined,
@@ -31,10 +38,10 @@ export function useRefreshVisibleOrders() {
       return { ok: false };
     }
     const now = Date.now();
-    if (!opts.force && now - lastRunRef.current < THROTTLE_MS) {
+    if (!opts.force && now - (lastRunByStore.get(storeId) ?? 0) < THROTTLE_MS) {
       return { ok: true }; // throttled (silencioso)
     }
-    lastRunRef.current = now;
+    lastRunByStore.set(storeId, now);
 
     setIsRefreshing(true);
     try {

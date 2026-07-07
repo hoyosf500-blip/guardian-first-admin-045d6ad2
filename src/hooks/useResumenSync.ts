@@ -20,6 +20,12 @@ export interface ResumenSyncResult {
   ordersError?: string;
   walletError?: string;
   walletSynced?: number;
+  /** true = el rango pedido era 100% viejo (>45d): no se invocó nada. */
+  skippedOldRange?: boolean;
+  /** true = el `from` se recortó a hoy−45d (anti-throttle). */
+  clamped?: boolean;
+  /** true = dropi-sync cortó por MAX_PAGES: quedaron páginas sin traer. */
+  ordersPartial?: boolean;
 }
 
 interface ResumenSyncVars {
@@ -54,6 +60,19 @@ function parseInvokeError(error: unknown): { error?: string; expired?: boolean }
   return null;
 }
 
+// Fecha local YYYY-MM-DD (mismo formateo que DateRangeFilter — NO toISOString,
+// que en UTC-5 corre el día después de las 19:00).
+function localISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Anti-throttle 2026-07-07: tope del rango del sync MANUAL. El preset
+// "Histórico" (2020-01-01) generaba ~27 chunks × paginación sin tope ≈ 396
+// requests a Dropi en UN click (EC) + un exportexcel de wallet de 6.5 años.
+// Los datos viejos YA están en la DB y el cron mantiene los cambios de estado;
+// el backfill completo queda como acción explícita de admin (/admin → SyncPanel).
+const MAX_SYNC_DAYS_BACK = 45;
+
 export function useResumenSync() {
   const qc = useQueryClient();
   const { activeStoreId } = useStore();
@@ -61,14 +80,29 @@ export function useResumenSync() {
   return useMutation<ResumenSyncResult, Error, ResumenSyncVars>({
     mutationFn: async ({ from, untill }) => {
       if (!activeStoreId) throw new Error('Sin tienda activa');
-      const body = { store_id: activeStoreId, from, untill };
+
+      // Clamp del rango (dentro del hook, no en los callers: FinanzasTab.test
+      // asserta los args crudos de mutate sobre un mock).
+      const minFromDate = new Date();
+      minFromDate.setDate(minFromDate.getDate() - MAX_SYNC_DAYS_BACK);
+      const minFrom = localISODate(minFromDate);
+      const clamped = from < minFrom;
+      const clampedFrom = clamped ? minFrom : from;
+      // Rango 100% viejo (ej. ene–mar de un año pasado): dropi-sync con
+      // from>untill genera 0 chunks y daría un "éxito" silencioso engañoso.
+      // No invocar nada y avisar honesto.
+      if (clampedFrom > untill) {
+        return { ordersOk: true, walletOk: true, skippedOldRange: true };
+      }
+      const body = { store_id: activeStoreId, from: clampedFrom, untill };
 
       // ── 1) Órdenes primero. Si falla, NO abortamos el wallet ──
       let ordersOk = true;
       let ordersError: string | undefined;
+      let ordersPartial = false;
       try {
         const { data, error } = await supabase.functions.invoke('dropi-sync', { body });
-        const d = data as { error?: string; rateLimited?: boolean; message?: string } | null;
+        const d = data as { error?: string; rateLimited?: boolean; message?: string; partial?: boolean } | null;
         if (error) {
           ordersOk = false;
           ordersError = parseInvokeError(error)?.error ?? error.message;
@@ -79,6 +113,10 @@ export function useResumenSync() {
         } else if (d?.error) {
           ordersOk = false;
           ordersError = d.error;
+        } else if (d?.partial) {
+          // Sync PARCIAL (MAX_PAGES): upserteó lo traído pero quedaron páginas.
+          // Surfacearlo — un corte silencioso sería un hueco de paridad invisible.
+          ordersPartial = true;
         }
       } catch (e) {
         ordersOk = false;
@@ -107,14 +145,25 @@ export function useResumenSync() {
         walletError = (e as Error).message;
       }
 
-      return { ordersOk, walletOk, ordersError, walletError, walletSynced };
+      return { ordersOk, walletOk, ordersError, walletError, walletSynced, clamped, ordersPartial };
     },
 
     onSuccess: (r) => {
-      if (r.ordersOk && r.walletOk) {
-        toast.success(
-          `Pedidos y wallet sincronizados${r.walletSynced != null ? ` (${r.walletSynced} movimientos)` : ''}.`,
+      if (r.skippedOldRange) {
+        toast.info(
+          'Ese período ya es histórico — los datos están en la base y el sync automático mantiene los cambios de estado. Para re-descargarlo usá /admin → Sincronizar pedidos.',
         );
+        return;
+      }
+      if (r.ordersOk && r.walletOk) {
+        const clampNote = r.clamped ? ' Sincronicé los últimos 45 días — el histórico lo mantiene el sync automático.' : '';
+        if (r.ordersPartial) {
+          toast.warning(`Sync PARCIAL de pedidos: el rango era muy grande y quedaron páginas sin traer — el sync automático completa el resto.${clampNote}`);
+        } else {
+          toast.success(
+            `Pedidos y wallet sincronizados${r.walletSynced != null ? ` (${r.walletSynced} movimientos)` : ''}.${clampNote}`,
+          );
+        }
       } else if (!r.ordersOk && !r.walletOk) {
         toast.error(`Falló pedidos (${r.ordersError ?? '—'}) y wallet (${r.walletError ?? '—'}).`);
       } else if (!r.ordersOk) {
