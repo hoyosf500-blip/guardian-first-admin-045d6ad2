@@ -408,7 +408,17 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     prevById.forEach((_o, id) => {
       if (!nextById.has(id)) diffCount++;
     });
-    if (diffCount > 0) setPendingChanges(diffCount);
+    if (diffCount > 0) {
+      setPendingChanges(diffCount);
+    } else {
+      // El cambio no toca NINGUNA fila visible de esta vista (mismo set, mismos
+      // estados) → aplicar en silencio, sin banner: la tabla no se mueve pero
+      // onDataApplied dispara y los chips del padre se re-congelan con data
+      // fresca. Sin esto, un cambio fuera de la lista activa dejaba los chips
+      // de las OTRAS listas viejos por tiempo indefinido (review 2026-07-07).
+      pendingDataRef.current = null;
+      setData(dataProp);
+    }
   }, [dataProp, viewKey]);
 
   // Sync with parent initialDelayed prop

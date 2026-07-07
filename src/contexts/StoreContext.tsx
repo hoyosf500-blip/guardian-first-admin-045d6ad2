@@ -167,6 +167,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         'financial-summary', 'wallet_daily_series', 'wallet_movements',
         'logistics', 'logistics-cost-basis', 'product-profitability',
         'logistics_dashboard',
+        // Auditoría 2026-07-07: faltaban — el heatmap/recomendaciones, el saldo
+        // de hoy y el dropdown de ciudades quedaban con la tienda anterior si
+        // su refetch por cambio de key corría ANTES de set_active_store.
+        'logistics-city-carrier-matrix', 'wallet_saldo_hoy', 'logistics-cities-list',
       ]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }

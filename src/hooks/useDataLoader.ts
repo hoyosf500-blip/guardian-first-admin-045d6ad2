@@ -99,11 +99,15 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
     setSegLoaded(false);
   }, [storeId]);
 
-  // Reintento único ante error de red: si el refetch que falló era el catch-up
+  // Reintento ÚNICO ante error de red: si el refetch que falló era el catch-up
   // al volver a la pestaña, sin esto Seguimiento quedaba viejo hasta el próximo
-  // tick del poll de 15 min (auditoría 2026-07-07). Un solo timer pendiente a
-  // la vez — no puede escalar a loop.
+  // tick del poll de 15 min (auditoría 2026-07-07). `retriedOnceRef` corta la
+  // cadena: máximo UN reintento por episodio de fallo (se rearma solo cuando
+  // una carga vuelve a salir bien) — sin él, fallo→retry→fallo→retry loopeaba
+  // cada 30s con un toast por intento (review 2026-07-07).
   const retryTimerRef = useRef<number | null>(null);
+  const retriedOnceRef = useRef(false);
+  const inFlightRef = useRef(false);
   const loadSegDataRef = useRef<(force?: boolean) => void>(() => {});
   useEffect(() => () => {
     if (retryTimerRef.current != null) window.clearTimeout(retryTimerRef.current);
@@ -112,6 +116,11 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
   const loadSegData = useCallback(async (force = false) => {
     if (!user || !storeId) return;
     if (segLoaded && !force) return;
+    // Guard in-flight: el poll (runOnVisible) y el catch-up de realtime pueden
+    // dispararse casi juntos al volver a la pestaña — con esto el segundo se
+    // descarta en vez de correr un fetch completo duplicado.
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setSegLoading(true);
     try {
       // Paginación: Supabase limita cada SELECT a ~1000 filas por defecto.
@@ -141,12 +150,15 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           .range(fromIdx, toIdx);
         if (error) {
           console.error('Error loading seg orders:', error);
-          toast.error('Error cargando seguimiento: ' + error.message);
-          if (retryTimerRef.current == null) {
-            retryTimerRef.current = window.setTimeout(() => {
-              retryTimerRef.current = null;
-              loadSegDataRef.current(true);
-            }, 30_000);
+          if (!retriedOnceRef.current) {
+            toast.error('Error cargando seguimiento: ' + error.message);
+            retriedOnceRef.current = true;
+            if (retryTimerRef.current == null) {
+              retryTimerRef.current = window.setTimeout(() => {
+                retryTimerRef.current = null;
+                loadSegDataRef.current(true);
+              }, 30_000);
+            }
           }
           return;
         }
@@ -164,12 +176,15 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       setSegData(prev => smartMerge(prev, mapped));
       setSegLastUpdate(new Date());
       setSegLoaded(true);
-      // Cargó bien → el reintento pendiente (si lo había) ya no hace falta.
+      // Cargó bien → cerrar el episodio de fallo: cancelar reintento pendiente
+      // y rearmar el "único reintento" para el próximo episodio.
+      retriedOnceRef.current = false;
       if (retryTimerRef.current != null) {
         window.clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
     } finally {
+      inFlightRef.current = false;
       setSegLoading(false);
     }
   }, [user, segLoaded, storeId]);

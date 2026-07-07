@@ -19,12 +19,22 @@
 --     Resumen los excluye (decisión dueño 2026-06-24). Ahora cada RPC devuelve
 --     `rechazados` aparte para que el cliente calcule la madura consistente;
 --     `devueltos` SIGUE incluyendo rechazos (la vista de plata no cambia).
+--  6. Filtro global de ciudad: logistics_by_product / orders_estado_breakdown /
+--     logistics_timeline no aceptaban p_ciudad y lo ignoraban en silencio.
+--  7. Billetera de socios: la tabla de movimientos era RLS admin-only (los
+--     agregados SÍ salían por RPC) → policy de SELECT para owner/supervisor.
 --
--- Diseño: public._estado_bucket(text) espeja EXACTAMENTE resolveBucket() de
--- src/lib/estadoBuckets.ts (lookup exacto sin acentos + fallbacks por contenido).
--- Si se agrega un estado nuevo, actualizar AMBOS lados.
+-- Diseño: public._estado_bucket(text) espeja resolveBucket() de
+-- src/lib/estadoBuckets.ts (lookup exacto sin acentos + fallbacks por
+-- contenido). Si se agrega un estado nuevo, actualizar AMBOS lados.
+-- ASIMETRÍA DELIBERADA: en SQL 'REEMPLAZADA'/'ARCHIVADO GHOST' → bucket
+-- 'borrado' (para EXCLUIRLAS de todo); el cliente las mapea a 'cancelado'
+-- porque solo las ve por la RPC vieja o por realtime — al aplicar esta
+-- migration el server ya no se las manda.
 -- Los cuerpos base vienen de las copias APLICADAS por Lovable (20260626225713 y
 -- 20260707050637) — no del repo viejo — para no pisar drift.
+-- Los CTEs que computan el bucket son MATERIALIZED: garantiza UNA evaluación
+-- de _estado_bucket por fila (la función tiene WITH/FROM y no se inlinea).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION public._estado_bucket(p_estado text)
@@ -32,12 +42,13 @@ RETURNS text
 LANGUAGE sql IMMUTABLE PARALLEL SAFE
 AS $$
   WITH norm AS (
-    -- upper + trim + '_'→' ' + colapsar espacios + sin acentos
-    -- (espejo de normalizeEstado + stripAccents de estadoBuckets.ts)
-    SELECT translate(
-      regexp_replace(replace(upper(btrim(coalesce(p_estado, ''))), '_', ' '), '\s+', ' ', 'g'),
+    -- upper + '_'→' ' + colapsar espacios + trim FINAL + sin acentos
+    -- (espejo de normalizeEstado + stripAccents de estadoBuckets.ts; el btrim
+    -- va al final para que un '_' al borde no deje espacio residual).
+    SELECT btrim(translate(
+      regexp_replace(replace(upper(coalesce(p_estado, '')), '_', ' '), '\s+', ' ', 'g'),
       'ÁÉÍÓÚÜÑ', 'AEIOUUN'
-    ) AS e
+    )) AS e
   )
   SELECT CASE
     -- borrado: soft-delete de Guardian/Dropi — NO existe para ninguna métrica
@@ -60,23 +71,39 @@ AS $$
                'EN BODEGA TRANSPORTADORA', 'ADMITIDA', 'DESPACHADA', 'EN BODEGA DESTINO',
                'EN PUNTO DROOP') THEN 'en_transito'
     -- fallbacks por contenido (ESTADO_FALLBACK_PATTERNS) — solo si el exacto falló
-    WHEN e LIKE '%BODEGA ORIGEN%'            THEN 'en_transito'
-    WHEN e LIKE '%RUTA A%'                   THEN 'en_transito'
-    WHEN e LIKE '%CENTRO LOGISTICO%'         THEN 'en_transito'
-    WHEN e LIKE '%RECOLECCION%'              THEN 'en_transito'
-    WHEN e LIKE '%INGRESANDO OPERATIVO%'     THEN 'en_transito'
-    WHEN e LIKE '%INGRESANDO A%'             THEN 'en_transito'
-    WHEN e LIKE '%DISTRIBUCION A CLIENTE%'   THEN 'en_transito'
+    WHEN e LIKE 'DEVOLUC%'                    THEN 'devuelto'   -- variantes nuevas de Dropi (baseline financial_summary)
+    WHEN e LIKE '%BODEGA ORIGEN%'             THEN 'en_transito'
+    WHEN e LIKE '%RUTA A%'                    THEN 'en_transito'
+    WHEN e LIKE '%CENTRO LOGISTICO%'          THEN 'en_transito'
+    WHEN e LIKE '%RECOLECCION%'               THEN 'en_transito'
+    WHEN e LIKE '%INGRESANDO OPERATIVO%'      THEN 'en_transito'
+    WHEN e LIKE '%INGRESANDO A%'              THEN 'en_transito'
+    WHEN e LIKE '%DISTRIBUCION A CLIENTE%'    THEN 'en_transito'
     WHEN e LIKE '%DISTRIBUCION PARA ENTREGA%' THEN 'en_transito'
-    WHEN e LIKE '%ZONA DE ENTREGA%'          THEN 'en_transito'
-    WHEN e LIKE '%RETIRO EN AGENCIA%'        THEN 'novedad'
-    WHEN e LIKE '%SOLUCION APROBADA%'        THEN 'novedad'
+    WHEN e LIKE '%ZONA DE ENTREGA%'           THEN 'en_transito'
+    WHEN e LIKE '%RETIRO EN AGENCIA%'         THEN 'novedad'
+    WHEN e LIKE '%SOLUCION APROBADA%'         THEN 'novedad'
     ELSE 'otros'
   END
   FROM norm;
 $$;
 
 GRANT EXECUTE ON FUNCTION public._estado_bucket(text) TO authenticated;
+
+-- Normalizador expuesto aparte (misma expresión que _estado_bucket) para los
+-- conteos que necesitan distinguir DENTRO de un bucket (ej. PENDIENTE vs
+-- PENDIENTE CONFIRMACION) sin duplicar la fórmula.
+CREATE OR REPLACE FUNCTION public._estado_norm(p_estado text)
+RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS $$
+  SELECT btrim(translate(
+    regexp_replace(replace(upper(coalesce(p_estado, '')), '_', ' '), '\s+', ' ', 'g'),
+    'ÁÉÍÓÚÜÑ', 'AEIOUUN'
+  ));
+$$;
+
+GRANT EXECUTE ON FUNCTION public._estado_norm(text) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- logistics_summary(date, date) — overload legacy (sin p_ciudad)
@@ -90,13 +117,15 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH base AS (
+  WITH raw AS MATERIALIZED (
     SELECT o.valor, public._estado_bucket(o.estado) AS b
     FROM public.orders o
     WHERE fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND fecha::date BETWEEN p_from_date AND p_to_date
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) NOT IN ('cancelado', 'borrado')
+  ),
+  base AS (
+    SELECT * FROM raw WHERE b NOT IN ('cancelado', 'borrado')
   )
   SELECT
     COUNT(*),
@@ -126,14 +155,18 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH all_orders AS (
-    SELECT o.estado, o.valor, public._estado_bucket(o.estado) AS b
+  WITH raw AS MATERIALIZED (
+    -- e_norm y b comparten normalización (_estado_norm / _estado_bucket) para
+    -- que el conteo de pendientes y su valor no puedan divergir.
+    SELECT o.valor, public._estado_bucket(o.estado) AS b, public._estado_norm(o.estado) AS e_norm
     FROM public.orders o
     WHERE fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND fecha::date BETWEEN p_from_date AND p_to_date
       AND (p_ciudad IS NULL OR ciudad = p_ciudad)
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) <> 'borrado'
+  ),
+  all_orders AS (
+    SELECT * FROM raw WHERE b <> 'borrado'
   )
   SELECT
     COUNT(*) FILTER (WHERE b <> 'cancelado'),
@@ -145,8 +178,8 @@ BEGIN
     COALESCE(SUM(all_orders.valor) FILTER (WHERE b = 'entregado'), 0),
     COALESCE(SUM(all_orders.valor) FILTER (WHERE b IN ('devuelto', 'rechazado')), 0),
     COALESCE(SUM(all_orders.valor) FILTER (WHERE b = 'en_transito'), 0),
-    COUNT(*) FILTER (WHERE UPPER(all_orders.estado) = 'PENDIENTE'),
-    COUNT(*) FILTER (WHERE UPPER(all_orders.estado) IN ('PENDIENTE CONFIRMACION', 'PENDIENTE CONFIRMACIÓN')),
+    COUNT(*) FILTER (WHERE e_norm = 'PENDIENTE'),
+    COUNT(*) FILTER (WHERE e_norm = 'PENDIENTE CONFIRMACION'),
     COALESCE(SUM(all_orders.valor) FILTER (WHERE b = 'pendiente'), 0),
     COUNT(*) FILTER (WHERE b = 'cancelado'),
     COALESCE(SUM(all_orders.valor) FILTER (WHERE b = 'cancelado'), 0),
@@ -172,14 +205,16 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH base AS (
+  WITH raw AS MATERIALIZED (
     SELECT o.transportadora AS carrier, o.valor, o.dias_conf, public._estado_bucket(o.estado) AS b
     FROM public.orders o
     WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND o.fecha::date BETWEEN p_from_date AND p_to_date
       AND o.transportadora IS NOT NULL AND o.transportadora <> ''
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) NOT IN ('cancelado', 'borrado')
+  ),
+  base AS (
+    SELECT * FROM raw WHERE b NOT IN ('cancelado', 'borrado')
   )
   SELECT
     base.carrier::TEXT,
@@ -215,7 +250,7 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH base AS (
+  WITH raw AS MATERIALIZED (
     SELECT o.transportadora AS carrier, o.valor, o.dias_conf, public._estado_bucket(o.estado) AS b
     FROM public.orders o
     WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
@@ -223,7 +258,9 @@ BEGIN
       AND o.transportadora IS NOT NULL AND o.transportadora <> ''
       AND (p_ciudad IS NULL OR o.ciudad = p_ciudad)
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
+  ),
+  base AS (
+    SELECT * FROM raw WHERE b NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
   )
   SELECT
     base.carrier::TEXT,
@@ -262,14 +299,16 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH base AS (
+  WITH raw AS MATERIALIZED (
     SELECT o.ciudad AS city, COALESCE(o.departamento, '') AS dep, o.valor, public._estado_bucket(o.estado) AS b
     FROM public.orders o
     WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND o.fecha::date BETWEEN p_from_date AND p_to_date
       AND o.ciudad IS NOT NULL AND o.ciudad <> ''
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
+  ),
+  base AS (
+    SELECT * FROM raw WHERE b NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
   )
   SELECT
     base.city::TEXT,
@@ -291,12 +330,12 @@ $function$;
 GRANT EXECUTE ON FUNCTION public.logistics_by_city(date, date, integer) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- logistics_by_product — +rechazados → DROP. Cohorte despachada. Ranking por
--- tasa MADURA ascendente (peor entrega real primero; sin resueltos al final).
+-- logistics_by_product — +rechazados +p_ciudad → DROP. Cohorte despachada.
+-- Ranking por tasa MADURA ascendente (peor entrega real primero).
 -- ─────────────────────────────────────────────────────────────────────────────
 DROP FUNCTION IF EXISTS public.logistics_by_product(date, date, integer);
 
-CREATE FUNCTION public.logistics_by_product(p_from_date date, p_to_date date, p_limit integer DEFAULT 50)
+CREATE FUNCTION public.logistics_by_product(p_from_date date, p_to_date date, p_limit integer DEFAULT 50, p_ciudad text DEFAULT NULL::text)
  RETURNS TABLE(producto text, total_pedidos bigint, entregados bigint, devueltos bigint, tasa_entrega numeric, tasa_devolucion numeric, valor_entregado numeric, valor_perdido numeric, rechazados bigint)
  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
 AS $function$
@@ -305,14 +344,17 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH base AS (
+  WITH raw AS MATERIALIZED (
     SELECT o.producto AS prod, o.valor, public._estado_bucket(o.estado) AS b
     FROM public.orders o
     WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND o.fecha::date BETWEEN p_from_date AND p_to_date
       AND o.producto IS NOT NULL AND o.producto <> ''
+      AND (p_ciudad IS NULL OR o.ciudad = p_ciudad)
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
+  ),
+  base AS (
+    SELECT * FROM raw WHERE b NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
   )
   SELECT
     base.prod::TEXT,
@@ -334,7 +376,7 @@ BEGIN
 END;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.logistics_by_product(date, date, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.logistics_by_product(date, date, integer, text) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- logistics_by_city_carrier — +rechazados → DROP. Cohorte despachada (antes
@@ -351,7 +393,7 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH base AS (
+  WITH raw AS MATERIALIZED (
     SELECT o.ciudad AS city, COALESCE(o.departamento, '') AS dep, o.transportadora AS carrier,
            public._estado_bucket(o.estado) AS b
     FROM public.orders o
@@ -360,7 +402,9 @@ BEGIN
       AND o.ciudad IS NOT NULL AND o.ciudad <> ''
       AND o.transportadora IS NOT NULL AND o.transportadora <> ''
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
+  ),
+  base AS (
+    SELECT * FROM raw WHERE b NOT IN ('cancelado', 'borrado', 'pendiente', 'preparacion')
   ),
   city_volumes AS (
     SELECT base.city, COUNT(*) AS total FROM base
@@ -434,12 +478,14 @@ BEGIN
   IF v_store IS NULL THEN RETURN NULL; END IF;
 
   WITH
-  filtered AS (
+  raw AS MATERIALIZED (
     SELECT *, public._estado_bucket(estado) AS b FROM public.orders
     WHERE fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND fecha::date BETWEEN p_from_date AND p_to_date
       AND store_id = v_store
-      AND public._estado_bucket(estado) <> 'borrado'
+  ),
+  filtered AS (
+    SELECT * FROM raw WHERE b <> 'borrado'
   ),
   entregados AS (
     SELECT * FROM filtered WHERE b = 'entregado'
@@ -538,7 +584,8 @@ $function$;
 -- ─────────────────────────────────────────────────────────────────────────────
 -- product_profitability — FIX del 42702 (SUM(devueltos) sin calificar chocaba
 -- con la columna OUT homónima → la RPC fallaba en TODAS las llamadas) + excluye
--- borrado + criterio de entregado por bucket. Sin cambio de firma.
+-- borrado + criterio de entregado por bucket + bucket UNA vez por fila.
+-- Sin cambio de firma.
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.product_profitability(p_from_date date, p_to_date date, p_limit integer DEFAULT 100)
  RETURNS TABLE(producto text, total_pedidos bigint, entregados bigint, devueltos bigint, cancelados bigint, en_transito bigint, ingresos_entregados numeric, costo_prod_entregados numeric, flete_inicial_entregados numeric, costo_devolucion_total numeric, utilidad_real numeric, utilidad_proyectada numeric, tasa_entrega numeric, tasa_devolucion numeric, tasa_cancelacion numeric, ticket_promedio numeric, margen_pct numeric)
@@ -549,25 +596,28 @@ BEGIN
   v_store := public._resolve_scope_store();
   IF v_store IS NULL THEN RETURN; END IF;
   RETURN QUERY
-  WITH agg AS (
-    SELECT
-      o.producto::TEXT AS producto,
-      COUNT(*) AS total_pedidos,
-      COUNT(*) FILTER (WHERE public._estado_bucket(o.estado) = 'entregado') AS entregados,
-      COUNT(*) FILTER (WHERE public._estado_bucket(o.estado) IN ('devuelto', 'rechazado')) AS devueltos,
-      COUNT(*) FILTER (WHERE public._estado_bucket(o.estado) = 'cancelado') AS cancelados,
-      COUNT(*) FILTER (WHERE public._estado_bucket(o.estado) NOT IN
-        ('entregado', 'devuelto', 'rechazado', 'cancelado')) AS en_transito,
-      COALESCE(SUM(o.valor) FILTER (WHERE public._estado_bucket(o.estado) = 'entregado'), 0) AS ingresos_entregados,
-      COALESCE(SUM(o.costo_prod) FILTER (WHERE public._estado_bucket(o.estado) = 'entregado'), 0) AS costo_prod_entregados,
-      COALESCE(SUM(o.flete) FILTER (WHERE public._estado_bucket(o.estado) = 'entregado'), 0) AS flete_inicial_entregados
+  WITH raw AS MATERIALIZED (
+    SELECT o.producto AS prod, o.valor, o.costo_prod, o.flete, public._estado_bucket(o.estado) AS b
     FROM public.orders o
     WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
       AND o.fecha::date BETWEEN p_from_date AND p_to_date
       AND o.producto IS NOT NULL AND o.producto <> ''
       AND o.store_id = v_store
-      AND public._estado_bucket(o.estado) <> 'borrado'
-    GROUP BY o.producto
+  ),
+  agg AS (
+    SELECT
+      r.prod::TEXT AS producto,
+      COUNT(*) AS total_pedidos,
+      COUNT(*) FILTER (WHERE r.b = 'entregado') AS entregados,
+      COUNT(*) FILTER (WHERE r.b IN ('devuelto', 'rechazado')) AS devueltos,
+      COUNT(*) FILTER (WHERE r.b = 'cancelado') AS cancelados,
+      COUNT(*) FILTER (WHERE r.b NOT IN ('entregado', 'devuelto', 'rechazado', 'cancelado')) AS en_transito,
+      COALESCE(SUM(r.valor) FILTER (WHERE r.b = 'entregado'), 0) AS ingresos_entregados,
+      COALESCE(SUM(r.costo_prod) FILTER (WHERE r.b = 'entregado'), 0) AS costo_prod_entregados,
+      COALESCE(SUM(r.flete) FILTER (WHERE r.b = 'entregado'), 0) AS flete_inicial_entregados
+    FROM raw r
+    WHERE r.b <> 'borrado'
+    GROUP BY r.prod
   ),
   wallet_attributed AS (
     SELECT o.producto::TEXT AS producto,
@@ -635,9 +685,13 @@ $function$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- orders_estado_breakdown — el embudo del cliente. Excluye borrado (paridad
--- Dropi: una orden reemplazada/soft-borrada no existe). Sin cambio de firma.
+-- Dropi: una orden reemplazada/soft-borrada no existe) + p_ciudad → DROP
+-- (agregar un parámetro con DEFAULT crea una firma nueva; sin DROP quedarían
+-- las dos y PostgREST se confunde).
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.orders_estado_breakdown(p_from date, p_to date)
+DROP FUNCTION IF EXISTS public.orders_estado_breakdown(date, date);
+
+CREATE FUNCTION public.orders_estado_breakdown(p_from date, p_to date, p_ciudad text DEFAULT NULL::text)
  RETURNS TABLE(estado text, pedidos bigint, valor numeric, unidades numeric)
  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
 AS $function$
@@ -654,24 +708,30 @@ BEGIN
   FROM public.orders o
   WHERE o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
     AND o.fecha::date BETWEEN p_from AND p_to
+    AND (p_ciudad IS NULL OR o.ciudad = p_ciudad)
     AND o.store_id = v_store
     AND public._estado_bucket(o.estado) <> 'borrado'
   GROUP BY UPPER(COALESCE(NULLIF(TRIM(o.estado), ''), '(sin estado)'));
 END;
 $function$;
 
+GRANT EXECUTE ON FUNCTION public.orders_estado_breakdown(date, date, text) TO authenticated;
+
 -- ─────────────────────────────────────────────────────────────────────────────
--- logistics_timeline — el drill-down tampoco debe listar borradas.
--- Solo cambia el WHERE del CTE filtered; el resto queda idéntico.
+-- logistics_timeline — el drill-down tampoco debe listar borradas + p_ciudad.
+-- DROP porque agregar un parámetro con DEFAULT crea una firma nueva.
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.logistics_timeline(
+DROP FUNCTION IF EXISTS public.logistics_timeline(date, date, text[], text, text, integer, integer);
+
+CREATE FUNCTION public.logistics_timeline(
   p_from_date      DATE,
   p_to_date        DATE,
   p_estados        TEXT[] DEFAULT NULL,
   p_transportadora TEXT   DEFAULT NULL,
   p_search         TEXT   DEFAULT NULL,
   p_limit          INTEGER DEFAULT 50,
-  p_offset         INTEGER DEFAULT 0
+  p_offset         INTEGER DEFAULT 0,
+  p_ciudad         TEXT   DEFAULT NULL
 )
 RETURNS TABLE (
   id              UUID,
@@ -713,6 +773,7 @@ BEGIN
       AND public._estado_bucket(o.estado) <> 'borrado'
       AND (p_estados IS NULL OR UPPER(COALESCE(o.estado, '')) = ANY(p_estados))
       AND (p_transportadora IS NULL OR p_transportadora = '' OR o.transportadora = p_transportadora)
+      AND (p_ciudad IS NULL OR p_ciudad = '' OR o.ciudad = p_ciudad)
       AND (
         v_search_pattern IS NULL
         OR o.guia ILIKE v_search_pattern
@@ -738,6 +799,8 @@ BEGIN
   LIMIT p_limit OFFSET p_offset;
 END;
 $$;
+
+GRANT EXECUTE ON FUNCTION public.logistics_timeline(DATE, DATE, TEXT[], TEXT, TEXT, INTEGER, INTEGER, TEXT) TO authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- get_top_cities — el dropdown de ciudades no debe rankear con borradas.
@@ -774,3 +837,21 @@ BEGIN
   LIMIT p_limit;
 END;
 $func$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Billetera para socios: la tabla dropi_wallet_movements era SELECT admin-only
+-- (wallet_admin_select) mientras los agregados (wallet_summary, SECURITY
+-- DEFINER) sí salían — el socio veía "Entradas $X" con la lista vacía.
+-- Owner/supervisor de la tienda pueden LEER sus movimientos; INSERT/UPDATE
+-- siguen bloqueados (todo entra por upsert_wallet_movements).
+-- ─────────────────────────────────────────────────────────────────────────────
+DROP POLICY IF EXISTS wallet_member_select ON public.dropi_wallet_movements;
+CREATE POLICY wallet_member_select ON public.dropi_wallet_movements
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.store_members sm
+      WHERE sm.user_id = auth.uid()
+        AND sm.store_id = dropi_wallet_movements.store_id
+        AND sm.role IN ('owner', 'supervisor')
+    )
+  );

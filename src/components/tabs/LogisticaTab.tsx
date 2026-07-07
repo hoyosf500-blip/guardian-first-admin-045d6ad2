@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useSessionState } from '@/hooks/useSessionState';
 import {
@@ -213,11 +214,14 @@ export default function LogisticaTab() {
   const [periodB, setPeriodB] = useState<LogisticsFilters>(() => prevPeriod(defaultRange()));
 
   const { summary, carriers, cities, products, isLoading, isError } = useLogisticsStats(filters);
+  const activeStoreId = useActiveStoreId();
+  const queryClient = useQueryClient();
 
   // Query extra para los 4 gráficos nuevos (RPC `logistics_dashboard`).
   // Si el RPC no existe en DB, cae a EmptyChart y el resto sigue funcionando.
+  // storeId en la key: la RPC resuelve la tienda server-side (auditoría 2026-07-07).
   const dashboardQuery = useQuery<DashboardData>({
-    queryKey: ['logistics_dashboard', rangeKey(filters)],
+    queryKey: ['logistics_dashboard', activeStoreId ?? 'none', rangeKey(filters)],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('logistics_dashboard', { p_range: rangeKey(filters) });
       if (error) throw error;
@@ -225,6 +229,7 @@ export default function LogisticaTab() {
     },
     staleTime: 60_000,
     retry: false,
+    enabled: Boolean(activeStoreId),
   });
 
   const errorMsg = useMemo(() => {
@@ -238,6 +243,18 @@ export default function LogisticaTab() {
   const refetchAll = () => {
     summary.refetch(); carriers.refetch(); cities.refetch(); products.refetch();
     dashboardQuery.refetch();
+    // El botón decía "Refrescar" pero solo cubría 5 queries: en Finanzas /
+    // Decisiones / Billetera el timestamp mentía sobre la frescura de la plata
+    // (auditoría 2026-07-07). Invalidar por prefijo cubre el resto sin acoplar
+    // este componente a cada hook.
+    for (const key of [
+      'financial-summary', 'ganancia-neta-dropi', 'operativo-cohorte',
+      'orders-estado-breakdown', 'wallet_movements', 'wallet_saldo_hoy',
+      'wallet_daily_series', 'wallet_sync_health', 'logistics-city-carrier-matrix',
+      'logistics-cost-basis', 'product-profitability',
+    ]) {
+      void queryClient.invalidateQueries({ queryKey: [key] });
+    }
   };
 
   const lastUpdated = summary.dataUpdatedAt
@@ -386,6 +403,14 @@ export default function LogisticaTab() {
           <TabsContent value="carriers" className="mt-4 space-y-4">
             <CarrierStatsTable rows={carriers.data ?? []} />
 
+            {/* Antes un error del RPC (retry:false) hacía DESAPARECER los charts
+                en silencio — parecía "no hay datos" (auditoría 2026-07-07). */}
+            {dashboardQuery.isError && (
+              <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 text-xs text-muted-foreground">
+                No se pudieron cargar los gráficos de transportadoras — usá el botón Refrescar.
+              </div>
+            )}
+
             {dashboardQuery.data && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <CarrierDonut data={dashboardQuery.data.by_transportadora} colorMap={carrierColorMap} />
@@ -421,6 +446,11 @@ export default function LogisticaTab() {
           </TabsContent>
 
           <TabsContent value="trazabilidad" className="mt-4 space-y-4">
+            {dashboardQuery.isError && (
+              <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 text-xs text-muted-foreground">
+                No se pudieron cargar los gráficos de estados — usá el botón Refrescar.
+              </div>
+            )}
             {dashboardQuery.data && (
               <EstadoDonutAndDailyStack
                 donut={dashboardQuery.data.by_estado}

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveStoreId } from '@/contexts/StoreContext';
+import { bogotaDayBounds } from '@/lib/bogotaDayBounds';
 
 export interface WalletMovement {
   id: number;
@@ -51,8 +52,8 @@ export function useWalletMovements(params: UseWalletMovementsParams) {
   return useQuery<WalletMovementsResult>({
     queryKey: ['wallet_movements', storeId, fromDate, toDate, tipo, categoria, page, pageSize],
     queryFn: async () => {
-      const fromTs = `${fromDate}T00:00:00Z`;
-      const toTs = `${toDate}T23:59:59Z`;
+      // Corte de día en hora Bogotá (antes 'Z' = UTC corría el corte 5h).
+      const { fromTs, toTs } = bogotaDayBounds(fromDate, toDate);
 
       // 1. Página filtrada (con count exacto) — solo trae las N filas visibles
       let q = supabase
@@ -137,8 +138,8 @@ export function useWalletDailySeries(fromDate: string, toDate: string) {
     queryKey: ['wallet_daily_series', storeId ?? 'all', fromDate, toDate],
     enabled: Boolean(storeId),
     queryFn: async () => {
-      const fromTs = `${fromDate}T00:00:00Z`;
-      const toTs = `${toDate}T23:59:59Z`;
+      // Corte de día en hora Bogotá (antes 'Z' = UTC corría el corte 5h).
+      const { fromTs, toTs } = bogotaDayBounds(fromDate, toDate);
       const { data, error } = await supabase.rpc('wallet_daily_series', {
         p_from: fromTs,
         p_to: toTs,

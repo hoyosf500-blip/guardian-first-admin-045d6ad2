@@ -61,10 +61,15 @@ export function deriveDeliveryMaturity(
   rechazados = 0,
 ): DeliveryMaturity {
   const e = Math.max(0, entregados || 0);
-  const d = Math.max(0, (devueltos || 0) - Math.max(0, rechazados || 0));
+  const dRaw = Math.max(0, devueltos || 0);
+  const d = Math.max(0, dRaw - Math.max(0, rechazados || 0));
   const t = Math.max(0, total || 0);
   const resueltos = e + d;
-  const pctConcluido = t > 0 ? Math.round((resueltos / t) * 100) : 0;
+  // Madurez del cohorte: los rechazos SÍ concluyeron su ciclo (no miden a la
+  // transportadora, pero tampoco están "en camino") — cuentan como concluidos
+  // aunque no entren en `resueltos` (denominador de la tasa).
+  const concluidos = e + dRaw;
+  const pctConcluido = t > 0 ? Math.round((concluidos / t) * 100) : 0;
   return {
     resueltos,
     tasaEntregaMadura: resueltos > 0 ? Math.round((e / resueltos) * 100) : null,

@@ -604,7 +604,9 @@ export default function SeguimientoTab() {
               )}
             >
               Todas
-              <span className="font-mono tabular-nums text-[11px] opacity-80">{dedupedByDate.length}</span>
+              {/* chipsBase (no dedupedByDate): en vista Lista respira con el
+                  mismo snapshot congelado que los demás chips y la tabla. */}
+              <span className="font-mono tabular-nums text-[11px] opacity-80">{chipsBase.length}</span>
             </button>
             {SEG_LISTS
               .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
@@ -739,7 +741,12 @@ export default function SeguimientoTab() {
           patrón que classifySegOwnershipFromTps en segOwnership.ts). Con "Ocultar
           gestionados" (default), cada pedido gestionado desaparece del tablero. */}
       {(() => {
-        const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+        // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
+        // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
+        const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
+        const feedBase = listaActiva && !listaActiva.externalRoute
+          ? counterSource.filter((o) => listaActiva.matches(o))
+          : counterSource;
         const total = feedBase.length;
         if (total === 0) return null;
         const gestionados = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
@@ -809,9 +816,12 @@ export default function SeguimientoTab() {
           emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
           controlledStatusFilter={statusFilter}
           onControlledStatusFilterChange={setStatusFilter}
-          // Vista del operador = Lista SLA activa + búsqueda. Al cambiarla, la
-          // tabla se actualiza al instante (sin banner de "N cambios").
-          viewKey={`${listaSlug ?? 'all'}|${search}`}
+          // Vista del operador = tienda activa + Lista SLA + búsqueda. Al
+          // cambiarla, la tabla se actualiza al instante (sin banner de "N
+          // cambios"). storeId incluido: sin él, el cambio de tienda dejaba la
+          // tabla y los chips congelados con la tienda ANTERIOR detrás del
+          // banner (review 2026-07-07).
+          viewKey={`${activeStoreId ?? ''}|${listaSlug ?? 'all'}|${search}`}
           onDataApplied={handleListDataApplied}
         />
       )}

@@ -21,15 +21,25 @@ function num(v: unknown): number {
   return isFinite(n) ? n : 0;
 }
 
-export function useEstadoBreakdown(from: string, to: string) {
+export function useEstadoBreakdown(from: string, to: string, ciudad?: string | null) {
   const storeId = useActiveStoreId();
+  const ciudadKey = ciudad?.trim() || null;
   return useQuery<EstadoRow[] | null>({
-    queryKey: ['orders-estado-breakdown', storeId, from, to],
+    queryKey: ['orders-estado-breakdown', storeId, from, to, ciudadKey],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('orders_estado_breakdown', {
-        p_from: from,
-        p_to: to,
-      });
+      const call = (args: Record<string, unknown>) =>
+        (supabase.rpc as unknown as (fn: string, a: Record<string, unknown>) =>
+          Promise<{ data: unknown; error: { code?: string; message: string } | null }>)(
+          'orders_estado_breakdown', args);
+      // El filtro global de ciudad se ignoraba EN SILENCIO en el embudo
+      // (auditoría 2026-07-07). Con la RPC vieja (sin p_ciudad, PGRST202)
+      // reintenta sin el filtro = comportamiento previo.
+      let { data, error } = ciudadKey
+        ? await call({ p_from: from, p_to: to, p_ciudad: ciudadKey })
+        : await call({ p_from: from, p_to: to });
+      if (error && ciudadKey && (error.code === 'PGRST202' || /find the function|does not exist/i.test(error.message))) {
+        ({ data, error } = await call({ p_from: from, p_to: to }));
+      }
       // RPC no desplegado aún → degradar a null (el componente usa el fallback).
       if (error) {
         if (error.code === 'PGRST202' || /find the function|does not exist/i.test(error.message)) {

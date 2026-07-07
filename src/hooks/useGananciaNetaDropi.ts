@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import { isRpcMissing } from '@/lib/rpcError';
+import { bogotaDayBounds } from '@/lib/bogotaDayBounds';
 
 // Categorías OPERATIVAS de la wallet de Dropi — son las que sí mueven la
 // ganancia real del cliente. El resto (retiros, depósitos, transferencias)
@@ -134,8 +135,8 @@ export function useGananciaNetaDropi(from: string, to: string) {
   return useQuery<GananciaNetaResult>({
     queryKey: ['ganancia-neta-dropi', storeId, from, to],
     queryFn: async () => {
-      const fromTs = `${from}T00:00:00Z`;
-      const toTs = `${to}T23:59:59Z`;
+      // Corte de día en hora Bogotá (antes 'Z' = UTC corría el corte 5h).
+      const { fromTs, toTs } = bogotaDayBounds(from, to);
 
       // 1. RPC store-scoped (camino principal — funciona para socios).
       const { data, error } = await supabase.rpc('wallet_ganancia_neta', {

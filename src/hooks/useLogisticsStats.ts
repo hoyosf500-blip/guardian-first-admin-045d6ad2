@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import type {
   LogisticsSummary,
   CarrierStats,
@@ -16,15 +17,40 @@ const STALE_5MIN = 5 * 60 * 1000;
 
 interface RpcResult<T> {
   data: T[] | null;
-  error: { message: string } | null;
+  error: { message: string; code?: string } | null;
+}
+
+async function rpcRaw<T>(fn: string, args: Record<string, unknown>): Promise<RpcResult<T>> {
+  return await (supabase.rpc as unknown as (
+    fn: string, args: Record<string, unknown>
+  ) => Promise<RpcResult<T>>)(fn, args);
 }
 
 async function callRpc<T>(fn: string, args: Record<string, unknown>): Promise<T[]> {
-  const { data, error } = await (supabase.rpc as unknown as (
-    fn: string, args: Record<string, unknown>
-  ) => Promise<RpcResult<T>>)(fn, args);
+  const { data, error } = await rpcRaw<T>(fn, args);
   if (error) throw new Error(`${fn}: ${error.message}`);
   return data ?? [];
+}
+
+/** ¿El error es "no existe una función con esos parámetros"? (RPC deployada
+ *  vieja que aún no acepta el parámetro nuevo — PostgREST matchea por firma). */
+function isFnSignatureMissing(err: { message: string; code?: string }): boolean {
+  return err.code === 'PGRST202' || /find the function|does not exist/i.test(err.message);
+}
+
+/** Llama la RPC con p_ciudad; si la versión deployada aún no acepta el
+ *  parámetro (migration 20260707120000 sin aplicar), reintenta SIN él —
+ *  mismo comportamiento que antes del fix (filtro de ciudad ignorado). */
+async function callRpcCityAware<T>(
+  fn: string,
+  base: Record<string, unknown>,
+  ciudadKey: string | null,
+): Promise<T[]> {
+  if (!ciudadKey) return callRpc<T>(fn, base);
+  const { data, error } = await rpcRaw<T>(fn, { ...base, p_ciudad: ciudadKey });
+  if (!error) return data ?? [];
+  if (isFnSignatureMissing(error)) return callRpc<T>(fn, base);
+  throw new Error(`${fn}: ${error.message}`);
 }
 
 export interface UseLogisticsStatsResult {
@@ -42,8 +68,13 @@ export function useLogisticsStats(
 ): UseLogisticsStatsResult {
   const { fromDate, toDate, ciudad } = filters;
   const ciudadKey = ciudad?.trim() || null;
-  const baseKey = ['logistics', fromDate, toDate, ciudadKey] as const;
+  // storeId en la key: las RPCs resuelven la tienda SERVER-side
+  // (_resolve_scope_store), así que sin esto un cambio de tienda servía el
+  // cache de la tienda anterior bajo la misma key (auditoría 2026-07-07).
+  const storeId = useActiveStoreId();
+  const baseKey = ['logistics', storeId ?? 'none', fromDate, toDate, ciudadKey] as const;
   const queryClient = useQueryClient();
+  const storeReady = Boolean(storeId);
 
   const summary = useQuery<LogisticsSummary | null>({
     queryKey: [...baseKey, 'summary'],
@@ -56,6 +87,7 @@ export function useLogisticsStats(
       return rows[0] ?? null;
     },
     staleTime: STALE_5MIN,
+    enabled: storeReady,
   });
 
   const carriers = useQuery<CarrierStats[]>({
@@ -66,6 +98,7 @@ export function useLogisticsStats(
       p_ciudad: ciudadKey,
     }),
     staleTime: STALE_5MIN,
+    enabled: storeReady,
   });
 
   const cities = useQuery<CityReturns[]>({
@@ -78,17 +111,20 @@ export function useLogisticsStats(
     staleTime: STALE_5MIN,
     // Cuando hay filtro de ciudad, esta query no aporta (sería 1 sola fila).
     // La deshabilitamos para ahorrar round-trip.
-    enabled: !ciudadKey,
+    enabled: storeReady && !ciudadKey,
   });
 
   const products = useQuery<ProductFailure[]>({
     queryKey: [...baseKey, 'products'],
-    queryFn: () => callRpc<ProductFailure>('logistics_by_product', {
+    // p_ciudad con fallback: la RPC vieja no aceptaba ciudad y el filtro
+    // global se ignoraba EN SILENCIO en la tab Productos (auditoría 2026-07-07).
+    queryFn: () => callRpcCityAware<ProductFailure>('logistics_by_product', {
       p_from_date: fromDate,
       p_to_date: toDate,
       p_limit: 50,
-    }),
+    }, ciudadKey),
     staleTime: STALE_5MIN,
+    enabled: storeReady,
   });
 
   // Realtime: cualquier cambio en `orders` invalida los 4 queries
