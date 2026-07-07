@@ -16,9 +16,8 @@ import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
-import EditOrderDialog from '@/components/EditOrderDialog';
-import ChangeCarrierDialog from '@/components/confirmar/ChangeCarrierDialog';
-import ChangeValueDialog from '@/components/confirmar/ChangeValueDialog';
+import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
+import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
@@ -123,7 +122,10 @@ export default function CallView({ items, alerts }: Props) {
   // mostramos un campo de texto OBLIGATORIO en vez de cancelar de una.
   const [cancelOtroMode, setCancelOtroMode] = useState(false);
   const [cancelOtroText, setCancelOtroText] = useState('');
-  const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
+  // Edición de orden unificada (datos + transportadora + producto + valor).
+  // `suggestedTotal` viene del chip de sobreprecio (total de Shopify).
+  const [editorState, setEditorState] = useState<{ order: OrderData; suggestedTotal?: number } | null>(null);
+  const refreshOrderRow = useRefreshOrderRow();
   // El modal de cancelación es estado por-componente y CallView NO se re-monta
   // al pasar de pedido (solo cambia `callOrderId`). Reseteamos al cambiar de
   // pedido para que el texto de "Otro" no se filtre al siguiente pedido.
@@ -132,9 +134,6 @@ export default function CallView({ items, alerts }: Props) {
     setCancelOtroMode(false);
     setCancelOtroText('');
   }, [callOrderId]);
-  const [carrierOrder, setCarrierOrder] = useState<OrderData | null>(null);
-  // Cambiar valor a cobrar: `suggested` viene del chip de sobreprecio (total Shopify).
-  const [valueOrder, setValueOrder] = useState<{ order: OrderData; suggested?: number } | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
   // Validador-direcciones: override admin-only para destrabar el gate cuando
   // la dirección quedó en yellow/red pero el admin decidió despachar igual.
@@ -776,7 +775,7 @@ export default function CallView({ items, alerts }: Props) {
               {!o.guia && o.externalId && (
                 <button
                   type="button"
-                  onClick={() => setValueOrder({ order: o, suggested: oc.shopifyTotal })}
+                  onClick={() => setEditorState({ order: o, suggestedTotal: oc.shopifyTotal })}
                   className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors whitespace-nowrap"
                 >
                   Corregir a {formatCOP(oc.shopifyTotal)}
@@ -949,44 +948,21 @@ export default function CallView({ items, alerts }: Props) {
           )
         )}
 
-        {/* Edit order button (AI script generator removed — unused) */}
+        {/* Edición de orden unificada estilo Dropi: datos + dirección +
+            transportadora + producto + valor en un solo diálogo. */}
         {!o.result && o.externalId && (
           <div className="mb-3 grid gap-2">
             <button
               type="button"
-              onClick={() => setEditingOrder(o)}
-              title="Editar datos del cliente"
-              aria-label="Editar datos del cliente"
+              onClick={() => setEditorState({ order: o })}
+              title="Editar orden (datos, transportadora, cantidades y valor)"
+              aria-label="Editar orden"
               className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
             >
-              <UserCog size={14} aria-hidden="true" /> Editar datos del cliente
+              <UserCog size={14} aria-hidden="true" /> Editar orden
+              {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
+              {o.valor > 0 && <span className="opacity-70">· {formatCOP(o.valor)}</span>}
             </button>
-            {/* Cambiar transportadora: solo sin guía generada (luego queda fija). */}
-            {!o.guia && (
-              <button
-                type="button"
-                onClick={() => setCarrierOrder(o)}
-                title="Cambiar transportadora"
-                aria-label="Cambiar transportadora"
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-500 text-xs font-semibold hover:bg-cyan-500/20 hover:border-cyan-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:outline-none"
-              >
-                <Package size={14} aria-hidden="true" /> Cambiar transportadora
-                {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
-              </button>
-            )}
-            {/* Cambiar valor a cobrar: mismo límite que transportadora (sin guía). */}
-            {!o.guia && (
-              <button
-                type="button"
-                onClick={() => setValueOrder({ order: o })}
-                title="Cambiar valor a cobrar"
-                aria-label="Cambiar valor a cobrar"
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs font-semibold hover:bg-amber-500/20 hover:border-amber-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
-              >
-                <DollarSign size={14} aria-hidden="true" /> Cambiar valor
-                {o.valor > 0 && <span className="opacity-70">· {formatCOP(o.valor)}</span>}
-              </button>
-            )}
           </div>
         )}
 
@@ -1110,67 +1086,19 @@ export default function CallView({ items, alerts }: Props) {
         </div>
       )}
 
-      {editingOrder && (
-        <EditOrderDialog
-          open={!!editingOrder}
-          onOpenChange={(op) => { if (!op) setEditingOrder(null); }}
-          order={editingOrder}
+      {editorState && (
+        <OrderEditorDialog
+          open={!!editorState}
+          onOpenChange={(op) => { if (!op) setEditorState(null); }}
+          order={editorState.order}
+          suggestedTotal={editorState.suggestedTotal}
           onSuccess={async () => {
-            // BUG 4 fix: re-fetch del pedido editado para refrescar pantalla.
-            if (!editingOrder?.dbId) return;
-            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', editingOrder.dbId).maybeSingle();
-            if (data) {
-              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
-              const merged = allOrders.map(ord => ord.dbId === updated.dbId
-                ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
-                : ord);
-              setAllOrders(merged);
-              buildWorkQueue(merged);
-            }
-          }}
-        />
-      )}
-
-      {carrierOrder && (
-        <ChangeCarrierDialog
-          open={!!carrierOrder}
-          onOpenChange={(op) => { if (!op) setCarrierOrder(null); }}
-          order={carrierOrder}
-          onSuccess={async () => {
-            // Re-fetch del pedido para reflejar la nueva transportadora.
-            if (!carrierOrder?.dbId) return;
-            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', carrierOrder.dbId).maybeSingle();
-            if (data) {
-              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
-              const merged = allOrders.map(ord => ord.dbId === updated.dbId
-                ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
-                : ord);
-              setAllOrders(merged);
-              buildWorkQueue(merged);
-            }
-          }}
-        />
-      )}
-
-      {valueOrder && (
-        <ChangeValueDialog
-          open={!!valueOrder}
-          onOpenChange={(op) => { if (!op) setValueOrder(null); }}
-          order={valueOrder.order}
-          suggested={valueOrder.suggested}
-          onSuccess={async () => {
-            // Re-fetch del pedido para reflejar el valor nuevo (y el external_id
-            // nuevo si Dropi recreó la orden — misma fila física, mismo dbId).
-            if (!valueOrder?.order.dbId) return;
-            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', valueOrder.order.dbId).maybeSingle();
-            if (data) {
-              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
-              const merged = allOrders.map(ord => ord.dbId === updated.dbId
-                ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
-                : ord);
-              setAllOrders(merged);
-              buildWorkQueue(merged);
-            }
+            // Re-fetch de la fila editada (mismo dbId aunque Dropi recree la
+            // orden) + RE-ANCLAJE del pedido activo: tras un recreate el
+            // external_id CAMBIA y el ancla vieja mandaba a la operadora al
+            // primer pendiente (perdía su lugar en la cola).
+            const updated = await refreshOrderRow(editorState.order.dbId);
+            if (updated) setCallOrderId(updated.externalId || updated.dbId || null);
           }}
         />
       )}
