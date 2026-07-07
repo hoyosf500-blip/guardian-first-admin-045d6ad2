@@ -21,7 +21,13 @@ para Ecuador (USD) ni para el control diario ni para que los socios de una tiend
 3. **Granularidad:** **un monto por (tienda, día, canal)**. No por cuenta de anuncios.
    (Si en el futuro quiere por cuenta, se agrega; hoy YAGNI.)
 4. **Multi-país:** montos en la **moneda de la tienda** — pesos en CO, dólares en EC.
-   `formatCOP` ya es country-aware, así que la moneda sale sola.
+   La corrección de moneda es a nivel de **captura del dato**: un encargado de EC teclea
+   dólares, uno de CO teclea pesos. Para **mostrar** se usa el `formatCOP` universal de la
+   app (símbolo `$`, agrupación es-CO, sin decimales), el MISMO que usa el resto de Logística
+   y la propia Ganancia Neta — así la pauta queda visualmente alineada con el número del que
+   se resta. (Nota: `formatCOP` en `src/lib/utils.ts` NO es country-aware pese a lo que dice
+   CLAUDE.md; no existe `setCurrencyCountry`. No se introduce un formateador USD aparte
+   porque chocaría con la Ganancia que está al lado.)
 
 Se **descartó** reusar/retrofitear `monthly_ad_spend` (es global/admin/CO-only/pesos;
 mezclar diario + `store_id` + USD lo ensuciaría y rompería la tarjeta mensual del CFO).
@@ -106,8 +112,9 @@ de `<MesActualResumen .../>`** (línea ~372), recibiendo `filters`. Muestra:
 
 ## Multi-país / privacidad (salen del diseño, sin código extra)
 
-- Moneda por tienda vía `formatCOP` country-aware (EC = USD, CO = pesos). Los montos se
-  guardan y muestran en la moneda de la tienda; no se convierten entre monedas.
+- Moneda por tienda a nivel de captura (EC teclea USD, CO teclea pesos). Display con el
+  `formatCOP` universal (símbolo `$` compartido) para alinear visualmente con la Ganancia.
+  Los montos se guardan en la moneda de la tienda; no se convierten entre monedas.
 - Visibilidad: `is_store_manager` (RLS) + Logística `managerOnly` → solo dueño y supervisores
   de esa tienda. Operadores no acceden a Logística.
 
