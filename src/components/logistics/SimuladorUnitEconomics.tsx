@@ -119,9 +119,12 @@ export default function SimuladorUnitEconomics({
     pedidos: Math.round(generadosSinCancel),
     ticket: round2(kpis.ticketPromedio),
     tasaDespachos: kpis.tasaDespachos,
-    // El simulador proyecta devoluciones SOBRE lo despachado, así que usa la tasa de
-    // NO-entrega total (devoluciones + rechazos) / despachado — no la madura del tile.
-    pctDevolucion: kpis.pctNoEntregaSobreDespacho,
+    // El simulador proyecta "de lo despachado, qué fracción falla". El estimador
+    // honesto es sobre CONCLUIDOS ((dev+rech)/(entreg+dev+rech)): la versión
+    // anterior dividía por despachados CON lo aún en tránsito → a mitad de mes
+    // asumía que todo lo en camino entregaba y la ganancia proyectada quedaba
+    // inflada (auditoría 2026-07-07).
+    pctDevolucion: kpis.pctNoEntregaProyeccion,
     costoProductoPct: ingresosBase > 0 ? cogs / ingresosBase : 0,
     fletePct: ingresosBase > 0 ? flete / ingresosBase : 0,
     publicidadPct: ingresosBase > 0 ? pautaProrateada / ingresosBase : 0,
@@ -162,7 +165,7 @@ export default function SimuladorUnitEconomics({
         <KpiCard label="% Rechazo" value={pct1(kpis.pctRechazo)} icon={Undo2} tone="warning"
           hint={`${rechazadosCount} rechazados / despachado`} />
         <KpiCard label="% Inefectividad" value={pct1(kpis.pctInefectividad)} icon={TrendingDown} tone="warning"
-          hint="no entregado / generado" />
+          hint="no entregado / generado · incluye lo aún en camino: baja solo al madurar el mes" />
         <KpiCard label="Ticket promedio" value={formatCOP(kpis.ticketPromedio)} icon={Receipt} tone="accent"
           hint="por pedido entregado" />
       </div>

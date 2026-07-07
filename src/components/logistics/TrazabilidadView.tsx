@@ -125,8 +125,12 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
   const valorTotal        = valorDespachadas + valorPendientes + valorCancelado;
 
   // ── Tasas ───────────────────────────────────────────────────
-  const tasaDespacho = totalEntrados > 0
-    ? (despachadasReales / totalEntrados) * 100
+  // Tasa de despacho = despachadas ÷ GENERADOS SIN CANCELAR — la MISMA fórmula
+  // que "Tasa de despachos" del Simulador (unitEconomics.tasaDespachos). Antes
+  // esta dividía por total+cancelados y las dos tabs mostraban hasta 11 puntos
+  // de diferencia para la misma pregunta (auditoría 2026-07-07).
+  const tasaDespacho = totalActivos > 0
+    ? (despachadasReales / totalActivos) * 100
     : 0;
   const tasaCancelacion = totalEntrados > 0
     ? (cancelados / totalEntrados) * 100
@@ -134,7 +138,11 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
 
   // % por fila (sobre total despachadas)
   const pct = (n: number) => despachadasReales > 0 ? (n / despachadasReales) * 100 : 0;
-  const pctPend = (n: number) => totalPendientes > 0 ? (n / totalPendientes) * 100 : 0;
+  // % por fila de pendientes: sobre el TOTAL ENTRADO — el header de la columna
+  // dice "% sobre total" y la fila Total ya dividía por totalEntrados; las filas
+  // dividían por totalPendientes → tres denominadores en una columna que no
+  // cerraba consigo misma (auditoría 2026-07-07).
+  const pctPend = (n: number) => totalEntrados > 0 ? (n / totalEntrados) * 100 : 0;
   // Distribución de valor pendiente proporcional (no tenemos breakdown por sub-tipo).
   const valorPendDistr = (n: number) => totalPendientes > 0
     ? valorPendientes * (n / totalPendientes)
@@ -170,7 +178,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         <HeroKpi
           label="Despachados reales"
           value={despachadasReales.toLocaleString('es-CO')}
-          subline={`${tasaDespacho.toFixed(1)}% del total`}
+          subline={`${tasaDespacho.toFixed(1)}% de generados sin cancelar`}
           tone="success"
           icon={PackageCheck}
         />
@@ -227,7 +235,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         <RateCard
           label="Tasa de Despacho"
           pct={tasaDespacho}
-          subline={`${despachadasReales.toLocaleString('es-CO')} de ${totalEntrados.toLocaleString('es-CO')} pedidos`}
+          subline={`${despachadasReales.toLocaleString('es-CO')} de ${totalActivos.toLocaleString('es-CO')} generados sin cancelar`}
           tone="success"
         />
         <RateCard

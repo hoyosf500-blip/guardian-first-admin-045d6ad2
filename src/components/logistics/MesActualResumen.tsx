@@ -68,7 +68,7 @@ interface Props {
 
 export default function MesActualResumen({ summary, filters }: Props) {
   // Desglose real por estado (RPC). Si no está desplegado → null → fallback.
-  const { data: breakdown } = useEstadoBreakdown(filters.fromDate, filters.toDate);
+  const { data: breakdown } = useEstadoBreakdown(filters.fromDate, filters.toDate, filters.ciudad);
   const full = useMemo(() => buildMesResumenFromBreakdown(breakdown ?? null), [breakdown]);
   const fallback = useMemo(() => buildMesResumen(summary), [summary]);
   const resumen = full ?? fallback;
@@ -85,10 +85,21 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // Saldo real de HOY (último movimiento, sin filtro de mes) — la card decía
   // "Saldo disponible hoy" pero mostraba el saldo al cierre del mes filtrado.
   const { data: saldoHoy, isLoading: walletLoading } = useWalletSaldoHoy();
-  // Mes mostrado ('YYYY-MM'); el rango siempre arranca el 1ro del mes → slice OK.
-  // Se computa ACÁ (antes del early return) porque el hook de cohorte lo necesita.
+  // Mes mostrado ('YYYY-MM'). OJO: el rango NO siempre arranca el 1ro — los
+  // presets 7d/30d/90d/Histórico cruzan meses. El cohorte (que es de UN mes
+  // calendario completo) solo aplica si el rango cubre el mes entero; si no,
+  // el tile "Operativo" cae a la caja del wallet, que SÍ respeta el rango.
+  // Mismo guard que FinanzasTab (auditoría 2026-07-07).
   const yearMonth = filters.fromDate.slice(0, 7);
-  const cohorte = useOperativoCohorte(yearMonth);
+  const isSingleMonth = (() => {
+    if (yearMonth !== filters.toDate.slice(0, 7)) return false;
+    if (filters.fromDate !== `${yearMonth}-01`) return false;
+    const [yy, mm] = yearMonth.split('-').map(Number);
+    const monthEnd = `${yearMonth}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    return filters.toDate >= monthEnd || filters.toDate >= todayStr;
+  })();
+  const cohorte = useOperativoCohorte(isSingleMonth ? yearMonth : '');
   // Base de costos REAL (COGS + flete) + costos mensuales (pauta/admin) para el
   // simulador de unit-economics. Ambos store-scoped; degradan a null/ceros si la
   // migration no está aplicada (el simulador avisa, no rompe).
@@ -120,12 +131,14 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const saldoActual = saldoHoy ?? null;
 
   // OPERATIVO_BASE: utilidad de los pedidos CREADOS este mes (cohorte) — reconcilia
-  // con la "Utilidad Total" de Dropi (~$4.8M). Fallback al wallet (gananciaNeta, por
-  // fecha de movimiento, ~$7.2M) SOLO si el RPC operativo_mes_cohorte no está
-  // desplegado aún. Punto ÚNICO de cambio del operativo.
-  const operativoBase = cohorte.data?.operativo ?? gananciaNeta;
+  // con la "Utilidad Total" de Dropi (~$4.8M). Cae a la caja del wallet cuando:
+  // el rango no es un mes completo, el RPC no está desplegado, o el RPC FALLÓ
+  // (antes cohorte.isError caía en silencio al wallet inflado bajo la etiqueta
+  // de cohorte — auditoría 2026-07-07: ahora el hint dice la base real).
+  const usingCohorte = isSingleMonth && !cohorte.isError && cohorte.data?.operativo != null;
+  const operativoBase = usingCohorte ? cohorte.data!.operativo : gananciaNeta;
   const operativoLoading = cohorte.isLoading || gananciaLoading;
-  const movimientosSinLink = cohorte.data?.movimientos_sin_link ?? 0;
+  const movimientosSinLink = usingCohorte ? (cohorte.data?.movimientos_sin_link ?? 0) : 0;
   const valorPreparacion = full?.valorPreparacion ?? 0;
   const valorOtros = full?.valorOtros ?? 0;
 
@@ -265,11 +278,17 @@ export default function MesActualResumen({ summary, filters }: Props) {
         {/* OPERATIVO_BASE — ver const operativoBase arriba: cohorte de pedido
             (reconcilia con la "Utilidad Total" de Dropi), con fallback al wallet. */}
         <KpiCard
-          label="Operativo del mes"
+          label={usingCohorte ? 'Operativo del mes' : 'Caja del período'}
           value={operativoLoading ? '…' : formatCOP(operativoBase)}
           icon={Wallet}
           tone={walletStale ? 'warning' : operativoBase >= 0 ? 'success' : 'danger'}
-          hint={walletStale ? '⚠ wallet viejo, sincronizá' : 'pedidos del mes · realizado a hoy'}
+          hint={walletStale
+            ? '⚠ wallet viejo, sincronizá'
+            : usingCohorte
+              ? 'pedidos del mes · realizado a hoy'
+              : cohorte.isError
+                ? '⚠ cohorte no cargó — mostrando caja del wallet del rango'
+                : 'caja del wallet en el rango (el cohorte es solo por mes completo)'}
         />
       </div>
 
@@ -384,14 +403,23 @@ export default function MesActualResumen({ summary, filters }: Props) {
           </div>
 
           {/* Neto real = operativo − pauta − admin (inputs que persisten por mes,
-              solo el dueño edita). El operativo es el OPERATIVO_BASE de arriba. */}
-          <NetoRealCard
-            operativo={operativoBase}
-            yearMonth={yearMonth}
-            canEdit={isOwnerOfActive}
-            pedidosEnCalle={enLaCalleCount}
-            movimientosSinLink={movimientosSinLink}
-          />
+              solo el dueño edita). El operativo es el OPERATIVO_BASE de arriba.
+              Solo con rango de MES COMPLETO: la pauta/admin son inputs mensuales
+              y en un sub-rango restarían el mes entero de la caja de una semana. */}
+          {isSingleMonth ? (
+            <NetoRealCard
+              operativo={operativoBase}
+              yearMonth={yearMonth}
+              canEdit={isOwnerOfActive}
+              pedidosEnCalle={enLaCalleCount}
+              movimientosSinLink={movimientosSinLink}
+            />
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              El <strong className="text-foreground">Neto Real</strong> (operativo − pauta − admin) se calcula
+              por mes calendario completo — elegí el preset "Mes actual" para verlo.
+            </p>
+          )}
 
           {/* Explicación llana del gap */}
           <div className="flex items-start gap-2 text-[11px] text-muted-foreground">

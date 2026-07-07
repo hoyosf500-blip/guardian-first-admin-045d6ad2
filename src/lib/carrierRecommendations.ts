@@ -46,7 +46,9 @@ export function deriveCarrierRecommendations(
       byCity.set(key, city);
     }
     const entregados = Math.max(0, r.entregados || 0);
-    const devueltos = Math.max(0, r.devueltos || 0);
+    // Los rechazos vienen dentro de `devueltos` — la tasa madura los excluye
+    // (decisión dueño 2026-06-24; RPC vieja sin la columna → 0, sin cambio).
+    const devueltos = Math.max(0, (r.devueltos || 0) - Math.max(0, r.rechazados ?? 0));
     const resueltos = entregados + devueltos;
     city.carriers.push({
       transportadora: r.transportadora,

@@ -4,6 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { useLogisticsStats } from './useLogisticsStats';
 
+// El hook ahora lee la tienda activa para la queryKey (aislamiento multi-tienda).
+vi.mock('@/contexts/StoreContext', () => ({
+  useActiveStoreId: () => 'test-store-id',
+}));
+
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     rpc: vi.fn().mockImplementation((fn: string) => {

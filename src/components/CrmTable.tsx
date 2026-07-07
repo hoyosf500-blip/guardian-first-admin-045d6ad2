@@ -79,6 +79,14 @@ interface CrmTableProps {
    * queda SOLO para cambios que llegan por realtime dentro de la MISMA vista.
    */
   viewKey?: string;
+  /**
+   * Se dispara cada vez que la tabla APLICA data (carga inicial, cambio de
+   * vista, clic en el banner "N cambios"). Permite al padre congelar sus
+   * contadores/chips en sincronía con las filas visibles — sin esto los chips
+   * seguían la DB en vivo y contradecían a la tabla bufferizada hasta el clic
+   * (auditoría 2026-07-07).
+   */
+  onDataApplied?: () => void;
 }
 
 /**
@@ -271,7 +279,7 @@ function ColumnBody({
   );
 }
 
-export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange, viewKey }: CrmTableProps) {
+export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange, viewKey, onDataApplied }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const { activeStoreId, activeStore } = useStore();
   // countryCode pasa a cada OrderCard como prop para que `getTrackingUrl`
@@ -346,6 +354,9 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   const dataRef = useRef<OrderData[]>(data);
   dataRef.current = data;
 
+  // Avisar al padre CADA vez que la tabla aplica data (ver prop onDataApplied).
+  useEffect(() => { onDataApplied?.(); }, [data, onDataApplied]);
+
   const viewKeyRef = useRef(viewKey);
 
   const applyPendingNow = useCallback(() => {
@@ -397,7 +408,17 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     prevById.forEach((_o, id) => {
       if (!nextById.has(id)) diffCount++;
     });
-    if (diffCount > 0) setPendingChanges(diffCount);
+    if (diffCount > 0) {
+      setPendingChanges(diffCount);
+    } else {
+      // El cambio no toca NINGUNA fila visible de esta vista (mismo set, mismos
+      // estados) → aplicar en silencio, sin banner: la tabla no se mueve pero
+      // onDataApplied dispara y los chips del padre se re-congelan con data
+      // fresca. Sin esto, un cambio fuera de la lista activa dejaba los chips
+      // de las OTRAS listas viejos por tiempo indefinido (review 2026-07-07).
+      pendingDataRef.current = null;
+      setData(dataProp);
+    }
   }, [dataProp, viewKey]);
 
   // Sync with parent initialDelayed prop

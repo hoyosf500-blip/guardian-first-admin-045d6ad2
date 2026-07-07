@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Grid3x3, Info } from 'lucide-react';
 import { useCityCarrierMatrix } from '@/hooks/useCityCarrierMatrix';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 
 interface Props {
@@ -38,25 +39,25 @@ export default memo(function CarrierCityMatrix({
     for (const r of data) {
       carrierSet.add(r.transportadora);
       const key = r.ciudad;
+      // Celdas con la tasa MADURA (÷ entregados+devueltos, sin rechazos ni
+      // tránsito) — la misma que usa la tabla de recomendaciones de arriba.
+      // Antes acá iba r.tasa_entrega cruda del RPC (÷ COUNT con tránsito) y el
+      // heatmap pintaba rojo a carriers que la tabla declaraba óptimos.
+      const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
+      const cell = {
+        tasa: m.tasaEntregaMadura ?? 0,
+        total: r.total_pedidos,
+        entregados: r.entregados,
+      };
       const existing = cityMap.get(key);
       if (existing) {
-        existing.byCarrier[r.transportadora] = {
-          tasa: r.tasa_entrega,
-          total: r.total_pedidos,
-          entregados: r.entregados,
-        };
+        existing.byCarrier[r.transportadora] = cell;
       } else {
         cityMap.set(key, {
           ciudad: r.ciudad,
           departamento: r.departamento,
           total: r.ciudad_total,
-          byCarrier: {
-            [r.transportadora]: {
-              tasa: r.tasa_entrega,
-              total: r.total_pedidos,
-              entregados: r.entregados,
-            },
-          },
+          byCarrier: { [r.transportadora]: cell },
         });
       }
     }

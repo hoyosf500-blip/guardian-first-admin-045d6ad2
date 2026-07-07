@@ -30,6 +30,9 @@ export interface FinancialSummary {
   total_ordenes: number;
   total_entregadas: number;
   total_devueltas: number;
+  /** RPC 20260707120000 — rechazos del cliente, ya incluidos en total_devueltas.
+   *  Con la RPC vieja llega 0 (mismo comportamiento histórico). */
+  total_rechazadas: number;
   tasa_entrega_pct: number;
   ticket_promedio: number;
   wallet_neto: number;
@@ -68,6 +71,7 @@ function parseFinancialSummary(raw: unknown): FinancialSummary {
     total_ordenes:      toNumber(o.total_ordenes),
     total_entregadas:   toNumber(o.total_entregadas),
     total_devueltas:    toNumber(o.total_devueltas),
+    total_rechazadas:   toNumber(o.total_rechazadas),
     tasa_entrega_pct:   toNumber(o.tasa_entrega_pct),
     ticket_promedio:    toNumber(o.ticket_promedio),
     wallet_neto:        toNumber(o.wallet_neto),

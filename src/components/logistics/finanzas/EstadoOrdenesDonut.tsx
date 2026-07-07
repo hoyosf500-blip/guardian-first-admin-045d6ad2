@@ -8,6 +8,13 @@ interface EstadoOrdenesDonutProps {
   devueltas: number;
   canceladas: number;
   isLoading?: boolean;
+  /** Tasa de entrega MADURA (÷ resueltos) calculada por el padre — la misma del
+   *  KpiCard "Tasa de entrega". El centro del donut mostraba entregadas÷TOTAL
+   *  (con canceladas y pendientes) al lado del KPI maduro: dos números con la
+   *  misma etiqueta en la misma pantalla (auditoría 2026-07-07). */
+  tasaEntregaMadura?: number | null;
+  /** true → cohorte inmaduro: el centro se atenúa y marca "prelim." */
+  tasaPreliminar?: boolean;
 }
 
 const TOOLTIP_STYLE = {
@@ -22,6 +29,7 @@ const TOOLTIP_STYLE = {
 
 export default function EstadoOrdenesDonut({
   totalOrdenes, entregadas, devueltas, canceladas, isLoading = false,
+  tasaEntregaMadura, tasaPreliminar = false,
 }: EstadoOrdenesDonutProps) {
   const pendientes = Math.max(0, totalOrdenes - entregadas - devueltas - canceladas);
 
@@ -33,7 +41,10 @@ export default function EstadoOrdenesDonut({
   ], [entregadas, devueltas, pendientes, canceladas]);
 
   const total = totalOrdenes || 1;
-  const tasaEntrega = totalOrdenes > 0 ? (entregadas / totalOrdenes) * 100 : 0;
+  // Centro del donut = la tasa MADURA del padre (misma que el KPI de al lado).
+  // Fallback legacy (padre viejo sin prop): resueltos locales, no ÷ total.
+  const resueltosLocal = entregadas + devueltas;
+  const tasaEntrega = tasaEntregaMadura ?? (resueltosLocal > 0 ? (entregadas / resueltosLocal) * 100 : null);
 
   if (isLoading) {
     return <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />;
@@ -86,11 +97,11 @@ export default function EstadoOrdenesDonut({
             </PieChart>
           </ResponsiveContainer>
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div className="text-2xl font-extrabold tabular-nums leading-none text-success">
-              {tasaEntrega.toFixed(1)}%
+            <div className={`text-2xl font-extrabold tabular-nums leading-none ${tasaPreliminar ? 'text-muted-foreground' : 'text-success'}`}>
+              {tasaEntrega == null ? '—' : `${tasaEntrega.toFixed(1)}%`}
             </div>
             <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-muted-foreground mt-1">
-              entrega
+              entrega · resueltos{tasaPreliminar ? ' · prelim.' : ''}
             </div>
           </div>
         </div>

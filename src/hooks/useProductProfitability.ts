@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 
 // Hook del bloque "Rentabilidad por producto" en /logistica.
 // Llama RPC product_profitability que desglosa cuánta plata gana o
@@ -74,8 +75,11 @@ export function useProductProfitability(
   params: UseProductProfitabilityParams,
 ): UseQueryResult<ProductProfitabilityRow[]> {
   const { fromDate, toDate, limit = 100 } = params;
+  // storeId en la key: la RPC resuelve la tienda server-side — sin esto el
+  // cambio de tienda servía el cache de la anterior (auditoría 2026-07-07).
+  const storeId = useActiveStoreId();
   return useQuery<ProductProfitabilityRow[]>({
-    queryKey: ['product-profitability', fromDate, toDate, limit],
+    queryKey: ['product-profitability', storeId ?? 'none', fromDate, toDate, limit],
     queryFn: async () => {
       // .bind(supabase): preserva `this`. Sin bind, el método se invoca
       // con `this === undefined` y supabase-js explota leyendo `this.rest`.
@@ -92,7 +96,7 @@ export function useProductProfitability(
       return rows.map(parseRow).filter((r): r is ProductProfitabilityRow => r !== null);
     },
     staleTime: 5 * 60 * 1000,
-    enabled: Boolean(fromDate && toDate),
+    enabled: Boolean(fromDate && toDate && storeId),
   });
 }
 

@@ -4,13 +4,17 @@ import type { TimelineEntry, TimelineFilters, LogisticsFilters } from '@/lib/log
 
 interface RpcResult<T> {
   data: T[] | null;
-  error: { message: string } | null;
+  error: { message: string; code?: string } | null;
+}
+
+async function rpcRaw<T>(fn: string, args: Record<string, unknown>): Promise<RpcResult<T>> {
+  return await (supabase.rpc as unknown as (
+    fn: string, args: Record<string, unknown>
+  ) => Promise<RpcResult<T>>)(fn, args);
 }
 
 async function callRpc<T>(fn: string, args: Record<string, unknown>): Promise<T[]> {
-  const { data, error } = await (supabase.rpc as unknown as (
-    fn: string, args: Record<string, unknown>
-  ) => Promise<RpcResult<T>>)(fn, args);
+  const { data, error } = await rpcRaw<T>(fn, args);
   if (error) throw new Error(`${fn}: ${error.message}`);
   return data ?? [];
 }
@@ -34,6 +38,10 @@ export function useLogisticsTimeline(
   filters: TimelineFilters = {},
 ): UseQueryResult<TimelineResult> {
   const { fromDate, toDate } = range;
+  // El filtro global de ciudad venía en `range` pero se ignoraba EN SILENCIO
+  // (auditoría 2026-07-07): Trazabilidad mostraba todas las ciudades con el
+  // filtro puesto. Con la RPC vieja (sin p_ciudad) reintenta sin el filtro.
+  const ciudadKey = range.ciudad?.trim() || null;
   const {
     estados,
     transportadora,
@@ -51,10 +59,10 @@ export function useLogisticsTimeline(
   return useQuery<TimelineResult>({
     queryKey: [
       'logistics', fromDate, toDate, 'timeline',
-      estadosKey, transportadoraKey, searchKey, page, pageSize,
+      estadosKey, transportadoraKey, searchKey, ciudadKey, page, pageSize,
     ],
     queryFn: async () => {
-      const rows = await callRpc<TimelineEntry>('logistics_timeline', {
+      const base = {
         p_from_date: fromDate,
         p_to_date: toDate,
         p_estados: estadosKey,
@@ -62,7 +70,21 @@ export function useLogisticsTimeline(
         p_search: searchKey,
         p_limit: pageSize,
         p_offset: page * pageSize,
-      });
+      };
+      let rows: TimelineEntry[];
+      if (ciudadKey) {
+        const { data, error } = await rpcRaw<TimelineEntry>('logistics_timeline', { ...base, p_ciudad: ciudadKey });
+        if (!error) {
+          rows = data ?? [];
+        } else if (error.code === 'PGRST202' || /find the function|does not exist/i.test(error.message)) {
+          // RPC deployada vieja sin p_ciudad → mismo comportamiento previo.
+          rows = await callRpc<TimelineEntry>('logistics_timeline', base);
+        } else {
+          throw new Error(`logistics_timeline: ${error.message}`);
+        }
+      } else {
+        rows = await callRpc<TimelineEntry>('logistics_timeline', base);
+      }
       return {
         entries: rows,
         totalCount: rows[0]?.total_count ?? 0,

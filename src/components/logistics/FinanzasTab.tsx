@@ -48,7 +48,19 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   // rango es UN mes calendario; en rangos multi-mes el cohorte (1 solo mes) no
   // representa el período → cae a la caja del wallet. Mismo patrón que MesActualResumen.
   const yearMonth = fromDate.slice(0, 7);
-  const isSingleMonth = yearMonth === toDate.slice(0, 7);
+  // Cohorte SOLO si el rango cubre el mes COMPLETO (día 1 → fin de mes, o hasta
+  // hoy si es el mes en curso). Antes bastaba "mismo mes" y un sub-rango como
+  // 1-7 julio mezclaba la ganancia del MES ENTERO (numerador) con los ingresos
+  // de una semana (denominador) — margen inflado por construcción (auditoría
+  // 2026-07-07). En sub-rangos cae a la caja del wallet, que sí respeta el rango.
+  const isSingleMonth = (() => {
+    if (yearMonth !== toDate.slice(0, 7)) return false;
+    if (fromDate !== `${yearMonth}-01`) return false;
+    const [yy, mm] = yearMonth.split('-').map(Number);
+    const monthEnd = `${yearMonth}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    return toDate >= monthEnd || toDate >= todayStr;
+  })();
   const cohorte = useOperativoCohorte(isSingleMonth ? yearMonth : '');
 
   // Botón "Sincronizar" (mismo hook + patrón que MesActualResumen): dispara
@@ -89,6 +101,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   // recientes). El donut de al lado sigue mostrando la composición sobre el total.
   const entregaMaturity = deriveDeliveryMaturity(
     data?.total_entregadas ?? 0, data?.total_devueltas ?? 0, data?.total_ordenes ?? 0,
+    data?.total_rechazadas ?? 0,
   );
 
   const gn = gananciaNeta?.ganancia_neta ?? 0;
@@ -220,6 +233,8 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               entregadas={data?.total_entregadas ?? 0}
               devueltas={data?.total_devueltas ?? 0}
               canceladas={data?.total_cancelados ?? 0}
+              tasaEntregaMadura={entregaMaturity.tasaEntregaMadura}
+              tasaPreliminar={entregaMaturity.inmaduro}
             />
             <CashFlowChart
               series={dailySeries ?? []}

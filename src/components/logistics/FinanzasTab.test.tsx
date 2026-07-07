@@ -122,6 +122,7 @@ const SAMPLE: FinancialSummary = {
   total_ordenes: 100,
   total_entregadas: 70,
   total_devueltas: 10,
+  total_rechazadas: 0,
   tasa_entrega_pct: 70,
   ticket_promedio: 142_857,
   wallet_neto: 500_000,
@@ -240,9 +241,11 @@ describe('FinanzasTab', () => {
     expect(screen.getAllByText(/Ingresos brutos/i).length).toBeGreaterThanOrEqual(1);
     // "COGS" aparece en el label del KPI y en el banner — ambos deben estar
     expect(screen.getAllByText(/COGS/i).length).toBeGreaterThan(0);
-    // "70.0%" aparece en el KPI "Tasa de entrega" Y en el centro del donut
-    // de estado de órdenes (mismo cálculo: entregadas/total).
-    expect(screen.getAllByText('70.0%').length).toBeGreaterThanOrEqual(1);
+    // "88.0%" = tasa de entrega MADURA (70 entregadas ÷ 80 resueltas) — aparece
+    // en el KPI "Tasa de entrega" Y en el centro del donut (auditoría
+    // 2026-07-07: antes el donut mostraba 70/100 diluido, con pendientes y
+    // canceladas en el denominador, al lado del KPI maduro).
+    expect(screen.getAllByText('88.0%').length).toBeGreaterThanOrEqual(1);
     // Volumen de operación: contadores planos
     expect(screen.getByText('100')).toBeInTheDocument();
   });

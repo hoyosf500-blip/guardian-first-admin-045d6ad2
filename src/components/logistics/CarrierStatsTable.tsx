@@ -142,7 +142,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
   // madura sin tocar nada más. Los conteos crudos (entregados/devueltos/total)
   // quedan intactos → la CompositionBar sigue mostrando composición real.
   const matureRows = useMemo<CarrierRow[]>(() => rows.map(r => {
-    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
+    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
     return {
       ...r,
       tasa_entrega: m.tasaEntregaMadura ?? 0,

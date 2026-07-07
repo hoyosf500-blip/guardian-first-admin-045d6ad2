@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
+import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { CarrierStats } from '@/lib/logistics.types';
 import {
   CHART_GRID_PROPS, CHART_BAR_CURSOR, SEMANTIC_COLORS,
@@ -16,14 +17,18 @@ function HeroTooltip({ active, payload }: { active?: boolean; payload?: TooltipP
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
   if (!d) return null;
+  // Tasas MADURAS (÷ resueltos, sin rechazos) — las mismas que la tabla
+  // Transportadoras. Antes el tooltip mostraba las crudas del RPC (÷ COUNT con
+  // tránsito) y el mismo carrier tenía dos tasas distintas en la misma página.
+  const m = deriveDeliveryMaturity(d.entregados, d.devueltos, d.total_pedidos, d.rechazados ?? 0);
   return (
     <div className="rounded-lg border border-border bg-card/95 backdrop-blur-sm p-3 shadow-2xl text-xs min-w-[220px]">
       <div className="mb-2 font-bold text-sm text-foreground">{d.transportadora}</div>
       <div className="space-y-1.5">
-        <Row dot="bg-success" label="Entregados"  value={d.entregados}        extra={`${d.tasa_entrega.toFixed(1)}%`}    valueClass="text-success" />
+        <Row dot="bg-success" label="Entregados"  value={d.entregados}        extra={m.tasaEntregaMadura == null ? undefined : `${m.tasaEntregaMadura}% resueltos`}    valueClass="text-success" />
         <Row dot="bg-info"    label="En tránsito" value={d.en_transito ?? 0}                                              valueClass="text-info" />
         <Row dot="bg-warning" label="Novedades"   value={d.novedades ?? 0}                                                valueClass="text-warning" />
-        <Row dot="bg-danger"  label="Devueltos"   value={d.devueltos}         extra={`${d.tasa_devolucion.toFixed(1)}%`} valueClass="text-danger" />
+        <Row dot="bg-danger"  label="Devueltos"   value={d.devueltos}         extra={m.tasaDevolucionMadura == null ? undefined : `${m.tasaDevolucionMadura}% resueltos`} valueClass="text-danger" />
         <div className="flex items-center justify-between gap-4 pt-1.5 mt-1.5 border-t border-border/60">
           <span className="text-muted-foreground">Total envíos</span>
           <span className="font-mono font-bold tabular-nums text-foreground">{d.total_pedidos.toLocaleString('es-CO')}</span>

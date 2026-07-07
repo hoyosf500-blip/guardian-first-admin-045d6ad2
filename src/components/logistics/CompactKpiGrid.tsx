@@ -22,7 +22,7 @@ export default memo(function CompactKpiGrid({ data }: Props) {
   // Tasas MADURAS: sobre (entregados + devueltos), no sobre el total — así los
   // pedidos en tránsito no hunden la tasa de entrega en rangos recientes.
   // `% concluido` indica madurez; bajo el umbral la tasa es preliminar (gris).
-  const m = deriveDeliveryMaturity(data.entregados, data.devueltos, data.total_pedidos);
+  const m = deriveDeliveryMaturity(data.entregados, data.devueltos, data.total_pedidos, data.rechazados ?? 0);
   const entregaHint = m.tasaEntregaMadura == null
     ? 'Sin concluir aún'
     : `${m.tasaEntregaMadura}% entrega · ${m.pctConcluido}% concluido${m.inmaduro ? ' · prelim.' : ''}`;

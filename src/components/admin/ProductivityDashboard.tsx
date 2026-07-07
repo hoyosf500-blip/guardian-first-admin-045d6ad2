@@ -292,6 +292,13 @@ export default function ProductivityDashboard() {
   const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
   const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
   const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
+  // Meta POR OPERADORA = la meta del equipo repartida entre las que trabajaron.
+  // La fila de cada una divide SUS confirmados por el inflow GLOBAL (la cola es
+  // compartida, no hay inflow por-operadora), así que con 2+ operadoras que se
+  // reparten el día TODAS quedaban "en rojo" vs 55% aunque el equipo estuviera
+  // encima (auditoría 2026-07-07). Con 1 operadora activa no cambia nada.
+  const opsActivas = Math.max(1, rows.filter((r) => (r.total_atendidos ?? 0) > 0).length);
+  const metaPorOperadora = Math.max(1, Math.round(CONF_DIA_TARGET_PCT / opsActivas));
 
   return (
     <div className="space-y-5">
@@ -777,9 +784,12 @@ export default function ProductivityDashboard() {
                         // cierre (÷resueltos, la vieja) queda en el tooltip.
                         const cd = confRateByCohort(r.confirmados, r.cancelados, entrantes);
                         const ef = confRateBySample(r.confirmados, r.cancelados);
+                        const metaTip = opsActivas > 1
+                          ? ` Meta individual: ${metaPorOperadora}% (${CONF_DIA_TARGET_PCT}% del equipo ÷ ${opsActivas} operadoras activas).`
+                          : '';
                         const tip = ef.tasa != null
-                          ? `Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que decidieron). ${cd.pctProcesado}% del día trabajado.`
-                          : 'Sin pedidos resueltos aún.';
+                          ? `Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que decidieron). ${cd.pctProcesado}% del día trabajado.${metaTip}`
+                          : `Sin pedidos resueltos aún.${metaTip}`;
                         if (cd.tasaDia == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title={tip}>—</span>;
                         // SOLO en 'today' (día vivo) y con < 90% trabajado → provisional
                         // gris, NUNCA rojo: temprano en la jornada la tasa ÷inflow es baja
@@ -790,7 +800,7 @@ export default function ProductivityDashboard() {
                             {cd.tasaDia}% <span className="opacity-70">· en curso</span>
                           </span>
                         );
-                        return <span title={tip}><RateBar value={cd.tasaDia} target={CONF_DIA_TARGET_PCT} /></span>;
+                        return <span title={tip}><RateBar value={cd.tasaDia} target={metaPorOperadora} /></span>;
                       })()}</td>
                       {/* Clientes REALES por hora (conf+canc ÷ horas) — producción,
                           informativo (sin rojo: un día malo de no-contesta no es su culpa). */}

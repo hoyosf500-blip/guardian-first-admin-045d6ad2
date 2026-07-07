@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -258,6 +258,21 @@ export default function SeguimientoTab() {
     return s;
   }, [dedupedByDate]);
 
+  // Chips en SINCRONÍA con la tabla: en vista Lista, CrmTable bufferiza los
+  // cambios de realtime detrás del banner "N cambios — clic para actualizar",
+  // pero los chips seguían la DB en vivo → el chip decía 10 mientras la tabla
+  // mostraba 12 filas (auditoría 2026-07-07). CrmTable avisa vía onDataApplied
+  // cada vez que APLICA data (carga inicial / cambio de vista / clic en el
+  // banner) y acá capturamos el snapshot base de ese momento para los chips.
+  // En vista Tablero (viva) los chips siguen la data en vivo, como siempre.
+  const dedupedRef = useRef(dedupedByDate);
+  dedupedRef.current = dedupedByDate;
+  const [chipsBaseFrozen, setChipsBaseFrozen] = useState<OrderData[] | null>(null);
+  const handleListDataApplied = useCallback(() => {
+    setChipsBaseFrozen(dedupedRef.current);
+  }, []);
+  const chipsBase = viewMode === 'list' && chipsBaseFrozen ? chipsBaseFrozen : dedupedByDate;
+
   // Conteo por lista SLA (sobre los pedidos ya filtrados por fecha + deduped).
   // Alimenta los chips de listas — la forma principal de priorizar. Las
   // listas con externalRoute (ej. confirmación) no se cuentan acá: viven en
@@ -265,10 +280,10 @@ export default function SeguimientoTab() {
   const listCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const l of SEG_LISTS) {
-      counts[l.slug] = l.externalRoute ? 0 : dedupedByDate.filter(l.matches).length;
+      counts[l.slug] = l.externalRoute ? 0 : chipsBase.filter(l.matches).length;
     }
     return counts;
-  }, [dedupedByDate]);
+  }, [chipsBase]);
 
   // "Sugerido": la lista NO-vacía de mayor urgencia (danger > warning > resto),
   // desempatando por el orden de SEG_LISTS (ya priorizado). Guía hacia dónde
@@ -589,7 +604,9 @@ export default function SeguimientoTab() {
               )}
             >
               Todas
-              <span className="font-mono tabular-nums text-[11px] opacity-80">{dedupedByDate.length}</span>
+              {/* chipsBase (no dedupedByDate): en vista Lista respira con el
+                  mismo snapshot congelado que los demás chips y la tabla. */}
+              <span className="font-mono tabular-nums text-[11px] opacity-80">{chipsBase.length}</span>
             </button>
             {SEG_LISTS
               .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
@@ -724,7 +741,12 @@ export default function SeguimientoTab() {
           patrón que classifySegOwnershipFromTps en segOwnership.ts). Con "Ocultar
           gestionados" (default), cada pedido gestionado desaparece del tablero. */}
       {(() => {
-        const feedBase = listaActiva && !listaActiva.externalRoute ? filteredByList : dedupedByDate;
+        // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
+        // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
+        const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
+        const feedBase = listaActiva && !listaActiva.externalRoute
+          ? counterSource.filter((o) => listaActiva.matches(o))
+          : counterSource;
         const total = feedBase.length;
         if (total === 0) return null;
         const gestionados = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
@@ -794,9 +816,13 @@ export default function SeguimientoTab() {
           emptyDesc="Los pedidos sincronizados desde Dropi aparecerán aquí organizados por estado."
           controlledStatusFilter={statusFilter}
           onControlledStatusFilterChange={setStatusFilter}
-          // Vista del operador = Lista SLA activa + búsqueda. Al cambiarla, la
-          // tabla se actualiza al instante (sin banner de "N cambios").
-          viewKey={`${listaSlug ?? 'all'}|${search}`}
+          // Vista del operador = tienda activa + Lista SLA + búsqueda. Al
+          // cambiarla, la tabla se actualiza al instante (sin banner de "N
+          // cambios"). storeId incluido: sin él, el cambio de tienda dejaba la
+          // tabla y los chips congelados con la tienda ANTERIOR detrás del
+          // banner (review 2026-07-07).
+          viewKey={`${activeStoreId ?? ''}|${listaSlug ?? 'all'}|${search}`}
+          onDataApplied={handleListDataApplied}
         />
       )}
     </div>

@@ -16,9 +16,29 @@ describe('computeRealKpis', () => {
     expect(k.tasaEntrega).toBeCloseTo(68 / 85, 5);                 // ÷ resueltos (68+17), NO ÷ despachados
     expect(k.pctDevolucion).toBeCloseTo(17 / 85, 5);              // devoluciones / resueltos
     expect(k.pctRechazo).toBeCloseTo(5 / 90, 5);                  // rechazos / despachados
-    expect(k.pctNoEntregaSobreDespacho).toBeCloseTo(22 / 90, 5); // (dev+rech)/despachados (seed del simulador)
+    expect(k.pctNoEntregaSobreDespacho).toBeCloseTo(22 / 90, 5); // (dev+rech)/despachados
+    // Seed del simulador desde 2026-07-07: sobre CONCLUIDOS (68+17+5) — no
+    // depende de lo aún en tránsito. En este fixture coincide con la anterior
+    // porque los 90 despachados ya concluyeron todos.
+    expect(k.pctNoEntregaProyeccion).toBeCloseTo(22 / 90, 5);
     expect(k.pctInefectividad).toBeCloseTo(0.32, 5);             // 1 − 68/100
     expect(k.ticketPromedio).toBeCloseTo(4_073_200 / 68, 2);
+  });
+
+  it('proyección de no-entrega NO se diluye con pedidos aún en tránsito', () => {
+    // 500 despachados = 200 entregados + 50 dev + 10 rech + 240 EN CAMINO.
+    // La vieja (÷despachados) daba 12% — asumía que los 240 en camino entregan.
+    // La proyección honesta va sobre concluidos: 60/260 ≈ 23%.
+    const k = computeRealKpis({
+      generadosSinCancel: 600,
+      despachados: 500,
+      entregados: 200,
+      devueltos: 50,
+      rechazados: 10,
+      valorEntregado: 1_000_000,
+    });
+    expect(k.pctNoEntregaSobreDespacho).toBeCloseTo(60 / 500, 5);
+    expect(k.pctNoEntregaProyeccion).toBeCloseTo(60 / 260, 5);
   });
 
   it('los rechazos NO bajan la tasa de entrega madura', () => {

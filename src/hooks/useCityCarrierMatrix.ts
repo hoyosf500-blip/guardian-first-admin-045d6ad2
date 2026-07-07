@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import type { CityCarrierMatrix, LogisticsFilters } from '@/lib/logistics.types';
 
 interface RpcResult<T> {
@@ -31,8 +32,12 @@ export function useCityCarrierMatrix({
   minOrders = 20,
   topCities = 20,
 }: Args): UseQueryResult<CityCarrierMatrix[]> {
+  // storeId en la key: la RPC resuelve la tienda SERVER-side — sin esto, al
+  // cambiar EC→CO el heatmap y las recomendaciones servían el cache de la
+  // tienda anterior hasta 5 min (auditoría 2026-07-07).
+  const storeId = useActiveStoreId();
   return useQuery<CityCarrierMatrix[]>({
-    queryKey: ['logistics-city-carrier-matrix', filters.fromDate, filters.toDate, minOrders, topCities],
+    queryKey: ['logistics-city-carrier-matrix', storeId ?? 'none', filters.fromDate, filters.toDate, minOrders, topCities],
     queryFn: () => callRpc<CityCarrierMatrix>('logistics_by_city_carrier', {
       p_from_date: filters.fromDate,
       p_to_date: filters.toDate,
@@ -40,5 +45,6 @@ export function useCityCarrierMatrix({
       p_top_cities: topCities,
     }),
     staleTime: 5 * 60 * 1000,
+    enabled: Boolean(storeId),
   });
 }

@@ -42,8 +42,14 @@ export interface RealKpis {
   pctInefectividad: number;  // 0-1: 1 − entregados / generados
   ticketPromedio: number;    // COP: valorEntregado / entregados
   /** 0-1: (devoluciones + rechazos) / despachados. Tasa de NO-entrega sobre lo
-   *  despachado — la que usa el simulador para proyectar (no la madura). */
+   *  despachado. OJO: el denominador incluye lo AÚN en tránsito, así que a mitad
+   *  de mes subestima el fallo final (asume que todo lo en camino entrega). */
   pctNoEntregaSobreDespacho: number;
+  /** 0-1: (devoluciones + rechazos) / CONCLUIDOS (entregados+dev+rech). El mejor
+   *  estimador de "de lo que despacho, qué fracción termina fallando" — no
+   *  depende de cuánto siga en camino. Es el seed del simulador (auditoría
+   *  2026-07-07: el seed anterior inflaba la proyección a mitad de mes). */
+  pctNoEntregaProyeccion: number;
 }
 
 export function computeRealKpis(i: RealKpisInput): RealKpis {
@@ -59,6 +65,9 @@ export function computeRealKpis(i: RealKpisInput): RealKpis {
       i.generadosSinCancel > 0 ? clamp01(1 - safeDiv(i.entregados, i.generadosSinCancel)) : 0,
     ticketPromedio: safeDiv(i.valorEntregado, i.entregados),
     pctNoEntregaSobreDespacho: clamp01(safeDiv(i.devueltos + i.rechazados, i.despachados)),
+    pctNoEntregaProyeccion: clamp01(
+      safeDiv(i.devueltos + i.rechazados, i.entregados + i.devueltos + i.rechazados),
+    ),
   };
 }
 

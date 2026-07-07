@@ -12,6 +12,17 @@ describe('deriveDeliveryMaturity', () => {
     expect(m.inmaduro).toBe(false);
   });
 
+  it('rechazados (v4) salen de la tasa madura sin tocar los conteos', () => {
+    // El server manda devueltos=20 que INCLUYE 10 rechazos del cliente.
+    // Decisión dueño 2026-06-24: el rechazo no mide a la transportadora.
+    const m = deriveDeliveryMaturity(80, 20, 110, 10);
+    expect(m.resueltos).toBe(90);          // 80 + (20 − 10)
+    expect(m.tasaEntregaMadura).toBe(89);  // 80/90
+    // RPC vieja sin columna → rechazados omitido → comportamiento histórico.
+    const legacy = deriveDeliveryMaturity(80, 20, 110);
+    expect(legacy.resueltos).toBe(100);
+  });
+
   it('cohorte inmaduro: pocos concluidos → gris', () => {
     // 2 entregados, 0 devueltos, 50 total (48 en tránsito)
     const m = deriveDeliveryMaturity(2, 0, 50);

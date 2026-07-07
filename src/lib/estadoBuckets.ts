@@ -118,7 +118,13 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'POR RECOLECTAR': 'preparacion', // EC: guía generada, la transportadora aún no recogió el paquete
   // cancelado
   'CANCELADO': 'cancelado',
-  'REEMPLAZADA': 'cancelado', // orden vieja soft-borrada por una edición (create-with-edit)
+  // Órdenes soft-borradas (REEMPLAZADA por edición / ARCHIVADO_GHOST). OJO
+  // asimetría deliberada con el server: _estado_bucket (SQL) las manda a un
+  // bucket 'borrado' y las EXCLUYE de todas las RPCs; el cliente solo las ve
+  // por la RPC vieja o por realtime, y tratarlas como canceladas las saca de
+  // los tiles "sin cancelar" — el efecto neto es el mismo.
+  'REEMPLAZADA': 'cancelado',
+  'ARCHIVADO GHOST': 'cancelado',
 };
 
 // Fallback por CONTENIDO para estados de transportadoras de Ecuador (Servientrega
@@ -126,9 +132,14 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
 // ubicación variables (ej. "INGRESANDO OPERATIVO A BODEGA QUITO") y/o acentos.
 // Se evalúa SOLO si el lookup exacto falla, sobre el estado normalizado + sin
 // acentos. Lección del bug de categorías de wallet: el match exacto es frágil
-// con variantes de texto. Patrones específicos para no sobre-matchear. Ninguno es
-// terminal (entregado/devuelto/cancelado) → no altera tasas, solo llena "en la calle".
+// con variantes de texto. Patrones específicos para no sobre-matchear.
+// Los patrones TERMINALES (cancel/devoluc/devuelt) van PRIMERO para que una
+// variante como "DEVOLUCION EN CENTRO LOGISTICO" no caiga en tránsito —
+// espejo de _estado_bucket() en la migration 20260707120000.
 const ESTADO_FALLBACK_PATTERNS: Array<[string, BucketKey]> = [
+  ['CANCEL', 'cancelado'],   // "CANCELADO POR TRANSPORTADORA", etc. (paridad con NOT LIKE '%CANCEL%' del server)
+  ['DEVOLUC', 'devuelto'],   // variantes DEVOLUCION* nuevas de Dropi
+  ['DEVUELT', 'devuelto'],   // "DEVUELTO A ORIGEN", etc.
   ['BODEGA ORIGEN', 'en_transito'],
   ['RUTA A', 'en_transito'],           // EC: "EN RUTA A CENTRO LOGISTICO", "RUTA A CONCESION" — cualquier "ruta a X" es tránsito
   ['CENTRO LOGISTICO', 'en_transito'], // EC
