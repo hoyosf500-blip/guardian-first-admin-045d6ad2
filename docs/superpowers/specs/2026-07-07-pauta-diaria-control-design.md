@@ -1,7 +1,33 @@
 # Control diario de pauta por tienda — Diseño
 
 **Fecha:** 2026-07-07
-**Estado:** Aprobado por el dueño (Fabian) — listo para plan de implementación.
+**Estado:** Aprobado por el dueño (Fabian) — implementado con reconciliación (ver abajo).
+
+## ⚠️ RECONCILIACIÓN 2026-07-07 (leer primero)
+
+Al ir a mergear se descubrió que el checkout local estaba **muy desactualizado** vs
+`origin/main`. El main REAL **ya tiene** un "Neto Real del mes" (`NetoRealCard` +
+`useLogisticaMonthlyCosts`, tabla `logistica_monthly_costs`) que **ya resta pauta**
+(`operativo − pauta − admin`), donde hoy la pauta se carga como **un número mensual**.
+
+El diseño original (una segunda resta `Ganancia − Pauta = NETO` en el bloque Wallet REAL)
+**duplicaba el descuento** de pauta. Corregido con OK del dueño ("diario alimenta el Neto
+Real"):
+
+- **La bitácora diaria (`store_ad_spend_daily`) es la FUENTE de la pauta** del Neto Real.
+  `MesActualResumen` suma la pauta diaria del período (`sumAdSpend`) y la pasa a
+  `NetoRealCard` (prop `pautaTotal` + `pautaFromDaily`) y al `SimuladorUnitEconomics`.
+- **`NetoRealCard`**: la pauta pasa a **read-only** ("de tu Pauta diaria"); ya NO se edita
+  ahí. Solo `costos_admin` sigue editable (mensual). Al guardar preserva el `pauta_meta/tiktok`
+  mensual guardado sin pisarlo (fallback histórico).
+- **Fallback**: si un mes no tiene registros diarios (meses viejos con solo el número
+  mensual), usa el valor mensual guardado → los meses históricos no pierden su pauta.
+- **NO se agrega** la segunda resta en el bloque Wallet REAL (se descartó del diseño original).
+
+Lo demás del diseño (tabla, RLS, RPCs, hook, diálogo, panel, multi-país, degradación) queda
+igual. El panel de bitácora vive en Logística → Resumen tras `MesActualResumen`.
+
+---
 
 ## Problema / intención
 
