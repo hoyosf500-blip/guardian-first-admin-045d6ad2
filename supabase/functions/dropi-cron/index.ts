@@ -593,14 +593,23 @@ Deno.serve(async (req: Request) => {
       // Ahora se loguea como 'warn' con mensaje explícito para que el banner
       // SyncFreshness lo detecte.
       const isZombie = !r.error && !r.throttled && r.synced === 0 && r.statusTotal === 0;
-      const logStatus = r.error ? "error" : (isZombie ? "warn" : "success");
+      // STATUS STARVED: la cuenta throttleó y el pase de CAMBIO DE ESTATUS (el
+      // pesado, ~21d) no completó (statusTotal===0), aunque el pase liviano de
+      // CREADO sí trajo pedidos nuevos (synced>0). Antes esto era 'success' →
+      // banner verde mientras las guías en curso no refrescaban su estado. Ahora
+      // 'warn' con mensaje de throttle para que SyncFreshness lo pinte amarillo
+      // y ofrezca "reintenta solo" en vez de "auditar" (auditoría EC 2026-07-07).
+      const statusStarved = r.throttled && r.statusTotal === 0;
+      const logStatus = r.error ? "error" : (isZombie || statusStarved ? "warn" : "success");
       const logMsg = r.error
         ? r.error
-        : r.throttled
-          ? "Dropi throttle (429) — sincronización parcial"
-          : isZombie
-            ? `Dropi devolvió 0 pedidos en el pase de cambio de estatus (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o filter_date_by roto`
-            : null;
+        : statusStarved
+          ? "Dropi throttle (429): el refresh de estatus quedó incompleto — las guías en curso pueden no reflejar su último estado. Reintenta solo."
+          : r.throttled
+            ? "Dropi throttle (429) — sincronización parcial"
+            : isZombie
+              ? `Dropi devolvió 0 pedidos en el pase de cambio de estatus (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o filter_date_by roto`
+              : null;
       await sb.from("sync_logs").insert({
         source: "dropi-cron",
         status: logStatus,

@@ -31,6 +31,11 @@ const TERMINAL_STATES = new Set([
   // → distorsiona la tasa de rechazo (RECHAZADO=despachado, CANCELADO=no). Caso
   // real: 4 pedidos EC id~4.3M en ping-pong nightly↔cron el 2026-07-03.
   "RECHAZADO", "RECHAZADA",
+  // REEMPLAZADA/ARCHIVADO GHOST son soft-deletes de Guardian (orden vieja de una
+  // edición estilo Dropi): ya son terminales. Sin esto el nightly las trataría
+  // como no-terminales y podría flipearlas a CANCELADO (churn + ruido en
+  // cancelled_external_ids). Auditoría EC 2026-07-07.
+  "REEMPLAZADA", "ARCHIVADO GHOST", "ARCHIVADO_GHOST",
 ]);
 const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo
 // FIX 2026-07-03 (fantasmas de pedidos BORRADOS en Dropi): Dropi permite ELIMINAR

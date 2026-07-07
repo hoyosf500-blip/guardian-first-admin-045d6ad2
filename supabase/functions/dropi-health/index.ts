@@ -35,7 +35,11 @@ async function checkStore(cfg: StoreCfg, statusFilter: string): Promise<{ status
       },
     });
     if (res1.status !== 200) {
-      return { status: "down", sample: 0, httpStatus: res1.status };
+      // 429/503 = throttle transitorio de Dropi (la cuenta EC lo hace seguido),
+      // NO una cuenta caída: distinguir 'throttled' de 'down' evita pintar la
+      // tienda EC en rojo 1h por un rate-limit puntual (auditoría 2026-07-07).
+      const transient = res1.status === 429 || res1.status === 503 || res1.status === 502;
+      return { status: transient ? "throttled" : "down", sample: 0, httpStatus: res1.status };
     }
     const body1 = await res1.json().catch(() => ({}));
     const objs1 = Array.isArray(body1?.objects) ? body1.objects : [];
@@ -54,7 +58,8 @@ async function checkStore(cfg: StoreCfg, statusFilter: string): Promise<{ status
       },
     });
     if (res7.status !== 200) {
-      return { status: "down", sample: 0, httpStatus: res7.status };
+      const transient = res7.status === 429 || res7.status === 503 || res7.status === 502;
+      return { status: transient ? "throttled" : "down", sample: 0, httpStatus: res7.status };
     }
     const body7 = await res7.json().catch(() => ({}));
     const objs7 = Array.isArray(body7?.objects) ? body7.objects : [];

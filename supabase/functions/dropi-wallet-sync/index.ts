@@ -177,11 +177,27 @@ async function syncStore(
   });
   if (!xlsxRes.ok) {
     const txt = await xlsxRes.text();
+    const errMsg = `Dropi exportexcel [${xlsxRes.status}]: ${txt.slice(0, 200)}`;
+    // Loguear el FALLO a sync_logs: antes el wallet-sync solo escribía en el
+    // camino de éxito → un 401 (token vencido) o 429 (throttle EC) dejaba CERO
+    // rastro y el banner solo lo notaba como envejecimiento, sin distinguir
+    // "cron caído" de "token vencido". Auditoría EC 2026-07-07.
+    if (!dryRun) {
+      await sb.from("sync_logs").insert({
+        source: "dropi-wallet-sync",
+        status: "error",
+        synced_count: 0,
+        total_count: 0,
+        error_message: errMsg,
+        triggered_by: userId,
+        store_id: storeId,
+      });
+    }
     return {
       store_id: storeId,
       ok: false,
       expired: xlsxRes.status === 401,
-      error: `Dropi exportexcel [${xlsxRes.status}]: ${txt.slice(0, 200)}`,
+      error: errMsg,
     };
   }
 
@@ -198,6 +214,7 @@ async function syncStore(
     .filter((r): r is NonNullable<Mapped> => r !== null);
 
   let totalSynced = 0;
+  let anyUpsertError: string | null = null;
   if (!dryRun && mapped.length > 0) {
     for (let i = 0; i < mapped.length; i += 50) {
       const batch = mapped.slice(i, i + 50);
@@ -205,15 +222,22 @@ async function syncStore(
         "upsert_wallet_movements",
         { p_movements: batch },
       );
-      if (upsertError) console.error(`upsert_wallet_movements error (store ${storeId}):`, upsertError);
-      else totalSynced += (changedCount as number) || 0;
+      if (upsertError) {
+        console.error(`upsert_wallet_movements error (store ${storeId}):`, upsertError);
+        anyUpsertError = upsertError.message || String(upsertError);
+      } else {
+        totalSynced += (changedCount as number) || 0;
+      }
     }
+    // status='error' si algún batch falló (antes siempre 'success' aunque el
+    // upsert reventara → un fallo de RPC quedaba oculto). Auditoría EC 2026-07-07.
     await sb.from("sync_logs").insert({
       source: "dropi-wallet-sync",
-      status: "success",
+      status: anyUpsertError ? "error" : "success",
       synced_count: totalSynced,
       duplicates_count: 0,
       total_count: mapped.length,
+      error_message: anyUpsertError,
       triggered_by: userId,
       store_id: storeId,
     });

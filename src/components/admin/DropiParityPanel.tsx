@@ -55,11 +55,14 @@ export default function DropiParityPanel() {
   // cron y health funcionen también).
   const canAudit = Boolean((health?.dropi_api_key || '').length > 0);
   const healthStatus = health?.last_health_status || 'unknown';
+  // 'throttled' (nuevo, auditoría EC 2026-07-07): 429/503 transitorio de Dropi,
+  // NO cuenta caída — ámbar "Throttle", no rojo. Antes caía al else gris.
   const healthColor = healthStatus === 'ok' ? 'success'
-    : healthStatus === 'degraded' ? 'warning'
+    : healthStatus === 'degraded' || healthStatus === 'throttled' ? 'warning'
     : healthStatus === 'down' ? 'destructive' : 'muted-foreground';
   const healthLabel = healthStatus === 'ok' ? 'Saludable'
     : healthStatus === 'degraded' ? 'Sin novedades 7d'
+    : healthStatus === 'throttled' ? 'Throttle temporal'
     : healthStatus === 'down' ? 'Caído'
     : 'Sin chequear';
 

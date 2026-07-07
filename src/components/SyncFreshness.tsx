@@ -130,16 +130,28 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   }
 
   if (color === 'yellow') {
+    // Distinguir "throttle de Dropi" de "zombie / datos viejos": si alguna de
+    // las corridas recientes trae un error_message de rate-limit, la causa es
+    // el throttle EC (esperar), no un bug de datos → copy distinto y sin empujar
+    // a "Auditar paridad" (auditoría EC 2026-07-07). La fila ya trae error_message.
+    const recentErr = recentHour.map((l) => l.error_message).find(Boolean) || last.error_message;
+    const isThrottle = !!recentErr && /throttle|429|rate.?limit|too many/i.test(recentErr);
     return (
       <div className="rounded-lg border border-warning/40 bg-warning/8 px-3 py-2 flex items-center gap-3">
         <AlertTriangle size={16} className="text-warning flex-shrink-0" aria-hidden />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-warning">Sync corriendo pero sin novedades</p>
-          <p className="text-[11px] text-muted-foreground">
-            Las últimas {recentHour.length} corridas no trajeron cambios. ¿Sospechás datos viejos?
+          <p className="text-xs font-semibold text-warning">
+            {isThrottle ? 'Dropi está limitando la sincronización' : 'Sync corriendo pero sin novedades'}
+          </p>
+          <p className="text-[11px] text-muted-foreground truncate" title={recentErr || undefined}>
+            {isThrottle
+              ? 'La cuenta está throttleada (rate-limit). Reintenta solo; no hace falta auditar.'
+              : recentErr
+                ? recentErr
+                : `Las últimas ${recentHour.length} corridas no trajeron cambios. ¿Sospechás datos viejos?`}
           </p>
         </div>
-        {onAuditClick && isManagerOfActive && (
+        {onAuditClick && isManagerOfActive && !isThrottle && (
           <button
             onClick={onAuditClick}
             className="text-xs font-semibold text-warning hover:underline whitespace-nowrap cursor-pointer"
