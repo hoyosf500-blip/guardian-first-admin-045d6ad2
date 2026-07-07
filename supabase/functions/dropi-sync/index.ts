@@ -56,6 +56,15 @@ async function fetchAllPages(
   origin: string,
   chunkFrom: string,
   chunkTo: string,
+  // Corte por fecha de creación (anti-throttle 2026-07-07): Dropi ECUADOR
+  // IGNORA date_from/date_to en este endpoint (verificado: un sync "30 días"
+  // paginó la cuenta entera, ~2700+ pedidos). Como viene orderBy=id desc
+  // (≈ creación desc), cuando el pedido más viejo de la página ya es anterior
+  // al rango pedido, TODO lo restante es más viejo → cortamos. "Pedir el mes
+  // pasado trae el mes pasado", no el histórico completo. En CO (el filtro
+  // sí funciona) es un no-op. Válido porque este pull SIEMPRE filtra por
+  // FECHA DE CREADO.
+  stopBeforeCreated?: string,
 ): Promise<{ orders: Record<string, unknown>[]; partial: boolean }> {
   const allOrders: Record<string, unknown>[] = [];
   let start = 0;
@@ -126,6 +135,12 @@ async function fetchAllPages(
 
     allOrders.push(...orders);
     pagesFetched++;
+
+    if (stopBeforeCreated) {
+      const oldest = String((orders[orders.length - 1] as Record<string, unknown>).created_at || "");
+      // Ya pasamos el inicio del rango: lo restante es más viejo → completo.
+      if (oldest && oldest.split("T")[0] < stopBeforeCreated) break;
+    }
 
     if (orders.length < PAGE_SIZE) break;
     if (pagesFetched >= MAX_PAGES) {
@@ -406,7 +421,7 @@ Deno.serve(async (req: Request) => {
     let anyPartial = false;
 
     for (const chunk of chunks) {
-      const { orders: dropiOrders, partial } = await fetchAllPages(cfg.base, cfg.apiKey, cfg.storeUrl, chunk.from, chunk.to);
+      const { orders: dropiOrders, partial } = await fetchAllPages(cfg.base, cfg.apiKey, cfg.storeUrl, chunk.from, chunk.to, chunk.from);
       if (partial) anyPartial = true;
       totalFromDropi += dropiOrders.length;
 

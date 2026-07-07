@@ -88,6 +88,14 @@ Deno.serve(async (req) => {
 
     const from = ymd(days);
     const to = ymd(0);
+    // Corte EC (anti-throttle 2026-07-07): Dropi ECUADOR ignora date_from/
+    // date_to → sin corte, esta lista es la cuenta ENTERA (hasta MAX_PAGES=20
+    // páginas por click/mount de Seguimiento). Como viene orderBy=id desc
+    // (≈ creación desc), al pasar la ventana pedida (+7d de margen para
+    // pedidos viejos que aún se mueven) cortamos: lo restante es más viejo y
+    // lo reconcilia el nightly. En CO el filtro por estatus SÍ funciona y sus
+    // resultados viejos son legítimos → sin corte.
+    const cutBeforeCreated = cfg.countryCode === "EC" ? ymd(days + 7) : null;
     const headers: Record<string, string> = {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -194,6 +202,12 @@ Deno.serve(async (req) => {
         }
       } catch (hErr) {
         console.warn(`dropi-refresh-batch: error ingiriendo historial: ${hErr instanceof Error ? hErr.message : String(hErr)}`);
+      }
+
+      if (cutBeforeCreated) {
+        const oldest = String((objs[objs.length - 1] as Record<string, unknown>).created_at || "");
+        // Ya pasamos la ventana pedida: lo restante es más viejo → listo.
+        if (oldest && oldest.split("T")[0] < cutBeforeCreated) break;
       }
 
       if (objs.length < PAGE_SIZE) break; // última página

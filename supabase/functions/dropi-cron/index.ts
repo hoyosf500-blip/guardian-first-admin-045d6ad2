@@ -123,6 +123,14 @@ async function fetchAllPages(
   chunkTo: string,
   filterDateBy: string,
   deadline: number,
+  // Corte por fecha de creación (anti-throttle 2026-07-07): Dropi ECUADOR
+  // IGNORA date_from/date_to → el pase de "creado 3d" paginaba la cuenta
+  // ENTERA cada 5 min (~2700 pedidos/corrida medidos en vivo) hasta que el
+  // deadline lo cortaba — la causa raíz del throttle permanente de EC. Como
+  // viene orderBy=id desc (≈ creación desc), al pasar el inicio de la ventana
+  // cortamos: lo restante es más viejo. El caller decide cuándo aplica (ver
+  // buildPasses: pase creado = siempre; pase estatus = solo EC, con margen).
+  stopBeforeCreated?: string,
 ): Promise<Record<string, unknown>[]> {
   const allOrders: Record<string, unknown>[] = [];
   let start = 0;
@@ -203,6 +211,13 @@ async function fetchAllPages(
     if (!Array.isArray(orders) || orders.length === 0) break;
 
     allOrders.push(...orders);
+
+    if (stopBeforeCreated) {
+      const oldest = String((orders[orders.length - 1] as Record<string, unknown>).created_at || "");
+      // Ya pasamos el inicio de la ventana: lo restante es más viejo → listo.
+      if (oldest && oldest.split("T")[0] < stopBeforeCreated) break;
+    }
+
     if (orders.length < PAGE_SIZE) break;
     start += PAGE_SIZE;
     await sleep(RATE_LIMIT_MS);
@@ -310,7 +325,7 @@ interface StoreSync {
  *  sin importar antigüedad) + creado reciente (red de seguridad para nuevas). */
 // `role` marca cual pasada es la de estatus, para atribuir su conteo por
 // separado (winner filter + deteccion zombie miran SOLO el pase de estatus).
-interface SyncPass { from: string; to: string; filterDateBy: string; role?: "created" | "status" }
+interface SyncPass { from: string; to: string; filterDateBy: string; role?: "created" | "status"; stopBeforeCreated?: string }
 
 // Sincroniza UNA tienda con varias pasadas. Devuelve {synced, total}. No lanza:
 // captura su propio error para que una tienda caída no frene a las demás. El
@@ -347,7 +362,7 @@ async function syncStore(
           console.warn(`[store ${store.store_id}] presupuesto agotado, corte parcial`);
           return { synced, total, statusTotal, throttled: true };
         }
-        const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline);
+        const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline, pass.stopBeforeCreated);
         total += dropiOrders.length;
         if (pass.role === "status") statusTotal += dropiOrders.length;
         if (dropiOrders.length === 0) continue;
@@ -533,9 +548,28 @@ Deno.serve(async (req: Request) => {
     // entraron. Antes iba al reves y el pase pesado (~21d) se comia el
     // presupuesto/deadline -> las ordenes nuevas de Ecuador eran el sacrificio
     // sistematico y no aparecian en /confirmar (fuga de inflow).
-    const buildPasses = (statusFilter: string): SyncPass[] => ([
-      { from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO", role: "created" },
-      { from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter, role: "status" },
+    // Corte-por-rango (anti-throttle 2026-07-07, "pedir 3 días trae 3 días"):
+    // - Pase CREADO: stopBeforeCreated SIEMPRE (el pull es por FECHA DE CREADO,
+    //   el corte es exacto; en CO no-op porque el filtro sí funciona, en EC
+    //   corta la paginación de la cuenta entera → 1-2 páginas).
+    // - Pase ESTATUS: SOLO en EC (donde el filtro se ignora y la lista es toda
+    //   la cuenta por creación desc). Margen +7d: pedidos creados hasta 28d
+    //   atrás que aún se mueven conservan el refresh de 5 min; los más viejos
+    //   los reconcilia el nightly (corte-por-ID, fix 2026-07-07). En CO NO se
+    //   corta: el filtro funciona y sus resultados viejos son legítimos
+    //   (pedido viejo con estatus recién cambiado).
+    const EC_STATUS_SCAN_EXTRA_DAYS = 7;
+    const buildPasses = (statusFilter: string, countryCode: string): SyncPass[] => ([
+      {
+        from: dateBack(CREATED_DAYS_BACK), to, filterDateBy: "FECHA DE CREADO", role: "created",
+        stopBeforeCreated: dateBack(CREATED_DAYS_BACK),
+      },
+      {
+        from: dateBack(STATUS_CHANGE_DAYS_BACK), to, filterDateBy: statusFilter, role: "status",
+        stopBeforeCreated: countryCode === "EC"
+          ? dateBack(STATUS_CHANGE_DAYS_BACK + EC_STATUS_SCAN_EXTRA_DAYS)
+          : undefined,
+      },
     ]);
     const from = dateBack(STATUS_CHANGE_DAYS_BACK); // para logs
 
@@ -577,7 +611,7 @@ Deno.serve(async (req: Request) => {
 
       // Si ya sabemos qué filter_date_by funciona (de una tienda previa), arrancamos con ese.
       let chosenFilter = winningStatusFilter ?? STATUS_FILTER_VARIANTS[0];
-      let r = await syncStore(sb, store, buildPasses(chosenFilter), todayStr, storeDeadline);
+      let r = await syncStore(sb, store, buildPasses(chosenFilter, store.country_code), todayStr, storeDeadline);
 
       // Fallback: si la 1ª variante devolvió 0/0 SIN error/throttle, probamos el resto.
       // Solo aplicamos fallback si aún no tenemos winner (evita penalizar a las tiendas siguientes).
@@ -591,7 +625,7 @@ Deno.serve(async (req: Request) => {
           if (Date.now() > storeDeadline) break;
           console.warn(`dropi-cron: tienda ${storeId} — filter_date_by="${chosenFilter}" dio 0. Probando "${variant}"`);
           chosenFilter = variant;
-          const probe = await syncStore(sb, store, [buildPasses(variant)[1]], todayStr, storeDeadline);
+          const probe = await syncStore(sb, store, [buildPasses(variant, store.country_code)[1]], todayStr, storeDeadline);
           // Acumular lo que el probe haya traído sobre el resultado inicial
           // (synced/total del pase de creado inicial + estatus del probe).
           r = {
