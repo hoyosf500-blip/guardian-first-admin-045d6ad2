@@ -83,7 +83,7 @@ function getOrderStatusAgeDays(order: OrderData): number {
 
 function isExcludedFromDelay(estado: string): boolean {
   const e = estado.toUpperCase();
-  return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'RECHAZADO';
+  return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'REEMPLAZADA' || e === 'RECHAZADO';
 }
 
 /**
@@ -172,7 +172,7 @@ export default function CrmCallView({
     if (!ext || !activeStoreId) return;
     if (autoRefreshedIds.current.has(ext)) return;
     const estado = (previewOrder?.estado || '').toUpperCase();
-    const TERMINAL = ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'DEVUELTO', 'RECHAZADO'];
+    const TERMINAL = ['ENTREGADO', 'CANCELADO', 'REEMPLAZADA', 'DEVOLUCION', 'DEVUELTO', 'RECHAZADO'];
     if (TERMINAL.some(t => estado.includes(t))) return;
     const lastMov = previewOrder?.lastMovementAt || previewOrder?.fecha;
     if (!lastMov) return;

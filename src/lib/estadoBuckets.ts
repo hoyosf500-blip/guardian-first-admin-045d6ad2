@@ -118,6 +118,7 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   'POR RECOLECTAR': 'preparacion', // EC: guía generada, la transportadora aún no recogió el paquete
   // cancelado
   'CANCELADO': 'cancelado',
+  'REEMPLAZADA': 'cancelado', // orden vieja soft-borrada por una edición (create-with-edit)
 };
 
 // Fallback por CONTENIDO para estados de transportadoras de Ecuador (Servientrega

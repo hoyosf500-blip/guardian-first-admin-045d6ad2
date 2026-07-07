@@ -116,6 +116,7 @@ const STATUS_LABELS: Record<string, string> = {
   'DEVOLUCION EN TRANSITO': 'Devolución en tránsito',
   'RECHAZADO': 'Rechazado',
   'CANCELADO': 'Cancelado',
+  'REEMPLAZADA': 'Reemplazada (editada)',
 };
 
 /** Convierte un estado crudo de Dropi en una etiqueta legible. */

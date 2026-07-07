@@ -199,7 +199,7 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (!order?.external_id || !activeStoreId) return;
     if (refreshedThisSession.current.has(order.external_id)) return;
-    const TERMINAL = ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'DEVUELTO'];
+    const TERMINAL = ['ENTREGADO', 'CANCELADO', 'REEMPLAZADA', 'DEVOLUCION', 'DEVUELTO'];
     if (TERMINAL.includes((order.estado || '').toUpperCase())) return;
     const lastMov = order.last_movement_at || order.created_at;
     if (!lastMov) return;

@@ -122,6 +122,7 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           .not('estado', 'eq', 'PENDIENTE CONFIRMACION')
           .not('estado', 'eq', 'ENTREGADO')
           .not('estado', 'eq', 'CANCELADO')
+          .not('estado', 'eq', 'REEMPLAZADA')
           .not('estado', 'eq', 'RECHAZADO')
           .not('estado', 'eq', 'DEVOLUCION')
           .not('estado', 'eq', 'DEVOLUCION EN TRANSITO')

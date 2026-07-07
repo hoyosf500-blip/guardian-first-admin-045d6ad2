@@ -71,6 +71,8 @@ describe('classifySegEstado', () => {
   describe('terminales', () => {
     it('ENTREGADO', () => expect(classifySegEstado('ENTREGADO')).toBe('entregado'));
     it('CANCELADO', () => expect(classifySegEstado('CANCELADO')).toBe('cancelado'));
+    it('REEMPLAZADA (orden vieja soft-borrada por una edición)', () =>
+      expect(classifySegEstado('REEMPLAZADA')).toBe('cancelado'));
     it('DEVOLUCION', () => expect(classifySegEstado('DEVOLUCION')).toBe('devolucion'));
     it('DEVOLUCION EN TRANSITO va a su categoría propia', () =>
       expect(classifySegEstado('DEVOLUCION EN TRANSITO')).toBe('devolucion_transito'));

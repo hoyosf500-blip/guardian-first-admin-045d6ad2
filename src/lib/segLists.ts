@@ -113,6 +113,7 @@ const ESTADOS_OFICINA = (e: string): boolean =>
 const ESTADOS_TERMINALES = [
   'ENTREGADO',
   'CANCELADO',
+  'REEMPLAZADA', // Dropi soft-borra la orden vieja al editarla (create-with-edit + PUT)
   'DEVOLUCION',
   'DEVOLUCION EN TRANSITO',
   'DEVUELTO',

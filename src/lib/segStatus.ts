@@ -129,7 +129,7 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
   { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
   { key: 'indemnizada', match: (e) => e.includes('INDEMNIZADA') },
   { key: 'entregado', match: (e) => e === 'ENTREGADO' },
-  { key: 'cancelado', match: (e) => e === 'CANCELADO' || e === 'ARCHIVADO_GHOST' },
+  { key: 'cancelado', match: (e) => e === 'CANCELADO' || e === 'REEMPLAZADA' || e === 'ARCHIVADO_GHOST' },
 ];
 
 // Alerting de estados nuevos — log una sola vez por estado para no spamear.

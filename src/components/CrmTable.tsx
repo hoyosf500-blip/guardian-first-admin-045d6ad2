@@ -218,7 +218,7 @@ function getOrderStatusAgeDays(order: OrderData): number {
 
 function isExcludedFromDelay(estado: string): boolean {
   const e = estado.toUpperCase();
-  return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'RECHAZADO';
+  return e === 'ENTREGADO' || e.includes('DEVOL') || e === 'CANCELADO' || e === 'REEMPLAZADA' || e === 'RECHAZADO';
 }
 
 const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
