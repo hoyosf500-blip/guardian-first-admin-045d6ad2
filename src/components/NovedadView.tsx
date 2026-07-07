@@ -30,9 +30,14 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 
 interface Props {
   items: OrderData[];
+  /** Key de sessionStorage para la posición del carrusel. Cada instancia
+   *  simultánea (Por gestionar / Esperando transportadora) necesita la SUYA:
+   *  con la key compartida, el re-seed de una instancia pisaba la posición
+   *  de la otra y la operadora perdía su lugar en la cola de llamadas. */
+  stateKey?: string;
 }
 
-export default function NovedadView({ items }: Props) {
+export default function NovedadView({ items, stateKey = 'novedades:callOrderId' }: Props) {
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
   const { openChat, waEnabled } = useWaChat();
@@ -42,7 +47,7 @@ export default function NovedadView({ items }: Props) {
   // reorders or the operator returns from the carrier tab we keep showing
   // the same customer instead of jumping to a random one at that index.
   const [callOrderId, setCallOrderId] = useSessionState<string | null>(
-    'novedades:callOrderId',
+    stateKey,
     null,
   );
   const [solution, setSolution] = useState('');

@@ -66,7 +66,7 @@ export async function dropiWebFetch(
   cfg: DropiWebCfg,
   path: string,
   // deno-lint-ignore no-explicit-any
-  init: { method: "GET" | "POST" | "PUT"; body?: unknown },
+  init: { method: "GET" | "POST" | "PUT"; body?: unknown; logBody?: boolean },
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;
@@ -102,7 +102,13 @@ export async function dropiWebFetch(
     body: init.body != null ? JSON.stringify(init.body) : undefined,
   });
   const text = await res.text();
-  console.log("[dropi-web]", { url, status: res.status, body: text.slice(0, 400) });
+  // logBody:false para endpoints que devuelven listados con datos de clientes
+  // (nombre/teléfono/dirección) — evita volcar PII a los logs en cada llamada.
+  console.log("[dropi-web]", {
+    url,
+    status: res.status,
+    body: init.logBody === false ? `[omitido, ${text.length} chars]` : text.slice(0, 400),
+  });
   // deno-lint-ignore no-explicit-any
   let body: any = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
