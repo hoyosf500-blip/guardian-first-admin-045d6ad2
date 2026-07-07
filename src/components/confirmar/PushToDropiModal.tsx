@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X, Loader2, Truck, AlertTriangle, CheckCircle2, Link2 } from 'lucide-react';
 import { usePushToDropi, type PushClient, type PushProduct, type PushUnmapped, type PushDuplicate } from '@/hooks/usePushToDropi';
 import DropiProductSearch from '@/components/DropiProductSearch';
+import { formatCOP } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface Props {
@@ -173,8 +174,8 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
               <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2">
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                 <span>
-                  El COD calculado (<strong>${total.toLocaleString()}</strong>) supera el total real de Shopify
-                  (<strong>${shopifyTotal.toLocaleString()}</strong>). Probablemente se perdió un descuento —
+                  El COD calculado (<strong>{formatCOP(total)}</strong>) supera el total real de Shopify
+                  (<strong>{formatCOP(shopifyTotal)}</strong>). Probablemente se perdió un descuento —
                   revisá los precios antes de subir para no cobrarle de más al cliente.
                 </span>
               </div>
@@ -255,12 +256,12 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
               {shipping > 0 && (
                 <div className="px-3 py-1.5 flex items-center justify-between text-xs border-t border-border">
                   <span className="text-muted-foreground">Envío prioritario</span>
-                  <span className="tabular-nums text-foreground">+${shipping.toLocaleString()}</span>
+                  <span className="tabular-nums text-foreground">+{formatCOP(shipping)}</span>
                 </div>
               )}
               <div className="px-3 py-2 bg-muted/40 flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Total a cobrar (COD)</span>
-                <span className="font-bold tabular-nums text-foreground">${total.toLocaleString()}</span>
+                <span className="font-bold tabular-nums text-foreground">{formatCOP(total)}</span>
               </div>
             </div>
 

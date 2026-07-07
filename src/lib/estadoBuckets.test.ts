@@ -187,3 +187,39 @@ describe('estados EC nuevos de julio (auditoría 2026-07-03)', () => {
     expect(r.estadosSinMapear).toEqual(['ESTADO_RARISIMO_NUEVO']);
   });
 });
+
+describe('estados EC sin mapear (auditoría 2026-07-07, sondeados en vivo)', () => {
+  it('ASIGNADO A <carrier/ciudad> → en_transito (repartidor asignado, ya no cae en otros)', () => {
+    const r = bucketizeEstados([
+      { estado: 'ASIGNADO A', pedidos: 1, valor: 27, unidades: 1 },
+      { estado: 'ASIGNADO A GINTRACOM', pedidos: 3, valor: 90, unidades: 3 },
+      { estado: 'ASIGNADO A QUITO', pedidos: 2, valor: 54, unidades: 2 },
+    ]);
+    expect(r.buckets.en_transito.pedidos).toBe(6);
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('INGRESANDO pelado → en_transito (antes solo mapeaban INGRESANDO A / OPERATIVO)', () => {
+    const r = bucketizeEstados([{ estado: 'INGRESANDO', pedidos: 1, valor: 27, unidades: 1 }]);
+    expect(r.buckets.en_transito.pedidos).toBe(1);
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('CLIENTE SOLICITA RETIRAR EN CS → novedad (cliente pide retirar = riesgo no-entrega)', () => {
+    const r = bucketizeEstados([{ estado: 'CLIENTE SOLICITA RETIRAR EN CS', pedidos: 1, valor: 27, unidades: 1 }]);
+    expect(r.buckets.novedad.pedidos).toBe(1);
+    expect(r.estadosSinMapear).toHaveLength(0);
+  });
+
+  it('los 3 juntos: embudo cierra sin huecos, cero sin clasificar', () => {
+    const r = bucketizeEstados([
+      { estado: 'ENTREGADO', pedidos: 385, valor: 10_000, unidades: 400 },
+      { estado: 'ASIGNADO A', pedidos: 1, valor: 27, unidades: 1 },
+      { estado: 'INGRESANDO', pedidos: 1, valor: 27, unidades: 1 },
+      { estado: 'CLIENTE SOLICITA RETIRAR EN CS', pedidos: 1, valor: 27, unidades: 1 },
+    ]);
+    const sumaBuckets = Object.values(r.buckets).reduce((a, b) => a + b.pedidos, 0);
+    expect(sumaBuckets).toBe(r.totals.pedidos);
+    expect(r.estadosSinMapear).toEqual([]);
+  });
+});

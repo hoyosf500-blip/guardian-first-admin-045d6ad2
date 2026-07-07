@@ -63,7 +63,13 @@ export function heuristicValidate(direccion: string, countryCode?: string): Heur
     };
   }
 
-  if (kind === 'rural') {
+  // OJO paridad EC: mapAddressKind marca "rural" cualquier dirección con
+  // mz/manzana/lote/sector, pero en Ecuador ese direccionamiento (ej. "Cdla La
+  // Garzota Mz 8 Villa 15, Guayaquil") es URBANO estándar y la rama EC de abajo
+  // lo puntúa POSITIVO. Sin el `!isEC`, esas direcciones EC daban un falso
+  // amarillo "rural/confirmar" y jamás llegaban a la heurística EC (auditoría
+  // 2026-07-07). pickup_office queda arriba porque es country-agnostic.
+  if (kind === 'rural' && !isEC) {
     return {
       score: 60,
       issues: ['rural_address'],

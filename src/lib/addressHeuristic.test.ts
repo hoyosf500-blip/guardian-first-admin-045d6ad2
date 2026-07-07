@@ -51,3 +51,27 @@ describe('heuristicValidate — complemento sin número (Bug C)', () => {
     expect(r.issues).not.toContain('complemento_sin_numero');
   });
 });
+
+describe('heuristicValidate — direcciones urbanas EC no son "rural" (auditoría 2026-07-07)', () => {
+  it('"Cdla La Garzota Mz 8 Villa 15, Guayaquil" en EC NO cae en amarillo rural', () => {
+    // 'Mz' matchea RURAL_PATTERNS de mapAddressKind, pero en EC es urbano estándar.
+    // Sin el fix (rural check antes de la rama EC) daba yellow 'rural_address'.
+    const r = heuristicValidate('Cdla La Garzota Mz 8 Villa 15, Guayaquil', 'EC');
+    expect(r.decision).not.toBe('yellow');
+    expect(r.issues).not.toContain('rural_address');
+    expect(r.score).toBeGreaterThanOrEqual(70); // llega a la rama EC y puntúa positivo
+  });
+
+  it('"Coop. Bastión Popular Bloque 3 Mz 1240 Solar 5" (Guayaquil) EC → verde/alto, no rural', () => {
+    const r = heuristicValidate('Coop Bastion Popular Bloque 3 Mz 1240 Solar 5', 'EC');
+    expect(r.issues).not.toContain('rural_address');
+    expect(r.score).toBeGreaterThanOrEqual(70);
+  });
+
+  it('la MISMA dirección con "Mz" en CO (default) SÍ sigue tratándose como rural', () => {
+    // Regresión: el fix es country-scoped, no cambia el comportamiento CO.
+    const r = heuristicValidate('Vereda El Rosal Mz 8 lote 3');
+    expect(r.decision).toBe('yellow');
+    expect(r.issues).toContain('rural_address');
+  });
+});

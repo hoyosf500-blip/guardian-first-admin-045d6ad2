@@ -140,17 +140,18 @@ const ESTADO_FALLBACK_PATTERNS: Array<[string, BucketKey]> = [
   ['CANCEL', 'cancelado'],   // "CANCELADO POR TRANSPORTADORA", etc. (paridad con NOT LIKE '%CANCEL%' del server)
   ['DEVOLUC', 'devuelto'],   // variantes DEVOLUCION* nuevas de Dropi
   ['DEVUELT', 'devuelto'],   // "DEVUELTO A ORIGEN", etc.
+  ['ASIGNADO', 'en_transito'],   // EC: "ASIGNADO A GINTRACOM"/"ASIGNADO A QUITO" — repartidor/carrier asignado = en la calle. Espeja segStatus.startsWith('ASIGNADO'). (auditoría EC 2026-07-07: caía en 'otros')
+  ['INGRESANDO', 'en_transito'], // EC: cubre "INGRESANDO" solo, "INGRESANDO A <bodega>", "INGRESANDO OPERATIVO A <ciudad>", "INGRESANDO DE RECOLECCION A". Antes 'INGRESANDO' pelado caía en 'otros'.
   ['BODEGA ORIGEN', 'en_transito'],
   ['RUTA A', 'en_transito'],           // EC: "EN RUTA A CENTRO LOGISTICO", "RUTA A CONCESION" — cualquier "ruta a X" es tránsito
   ['CENTRO LOGISTICO', 'en_transito'], // EC
   ['RECOLECCION', 'en_transito'],      // EC: "INGRESANDO DE RECOLECCION A <ciudad>"
-  ['INGRESANDO OPERATIVO', 'en_transito'],
-  ['INGRESANDO A', 'en_transito'], // EC: "INGRESANDO A <bodega/ciudad>" — en bodega de transportadora
   ['DISTRIBUCION A CLIENTE', 'en_transito'],
   ['DISTRIBUCION PARA ENTREGA', 'en_transito'],
   ['ZONA DE ENTREGA', 'en_transito'],
-  ['RETIRO EN AGENCIA', 'novedad'], // cliente debe ir a recoger = riesgo no-entrega
-  ['SOLUCION APROBADA', 'novedad'], // lifecycle de novedad resuelta
+  ['RETIRO EN AGENCIA', 'novedad'],   // cliente debe ir a recoger = riesgo no-entrega
+  ['SOLICITA RETIRAR', 'novedad'],    // EC: "CLIENTE SOLICITA RETIRAR EN CS" — cliente pide retirar = riesgo no-entrega (auditoría EC 2026-07-07)
+  ['SOLUCION APROBADA', 'novedad'],   // lifecycle de novedad resuelta
 ];
 
 /** Quita acentos para que el fallback matchee "CONCESIÓN"/"DISTRIBUCIÓN" con tilde. */

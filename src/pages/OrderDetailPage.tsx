@@ -415,7 +415,7 @@ export default function OrderDetailPage() {
     );
   }
 
-  const trackUrl = getTrackingUrl(order.transportadora || '', order.guia || '');
+  const trackUrl = getTrackingUrl(order.transportadora || '', order.guia || '', countryCode);
   const valor = Number(order.valor) || 0;
   const flete = Number(order.flete) || 0;
   const costoProd = Number(order.costo_prod) || 0;

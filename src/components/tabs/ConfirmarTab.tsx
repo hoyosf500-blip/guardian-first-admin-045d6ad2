@@ -23,7 +23,7 @@ import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { cn, bogotaToday } from '@/lib/utils';
+import { cn, bogotaToday, formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -659,7 +659,7 @@ export default function ConfirmarTab({ profile }: Props) {
                       <span className="font-medium text-foreground truncate">{o.nombre}</span>
                       <span className="font-mono text-[10px] text-muted-foreground">#{o.externalId}</span>
                       <span className="text-muted-foreground">{o.producto}</span>
-                      <span className="ml-auto tabular-nums text-muted-foreground">${Number(o.valor || 0).toLocaleString()}</span>
+                      <span className="ml-auto tabular-nums text-muted-foreground">{formatCOP(Number(o.valor || 0))}</span>
                     </div>
                   ))}
                 </div>

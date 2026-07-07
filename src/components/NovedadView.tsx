@@ -134,7 +134,10 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
     await doMark('devolucion');
   };
 
-  const trackUrl = o.guia ? getTrackingUrl(o.transportadora, o.guia) : null;
+  // countryCode explícito: sin él, tras F5 directo en /novedades el módulo de
+  // tracking arranca en 'CO' (el useEffect de StoreContext.setTrackingCountry
+  // corre post-paint) y el primer render no resuelve GINTRACOM/LAAR/Serv-EC.
+  const trackUrl = o.guia ? getTrackingUrl(o.transportadora, o.guia, countryCode) : null;
 
   return (
     <>

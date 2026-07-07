@@ -9,7 +9,7 @@ import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
 import { matchesQuery } from '@/lib/textSearch';
 import { supabase } from '@/integrations/supabase/client';
-import { bogotaToday } from '@/lib/utils';
+import { bogotaToday, formatCOP } from '@/lib/utils';
 import PushToDropiModal from './PushToDropiModal';
 import ShopifyMarksHistoryModal from './ShopifyMarksHistoryModal';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
@@ -386,9 +386,9 @@ export default function ShopifyPendingPanel() {
                     {m.estado && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{m.estado}</span>}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 text-xs mt-0.5">
-                    <span className="text-muted-foreground">Shopify <span className="tabular-nums text-foreground">${m.shopify_total.toLocaleString()}</span></span>
-                    <span className="text-muted-foreground">· Dropi <span className="tabular-nums font-semibold text-destructive">${m.dropi_valor.toLocaleString()}</span></span>
-                    <span className="font-semibold text-destructive">(+${m.overcharge.toLocaleString()} de más)</span>
+                    <span className="text-muted-foreground">Shopify <span className="tabular-nums text-foreground">{formatCOP(m.shopify_total)}</span></span>
+                    <span className="text-muted-foreground">· Dropi <span className="tabular-nums font-semibold text-destructive">{formatCOP(m.dropi_valor)}</span></span>
+                    <span className="font-semibold text-destructive">(+{formatCOP(m.overcharge)} de más)</span>
                   </div>
                 </div>
                 <a href={m.admin_url} target="_blank" rel="noreferrer" title="Abrir en Shopify"
@@ -667,7 +667,7 @@ export default function ShopifyPendingPanel() {
                                 </button>
                               : <span className="italic">—</span>}
                             {p.city && <span>· {p.city}</span>}
-                            {p.total > 0 && <span>· ${p.total.toLocaleString()}</span>}
+                            {p.total > 0 && <span>· {formatCOP(p.total)}</span>}
                             {p.producto && <span className="truncate max-w-[12rem]" title={p.producto}>· {p.producto}</span>}
                           </div>
                         </div>

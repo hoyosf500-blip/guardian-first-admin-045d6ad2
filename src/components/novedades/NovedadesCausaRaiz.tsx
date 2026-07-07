@@ -3,6 +3,7 @@ import { SeguimientoRange } from '@/hooks/useNovedadesSeguimiento';
 import { CULPA_LABEL, Culpa } from '@/lib/novedadTaxonomy';
 import { EvitableReason } from '@/lib/novedadRootCause';
 import { Stat } from '@/components/novedades/Stat';
+import { formatCOP } from '@/lib/utils';
 import { SEMANTIC_COLORS } from '@/components/logistics/charts/chartTokens';
 import {
   RefreshCw, TriangleAlert, Target, DollarSign, Users, Lock, Wrench, ServerCrash,
@@ -31,10 +32,6 @@ const REASON_ORDER: EvitableReason[] = ['semaforo', 'direccion', 'pickup'];
 function pct(n: number | null): string {
   if (n == null) return '—';
   return `${Math.round(n * 100)}%`;
-}
-
-function fmtMoney(n: number): string {
-  return `$${Math.round(n || 0).toLocaleString('es-CO')}`;
 }
 
 function catLabel(categoria: string): string {
@@ -112,8 +109,8 @@ export default function NovedadesCausaRaiz() {
               hint="prevenibles de nuestro lado"
             />
             <Stat
-              icon={<DollarSign size={11} />} label="$ perdido evitable" value={fmtMoney(summary.valorPerdidoEvitable)}
-              tone={summary.valorPerdidoEvitable > 0 ? 'danger' : 'default'} hint={`de ${fmtMoney(summary.valorPerdidoTotal)} total`}
+              icon={<DollarSign size={11} />} label="$ perdido evitable" value={formatCOP(summary.valorPerdidoEvitable)}
+              tone={summary.valorPerdidoEvitable > 0 ? 'danger' : 'default'} hint={`de ${formatCOP(summary.valorPerdidoTotal)} total`}
             />
             <Stat icon={<Users size={11} />} label="Con confirmador" value={summary.conConfirmador}
               hint={`${summary.sinConfirmador} carga directa`} />

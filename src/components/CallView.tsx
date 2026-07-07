@@ -829,7 +829,7 @@ export default function CallView({ items, alerts }: Props) {
 
         {o.guia && (
           <div className="text-xs mb-2 inline-flex items-center gap-1.5">
-            <Tag size={12} /> Guía: <a href={getTrackingUrl(o.transportadora, o.guia) || '#'} target="_blank" rel="noreferrer" className="text-cyan">{o.guia}</a>
+            <Tag size={12} /> Guía: <a href={getTrackingUrl(o.transportadora, o.guia, countryCode) || '#'} target="_blank" rel="noreferrer" className="text-cyan">{o.guia}</a>
             {o.transportadora && ` (${o.transportadora})`}
           </div>
         )}

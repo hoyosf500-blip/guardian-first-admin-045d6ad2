@@ -74,7 +74,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const resumen = full ?? fallback;
 
   // El sync es solo del dueño (las edge functions validan isStoreOwner / membresía).
-  const { isOwnerOfActive, activeStoreId } = useStore();
+  const { isOwnerOfActive, isManagerOfActive, activeStoreId } = useStore();
   const resumenSync = useResumenSync();
   const walletHealth = useWalletSyncHealth(activeStoreId);
   const walletStale = walletHealth.data?.status === 'stale' || walletHealth.data?.status === 'critical';
@@ -234,8 +234,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
       </div>
 
       {/* Detector de estados sin clasificar — se dispara con cualquier estado nuevo
-          de Dropi que aún no mapeamos. Solo el dueño lo ve. Ámbar informativo. */}
-      {isOwnerOfActive && sinMapear.length > 0 && (
+          de Dropi que aún no mapeamos. Lo ven owner Y supervisores (managers): un
+          socio que mira los KPIs también debe enterarse de que hay estados que los
+          sesgan (auditoría EC 2026-07-07). Ámbar informativo. */}
+      {isManagerOfActive && sinMapear.length > 0 && (
         <div className="px-5 py-2.5 border-b border-warning/30 bg-warning/8 flex items-start gap-2">
           <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
           <p className="text-[11px] text-warning leading-relaxed">
