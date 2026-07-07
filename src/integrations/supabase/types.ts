@@ -1446,8 +1446,12 @@ export type Database = {
         Row: {
           country_code: string
           dropi_api_key: string | null
+          dropi_login_email: string | null
+          dropi_login_password: string | null
+          dropi_session_refreshed_at: string | null
           dropi_session_token: string | null
           dropi_store_url: string | null
+          dropi_white_brand_id: number
           last_health_checked_at: string | null
           last_health_status: string | null
           store_id: string
@@ -1457,8 +1461,12 @@ export type Database = {
         Insert: {
           country_code?: string
           dropi_api_key?: string | null
+          dropi_login_email?: string | null
+          dropi_login_password?: string | null
+          dropi_session_refreshed_at?: string | null
           dropi_session_token?: string | null
           dropi_store_url?: string | null
+          dropi_white_brand_id?: number
           last_health_checked_at?: string | null
           last_health_status?: string | null
           store_id: string
@@ -1468,8 +1476,12 @@ export type Database = {
         Update: {
           country_code?: string
           dropi_api_key?: string | null
+          dropi_login_email?: string | null
+          dropi_login_password?: string | null
+          dropi_session_refreshed_at?: string | null
           dropi_session_token?: string | null
           dropi_store_url?: string | null
+          dropi_white_brand_id?: number
           last_health_checked_at?: string | null
           last_health_status?: string | null
           store_id?: string
@@ -3238,6 +3250,14 @@ export type Database = {
           p_dropi_api_key: string
           p_dropi_session_token: string
           p_dropi_store_url: string
+          p_store_id: string
+        }
+        Returns: undefined
+      }
+      upsert_store_dropi_login: {
+        Args: {
+          p_login_email: string
+          p_login_password: string
           p_store_id: string
         }
         Returns: undefined
