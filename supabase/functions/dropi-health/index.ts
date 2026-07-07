@@ -18,6 +18,12 @@ interface StoreCfg {
   dropi_store_url: string | null;
 }
 
+// Anti-throttle 2026-07-07: espaciado entre requests (antes los 2 pings de una
+// tienda y las tiendas entre sí iban back-to-back — ráfaga puntual que, sumada
+// al cron, provocaba el mismo "throttled" que este health pretende medir).
+const SPACING_MS = 1500;
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+
 async function checkStore(cfg: StoreCfg, statusFilter: string): Promise<{ status: string; sample: number; httpStatus: number }> {
   const base = dropiHostFor(cfg.country_code || "CO");
   const today = new Date().toISOString().split("T")[0];
@@ -48,6 +54,7 @@ async function checkStore(cfg: StoreCfg, statusFilter: string): Promise<{ status
     }
 
     // Vacío hoy. Probamos 7d con el filter ganador (lo persiste dropi-cron, GAP A).
+    await sleep(SPACING_MS);
     const filterParam = statusFilter ? `&filter_date_by=${encodeURIComponent(statusFilter)}` : "";
     const url7 = `${base}/integrations/orders/myorders?result_number=1&date_from=${sevenDaysAgo}&date_to=${today}${filterParam}`;
     const res7 = await fetch(url7, {
@@ -107,7 +114,10 @@ Deno.serve(async (req) => {
     .select("value").eq("key", "dropi_winning_status_filter").maybeSingle();
   const STATUS_FILTER = (filterRow?.value as string) || "FECHA DE CAMBIO DE ESTATUS";
 
+  let first = true;
   for (const cfg of active) {
+    if (!first) await sleep(SPACING_MS);
+    first = false;
     const r = await checkStore(cfg, STATUS_FILTER);
     await sb.from("store_dropi_config").update({
       last_health_status: r.status,

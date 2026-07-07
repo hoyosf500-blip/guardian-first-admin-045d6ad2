@@ -1,0 +1,105 @@
+-- Desfasar los schedules pg_cron que pegan a Dropi (anti-throttle 2026-07-07).
+--
+-- POR QUÉ: dropi-cron ('*/5'), dropi-health ('0 * * * *'), dropi-wallet-sync
+-- ('0 */6 * * *') y dropi-nightly-reconcile ('0 3 * * *') disparaban TODOS en el
+-- segundo 0 del minuto 0 — colisión determinística: cada hora el health aterriza
+-- encima del fan-out del cron de pedidos; a las 00/06/12/18 UTC se suma el wallet
+-- (18 UTC = 13:00 Quito/Bogotá, horario pico) y a las 03:00 el nightly. Contra la
+-- cuenta EC (throttle agresivo), health terminaba midiendo un "throttled" que su
+-- propio timing provocaba, y el nightly arrancaba ya throttleado → fail-safe
+-- cancela 0 → corrida quemada. Minutos elegidos NO múltiplos de 5 para no
+-- coincidir jamás con el arranque de dropi-cron: health :7, nightly 3:17,
+-- wallet :23. (Reduce drásticamente el solape de ARRANQUE; una pasada larga del
+-- cron con backoff puede seguir en vuelo igual — eso lo maneja el fail-fast.)
+--
+-- OJO: los schedules minuto-0 están VIVOS en la DB (los agendó 20260707170000 y
+-- su duplicado Lovable 20260707090319) — editar esas migrations no cambia nada en
+-- producción. Esta migration nueva los re-agenda; el unschedule-by-ILIKE mata
+-- ambos orígenes sin importar cuál los creó. NO se auto-aplica → supabase db push.
+
+-- ── dropi-health: cada hora en el minuto 7 (antes :0) ───────────────────────
+DO $$
+DECLARE j RECORD;
+BEGIN
+  FOR j IN SELECT jobid FROM cron.job WHERE command ILIKE '%dropi-health%' LOOP
+    PERFORM cron.unschedule(j.jobid);
+  END LOOP;
+END $$;
+
+SELECT cron.schedule(
+  'dropi-health-1h',
+  '7 * * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-health',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (SELECT value FROM public.app_settings WHERE key = 'cron_shared_secret')
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);
+
+-- ── dropi-nightly-reconcile: 3:17 AM UTC (antes 3:00) ───────────────────────
+-- La ventana de fechas usa toISOString().split('T')[0] → 03:17 UTC cae en la
+-- misma fecha que 03:00: cero impacto en paridad.
+DO $$
+DECLARE j RECORD;
+BEGIN
+  FOR j IN SELECT jobid FROM cron.job WHERE command ILIKE '%dropi-nightly-reconcile%' LOOP
+    PERFORM cron.unschedule(j.jobid);
+  END LOOP;
+END $$;
+
+SELECT cron.schedule(
+  'dropi-nightly-reconcile',
+  '17 3 * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-nightly-reconcile',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (SELECT value FROM public.app_settings WHERE key = 'cron_shared_secret')
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);
+
+-- ── dropi-wallet-sync: cada 6h en el minuto 23 (antes :0) ────────────────────
+-- Body COPIADO EXACTO de 20260624190000 (ventana 45d + Bearer anon +
+-- x-cron-secret + timeout 60s). Sin la ventana 45d el wallet regresa al default
+-- de 30d de la edge function y pierde los pagos que Dropi liquida tarde —
+-- la razón de ser de aquella migration. SOLO cambia el minuto.
+DO $$
+DECLARE j RECORD;
+BEGIN
+  FOR j IN
+    SELECT jobid FROM cron.job
+     WHERE jobname IN ('dropi-wallet-sync-6h', 'dropi-wallet-sync')
+        OR command ILIKE '%dropi-wallet-sync%'
+  LOOP
+    PERFORM cron.unschedule(j.jobid);
+  END LOOP;
+END $$;
+
+SELECT cron.schedule(
+  'dropi-wallet-sync-6h',
+  '23 */6 * * *',
+  $cron$
+  SELECT net.http_post(
+    url := 'https://bokhlpfmttoizjaakntc.supabase.co/functions/v1/dropi-wallet-sync',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJva2hscGZtdHRvaXpqYWFrbnRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMzgzNjksImV4cCI6MjA5MTYxNDM2OX0.tILkDzwZf8SSNKRDF9Neofd16MTwCOWqr2JcR-dMasc',
+      'x-cron-secret', (SELECT value FROM public.app_settings WHERE key = 'cron_shared_secret')
+    ),
+    body := jsonb_build_object(
+      'from',   to_char((now() AT TIME ZONE 'UTC')::date - INTERVAL '45 days', 'YYYY-MM-DD'),
+      'untill', to_char((now() AT TIME ZONE 'UTC')::date,                      'YYYY-MM-DD')
+    ),
+    timeout_milliseconds := 60000
+  );
+  $cron$
+);
