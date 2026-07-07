@@ -18,6 +18,8 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
 import ChangeCarrierDialog from '@/components/confirmar/ChangeCarrierDialog';
+import ChangeValueDialog from '@/components/confirmar/ChangeValueDialog';
+import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
@@ -69,9 +71,12 @@ interface VipInfo {
 
 interface Props {
   items: OrderData[];
+  /** Alertas por pedido (duplicado en curso + sobreprecio vs Shopify) —
+   *  las computa ConfirmarTab una sola vez para toda la cola. */
+  alerts?: ConfirmarOrderAlerts;
 }
 
-export default function CallView({ items }: Props) {
+export default function CallView({ items, alerts }: Props) {
   const { markResult, undoLast, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user, isAdmin } = useAuth();
   const { activeStore } = useStore();
@@ -128,6 +133,8 @@ export default function CallView({ items }: Props) {
     setCancelOtroText('');
   }, [callOrderId]);
   const [carrierOrder, setCarrierOrder] = useState<OrderData | null>(null);
+  // Cambiar valor a cobrar: `suggested` viene del chip de sobreprecio (total Shopify).
+  const [valueOrder, setValueOrder] = useState<{ order: OrderData; suggested?: number } | null>(null);
   const [vip, setVip] = useState<VipInfo | null>(null);
   // Validador-direcciones: override admin-only para destrabar el gate cuando
   // la dirección quedó en yellow/red pero el admin decidió despachar igual.
@@ -717,6 +724,67 @@ export default function CallView({ items }: Props) {
             </button>
           </div>
         )}
+        {/* Aviso DUPLICADO en el pedido mismo: el cliente ya tiene OTRO pedido en
+            curso (real en Dropi o repetido en esta cola) — revisar antes de
+            confirmar para no despachar dos veces. */}
+        {!o.result && (() => {
+          const dups = dupAlertsFor(alerts?.dupByPhone, o);
+          if (dups.length === 0) return null;
+          return (
+            <div className="mb-3 rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 space-y-1">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={14} className="text-destructive flex-shrink-0" aria-hidden="true" />
+                <span className="text-[11px] font-bold text-destructive uppercase tracking-wide">
+                  Posible duplicado — este cliente tiene {dups.length === 1 ? 'otro pedido' : `${dups.length} pedidos más`}
+                </span>
+              </div>
+              <ul className="text-xs text-foreground/90 space-y-0.5 pl-6">
+                {dups.slice(0, 3).map(d => (
+                  <li key={`${d.source}-${d.externalId}`} className="flex items-center gap-1.5 flex-wrap">
+                    <a
+                      href={`/pedido/${d.externalId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-cyan hover:underline"
+                    >#{d.externalId}</a>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-semibold">{d.estado}</span>
+                    {d.fecha && <span className="text-muted-foreground">{d.fecha}</span>}
+                    {d.source === 'cola' && <span className="text-[10px] text-muted-foreground">(en esta cola)</span>}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-muted-foreground pl-6">
+                Revisá antes de confirmar. Si hay dos en Dropi, cancelá el sobrante en el panel de Dropi.
+              </p>
+            </div>
+          );
+        })()}
+        {/* Aviso SOBREPRECIO en el pedido mismo: Dropi va a cobrar más de lo que el
+            cliente aceptó en Shopify. Se calcula contra o.valor VIVO → desaparece
+            solo apenas se corrige. El botón precarga el total de Shopify. */}
+        {!o.result && (() => {
+          const oc = overchargeFor(alerts?.mismatchByExt, o);
+          if (!oc) return null;
+          return (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <DollarSign size={14} className="text-amber-500 flex-shrink-0" aria-hidden="true" />
+                <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                  Cobra de más: Dropi {formatCOP(o.valor)} vs Shopify {formatCOP(oc.shopifyTotal)} (+{formatCOP(oc.overcharge)})
+                </span>
+              </div>
+              {!o.guia && o.externalId && (
+                <button
+                  type="button"
+                  onClick={() => setValueOrder({ order: o, suggested: oc.shopifyTotal })}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors whitespace-nowrap"
+                >
+                  Corregir a {formatCOP(oc.shopifyTotal)}
+                </button>
+              )}
+            </div>
+          );
+        })()}
         {!o.result && <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>}
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <div className={`w-2 h-2 rounded-full ${pDot}`} />
@@ -906,6 +974,19 @@ export default function CallView({ items }: Props) {
                 {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
               </button>
             )}
+            {/* Cambiar valor a cobrar: mismo límite que transportadora (sin guía). */}
+            {!o.guia && (
+              <button
+                type="button"
+                onClick={() => setValueOrder({ order: o })}
+                title="Cambiar valor a cobrar"
+                aria-label="Cambiar valor a cobrar"
+                className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500 text-xs font-semibold hover:bg-amber-500/20 hover:border-amber-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none"
+              >
+                <DollarSign size={14} aria-hidden="true" /> Cambiar valor
+                {o.valor > 0 && <span className="opacity-70">· {formatCOP(o.valor)}</span>}
+              </button>
+            )}
           </div>
         )}
 
@@ -1059,6 +1140,29 @@ export default function CallView({ items }: Props) {
             // Re-fetch del pedido para reflejar la nueva transportadora.
             if (!carrierOrder?.dbId) return;
             const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', carrierOrder.dbId).maybeSingle();
+            if (data) {
+              const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
+              const merged = allOrders.map(ord => ord.dbId === updated.dbId
+                ? { ...ord, ...updated, result: ord.result, reason: ord.reason, retryCount: ord.retryCount }
+                : ord);
+              setAllOrders(merged);
+              buildWorkQueue(merged);
+            }
+          }}
+        />
+      )}
+
+      {valueOrder && (
+        <ChangeValueDialog
+          open={!!valueOrder}
+          onOpenChange={(op) => { if (!op) setValueOrder(null); }}
+          order={valueOrder.order}
+          suggested={valueOrder.suggested}
+          onSuccess={async () => {
+            // Re-fetch del pedido para reflejar el valor nuevo (y el external_id
+            // nuevo si Dropi recreó la orden — misma fila física, mismo dbId).
+            if (!valueOrder?.order.dbId) return;
+            const { data } = await supabase.from('orders').select(ORDER_COLUMNS).eq('id', valueOrder.order.dbId).maybeSingle();
             if (data) {
               const updated = dbToOrderData(data as unknown as Parameters<typeof dbToOrderData>[0], 0);
               const merged = allOrders.map(ord => ord.dbId === updated.dbId

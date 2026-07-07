@@ -111,7 +111,7 @@ export async function dropiWebFetch(
     const msg = String(body?.message || body?.error || text || "");
     if (/not issued to this api|could not be parsed|unauthenticated|token/i.test(msg) || !msg) {
       throw new WebFallbackError(
-        "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para cotizar en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+        "El token de sesión Dropi de la tienda venció o no sirve. Configurá el login automático (email + clave de Dropi) en Admin → Credenciales Dropi para que se renueve solo, o pegá un `dropi_session_token` fresco ahí mismo.",
         422,
       );
     }
@@ -291,7 +291,7 @@ export async function quoteCarriers(
 ): Promise<QuoteContext> {
   if (!cfg.sessionToken) {
     throw new WebFallbackError(
-      "La tienda no tiene un token de sesión Dropi vigente. La integration-key no sirve para cotizar en el panel web de Dropi; pegá un `dropi_session_token` fresco en la config de la tienda (Admin → Credenciales Dropi).",
+      "La tienda no tiene un token de sesión Dropi. La integration-key no sirve para el panel web de Dropi; configurá el login automático (email + clave) en Admin → Credenciales Dropi para que se genere solo, o pegá un `dropi_session_token` ahí mismo.",
       422,
     );
   }

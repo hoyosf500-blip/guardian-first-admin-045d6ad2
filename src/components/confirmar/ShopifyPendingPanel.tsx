@@ -363,7 +363,8 @@ export default function ShopifyPendingPanel() {
             <span className="text-sm font-semibold text-foreground">con valor distinto a Shopify</span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Dropi va a cobrar más de lo que el cliente aceptó — corregilo en el panel de Dropi para que no rechacen la entrega.
+            Dropi va a cobrar más de lo que el cliente aceptó. Cada pedido afectado muestra el aviso
+            en su ficha con un botón «Corregir a $X» que lo arregla desde acá (sin ir al panel de Dropi).
           </p>
         </div>
         <button onClick={() => setShowMismatches(s => !s)}

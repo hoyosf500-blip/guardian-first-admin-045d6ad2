@@ -28,6 +28,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import {
   quoteCarriers,
   dropiWebFetch,
@@ -88,9 +89,11 @@ async function resolveDestCity(
 
 interface ChangeCarrierBody {
   externalId?: string;
-  mode?: "quote" | "apply";
+  mode?: "quote" | "apply" | "apply_value" | "debug";
   distributionCompanyId?: number | string;
   name?: string;
+  /** mode "apply_value": nuevo valor a cobrar (COD) del pedido. */
+  newValor?: number | string;
 }
 
 interface DropiResult {
@@ -141,6 +144,66 @@ async function dropiGetOrder(
   try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
   const ok = res.ok && body.isSuccess !== false;
   return { ok, httpStatus: res.status, body, rawText };
+}
+
+/** PUT del total del pedido vía integration-key. OJO: el PUT de Dropi IGNORA EN
+ *  SILENCIO los campos que no soporta (devuelve 200 sin cambiar nada — verificado
+ *  con distribution_company_id), así que NUNCA confiar en el 200: verificar con
+ *  un GET posterior (parseOrderTotal). */
+async function dropiPutTotal(
+  base: string,
+  apiKey: string,
+  storeUrl: string,
+  externalId: string,
+  newTotal: number,
+): Promise<DropiResult> {
+  const res = await fetch(
+    `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "dropi-integration-key": apiKey,
+        "Origin": storeUrl,
+      },
+      body: JSON.stringify({ total_order: newTotal }),
+    },
+  );
+  const rawText = await res.text();
+  let body: Record<string, unknown> = {};
+  try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
+  const ok = res.ok && body.isSuccess !== false;
+  return { ok, httpStatus: res.status, body, rawText };
+}
+
+/** Extrae total_order del cuerpo de un pedido Dropi (integration GET). */
+function parseOrderTotal(body: Record<string, unknown>): number | null {
+  const order = (body.objects ?? body.data ?? body.order ?? body) as Record<string, unknown>;
+  const t = parseFloat(String(order?.total_order ?? ""));
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Redondeo por país: EC usa centavos (USD), CO pesos enteros. */
+function roundMoney(n: number, countryCode: string): number {
+  const f = countryCode === "EC" ? 100 : 1;
+  return Math.round(n * f) / f;
+}
+
+/** Escala los precios de línea para que acompañen el valor nuevo del pedido.
+ *  `total_order` es la verdad del recaudo (puede diferir por centavos de la
+ *  suma de líneas — el create ya lo permitía), esto solo mantiene coherencia
+ *  visual/contable en el panel de Dropi. */
+function scaleLinePrices(lines: QuoteLine[], newTotal: number, countryCode: string): QuoteLine[] {
+  const oldSum = lines.reduce((s, l) => s + l.price * l.quantity, 0);
+  if (oldSum > 0) {
+    const factor = newTotal / oldSum;
+    return lines.map((l) => ({ ...l, price: roundMoney(l.price * factor, countryCode) }));
+  }
+  // Sin precios previos: repartir el total entre las unidades.
+  const units = lines.reduce((s, l) => s + (l.quantity || 1), 0) || 1;
+  const perUnit = roundMoney(newTotal / units, countryCode);
+  return lines.map((l) => ({ ...l, price: perUnit }));
 }
 
 /** Deriva el host api-v2 (detalle web del pedido) desde el host de integraciones.
@@ -234,6 +297,84 @@ function parseV2Lines(body: Record<string, unknown>): QuoteLine[] {
   return lines;
 }
 
+/** Fila Guardian mínima para el fallback de cliente. */
+interface OrderRowFallback {
+  nombre?: string | null;
+  phone?: string | null;
+  direccion?: string | null;
+  ciudad?: string | null;
+  departamento?: string | null;
+}
+
+type ClientLinesResult =
+  | { ok: true; client: OrderClientFields; lines: QuoteLine[] }
+  | { ok: false; error: string; dropiBody?: Record<string, unknown> };
+
+/** Prep compartida de los modos que recrean la orden (apply / apply_value):
+ *  detalle del cliente + líneas. PRIMERO el detalle v2 (rico: client, rate_type,
+ *  notes, shop_order_id, products). FALLBACK a la fila Guardian + integration GET.
+ *  Extraída 1:1 del apply original — no cambiar sin re-verificar en vivo. */
+async function resolveClientAndLines(
+  cfg: { base: string; sessionToken: string; apiKey: string; storeUrl: string },
+  orderRow: OrderRowFallback,
+  externalId: string,
+): Promise<ClientLinesResult> {
+  let client: OrderClientFields | null = null;
+  let lines: QuoteLine[] = [];
+  try {
+    const v2 = await dropiGetOrderV2(cfg, externalId);
+    if (v2.ok) {
+      client = parseV2Client(v2.body);
+      lines = parseV2Lines(v2.body);
+    }
+  } catch (e) {
+    // No abortamos por el v2: caemos al fallback. Logueamos para diagnóstico.
+    console.error("[dropi-change-carrier] v2 detail failed:", e);
+  }
+
+  // Fallback de líneas: integration GET (parseOrderLines) si v2 no trajo productos.
+  let integrationBody: Record<string, unknown> | null = null;
+  if (lines.length === 0) {
+    const ord = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+    integrationBody = ord.body;
+    if (ord.ok) lines = parseOrderLines(ord.body);
+  }
+  if (lines.length === 0) {
+    return {
+      ok: false,
+      error: "No pude leer los productos del pedido para recrearlo (ni v2 ni integración).",
+      dropiBody: integrationBody ?? undefined,
+    };
+  }
+
+  // Fallback de cliente: la fila Guardian (nombre/phone/direccion/ciudad/departamento).
+  if (!client) {
+    const nombre = String(orderRow.nombre || "").trim();
+    const phone = String(orderRow.phone || "").trim();
+    const dir = String(orderRow.direccion || "").trim();
+    if (!nombre || !phone || !dir) {
+      return {
+        ok: false,
+        error: "No pude leer los datos del cliente (nombre/teléfono/dirección) para recrear la orden.",
+      };
+    }
+    client = {
+      name: nombre,
+      surname: "",
+      dir,
+      phone,
+      state: String(orderRow.departamento || "").trim(),
+      city: String(orderRow.ciudad || "").trim(),
+      email: "",
+      notes: "",
+      rateType: "CON RECAUDO",
+      shopOrderId: "",
+      shopId: null,
+    };
+  }
+  return { ok: true, client, lines };
+}
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
   const jsonErr = (error: string, status: number) =>
@@ -270,7 +411,11 @@ Deno.serve(async (req: Request) => {
     try { body = await req.json() as ChangeCarrierBody; } catch { return jsonErr("Body inválido", 400); }
 
     const externalId = String(body.externalId || "").trim();
-    const mode = body.mode === "apply" ? "apply" : "quote";
+    const mode = body.mode === "apply"
+      ? "apply"
+      : body.mode === "apply_value"
+        ? "apply_value"
+        : "quote";
     if (!externalId) return jsonErr("Falta externalId", 400);
 
     // ---- Resolver pedido + tienda + membresía ----
@@ -345,6 +490,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Renovar el session token si venció (login automático por tienda —
+    // _shared/dropiSessionLogin). quote y apply dependen 100% del panel web;
+    // apply_value lo renueva LAZY (su camino directo PUT+verify no lo necesita).
+    if (mode === "quote" || mode === "apply") {
+      try {
+        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+      } catch (e) {
+        if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
+        throw e;
+      }
+    }
+
     // =========================== MODE: QUOTE ===========================
     if (mode === "quote") {
       // 1) Leer las líneas del pedido desde Dropi (no guardamos product ids local).
@@ -405,6 +562,245 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ======================== MODE: APPLY_VALUE =========================
+    // Cambia el VALOR a cobrar (COD) del pedido. Dos caminos, en orden:
+    //  1) DIRECTO: PUT total_order con la integration-key + VERIFICACIÓN por GET
+    //     (el PUT de Dropi ignora en silencio lo que no soporta — nunca creer el 200).
+    //     No necesita session token → funciona aunque el login automático no esté.
+    //  2) RECREAR como el panel (create-with-edit, misma mecánica verificada del
+    //     apply): cancela la vieja + crea una nueva con el total nuevo y la MISMA
+    //     transportadora. Necesita session token (se renueva acá, lazy).
+    // El cliente detecta funciones viejas deployadas con `valorApplied === true`.
+    if (mode === "apply_value") {
+      const newValor = Number(body.newValor);
+      if (!Number.isFinite(newValor) || newValor <= 0) {
+        return jsonOk({ ok: false, error: "Valor nuevo inválido (debe ser un número mayor a 0)." });
+      }
+      const oldValor = Number(orderRow.valor) || 0;
+      if (Math.abs(newValor - oldValor) < 0.01) {
+        return jsonOk({ ok: true, valorApplied: true, method: "no_change", externalId, valor: oldValor });
+      }
+
+      // ---- Camino 1: PUT directo + verificación ----
+      let putDetail = "";
+      try {
+        const put = await dropiPutTotal(cfg.base, cfg.apiKey, cfg.storeUrl, externalId, newValor);
+        putDetail = `PUT ${put.httpStatus}`;
+        if (put.ok) {
+          const after = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+          const t = after.ok ? parseOrderTotal(after.body) : null;
+          if (t !== null && Math.abs(t - newValor) < 0.01) {
+            const { error: updErr } = await sbAdmin
+              .from("orders")
+              .update({ valor: newValor })
+              .eq("id", orderRow.id);
+            if (updErr) console.error("[apply_value] local valor update failed:", updErr);
+            const { error: auditErr } = await sbAdmin.from("order_results").insert({
+              order_id: orderRow.id,
+              phone: String(orderRow.phone || ""),
+              operator_id: user.id,
+              module: "confirmar",
+              result: "cambio_valor",
+              reason: JSON.stringify({ antes: { valor: oldValor }, despues: { valor: newValor }, via: "put" }).slice(0, 2000),
+              store_id: storeId,
+            });
+            if (auditErr) console.error("[apply_value] audit insert failed:", auditErr);
+            return jsonOk({ ok: true, valorApplied: true, method: "put", externalId, valor: newValor });
+          }
+          putDetail += t === null ? " (no pude verificar el total)" : ` (Dropi lo ignoró: total sigue en ${t})`;
+        }
+      } catch (e) {
+        console.error("[apply_value] PUT directo falló:", e);
+        putDetail = "PUT falló: " + (e instanceof Error ? e.message : String(e));
+      }
+      console.log("[apply_value] camino directo no aplicó, recreando.", { externalId, putDetail });
+
+      // ---- Camino 2: recrear como el panel (create-with-edit) ----
+      try {
+        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+      } catch (e) {
+        if (e instanceof WebFallbackError) {
+          return jsonOk({
+            ok: false,
+            error: `Dropi no aceptó el cambio directo del valor (${putDetail}) y no pude entrar al panel para recrear el pedido: ${e.message}`,
+          });
+        }
+        throw e;
+      }
+
+      const prepV = await resolveClientAndLines(cfg, orderRow, externalId);
+      if (!prepV.ok) {
+        return jsonOk({ ok: false, error: prepV.error, ...(prepV.dropiBody ? { dropiBody: prepV.dropiBody } : {}) });
+      }
+      const clientV = prepV.client;
+      // Precios de línea escalados al valor nuevo (total_order manda para el recaudo).
+      const linesV = scaleLinePrices(prepV.lines, newValor, cfg.countryCode);
+
+      const countryV = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const destCityV = await resolveDestCity(sbAdmin, cfg.countryCode, clientV.city, clientV.state);
+      if (!destCityV) {
+        return jsonOk({
+          ok: false,
+          error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+          city: clientV.city, state: clientV.state,
+        });
+      }
+
+      let ctxV;
+      try {
+        ctxV = await quoteCarriers(cfg, {
+          country: countryV,
+          city: clientV.city,
+          state: clientV.state,
+          destCity: destCityV,
+          lines: linesV,
+          total: newValor,
+        });
+      } catch (e) {
+        if (e instanceof WebFallbackError) {
+          return jsonOk({ ok: false, error: e.message, dropiBody: (e as WebFallbackError).body });
+        }
+        throw e;
+      }
+
+      // Mantener la transportadora ACTUAL. Si no cotiza esta ruta (o el pedido
+      // no tiene una asignada), caer a la más barata ≠ VELOCES (criterio del push).
+      const currentCarrierNorm = normUp(orderRow.transportadora || "");
+      const chosen =
+        (currentCarrierNorm
+          ? ctxV.options.find((op) => normUp(op.name) === currentCarrierNorm)
+          : undefined) ??
+        ctxV.options.find((op) => normUp(op.name) !== "VELOCES") ??
+        ctxV.options[0] ??
+        null;
+      if (!chosen) {
+        return jsonOk({ ok: false, error: "Dropi no devolvió transportadoras para recrear el pedido con el valor nuevo." });
+      }
+
+      const userIdV = decodeJwtSub(cfg.sessionToken);
+      const orderBodyV: Record<string, unknown> = {
+        total_order: newValor,
+        notes: clientV.notes || "",
+        name: clientV.name,
+        surname: clientV.surname || "",
+        dir: clientV.dir,
+        country: countryV,
+        state: ctxV.dest.stateName,
+        city: ctxV.dest.cityName,
+        phone: clientV.phone,
+        client_email: clientV.email || "",
+        payment_method_id: 1,
+        user_id: userIdV,
+        supplier_id: ctxV.supplierId,
+        type: "FINAL_ORDER",
+        rate_type: clientV.rateType || "CON RECAUDO",
+        products: ctxV.products.map((p) => ({
+          id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
+        })),
+        distributionCompany: { id: chosen.id, name: chosen.name },
+        type_service: "normal",
+        zip_code: "",
+        colonia: "",
+        shop_id: clientV.shopId ?? null,
+        dni: "",
+        dni_type: "",
+        insurance: false,
+        warehouses_selected_id: ctxV.origin.warehouseId,
+        // Flags de EDICIÓN (verificados en vivo) — cancelan la vieja + linkean la nueva.
+        is_edit_order: true,
+        id_old_order: Number(externalId),
+        shop_order_id: clientV.shopOrderId || "",
+        shop_order_number: "",
+        reasonComment: `Esta orden reemplaza a la orden ${externalId}: cambio de valor ${oldValor} → ${newValor}.`,
+      };
+
+      let newIdV: string | null = null;
+      let dropiStatusV = 0;
+      try {
+        const { status, body: respBody, text } = await dropiWebFetch(
+          cfg, `/api/orders/myorders`, { method: "POST", body: orderBodyV },
+        );
+        dropiStatusV = status;
+        const okV = status >= 200 && status < 300 && respBody?.isSuccess !== false;
+        const rawId =
+          (respBody?.objects?.id as string | number | undefined) ??
+          (respBody?.id as string | number | undefined) ??
+          (respBody?.data?.id as string | number | undefined) ??
+          (respBody?.order?.id as string | number | undefined) ??
+          null;
+        if (!okV || rawId == null) {
+          const detail = String(respBody?.message || respBody?.error || text || "error").slice(0, 500);
+          await sbAdmin.from("sync_logs").insert({
+            source: "dropi-change-carrier",
+            status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
+            triggered_by: user.id, error_message: `Dropi rechazó el cambio de valor [${status}]: ${detail}`,
+            store_id: storeId,
+          });
+          return jsonOk({
+            ok: false,
+            error: `Dropi rechazó el cambio de valor [${status}]: ${detail}`,
+            dropiHttpStatus: status,
+            dropiBody: respBody,
+          });
+        }
+        newIdV = String(rawId);
+      } catch (e) {
+        if (e instanceof WebFallbackError) {
+          return jsonOk({ ok: false, error: e.message, dropiHttpStatus: (e as WebFallbackError).status, dropiBody: (e as WebFallbackError).body });
+        }
+        throw e;
+      }
+
+      // Sincronizar la fila Guardian EN SU LUGAR (mismo dbId) — mismo patrón y
+      // manejo de carrera 23505 que el apply de transportadora.
+      let warningV: string | undefined;
+      const { error: updErrV } = await sbAdmin
+        .from("orders")
+        .update({ external_id: newIdV, valor: newValor, transportadora: chosen.name })
+        .eq("id", orderRow.id);
+      if (updErrV) {
+        console.error("[apply_value] local update failed:", updErrV);
+        if ((updErrV as { code?: string }).code === "23505") {
+          const { error: cancelErrV } = await sbAdmin
+            .from("orders")
+            .update({ estado: "CANCELADO" })
+            .eq("id", orderRow.id);
+          warningV = cancelErrV
+            ? `El sync ya trajo la orden nueva ${newIdV} y no pude cancelar la fila vieja: ${cancelErrV.message}.`
+            : `El sync ya había traído la orden nueva ${newIdV}; la fila vieja quedó CANCELADO.`;
+        } else {
+          warningV = `El cambio se aplicó en Dropi (nuevo id ${newIdV}) pero no pude actualizar la fila local: ${updErrV.message}. Puede aparecer un duplicado hasta el próximo sync.`;
+        }
+      }
+
+      const { error: auditErrV } = await sbAdmin.from("order_results").insert({
+        order_id: orderRow.id,
+        phone: String(orderRow.phone || clientV.phone || ""),
+        operator_id: user.id,
+        module: "confirmar",
+        result: "cambio_valor",
+        reason: JSON.stringify({
+          antes: { valor: oldValor, external_id: externalId },
+          despues: { valor: newValor, external_id: newIdV, transportadora: chosen.name },
+          via: "recreate",
+        }).slice(0, 2000),
+        store_id: storeId,
+      });
+      if (auditErrV) console.error("[apply_value] audit insert failed:", auditErrV);
+
+      return jsonOk({
+        ok: true,
+        valorApplied: true,
+        method: "recreate",
+        externalId: newIdV,
+        oldExternalId: externalId,
+        valor: newValor,
+        transportadora: chosen.name,
+        dropiHttpStatus: dropiStatusV,
+        ...(warningV ? { warning: warningV } : {}),
+      });
+    }
+
     // =========================== MODE: APPLY ===========================
     // Create-with-edit: cancela la orden vieja + crea una nueva (nuevo external_id)
     // con la transportadora ELEGIDA. Nunca rompe la card: cualquier fallo devuelve
@@ -420,61 +816,13 @@ Deno.serve(async (req: Request) => {
 
     const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
 
-    // 1) Detalle del cliente + líneas. PRIMERO el detalle v2 (rico: client, rate_type,
-    //    notes, shop_order_id, products). FALLBACK a la fila Guardian + integration GET.
-    let client: OrderClientFields | null = null;
-    let lines: QuoteLine[] = [];
-    try {
-      const v2 = await dropiGetOrderV2(cfg, externalId);
-      if (v2.ok) {
-        client = parseV2Client(v2.body);
-        lines = parseV2Lines(v2.body);
-      }
-    } catch (e) {
-      // No abortamos por el v2: caemos al fallback. Logueamos para diagnóstico.
-      console.error("[dropi-change-carrier] v2 detail failed:", e);
+    // 1) Detalle del cliente + líneas (prep compartida con apply_value).
+    const prep = await resolveClientAndLines(cfg, orderRow, externalId);
+    if (!prep.ok) {
+      return jsonOk({ ok: false, error: prep.error, ...(prep.dropiBody ? { dropiBody: prep.dropiBody } : {}) });
     }
-
-    // Fallback de líneas: integration GET (parseOrderLines) si v2 no trajo productos.
-    let integrationBody: Record<string, unknown> | null = null;
-    if (lines.length === 0) {
-      const ord = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
-      integrationBody = ord.body;
-      if (ord.ok) lines = parseOrderLines(ord.body);
-    }
-    if (lines.length === 0) {
-      return jsonOk({
-        ok: false,
-        error: "No pude leer los productos del pedido para recrearlo (ni v2 ni integración).",
-        dropiBody: integrationBody ?? undefined,
-      });
-    }
-
-    // Fallback de cliente: la fila Guardian (nombre/phone/direccion/ciudad/departamento).
-    if (!client) {
-      const nombre = String(orderRow.nombre || "").trim();
-      const phone = String(orderRow.phone || "").trim();
-      const dir = String(orderRow.direccion || "").trim();
-      if (!nombre || !phone || !dir) {
-        return jsonOk({
-          ok: false,
-          error: "No pude leer los datos del cliente (nombre/teléfono/dirección) para recrear la orden.",
-        });
-      }
-      client = {
-        name: nombre,
-        surname: "",
-        dir,
-        phone,
-        state: String(orderRow.departamento || "").trim(),
-        city: String(orderRow.ciudad || "").trim(),
-        email: "",
-        notes: "",
-        rateType: "CON RECAUDO",
-        shopOrderId: "",
-        shopId: null,
-      };
-    }
+    const client = prep.client;
+    const lines = prep.lines;
 
     // 2) Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
     const destCity = await resolveDestCity(sbAdmin, cfg.countryCode, client.city, client.state);
