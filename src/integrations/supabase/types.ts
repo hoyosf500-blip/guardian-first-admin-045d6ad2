@@ -2374,6 +2374,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _estado_bucket: { Args: { p_estado: string }; Returns: string }
+      _estado_norm: { Args: { p_estado: string }; Returns: string }
       _resolve_scope_store: { Args: never; Returns: string }
       admin_cancelled_details: {
         Args: { p_fecha: string; p_operadora: string; p_store_id?: string }
@@ -2693,6 +2695,7 @@ export type Database = {
               en_transito: number
               entregados: number
               novedades: number
+              rechazados: number
               tasa_devolucion: number
               tasa_entrega: number
               total_pedidos: number
@@ -2708,6 +2711,7 @@ export type Database = {
           departamento: string
           devueltos: number
           entregados: number
+          rechazados: number
           tasa_devolucion: number
           tasa_entrega: number
           total_pedidos: number
@@ -2727,6 +2731,7 @@ export type Database = {
           departamento: string
           devueltos: number
           entregados: number
+          rechazados: number
           tasa_devolucion: number
           tasa_entrega: number
           total_pedidos: number
@@ -2734,11 +2739,17 @@ export type Database = {
         }[]
       }
       logistics_by_product: {
-        Args: { p_from_date: string; p_limit?: number; p_to_date: string }
+        Args: {
+          p_ciudad?: string
+          p_from_date: string
+          p_limit?: number
+          p_to_date: string
+        }
         Returns: {
           devueltos: number
           entregados: number
           producto: string
+          rechazados: number
           tasa_devolucion: number
           tasa_entrega: number
           total_pedidos: number
@@ -2797,6 +2808,7 @@ export type Database = {
               novedades: number
               pendientes_por_confirmar: number
               pendientes_sin_despachar: number
+              rechazados: number
               tasa_devolucion: number
               tasa_entrega: number
               total_pedidos: number
@@ -2806,10 +2818,12 @@ export type Database = {
               valor_novedades: number
               valor_pendientes: number
               valor_perdido: number
+              valor_rechazado: number
             }[]
           }
       logistics_timeline: {
         Args: {
+          p_ciudad?: string
           p_estados?: string[]
           p_from_date: string
           p_limit?: number
@@ -2932,7 +2946,7 @@ export type Database = {
         }[]
       }
       orders_estado_breakdown: {
-        Args: { p_from: string; p_to: string }
+        Args: { p_ciudad?: string; p_from: string; p_to: string }
         Returns: {
           estado: string
           pedidos: number
