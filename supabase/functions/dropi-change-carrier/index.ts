@@ -89,11 +89,46 @@ async function resolveDestCity(
 
 interface ChangeCarrierBody {
   externalId?: string;
-  mode?: "quote" | "apply" | "apply_value" | "debug";
+  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "debug";
   distributionCompanyId?: number | string;
   name?: string;
-  /** mode "apply_value": nuevo valor a cobrar (COD) del pedido. */
+  /** modes "apply_value" / "apply_edit": nuevo valor a cobrar (COD) del pedido. */
   newValor?: number | string;
+  /** mode "quote": override de líneas para re-cotizar con cantidades/precios editados. */
+  lines?: Array<{ dropiId?: number | string; quantity?: number | string; price?: number | string }>;
+  /** mode "apply_edit": líneas editadas (mismo set de dropiIds, sin agregar/quitar). */
+  newLines?: Array<{ dropiId?: number | string; quantity?: number | string; price?: number | string }>;
+}
+
+/** QuoteLine + nombre del producto (para el editor unificado del CRM).
+ *  Tipo LOCAL — no tocamos QuoteLine en _shared/dropiWebQuote.ts. */
+interface LineDetail extends QuoteLine {
+  name?: string;
+}
+
+/** Valida un override de líneas del cliente contra las líneas reales del pedido:
+ *  mismo SET de dropiIds (sin agregar/quitar), cantidad entera 1-1000, precio ≥0.
+ *  Inválido → null (el caller decide el fallback). Conserva el name original. */
+function sanitizeLinesOverride(
+  raw: ChangeCarrierBody["lines"],
+  existing: LineDetail[],
+): LineDetail[] | null {
+  if (!Array.isArray(raw) || raw.length !== existing.length) return null;
+  const byId = new Map(existing.map((l) => [l.dropiId, l]));
+  const out: LineDetail[] = [];
+  const seen = new Set<number>();
+  for (const r of raw) {
+    const id = Number(r?.dropiId);
+    const orig = byId.get(id);
+    if (!orig || seen.has(id)) return null;
+    seen.add(id);
+    const quantity = Number(r?.quantity);
+    const price = Number(r?.price);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000) return null;
+    if (!Number.isFinite(price) || price < 0) return null;
+    out.push({ ...orig, quantity, price });
+  }
+  return out;
 }
 
 interface DropiResult {
@@ -264,35 +299,37 @@ function parseV2Client(body: Record<string, unknown>): OrderClientFields | null 
   };
 }
 
-/** Extrae líneas {dropiId, quantity, price} desde el cuerpo de un pedido Dropi
- *  (integration GET) — usado como fallback cuando el detalle v2 no está. */
-function parseOrderLines(body: Record<string, unknown>): QuoteLine[] {
+/** Extrae líneas {dropiId, quantity, price, name?} desde el cuerpo de un pedido
+ *  Dropi (integration GET) — usado como fallback cuando el detalle v2 no está. */
+function parseOrderLines(body: Record<string, unknown>): LineDetail[] {
   // El pedido puede venir en body, body.objects, body.data o body.order.
   const order = (body.objects ?? body.data ?? body.order ?? body) as Record<string, unknown>;
   const details = (order?.orderdetails ?? order?.order_details ?? []) as Array<Record<string, unknown>>;
-  const lines: QuoteLine[] = [];
+  const lines: LineDetail[] = [];
   for (const d of Array.isArray(details) ? details : []) {
     const product = (d.product ?? {}) as Record<string, unknown>;
     const dropiId = Number(product.id ?? d.product_id ?? d.id);
     if (!Number.isFinite(dropiId) || dropiId <= 0) continue;
     const quantity = Number(d.quantity ?? 1) || 1;
     const price = Number(d.price ?? product.sale_price ?? product.price ?? 0) || 0;
-    lines.push({ dropiId, quantity, price });
+    const name = String(product.name ?? d.name ?? "").trim() || undefined;
+    lines.push({ dropiId, quantity, price, ...(name ? { name } : {}) });
   }
   return lines;
 }
 
-/** Extrae líneas {dropiId, quantity, price} desde el detalle v2 (data.products[]). */
-function parseV2Lines(body: Record<string, unknown>): QuoteLine[] {
+/** Extrae líneas {dropiId, quantity, price, name?} desde el detalle v2 (data.products[]). */
+function parseV2Lines(body: Record<string, unknown>): LineDetail[] {
   const data = (body.data ?? body.objects ?? body) as Record<string, unknown>;
   const products = (data?.products ?? []) as Array<Record<string, unknown>>;
-  const lines: QuoteLine[] = [];
+  const lines: LineDetail[] = [];
   for (const p of Array.isArray(products) ? products : []) {
     const dropiId = Number(p.id ?? p.product_id);
     if (!Number.isFinite(dropiId) || dropiId <= 0) continue;
     const quantity = Number(p.quantity ?? 1) || 1;
     const price = Number(p.price ?? p.sale_price ?? 0) || 0;
-    lines.push({ dropiId, quantity, price });
+    const name = String(p.name ?? "").trim() || undefined;
+    lines.push({ dropiId, quantity, price, ...(name ? { name } : {}) });
   }
   return lines;
 }
@@ -307,7 +344,7 @@ interface OrderRowFallback {
 }
 
 type ClientLinesResult =
-  | { ok: true; client: OrderClientFields; lines: QuoteLine[] }
+  | { ok: true; client: OrderClientFields; lines: LineDetail[] }
   | { ok: false; error: string; dropiBody?: Record<string, unknown> };
 
 /** Prep compartida de los modos que recrean la orden (apply / apply_value):
@@ -320,7 +357,7 @@ async function resolveClientAndLines(
   externalId: string,
 ): Promise<ClientLinesResult> {
   let client: OrderClientFields | null = null;
-  let lines: QuoteLine[] = [];
+  let lines: LineDetail[] = [];
   try {
     const v2 = await dropiGetOrderV2(cfg, externalId);
     if (v2.ok) {
@@ -415,7 +452,9 @@ Deno.serve(async (req: Request) => {
       ? "apply"
       : body.mode === "apply_value"
         ? "apply_value"
-        : "quote";
+        : body.mode === "apply_edit"
+          ? "apply_edit"
+          : "quote";
     if (!externalId) return jsonErr("Falta externalId", 400);
 
     // ---- Resolver pedido + tienda + membresía ----
@@ -514,14 +553,19 @@ Deno.serve(async (req: Request) => {
           dropiBody: ord.body,
         });
       }
-      const lines = parseOrderLines(ord.body);
-      if (lines.length === 0) {
+      const realLines = parseOrderLines(ord.body);
+      if (realLines.length === 0) {
         return jsonOk({
           ok: false,
           error: "No pude leer los productos del pedido desde Dropi (sin orderdetails con id).",
           dropiBody: ord.body,
         });
       }
+      // Override de líneas (botón "Recotizar" del editor unificado): permite
+      // cotizar con cantidades/precios editados sin aplicar nada todavía.
+      // Inválido → se ignora y se cotiza con las líneas reales.
+      const overrideLines = sanitizeLinesOverride(body.lines, realLines);
+      const lines = overrideLines ?? realLines;
 
       // 2) Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
       const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
@@ -537,7 +581,9 @@ Deno.serve(async (req: Request) => {
       }
 
       // 3) Cotizar en vivo (panel web — session token; destino ya resuelto del catálogo).
-      const total = Number(orderRow.valor) || lines.reduce((s, l) => s + l.price * l.quantity, 0);
+      const total = overrideLines
+        ? roundMoney(overrideLines.reduce((s, l) => s + l.price * l.quantity, 0), cfg.countryCode)
+        : Number(orderRow.valor) || lines.reduce((s, l) => s + l.price * l.quantity, 0);
       try {
         const ctx = await quoteCarriers(cfg, {
           country,
@@ -551,6 +597,11 @@ Deno.serve(async (req: Request) => {
           ok: true,
           current: String(orderRow.transportadora || ""),
           options: ctx.options,
+          // Editor unificado: líneas usadas para cotizar (dropiId/quantity/price/
+          // name) + total — el diálogo pinta el editor de producto con la MISMA
+          // llamada que ya hacía para cotizar. Clientes viejos las ignoran.
+          lines,
+          total,
         });
       } catch (e) {
         if (e instanceof WebFallbackError) {
@@ -798,6 +849,244 @@ Deno.serve(async (req: Request) => {
         transportadora: chosen.name,
         dropiHttpStatus: dropiStatusV,
         ...(warningV ? { warning: warningV } : {}),
+      });
+    }
+
+    // ======================== MODE: APPLY_EDIT =========================
+    // Edición combinada estilo panel Dropi en UNA sola recreación: transportadora
+    // y/o líneas (cantidad/precio) y/o valor total. Reusa la mecánica verificada
+    // de apply/apply_value (create-with-edit: cancela la vieja + crea la nueva +
+    // actualiza la MISMA fila local + audita). ADITIVO: no toca apply ni
+    // apply_value. Si el server corre una versión vieja, este mode cae a quote
+    // (read-only, no muta) y el cliente lo detecta por la ausencia de
+    // `editApplied:true` — seguro por construcción.
+    if (mode === "apply_edit") {
+      const dcIdRaw = body.distributionCompanyId;
+      const dcName = String(body.name || "").trim();
+      const hasCarrier = dcIdRaw != null && dcIdRaw !== "" && !!dcName;
+      const newValorE = body.newValor != null && body.newValor !== ""
+        ? Number(body.newValor)
+        : null;
+      if (newValorE !== null && (!Number.isFinite(newValorE) || newValorE <= 0)) {
+        return jsonOk({ ok: false, error: "Valor nuevo inválido (debe ser un número mayor a 0)." });
+      }
+      const wantsLines = Array.isArray(body.newLines) && body.newLines.length > 0;
+      if (!hasCarrier && !wantsLines && newValorE === null) {
+        return jsonOk({ ok: false, error: "Sin cambios: mandá transportadora, líneas o valor nuevo." });
+      }
+      const oldValorE = Number(orderRow.valor) || 0;
+
+      try {
+        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+      } catch (e) {
+        if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
+        throw e;
+      }
+
+      const prepE = await resolveClientAndLines(cfg, orderRow, externalId);
+      if (!prepE.ok) {
+        return jsonOk({ ok: false, error: prepE.error, ...(prepE.dropiBody ? { dropiBody: prepE.dropiBody } : {}) });
+      }
+      const clientE = prepE.client;
+
+      // Líneas finales: editadas (validadas: mismo set de dropiIds, sin agregar/
+      // quitar) > escaladas si solo vino valor nuevo > las reales tal cual.
+      let linesE: LineDetail[];
+      if (wantsLines) {
+        const sanitized = sanitizeLinesOverride(body.newLines, prepE.lines);
+        if (!sanitized) {
+          return jsonOk({
+            ok: false,
+            error: "Las líneas editadas no coinciden con las del pedido (mismos productos, cantidad entera 1-1000, precio ≥0; no se puede agregar/quitar líneas). Reabrí el editor para recargarlas.",
+          });
+        }
+        linesE = sanitized;
+      } else if (newValorE !== null) {
+        linesE = scaleLinePrices(prepE.lines, newValorE, cfg.countryCode);
+      } else {
+        linesE = prepE.lines;
+      }
+      // Total final: el valor explícito manda; si no, la suma de las líneas.
+      const totalE = newValorE !== null
+        ? newValorE
+        : roundMoney(linesE.reduce((s, l) => s + l.price * l.quantity, 0), cfg.countryCode);
+
+      const countryE = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const destCityE = await resolveDestCity(sbAdmin, cfg.countryCode, clientE.city, clientE.state);
+      if (!destCityE) {
+        return jsonOk({
+          ok: false,
+          error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+          city: clientE.city, state: clientE.state,
+        });
+      }
+
+      let ctxE;
+      try {
+        ctxE = await quoteCarriers(cfg, {
+          country: countryE,
+          city: clientE.city,
+          state: clientE.state,
+          destCity: destCityE,
+          lines: linesE,
+          total: totalE,
+        });
+      } catch (e) {
+        if (e instanceof WebFallbackError) {
+          return jsonOk({ ok: false, error: e.message, dropiBody: (e as WebFallbackError).body });
+        }
+        throw e;
+      }
+
+      // Transportadora: la elegida por la operadora (id+name directos, como en
+      // apply) o la ACTUAL resuelta contra las options (patrón apply_value).
+      let chosenE: { id: number | string; name: string } | null = null;
+      if (hasCarrier) {
+        const dcIdNumE = Number(dcIdRaw);
+        chosenE = { id: Number.isFinite(dcIdNumE) ? dcIdNumE : (dcIdRaw as number | string), name: dcName };
+      } else {
+        const currentNormE = normUp(orderRow.transportadora || "");
+        const found =
+          (currentNormE ? ctxE.options.find((op) => normUp(op.name) === currentNormE) : undefined) ??
+          ctxE.options.find((op) => normUp(op.name) !== "VELOCES") ??
+          ctxE.options[0] ?? null;
+        if (found) chosenE = { id: found.id, name: found.name };
+      }
+      if (!chosenE) {
+        return jsonOk({ ok: false, error: "Dropi no devolvió transportadoras para recrear el pedido." });
+      }
+
+      const userIdE = decodeJwtSub(cfg.sessionToken);
+      const orderBodyE: Record<string, unknown> = {
+        total_order: totalE,
+        notes: clientE.notes || "",
+        name: clientE.name,
+        surname: clientE.surname || "",
+        dir: clientE.dir,
+        country: countryE,
+        state: ctxE.dest.stateName,
+        city: ctxE.dest.cityName,
+        phone: clientE.phone,
+        client_email: clientE.email || "",
+        payment_method_id: 1,
+        user_id: userIdE,
+        supplier_id: ctxE.supplierId,
+        type: "FINAL_ORDER",
+        rate_type: clientE.rateType || "CON RECAUDO",
+        products: ctxE.products.map((p) => ({
+          id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
+        })),
+        distributionCompany: { id: chosenE.id, name: chosenE.name },
+        type_service: "normal",
+        zip_code: "",
+        colonia: "",
+        shop_id: clientE.shopId ?? null,
+        dni: "",
+        dni_type: "",
+        insurance: false,
+        warehouses_selected_id: ctxE.origin.warehouseId,
+        // Flags de EDICIÓN (verificados en vivo) — cancelan la vieja + linkean la nueva.
+        is_edit_order: true,
+        id_old_order: Number(externalId),
+        shop_order_id: clientE.shopOrderId || "",
+        shop_order_number: "",
+        reasonComment: `Esta orden reemplaza a la orden ${externalId}: edición desde el CRM (transportadora/cantidades/valor).`,
+      };
+
+      let newIdE: string | null = null;
+      let dropiStatusE = 0;
+      try {
+        const { status, body: respBody, text } = await dropiWebFetch(
+          cfg, `/api/orders/myorders`, { method: "POST", body: orderBodyE },
+        );
+        dropiStatusE = status;
+        const okE = status >= 200 && status < 300 && respBody?.isSuccess !== false;
+        const rawIdE =
+          (respBody?.objects?.id as string | number | undefined) ??
+          (respBody?.id as string | number | undefined) ??
+          (respBody?.data?.id as string | number | undefined) ??
+          (respBody?.order?.id as string | number | undefined) ??
+          null;
+        if (!okE || rawIdE == null) {
+          const detail = String(respBody?.message || respBody?.error || text || "error").slice(0, 500);
+          await sbAdmin.from("sync_logs").insert({
+            source: "dropi-change-carrier",
+            status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
+            triggered_by: user.id, error_message: `Dropi rechazó la edición [${status}]: ${detail}`,
+            store_id: storeId,
+          });
+          return jsonOk({
+            ok: false,
+            error: `Dropi rechazó la edición del pedido [${status}]: ${detail}`,
+            dropiHttpStatus: status,
+            dropiBody: respBody,
+          });
+        }
+        newIdE = String(rawIdE);
+      } catch (e) {
+        if (e instanceof WebFallbackError) {
+          return jsonOk({ ok: false, error: e.message, dropiHttpStatus: (e as WebFallbackError).status, dropiBody: (e as WebFallbackError).body });
+        }
+        throw e;
+      }
+
+      // Sincronizar la fila Guardian EN SU LUGAR (mismo dbId) — mismo patrón y
+      // manejo de carrera 23505 que apply/apply_value.
+      let warningE: string | undefined;
+      const { error: updErrE } = await sbAdmin
+        .from("orders")
+        .update({
+          external_id: newIdE,
+          transportadora: chosenE.name,
+          valor: totalE,
+          cantidad: linesE.reduce((s, l) => s + (l.quantity || 1), 0),
+        })
+        .eq("id", orderRow.id);
+      if (updErrE) {
+        console.error("[apply_edit] local update failed:", updErrE);
+        if ((updErrE as { code?: string }).code === "23505") {
+          const { error: cancelErrE } = await sbAdmin
+            .from("orders")
+            .update({ estado: "CANCELADO" })
+            .eq("id", orderRow.id);
+          warningE = cancelErrE
+            ? `El sync ya trajo la orden nueva ${newIdE} y no pude cancelar la fila vieja: ${cancelErrE.message}.`
+            : `El sync ya había traído la orden nueva ${newIdE}; la fila vieja quedó CANCELADO.`;
+        } else {
+          warningE = `El cambio se aplicó en Dropi (nuevo id ${newIdE}) pero no pude actualizar la fila local: ${updErrE.message}. Puede aparecer un duplicado hasta el próximo sync.`;
+        }
+      }
+
+      const { error: auditErrE } = await sbAdmin.from("order_results").insert({
+        order_id: orderRow.id,
+        phone: String(orderRow.phone || clientE.phone || ""),
+        operator_id: user.id,
+        module: "confirmar",
+        result: "edicion_completa",
+        reason: JSON.stringify({
+          antes: { valor: oldValorE, external_id: externalId, transportadora: orderRow.transportadora || "" },
+          despues: {
+            valor: totalE,
+            external_id: newIdE,
+            transportadora: chosenE.name,
+            lines: linesE.map((l) => ({ id: l.dropiId, q: l.quantity, p: l.price })),
+          },
+          via: "recreate",
+        }).slice(0, 2000),
+        store_id: storeId,
+      });
+      if (auditErrE) console.error("[apply_edit] audit insert failed:", auditErrE);
+
+      return jsonOk({
+        ok: true,
+        editApplied: true,
+        method: "recreate",
+        externalId: newIdE,
+        oldExternalId: externalId,
+        transportadora: chosenE.name,
+        valor: totalE,
+        dropiHttpStatus: dropiStatusE,
+        ...(warningE ? { warning: warningE } : {}),
       });
     }
 

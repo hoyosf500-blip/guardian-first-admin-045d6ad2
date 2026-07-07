@@ -5,7 +5,8 @@ import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSyst
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
-import EditOrderDialog from '@/components/EditOrderDialog';
+import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
+import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
 import { isReminderDue } from '@/lib/reminders';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
@@ -51,6 +52,9 @@ function diasReales(o: OrderData): number {
 export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
+  // Editar desde la lista ahora SÍ refresca la fila al guardar (antes no pasaba
+  // onSuccess y la lista quedaba vieja hasta el próximo sync).
+  const refreshOrderRow = useRefreshOrderRow();
   // isAdmin gate removed — feature validated end-to-end. Ownership is now
   // enforced by the protect_order_financial_fields trigger (assigned_to = auth.uid()).
 
@@ -233,10 +237,11 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
       )}
     </div>
     {editingOrder && (
-      <EditOrderDialog
+      <OrderEditorDialog
         open={!!editingOrder}
         onOpenChange={(o) => { if (!o) setEditingOrder(null); }}
         order={editingOrder}
+        onSuccess={() => { void refreshOrderRow(editingOrder.dbId); }}
       />
     )}
     </>
