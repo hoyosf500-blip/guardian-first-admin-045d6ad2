@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -258,6 +258,21 @@ export default function SeguimientoTab() {
     return s;
   }, [dedupedByDate]);
 
+  // Chips en SINCRONÍA con la tabla: en vista Lista, CrmTable bufferiza los
+  // cambios de realtime detrás del banner "N cambios — clic para actualizar",
+  // pero los chips seguían la DB en vivo → el chip decía 10 mientras la tabla
+  // mostraba 12 filas (auditoría 2026-07-07). CrmTable avisa vía onDataApplied
+  // cada vez que APLICA data (carga inicial / cambio de vista / clic en el
+  // banner) y acá capturamos el snapshot base de ese momento para los chips.
+  // En vista Tablero (viva) los chips siguen la data en vivo, como siempre.
+  const dedupedRef = useRef(dedupedByDate);
+  dedupedRef.current = dedupedByDate;
+  const [chipsBaseFrozen, setChipsBaseFrozen] = useState<OrderData[] | null>(null);
+  const handleListDataApplied = useCallback(() => {
+    setChipsBaseFrozen(dedupedRef.current);
+  }, []);
+  const chipsBase = viewMode === 'list' && chipsBaseFrozen ? chipsBaseFrozen : dedupedByDate;
+
   // Conteo por lista SLA (sobre los pedidos ya filtrados por fecha + deduped).
   // Alimenta los chips de listas — la forma principal de priorizar. Las
   // listas con externalRoute (ej. confirmación) no se cuentan acá: viven en
@@ -265,10 +280,10 @@ export default function SeguimientoTab() {
   const listCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const l of SEG_LISTS) {
-      counts[l.slug] = l.externalRoute ? 0 : dedupedByDate.filter(l.matches).length;
+      counts[l.slug] = l.externalRoute ? 0 : chipsBase.filter(l.matches).length;
     }
     return counts;
-  }, [dedupedByDate]);
+  }, [chipsBase]);
 
   // "Sugerido": la lista NO-vacía de mayor urgencia (danger > warning > resto),
   // desempatando por el orden de SEG_LISTS (ya priorizado). Guía hacia dónde
@@ -797,6 +812,7 @@ export default function SeguimientoTab() {
           // Vista del operador = Lista SLA activa + búsqueda. Al cambiarla, la
           // tabla se actualiza al instante (sin banner de "N cambios").
           viewKey={`${listaSlug ?? 'all'}|${search}`}
+          onDataApplied={handleListDataApplied}
         />
       )}
     </div>

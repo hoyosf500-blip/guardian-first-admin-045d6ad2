@@ -53,7 +53,7 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
   // tasa_entrega/tasa_devolucion → maduras (÷ entregados+devueltos). Conteos
   // crudos intactos. Sort/bars/CSV/"Crítico" usan la tasa madura.
   const matureRows = useMemo<ProductFailure[]>(() => rows.map(r => {
-    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
+    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
     return { ...r, tasa_entrega: m.tasaEntregaMadura ?? 0, tasa_devolucion: m.tasaDevolucionMadura ?? 0 };
   }), [rows]);
 

@@ -47,13 +47,21 @@ export interface DeliveryMaturity {
   inmaduro: boolean;
 }
 
+/**
+ * @param rechazados — los RECHAZADOS vienen sumados DENTRO de `devueltos` en
+ *   todas las RPCs (la vista de plata no cambia), pero la tasa madura los
+ *   EXCLUYE (decisión del dueño 2026-06-24: un rechazo del cliente no mide a la
+ *   transportadora). Pasar la columna `rechazados` del server cuando exista;
+ *   con la RPC vieja (sin columna) queda en 0 y el cálculo es el histórico.
+ */
 export function deriveDeliveryMaturity(
   entregados: number,
   devueltos: number,
   total: number,
+  rechazados = 0,
 ): DeliveryMaturity {
   const e = Math.max(0, entregados || 0);
-  const d = Math.max(0, devueltos || 0);
+  const d = Math.max(0, (devueltos || 0) - Math.max(0, rechazados || 0));
   const t = Math.max(0, total || 0);
   const resueltos = e + d;
   const pctConcluido = t > 0 ? Math.round((resueltos / t) * 100) : 0;

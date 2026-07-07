@@ -13,7 +13,7 @@ import type { LogisticsFilters, LogisticsSummary } from '@/lib/logistics.types';
 // concluido. Era el único de los 7 componentes de /logística sin madurez.
 function maduras(s: LogisticsSummary | null): { entrega: number; devolucion: number } {
   if (!s) return { entrega: 0, devolucion: 0 };
-  const m = deriveDeliveryMaturity(s.entregados ?? 0, s.devueltos ?? 0, s.total_pedidos ?? 0);
+  const m = deriveDeliveryMaturity(s.entregados ?? 0, s.devueltos ?? 0, s.total_pedidos ?? 0, s.rechazados ?? 0);
   return { entrega: m.tasaEntregaMadura ?? 0, devolucion: m.tasaDevolucionMadura ?? 0 };
 }
 

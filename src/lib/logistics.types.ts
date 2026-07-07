@@ -24,6 +24,11 @@ export interface LogisticsSummary {
   // Sin esto, ~20% de los pedidos quedaban sin asignar a ningún bucket.
   novedades?: number;
   valor_novedades?: number;
+  // v4: rechazos aparte — migration 20260707120000. Los rechazos SIGUEN
+  // sumados dentro de `devueltos` (vista de plata intacta); esta columna
+  // permite excluirlos de la tasa madura (deriveDeliveryMaturity).
+  rechazados?: number;
+  valor_rechazado?: number;
 }
 
 /** Una fila del timeline de guías (RPC `logistics_timeline`). */
@@ -61,6 +66,8 @@ export interface CarrierStats {
   valor_entregado: number;
   valor_perdido: number;
   avg_dias_entrega: number | null;
+  /** v4 (20260707120000): rechazos del cliente, ya incluidos en `devueltos`. */
+  rechazados?: number;
 }
 
 export interface CityReturns {
@@ -72,6 +79,7 @@ export interface CityReturns {
   tasa_devolucion: number;
   tasa_entrega: number;
   valor_perdido: number;
+  rechazados?: number;
 }
 
 export interface ProductFailure {
@@ -83,6 +91,7 @@ export interface ProductFailure {
   tasa_devolucion: number;
   valor_entregado: number;
   valor_perdido: number;
+  rechazados?: number;
 }
 
 export interface LogisticsFilters {
@@ -103,6 +112,7 @@ export interface CityCarrierMatrix {
   tasa_entrega: number;
   tasa_devolucion: number;
   ciudad_total: number;
+  rechazados?: number;
 }
 
 /** Recomendación de transportadora por ciudad. */

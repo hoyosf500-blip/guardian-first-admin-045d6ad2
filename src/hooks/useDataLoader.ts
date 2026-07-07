@@ -99,6 +99,16 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
     setSegLoaded(false);
   }, [storeId]);
 
+  // Reintento único ante error de red: si el refetch que falló era el catch-up
+  // al volver a la pestaña, sin esto Seguimiento quedaba viejo hasta el próximo
+  // tick del poll de 15 min (auditoría 2026-07-07). Un solo timer pendiente a
+  // la vez — no puede escalar a loop.
+  const retryTimerRef = useRef<number | null>(null);
+  const loadSegDataRef = useRef<(force?: boolean) => void>(() => {});
+  useEffect(() => () => {
+    if (retryTimerRef.current != null) window.clearTimeout(retryTimerRef.current);
+  }, []);
+
   const loadSegData = useCallback(async (force = false) => {
     if (!user || !storeId) return;
     if (segLoaded && !force) return;
@@ -132,6 +142,12 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
         if (error) {
           console.error('Error loading seg orders:', error);
           toast.error('Error cargando seguimiento: ' + error.message);
+          if (retryTimerRef.current == null) {
+            retryTimerRef.current = window.setTimeout(() => {
+              retryTimerRef.current = null;
+              loadSegDataRef.current(true);
+            }, 30_000);
+          }
           return;
         }
         const rows = (data || []) as Row[];
@@ -148,17 +164,25 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       setSegData(prev => smartMerge(prev, mapped));
       setSegLastUpdate(new Date());
       setSegLoaded(true);
+      // Cargó bien → el reintento pendiente (si lo había) ya no hace falta.
+      if (retryTimerRef.current != null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
     } finally {
       setSegLoading(false);
     }
   }, [user, segLoaded, storeId]);
+  loadSegDataRef.current = (force = true) => { void loadSegData(force); };
 
-  // COST-1: auto-refresh cada 15 min y solo cuando la pestaña está visible.
+  // COST-1: auto-refresh cada 15 min. runOnVisible:true → al volver a la
+  // pestaña refetchea de una (smartMerge evita el parpadeo/scroll-reset que
+  // motivó apagarlo); cubre el caso en que el catch-up de realtime falló.
   useEffect(() => {
     if (!user) return;
     return pollWhenVisible(() => {
       if (segLoaded) loadSegData(true);
-    }, 15 * 60 * 1000, { runOnVisible: false });
+    }, 15 * 60 * 1000, { runOnVisible: true });
   }, [user, segLoaded, loadSegData]);
 
   return {

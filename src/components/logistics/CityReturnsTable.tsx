@@ -37,7 +37,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
   // crudos intactos. Sort/bars/CSV usan la tasa madura automáticamente.
   // `_prelim` marca las tasas de muestra chica / cohorte inmaduro para atenuarlas.
   const matureRows = useMemo<CityRow[]>(() => rows.map(r => {
-    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos);
+    const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
     return {
       ...r,
       tasa_entrega: m.tasaEntregaMadura ?? 0,

@@ -79,6 +79,14 @@ interface CrmTableProps {
    * queda SOLO para cambios que llegan por realtime dentro de la MISMA vista.
    */
   viewKey?: string;
+  /**
+   * Se dispara cada vez que la tabla APLICA data (carga inicial, cambio de
+   * vista, clic en el banner "N cambios"). Permite al padre congelar sus
+   * contadores/chips en sincronía con las filas visibles — sin esto los chips
+   * seguían la DB en vivo y contradecían a la tabla bufferizada hasta el clic
+   * (auditoría 2026-07-07).
+   */
+  onDataApplied?: () => void;
 }
 
 /**
@@ -271,7 +279,7 @@ function ColumnBody({
   );
 }
 
-export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange, viewKey }: CrmTableProps) {
+export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle, emptyDesc, initialDelayed, stalledCategoryFilter, controlledStatusFilter, onControlledStatusFilterChange, viewKey, onDataApplied }: CrmTableProps) {
   const { user, isAdmin } = useAuth();
   const { activeStoreId, activeStore } = useStore();
   // countryCode pasa a cada OrderCard como prop para que `getTrackingUrl`
@@ -345,6 +353,9 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   const pendingDataRef = useRef<OrderData[] | null>(null);
   const dataRef = useRef<OrderData[]>(data);
   dataRef.current = data;
+
+  // Avisar al padre CADA vez que la tabla aplica data (ver prop onDataApplied).
+  useEffect(() => { onDataApplied?.(); }, [data, onDataApplied]);
 
   const viewKeyRef = useRef(viewKey);
 
