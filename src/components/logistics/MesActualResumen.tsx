@@ -19,6 +19,7 @@ import NetoRealCard from '@/components/logistics/NetoRealCard';
 import SimuladorUnitEconomics from '@/components/logistics/SimuladorUnitEconomics';
 import { useLogisticsCostBasis } from '@/hooks/useLogisticsCostBasis';
 import { useLogisticaMonthlyCosts } from '@/hooks/useLogisticaMonthlyCosts';
+import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 
@@ -105,6 +106,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // migration no está aplicada (el simulador avisa, no rompe).
   const costBasis = useLogisticsCostBasis(filters.fromDate, filters.toDate, filters.ciudad);
   const monthlyCosts = useLogisticaMonthlyCosts(yearMonth);
+
+  // Pauta DIARIA (bitácora, store-scoped) — es la fuente de la pauta del Neto Real
+  // desde 2026-07. Si el período tiene registros diarios, manda la suma diaria; si
+  // no (mes viejo con solo el número mensual), cae al valor guardado en
+  // logistica_monthly_costs. Así lo diario alimenta el Neto Real SIN doble descuento
+  // ni doble carga, y los meses históricos no pierden su pauta. Degrada a 0 si la
+  // migration de pauta diaria no está aplicada.
+  const { data: adRows } = useStoreAdSpendRange(filters.fromDate, filters.toDate);
+  const pautaDiariaTotal = sumAdSpend(adRows ?? []).total;
+  const pautaMensualGuardada =
+    (monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0);
+  const pautaFromDaily = pautaDiariaTotal > 0;
+  const pautaEfectiva = pautaFromDaily ? pautaDiariaTotal : pautaMensualGuardada;
 
   const title = rangeTitle(filters);
 
@@ -413,6 +427,8 @@ export default function MesActualResumen({ summary, filters }: Props) {
               operativo={operativoBase}
               yearMonth={yearMonth}
               canEdit={isOwnerOfActive}
+              pautaTotal={pautaEfectiva}
+              pautaFromDaily={pautaFromDaily}
               pedidosEnCalle={enLaCalleCount}
               movimientosSinLink={movimientosSinLink}
             />
@@ -504,7 +520,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
           valorRechazos={valorRechazos}
           costBasis={costBasis.data ?? null}
           costBasisLoading={costBasis.isLoading}
-          pautaTotal={(monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0)}
+          pautaTotal={pautaEfectiva}
           adminTotal={monthlyCosts.data?.costos_admin ?? 0}
           fromDate={filters.fromDate}
           toDate={filters.toDate}

@@ -7,11 +7,18 @@ import {
   useUpsertLogisticaMonthlyCosts,
 } from '@/hooks/useLogisticaMonthlyCosts';
 
-// Bloque "Neto Real" de "Cómo voy": resta pauta (Meta/TikTok) + costos admin al
-// OPERATIVO del mes (hoy = ganancia neta del wallet — ver MesActualResumen, el
-// comentario // OPERATIVO_BASE). Los inputs persisten por mes en
-// logistica_monthly_costs vía RPC store-scoped. Si la tabla aún no está aplicada,
-// el hook devuelve ceros y el bloque NO rompe — solo no recalcula con basura.
+// Bloque "Neto Real" de "Cómo voy": resta pauta + costos admin al OPERATIVO del
+// mes (hoy = ganancia neta del wallet — ver MesActualResumen, // OPERATIVO_BASE).
+//
+// PAUTA (desde 2026-07): la pauta ya NO se edita acá — viene de la bitácora
+// "Pauta diaria" (store_ad_spend_daily), sumada por MesActualResumen y pasada por
+// `pautaTotal`. Así se carga día por día y se resta UNA sola vez (sin doble
+// descuento ni doble carga). Para meses viejos sin registros diarios, el padre
+// pasa el valor mensual guardado como fallback (`pautaFromDaily=false`).
+//
+// COSTOS ADMIN sí se siguen editando acá (input mensual, persistido en
+// logistica_monthly_costs vía RPC store-scoped). Si la tabla no está aplicada, el
+// hook devuelve ceros y el bloque NO rompe.
 
 interface Props {
   /** Operativo del mes (base del neto). Hoy = operativo por cohorte de pedido. */
@@ -20,6 +27,10 @@ interface Props {
   yearMonth: string;
   /** Solo el dueño de la tienda edita/guarda los costos. */
   canEdit: boolean;
+  /** Pauta del período (ya resuelta por el padre: diaria si hay, si no mensual). */
+  pautaTotal: number;
+  /** true = la pauta viene de la bitácora diaria; false = fallback mensual guardado. */
+  pautaFromDaily: boolean;
   /** Pedidos sin cerrar — el neto sube cuando se entregan. */
   pedidosEnCalle?: number;
   /** Movimientos de wallet con related_order_id que no cruzó a un pedido (transparencia). */
@@ -34,31 +45,30 @@ function parseInput(v: string): number {
 }
 
 export default function NetoRealCard({
-  operativo, yearMonth, canEdit, pedidosEnCalle, movimientosSinLink = 0,
+  operativo, yearMonth, canEdit, pautaTotal, pautaFromDaily,
+  pedidosEnCalle, movimientosSinLink = 0,
 }: Props) {
   const { data: saved } = useLogisticaMonthlyCosts(yearMonth);
   const upsert = useUpsertLogisticaMonthlyCosts();
 
-  // Estado local de los inputs, sembrado desde lo guardado. El neto recalcula en
-  // vivo con estos valores; nunca con basura (arrancan en lo persistido o 0).
-  const [pautaMeta, setPautaMeta] = useState(0);
-  const [pautaTiktok, setPautaTiktok] = useState(0);
+  // Solo "Costos admin" es editable acá; la pauta viene de la bitácora diaria.
   const [costosAdmin, setCostosAdmin] = useState(0);
 
   // Re-sembrar cuando llega la fila guardada o cambia el mes.
   useEffect(() => {
-    setPautaMeta(saved?.pauta_meta ?? 0);
-    setPautaTiktok(saved?.pauta_tiktok ?? 0);
     setCostosAdmin(saved?.costos_admin ?? 0);
-  }, [saved?.pauta_meta, saved?.pauta_tiktok, saved?.costos_admin, yearMonth]);
+  }, [saved?.costos_admin, yearMonth]);
 
-  const totalCostos = pautaMeta + pautaTiktok + costosAdmin;
+  const totalCostos = pautaTotal + costosAdmin;
   const neto = operativo - totalCostos;
 
-  const dirty =
-    pautaMeta !== (saved?.pauta_meta ?? 0) ||
-    pautaTiktok !== (saved?.pauta_tiktok ?? 0) ||
-    costosAdmin !== (saved?.costos_admin ?? 0);
+  const dirty = costosAdmin !== (saved?.costos_admin ?? 0);
+
+  const pautaHint = pautaFromDaily
+    ? 'de tu Pauta diaria'
+    : pautaTotal > 0
+      ? 'valor mensual guardado'
+      : 'cargá en Pauta diaria';
 
   return (
     <div className="rounded-lg border border-border bg-card p-3.5 space-y-3">
@@ -69,19 +79,20 @@ export default function NetoRealCard({
         </span>
       </div>
 
-      {canEdit ? (
-        <div className="grid grid-cols-3 gap-2">
-          <CostInput label="Pauta Meta" value={pautaMeta} onChange={setPautaMeta} />
-          <CostInput label="Pauta TikTok" value={pautaTiktok} onChange={setPautaTiktok} />
+      <div className="grid grid-cols-2 gap-2">
+        {/* Pauta — read-only, viene de la bitácora diaria (o fallback mensual) */}
+        <div className="space-y-1">
+          <span className="block text-[10px] text-muted-foreground">Pauta{pautaFromDaily ? ' (diaria)' : ''}</span>
+          <span className="block text-xs tabular-nums text-foreground">{formatCOP(pautaTotal)}</span>
+          <span className="block text-[9px] text-muted-foreground/70">{pautaHint}</span>
+        </div>
+        {/* Costos admin — editable mensual */}
+        {canEdit ? (
           <CostInput label="Costos admin" value={costosAdmin} onChange={setCostosAdmin} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          <ReadOnly label="Pauta Meta" value={pautaMeta} />
-          <ReadOnly label="Pauta TikTok" value={pautaTiktok} />
+        ) : (
           <ReadOnly label="Costos admin" value={costosAdmin} />
-        </div>
-      )}
+        )}
+      </div>
 
       {canEdit && (
         <div className="flex justify-end">
@@ -90,10 +101,12 @@ export default function NetoRealCard({
             variant="outline"
             disabled={!dirty || upsert.isPending}
             onClick={() =>
+              // Guarda SOLO costos_admin; preserva la pauta mensual guardada
+              // (fallback histórico) sin pisarla — la pauta se maneja en la bitácora.
               upsert.mutate({
                 yearMonth,
-                pauta_meta: pautaMeta,
-                pauta_tiktok: pautaTiktok,
+                pauta_meta: saved?.pauta_meta ?? 0,
+                pauta_tiktok: saved?.pauta_tiktok ?? 0,
                 costos_admin: costosAdmin,
               })
             }
@@ -107,7 +120,7 @@ export default function NetoRealCard({
         <span className="text-xs text-foreground font-medium">
           Neto real
           <span className="block text-[10px] text-muted-foreground/70">
-            Operativo {formatCOP(operativo)} − costos {formatCOP(totalCostos)}
+            Operativo {formatCOP(operativo)} − pauta {formatCOP(pautaTotal)} − admin {formatCOP(costosAdmin)}
           </span>
         </span>
         <span className={`text-lg font-bold tabular-nums shrink-0 ${neto >= 0 ? 'text-green' : 'text-red'}`}>
