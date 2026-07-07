@@ -9,21 +9,24 @@
 //
 // Auth: Authorization: Bearer <user_jwt> (debe ser miembro de la tienda).
 //
-// MECÁNICA REAL DEL CAMBIO (verificada en vivo, panel app.dropi.ec 2026-07-01):
-// Dropi NO reasigna la transportadora con un PUT distribution_company_id (eso es
-// un no-op: devuelve 200 pero nunca cambia nada). Lo que hace el panel al
-// "Editar Orden" es CANCELAR la orden vieja y CREAR una nueva (nuevo external_id)
-// vía POST /api/orders/myorders (token de SESIÓN web) con:
-//     is_edit_order: true
-//     id_old_order: <external_id viejo>
-//     distributionCompany: { id, name }   // la transportadora ELEGIDA
-// Success → { isSuccess:true, objects:{ id:<NUEVO external_id>, ... } }.
+// MECÁNICA REAL DEL CAMBIO (capturada del panel app.dropi.ec con clicks reales,
+// 2026-07-01 y 2026-07-06): Dropi NO edita in-place — su propio panel avisa
+// "La actualización generará un nuevo ID de la orden" y dispara DOS requests:
+//   1) POST /api/orders/myorders (token de SESIÓN web) con:
+//        is_edit_order: true
+//        id_old_order: <external_id viejo>
+//        distributionCompany: { id, name }   // la transportadora ELEGIDA
+//      Success → { isSuccess:true, objects:{ id:<NUEVO external_id>, ... } }.
+//   2) PUT /api/orders/myorders/<external_id viejo> con:
+//        { status: "REEMPLAZADA", reasonComment: "Cancelación por edición de orden", replaced: true }
+//      → la vieja queda REEMPLAZADA + deleted_at (soft-delete) y desaparece de
+//      los listados. SIN ESTE PUT la vieja sigue PENDIENTE en Dropi y el cron la
+//      re-importa a los 5 min → duplicado en Dropi Y en el CRM (bug del 2026-07-06).
 //
-// Por eso el "apply" hace un create-with-edit y, al éxito, ACTUALIZA la fila
-// local (external_id → nuevo id, transportadora → nuevo nombre) y audita el
-// reemplazo. Si no lo hiciéramos, el nightly-reconcile/sync crearía un duplicado
-// (el nuevo id como INSERT) y dejaría el viejo huérfano. smartMerge dedup por
-// dbId (UUID estable), así que la MISMA fila física refleja el cambio en la UI.
+// Por eso cada recreate hace POST + markOldOrderReplaced() y, al éxito, ACTUALIZA
+// la fila local (external_id → nuevo id, transportadora → nuevo nombre) y audita
+// el reemplazo. smartMerge dedup por dbId (UUID estable), así que la MISMA fila
+// física refleja el cambio en la UI.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
@@ -239,6 +242,31 @@ function scaleLinePrices(lines: QuoteLine[], newTotal: number, countryCode: stri
   const units = lines.reduce((s, l) => s + (l.quantity || 1), 0) || 1;
   const perUnit = roundMoney(newTotal / units, countryCode);
   return lines.map((l) => ({ ...l, price: perUnit }));
+}
+
+/** Paridad con el panel Dropi (request capturado en vivo 2026-07-06): tras el
+ *  POST create-with-edit, el panel manda este PUT que deja la orden VIEJA con
+ *  status=REEMPLAZADA + deleted_at (soft-delete) → desaparece de los listados y
+ *  el cron ya no puede re-importarla como duplicado. NUNCA tira: si falla, la
+ *  orden nueva ya existe y el caller degrada a warning (la vieja queda activa). */
+async function markOldOrderReplaced(
+  cfg: Parameters<typeof dropiWebFetch>[0],
+  oldId: string,
+): Promise<{ ok: boolean; status: number; detail: string }> {
+  try {
+    const { status, body } = await dropiWebFetch(
+      cfg,
+      `/api/orders/myorders/${encodeURIComponent(oldId)}`,
+      {
+        method: "PUT",
+        body: { status: "REEMPLAZADA", reasonComment: "Cancelación por edición de orden", replaced: true },
+      },
+    );
+    const ok = status >= 200 && status < 300 && body?.isSuccess !== false;
+    return { ok, status, detail: ok ? "" : String(body?.message || body?.error || "").slice(0, 300) };
+  } catch (e) {
+    return { ok: false, status: 0, detail: e instanceof Error ? e.message.slice(0, 300) : "error" };
+  }
 }
 
 /** Deriva el host api-v2 (detalle web del pedido) desde el host de integraciones.
@@ -802,6 +830,19 @@ Deno.serve(async (req: Request) => {
         throw e;
       }
 
+      // Paridad panel: soft-borrar la orden vieja (REEMPLAZADA) para que no quede
+      // duplicada en Dropi ni la re-importe el cron.
+      const replacedV = await markOldOrderReplaced(cfg, externalId);
+      if (!replacedV.ok) {
+        await sbAdmin.from("sync_logs").insert({
+          source: "dropi-change-carrier",
+          status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
+          triggered_by: user.id,
+          error_message: `No pude marcar REEMPLAZADA la orden vieja ${externalId} tras crear ${newIdV} [${replacedV.status}]: ${replacedV.detail}`,
+          store_id: storeId,
+        });
+      }
+
       // Sincronizar la fila Guardian EN SU LUGAR (mismo dbId) — mismo patrón y
       // manejo de carrera 23505 que el apply de transportadora.
       let warningV: string | undefined;
@@ -824,6 +865,11 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      if (!replacedV.ok) {
+        const extraV = `La orden vieja #${externalId} pudo quedar activa en Dropi (no se pudo marcar REEMPLAZADA) — verificala/cancelala en el panel.`;
+        warningV = warningV ? `${warningV} ${extraV}` : extraV;
+      }
+
       const { error: auditErrV } = await sbAdmin.from("order_results").insert({
         order_id: orderRow.id,
         phone: String(orderRow.phone || clientV.phone || ""),
@@ -843,6 +889,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         valorApplied: true,
         method: "recreate",
+        oldReplaced: replacedV.ok,
         externalId: newIdV,
         oldExternalId: externalId,
         valor: newValor,
@@ -1030,6 +1077,19 @@ Deno.serve(async (req: Request) => {
         throw e;
       }
 
+      // Paridad panel: soft-borrar la orden vieja (REEMPLAZADA) para que no quede
+      // duplicada en Dropi ni la re-importe el cron.
+      const replacedE = await markOldOrderReplaced(cfg, externalId);
+      if (!replacedE.ok) {
+        await sbAdmin.from("sync_logs").insert({
+          source: "dropi-change-carrier",
+          status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
+          triggered_by: user.id,
+          error_message: `No pude marcar REEMPLAZADA la orden vieja ${externalId} tras crear ${newIdE} [${replacedE.status}]: ${replacedE.detail}`,
+          store_id: storeId,
+        });
+      }
+
       // Sincronizar la fila Guardian EN SU LUGAR (mismo dbId) — mismo patrón y
       // manejo de carrera 23505 que apply/apply_value.
       let warningE: string | undefined;
@@ -1057,6 +1117,11 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      if (!replacedE.ok) {
+        const extraE = `La orden vieja #${externalId} pudo quedar activa en Dropi (no se pudo marcar REEMPLAZADA) — verificala/cancelala en el panel.`;
+        warningE = warningE ? `${warningE} ${extraE}` : extraE;
+      }
+
       const { error: auditErrE } = await sbAdmin.from("order_results").insert({
         order_id: orderRow.id,
         phone: String(orderRow.phone || clientE.phone || ""),
@@ -1081,6 +1146,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         editApplied: true,
         method: "recreate",
+        oldReplaced: replacedE.ok,
         externalId: newIdE,
         oldExternalId: externalId,
         transportadora: chosenE.name,
@@ -1227,6 +1293,19 @@ Deno.serve(async (req: Request) => {
       throw e;
     }
 
+    // 4b) Paridad panel: soft-borrar la orden vieja (REEMPLAZADA) para que no quede
+    //     duplicada en Dropi ni la re-importe el cron.
+    const replacedA = await markOldOrderReplaced(cfg, externalId);
+    if (!replacedA.ok) {
+      await sbAdmin.from("sync_logs").insert({
+        source: "dropi-change-carrier",
+        status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
+        triggered_by: user.id,
+        error_message: `No pude marcar REEMPLAZADA la orden vieja ${externalId} tras crear ${newExternalId} [${replacedA.status}]: ${replacedA.detail}`,
+        store_id: storeId,
+      });
+    }
+
     // 5) Sincronizar la fila Guardian EN SU LUGAR (mismo dbId): external_id → nuevo id,
     //    transportadora → nuevo nombre. Sin esto, el nightly-reconcile crearía un
     //    duplicado (nuevo id como INSERT) y dejaría el viejo huérfano.
@@ -1254,6 +1333,11 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    if (!replacedA.ok) {
+      const extraA = `La orden vieja #${externalId} pudo quedar activa en Dropi (no se pudo marcar REEMPLAZADA) — verificala/cancelala en el panel.`;
+      warning = warning ? `${warning} ${extraA}` : extraA;
+    }
+
     // Auditoría del reemplazo (incluye old→new external id para trazabilidad).
     const auditPayload = {
       antes: { external_id: externalId, transportadora: orderRow.transportadora || "" },
@@ -1272,6 +1356,7 @@ Deno.serve(async (req: Request) => {
 
     return jsonOk({
       ok: true,
+      oldReplaced: replacedA.ok,
       externalId: newExternalId,
       oldExternalId: externalId,
       transportadora: name,

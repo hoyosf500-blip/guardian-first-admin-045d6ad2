@@ -177,6 +177,7 @@ export default function ConfirmarTab({ profile }: Props) {
       .in('phone', phones)
       .not('estado', 'ilike', 'PENDIENTE CONFIRMACION')
       .neq('estado', 'CANCELADO')
+      .neq('estado', 'REEMPLAZADA')
       .gte('created_at', since)
       .then(({ data, error }) => {
         if (cancelled || error || !data) return;

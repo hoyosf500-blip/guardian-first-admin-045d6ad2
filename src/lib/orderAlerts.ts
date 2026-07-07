@@ -13,7 +13,7 @@ import type { ProgressedOrder } from './duplicateOrders';
 
 /** Estados terminales: un pedido ENTREGADO/DEVUELTO/INDEMNIZADO/RECHAZADO viejo
  *  es una recompra o historia, NO un duplicado en riesgo de doble envío. */
-const TERMINAL_STATES = /ENTREGAD|CANCELAD|DEVOLUCION|DEVUELT|INDEMNIZ|RECHAZAD/i;
+const TERMINAL_STATES = /ENTREGAD|CANCELAD|REEMPLAZ|DEVOLUCION|DEVUELT|INDEMNIZ|RECHAZAD/i;
 
 export interface ActiveDupAlert {
   externalId: string;

@@ -140,8 +140,8 @@ describe('SEG_LISTS — catch-all y terminales', () => {
     }
   });
 
-  it('estados terminales (ENTREGADO/CANCELADO/DEVOLUCION/INDEMNIZADA) NO matchean ninguna lista', () => {
-    for (const estadoTerminal of ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'INDEMNIZADA']) {
+  it('estados terminales (ENTREGADO/CANCELADO/REEMPLAZADA/DEVOLUCION/INDEMNIZADA) NO matchean ninguna lista', () => {
+    for (const estadoTerminal of ['ENTREGADO', 'CANCELADO', 'REEMPLAZADA', 'DEVOLUCION', 'INDEMNIZADA']) {
       const o: OrderData = { ...baseOrder, estado: estadoTerminal, fecha: '', dias: 10 };
       for (const lista of SEG_LISTS) {
         expect(lista.matches(o), `${lista.slug} no debe matchear ${estadoTerminal}`).toBe(false);

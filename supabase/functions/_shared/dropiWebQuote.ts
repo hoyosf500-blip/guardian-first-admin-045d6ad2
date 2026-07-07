@@ -66,7 +66,7 @@ export async function dropiWebFetch(
   cfg: DropiWebCfg,
   path: string,
   // deno-lint-ignore no-explicit-any
-  init: { method: "GET" | "POST"; body?: unknown },
+  init: { method: "GET" | "POST" | "PUT"; body?: unknown },
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;

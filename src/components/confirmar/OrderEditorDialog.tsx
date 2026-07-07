@@ -51,6 +51,9 @@ interface ApplyResponse {
   error?: string;
   editApplied?: boolean;
   valorApplied?: boolean;
+  /** true = la orden vieja quedó REEMPLAZADA (soft-delete) en Dropi, como hace su panel.
+   *  undefined = función deployada vieja (sin el PUT de reemplazo) → puede duplicar. */
+  oldReplaced?: boolean;
   method?: string;
   externalId?: string;
   oldExternalId?: string;
@@ -360,6 +363,15 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
             : `Orden actualizada (${parts})`,
         );
         if (applyResult.warning) toast.warning(applyResult.warning, { duration: 12000 });
+        // Función deployada VIEJA (sin el PUT REEMPLAZADA): la orden vieja queda viva
+        // en Dropi → duplicado. Con la función nueva, oldReplaced viene true/false y
+        // el caso false ya llega explicado en applyResult.warning.
+        if (applyResult.method === 'recreate' && applyResult.oldReplaced === undefined) {
+          toast.warning(
+            `La función del servidor no marcó la orden vieja #${applyResult.oldExternalId} como REEMPLAZADA (falta el redeploy de dropi-change-carrier): puede quedar duplicada en Dropi — cancelala en el panel.`,
+            { duration: 15000 },
+          );
+        }
       } else if (clientApplied) {
         toast.success('Orden actualizada y sincronizada con Dropi');
       }
@@ -460,8 +472,9 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
 
                 {plan.includes('apply_edit') && (
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Al aplicar, el pedido se recrea en Dropi (igual que al editarlo en su panel) y
-                    queda con un <strong>ID nuevo</strong> — la ficha del CRM se actualiza sola, sin duplicados.
+                    Igual que el panel de Dropi: el pedido se recrea con un <strong>ID nuevo</strong> y
+                    la orden vieja queda <strong>REEMPLAZADA</strong> al instante — sin duplicados ni en
+                    Dropi ni en el CRM (la ficha se actualiza sola).
                   </p>
                 )}
               </>

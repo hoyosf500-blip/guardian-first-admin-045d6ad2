@@ -40,6 +40,11 @@ describe('buildActiveDupIndex + dupAlertsFor', () => {
     expect(dupAlertsFor(idx, order({}))).toHaveLength(0);
   });
 
+  it('NO marca duplicado por una orden REEMPLAZADA (soft-borrada por una edición)', () => {
+    const idx = buildActiveDupIndex([order({})], [prog({ estado: 'REEMPLAZADA' })]);
+    expect(dupAlertsFor(idx, order({}))).toHaveLength(0);
+  });
+
   it('NO marca por devoluciones ni indemnizadas', () => {
     const idx = buildActiveDupIndex([order({})], [
       prog({ estado: 'DEVOLUCION EN TRANSITO', external_id: '201' }),
