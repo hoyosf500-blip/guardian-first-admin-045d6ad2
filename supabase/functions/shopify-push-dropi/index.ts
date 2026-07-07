@@ -16,6 +16,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStoreConfig.ts";
 import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers, type DestCity } from "../_shared/dropiWebQuote.ts";
 
@@ -814,6 +815,15 @@ Deno.serve(async (req: Request) => {
     const shopToken = await getShopifyAccessToken(shopCfg);
     const dropiCfg = await loadStoreConfig(sb, storeId);
     if (!dropiCfg.apiKey) return json({ ok: false, error: "La tienda no tiene Clave API de Dropi" }, 400, cors);
+    // Renovar el session token si venció (login automático por tienda). Los
+    // productos privados y la cotización web dependen de él; sin esto el push
+    // moría cada ~24h hasta que alguien pegara un token fresco a mano.
+    try {
+      dropiCfg.sessionToken = await ensureFreshSessionToken(sb, dropiCfg);
+    } catch (e) {
+      if (e instanceof WebFallbackError) return json({ ok: false, error: e.message }, 422, cors);
+      throw e;
+    }
 
     // ¿Ya fue subido? (idempotencia / aviso en preview)
     const { data: prior } = await sb

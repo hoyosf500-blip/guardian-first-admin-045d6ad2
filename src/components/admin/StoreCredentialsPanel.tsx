@@ -50,6 +50,18 @@ export default function StoreCredentialsPanel() {
   const [name, setName] = useState('');
   const [logoUrl, setLogoUrl] = useState('');
 
+  // Login automático (renovación del session token): email+clave del panel
+  // Dropi, columnas de la migración 20260706120000. La clave NUNCA se trae al
+  // cliente — solo un flag de "hay clave guardada".
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [savedLoginEmail, setSavedLoginEmail] = useState('');
+  const [hasLoginPassword, setHasLoginPassword] = useState(false);
+  const [showLoginPass, setShowLoginPass] = useState(false);
+  const [savingLogin, setSavingLogin] = useState(false);
+  const [sessionRefreshedAt, setSessionRefreshedAt] = useState<string | null>(null);
+  const [loginColsMissing, setLoginColsMissing] = useState(false);
+
   // saved snapshots (para detectar dirty)
   const [savedApiKey, setSavedApiKey] = useState('');
   const [savedSession, setSavedSession] = useState('');
@@ -104,6 +116,39 @@ export default function StoreCredentialsPanel() {
     return () => { cancelled = true; };
   }, [activeStoreId, isManagerOfActive, activeStore]);
 
+  // Login automático — query aparte y DEFENSIVA (mismo patrón que
+  // useStoreSchedule): si las columnas no existen todavía (migración
+  // 20260706120000 sin aplicar) el panel muestra el aviso y no rompe nada.
+  useEffect(() => {
+    if (!activeStoreId || !isManagerOfActive) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await supabase
+          .from('store_dropi_config')
+          .select('dropi_login_email, dropi_login_password, dropi_session_refreshed_at')
+          .eq('store_id', activeStoreId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (res.error) { setLoginColsMissing(true); return; }
+        const d = res.data as {
+          dropi_login_email?: string | null;
+          dropi_login_password?: string | null;
+          dropi_session_refreshed_at?: string | null;
+        } | null;
+        setLoginColsMissing(false);
+        setLoginEmail(d?.dropi_login_email ?? '');
+        setSavedLoginEmail(d?.dropi_login_email ?? '');
+        setHasLoginPassword(Boolean(d?.dropi_login_password));
+        setLoginPassword('');
+        setSessionRefreshedAt(d?.dropi_session_refreshed_at ?? null);
+      } catch {
+        if (!cancelled) setLoginColsMissing(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeStoreId, isManagerOfActive]);
+
   // Estado de Shopify (configurado + dominio; el token NUNCA se trae al cliente).
   useEffect(() => {
     if (!activeStoreId || !isManagerOfActive) return;
@@ -146,6 +191,29 @@ export default function StoreCredentialsPanel() {
     setSavedUrl(storeUrl.trim());
     toast.success('Credenciales Dropi guardadas');
     await refresh();
+  }
+
+  async function saveLogin() {
+    if (!activeStoreId) return;
+    setSavingLogin(true);
+    type RpcRes = { error: { message: string } | null };
+    const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>)(
+      'upsert_store_dropi_login',
+      { p_store_id: activeStoreId, p_login_email: loginEmail.trim(), p_login_password: loginPassword },
+    );
+    setSavingLogin(false);
+    if (error) {
+      const missing = /does not exist|could not find|PGRST202|42883/i.test(error.message || '');
+      toast.error(
+        missing ? 'Falta aplicar la migración SQL del login automático' : 'No se pudo guardar el login',
+        { description: error.message },
+      );
+      return;
+    }
+    setSavedLoginEmail(loginEmail.trim());
+    if (loginPassword) setHasLoginPassword(true);
+    setLoginPassword('');
+    toast.success(loginEmail.trim() ? 'Login automático guardado' : 'Login automático desactivado');
   }
 
   async function saveBrand() {
@@ -371,9 +439,66 @@ export default function StoreCredentialsPanel() {
                 Si no aparece, también podés copiarlo desde DevTools → Network → header <code className="bg-muted px-1 rounded">x-authorization</code> de cualquier llamada a <code className="bg-muted px-1 rounded">{apiDropiHost}</code>.
               </p>
               <p className="mt-2 text-yellow-600 dark:text-yellow-400">
-                Este token vence cada ~24 h (lo fija Dropi y no se puede alargar desde acá). Si la huella o la billetera dejan de funcionar, repetí estos pasos.
+                Este token vence cada ~24 h (lo fija Dropi). Configurá el <strong>login automático</strong> de abajo para que se renueve solo.
               </p>
             </details>
+          </div>
+
+          {/* Login automático: renueva el session token solo cuando vence */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              Login automático (renueva el token solo)
+            </label>
+            <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={e => setLoginEmail(e.target.value)}
+                placeholder="email de app.dropi…"
+                autoComplete="off"
+                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <div className="relative">
+                <input
+                  type={showLoginPass ? 'text' : 'password'}
+                  value={loginPassword}
+                  onChange={e => setLoginPassword(e.target.value)}
+                  placeholder={hasLoginPassword ? '•••••• (guardada — escribí para cambiarla)' : 'contraseña de Dropi'}
+                  autoComplete="new-password"
+                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showLoginPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+              Cuando el token venza, el sistema entra solo a Dropi con este email+clave y lo renueva
+              (Cambiar transportadora, Cambiar valor y Subir a Dropi dejan de morirse cada día).{' '}
+              <strong>No funciona si la cuenta tiene verificación en dos pasos (2FA)</strong> — Dropi
+              bloquea ese login; en ese caso desactivá el 2FA de la cuenta o seguí pegando el token a
+              mano. Para apagar el auto-login, borrá el email y guardá.
+            </p>
+            {sessionRefreshedAt && (
+              <p className="mt-1 text-[11px] text-success">
+                Última renovación automática: {new Date(sessionRefreshedAt).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+            {loginColsMissing && (
+              <p className="mt-1 text-[11px] text-warning font-medium">
+                Requiere aplicar la migración SQL 20260706120000 (columnas de login en store_dropi_config).
+              </p>
+            )}
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={saveLogin}
+                disabled={savingLogin || loginColsMissing || (loginEmail.trim() === savedLoginEmail && !loginPassword)}
+                className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingLogin ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                Guardar login
+              </button>
+            </div>
           </div>
           {/* Store URL */}
           <div>

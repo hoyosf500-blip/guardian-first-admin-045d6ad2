@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { OrderData, formatPhone, parseDate } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import EditOrderDialog from '@/components/EditOrderDialog';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
 import { isReminderDue } from '@/lib/reminders';
+import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 // import { useAuth } from '@/contexts/AuthContext'; // gate removed after end-to-end validation
 
 interface Props {
@@ -17,6 +18,9 @@ interface Props {
    *  si no se pasa, las filas no muestran ícono de nota. Permite que la tab
    *  padre haga 1 sola query agregada en vez de N. */
   notesIndex?: NoteIndex;
+  /** Alertas por pedido (duplicado en curso + sobreprecio vs Shopify) —
+   *  las computa ConfirmarTab una sola vez para toda la cola. */
+  alerts?: ConfirmarOrderAlerts;
 }
 
 function timeAgo(dias: number): string {
@@ -44,7 +48,7 @@ function diasReales(o: OrderData): number {
   return Math.max(0, o.dias ?? 0);
 }
 
-export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
+export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   // isAdmin gate removed — feature validated end-to-end. Ownership is now
@@ -143,6 +147,26 @@ export default function WorkList({ items, onOpenCall, notesIndex }: Props) {
                 >
                   <UserCog size={15} aria-hidden="true" />
                 </button>
+              )}
+              {/* Aviso duplicado: el cliente tiene otro pedido en curso (detalle en la ficha) */}
+              {!o.result && dupAlertsFor(alerts?.dupByPhone, o).length > 0 && (
+                <span
+                  title="Este cliente tiene otro pedido en curso — abrí la ficha para ver el detalle"
+                  aria-label="Posible duplicado"
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 bg-destructive/15 text-destructive border-destructive/30 inline-flex items-center gap-0.5"
+                >
+                  <Copy size={9} aria-hidden="true" /> DUP
+                </span>
+              )}
+              {/* Aviso sobreprecio: Dropi cobra más que el total de Shopify */}
+              {!o.result && overchargeFor(alerts?.mismatchByExt, o) && (
+                <span
+                  title={`Dropi cobra ${formatCOP(o.valor)} y el cliente aceptó ${formatCOP(overchargeFor(alerts?.mismatchByExt, o)!.shopifyTotal)} en Shopify — corregilo desde la ficha`}
+                  aria-label="Valor distinto a Shopify"
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 inline-flex items-center gap-0.5"
+                >
+                  <DollarSign size={9} aria-hidden="true" /> DE MÁS
+                </span>
               )}
               {/* Priority badge (high/critical only) */}
               {pLevel !== 'low' && (

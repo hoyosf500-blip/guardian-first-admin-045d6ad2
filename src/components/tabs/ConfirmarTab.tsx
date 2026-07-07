@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { findSupersededPendingConf, type ProgressedOrder } from '@/lib/duplicateOrders';
+import { buildActiveDupIndex, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
+import { useShopifyValueMismatches } from '@/hooks/useShopifyPending';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
@@ -197,6 +199,25 @@ export default function ConfirmarTab({ profile }: Props) {
     () => workQueue.filter(o => supersededIds.has(String(o.externalId))),
     [workQueue, supersededIds],
   );
+
+  // Alertas POR PEDIDO para CallView/WorkList (chips en la ficha misma):
+  //  - duplicado: cliente con OTRO pedido en curso (Dropi o repetido en la cola)
+  //  - sobreprecio: valor Dropi > total Shopify (mismo dato del banner de arriba;
+  //    React Query dedupea con la instancia de ShopifyPendingPanel — 0 requests extra)
+  const { data: vmDataTab } = useShopifyValueMismatches(activeStoreId);
+  const orderAlerts = useMemo<ConfirmarOrderAlerts>(() => {
+    const mismatchByExt = new Map<string, number>();
+    for (const m of vmDataTab?.valueMismatches ?? []) {
+      // Cancelados en Dropi no se despachan → no hay cobro de más (mismo filtro
+      // que el banner del panel).
+      if (/CANCEL/i.test(String(m.estado ?? ''))) continue;
+      if (m.external_id) mismatchByExt.set(String(m.external_id), Number(m.shopify_total) || 0);
+    }
+    return {
+      dupByPhone: buildActiveDupIndex(visibleQueue, progressedOrders),
+      mismatchByExt,
+    };
+  }, [vmDataTab, visibleQueue, progressedOrders]);
 
   // Notas/recordatorios agregados por pedido (1 sola query, no N). El hook
   // se suscribe a realtime para que cuando otra asesora deje una nota, todos
@@ -646,7 +667,7 @@ export default function ConfirmarTab({ profile }: Props) {
           )}
 
           {view === 'list' ? (
-            <WorkList items={filteredItems} notesIndex={notesIndex} onOpenCall={(idx) => {
+            <WorkList items={filteredItems} notesIndex={notesIndex} alerts={orderAlerts} onOpenCall={(idx) => {
               // Abrir EL pedido clickeado, no el primer pendiente. CallView lee el
               // pedido activo de sessionStorage['confirmar:callOrderId'] en su
               // inicializador de useState al montarse. useSessionState persiste en
@@ -659,7 +680,7 @@ export default function ConfirmarTab({ profile }: Props) {
               setView('call');
             }} />
           ) : (
-            <CallView items={filteredItems} />
+            <CallView items={filteredItems} alerts={orderAlerts} />
           )}
         </>
       )}
