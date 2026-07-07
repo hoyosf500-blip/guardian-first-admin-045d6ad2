@@ -74,6 +74,14 @@ async function fetchDropiRange(
   to: string,
   statusFilter: string,
   stopBeforeDate?: string,
+  // Corte temprano por ID (anti-throttle 2026-07-07): como viene orderBy=id
+  // desc, cuando el id más viejo de la página ya es menor que el menor id que
+  // el caller necesita cruzar, todo lo restante es más viejo → el pull es
+  // EQUIVALENTE al completo para sus usos (divergencias + ausencia) →
+  // complete=true. Aparte de stopBeforeDate (NO reusar la fecha en el pull por
+  // estatus: cortaría por created_at en un pull filtrado por cambio-de-estatus
+  // y perdería pedidos viejos con estatus recién cambiado).
+  stopBeforeId?: number,
 ): Promise<{ orders: Record<string, unknown>[]; complete: boolean }> {
   const out: Record<string, unknown>[] = [];
   let start = 0;
@@ -94,6 +102,11 @@ async function fetchDropiRange(
       }).catch(() => null);
       if (res?.ok) break;
       console.warn(`reconcile: HTTP ${res?.status ?? "fetch-fail"} at start=${start} (intento ${attempt + 1}/4)`);
+      // Anti-throttle 2026-07-07: un 4xx definitivo (400/401/403/404 ≠ 429) no
+      // se cura reintentando — cortar sin quemar 3 fetches + ~14s contra una
+      // api_key revocada. 429 y TODO 5xx (el Laravel de Dropi tira 500
+      // transitorios) sí se reintentan, igual que fetch-fail (res null).
+      if (res && res.status >= 400 && res.status < 500 && res.status !== 429) break;
     }
     if (!res?.ok) {
       console.warn(`reconcile: page start=${start} agotó reintentos (pull INCOMPLETO)`);
@@ -107,6 +120,11 @@ async function fetchDropiRange(
     if (stopBeforeDate && objs.length > 0) {
       const oldest = String((objs[objs.length - 1] as Record<string, unknown>).created_at || "");
       if (oldest && oldest.split("T")[0] < stopBeforeDate) { complete = true; break; }
+    }
+    if (stopBeforeId !== undefined && objs.length > 0) {
+      const oldestId = Number((objs[objs.length - 1] as Record<string, unknown>).id);
+      // Comparación estricta <; si el id no parsea, NO cortar (fail-safe).
+      if (Number.isFinite(oldestId) && oldestId < stopBeforeId) { complete = true; break; }
     }
     start += PAGE_SIZE;
     await sleep(RATE_LIMIT_MS);
@@ -171,7 +189,15 @@ async function reconcileStore(
     }
 
     const base = dropiHostFor(countryCode);
-    const statusPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, statusFilter);
+    // Corte temprano por ID: en EC (que ignora date_from/date_to y tiene >4k
+    // pedidos) el status pull agotaba MAX_PAGES=40 TODAS las noches → nunca
+    // complete=true → la limpieza de huérfanos <5M llevaba PERMANENTEMENTE
+    // anulada por el fail-safe. El pull solo alimenta el cruce contra
+    // guardianNonTerminal: cortar cuando ya pasamos su id más viejo es
+    // equivalente al pull completo.
+    const guardianIdNums = guardianNonTerminal.map((g) => Number(g.external_id)).filter(Number.isFinite);
+    const statusStopId = guardianIdNums.length ? Math.min(...guardianIdNums) : undefined;
+    const statusPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, statusFilter, undefined, statusStopId);
     const dropiMap = new Map<string, Record<string, unknown>>();
     for (const o of statusPull.orders) {
       dropiMap.set(String(o.id), o);
@@ -272,7 +298,11 @@ async function reconcileStore(
       await sleep(5000); // pausa entre los dos pulls — le da aire al rate-limit EC
       // stopBeforeDate=from: EC ignora date_from/date_to → sin corte temprano
       // paginaría la cuenta entera y el throttle lo mataría antes de completar.
-      const createdPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, "FECHA DE CREADO", from);
+      // + corte por ID (mismo argumento que el status pull): el createdSet solo
+      // se cruza contra existenceCandidates.
+      const candidateIdNums = existenceCandidates.map((g) => Number(g.external_id)).filter(Number.isFinite);
+      const createdStopId = candidateIdNums.length ? Math.min(...candidateIdNums) : undefined;
+      const createdPull = await fetchDropiRange(base, apiKey, storeUrl, from, to, "FECHA DE CREADO", from, createdStopId);
       deletedCheckComplete = createdPull.complete && createdPull.orders.length > 0;
       dropiCreatedCount = createdPull.orders.length;
       if (deletedCheckComplete) {
