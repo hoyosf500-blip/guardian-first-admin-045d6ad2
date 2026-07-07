@@ -28,6 +28,7 @@ import type { LogisticsFilters } from '@/lib/logistics.types';
 import BilleteraTab from '@/components/logistics/BilleteraTab';
 import FinanzasTab from '@/components/logistics/FinanzasTab';
 import MesActualResumen from '@/components/logistics/MesActualResumen';
+import StoreAdSpendPanel from '@/components/logistics/StoreAdSpendPanel';
 import {
   CHART_TOOLTIP_STYLE,
   CHART_GRID_PROPS,
@@ -395,6 +396,9 @@ export default function LogisticaTab() {
                 huecos) + conciliación (realizado vs pendiente vs perdido + wallet
                 real). Reemplaza al CompactKpiGrid (sus KPIs quedan cubiertos). */}
             <MesActualResumen summary={summary.data ?? null} filters={filters} />
+
+            {/* Pauta diaria por tienda — se resta de la Ganancia Neta de arriba. */}
+            <StoreAdSpendPanel filters={filters} />
 
             {/* Composición por transportadora (complementa los tiles de arriba). */}
             <LogisticsHeroChart rows={carriers.data ?? []} />
