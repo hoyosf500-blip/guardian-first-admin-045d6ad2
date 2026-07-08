@@ -693,11 +693,15 @@ export default function CallView({ items, alerts }: Props) {
       if (!o.externalId) {
         toast.success(`Confirmado — ${o.nombre.split(' ')[0]}`);
       }
+    } else if (result === 'canc') {
+      // FASE 3: con externalId, markResult empuja la cancelación a Dropi y maneja
+      // el toast (loading → ok/error con el mismo id). Sin externalId (Excel
+      // manual) no hay nada que cancelar en Dropi → restauramos el success local.
+      if (!o.externalId) {
+        toast.success(`Cancelado — ${o.nombre.split(' ')[0]}`);
+      }
     } else {
-      toast.success(
-        result === 'canc' ? `Cancelado — ${o.nombre.split(' ')[0]}` :
-        `No respondió — ${o.nombre.split(' ')[0]}`,
-      );
+      toast.success(`No respondió — ${o.nombre.split(' ')[0]}`);
     }
   };
 

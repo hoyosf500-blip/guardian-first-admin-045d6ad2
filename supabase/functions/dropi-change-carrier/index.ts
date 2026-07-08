@@ -1,11 +1,17 @@
 // Edge Function: dropi-change-carrier
 //
 // Permite a la operadora cambiar la transportadora de un pedido PENDIENTE desde
-// Confirmar. Dos modos:
+// Confirmar. Modos:
 //   - mode "quote": cotiza en vivo (panel web Dropi) las transportadoras que
 //     pueden despachar ese pedido + su precio. Devuelve también la actual.
 //   - mode "apply": reasigna la transportadora elegida en Dropi y sincroniza
 //     orders.transportadora + orders.external_id local + deja auditoría.
+//   - mode "cancel" (FASE 3): cancela DE VERDAD el pedido en Dropi. Antes la
+//     cancelación era solo un overlay local que caducaba a 7 días y Dropi seguía
+//     enviando el pedido PENDIENTE → el cron lo re-importaba (fantasma). Ahora
+//     hace el MISMO PUT que el "Cancelar orden" del panel web (capturado en vivo
+//     2026-07-06): PUT /api/orders/myorders/{id} { status:"CANCELADO", reasonComment }
+//     + marca orders.estado='CANCELADO' (durable, inmediato). Devuelve canceled:true.
 //
 // Auth: Authorization: Bearer <user_jwt> (debe ser miembro de la tienda).
 //
@@ -92,7 +98,9 @@ async function resolveDestCity(
 
 interface ChangeCarrierBody {
   externalId?: string;
-  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "debug";
+  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "cancel" | "debug";
+  /** mode "cancel": motivo de la cancelación (va en reasonComment del PUT a Dropi). */
+  reason?: string;
   distributionCompanyId?: number | string;
   name?: string;
   /** modes "apply_value" / "apply_edit": nuevo valor a cobrar (COD) del pedido. */
@@ -482,7 +490,9 @@ Deno.serve(async (req: Request) => {
         ? "apply_value"
         : body.mode === "apply_edit"
           ? "apply_edit"
-          : "quote";
+          : body.mode === "cancel"
+            ? "cancel"
+            : "quote";
     if (!externalId) return jsonErr("Falta externalId", 400);
 
     // ---- Resolver pedido + tienda + membresía ----
@@ -497,8 +507,10 @@ Deno.serve(async (req: Request) => {
     const isMember = await isStoreMember(sbAdmin, user.id, storeId);
     if (!isMember) return jsonOk({ ok: false, error: "No perteneces a esta tienda" });
 
-    // Guía ya generada → la transportadora quedó fija al imprimir.
-    if (String(orderRow.guia || "").trim()) {
+    // Guía ya generada → la transportadora quedó fija al imprimir. NO aplica a
+    // "cancel": una cancelación es válida aunque el pedido tenga guía (el panel
+    // Dropi también lo permite) — el fantasma que matamos puede tener guía en EC.
+    if (mode !== "cancel" && String(orderRow.guia || "").trim()) {
       return jsonOk({ ok: false, code: "guia_generada", error: "El pedido ya tiene guía generada; la transportadora no se puede cambiar." });
     }
 
@@ -558,15 +570,57 @@ Deno.serve(async (req: Request) => {
     }
 
     // Renovar el session token si venció (login automático por tienda —
-    // _shared/dropiSessionLogin). quote y apply dependen 100% del panel web;
+    // _shared/dropiSessionLogin). quote/apply/cancel dependen 100% del panel web;
     // apply_value lo renueva LAZY (su camino directo PUT+verify no lo necesita).
-    if (mode === "quote" || mode === "apply") {
+    if (mode === "quote" || mode === "apply" || mode === "cancel") {
       try {
         cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
       } catch (e) {
         if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
         throw e;
       }
+    }
+
+    // =========================== MODE: CANCEL ===========================
+    // Cancela DE VERDAD el pedido en Dropi. Camino = el mismo PUT que el
+    // "Cancelar orden" del panel (request capturado en vivo 2026-07-06):
+    //   PUT /api/orders/myorders/{externalId} { status:"CANCELADO", reasonComment }
+    // Tras el éxito, marca orders.estado='CANCELADO' (durable + inmediato) para
+    // que el pedido salga de la cola sin depender del cron y no reaparezca. Si el
+    // PUT falla, NO toca el estado local (el pedido sigue vivo en Dropi) y
+    // devuelve ok:false → el cliente conserva su overlay local y avisa "reintentar".
+    if (mode === "cancel") {
+      const reasonComment = String(body.reason || "").trim() ||
+        "Cancelado desde el CRM (gestión de confirmación).";
+      let put: { status: number; body?: Record<string, unknown> };
+      try {
+        put = await dropiWebFetch(
+          cfg,
+          `/api/orders/myorders/${encodeURIComponent(externalId)}`,
+          { method: "PUT", body: { status: "CANCELADO", reasonComment } },
+        );
+      } catch (e) {
+        console.error("[cancel] PUT CANCELADO falló:", e);
+        return jsonOk({
+          ok: false, code: "dropi_error",
+          error: e instanceof Error ? e.message.slice(0, 300) : "Error al cancelar en Dropi",
+        });
+      }
+      const okCancel = put.status >= 200 && put.status < 300 && put.body?.isSuccess !== false;
+      if (!okCancel) {
+        return jsonOk({
+          ok: false, code: "dropi_rejected", dropiStatus: put.status,
+          error: String(put.body?.message || put.body?.error || "Dropi rechazó la cancelación").slice(0, 300),
+        });
+      }
+      // Éxito en Dropi → marcar CANCELADO local (durable, inmediato). Si el UPDATE
+      // falla, Dropi ya está cancelado y el cron reconciliará el estado local.
+      const { error: updErr } = await sbAdmin
+        .from("orders")
+        .update({ estado: "CANCELADO" })
+        .eq("id", (orderRow as { id: string }).id);
+      if (updErr) console.error("[cancel] Dropi OK pero UPDATE local falló:", updErr.message);
+      return jsonOk({ ok: true, canceled: true, externalId, dropiStatus: put.status });
     }
 
     // =========================== MODE: QUOTE ===========================
