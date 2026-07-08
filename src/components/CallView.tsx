@@ -31,6 +31,7 @@ import { mapAddressKind } from '@/lib/mapAddressKind';
 import { useGoogleAddressLookup } from '@/hooks/useGoogleAddressLookup';
 import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
 import { locationMatches } from '@/lib/locationGuard';
+import { itemKey, indexOfKey, nextUnmanagedKey, resolveFallbackIdx } from '@/lib/callQueueNav';
 
 // Validador-direcciones: helper local para gate de confirmación.
 // Bug 2026-05-05 (cliente Cristian Mendez): el regex inline rechazaba
@@ -86,6 +87,9 @@ export default function CallView({ items, alerts }: Props) {
   // el último pedido visto — los usa el efecto release-on-navigate de abajo.
   const claimedByMeRef = useRef<string | null>(null);
   const prevViewedDbIdRef = useRef<string | null>(null);
+  // Fix 2: última posición donde el ancla matcheó de verdad — el fallback la usa
+  // para no saltar al tope cuando el pedido en pantalla desaparece por fuera.
+  const lastGoodIdxRef = useRef(0);
   // BUG B fix: persist the customer's stable identifier (externalId or dbId),
   // not the array index. Indexes break when items reorder due to refresh/sync.
   const [callOrderId, setCallOrderId] = useSessionState<string | null>(
@@ -93,29 +97,32 @@ export default function CallView({ items, alerts }: Props) {
     null,
   );
 
-  const orderKey = (o: OrderData | undefined) =>
-    o ? (o.externalId || o.dbId || null) : null;
-
   // Compute the real index from the persisted ID. If the customer is gone from
-  // the queue (-1), fall back to the first pending order.
-  let callIdx = callOrderId
-    ? items.findIndex(o => (o.externalId || o.dbId) === callOrderId)
-    : -1;
-  if (callIdx < 0) {
-    const firstPending = items.findIndex(o => !o.result);
-    callIdx = firstPending >= 0 ? firstPending : 0;
-  }
+  // the queue (-1), fall back near the LAST GOOD position instead of the top.
+  // Fix 2 (2026-07-07): saltar a items[0] teletransportaba a la operadora al
+  // tope cuando el pedido en pantalla desaparecía por algo externo (el cron le
+  // cambia el estado). `resolveFallbackIdx` la deja en el vecino (≈ el siguiente).
+  let callIdx = indexOfKey(items, callOrderId);
+  const matchedAnchor = callIdx >= 0;
+  if (callIdx < 0) callIdx = resolveFallbackIdx(items, lastGoodIdxRef.current);
+
+  // Recordar la última posición REAL (cuando el ancla matcheó) para alimentar el
+  // fallback de arriba. Se actualiza post-commit para reflejar el índice servido.
+  useEffect(() => {
+    if (matchedAnchor) lastGoodIdxRef.current = callIdx;
+  }, [matchedAnchor, callIdx]);
 
   // Re-anchor the persisted ID only when missing or stale. Never trigger on
   // items.length alone — that was causing the operator to lose their customer.
+  // Fix 2: al re-anclar, usar la posición resuelta (vecino), NO el tope.
   useEffect(() => {
     if (!items.length) return;
     const exists = callOrderId
       ? items.some(o => (o.externalId || o.dbId) === callOrderId)
       : false;
     if (!exists) {
-      const firstPending = items.find(o => !o.result) || items[0];
-      const k = orderKey(firstPending);
+      const idx = resolveFallbackIdx(items, lastGoodIdxRef.current);
+      const k = itemKey(items[idx]);
       if (k && k !== callOrderId) setCallOrderId(k);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -219,8 +226,7 @@ export default function CallView({ items, alerts }: Props) {
           return;
         }
         // reason === 'locked' | 'no-elegible': el pedido no es nuestro, saltar.
-        const next = items.find((it, i) => i > callIdx && !it.result);
-        const k = orderKey(next);
+        const k = nextUnmanagedKey(items, callIdx);
         if (k) {
           setCallOrderId(k);
           // ID estable: si la operadora salta varios pedidos lockeados en
@@ -652,15 +658,23 @@ export default function CallView({ items, alerts }: Props) {
   const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
 
   const handleMark = async (result: string, reason?: string) => {
-    await markResult(o, result, reason);
-    // markResult ya libera el lock vía release_order RPC.
-    // Llamarlo dos veces causaba un PATCH redundante a /orders.
-    // Anular el ref para que el efecto release-on-navigate no re-libere
-    // cuando el setTimeout de abajo mueva la ficha al siguiente pedido.
+    // Fix 1 (2026-07-07): calcular el SIGUIENTE con la cola FRESCA de ESTE render
+    // y avanzar YA — ANTES del await de markResult. Antes se hacía en un
+    // setTimeout(400ms) que leía `items`/`callIdx` viejos (stale-closure → aterrizaba
+    // 1-3 posiciones desfasado si la cola cambió), y ese hueco de 400 ms era también
+    // el que producía el parpadeo al tope (el pedido marcado salía del filtro
+    // `pending` → callOrderId apuntaba a un pedido ausente → fallback). Avanzar ya
+    // elimina el desfase Y el parpadeo. `o` sigue siendo el pedido marcado (closure).
+    const nextKey = nextUnmanagedKey(items, callIdx);
+    // Anular el ref ANTES de avanzar: el efecto release-on-navigate ve null para el
+    // pedido marcado y NO re-libera (markResult ya lo libera server-side).
     if (claimedByMeRef.current === o.dbId) claimedByMeRef.current = null;
+    if (nextKey) setCallOrderId(nextKey);
     setShowCancelModal(false);
     setCancelOtroMode(false);
     setCancelOtroText('');
+    await markResult(o, result, reason);
+    // markResult ya libera el lock vía release_order RPC.
     // REG-1 / H9: Para `result === 'conf'` con externalId, el toast lo
     // maneja `markResult` (flujo unificado de Dropi sync: loading →
     // success/error con mismo toastId). Pero si el pedido NO tiene
@@ -676,16 +690,11 @@ export default function CallView({ items, alerts }: Props) {
         `No respondió — ${o.nombre.split(' ')[0]}`,
       );
     }
-    setTimeout(() => {
-      const next = items.find((item, i) => i > callIdx && !item.result);
-      const k = orderKey(next);
-      if (k) setCallOrderId(k);
-    }, 400);
   };
 
   const navCall = (dir: number) => {
     const target = Math.max(0, Math.min(items.length - 1, callIdx + dir));
-    const k = orderKey(items[target]);
+    const k = itemKey(items[target]);
     if (k) setCallOrderId(k);
   };
 
