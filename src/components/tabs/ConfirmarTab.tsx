@@ -526,6 +526,12 @@ export default function ConfirmarTab({ profile }: Props) {
                     <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{total}</strong>
                     <span className="text-muted-foreground">gestionados</span>
                   </span>
+                  {/* Estos conteos son de TODA la tienda (todas las operadoras),
+                      no personales. Se etiqueta para no confundir con "Tu cola hoy"
+                      y con el banner personal de arriba. */}
+                  <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
+                    equipo · toda la tienda
+                  </span>
                 </div>
                 {(d7 > 0 || d46 > 0) && (
                   <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:border-l sm:border-border/60 sm:pl-5">
