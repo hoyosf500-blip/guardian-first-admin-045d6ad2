@@ -17,6 +17,7 @@ import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Ta
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
+import AttemptHistory from '@/components/confirmar/AttemptHistory';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import NotesPanel from '@/components/order-notes/NotesPanel';
@@ -746,6 +747,10 @@ export default function CallView({ items, alerts }: Props) {
             </span>
           </div>
         )}
+
+        {/* Fase 2a: historial de intentos por asesor (quién llamó, qué resultó, cuándo).
+            Solo se muestra si hay intentos previos → no ensucia pedidos frescos. */}
+        <AttemptHistory orderId={o.dbId} />
         {vip?.isVip && !o.result && (
           <div className="flex items-center justify-between gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
             <div className="flex items-center gap-2">
