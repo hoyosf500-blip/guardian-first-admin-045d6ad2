@@ -672,15 +672,15 @@ export default function ProductivityDashboard() {
                     <th className="text-right">Canc.</th>
                     <th
                       className="text-right"
-                      title="Pedidos donde marcó 'no contestó' al menos UNA vez en el período, incluso si después se confirmaron. Métrica de ESFUERZO (no de estado final)."
+                      title="Clientes DISTINTOS que no contestaron en el período, aunque después se cerraran. Es la MISMA métrica de 'no respondió' que muestra el banner de Confirmar y el cierre de la operadora (todos cuadran)."
                     >
-                      Intentos N/R
+                      No contestó
                     </th>
                     <th
                       className="text-right"
-                      title="Pedidos cuyo último intento sigue siendo 'no contestó' (sin conf/canc posterior). Métrica de ESTADO ACTUAL — los que quedaron sin cerrar."
+                      title="Detalle admin: de los que no contestaron, cuántos AÚN quedan sin cerrar (sin conf/canc posterior). Métrica de estado actual, distinta de 'No contestó' (esfuerzo)."
                     >
-                      N/R abiertos
+                      Sin cerrar aún
                     </th>
                     <th className="text-right">Atendidos</th>
                     <th
