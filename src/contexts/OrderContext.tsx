@@ -712,7 +712,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       supabase.functions
         .invoke('dropi-change-carrier', { body: { mode: 'cancel', externalId: order.externalId, reason } })
         .then(async (res) => {
-          const data = res?.data as { ok?: boolean; canceled?: boolean; error?: string } | null | undefined;
+          const data = res?.data as { ok?: boolean; canceled?: boolean; dropiMissing?: boolean; error?: string } | null | undefined;
           // Degradación segura: solo es éxito si la función NUEVA confirmó con
           // canceled:true. Si el edge está sin redeployar, mode:'cancel' cae a
           // "quote" y devuelve ok:true SIN cancelar nada → lo tratamos como fallo
@@ -725,7 +725,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           } else {
             // El edge ya marcó estado='CANCELADO' server-side; reflejarlo local ya.
             setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
-            toast.success(`Cancelado en Dropi — ${order.nombre.split(' ')[0]}`, { id: toastId, duration: 2500 });
+            const nombre = order.nombre.split(' ')[0];
+            // dropiMissing = era un fantasma (ya no estaba en Dropi) → se limpió local.
+            toast.success(
+              data?.dropiMissing ? `Pedido fantasma limpiado — ${nombre}` : `Cancelado en Dropi — ${nombre}`,
+              { id: toastId, duration: 2500 },
+            );
           }
         })
         .catch(async (err: unknown) => {
