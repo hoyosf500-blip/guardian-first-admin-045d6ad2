@@ -10,6 +10,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
+import { isLockedByOther } from '@/lib/callQueueNav';
 import { toast } from 'sonner';
 import ExcelUploader from '@/components/ExcelUploader';
 import AperturaWizard from '@/components/AperturaWizard';
@@ -235,6 +236,13 @@ export default function ConfirmarTab({ profile }: Props) {
   // (incluido cada refresh de realtime), forzando a WorkList/CallView a
   // re-renderizar aunque el contenido fuera idéntico.
   const filteredItems = useMemo(() => visibleQueue.filter(o => {
+    // ANTI-CHOQUE (Fase 1, 2026-07-07): esconder de MI cola lo que otra asesora
+    // está atendiendo AHORA (lock fresco <15 min, ajeno). Así no me lo topo, no me
+    // rebota al aterrizar, y puedo retroceder sin caer en un pedido de otra. Nunca
+    // esconde el que YO tengo en pantalla (lock mío). Reaparece solo cuando se libera
+    // (el realtime de orders ya trae el cambio de locked_by → recomputa este memo).
+    // Todo automático: la asesora no hace nada.
+    if (isLockedByOther(o, user?.id ?? null, Date.now())) return false;
     // Toggle "Solo sin tocar" — los pedidos que ya marqué (cualquier result)
     // se ocultan. Útil cuando me quedan los noresp pendientes pero no quiero
     // ver los que ya gestioné hoy. dbId puede ser undefined en pedidos
@@ -269,7 +277,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday]);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, user?.id]);
 
   // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
   // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente
