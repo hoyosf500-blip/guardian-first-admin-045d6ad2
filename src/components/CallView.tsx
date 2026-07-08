@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOrderLock } from '@/hooks/useOrderLock';
@@ -82,6 +82,10 @@ export default function CallView({ items, alerts }: Props) {
   const countryCode = activeStore?.country_code;
   const { openChat, waEnabled } = useWaChat();
   const { claimOrder, releaseOrder } = useOrderLock();
+  // FIX "Siguiente salta ~10": último pedido cuyo lock conseguimos NOSOTROS y
+  // el último pedido visto — los usa el efecto release-on-navigate de abajo.
+  const claimedByMeRef = useRef<string | null>(null);
+  const prevViewedDbIdRef = useRef<string | null>(null);
   // BUG B fix: persist the customer's stable identifier (externalId or dbId),
   // not the array index. Indexes break when items reorder due to refresh/sync.
   const [callOrderId, setCallOrderId] = useSessionState<string | null>(
@@ -200,7 +204,7 @@ export default function CallView({ items, alerts }: Props) {
     const attemptClaim = (retriesLeft: number) => {
       claimOrder(orderId).then(res => {
         if (cancelled) return;
-        if (res.ok) return; // lock nuestro, keep-alive OK
+        if (res.ok) { claimedByMeRef.current = orderId; return; } // lock nuestro, keep-alive OK
         // `'reason' in res` en vez de mirar solo `res.ok`: con strictNullChecks
         // apagado (tsconfig no estricto) el narrowing por el booleano `ok` no
         // descarta el miembro `{ ok: true }`, así que discriminamos por la
@@ -235,6 +239,29 @@ export default function CallView({ items, alerts }: Props) {
     attemptClaim(1);
     return () => { cancelled = true; };
   }, [o?.dbId, user, claimOrder, callIdx, items, setCallOrderId, o?.result]);
+
+  // FIX "Siguiente salta ~10" (2026-07-07): liberar el lock del pedido ANTERIOR
+  // al pasar a otro. Ver un pedido lo lockea (efecto de arriba) pero nada lo
+  // soltaba al pasar de largo con Siguiente/Anterior — solo markResult o el cron
+  // de 15 min. Con 3 operadoras navegando a la vez los locks se ACUMULABAN
+  // (visto en vivo: 7 locks frescos de una sola operadora) y el skip del claim
+  // saltaba en cascada por encima de todos → "Siguiente salta como a 10".
+  // Guardas:
+  //  - solo si el claim fue NUESTRO (claimedByMeRef) — release_order con admin
+  //    puede soltar locks ajenos y NO queremos eso al pasar de largo;
+  //  - solo al CAMBIAR de pedido estando montados — SIN cleanup de unmount
+  //    (BUG 3: cambiar de pestaña no debe soltar el lock del cliente en atención);
+  //  - handleMark anula claimedByMeRef tras marcar (markResult ya libera
+  //    server-side; re-liberar era el PATCH redundante ya conocido).
+  useEffect(() => {
+    const prev = prevViewedDbIdRef.current;
+    const cur = o?.dbId ?? null;
+    if (prev && prev !== cur && claimedByMeRef.current === prev) {
+      claimedByMeRef.current = null;
+      void releaseOrder(prev);
+    }
+    prevViewedDbIdRef.current = cur;
+  }, [o?.dbId, releaseOrder]);
 
   // Best-effort release on tab close so locks no quedan huérfanos hasta el cron.
   useEffect(() => {
@@ -628,6 +655,9 @@ export default function CallView({ items, alerts }: Props) {
     await markResult(o, result, reason);
     // markResult ya libera el lock vía release_order RPC.
     // Llamarlo dos veces causaba un PATCH redundante a /orders.
+    // Anular el ref para que el efecto release-on-navigate no re-libere
+    // cuando el setTimeout de abajo mueva la ficha al siguiente pedido.
+    if (claimedByMeRef.current === o.dbId) claimedByMeRef.current = null;
     setShowCancelModal(false);
     setCancelOtroMode(false);
     setCancelOtroText('');
