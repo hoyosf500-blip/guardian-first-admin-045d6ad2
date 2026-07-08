@@ -873,6 +873,51 @@ export type Database = {
           },
         ]
       }
+      order_labels: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          operator_id: string | null
+          order_id: string | null
+          phone: string | null
+          store_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label: string
+          operator_id?: string | null
+          order_id?: string | null
+          phone?: string | null
+          store_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          operator_id?: string | null
+          order_id?: string | null
+          phone?: string | null
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_labels_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_labels_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_results: {
         Row: {
           created_at: string
