@@ -144,27 +144,21 @@ export function splitCalientesVsViejos<T extends ConfirmarQueueOrder>(
 }
 
 // —————————————————————————————————————————————————————————————————————————
-// Escalera de reintentos N/R (Hallazgo "N/R escalera").
+// Reintentos N/R — cooldown PLANO de 2 h (regla del dueño, 2026-07-07).
 //
-// Antes: cooldown PLANO de 2 h entre intentos (COOLDOWN_HOURS=2). Rígido: el
-// primer reintento de un "no contestó" recién hecho tardaba 2 h en habilitarse,
-// cuando en la práctica conviene reintentar mucho antes (la persona pudo estar
-// ocupada 20 min). La escalera arranca corto y se estira:
-//   intento 1 → ~0.4 h (25 min), intento 2 → 1 h, intento 3 → 2 h.
+// Regla operativa: si el cliente no contestó, se hacen hasta 3 intentos, uno
+// cada 2 horas. Ej.: llamó a las 10 → el pedido vuelve a la cola a las 12 →
+// vuelve a las 14 → y ahí se cierra el día (cap 3). Antes había una escalera
+// (25 min → 1 h → 2 h) que reintentaba el primero mucho antes; el dueño la
+// cambió por 2 h parejo (más predecible para el equipo).
 //
 // El CAP de intentos/día SIGUE en 3 (MAX_DAILY_ATTEMPTS) — NO subirlo: la RPC
 // `pending_retry_list` asume cap 3 y hay que quedar alineados (ver `concerns`).
 // —————————————————————————————————————————————————————————————————————————
 
-/** Horas de cooldown según cuántos intentos N/R ya hubo HOY (escalera).
- *  `attemptNumber` = cantidad de noresp ya registrados hoy para el pedido:
- *    1 → 0.4 h (~25 min) antes del 1er reintento
- *    2 → 1 h
- *    3+ → 2 h
- *  Defensivo: valores <1 se tratan como 1 (nunca cooldown 0). */
-export function cooldownHoursForAttempt(attemptNumber: number): number {
-  const n = Number.isFinite(attemptNumber) ? Math.floor(attemptNumber) : 1;
-  if (n <= 1) return 0.4;
-  if (n === 2) return 1;
+/** Horas de cooldown antes de que un "no contestó" vuelva a la cola.
+ *  Plano en 2 h para todos los intentos (llamó 10 → vuelve 12 → 14). El
+ *  parámetro se mantiene por compatibilidad de firma con los call-sites. */
+export function cooldownHoursForAttempt(_attemptNumber?: number): number {
   return 2;
 }
