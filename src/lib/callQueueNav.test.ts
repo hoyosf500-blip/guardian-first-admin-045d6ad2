@@ -4,6 +4,7 @@ import {
   indexOfKey,
   nextUnmanagedKey,
   resolveFallbackIdx,
+  isLockedByOther,
   type NavItem,
 } from './callQueueNav';
 
@@ -89,5 +90,38 @@ describe('resolveFallbackIdx', () => {
   it('lastGoodIdx negativo se trata como 0', () => {
     const items = [ext('A'), ext('B')];
     expect(resolveFallbackIdx(items, -3)).toBe(0);
+  });
+});
+
+describe('isLockedByOther', () => {
+  const ME = 'me-uuid';
+  const OTHER = 'other-uuid';
+  // nowMs fijo para tests deterministas (Date.now() no se usa dentro del helper).
+  const NOW = 1_700_000_000_000;
+  const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
+
+  it('libre (sin lockedBy) → false', () => {
+    expect(isLockedByOther({ lockedBy: null, lockedAt: null }, ME, NOW)).toBe(false);
+  });
+  it('lockeado por MÍ → false (lo sigo viendo)', () => {
+    expect(isLockedByOther({ lockedBy: ME, lockedAt: iso(60_000) }, ME, NOW)).toBe(false);
+  });
+  it('lockeado por OTRA, fresco (<15min) → true (se esconde)', () => {
+    expect(isLockedByOther({ lockedBy: OTHER, lockedAt: iso(5 * 60_000) }, ME, NOW)).toBe(true);
+  });
+  it('lockeado por OTRA pero VIEJO (>15min) → false (lock caducó)', () => {
+    expect(isLockedByOther({ lockedBy: OTHER, lockedAt: iso(16 * 60_000) }, ME, NOW)).toBe(false);
+  });
+  it('lockedBy presente pero lockedAt null → false (no se puede fechar el lock)', () => {
+    expect(isLockedByOther({ lockedBy: OTHER, lockedAt: null }, ME, NOW)).toBe(false);
+  });
+  it('lockedAt malformado → false', () => {
+    expect(isLockedByOther({ lockedBy: OTHER, lockedAt: 'no-es-fecha' }, ME, NOW)).toBe(false);
+  });
+  it('sin myUserId (null): un lock ajeno fresco se trata como ajeno → true', () => {
+    expect(isLockedByOther({ lockedBy: OTHER, lockedAt: iso(60_000) }, null, NOW)).toBe(true);
+  });
+  it('exactamente en el borde de 15min → sigue vigente (true)', () => {
+    expect(isLockedByOther({ lockedBy: OTHER, lockedAt: iso(15 * 60_000) }, ME, NOW)).toBe(true);
   });
 });
