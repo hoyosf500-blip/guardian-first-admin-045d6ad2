@@ -18,6 +18,8 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import AttemptHistory from '@/components/confirmar/AttemptHistory';
+import OrderLabels from '@/components/confirmar/OrderLabels';
+import { useOrderAttempts } from '@/hooks/useOrderAttempts';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import { dupAlertsFor, overchargeFor, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import NotesPanel from '@/components/order-notes/NotesPanel';
@@ -166,6 +168,12 @@ export default function CallView({ items, alerts }: Props) {
   const [googleSuggestions, setGoogleSuggestions] = useState<Record<string, string>>({});
 
   const o = items[Math.min(callIdx, items.length - 1)];
+
+  // Fase 2a/2b: intentos previos del pedido (una sola query, compartida por el
+  // historial de intentos Y el conteo de noresp que alimenta la etiqueta auto
+  // "No contesta"). Hook antes del early-return para no violar reglas de hooks.
+  const { attempts } = useOrderAttempts(o?.dbId);
+  const norespCount = attempts.filter(a => a.result === 'noresp').length;
 
   // VIP check: query order history for this phone (F4)
   useEffect(() => {
@@ -748,9 +756,19 @@ export default function CallView({ items, alerts }: Props) {
           </div>
         )}
 
+        {/* Fase 2b: etiquetas — auto (Datos incompletos / No contesta, derivadas) +
+            manuales (Interesado / Difícil, compartidas por tienda). */}
+        <OrderLabels
+          orderId={o.dbId}
+          phone={o.phone}
+          validationDecision={o.validationDecision}
+          missingFields={o.missingFields}
+          norespCount={norespCount}
+        />
+
         {/* Fase 2a: historial de intentos por asesor (quién llamó, qué resultó, cuándo).
             Solo se muestra si hay intentos previos → no ensucia pedidos frescos. */}
-        <AttemptHistory orderId={o.dbId} />
+        <AttemptHistory attempts={attempts} />
         {vip?.isVip && !o.result && (
           <div className="flex items-center justify-between gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
             <div className="flex items-center gap-2">

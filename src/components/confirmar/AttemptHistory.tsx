@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import { History } from 'lucide-react';
-import { useOrderAttempts } from '@/hooks/useOrderAttempts';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
-import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix } from '@/lib/attemptFormat';
+import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, type AttemptRow } from '@/lib/attemptFormat';
 import { bogotaToday } from '@/lib/utils';
 
 const TONE_DOT: Record<string, string> = {
@@ -18,8 +17,7 @@ const TONE_DOT: Record<string, string> = {
  * cada quién ("Roberto · no contestó · 14:30") y no repita trabajo, sin abrir la
  * página de detalle. No se muestra si no hay intentos previos (pedido fresco).
  */
-export default function AttemptHistory({ orderId }: { orderId?: string | null }) {
-  const { attempts } = useOrderAttempts(orderId);
+export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] }) {
   const { nameOf } = useOperatorNames();
   const [expanded, setExpanded] = useState(false);
   const today = useMemo(() => bogotaToday(), []);
