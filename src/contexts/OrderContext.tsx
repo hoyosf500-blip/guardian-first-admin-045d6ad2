@@ -683,6 +683,57 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           });
       }
     }
+    if (!error && result === 'canc' && order.dbId && order.externalId) {
+      // FASE 3: cancelar DE VERDAD en Dropi, no solo el overlay local. Antes la
+      // cancelación era un order_results que caducaba a 7 días mientras Dropi
+      // seguía enviando el pedido PENDIENTE → el cron lo re-importaba (fantasma).
+      // Mismo patrón que la confirmación: guardamos local YA (el overlay 'canc'
+      // ya lo escondió de la cola), empujamos a Dropi en segundo plano; si Dropi
+      // falla, marcamos la fila 'failed' + avisamos, NUNCA en silencio.
+      const toastId = `dropi-cancel-${order.externalId}`;
+      const insertedResultId = insertedResult?.id;
+      toast.loading(`Cancelando en Dropi — ${order.nombre.split(' ')[0]}…`, { id: toastId });
+
+      const markCancelFailure = async (errMsg: string) => {
+        if (insertedResultId) {
+          await (supabase.from('order_results') as unknown as {
+            update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+          }).update({
+            dropi_sync_status: 'failed',
+            result_notes: `Cancelación en Dropi pendiente - reintentar (${errMsg})`,
+          }).eq('id', insertedResultId);
+        }
+        toast.error(
+          '⚠ Cancelación guardada localmente pero Dropi no la aceptó — el pedido podría reaparecer. Revisá/cancelá en el panel Dropi.',
+          { id: toastId, duration: 10000 },
+        );
+      };
+
+      supabase.functions
+        .invoke('dropi-change-carrier', { body: { mode: 'cancel', externalId: order.externalId, reason } })
+        .then(async (res) => {
+          const data = res?.data as { ok?: boolean; canceled?: boolean; error?: string } | null | undefined;
+          // Degradación segura: solo es éxito si la función NUEVA confirmó con
+          // canceled:true. Si el edge está sin redeployar, mode:'cancel' cae a
+          // "quote" y devuelve ok:true SIN cancelar nada → lo tratamos como fallo
+          // (mismo criterio que apply_edit/editApplied) para no esconder en falso
+          // un pedido que sigue vivo en Dropi.
+          if (res?.error || data?.ok === false || data?.canceled !== true) {
+            const msg = res?.error?.message || data?.error ||
+              (data?.canceled !== true ? 'la función Dropi no confirmó la cancelación (¿falta redeploy?)' : 'Error desconocido');
+            await markCancelFailure(msg);
+          } else {
+            // El edge ya marcó estado='CANCELADO' server-side; reflejarlo local ya.
+            setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
+            toast.success(`Cancelado en Dropi — ${order.nombre.split(' ')[0]}`, { id: toastId, duration: 2500 });
+          }
+        })
+        .catch(async (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          await markCancelFailure(`red — ${msg}`);
+        });
+    }
+
     if (error) {
       // OLD-6: incluir el mensaje del error para que la operadora pueda
       // diferenciar entre red, RLS, validación, etc.
