@@ -740,10 +740,10 @@ export default function CallView({ items, alerts }: Props) {
 
       <div className="bg-gradient-to-b from-card to-surface border border-input rounded-2xl p-5 mb-4">
         {o.retryCount && !o.result && (
-          <div className="flex items-center gap-2 mb-3 rounded-lg bg-orange-500/10 border border-orange-500/20 px-3 py-2">
-            <RotateCcw size={14} className="text-orange-500" />
-            <span className="text-[11px] font-semibold text-orange-500">
-              Reintento {o.retryCount}/3 — No contestó antes, volver a llamar
+          <div className="flex items-center gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2">
+            <RotateCcw size={14} className="text-emerald-500" />
+            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+              Luz verde ✓ — ya pasaron las 2h, volvé a llamar (intento {Number(o.retryCount) + 1}/3)
             </span>
           </div>
         )}

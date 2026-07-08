@@ -140,25 +140,18 @@ describe('splitCalientesVsViejos', () => {
   });
 });
 
-describe('cooldownHoursForAttempt (escalera N/R)', () => {
-  it('1er intento → 0.4h (~25min)', () => {
-    expect(cooldownHoursForAttempt(1)).toBe(0.4);
-  });
-  it('2do intento → 1h', () => {
-    expect(cooldownHoursForAttempt(2)).toBe(1);
-  });
-  it('3er intento → 2h (y se mantiene en 2h para valores mayores)', () => {
+describe('cooldownHoursForAttempt (2h plano — regla del dueño)', () => {
+  it('todos los intentos → 2h (llamó 10 → vuelve 12 → 14)', () => {
+    expect(cooldownHoursForAttempt(1)).toBe(2);
+    expect(cooldownHoursForAttempt(2)).toBe(2);
     expect(cooldownHoursForAttempt(3)).toBe(2);
     expect(cooldownHoursForAttempt(4)).toBe(2);
   });
-  it('valores <1 / no finitos se tratan como 1 (nunca cooldown 0)', () => {
-    expect(cooldownHoursForAttempt(0)).toBe(0.4);
-    expect(cooldownHoursForAttempt(-3)).toBe(0.4);
-    expect(cooldownHoursForAttempt(NaN)).toBe(0.4);
-  });
-  it('la escalera es monótona creciente', () => {
-    expect(cooldownHoursForAttempt(1)).toBeLessThan(cooldownHoursForAttempt(2));
-    expect(cooldownHoursForAttempt(2)).toBeLessThan(cooldownHoursForAttempt(3));
+  it('robusto ante valores raros o ausentes (sigue 2h)', () => {
+    expect(cooldownHoursForAttempt(0)).toBe(2);
+    expect(cooldownHoursForAttempt(-3)).toBe(2);
+    expect(cooldownHoursForAttempt(NaN)).toBe(2);
+    expect(cooldownHoursForAttempt(undefined)).toBe(2);
   });
 });
 
