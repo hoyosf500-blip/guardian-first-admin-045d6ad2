@@ -176,7 +176,7 @@ export function useGananciaNetaDropi(from: string, to: string) {
     // selectivo + poll suave de 5 min mientras la pantalla esté abierta, para que
     // el número no quede viejo con el badge de frescura en verde al lado.
     refetchOnWindowFocus: true,
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000, // COST-2 2026-07-10: era 5 min
     enabled: Boolean(from && to && storeId),
   });
 }

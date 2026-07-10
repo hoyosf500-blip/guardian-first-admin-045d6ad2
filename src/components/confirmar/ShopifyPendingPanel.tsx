@@ -100,7 +100,8 @@ export default function ShopifyPendingPanel() {
     if (!activeStoreId) return;
     // Refresca pendientes Y valor-distinto → el panel de mismatches se actualiza
     // solo (un pedido corregido/cancelado en Dropi cae de la lista al re-sincar).
-    return pollWhenVisible(() => { void refetch(); void vmRefetch(); }, 120000, { runOnVisible: false });
+    // COST-2 2026-07-10: 2 min → 15 min.
+    return pollWhenVisible(() => { void refetch(); void vmRefetch(); }, 15 * 60_000, { runOnVisible: false });
   }, [activeStoreId, refetch, vmRefetch]);
 
   const pending: ShopifyPendingItem[] = useMemo(() => data?.pending ?? [], [data]);

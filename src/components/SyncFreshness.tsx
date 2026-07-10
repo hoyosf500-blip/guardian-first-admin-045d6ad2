@@ -58,7 +58,8 @@ export default function SyncFreshness({ onAuditClick }: Props) {
 
   useEffect(() => {
     void load();
-    const id = setInterval(() => { void load(); }, 60_000);
+    // COST-2 2026-07-10: 60s → 5 min (badge de frescura, no crítico).
+    const id = setInterval(() => { void load(); }, 5 * 60_000);
     return () => clearInterval(id);
   }, [load]);
 

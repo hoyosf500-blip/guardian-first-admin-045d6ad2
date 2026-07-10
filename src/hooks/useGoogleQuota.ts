@@ -34,7 +34,8 @@ export function useGoogleQuota() {
   return useQuery({
     queryKey: ['google_quota'],
     queryFn: fetchQuota,
-    refetchInterval: 60_000,
-    staleTime: 50_000,
+    // COST-2 2026-07-10: 60s → 10 min. Google Places está OFF (feature flag).
+    refetchInterval: 10 * 60_000,
+    staleTime: 9 * 60_000,
   });
 }
