@@ -52,56 +52,8 @@ import {
   normUp,
   WebFallbackError,
   type QuoteLine,
-  type DestCity,
 } from "../_shared/dropiWebQuote.ts";
-
-/** Resuelve la ciudad destino contra `dropi_city_catalog` (reemplaza /api/locations,
- *  que Dropi bloquea con 403 desde la IP del datacenter de Supabase). Busca por
- *  (country_code, city_norm, dept_norm); si el dept no matchea, reintenta solo por
- *  city_norm. Devuelve null si la ciudad no está en el catálogo. */
-// deno-lint-ignore no-explicit-any
-async function resolveDestCity(
-  sbAdmin: any,
-  countryCode: string,
-  city: string,
-  state: string,
-): Promise<DestCity | null> {
-  const country = countryCode === "EC" ? "EC" : "CO";
-  const cityNorm = normUp(city);
-  const deptNorm = normUp(state);
-  if (!cityNorm) return null;
-
-  const withDept = await sbAdmin
-    .from("dropi_city_catalog")
-    .select("city_id, name, department_id, cod_dane")
-    .eq("country_code", country)
-    .eq("city_norm", cityNorm)
-    .eq("dept_norm", deptNorm)
-    .limit(1)
-    .maybeSingle();
-  // deno-lint-ignore no-explicit-any
-  let row: any = withDept?.data ?? null;
-
-  if (!row) {
-    const cityOnly = await sbAdmin
-      .from("dropi_city_catalog")
-      .select("city_id, name, department_id, cod_dane")
-      .eq("country_code", country)
-      .eq("city_norm", cityNorm)
-      .order("id", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    row = cityOnly?.data ?? null;
-  }
-
-  if (!row) return null;
-  return {
-    cityId: Number(row.city_id),
-    name: String(row.name),
-    departmentId: row.department_id != null ? Number(row.department_id) : null,
-    codDane: String(row.cod_dane),
-  };
-}
+import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
 
 interface ChangeCarrierBody {
   externalId?: string;
@@ -284,6 +236,89 @@ async function markOldOrderReplaced(
   }
 }
 
+/** Control de daños tras un create-with-edit cuando el PUT REEMPLAZADA de la
+ *  orden vieja NO se pudo confirmar. Verifica el estado real (GET integración),
+ *  deja una FILA-TUMBA local con el external_id viejo (estado REEMPLAZADA) para
+ *  que un re-import del cron caiga sobre ella en vez de crear una fila PENDIENTE
+ *  duplicada en la cola, y loguea a sync_logs. Devuelve warning SOLO si la orden
+ *  vieja sigue ACTIVA en Dropi (riesgo real de doble envío). LLAMAR DESPUÉS del
+ *  update local (la fila propia ya no ocupa el external_id viejo). Nunca tira. */
+async function guardReplacedOldOrder(
+  cfg: { base: string; sessionToken: string; apiKey: string; storeUrl: string },
+  // deno-lint-ignore no-explicit-any
+  sbAdmin: any,
+  opts: {
+    replaced: { ok: boolean; status: number; detail: string };
+    externalId: string;
+    newId: string;
+    rowId: string;
+    storeId: string;
+    userId: string;
+  },
+): Promise<string | undefined> {
+  const { replaced, externalId, newId, rowId, storeId, userId } = opts;
+  if (replaced.ok) return undefined;
+
+  // ¿Sigue viva de verdad? Para pedidos de bot (LucidBot) el PUT guía-based no
+  // los ve (falla con error SQL/"guia no existe") aunque el create-with-edit YA
+  // los mató server-side (verificado 2026-07-10: el cron nunca re-importó
+  // #6053027). El GET de integración discrimina: 404/"no encontrada" = sin
+  // rastro (benigno, clase bot); estado activo = alerta REAL para la asesora.
+  let aliveStatus: string | null = null;
+  try {
+    const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+    if (check.ok) {
+      const ord = (check.body.objects ?? check.body.data ?? check.body.order ?? check.body) as Record<string, unknown>;
+      aliveStatus = String(ord?.status || "").toUpperCase() || null;
+    }
+  } catch (e) {
+    console.error("[guardReplacedOldOrder] check de existencia falló:", e);
+  }
+  const stillActive = aliveStatus !== null && !/CANCELAD|REEMPLAZAD/.test(aliveStatus);
+
+  // FILA-TUMBA anti-reimport: copia de la fila propia (que ya apunta al id nuevo)
+  // con el external_id VIEJO y estado REEMPLAZADA. Si el cron vuelve a listar el
+  // id viejo, su upsert cae sobre esta fila (UNIQUE external_id) y la resucita
+  // VISIBLEMENTE en vez de crear una fila PENDIENTE duplicada. Si nunca vuelve,
+  // queda REEMPLAZADA (excluida de colas y métricas — PR #111).
+  try {
+    const { data: fullRow } = await sbAdmin.from("orders").select("*").eq("id", rowId).maybeSingle();
+    if (fullRow) {
+      const tomb: Record<string, unknown> = { ...fullRow };
+      delete tomb.id;
+      delete tomb.created_at;
+      tomb.external_id = externalId;
+      tomb.estado = "REEMPLAZADA";
+      const { error: tombErr } = await sbAdmin.from("orders").insert(tomb);
+      if (tombErr && (tombErr as { code?: string }).code === "23505") {
+        // El id viejo ya está ocupado (cron re-importó en la ventana, o el update
+        // local falló y la fila propia aún lo tiene — .neq la protege). Marcar
+        // REEMPLAZADA: si Dropi de verdad la lista viva, el cron la resucita solo.
+        await sbAdmin.from("orders").update({ estado: "REEMPLAZADA" })
+          .eq("external_id", externalId).eq("store_id", storeId).neq("id", rowId);
+      } else if (tombErr) {
+        console.error("[guardReplacedOldOrder] tumba no insertada:", tombErr);
+      }
+    }
+  } catch (e) {
+    console.error("[guardReplacedOldOrder] tumba falló:", e);
+  }
+
+  await sbAdmin.from("sync_logs").insert({
+    source: "dropi-change-carrier",
+    status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
+    triggered_by: userId,
+    error_message: stillActive
+      ? `Orden vieja ${externalId} SIGUE ACTIVA (${aliveStatus}) en Dropi tras crear ${newId}; PUT REEMPLAZADA falló [${replaced.status}]: ${replaced.detail}. Tumba local creada.`
+      : `PUT REEMPLAZADA falló para la orden vieja ${externalId} tras crear ${newId} [${replaced.status}]: ${replaced.detail} — sin rastro activo en integración (clase bot; el create-with-edit ya la cancela server-side). Tumba local creada.`,
+    store_id: storeId,
+  });
+
+  return stillActive
+    ? `La orden vieja #${externalId} sigue ACTIVA en Dropi (${aliveStatus}) — cancelala en el panel para que no se duplique el envío.`
+    : undefined;
+}
+
 /** Busca la transportadora elegida DENTRO de las opciones cotizadas (por id o
  *  nombre normalizado). Devuelve la opción completa (con typeService y
  *  shippingAmount) o null si no cotiza esta ruta. Evita POSTear un create con
@@ -318,7 +353,7 @@ async function postCreateWithEdit(
   opts: { orderBody: Record<string, unknown>; userId: string; storeId: string; label: string },
 ): Promise<
   | { ok: true; newId: string; status: number; retriedSinShop: boolean }
-  | { ok: false; status: number; detail: string; respBody: Record<string, unknown> | null }
+  | { ok: false; code?: "orden_ya_enviada"; status: number; detail: string; respBody: Record<string, unknown> | null }
 > {
   const attempt = async (body: Record<string, unknown>) => {
     const { status, body: respBody, text } = await dropiWebFetch(
@@ -353,18 +388,68 @@ async function postCreateWithEdit(
     Boolean(String(opts.orderBody.shop_order_id ?? "").trim()) || opts.orderBody.shop_id != null;
   await logFail(first.status, first.detail, first.respBody, hadShopFields ? " (intento 1, con shop_order_id/shop_id)" : "");
 
+  // GUARD ANTI-DUPLICADO DE DROPI (caso Yolanda 2026-07-10): "Esta orden ya fue
+  // enviada a dropiX" = la compra YA fue reenviada/forwardeada dentro de Dropi y
+  // existe OTRA orden viva de la misma compra (#6053850 EN TRÁNSITO). Reintentar
+  // sin shop_order_id ESQUIVA ese guard y CREA UN DUPLICADO REAL (pasó: se creó
+  // #6066531 y hubo que cancelarla — doble envío al cliente). NUNCA reintentar.
+  const yaEnviada = /ya fue enviada/i.test(
+    `${first.detail} ${JSON.stringify(first.respBody ?? {})}`,
+  );
+  if (yaEnviada) {
+    return { ok: false, code: "orden_ya_enviada", status: first.status, detail: first.detail, respBody: first.respBody };
+  }
+
   if (!hadShopFields) {
     return { ok: false, status: first.status, detail: first.detail, respBody: first.respBody };
   }
   // Reintento sin los campos de shop del pedido viejo (paridad con el create que funciona).
   const retryBody = { ...opts.orderBody, shop_order_id: "", shop_id: null };
-  const second = await attempt(retryBody);
+  let second: Awaited<ReturnType<typeof attempt>>;
+  try {
+    second = await attempt(retryBody);
+  } catch (e) {
+    // Sin este log, un throw en el intento 2 (token/red) era INVISIBLE en
+    // sync_logs (solo quedaba el intento 1) — pasó 3 veces el 2026-07-10 tarde.
+    const msg = e instanceof Error ? e.message : String(e);
+    await logFail(0, `lanzó excepción: ${msg}`, null, " (intento 2, sin shop_order_id/shop_id)");
+    throw e;
+  }
   if (second.ok) {
     console.log(`[${opts.label}] retry sin shop_order_id/shop_id FUNCIONÓ (pedido de bot/otra shop).`);
     return { ok: true, newId: String(second.rawId), status: second.status, retriedSinShop: true };
   }
   await logFail(second.status, second.detail, second.respBody, " (intento 2, sin shop_order_id/shop_id)");
   return { ok: false, status: second.status, detail: second.detail, respBody: second.respBody };
+}
+
+/** Otras órdenes ACTIVAS del mismo cliente en Dropi (búsqueda por nombre en el
+ *  listado web). Se usa cuando Dropi bloquea un create-with-edit con "ya fue
+ *  enviada": la orden hermana viva es la que la asesora debe mirar. Nunca tira. */
+async function findActiveSiblings(
+  cfg: Parameters<typeof dropiWebFetch>[0],
+  clientName: string,
+  excludeId: string,
+): Promise<Array<{ id: string; status: string; total: string }>> {
+  try {
+    const name = clientName.trim();
+    if (name.length < 4) return [];
+    const { status, body } = await dropiWebFetch(
+      cfg,
+      `/api/orders/myorders?result_number=10&start=0&textToSearch=${encodeURIComponent(name)}`,
+      { method: "GET", logBody: false },
+    );
+    if (status < 200 || status >= 300) return [];
+    // deno-lint-ignore no-explicit-any
+    const objs: any[] = Array.isArray(body?.objects) ? body.objects : [];
+    return objs
+      .filter((o) => String(o?.id) !== excludeId &&
+        !/CANCELAD|REEMPLAZAD|ENTREGAD|DEVOLUCION|DEVUELTO/i.test(String(o?.status || "")))
+      .slice(0, 3)
+      .map((o) => ({ id: String(o.id), status: String(o.status || ""), total: String(o.total_order ?? "") }));
+  } catch {
+    return [];
+  }
 }
 
 /** Deriva el host api-v2 (detalle web del pedido) desde el host de integraciones.
@@ -799,15 +884,16 @@ Deno.serve(async (req: Request) => {
       const overrideLines = sanitizeLinesOverride(body.lines, realLines);
       const lines = overrideLines ?? realLines;
 
-      // 2) Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
+      // 2) Ciudad destino: catálogo local + fallback vivo /api/locations (self-healing).
       const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
       const destCity = await resolveDestCity(
-        sbAdmin, cfg.countryCode, String(orderRow.ciudad || ""), String(orderRow.departamento || ""),
+        sbAdmin, cfg, cfg.countryCode, String(orderRow.ciudad || ""), String(orderRow.departamento || ""),
       );
       if (!destCity) {
         return jsonOk({
           ok: false,
-          error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+          code: "sin_cobertura_dropi",
+          error: noCoverageMessage(String(orderRow.ciudad || ""), String(orderRow.departamento || "")),
           city: String(orderRow.ciudad || ""), state: String(orderRow.departamento || ""),
         });
       }
@@ -920,11 +1006,12 @@ Deno.serve(async (req: Request) => {
       const linesV = scaleLinePrices(prepV.lines, newValor, cfg.countryCode);
 
       const countryV = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
-      const destCityV = await resolveDestCity(sbAdmin, cfg.countryCode, clientV.city, clientV.state);
+      const destCityV = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, clientV.city, clientV.state);
       if (!destCityV) {
         return jsonOk({
           ok: false,
-          error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+          code: "sin_cobertura_dropi",
+          error: noCoverageMessage(clientV.city, clientV.state),
           city: clientV.city, state: clientV.state,
         });
       }
@@ -1009,6 +1096,19 @@ Deno.serve(async (req: Request) => {
         dropiStatusV = postV.status;
         // `=== false` (no `!ok`): narrowing robusto también sin strict mode.
         if (postV.ok === false) {
+          if (postV.code === "orden_ya_enviada") {
+            const sibsV = await findActiveSiblings(cfg, `${clientV.name} ${clientV.surname || ""}`, externalId);
+            const sibTxtV = sibsV.length
+              ? ` Orden(es) activa(s) del cliente en Dropi: ${sibsV.map((s) => `#${s.id} (${s.status}${s.total ? `, $${s.total}` : ""})`).join(", ")}.`
+              : "";
+            return jsonOk({
+              ok: false,
+              code: "orden_ya_enviada",
+              error: `Dropi bloqueó el cambio: esta compra ya fue reenviada dentro de Dropi y recrearla generaría un pedido DUPLICADO (doble envío al cliente).${sibTxtV} Gestioná la orden activa del cliente; acá no se creó ni cambió nada.`,
+              dropiHttpStatus: postV.status,
+              dropiBody: postV.respBody,
+            });
+          }
           return jsonOk({
             ok: false,
             error: `Dropi rechazó el cambio de valor [${postV.status}]: ${postV.detail}`,
@@ -1027,15 +1127,6 @@ Deno.serve(async (req: Request) => {
       // Paridad panel: soft-borrar la orden vieja (REEMPLAZADA) para que no quede
       // duplicada en Dropi ni la re-importe el cron.
       const replacedV = await markOldOrderReplaced(cfg, externalId);
-      if (!replacedV.ok) {
-        await sbAdmin.from("sync_logs").insert({
-          source: "dropi-change-carrier",
-          status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
-          triggered_by: user.id,
-          error_message: `No pude marcar REEMPLAZADA la orden vieja ${externalId} tras crear ${newIdV} [${replacedV.status}]: ${replacedV.detail}`,
-          store_id: storeId,
-        });
-      }
 
       // Sincronizar la fila Guardian EN SU LUGAR (mismo dbId) — mismo patrón y
       // manejo de carrera 23505 que el apply de transportadora.
@@ -1059,10 +1150,11 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      if (!replacedV.ok) {
-        const extraV = `La orden vieja #${externalId} pudo quedar activa en Dropi (no se pudo marcar REEMPLAZADA) — verificala/cancelala en el panel.`;
-        warningV = warningV ? `${warningV} ${extraV}` : extraV;
-      }
+      // Verificación + tumba anti-reimport si el PUT REEMPLAZADA no se confirmó.
+      const guardWarnV = await guardReplacedOldOrder(cfg, sbAdmin, {
+        replaced: replacedV, externalId, newId: String(newIdV), rowId: String(orderRow.id), storeId, userId: user.id,
+      });
+      if (guardWarnV) warningV = warningV ? `${warningV} ${guardWarnV}` : guardWarnV;
 
       const { error: auditErrV } = await sbAdmin.from("order_results").insert({
         order_id: orderRow.id,
@@ -1153,11 +1245,12 @@ Deno.serve(async (req: Request) => {
         : roundMoney(linesE.reduce((s, l) => s + l.price * l.quantity, 0), cfg.countryCode);
 
       const countryE = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
-      const destCityE = await resolveDestCity(sbAdmin, cfg.countryCode, clientE.city, clientE.state);
+      const destCityE = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, clientE.city, clientE.state);
       if (!destCityE) {
         return jsonOk({
           ok: false,
-          error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+          code: "sin_cobertura_dropi",
+          error: noCoverageMessage(clientE.city, clientE.state),
           city: clientE.city, state: clientE.state,
         });
       }
@@ -1256,6 +1349,19 @@ Deno.serve(async (req: Request) => {
         dropiStatusE = postE.status;
         // `=== false` (no `!ok`): narrowing robusto también sin strict mode.
         if (postE.ok === false) {
+          if (postE.code === "orden_ya_enviada") {
+            const sibsE = await findActiveSiblings(cfg, `${clientE.name} ${clientE.surname || ""}`, externalId);
+            const sibTxtE = sibsE.length
+              ? ` Orden(es) activa(s) del cliente en Dropi: ${sibsE.map((s) => `#${s.id} (${s.status}${s.total ? `, $${s.total}` : ""})`).join(", ")}.`
+              : "";
+            return jsonOk({
+              ok: false,
+              code: "orden_ya_enviada",
+              error: `Dropi bloqueó la edición: esta compra ya fue reenviada dentro de Dropi y recrearla generaría un pedido DUPLICADO (doble envío al cliente).${sibTxtE} Gestioná la orden activa del cliente; acá no se creó ni cambió nada.`,
+              dropiHttpStatus: postE.status,
+              dropiBody: postE.respBody,
+            });
+          }
           return jsonOk({
             ok: false,
             error: `Dropi rechazó la edición del pedido [${postE.status}]: ${postE.detail}`,
@@ -1274,15 +1380,6 @@ Deno.serve(async (req: Request) => {
       // Paridad panel: soft-borrar la orden vieja (REEMPLAZADA) para que no quede
       // duplicada en Dropi ni la re-importe el cron.
       const replacedE = await markOldOrderReplaced(cfg, externalId);
-      if (!replacedE.ok) {
-        await sbAdmin.from("sync_logs").insert({
-          source: "dropi-change-carrier",
-          status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
-          triggered_by: user.id,
-          error_message: `No pude marcar REEMPLAZADA la orden vieja ${externalId} tras crear ${newIdE} [${replacedE.status}]: ${replacedE.detail}`,
-          store_id: storeId,
-        });
-      }
 
       // Sincronizar la fila Guardian EN SU LUGAR (mismo dbId) — mismo patrón y
       // manejo de carrera 23505 que apply/apply_value.
@@ -1311,10 +1408,11 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      if (!replacedE.ok) {
-        const extraE = `La orden vieja #${externalId} pudo quedar activa en Dropi (no se pudo marcar REEMPLAZADA) — verificala/cancelala en el panel.`;
-        warningE = warningE ? `${warningE} ${extraE}` : extraE;
-      }
+      // Verificación + tumba anti-reimport si el PUT REEMPLAZADA no se confirmó.
+      const guardWarnE = await guardReplacedOldOrder(cfg, sbAdmin, {
+        replaced: replacedE, externalId, newId: String(newIdE), rowId: String(orderRow.id), storeId, userId: user.id,
+      });
+      if (guardWarnE) warningE = warningE ? `${warningE} ${guardWarnE}` : guardWarnE;
 
       const { error: auditErrE } = await sbAdmin.from("order_results").insert({
         order_id: orderRow.id,
@@ -1374,11 +1472,12 @@ Deno.serve(async (req: Request) => {
     const lines = prep.lines;
 
     // 2) Ciudad destino desde el catálogo local (NO /api/locations, bloqueado por IP).
-    const destCity = await resolveDestCity(sbAdmin, cfg.countryCode, client.city, client.state);
+    const destCity = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, client.city, client.state);
     if (!destCity) {
       return jsonOk({
         ok: false,
-        error: "No pude resolver la ciudad destino en el catálogo (agregala a dropi_city_catalog).",
+        code: "sin_cobertura_dropi",
+        error: noCoverageMessage(client.city, client.state),
         city: client.city, state: client.state,
       });
     }
@@ -1469,6 +1568,19 @@ Deno.serve(async (req: Request) => {
       dropiHttpStatus = postA.status;
       // `=== false` (no `!ok`): narrowing robusto también sin strict mode.
       if (postA.ok === false) {
+        if (postA.code === "orden_ya_enviada") {
+          const sibsA = await findActiveSiblings(cfg, `${client.name} ${client.surname || ""}`, externalId);
+          const sibTxtA = sibsA.length
+            ? ` Orden(es) activa(s) del cliente en Dropi: ${sibsA.map((s) => `#${s.id} (${s.status}${s.total ? `, $${s.total}` : ""})`).join(", ")}.`
+            : "";
+          return jsonOk({
+            ok: false,
+            code: "orden_ya_enviada",
+            error: `Dropi bloqueó el cambio: esta compra ya fue reenviada dentro de Dropi y recrearla generaría un pedido DUPLICADO (doble envío al cliente).${sibTxtA} Gestioná la orden activa del cliente; acá no se creó ni cambió nada.`,
+            dropiHttpStatus: postA.status,
+            dropiBody: postA.respBody,
+          });
+        }
         return jsonOk({
           ok: false,
           error: `Dropi rechazó el cambio de transportadora [${postA.status}]: ${postA.detail}`,
@@ -1487,15 +1599,6 @@ Deno.serve(async (req: Request) => {
     // 4b) Paridad panel: soft-borrar la orden vieja (REEMPLAZADA) para que no quede
     //     duplicada en Dropi ni la re-importe el cron.
     const replacedA = await markOldOrderReplaced(cfg, externalId);
-    if (!replacedA.ok) {
-      await sbAdmin.from("sync_logs").insert({
-        source: "dropi-change-carrier",
-        status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
-        triggered_by: user.id,
-        error_message: `No pude marcar REEMPLAZADA la orden vieja ${externalId} tras crear ${newExternalId} [${replacedA.status}]: ${replacedA.detail}`,
-        store_id: storeId,
-      });
-    }
 
     // 5) Sincronizar la fila Guardian EN SU LUGAR (mismo dbId): external_id → nuevo id,
     //    transportadora → nuevo nombre. Sin esto, el nightly-reconcile crearía un
@@ -1524,10 +1627,11 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (!replacedA.ok) {
-      const extraA = `La orden vieja #${externalId} pudo quedar activa en Dropi (no se pudo marcar REEMPLAZADA) — verificala/cancelala en el panel.`;
-      warning = warning ? `${warning} ${extraA}` : extraA;
-    }
+    // Verificación + tumba anti-reimport si el PUT REEMPLAZADA no se confirmó.
+    const guardWarnA = await guardReplacedOldOrder(cfg, sbAdmin, {
+      replaced: replacedA, externalId, newId: String(newExternalId), rowId: String(orderRow.id), storeId, userId: user.id,
+    });
+    if (guardWarnA) warning = warning ? `${warning} ${guardWarnA}` : guardWarnA;
 
     // Auditoría del reemplazo (incluye old→new external id para trazabilidad).
     const auditPayload = {
