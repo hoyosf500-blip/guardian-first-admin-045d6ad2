@@ -284,6 +284,89 @@ async function markOldOrderReplaced(
   }
 }
 
+/** Busca la transportadora elegida DENTRO de las opciones cotizadas (por id o
+ *  nombre normalizado). Devuelve la opción completa (con typeService y
+ *  shippingAmount) o null si no cotiza esta ruta. Evita POSTear un create con
+ *  una carrier sin cobertura — Dropi lo rechaza (a veces con mensaje claro tipo
+ *  "La ciudad no tiene habilitado el método de envío", a veces con el genérico
+ *  "Error al crear la orden"). Caso real: ECHEANDIA-BOLIVAR-LAARCOURIER 2026-07-09. */
+function findQuotedOption(
+  options: Array<{ id: number | string; name: string; typeService: string; shippingAmount: number }>,
+  dcIdRaw: number | string | undefined,
+  dcName: string,
+): { id: number | string; name: string; typeService: string; shippingAmount: number } | null {
+  const idNum = Number(dcIdRaw);
+  const nameNorm = normUp(dcName);
+  return (
+    options.find((op) => Number(op.id) === idNum && Number.isFinite(idNum)) ??
+    options.find((op) => normUp(op.name) === nameNorm && nameNorm !== "") ??
+    null
+  );
+}
+
+/** POST del create-with-edit con reintento defensivo para pedidos "de bot"
+ *  (LucidBot/FINAL_ORDER de otra shop): si el primer POST falla y el body
+ *  llevaba shop_order_id/shop_id (heredados del pedido viejo vía detalle v2),
+ *  reintenta UNA vez sin ellos — el create web que SÍ funciona (shopify-push)
+ *  nunca los manda, y Dropi rechaza con el genérico "Error al crear la orden"
+ *  cuando el shop_order_id pertenece a otra integración (caso #6053027,
+ *  LUCIDBOT-4783411). Loguea cada intento en sync_logs con el body de Dropi. */
+async function postCreateWithEdit(
+  cfg: Parameters<typeof dropiWebFetch>[0],
+  // deno-lint-ignore no-explicit-any
+  sbAdmin: any,
+  opts: { orderBody: Record<string, unknown>; userId: string; storeId: string; label: string },
+): Promise<
+  | { ok: true; newId: string; status: number; retriedSinShop: boolean }
+  | { ok: false; status: number; detail: string; respBody: Record<string, unknown> | null }
+> {
+  const attempt = async (body: Record<string, unknown>) => {
+    const { status, body: respBody, text } = await dropiWebFetch(
+      cfg, `/api/orders/myorders`, { method: "POST", body },
+    );
+    const ok = status >= 200 && status < 300 && respBody?.isSuccess !== false;
+    const rawId =
+      (respBody?.objects?.id as string | number | undefined) ??
+      (respBody?.id as string | number | undefined) ??
+      (respBody?.data?.id as string | number | undefined) ??
+      (respBody?.order?.id as string | number | undefined) ??
+      null;
+    const detail = String(respBody?.message || respBody?.error || text || "error").slice(0, 500);
+    return { ok: ok && rawId != null, rawId, status, respBody: respBody ?? null, detail };
+  };
+  const logFail = async (status: number, detail: string, respBody: unknown, extra: string) => {
+    await sbAdmin.from("sync_logs").insert({
+      source: "dropi-change-carrier",
+      status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
+      triggered_by: opts.userId,
+      // Incluir el body crudo de Dropi: el `message` genérico ("Error al crear
+      // la orden") no alcanza para diagnosticar; el JSON completo sí.
+      error_message: `${opts.label} [${status}]${extra}: ${detail} :: dropiBody=${JSON.stringify(respBody ?? {}).slice(0, 700)}`,
+      store_id: opts.storeId,
+    });
+  };
+
+  const first = await attempt(opts.orderBody);
+  if (first.ok) return { ok: true, newId: String(first.rawId), status: first.status, retriedSinShop: false };
+
+  const hadShopFields =
+    Boolean(String(opts.orderBody.shop_order_id ?? "").trim()) || opts.orderBody.shop_id != null;
+  await logFail(first.status, first.detail, first.respBody, hadShopFields ? " (intento 1, con shop_order_id/shop_id)" : "");
+
+  if (!hadShopFields) {
+    return { ok: false, status: first.status, detail: first.detail, respBody: first.respBody };
+  }
+  // Reintento sin los campos de shop del pedido viejo (paridad con el create que funciona).
+  const retryBody = { ...opts.orderBody, shop_order_id: "", shop_id: null };
+  const second = await attempt(retryBody);
+  if (second.ok) {
+    console.log(`[${opts.label}] retry sin shop_order_id/shop_id FUNCIONÓ (pedido de bot/otra shop).`);
+    return { ok: true, newId: String(second.rawId), status: second.status, retriedSinShop: true };
+  }
+  await logFail(second.status, second.detail, second.respBody, " (intento 2, sin shop_order_id/shop_id)");
+  return { ok: false, status: second.status, detail: second.detail, respBody: second.respBody };
+}
+
 /** Deriva el host api-v2 (detalle web del pedido) desde el host de integraciones.
  *  cfg.base = "https://api.dropi.ec" → "https://api-v2.dropi.ec". */
 function apiV2HostFrom(base: string): string {
@@ -632,13 +715,34 @@ Deno.serve(async (req: Request) => {
       //    (caso Manuel Macías) que reaparecía al caducar el overlay local a los 7
       //    días. Dropi devuelve HTTP 200 con {isSuccess:false, status:404,
       //    message:"Orden no encontrada"} para estos → dropiGetOrder da ok:false.
+      //
+      //    ENDURECIDO 2026-07-10: el 404 de INTEGRACIÓN solo NO alcanza — los
+      //    pedidos de bot (LucidBot/FINAL_ORDER de otra shop, caso #6053027) son
+      //    invisibles para /integrations pero VIVOS en el panel. Fantasma de
+      //    verdad = integración-404 Y el detalle v2 (web) tampoco lo encuentra.
+      //    Si la web SÍ lo ve, NO se cancela local (falso positivo).
+      // Señal de "no existe": 404 explícito o el mensaje textual de Dropi
+      // ("Orden no encontrada" en integración; "Esta guia no existe" en web).
+      // NO usar status 400 a secas — un bad-request genérico NO es fantasma.
+      const notFoundSignal = (httpStatus: number, b: Record<string, unknown>) =>
+        httpStatus === 404 ||
+        (b.isSuccess === false &&
+          (Number(b.status) === 404 ||
+            /no encontrada|no existe|not found/i.test(String(b.message || ""))));
       let ghost = false;
       try {
         const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
-        const cb = (check.body || {}) as Record<string, unknown>;
-        ghost = check.httpStatus === 404 ||
-          (cb.isSuccess === false &&
-            (Number(cb.status) === 404 || /no encontrada|no existe|not found/i.test(String(cb.message || ""))));
+        const integrationMissing = notFoundSignal(check.httpStatus, (check.body || {}) as Record<string, unknown>);
+        if (integrationMissing) {
+          // Segunda opinión: detalle v2 con sesión web (ve pedidos de bot/panel).
+          const v2c = await dropiGetOrderV2(cfg, externalId);
+          const webMissing = !v2c.ok && notFoundSignal(v2c.httpStatus, (v2c.body || {}) as Record<string, unknown>);
+          ghost = webMissing;
+          if (!webMissing && !v2c.ok) {
+            // v2 falló por otra razón (token/red) → NO concluir fantasma (fail-safe).
+            console.warn("[cancel] integración=404 pero v2 no concluyente — NO se cancela local", { externalId, v2Status: v2c.httpStatus });
+          }
+        }
       } catch (e) {
         console.error("[cancel] check de existencia falló:", e);
       }
@@ -663,16 +767,31 @@ Deno.serve(async (req: Request) => {
     // =========================== MODE: QUOTE ===========================
     if (mode === "quote") {
       // 1) Leer las líneas del pedido desde Dropi (no guardamos product ids local).
+      //    PRIMERO la integración; si da "Orden no encontrada" (pedidos de bot
+      //    LucidBot/FINAL_ORDER de otra shop, INVISIBLES para /integrations pero
+      //    vivos en el panel — caso #6053027 2026-07-10), caer al detalle v2 (web),
+      //    el mismo fallback que ya usa resolveClientAndLines para los recreates.
       const ord = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
-      if (!ord.ok) {
-        return jsonOk({
-          ok: false,
-          error: `No pude leer el pedido en Dropi [${ord.httpStatus}].`,
-          dropiHttpStatus: ord.httpStatus,
-          dropiBody: ord.body,
-        });
+      let realLines: LineDetail[] = [];
+      if (ord.ok) {
+        realLines = parseOrderLines(ord.body);
+      } else {
+        try {
+          cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+          const v2q = await dropiGetOrderV2(cfg, externalId);
+          if (v2q.ok) realLines = parseV2Lines(v2q.body);
+        } catch (e) {
+          console.error("[quote] fallback v2 falló:", e);
+        }
+        if (realLines.length === 0) {
+          return jsonOk({
+            ok: false,
+            error: `No pude leer el pedido en Dropi [${ord.httpStatus}].`,
+            dropiHttpStatus: ord.httpStatus,
+            dropiBody: ord.body,
+          });
+        }
       }
-      const realLines = parseOrderLines(ord.body);
       if (realLines.length === 0) {
         return jsonOk({
           ok: false,
@@ -868,13 +987,16 @@ Deno.serve(async (req: Request) => {
           id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
         })),
         distributionCompany: { id: chosen.id, name: chosen.name },
-        type_service: "normal",
-        zip_code: "",
+        // Paridad con el create web QUE FUNCIONA (shopify-push createOrderViaWeb).
+        type_service: chosen.typeService || "normal",
+        shipping_amount: chosen.shippingAmount,
+        zip_code: null,
         colonia: "",
         shop_id: clientV.shopId ?? null,
         dni: "",
-        dni_type: "",
+        dni_type: null,
         insurance: false,
+        shalom_data: null,
         warehouses_selected_id: ctxV.origin.warehouseId,
         // Flags de EDICIÓN (verificados en vivo) — cancelan la vieja + linkean la nueva.
         is_edit_order: true,
@@ -887,33 +1009,20 @@ Deno.serve(async (req: Request) => {
       let newIdV: string | null = null;
       let dropiStatusV = 0;
       try {
-        const { status, body: respBody, text } = await dropiWebFetch(
-          cfg, `/api/orders/myorders`, { method: "POST", body: orderBodyV },
-        );
-        dropiStatusV = status;
-        const okV = status >= 200 && status < 300 && respBody?.isSuccess !== false;
-        const rawId =
-          (respBody?.objects?.id as string | number | undefined) ??
-          (respBody?.id as string | number | undefined) ??
-          (respBody?.data?.id as string | number | undefined) ??
-          (respBody?.order?.id as string | number | undefined) ??
-          null;
-        if (!okV || rawId == null) {
-          const detail = String(respBody?.message || respBody?.error || text || "error").slice(0, 500);
-          await sbAdmin.from("sync_logs").insert({
-            source: "dropi-change-carrier",
-            status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
-            triggered_by: user.id, error_message: `Dropi rechazó el cambio de valor [${status}]: ${detail}`,
-            store_id: storeId,
-          });
+        const postV = await postCreateWithEdit(cfg, sbAdmin, {
+          orderBody: orderBodyV, userId: user.id, storeId, label: "Dropi rechazó el cambio de valor",
+        });
+        dropiStatusV = postV.status;
+        // `=== false` (no `!ok`): narrowing robusto también sin strict mode.
+        if (postV.ok === false) {
           return jsonOk({
             ok: false,
-            error: `Dropi rechazó el cambio de valor [${status}]: ${detail}`,
-            dropiHttpStatus: status,
-            dropiBody: respBody,
+            error: `Dropi rechazó el cambio de valor [${postV.status}]: ${postV.detail}`,
+            dropiHttpStatus: postV.status,
+            dropiBody: postV.respBody,
           });
         }
-        newIdV = String(rawId);
+        newIdV = postV.newId;
       } catch (e) {
         if (e instanceof WebFallbackError) {
           return jsonOk({ ok: false, error: e.message, dropiHttpStatus: (e as WebFallbackError).status, dropiBody: (e as WebFallbackError).body });
@@ -1076,19 +1185,27 @@ Deno.serve(async (req: Request) => {
         throw e;
       }
 
-      // Transportadora: la elegida por la operadora (id+name directos, como en
-      // apply) o la ACTUAL resuelta contra las options (patrón apply_value).
-      let chosenE: { id: number | string; name: string } | null = null;
+      // Transportadora: la elegida por la operadora VALIDADA contra las opciones
+      // cotizadas (antes se mandaba id+name directos sin validar → Dropi rechazaba
+      // el create con "La ciudad no tiene habilitado el método de envío" o el
+      // genérico "Error al crear la orden"; caso ECHEANDIA/LAARCOURIER 2026-07-09).
+      // Si no vino carrier, la ACTUAL resuelta contra las options (patrón apply_value).
+      let chosenE: { id: number | string; name: string; typeService: string; shippingAmount: number } | null = null;
       if (hasCarrier) {
-        const dcIdNumE = Number(dcIdRaw);
-        chosenE = { id: Number.isFinite(dcIdNumE) ? dcIdNumE : (dcIdRaw as number | string), name: dcName };
+        chosenE = findQuotedOption(ctxE.options, dcIdRaw as number | string, dcName);
+        if (!chosenE) {
+          return jsonOk({
+            ok: false,
+            code: "carrier_sin_cobertura",
+            error: `${dcName} no cotiza envíos a ${ctxE.dest.cityName} (${ctxE.dest.stateName}) para este pedido. Transportadoras disponibles: ${ctxE.options.map((o) => o.name).join(", ") || "ninguna"}. Tocá "Recotizar" y elegí una de la lista.`,
+          });
+        }
       } else {
         const currentNormE = normUp(orderRow.transportadora || "");
-        const found =
+        chosenE =
           (currentNormE ? ctxE.options.find((op) => normUp(op.name) === currentNormE) : undefined) ??
           ctxE.options.find((op) => normUp(op.name) !== "VELOCES") ??
           ctxE.options[0] ?? null;
-        if (found) chosenE = { id: found.id, name: found.name };
       }
       if (!chosenE) {
         return jsonOk({ ok: false, error: "Dropi no devolvió transportadoras para recrear el pedido." });
@@ -1115,13 +1232,18 @@ Deno.serve(async (req: Request) => {
           id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
         })),
         distributionCompany: { id: chosenE.id, name: chosenE.name },
-        type_service: "normal",
-        zip_code: "",
+        // Paridad con el create web QUE FUNCIONA (shopify-push createOrderViaWeb):
+        // type_service real cotizado (no "normal" hardcodeado), shipping_amount de
+        // la opción elegida, y nulls donde el panel manda null (no "").
+        type_service: chosenE.typeService || "normal",
+        shipping_amount: chosenE.shippingAmount,
+        zip_code: null,
         colonia: "",
         shop_id: clientE.shopId ?? null,
         dni: "",
-        dni_type: "",
+        dni_type: null,
         insurance: false,
+        shalom_data: null,
         warehouses_selected_id: ctxE.origin.warehouseId,
         // Flags de EDICIÓN (verificados en vivo) — cancelan la vieja + linkean la nueva.
         is_edit_order: true,
@@ -1134,33 +1256,20 @@ Deno.serve(async (req: Request) => {
       let newIdE: string | null = null;
       let dropiStatusE = 0;
       try {
-        const { status, body: respBody, text } = await dropiWebFetch(
-          cfg, `/api/orders/myorders`, { method: "POST", body: orderBodyE },
-        );
-        dropiStatusE = status;
-        const okE = status >= 200 && status < 300 && respBody?.isSuccess !== false;
-        const rawIdE =
-          (respBody?.objects?.id as string | number | undefined) ??
-          (respBody?.id as string | number | undefined) ??
-          (respBody?.data?.id as string | number | undefined) ??
-          (respBody?.order?.id as string | number | undefined) ??
-          null;
-        if (!okE || rawIdE == null) {
-          const detail = String(respBody?.message || respBody?.error || text || "error").slice(0, 500);
-          await sbAdmin.from("sync_logs").insert({
-            source: "dropi-change-carrier",
-            status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
-            triggered_by: user.id, error_message: `Dropi rechazó la edición [${status}]: ${detail}`,
-            store_id: storeId,
-          });
+        const postE = await postCreateWithEdit(cfg, sbAdmin, {
+          orderBody: orderBodyE, userId: user.id, storeId, label: "Dropi rechazó la edición",
+        });
+        dropiStatusE = postE.status;
+        // `=== false` (no `!ok`): narrowing robusto también sin strict mode.
+        if (postE.ok === false) {
           return jsonOk({
             ok: false,
-            error: `Dropi rechazó la edición del pedido [${status}]: ${detail}`,
-            dropiHttpStatus: status,
-            dropiBody: respBody,
+            error: `Dropi rechazó la edición del pedido [${postE.status}]: ${postE.detail}`,
+            dropiHttpStatus: postE.status,
+            dropiBody: postE.respBody,
           });
         }
-        newIdE = String(rawIdE);
+        newIdE = postE.newId;
       } catch (e) {
         if (e instanceof WebFallbackError) {
           return jsonOk({ ok: false, error: e.message, dropiHttpStatus: (e as WebFallbackError).status, dropiBody: (e as WebFallbackError).body });
@@ -1301,13 +1410,22 @@ Deno.serve(async (req: Request) => {
     }
     const { dest, origin, products, supplierId } = ctx;
 
-    // 3) Construir el body de create-with-edit (idéntico al create + flags de edición).
+    // 3b) Validar la transportadora ELEGIDA contra las opciones cotizadas — si no
+    //     cotiza esta ruta, Dropi rechazaría el create (a veces con el genérico
+    //     "Error al crear la orden"). Error claro y accionable ANTES del POST.
+    const chosenA = findQuotedOption(ctx.options, distributionCompanyId as number | string, name);
+    if (!chosenA) {
+      return jsonOk({
+        ok: false,
+        code: "carrier_sin_cobertura",
+        error: `${name} no cotiza envíos a ${dest.cityName} (${dest.stateName}) para este pedido. Transportadoras disponibles: ${ctx.options.map((o) => o.name).join(", ") || "ninguna"}.`,
+      });
+    }
+
+    // 4) Construir el body de create-with-edit (idéntico al create + flags de edición).
     //    distributionCompany = la transportadora ELEGIDA (NO la más barata ≠ VELOCES).
     const userId = decodeJwtSub(cfg.sessionToken);
     const idOldOrder = Number(externalId);
-    // El panel manda el id como número; coercionamos por si la UI lo pasó string.
-    const dcIdNum = Number(distributionCompanyId);
-    const dcId = Number.isFinite(dcIdNum) ? dcIdNum : distributionCompanyId;
     const orderBody: Record<string, unknown> = {
       total_order: total,
       notes: client.notes || "",
@@ -1327,14 +1445,17 @@ Deno.serve(async (req: Request) => {
       products: products.map((p) => ({
         id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
       })),
-      distributionCompany: { id: dcId, name },
-      type_service: "normal",
-      zip_code: "",
+      distributionCompany: { id: chosenA.id, name: chosenA.name },
+      // Paridad con el create web QUE FUNCIONA (shopify-push createOrderViaWeb).
+      type_service: chosenA.typeService || "normal",
+      shipping_amount: chosenA.shippingAmount,
+      zip_code: null,
       colonia: "",
       shop_id: client.shopId ?? null,
       dni: "",
-      dni_type: "",
+      dni_type: null,
       insurance: false,
+      shalom_data: null,
       warehouses_selected_id: origin.warehouseId,
       // Flags de EDICIÓN (verificados en vivo) — cancelan la vieja + linkean la nueva.
       is_edit_order: true,
@@ -1344,39 +1465,24 @@ Deno.serve(async (req: Request) => {
       reasonComment: `Esta orden reemplaza a la orden ${externalId} que fue editada por el usuario.`,
     };
 
-    // 4) POST /api/orders/myorders (session token vía dropiWebFetch sobre cfg.base).
+    // 5) POST /api/orders/myorders (session token vía dropiWebFetch sobre cfg.base).
     let newExternalId: string | null = null;
     let dropiHttpStatus = 0;
     try {
-      const { status, body: respBody, text } = await dropiWebFetch(
-        cfg,
-        `/api/orders/myorders`,
-        { method: "POST", body: orderBody },
-      );
-      dropiHttpStatus = status;
-      const ok = status >= 200 && status < 300 && respBody?.isSuccess !== false;
-      const newId =
-        (respBody?.objects?.id as string | number | undefined) ??
-        (respBody?.id as string | number | undefined) ??
-        (respBody?.data?.id as string | number | undefined) ??
-        (respBody?.order?.id as string | number | undefined) ??
-        null;
-      if (!ok || newId == null) {
-        const detail = String(respBody?.message || respBody?.error || text || "error").slice(0, 500);
-        await sbAdmin.from("sync_logs").insert({
-          source: "dropi-change-carrier",
-          status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
-          triggered_by: user.id, error_message: `Dropi rechazó el cambio [${status}]: ${detail}`,
-          store_id: storeId,
-        });
+      const postA = await postCreateWithEdit(cfg, sbAdmin, {
+        orderBody, userId: user.id, storeId, label: "Dropi rechazó el cambio",
+      });
+      dropiHttpStatus = postA.status;
+      // `=== false` (no `!ok`): narrowing robusto también sin strict mode.
+      if (postA.ok === false) {
         return jsonOk({
           ok: false,
-          error: `Dropi rechazó el cambio de transportadora [${status}]: ${detail}`,
-          dropiHttpStatus: status,
-          dropiBody: respBody,
+          error: `Dropi rechazó el cambio de transportadora [${postA.status}]: ${postA.detail}`,
+          dropiHttpStatus: postA.status,
+          dropiBody: postA.respBody,
         });
       }
-      newExternalId = String(newId);
+      newExternalId = postA.newId;
     } catch (e) {
       if (e instanceof WebFallbackError) {
         return jsonOk({ ok: false, error: e.message, dropiHttpStatus: (e as WebFallbackError).status, dropiBody: (e as WebFallbackError).body });
@@ -1403,7 +1509,7 @@ Deno.serve(async (req: Request) => {
     let warning: string | undefined;
     const { error: updErr } = await sbAdmin
       .from("orders")
-      .update({ external_id: newExternalId, transportadora: name })
+      .update({ external_id: newExternalId, transportadora: chosenA.name })
       .eq("id", orderRow.id);
     if (updErr) {
       console.error("[dropi-change-carrier] local external_id/transportadora update failed:", updErr);
@@ -1432,7 +1538,7 @@ Deno.serve(async (req: Request) => {
     // Auditoría del reemplazo (incluye old→new external id para trazabilidad).
     const auditPayload = {
       antes: { external_id: externalId, transportadora: orderRow.transportadora || "" },
-      despues: { external_id: newExternalId, transportadora: name },
+      despues: { external_id: newExternalId, transportadora: chosenA.name },
     };
     const { error: auditErr } = await sbAdmin.from("order_results").insert({
       order_id: orderRow.id,
@@ -1450,7 +1556,7 @@ Deno.serve(async (req: Request) => {
       oldReplaced: replacedA.ok,
       externalId: newExternalId,
       oldExternalId: externalId,
-      transportadora: name,
+      transportadora: chosenA.name,
       dropiHttpStatus,
       ...(warning ? { warning } : {}),
     });

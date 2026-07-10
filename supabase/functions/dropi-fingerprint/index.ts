@@ -128,6 +128,17 @@ Deno.serve(async (req) => {
         );
       }
 
+      // 404 = Dropi no tiene historial para ese teléfono → cliente NUEVO, no un
+      // error. Antes se devolvía 502 y el badge del CRM lo escondía en silencio
+      // (indistinguible de "roto"). found:false deja al cliente pintar
+      // "Cliente nuevo — sin historial" (señal útil para la asesora).
+      if (apiRes.status === 404) {
+        return new Response(
+          JSON.stringify({ ok: true, fingerprint: { found: false } }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       return new Response(
         JSON.stringify({
           ok: false,

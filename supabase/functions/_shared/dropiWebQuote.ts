@@ -107,7 +107,10 @@ export async function dropiWebFetch(
   console.log("[dropi-web]", {
     url,
     status: res.status,
-    body: init.logBody === false ? `[omitido, ${text.length} chars]` : text.slice(0, 400),
+    // 1000 chars (antes 400): los rechazos de create-with-edit traen el motivo
+    // real más allá del message genérico "Error al crear la orden" — truncarlo
+    // a 400 nos dejaba ciegos para diagnosticar (bug edición 2026-07-10).
+    body: init.logBody === false ? `[omitido, ${text.length} chars]` : text.slice(0, 1000),
   });
   // deno-lint-ignore no-explicit-any
   let body: any = {};
