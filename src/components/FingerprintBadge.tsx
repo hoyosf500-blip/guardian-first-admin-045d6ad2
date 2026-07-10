@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Fingerprint, Package, CheckCircle2, RotateCcw, TrendingUp, ShieldAlert, ShieldCheck, Shield } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Fingerprint, Package, CheckCircle2, RotateCcw, TrendingUp, ShieldAlert, ShieldCheck, Shield, Sparkles, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 
@@ -14,27 +14,43 @@ interface FpData {
 }
 
 /**
+ * Estado explícito de la huella. Antes cualquier fallo/`found:false` era
+ * `null` → `return null` = la tarjeta desaparecía en silencio y la asesora no
+ * distinguía "cliente nuevo" de "algo se rompió" (bug reportado 2026-07-10:
+ * "la huella no sale"). Ahora los 3 casos son VISIBLES:
+ *  - history → tarjeta completa con datos.
+ *  - new     → "Cliente nuevo — sin historial" (señal útil).
+ *  - error   → "Huella no disponible" + reintentar (y NO se cachea).
+ */
+type FpState =
+  | { kind: 'history'; data: FpData }
+  | { kind: 'new' }
+  | { kind: 'error' };
+
+/**
  * In-memory cache con TTL de 10 min — evita re-fetch del mismo teléfono
  * dentro de una misma navegación, pero permite refrescar la huella si el
  * cliente compra/devuelve algo durante la sesión (operadora trabajando 8h
- * sin recargar la página).
+ * sin recargar la página). Solo se cachean resultados REALES (history/new);
+ * los errores NO se cachean — antes un fallo transitorio escondía la huella
+ * 10 minutos.
  */
 const FP_CACHE_TTL_MS = 10 * 60 * 1000;
-type FpCacheEntry = { value: FpData | null; expires: number };
+type FpCacheEntry = { value: FpState; expires: number };
 const fpCache = new Map<string, FpCacheEntry>();
 
-function getCachedFp(phone: string): FpData | null | undefined {
-  const entry = fpCache.get(phone);
+function getCachedFp(cacheKey: string): FpState | undefined {
+  const entry = fpCache.get(cacheKey);
   if (!entry) return undefined;
   if (Date.now() > entry.expires) {
-    fpCache.delete(phone);
+    fpCache.delete(cacheKey);
     return undefined;
   }
   return entry.value;
 }
 
-function setCachedFp(phone: string, value: FpData | null): void {
-  fpCache.set(phone, { value, expires: Date.now() + FP_CACHE_TTL_MS });
+function setCachedFp(cacheKey: string, value: FpState): void {
+  fpCache.set(cacheKey, { value, expires: Date.now() + FP_CACHE_TTL_MS });
 }
 
 /**
@@ -93,16 +109,23 @@ function devolutionColor(): { text: string; fill: string } {
 export default function FingerprintBadge({ phone }: { phone: string }) {
   const { activeStoreId } = useStore();
   const cacheKey = `${activeStoreId ?? 'none'}|${phone}`;
-  const [data, setData] = useState<FpData | null | undefined>(
+  const [state, setState] = useState<FpState | undefined>(
     () => getCachedFp(cacheKey),
   );
   const [loading, setLoading] = useState(false);
+  // Bump para "Reintentar" tras un error (fuerza re-correr el effect).
+  const [retryTick, setRetryTick] = useState(0);
+  const retry = useCallback(() => {
+    fpCache.delete(cacheKey);
+    setState(undefined);
+    setRetryTick((t) => t + 1);
+  }, [cacheKey]);
 
   useEffect(() => {
     if (!phone || !activeStoreId) return;
     const cached = getCachedFp(cacheKey);
     if (cached !== undefined) {
-      setData(cached);
+      setState(cached);
       return;
     }
     let cancelled = false;
@@ -125,32 +148,40 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dd = d as any;
-        if (!cancelled && !error && dd?.ok && dd.fingerprint?.found) {
+        if (cancelled) return;
+        if (!error && dd?.ok && dd.fingerprint?.found) {
           const gp = dd.fingerprint.global_profile;
-          const result: FpData = {
-            risk: gp.risk_label,
-            color: gp.risk_color,
-            orders: gp.lifetime_totals.orders,
-            delivered: gp.lifetime_totals.delivered,
-            returned: gp.lifetime_totals.returned,
-            buyerType: gp.buyer_type,
+          const next: FpState = {
+            kind: 'history',
+            data: {
+              risk: gp.risk_label,
+              color: gp.risk_color,
+              orders: gp.lifetime_totals.orders,
+              delivered: gp.lifetime_totals.delivered,
+              returned: gp.lifetime_totals.returned,
+              buyerType: gp.buyer_type,
+            },
           };
-          setCachedFp(cacheKey, result);
-          setData(result);
+          setCachedFp(cacheKey, next);
+          setState(next);
+        } else if (!error && dd?.ok && dd.fingerprint && dd.fingerprint.found === false) {
+          // Cliente sin historial en Dropi (edge nueva mapea el 404 acá).
+          const next: FpState = { kind: 'new' };
+          setCachedFp(cacheKey, next);
+          setState(next);
         } else {
-          setCachedFp(cacheKey, null);
-          setData(null);
+          // Error real (red / edge vieja / Dropi caído): visible + NO cachear.
+          setState({ kind: 'error' });
         }
       } catch (e) {
         console.error('[FingerprintBadge] threw', e);
-        fpCache.set(cacheKey, { value: null, expires: Date.now() + FP_CACHE_TTL_MS });
-        setData(null);
+        if (!cancelled) setState({ kind: 'error' });
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [phone, activeStoreId, cacheKey]);
+  }, [phone, activeStoreId, cacheKey, retryTick]);
 
 
   if (loading) {
@@ -175,8 +206,42 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
       </div>
     );
   }
-  if (!data) return null;
+  if (!state) return null;
 
+  // Cliente NUEVO — sin historial en Dropi. Señal útil (primera compra), no ausencia.
+  if (state.kind === 'new') {
+    return (
+      <div className="rounded-xl border border-border bg-card px-4 py-2.5 flex items-center gap-2">
+        <Fingerprint size={14} className="text-accent" aria-hidden="true" />
+        <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Huella Dropi
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-0.5">
+          <Sparkles size={12} className="text-accent" aria-hidden="true" />
+          <span className="text-[11px] font-semibold text-foreground">Cliente nuevo — sin historial</span>
+        </span>
+      </div>
+    );
+  }
+
+  // Error real (red / Dropi caído / edge vieja) — visible, con reintento manual.
+  if (state.kind === 'error') {
+    return (
+      <div className="rounded-xl border border-border bg-card px-4 py-2.5 flex items-center gap-2">
+        <Fingerprint size={14} className="text-muted-foreground" aria-hidden="true" />
+        <span className="text-[11px] text-muted-foreground">Huella no disponible</span>
+        <button
+          type="button"
+          onClick={retry}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+        >
+          <RefreshCw size={11} aria-hidden="true" /> Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  const data = state.data;
   const cfg = RISK_CONFIG[data.color] || RISK_CONFIG.yellow;
   const RiskIcon = cfg.icon;
   const pctEntrega = data.orders > 0 ? Math.round((data.delivered / data.orders) * 100) : 0;

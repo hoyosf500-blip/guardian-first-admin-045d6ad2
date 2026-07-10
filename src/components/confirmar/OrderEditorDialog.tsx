@@ -279,7 +279,15 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const d = (data as ApplyResponse | null) ?? null;
     if ((error && !d) || !d?.ok) {
       const shortMsg = d?.error || (error instanceof Error ? error.message : 'Error desconocido');
-      toast.error(`${partialPrefix(clientApplied)}Transportadora/cantidades/valor: NO se aplicaron`, {
+      // Título según lo que REALMENTE llevaba este intento — el label fijo
+      // "Transportadora/cantidades/valor" confundía cuando solo se tocó el
+      // precio (la asesora leía que la transportadora también falló).
+      const intentado = [
+        ...(carrierChanged && selectedCarrier ? ['Transportadora'] : []),
+        ...(linesChanged && effectiveLines ? ['Cantidades/precios'] : []),
+        ...(overrideValid ? ['Valor'] : []),
+      ].join(' + ') || 'La edición';
+      toast.error(`${partialPrefix(clientApplied)}${intentado}: NO se aplicó en Dropi`, {
         description: dropiErrorDescription(
           `${shortMsg} — Corregí y tocá "Actualizar Orden": solo se reintenta lo pendiente.`,
           d?.dropiHttpStatus, d?.dropiBody,
