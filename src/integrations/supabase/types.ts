@@ -743,6 +743,7 @@ export type Database = {
           closing_at: string | null
           closing_cancelados: number | null
           closing_confirmados: number | null
+          closing_gestionados: number | null
           closing_noresp: number | null
           closing_notes: string | null
           closing_pending_tomorrow: number | null
@@ -761,6 +762,7 @@ export type Database = {
           closing_at?: string | null
           closing_cancelados?: number | null
           closing_confirmados?: number | null
+          closing_gestionados?: number | null
           closing_noresp?: number | null
           closing_notes?: string | null
           closing_pending_tomorrow?: number | null
@@ -779,6 +781,7 @@ export type Database = {
           closing_at?: string | null
           closing_cancelados?: number | null
           closing_confirmados?: number | null
+          closing_gestionados?: number | null
           closing_noresp?: number | null
           closing_notes?: string | null
           closing_pending_tomorrow?: number | null
