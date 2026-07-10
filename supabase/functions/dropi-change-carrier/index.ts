@@ -716,14 +716,18 @@ Deno.serve(async (req: Request) => {
       //    días. Dropi devuelve HTTP 200 con {isSuccess:false, status:404,
       //    message:"Orden no encontrada"} para estos → dropiGetOrder da ok:false.
       //
-      //    ENDURECIDO 2026-07-10: el 404 de INTEGRACIÓN solo NO alcanza — los
-      //    pedidos de bot (LucidBot/FINAL_ORDER de otra shop, caso #6053027) son
-      //    invisibles para /integrations pero VIVOS en el panel. Fantasma de
-      //    verdad = integración-404 Y el detalle v2 (web) tampoco lo encuentra.
-      //    Si la web SÍ lo ve, NO se cancela local (falso positivo).
+      //    INVESTIGADO 2026-07-10: NO existe una "segunda opinión" barata para
+      //    confirmar el fantasma. El detalle v2 devuelve datos hasta para pedidos
+      //    BORRADOS (probado: Manuel Macías muerto y Yolanda viva se ven idénticos)
+      //    y la lista de integración es carísima en EC (ignora filtros de fecha →
+      //    4400 filas + 429). La protección REAL contra un falso positivo (pedido
+      //    de bot LucidBot vivo pero 404 en integración) es el PROPIO CRON: si
+      //    Dropi todavía lista el pedido, el próximo upsert (≤5 min) pisa el
+      //    estado local y el pedido REAPARECE solo en la cola. Verificado: los 7
+      //    fantasmas cancelados el 09-jul siguen CANCELADO tras 30h de cron OK.
       // Señal de "no existe": 404 explícito o el mensaje textual de Dropi
-      // ("Orden no encontrada" en integración; "Esta guia no existe" en web).
-      // NO usar status 400 a secas — un bad-request genérico NO es fantasma.
+      // ("Orden no encontrada"). NO usar status 400 a secas — un bad-request
+      // genérico NO es fantasma.
       const notFoundSignal = (httpStatus: number, b: Record<string, unknown>) =>
         httpStatus === 404 ||
         (b.isSuccess === false &&
@@ -732,17 +736,7 @@ Deno.serve(async (req: Request) => {
       let ghost = false;
       try {
         const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
-        const integrationMissing = notFoundSignal(check.httpStatus, (check.body || {}) as Record<string, unknown>);
-        if (integrationMissing) {
-          // Segunda opinión: detalle v2 con sesión web (ve pedidos de bot/panel).
-          const v2c = await dropiGetOrderV2(cfg, externalId);
-          const webMissing = !v2c.ok && notFoundSignal(v2c.httpStatus, (v2c.body || {}) as Record<string, unknown>);
-          ghost = webMissing;
-          if (!webMissing && !v2c.ok) {
-            // v2 falló por otra razón (token/red) → NO concluir fantasma (fail-safe).
-            console.warn("[cancel] integración=404 pero v2 no concluyente — NO se cancela local", { externalId, v2Status: v2c.httpStatus });
-          }
-        }
+        ghost = notFoundSignal(check.httpStatus, (check.body || {}) as Record<string, unknown>);
       } catch (e) {
         console.error("[cancel] check de existencia falló:", e);
       }
@@ -750,7 +744,7 @@ Deno.serve(async (req: Request) => {
         await markLocalCanceled();
         return jsonOk({
           ok: true, canceled: true, dropiMissing: true, externalId,
-          note: "La orden ya no existía en Dropi (fantasma) — se canceló localmente.",
+          note: "La orden no existe para la API de Dropi — se canceló localmente. Si reaparece en unos minutos, es un pedido del panel/bot de Dropi: cancelalo desde el panel.",
         });
       }
 
