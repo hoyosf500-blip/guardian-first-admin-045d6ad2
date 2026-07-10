@@ -102,10 +102,10 @@ export function useFinancialSummary(from: string, to: string) {
       return parseFinancialSummary(data);
     },
     staleTime: 60_000,
-    // Frescura de Finanzas: refrescar al volver a la pestaña + poll 5 min (el
-    // default global es refetchOnWindowFocus:false → se quedaba fotografiado).
+    // Frescura de Finanzas: refrescar al volver a la pestaña + poll 30 min
+    // (COST-2 2026-07-10: era 5 min).
     refetchOnWindowFocus: true,
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
     enabled: Boolean(from && to && storeId),
   });
 }

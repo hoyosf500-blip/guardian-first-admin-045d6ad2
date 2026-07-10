@@ -56,9 +56,9 @@ export function useEstadoBreakdown(from: string, to: string, ciudad?: string | n
     },
     staleTime: 60_000,
     // Frescura del hero "Cómo voy": refrescar al volver a la pestaña + poll de
-    // 5 min (el default global es refetchOnWindowFocus:false → se congelaba).
+    // 30 min (COST-2 2026-07-10: era 5 min → DB al tope en MVP).
     refetchOnWindowFocus: true,
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
     enabled: Boolean(from && to && storeId),
   });
 }

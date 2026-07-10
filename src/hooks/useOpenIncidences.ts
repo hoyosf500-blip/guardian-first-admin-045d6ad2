@@ -22,7 +22,8 @@ interface OpenIncidencesResp {
 }
 
 const MIN_REFRESH_MS = 60 * 1000;
-const POLL_MS = 5 * 60 * 1000;
+// COST-2 2026-07-10: era 5 min.
+const POLL_MS = 30 * 60 * 1000;
 
 // Cache por tienda compartido entre montajes (mismo patrón módulo-level que
 // setTrackingCountry / los overrides del validador de direcciones).

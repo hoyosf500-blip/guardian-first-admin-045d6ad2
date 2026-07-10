@@ -32,11 +32,13 @@ export const CANCEL_REASONS = [
 
 // OLD-9: intervalo de polling fallback (cuando realtime falla o se cae el
 // canal). Usado por useDataLoader, useNovedades.
-// COST-1 (2026-04-29): subido de 5 → 15 min para reducir consumo Cloud.
+// COST-1 (2026-04-29): subido de 5 → 15 min.
+// COST-2 (2026-07-10): 15 → 60 min. Realtime cubre updates en vivo; el polling
+// es solo safety-net. Antes: 70k+ queries/día por hook, DB al tope en MVP.
 // El polling además se pausa cuando la pestaña está oculta (pollWhenVisible).
-export const POLL_INTERVAL_MS = 15 * 60 * 1000;
-// Auto-sync de Dropi (admin) — corre 1 vez por hora en vez de cada 5 min.
-export const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000;
+export const POLL_INTERVAL_MS = 60 * 60 * 1000;
+// Auto-sync de Dropi (admin) — cada 2 h (antes 1 h) para bajar carga.
+export const AUTO_SYNC_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
 // Transportadoras de COLOMBIA (tienda CO). Es el mapa por defecto.
 export const CARRIER_TRACK: Record<string, string> = {

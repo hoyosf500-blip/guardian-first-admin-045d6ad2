@@ -230,7 +230,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // re-renderiza (no hay parpadeo ni costo de churn).
   useEffect(() => {
     if (!user || !activeStoreId) return;
-    return pollWhenVisible(() => { void loadWorkQueue(); }, 5 * 60 * 1000, { runOnVisible: false });
+    // COST-2 2026-07-10: 5 → 30 min. Realtime cubre updates en vivo.
+    return pollWhenVisible(() => { void loadWorkQueue(); }, 30 * 60 * 1000, { runOnVisible: false });
   }, [user, activeStoreId, loadWorkQueue]);
 
   // Cobertura del día (mySegTouchedToday inicial + realtime de los 2 sets).

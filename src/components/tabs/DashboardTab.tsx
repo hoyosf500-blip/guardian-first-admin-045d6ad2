@@ -159,13 +159,12 @@ export default function DashboardTab() {
     if (data) setLastSync(data);
   }, [activeStoreId]);
 
-  // COST-1: sync log cada 2 min (antes 30s), tick visual cada 30s (antes 15s).
-  // Ambos se pausan cuando la pestaña está oculta.
+  // COST-2 2026-07-10: sync log 2 → 15 min, tick visual 30s → 2 min.
   useEffect(() => {
     if (!user) return;
     loadSyncLog();
-    const stopPoll = pollWhenVisible(loadSyncLog, 2 * 60 * 1000, { runOnVisible: false });
-    const stopTick = pollWhenVisible(() => setNowTick(Date.now()), 30 * 1000, { runOnVisible: false });
+    const stopPoll = pollWhenVisible(loadSyncLog, 15 * 60 * 1000, { runOnVisible: false });
+    const stopTick = pollWhenVisible(() => setNowTick(Date.now()), 2 * 60 * 1000, { runOnVisible: false });
     return () => { stopPoll(); stopTick(); };
   }, [user, loadSyncLog]);
 
