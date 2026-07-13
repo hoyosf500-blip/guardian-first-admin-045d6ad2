@@ -120,6 +120,23 @@ function isBotClassFailure(httpStatus: number, errText: string): boolean {
   return httpStatus === 404 || BOT_SIGNAL_RE.test(String(errText || ""));
 }
 
+// ---- "YA confirmado" (no es un fallo) ----
+// El PUT PENDIENTE CONFIRMACION → PENDIENTE falla con "La orden no se encuentra
+// en estatus PENDIENTE_CONFIRMACION" cuando el pedido YA salió de esa etapa (lo
+// confirmó un intento previo, el bot, o Dropi mismo). La meta ya está cumplida.
+// Sin esto, pedidos reales YA confirmados se reintentaban en loop y figuraban
+// "confirmación falló" en el panel (auditoría 2026-07-13). Se verifica con un GET
+// que de verdad esté PENDIENTE o más adelante (no cancelado/reemplazado).
+const ALREADY_CONFIRMED_RE = /no se encuentra en estatus\s+pendiente[_\s]?confirmacion/i;
+function isAlreadyConfirmedSignal(errText: string): boolean {
+  return ALREADY_CONFIRMED_RE.test(
+    String(errText || "").normalize("NFD").replace(/[̀-ͯ]/g, ""),
+  );
+}
+// Estados que confirman que la orden YA pasó la etapa de confirmación (no hay que
+// reintentar). Cualquier estado que NO sea pre-confirmación ni cancelado/borrado.
+const PRE_O_MUERTO_RE = /PENDIENTE CONFIRMACION|POR CONFIRMAR|CANCELAD|REEMPLAZAD|RECHAZAD/i;
+
 // ---- Filas 'pending' ATASCADAS ----
 // El cliente (OrderContext.markResult) inserta la fila 'pending' y la promueve
 // a 'synced' (Dropi confirmó) o 'failed' (markDropiFailure/markCancelFailure)
@@ -858,7 +875,27 @@ Deno.serve(async (req: Request) => {
             }).eq("id", row.id);
             continue;
           }
-          if (r.ok) {
+          // "Ya confirmado": Dropi rechaza el PUT porque el pedido ya salió de
+          // PENDIENTE_CONFIRMACION. NO es fallo — verificamos con un GET y, si
+          // está PENDIENTE o más adelante (no cancelado/borrado), lo damos por
+          // sincronizado. Evita el loop de retry y el falso "falló" en el panel.
+          let alreadyConfirmed = false;
+          if (!r.ok && isAlreadyConfirmedSignal(r.error || "")) {
+            try {
+              const chk = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, ord.external_id);
+              if (chk.ok) {
+                const st = String(
+                  (chk.body?.objects ?? chk.body?.data ?? chk.body?.order ?? chk.body ?? {} as Record<string, unknown>)
+                    ?.status ?? "",
+                ).toUpperCase();
+                if (st && !PRE_O_MUERTO_RE.test(st)) alreadyConfirmed = true;
+              }
+            } catch (e) {
+              console.warn(`dropi-cron: verify 'ya confirmado' de #${ord.external_id} falló:`, e instanceof Error ? e.message : e);
+            }
+            await sleep(RATE_LIMIT_MS);
+          }
+          if (r.ok || alreadyConfirmed) {
             retryOk++;
             await sb.from("order_results").update({
               dropi_sync_status: "synced",

@@ -411,6 +411,45 @@ Deno.serve(async (req: Request) => {
         res.body.message || res.body.error || res.rawText || "error",
       ).slice(0, 300)}`;
 
+      // ---- ¿YA confirmado? El PUT PENDIENTE CONFIRMACION → PENDIENTE falla con
+      // "La orden no se encuentra en estatus PENDIENTE_CONFIRMACION" cuando el
+      // pedido YA salió de esa etapa (lo confirmó un intento previo, el bot, o
+      // Dropi mismo). Eso NO es un fallo: la meta (confirmar) ya está cumplida.
+      // Verificamos con un GET que de verdad esté en PENDIENTE o más adelante
+      // (NO cancelado/reemplazado) antes de declararlo éxito idempotente.
+      // Sin esto, 9+ pedidos CO reales por día figuraban "confirmación falló"
+      // en el panel aunque el cliente SÍ quedó confirmado (auditoría 2026-07-13).
+      if (
+        normalizeStatus(newStatus) === "PENDIENTE" &&
+        /no se encuentra en est[a]tus\s+pendiente[_\s]?confirmacion/i.test(
+          `${res.body.message || res.body.error || res.rawText || ""}`
+            .normalize("NFD").replace(/[̀-ͯ]/g, ""),
+        )
+      ) {
+        try {
+          const chk = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+          const st = chk.ok ? parseOrderStatus(chk.body) : null;
+          const rank = st ? FUNNEL_RANK[normalizeStatus(st)] : undefined;
+          if (rank !== undefined && rank >= FUNNEL_RANK["PENDIENTE"]) {
+            // Ya está confirmado (o más adelante): éxito idempotente.
+            await sb.from("sync_logs").insert({
+              source: "dropi-update-order", status: "success",
+              synced_count: 1, duplicates_count: 0, total_count: 1,
+              triggered_by: user?.id ?? null, store_id: storeId,
+            });
+            return new Response(
+              JSON.stringify({
+                ok: true, verified: true, alreadyConfirmed: true,
+                externalId, newStatus, currentStatus: st, dropiHttpStatus: res.httpStatus,
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        } catch (e) {
+          console.error("dropi-update-order: verify de 'ya confirmado' falló:", e);
+        }
+      }
+
       // ---- ¿Pedido del bot? El PUT falló con señal "Orden no encontrada":
       // confirmamos con un GET a la MISMA superficie de integración. Los
       // pedidos del bot de Dropi (LucidBot/FINAL_ORDER) están VIVOS en el
