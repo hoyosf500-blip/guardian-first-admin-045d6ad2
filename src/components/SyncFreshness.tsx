@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, AlertTriangle, WifiOff, RefreshCw } from 'lucide-react';
+import { AlertTriangle, WifiOff, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { toast } from 'sonner';
@@ -14,6 +14,13 @@ import { toast } from 'sonner';
  *
  * Crítico: el amarillo es la pieza que NO existía antes — del 21/05 al 28/05
  * todo decía verde "hace 5 min" mientras el cron devolvía 0 silenciosamente.
+ *
+ * FRESCURA VISIBLE (2026-07-13): el verde era un puntito "Sync OK" con la info
+ * ("hace X min · N cambios") escondida en un tooltip → el dueño no la veía y
+ * dudaba de los datos aunque estuvieran frescos. Ahora el verde es una píldora
+ * LEGIBLE: "Sincronizado con Dropi · hace X min · N pedidos actualizados", con
+ * el "hace X" ticando en vivo (timer local de 30s) y un PULSO "en vivo" cuando
+ * llega un cambio realtime — para que se VEA que la data se mueve sola.
  */
 
 type Color = 'green' | 'yellow' | 'red';
@@ -31,12 +38,27 @@ interface Props {
   onAuditClick?: () => void;
 }
 
+/** "hace 3 min" / "hace 2 h" / "recién" — relativo humano y corto. */
+function relTime(ms: number): string {
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  return `hace ${Math.floor(h / 24)} d`;
+}
+
 export default function SyncFreshness({ onAuditClick }: Props) {
   const { activeStoreId, isManagerOfActive } = useStore();
   const qc = useQueryClient();
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // Timestamp del último cambio realtime recibido — dispara el pulso "en vivo".
+  const [livePulseAt, setLivePulseAt] = useState(0);
+  // Reloj local: re-renderiza cada 30s para que "hace X min" nunca quede viejo
+  // entre recargas de sync_logs (el poll es cada 2 min).
+  const [, setNowTick] = useState(0);
 
   const load = useCallback(async () => {
     if (!activeStoreId) return;
@@ -58,10 +80,51 @@ export default function SyncFreshness({ onAuditClick }: Props) {
 
   useEffect(() => {
     void load();
-    // COST-2 2026-07-10: 60s → 5 min (badge de frescura, no crítico).
-    const id = setInterval(() => { void load(); }, 5 * 60_000);
+    // Poll de respaldo (el realtime de abajo lo mantiene fresco en vivo).
+    const id = setInterval(() => { void load(); }, 2 * 60_000);
     return () => clearInterval(id);
   }, [load]);
+
+  // Reloj local para el relativo "hace X min" (no toca la red).
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // PULSO EN VIVO: un canal liviano que escucha cambios de `orders` de la tienda
+  // activa. Cuando llega uno (el cron acaba de traer datos, o una operadora
+  // gestionó algo), encendemos el pulso "en vivo" 4s y recargamos la frescura.
+  // Es independiente del realtime de OrderContext (que refresca las colas): acá
+  // solo alimenta la señal visible de "se está moviendo". Debounce simple para
+  // no recargar sync_logs en cada fila de un burst del cron.
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!activeStoreId) return;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.access_token) await supabase.realtime.setAuth(session.access_token);
+      channel = supabase
+        .channel(`sync-freshness-${activeStoreId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders', filter: `store_id=eq.${activeStoreId}` },
+          () => {
+            setLivePulseAt(Date.now());
+            if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+            reloadTimerRef.current = setTimeout(() => { void load(); }, 1500);
+          },
+        )
+        .subscribe();
+    })();
+    return () => {
+      cancelled = true;
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+      if (channel) void supabase.removeChannel(channel);
+    };
+  }, [activeStoreId, load]);
 
   const handleRetry = async () => {
     if (retrying || !activeStoreId) return;
@@ -71,9 +134,6 @@ export default function SyncFreshness({ onAuditClick }: Props) {
       // Mismo call que el botón "Sincronizar" (useResumenSync): dropi-sync para
       // ESTA tienda, store-scoped (gate = dueño), rápido (1 tienda). Escribe
       // sync_logs source='dropi' que ESTE banner sí lee → se actualiza al toque.
-      // ANTES pegaba a dropi-cron: global (todas las tiendas, ~2 min), exigía
-      // admin GLOBAL (los socios recibían 403 silencioso) y escribía
-      // source='dropi-cron' que el banner NO leía → "no pasaba nada".
       const fmt = (d: Date) => d.toISOString().split('T')[0];
       const to = new Date();
       const from = new Date(to);
@@ -119,13 +179,36 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   else if (recentAllZeroOrWarn || lastSuccessAgeHrs > 24) color = 'yellow';
   else color = 'green';
 
-  // Verde es discreto — solo un punto + tooltip. Amarillo/rojo son banners.
+  // VERDE — píldora VISIBLE (antes era un puntito con la info en un tooltip).
+  // Muestra la última corrida del cron y el pulso "en vivo" cuando llega un
+  // cambio realtime, para que el dueño VEA que la data está fresca y se mueve.
   if (color === 'green') {
+    const live = now - livePulseAt < 4000;
+    const lastRunMs = now - new Date(last.created_at).getTime();
+    // Cambios de la última corrida CON novedades (el synced_count de la más
+    // reciente que trajo algo) — "N pedidos actualizados".
+    const cambios = lastSuccess?.synced_count ?? 0;
     return (
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-        title={`Última sync hace ${Math.round(lastAttemptAgeMin)} min · ${lastSuccess?.synced_count ?? 0} cambios`}>
-        <span className="w-1.5 h-1.5 rounded-full bg-success" aria-hidden />
-        <span>Sync OK</span>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-success/30 bg-success/[0.06] px-3 py-1.5">
+        <CheckCircle2 size={15} className="text-success flex-shrink-0" aria-hidden />
+        <span className="text-xs font-semibold text-success">Sincronizado con Dropi</span>
+        <span className="text-[11px] text-muted-foreground">
+          · última revisión {relTime(lastRunMs)}
+          {cambios > 0 && lastSuccess && (
+            <> · {cambios} {cambios === 1 ? 'pedido actualizado' : 'pedidos actualizados'}</>
+          )}
+        </span>
+        {live ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-success">
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-ping" aria-hidden />
+            en vivo
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground" title="La sincronización con Dropi corre sola cada 5 minutos y los cambios entran en vivo.">
+            <span className="w-1.5 h-1.5 rounded-full bg-success/70" aria-hidden />
+            automático cada 5 min
+          </span>
+        )}
       </div>
     );
   }
