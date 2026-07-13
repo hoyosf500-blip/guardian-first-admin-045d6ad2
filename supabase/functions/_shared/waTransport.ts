@@ -12,6 +12,22 @@
 
 export type WaProvider = "whapi" | "evolution" | "waha" | "cloud_api";
 
+/** Atribución CTWA (Click-to-WhatsApp): cuando un cliente hace clic en un anuncio
+ *  de Meta "enviar mensaje" y escribe al bot, el PRIMER mensaje trae el contexto del
+ *  anuncio. Guardian tiene su PROPIO bot, así que captura esta atribución NATIVA (a
+ *  diferencia de la competencia que depende de un tercero). `raw` guarda el objeto
+ *  CRUDO del contexto para no perder nada ni depender de acertar los paths. */
+export interface AdReferral {
+  ctwaClid?: string; // click id de CTWA (el ancla de atribución)
+  sourceId?: string; // id del anuncio / ad
+  sourceUrl?: string; // url del anuncio
+  sourceType?: string; // 'ad' | 'post' | ...
+  headline?: string; // título del anuncio
+  body?: string; // cuerpo/copy
+  mediaType?: string;
+  raw: Record<string, unknown>; // objeto CRUDO del contexto del anuncio
+}
+
 /** Mensaje entrante ya normalizado, agnóstico del proveedor. */
 export interface WaInboundMessage {
   waMessageId: string;
@@ -29,6 +45,18 @@ export interface WaInboundMessage {
   // EN SILENCIO al cliente que sí escribió. El webhook los omite y loguea (ver
   // auditoría 2026-06-26). Resolver LID→teléfono es trabajo aparte.
   isLid: boolean;
+  // Atribución de anuncio (CTWA): presente SOLO en el primer mensaje de un cliente
+  // que llegó por un anuncio "Click-to-WhatsApp" de Meta. null si no hay contexto de
+  // anuncio (la mayoría de los mensajes). Ver AdReferral.
+  adReferral?: AdReferral | null;
+}
+
+/** Log de debug: si detectamos atribución de anuncio, la mostramos (recortada) para
+ *  poder validar la FORMA real con el primer clic de un anuncio y ajustar los paths. */
+function logAdReferral(provider: WaProvider, ref: AdReferral | null): void {
+  if (ref) {
+    console.log("[wa-ctwa] adReferral detectado", provider, JSON.stringify(ref).slice(0, 600));
+  }
 }
 
 export interface WaSendResult {
@@ -121,6 +149,41 @@ function whapiMedia(m: WhapiRawMessage): Record<string, unknown> | null {
   return null;
 }
 
+// Atribución CTWA en Whapi: expone el contexto del anuncio en `m.referral` (formato
+// tipo Meta Cloud API) y/o en `m.context.referred_product`/`m.context.ad`. Extraemos
+// lo que esté con nombres snake_case (Cloud API) o camelCase; null si no hay señal.
+function whapiAdReferral(m: WhapiRawMessage): AdReferral | null {
+  const ctx = (m.context ?? {}) as Record<string, unknown>;
+  const ref = (m.referral ?? ctx.referral ?? ctx.ad ?? ctx.referred_product ?? null) as
+    | Record<string, unknown>
+    | null;
+  if (!ref || typeof ref !== "object") return null;
+  const g = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = ref[k];
+      if (typeof v === "string" && v) return v;
+    }
+    return undefined;
+  };
+  const clid = g("ctwa_clid", "ctwaClid");
+  const sourceId = g("source_id", "sourceId", "ad_id", "adId");
+  const sourceUrl = g("source_url", "sourceUrl", "url");
+  const headline = g("headline", "title");
+  const bodyText = g("body", "description");
+  // Sin ninguna señal de anuncio (ni clid, ni id, ni url) no es una atribución.
+  if (!clid && !sourceId && !sourceUrl) return null;
+  return {
+    ctwaClid: clid,
+    sourceId,
+    sourceUrl,
+    sourceType: g("source_type", "sourceType"),
+    headline,
+    body: bodyText,
+    mediaType: g("media_type", "mediaType"),
+    raw: ref,
+  };
+}
+
 // Grupo o lista de difusión: en WhatsApp el JID del grupo termina en "@g.us" y
 // el de status/broadcast en "@broadcast". El bot NO debe actuar ahí (el número
 // tiene grupos internos de la empresa). Se detecta por chat_id o from.
@@ -175,18 +238,23 @@ class WhapiTransport implements WaTransport {
     // Cap defensivo: el webhook es público (solo gateado por secreto). Un payload
     // con un array enorme no debe poder reventar la función.
     const raw = (Array.isArray(p.messages) ? p.messages : []).slice(0, 200);
-    return raw.map((m) => ({
-      waMessageId: String(m.id ?? ""),
-      fromPhone: onlyDigits(m.from ?? m.chat_id ?? ""),
-      fromName: m.from_name,
-      type: String(m.type ?? "text"),
-      body: whapiBody(m),
-      media: whapiMedia(m),
-      timestamp: Number(m.timestamp ?? 0),
-      fromMe: Boolean(m.from_me),
-      isGroup: whapiIsGroup(m),
-      isLid: isLidJid(m.from ?? m.chat_id),
-    })).filter((m) => m.waMessageId && m.fromPhone);
+    return raw.map((m) => {
+      const adReferral = whapiAdReferral(m);
+      logAdReferral(this.provider, adReferral);
+      return {
+        waMessageId: String(m.id ?? ""),
+        fromPhone: onlyDigits(m.from ?? m.chat_id ?? ""),
+        fromName: m.from_name,
+        type: String(m.type ?? "text"),
+        body: whapiBody(m),
+        media: whapiMedia(m),
+        timestamp: Number(m.timestamp ?? 0),
+        fromMe: Boolean(m.from_me),
+        isGroup: whapiIsGroup(m),
+        isLid: isLidJid(m.from ?? m.chat_id),
+        adReferral,
+      };
+    }).filter((m) => m.waMessageId && m.fromPhone);
   }
 }
 
@@ -233,6 +301,53 @@ function evoMedia(m: EvolutionRawMessage): Record<string, unknown> | null {
     if (msg[k]) return { kind: k, ...(msg[k] as Record<string, unknown>) };
   }
   return null;
+}
+
+// Atribución CTWA en Evolution (Baileys — proveedor PRIMARIO): el contexto del anuncio
+// llega en `message.extendedTextMessage.contextInfo.externalAdReply` con
+// { title, body, sourceType, sourceId, sourceUrl, ctwaClid, mediaType } y/o
+// `contextInfo.entryPointConversionSource === 'ctwa_ad'`. También revisamos el
+// `contextInfo` a nivel raíz del mensaje por si el proveedor lo mueve ahí. Devuelve
+// null si no hay señal de anuncio.
+function evoAdReferral(m: EvolutionRawMessage): AdReferral | null {
+  const msg = (m.message ?? {}) as Record<string, unknown>;
+  // contextInfo puede colgar de varios sub-mensajes (extendedText, image, video...).
+  const ext = (msg.extendedTextMessage ?? {}) as Record<string, unknown>;
+  const img = (msg.imageMessage ?? {}) as Record<string, unknown>;
+  const vid = (msg.videoMessage ?? {}) as Record<string, unknown>;
+  const ctx = (ext.contextInfo ??
+    img.contextInfo ??
+    vid.contextInfo ??
+    (m as { contextInfo?: unknown }).contextInfo ??
+    null) as Record<string, unknown> | null;
+  if (!ctx || typeof ctx !== "object") return null;
+
+  const ear = (ctx.externalAdReply ?? null) as Record<string, unknown> | null;
+  const entryPoint = String(ctx.entryPointConversionSource ?? "").toLowerCase();
+  const isCtwa = entryPoint === "ctwa_ad";
+  // Sin externalAdReply y sin marca ctwa_ad no hay atribución de anuncio.
+  if (!ear && !isCtwa) return null;
+
+  const src = (ear ?? {}) as Record<string, unknown>;
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v ? v : undefined;
+  const clid = str(src.ctwaClid) ?? str(ctx.ctwaClid) ??
+    str((ctx as { conversionData?: { ctwaClid?: unknown } }).conversionData?.ctwaClid);
+
+  const ref: AdReferral = {
+    ctwaClid: clid,
+    sourceId: str(src.sourceId),
+    sourceUrl: str(src.sourceUrl),
+    sourceType: str(src.sourceType),
+    headline: str(src.title),
+    body: str(src.body),
+    mediaType: str(src.mediaType),
+    // raw = el contextInfo completo (o el externalAdReply si no hay más): no perder nada.
+    raw: (ctx ?? src) as Record<string, unknown>,
+  };
+  // Si NO hay externalAdReply pero sí la marca ctwa_ad, igual devolvemos la atribución
+  // (aunque venga floja) para no perder el clic; raw preserva todo para diagnosticar.
+  return ref;
 }
 
 // Grupo / difusión: el remoteJid de grupo termina en "@g.us" y el de status en
@@ -295,6 +410,8 @@ class EvolutionTransport implements WaTransport {
     const raw = (Array.isArray(p.data) ? p.data : (p.data ? [p.data] : [])).slice(0, 200);
     return raw.map((m) => {
       const remoteJid = String(m.key?.remoteJid ?? "");
+      const adReferral = evoAdReferral(m);
+      logAdReferral(this.provider, adReferral);
       return {
         waMessageId: String(m.key?.id ?? ""),
         fromPhone: onlyDigits(remoteJid),
@@ -306,6 +423,7 @@ class EvolutionTransport implements WaTransport {
         fromMe: Boolean(m.key?.fromMe),
         isGroup: evoIsGroup(remoteJid),
         isLid: isLidJid(remoteJid),
+        adReferral,
       };
     }).filter((m) => m.waMessageId && m.fromPhone);
   }
@@ -403,6 +521,43 @@ function wahaMedia(m: WahaRawMessage): Record<string, unknown> | null {
   return null;
 }
 
+// Atribución CTWA en WAHA (whatsapp-web.js): el ad reply puede venir en `_data`
+// (ej. `_data.ctwaContext`, o campos snake/camelCase sueltos como `ctwa_clid` /
+// `matchedText`). No inventamos: si no hay señal clara de anuncio devolvemos null,
+// pero cuando SÍ la hay ponemos raw = `_data.ctwaContext` (o `_data`) para no perder
+// nada y ajustar después con un clic real.
+function wahaAdReferral(m: WahaRawMessage): AdReferral | null {
+  const data = (m._data ?? {}) as Record<string, unknown>;
+  const ctx = (data.ctwaContext ?? data.adReply ?? null) as Record<string, unknown> | null;
+  // Fuente: el sub-objeto ctwaContext si existe, si no el propio _data (para pescar
+  // campos sueltos tipo ctwa_clid en la raíz).
+  const src = (ctx ?? data) as Record<string, unknown>;
+  const g = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = src[k];
+      if (typeof v === "string" && v) return v;
+    }
+    return undefined;
+  };
+  const clid = g("ctwa_clid", "ctwaClid");
+  const sourceId = g("source_id", "sourceId", "ad_id", "adId");
+  const sourceUrl = g("source_url", "sourceUrl", "url");
+  const headline = g("title", "headline");
+  const bodyText = g("body", "description", "matchedText");
+  // Solo es atribución si hay clid, id o url. Sin ninguna señal → null (no inventar).
+  if (!clid && !sourceId && !sourceUrl) return null;
+  return {
+    ctwaClid: clid,
+    sourceId,
+    sourceUrl,
+    sourceType: g("source_type", "sourceType"),
+    headline,
+    body: bodyText,
+    mediaType: g("media_type", "mediaType"),
+    raw: (ctx ?? data) as Record<string, unknown>,
+  };
+}
+
 // Grupo / difusión: el JID de grupo termina en "@g.us" y el de status en
 // "@broadcast"; los grupos además traen `participant`. El bot NO actúa ahí.
 function wahaIsGroup(m: WahaRawMessage): boolean {
@@ -473,6 +628,8 @@ class WahaTransport implements WaTransport {
     if (!m || typeof m !== "object") return [];
     const from = String(m.from ?? "");
     const lid = isLidJid(from);
+    const adReferral = wahaAdReferral(m);
+    logAdReferral(this.provider, adReferral);
     const msg: WaInboundMessage = {
       waMessageId: String(m.id ?? ""),
       // Contacto LID (verificado 2026-06-27): el payload SOLO trae "<id>@lid" — el
@@ -491,6 +648,7 @@ class WahaTransport implements WaTransport {
       // que wa-webhook NO lo descarte (a diferencia de Baileys/Evolution, que no
       // pueden responderle al @lid). La identidad @lid viaja en fromPhone.
       isLid: false,
+      adReferral,
     };
     return [msg].filter((x) => x.waMessageId && x.fromPhone);
   }

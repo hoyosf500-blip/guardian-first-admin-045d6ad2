@@ -14,7 +14,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { loadWaChannel, recordInbound, upsertConversation } from "../_shared/waChannel.ts";
+import { loadWaChannel, recordAdAttribution, recordInbound, upsertConversation } from "../_shared/waChannel.ts";
 import { transcribeAudio } from "../_shared/waTranscribe.ts";
 import { isAudioKind, mediaKindOf, mediaMarker } from "../_shared/waMedia.ts";
 import { isLidJid } from "../_shared/waTransport.ts";
@@ -130,6 +130,18 @@ Deno.serve(async (req) => {
         providerTs: m.timestamp,
       });
       if (!rec.inserted || !rec.messageId) continue;
+
+      // Atribución pedido↔anuncio (CTWA): si el primer mensaje trae contexto de un
+      // anuncio de Meta, lo guardamos YA (best-effort, no rompe el flujo del bot).
+      if (m.adReferral) {
+        await recordAdAttribution(sbAdmin, {
+          storeId,
+          conversationId: conv.id,
+          phone,
+          waMessageId: m.waMessageId,
+          ad: m.adReferral,
+        });
+      }
 
       const aiAuto = conv.aiEnabled && conv.aiState === "auto";
       if (isAudio) {

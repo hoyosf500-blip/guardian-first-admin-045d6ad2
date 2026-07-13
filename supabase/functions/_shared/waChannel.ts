@@ -6,7 +6,7 @@
 // finitas. Espejo conceptual de _shared/dropiStoreConfig.ts.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getWaTransport, onlyDigits, type WaProvider, type WaTransport } from "./waTransport.ts";
+import { type AdReferral, getWaTransport, onlyDigits, type WaProvider, type WaTransport } from "./waTransport.ts";
 
 export interface LoadedWaChannel {
   channelId: string;
@@ -177,6 +177,53 @@ export async function recordInbound(
   await bumpConversation(sbAdmin, conversationId, { preview: body, direction: "in", incUnread: true });
 
   return { inserted: true, messageId: String(ins.data.id) };
+}
+
+/** Guarda la atribución pedido↔anuncio (CTWA) de un mensaje entrante.
+ *  Best-effort e idempotente por wa_message_id (UNIQUE): si ya existe, ignora el
+ *  conflicto 23505. NUNCA lanza — devuelve false ante cualquier error para que el
+ *  flujo del webhook (el bot debe responder igual) no se rompa por esto. */
+export async function recordAdAttribution(
+  sbAdmin: SupabaseClient,
+  args: {
+    storeId: string;
+    conversationId: string | null;
+    phone: string;
+    waMessageId: string;
+    ad: AdReferral;
+  },
+): Promise<boolean> {
+  const { storeId, conversationId, phone, waMessageId, ad } = args;
+  if (!waMessageId) return false;
+  try {
+    const { error } = await sbAdmin
+      .from("wa_ad_attributions")
+      .upsert(
+        {
+          store_id: storeId,
+          conversation_id: conversationId,
+          phone,
+          wa_message_id: waMessageId,
+          ctwa_clid: ad.ctwaClid ?? null,
+          source_id: ad.sourceId ?? null,
+          source_url: ad.sourceUrl ?? null,
+          headline: ad.headline ?? null,
+          body: ad.body ?? null,
+          media_type: ad.mediaType ?? null,
+          raw: ad.raw ?? null,
+        },
+        { onConflict: "wa_message_id", ignoreDuplicates: true },
+      );
+    // 23505 (unique_violation) = ya estaba: idempotencia, no es error real.
+    if (error && error.code !== "23505") {
+      console.error("recordAdAttribution falló:", error.message);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("recordAdAttribution excepción:", e instanceof Error ? e.message : String(e));
+    return false;
+  }
 }
 
 /** Envía un texto por el transporte y registra el mensaje SALIENTE + actualiza
