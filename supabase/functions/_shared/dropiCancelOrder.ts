@@ -83,14 +83,18 @@ export async function dropiGetOrder(
   return { ok, httpStatus: res.status, body };
 }
 
-/** Señal de "no existe": 404 explícito o el mensaje textual de Dropi
- *  ("Orden no encontrada"). NO usar status 400 a secas — un bad-request
- *  genérico NO es fantasma. Exportada para el resolvedor de pares del cron. */
+/** Señal de "no existe": 404 explícito o el mensaje textual de Dropi.
+ *  Variantes reales: "Orden no encontrada", "no encontrado" y "No se encontró
+ *  registro" (esta última probada en vivo 2026-07-12 con un PUT a un stub — el
+ *  regex viejo /no encontrada|.../ NO la matcheaba). NO usar status 400 a
+ *  secas — un bad-request genérico NO es fantasma. Sigue exigiendo httpStatus
+ *  404 O isSuccess:false con (status 404 o mensaje de esta clase). Exportada
+ *  para el resolvedor de pares del cron. */
 export function notFoundSignal(httpStatus: number, b: Record<string, unknown>): boolean {
   return httpStatus === 404 ||
     (b.isSuccess === false &&
       (Number(b.status) === 404 ||
-        /no encontrada|no existe|not found/i.test(String(b.message || ""))));
+        /no (se )?encontr|no existe|not found/i.test(String(b.message || ""))));
 }
 
 /**

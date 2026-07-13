@@ -2,6 +2,19 @@
 //
 // Update editable customer fields on a Dropi order (multi-tenant: resolves
 // store from the order's external_id, uses that store's API key + país host).
+//
+// Contrato de errores (mismo patrón que dropi-change-carrier): los errores de
+// DOMINIO (rechazo de Dropi, pedido no encontrado, tienda sin api key, fallo
+// del UPDATE local con dropiAccepted) responden HTTP 200 con {ok:false, code?,
+// error, ...} — con non-2xx, supabase-js v2 deja data=null y el motivo real
+// quedaba enterrado en error.context (el cliente ahora también lo rescata vía
+// parseInvoke, doble cobertura). Non-2xx queda SOLO para auth/CORS/malformed
+// (401/403/400 tempranos).
+//
+// La auditoría en order_results ('edicion_orden') la inserta el CLIENTE
+// (OrderEditorDialog) con dropi_sync_status 'pending'→'synced'/'failed' ANTES
+// de saber el resultado — acá ya NO se inserta (evita fila duplicada y deja
+// rastro también cuando Dropi rechaza o la red muere).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
@@ -61,6 +74,12 @@ Deno.serve(async (req: Request) => {
     new Response(JSON.stringify({ ok: false, error }), {
       status, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  // Errores de dominio: HTTP 200 con ok:false para que invoke() entregue el
+  // body en `data` (con non-2xx llega data=null y el motivo real se pierde).
+  const jsonOk = (payload: Record<string, unknown>) =>
+    new Response(JSON.stringify(payload), {
+      status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
 
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -109,7 +128,9 @@ Deno.serve(async (req: Request) => {
       .select("id, store_id, assigned_to, nombre, phone, ciudad, departamento, direccion, email, external_id")
       .eq("external_id", externalId)
       .maybeSingle();
-    if (orderErr || !orderRow) return jsonErr(`Pedido ${externalId} no encontrado`, 404);
+    if (orderErr || !orderRow) {
+      return jsonOk({ ok: false, code: "not_found", error: `Pedido ${externalId} no encontrado` });
+    }
 
     const storeId = String((orderRow as { store_id: string }).store_id);
     const isMember = await isStoreMember(sbAdmin, user.id, storeId);
@@ -131,7 +152,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const cfg = await loadStoreConfig(sbAdmin, storeId);
-    if (!cfg.apiKey) return jsonErr("La tienda no tiene Clave API de Dropi configurada", 400);
+    if (!cfg.apiKey) {
+      return jsonOk({ ok: false, code: "no_api_key", error: "La tienda no tiene Clave API de Dropi configurada" });
+    }
 
     const dropiPayload: Record<string, unknown> = {
       name: nombre,
@@ -153,9 +176,10 @@ Deno.serve(async (req: Request) => {
         status: "error", synced_count: 0, duplicates_count: 0, total_count: 1,
         triggered_by: user.id, error_message: errorMsg, store_id: storeId,
       });
-      return new Response(JSON.stringify({
-        ok: false, error: errorMsg, dropiHttpStatus: dropi.httpStatus, dropiBody: dropi.body,
-      }), { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return jsonOk({
+        ok: false, code: "dropi_rejected", error: errorMsg,
+        dropiHttpStatus: dropi.httpStatus, dropiBody: dropi.body,
+      });
     }
 
     // Usar sbAdmin: la membresía ya se validó arriba (línea ~115) y Dropi YA
@@ -173,32 +197,19 @@ Deno.serve(async (req: Request) => {
       .eq("id", orderRow.id);
 
     if (updateErr) {
-      return new Response(JSON.stringify({
-        ok: false, dropiAccepted: true, dbError: updateErr.message,
+      // OJO: dropiAccepted:true — Dropi SÍ guardó los datos; lo que falló fue
+      // la ficha local. El cliente bifurca el toast con este flag para no
+      // hacer que la asesora re-dicte datos que ya están en Dropi.
+      return jsonOk({
+        ok: false, code: "db_update_failed", dropiAccepted: true, dbError: updateErr.message,
         error: `Dropi aceptó el cambio pero la base de datos lo rechazó: ${updateErr.message}`,
-      }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      });
     }
 
-    const auditPayload = {
-      antes: { nombre: orderRow.nombre, phone: orderRow.phone, ciudad: orderRow.ciudad, departamento: orderRow.departamento, direccion: orderRow.direccion, email: orderRow.email },
-      despues: { nombre: fullName, phone, ciudad, departamento, direccion, email: email || null },
-    };
+    // (El insert de auditoría 'edicion_orden' se movió al cliente — ver
+    //  cabecera. Insertarlo también acá duplicaba la fila en cada edición.)
 
-    const { error: auditErr } = await sbAdmin.from("order_results").insert({
-      order_id: orderRow.id,
-      phone: phone || orderRow.phone || "",
-      operator_id: user.id,
-      module: "confirmar",
-      result: "edicion_orden",
-      reason: JSON.stringify(auditPayload).slice(0, 2000),
-      store_id: storeId,
-    });
-    if (auditErr) console.error("[dropi-update-order-full] audit insert failed:", auditErr);
-
-    return new Response(
-      JSON.stringify({ ok: true, externalId, dropiHttpStatus: dropi.httpStatus }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return jsonOk({ ok: true, externalId, dropiHttpStatus: dropi.httpStatus });
   } catch (err) {
     console.error("dropi-update-order-full error:", err);
     const msg = err instanceof Error ? err.message : "Error interno";

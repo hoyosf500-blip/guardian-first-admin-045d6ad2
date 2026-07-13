@@ -8,6 +8,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 import { parseValorInput } from '@/lib/orderAlerts';
 import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditStep } from '@/lib/orderEditPlan';
+import { parseInvoke } from '@/lib/parseInvoke';
 import CustomerForm, { buildCustomerInitial, customerDirty, type CustomerFormState } from '@/components/confirmar/CustomerForm';
 import CarrierPicker, { type CarrierOption } from '@/components/confirmar/CarrierPicker';
 import ProductLinesEditor, { draftToLine, type LineDraft } from '@/components/confirmar/ProductLinesEditor';
@@ -49,6 +50,7 @@ interface QuoteResponse {
 interface ApplyResponse {
   ok?: boolean;
   error?: string;
+  code?: string;
   editApplied?: boolean;
   valorApplied?: boolean;
   /** true = la orden vieja quedó REEMPLAZADA (soft-delete) en Dropi, como hace su panel.
@@ -93,8 +95,8 @@ function dropiErrorDescription(shortMsg: string, status?: number, body?: unknown
 }
 
 export default function OrderEditorDialog({ open, onOpenChange, order, suggestedTotal, onSuccess }: Props) {
-  const { isAdmin } = useAuth();
-  const { activeStore } = useStore();
+  const { user, isAdmin } = useAuth();
+  const { activeStore, activeStoreId } = useStore();
   const countryCode = activeStore?.country_code;
 
   // Guía generada o pedido ya gestionado: transportadora/líneas/valor fijos.
@@ -128,8 +130,11 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           ...(withLines ? { lines: withLines.map(l => ({ dropiId: l.dropiId, quantity: l.quantity, price: l.price })) } : {}),
         },
       });
-      const d = (data as QuoteResponse | null) ?? null;
-      if ((error && !d) || !d?.ok) {
+      // parseInvoke: con non-2xx, invoke() deja data=null y el body JSON real
+      // (error/code/dropiBody) queda en error.context — sin esto el mensaje
+      // colapsaba al genérico "Edge Function returned a non-2xx status code".
+      const d = await parseInvoke<QuoteResponse>(data, error);
+      if (!d?.ok) {
         setQuoteError(d?.error || (error instanceof Error ? error.message : 'No se pudo cotizar con Dropi.'));
         return;
       }
@@ -217,6 +222,53 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
 
   const canSubmit = plan.length > 0 && !submitting && !overrideInvalid && !anyPriceInvalid;
 
+  // ---- Auditoría honesta (mismo patrón conf/canc de OrderContext) ----
+  // La fila de order_results nace 'pending' ANTES del push a Dropi y se
+  // promueve a 'synced' SOLO con éxito verificado, o a 'failed' + motivo real
+  // en result_notes. Antes la única auditoría la insertaba el server SOLO en
+  // el camino feliz (verificado en prod: fila 'synced' 2s antes del rechazo
+  // de Dropi) → las ediciones rechazadas no dejaban rastro en ningún lado.
+  // Las filas 'failed'/'pending' atascadas las muestra DropiSyncFailuresPanel.
+
+  const insertPendingAudit = async (
+    result: string,
+    payload: Record<string, unknown>,
+  ): Promise<string | null> => {
+    if (!user?.id || !order.dbId || !activeStoreId) {
+      toast.warning('La edición corre pero no pude registrar la auditoría');
+      return null;
+    }
+    const { data, error } = await supabase.from('order_results').insert({
+      order_id: order.dbId,
+      phone: order.phone || '',
+      operator_id: user.id,
+      module: 'confirmar',
+      result,
+      reason: JSON.stringify(payload).slice(0, 2000),
+      dropi_sync_status: 'pending',
+      store_id: activeStoreId,
+    }).select('id').single();
+    if (error || !data?.id) {
+      // Nunca en silencio: la edición sigue (no bloquear a la asesora), pero
+      // que se sepa que este intento no quedó auditado.
+      toast.warning('La edición corre pero no pude registrar la auditoría');
+      return null;
+    }
+    return String(data.id);
+  };
+
+  const settleAudit = async (id: string | null, status: 'synced' | 'failed', notes?: string) => {
+    if (!id) return;
+    // Best-effort (mismo cast que los updates de order_results en OrderContext);
+    // si RLS bloquea, la fila queda 'pending' y el panel la muestra a los 15 min.
+    await (supabase.from('order_results') as unknown as {
+      update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+    }).update({
+      dropi_sync_status: status,
+      ...(notes ? { result_notes: notes.slice(0, 300) } : {}),
+    }).eq('id', id);
+  };
+
   // ---- Pasos del submit ----
 
   const runUpdateFull = async (): Promise<boolean> => {
@@ -231,6 +283,18 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       toast.error('Email inválido'); return false;
     }
     const phoneToSend = normalizePhoneForCountry(form.phone, countryCode) ?? form.phone;
+    const auditId = await insertPendingAudit('edicion_orden', {
+      antes: {
+        nombre: initial.nombre, apellido: initial.apellido, phone: initial.phone,
+        ciudad: initial.ciudad, departamento: initial.departamento,
+        direccion: initial.direccion, email: initial.email,
+      },
+      despues: {
+        nombre: form.nombre.trim(), apellido: form.apellido.trim(), phone: phoneToSend,
+        ciudad: form.ciudad.trim(), departamento: form.departamento.trim(),
+        direccion: form.direccion.trim(), email: form.email.trim(),
+      },
+    });
     const { data, error } = await supabase.functions.invoke('dropi-update-order-full', {
       body: {
         externalId: order.externalId,
@@ -243,17 +307,41 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         email: form.email.trim(),
       },
     });
-    const d = (data as { ok?: boolean; error?: string; noChange?: boolean; dropiHttpStatus?: number; dropiBody?: unknown } | null) ?? null;
-    const failed = (error && !d) || d?.ok === false ||
+    // parseInvoke: aunque la función deployada siga respondiendo non-2xx
+    // (data=null), acá recuperamos el body real {ok,error,code,dropiBody...}.
+    const d = await parseInvoke<{
+      ok?: boolean; error?: string; code?: string; noChange?: boolean;
+      dropiAccepted?: boolean; dbError?: string; dropiHttpStatus?: number; dropiBody?: unknown;
+    }>(data, error);
+    // Criterio ESTRICTO (mismo que conf/canc): éxito solo con ok:true explícito.
+    const failed = d?.ok !== true ||
       (typeof d?.dropiHttpStatus === 'number' && d.dropiHttpStatus >= 400);
     if (failed) {
       const shortMsg = d?.error || (error instanceof Error ? error.message : 'Error desconocido');
-      toast.error('No se guardó nada — Dropi rechazó los datos del cliente', {
-        description: dropiErrorDescription(shortMsg, d?.dropiHttpStatus, d?.dropiBody),
-        duration: 15000,
-      });
+      if (d?.dropiAccepted === true) {
+        // Dropi SÍ guardó los datos; lo que falló fue el UPDATE de la ficha
+        // local. El toast viejo ("Dropi rechazó los datos") MENTÍA y hacía
+        // que la asesora re-dictara todo. El push a Dropi sí llegó → 'synced'
+        // con el aviso en result_notes.
+        await settleAudit(auditId, 'synced',
+          `Dropi guardó los datos pero falló la ficha local: ${d?.dbError || shortMsg}`);
+        toast.warning(
+          'Dropi SÍ guardó los datos del cliente; falló la ficha local — NO vuelvas a dictar los datos, refrescá desde Dropi o reintentá.',
+          {
+            description: dropiErrorDescription(shortMsg, d?.dropiHttpStatus, d?.dropiBody),
+            duration: 15000,
+          },
+        );
+      } else {
+        await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
+        toast.error('No se guardó nada — Dropi rechazó los datos del cliente', {
+          description: dropiErrorDescription(shortMsg, d?.dropiHttpStatus, d?.dropiBody),
+          duration: 15000,
+        });
+      }
       return false;
     }
+    await settleAudit(auditId, 'synced', d?.noChange ? 'Sin cambios que empujar a Dropi' : undefined);
     // Baseline reset: si un paso posterior falla, el retry no re-manda los datos.
     setInitial({ ...form });
     return true;
@@ -263,6 +351,21 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     clientApplied ? 'Datos del cliente: GUARDADOS ✓ · ' : '';
 
   const runApplyEdit = async (clientApplied: boolean): Promise<ApplyResponse | null> => {
+    const auditId = await insertPendingAudit('edicion_completa', {
+      antes: {
+        external_id: order.externalId,
+        transportadora: order.transportadora || '',
+        valor: currentValor,
+      },
+      despues: {
+        ...(carrierChanged && selectedCarrier ? { transportadora: selectedCarrier.name } : {}),
+        ...(linesChanged && effectiveLines
+          ? { lines: effectiveLines.map(l => ({ id: l.dropiId, q: l.quantity, p: l.price })) }
+          : {}),
+        ...(overrideValid ? { valor: overrideParsed } : {}),
+      },
+      via: 'apply_edit',
+    });
     const { data, error } = await supabase.functions.invoke('dropi-change-carrier', {
       body: {
         externalId: order.externalId,
@@ -276,9 +379,12 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         ...(overrideValid ? { newValor: overrideParsed } : {}),
       },
     });
-    const d = (data as ApplyResponse | null) ?? null;
-    if ((error && !d) || !d?.ok) {
+    // parseInvoke: rescata el body real (error/code/dropiHttpStatus/dropiBody)
+    // aunque la edge haya respondido non-2xx — el motivo de Dropi SIEMPRE llega.
+    const d = await parseInvoke<ApplyResponse>(data, error);
+    if (d?.ok !== true) {
       const shortMsg = d?.error || (error instanceof Error ? error.message : 'Error desconocido');
+      await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
       // Título según lo que REALMENTE llevaba este intento — el label fijo
       // "Transportadora/cantidades/valor" confundía cuando solo se tocó el
       // precio (la asesora leía que la transportadora también falló).
@@ -298,22 +404,34 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     }
     if (d.editApplied !== true) {
       // Función vieja deployada: apply_edit cayó al modo quote (read-only, no mutó).
+      await settleAudit(auditId, 'failed',
+        'EDICIÓN falló: función del servidor desactualizada (apply_edit no mutó — falta redeploy de dropi-change-carrier)');
       toast.error(
         `${clientApplied ? 'Los datos del cliente SÍ quedaron guardados. ' : ''}La función del servidor está desactualizada: NO aplicó transportadora/cantidades. Pedí el redeploy de dropi-change-carrier en Lovable.`,
         { duration: 15000 },
       );
       return null;
     }
+    // Éxito verificado. Si vino warning (ej. "orden vieja puede seguir activa"),
+    // queda también en la auditoría, no solo en un toast que se evapora.
+    await settleAudit(auditId, 'synced', d.warning ? `Edición OK con aviso: ${d.warning}` : undefined);
     return d;
   };
 
   const runApplyValue = async (clientApplied: boolean): Promise<ApplyResponse | null> => {
+    const auditId = await insertPendingAudit('cambio_valor', {
+      antes: { external_id: order.externalId, valor: currentValor },
+      despues: { valor: finalTotal },
+      via: 'apply_value',
+    });
     const { data, error } = await supabase.functions.invoke('dropi-change-carrier', {
       body: { externalId: order.externalId, mode: 'apply_value', newValor: finalTotal },
     });
-    const d = (data as ApplyResponse | null) ?? null;
-    if ((error && !d) || !d?.ok) {
+    // parseInvoke: rescata el body real aunque la edge haya respondido non-2xx.
+    const d = await parseInvoke<ApplyResponse>(data, error);
+    if (d?.ok !== true) {
       const shortMsg = d?.error || (error instanceof Error ? error.message : 'Error desconocido');
+      await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
       toast.error(`${partialPrefix(clientApplied)}Valor: NO se aplicó`, {
         description: dropiErrorDescription(
           `${shortMsg} — Corregí y tocá "Actualizar Orden": solo se reintenta lo pendiente.`,
@@ -324,12 +442,15 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       return null;
     }
     if (d.valorApplied !== true) {
+      await settleAudit(auditId, 'failed',
+        'EDICIÓN falló: función del servidor desactualizada (apply_value no mutó — falta redeploy de dropi-change-carrier)');
       toast.error(
         `${clientApplied ? 'Los datos del cliente SÍ quedaron guardados. ' : ''}La función del servidor está desactualizada: no aplicó el valor. Pedí el redeploy de dropi-change-carrier en Lovable.`,
         { duration: 15000 },
       );
       return null;
     }
+    await settleAudit(auditId, 'synced', d.warning ? `Edición OK con aviso: ${d.warning}` : undefined);
     return d;
   };
 

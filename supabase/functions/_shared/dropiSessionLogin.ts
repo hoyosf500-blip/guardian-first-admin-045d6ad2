@@ -99,21 +99,32 @@ export async function ensureFreshSessionToken(
   // (User-Agent + Origin/Referer de app.dropi.* + Sec-Fetch-*), verificada en
   // vivo 2026-07-01 para getOriginCity/cotiza.
   const appOrigin = cfg.base.replace("://api.", "://app.");
-  const res = await fetch(`${cfg.base}/api/login`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Accept": "application/json, text/plain, */*",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-      "Origin": appOrigin,
-      "Referer": `${appOrigin}/`,
-      "Sec-Fetch-Dest": "empty",
-      "Sec-Fetch-Mode": "cors",
-      "Sec-Fetch-Site": "same-site",
-    },
-    body: JSON.stringify({ email, password, white_brand_id: whiteBrandId }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${cfg.base}/api/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Origin": appOrigin,
+        "Referer": `${appOrigin}/`,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+      },
+      body: JSON.stringify({ email, password, white_brand_id: whiteBrandId }),
+      // Timeout duro (mismo criterio que dropiWebFetch): un login colgado no
+      // debe matar la función por wall-clock sin dejar rastro del motivo.
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      throw new WebFallbackError("Dropi no respondió en 30s (/api/login).", 504);
+    }
+    throw e;
+  }
   const raw = await res.text();
   // Nunca loguear password; el body de login trae el token → solo status/tamaño.
   console.log("[dropi-login]", { storeId: cfg.storeId, status: res.status, bodyLen: raw.length });

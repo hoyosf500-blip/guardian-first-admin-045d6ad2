@@ -3,9 +3,10 @@ import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { toast } from 'sonner';
-import { CloudOff, ChevronDown, ChevronUp, RefreshCw, Loader2, Bot } from 'lucide-react';
+import { CloudOff, ChevronDown, ChevronUp, RefreshCw, Loader2, Bot, Pencil } from 'lucide-react';
 
-// Gestiones (conf/canc) que quedaron en el CRM pero NUNCA llegaron a Dropi
+// Gestiones (conf/canc) Y ediciones (transportadora/valor/edición de orden)
+// que quedaron en el CRM pero NUNCA llegaron a Dropi
 // (order_results.dropi_sync_status='failed'). Antes eran invisibles: el toast
 // mentía ("Aparecerá en Novedades") y nadie volvía a mirarlas. Este panel las
 // hace visibles arriba de la cola de Confirmar, con reintento manual.
@@ -13,15 +14,28 @@ import { CloudOff, ChevronDown, ChevronUp, RefreshCw, Loader2, Bot } from 'lucid
 // Los pedidos del bot de Dropi (LucidBot/FINAL_ORDER) NO tienen superficie de
 // escritura por API — reintentar es inútil eterno. Se marcan con el prefijo
 // BOT-SIN-API: en result_notes y acá se muestran como badge informativo.
+//
+// Las EDICIONES no tienen retry automático (no guardamos el payload completo
+// del intento): se muestran como aviso "reabrí el pedido y aplicala de nuevo".
+// El botón Reintentar queda SOLO para conf/canc.
 
 const BOT_PREFIX = 'BOT-SIN-API:';
 const WINDOW_DAYS = 7;
 const POLL_MS = 5 * 60_000; // poll suave — nada agresivo, la DB ya va justa
 
+// Resultados de edición (OrderEditorDialog, patrón pending→synced/failed).
+const EDIT_RESULTS = ['cambio_transportadora', 'cambio_valor', 'edicion_completa', 'edicion_orden'] as const;
+const EDIT_LABEL: Record<string, string> = {
+  cambio_transportadora: 'Transportadora',
+  cambio_valor: 'Valor',
+  edicion_completa: 'Edición de orden',
+  edicion_orden: 'Datos del cliente',
+};
+
 interface FailedGestion {
   id: string;
   orderId: string;
-  result: string; // 'conf' | 'canc'
+  result: string; // 'conf' | 'canc' | EDIT_RESULTS
   notes: string;
   createdAt: string;
   externalId: string;
@@ -71,21 +85,25 @@ export default function DropiSyncFailuresPanel() {
         .select('id, order_id, result, result_notes, created_at')
         .eq('store_id', activeStoreId)
         .or(`dropi_sync_status.eq.failed,and(dropi_sync_status.eq.pending,created_at.lt."${stalePendingIso}")`)
-        .in('result', ['conf', 'canc'])
+        .in('result', ['conf', 'canc', ...EDIT_RESULTS])
         .gte('created_at', since)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
 
-      // Una fila por pedido (la más reciente) — reintentos previos no duplican.
+      // Una fila por (pedido, tipo de gestión) — la más reciente gana (la query
+      // viene DESC). Dedupe por order_id solo escondía info: una conf fallida y
+      // una edición fallida del MISMO pedido son problemas distintos.
       const byOrder = new Map<string, NonNullable<typeof data>[number]>();
       for (const r of data ?? []) {
-        if (!byOrder.has(r.order_id)) byOrder.set(r.order_id, r);
+        const key = `${r.order_id}:${r.result}`;
+        if (!byOrder.has(key)) byOrder.set(key, r);
       }
 
       // Join liviano: resolver external_id/nombre con una 2ª query por id IN.
+      // (las keys del map son compuestas `${order_id}:${result}` — deduplicar acá)
       const meta = new Map<string, { externalId: string; nombre: string }>();
-      const orderIds = [...byOrder.keys()];
+      const orderIds = [...new Set([...byOrder.values()].map(r => r.order_id))];
       if (orderIds.length > 0) {
         const { data: ords } = await supabase
           .from('orders')
@@ -125,6 +143,9 @@ export default function DropiSyncFailuresPanel() {
 
   const retry = useCallback(async (row: FailedGestion) => {
     if (busyId || !row.externalId) return;
+    // Solo conf/canc tienen retry (el else de abajo CANCELA en Dropi — una
+    // fila de edición acá cancelaría el pedido). Las ediciones van por badge.
+    if (row.result !== 'conf' && row.result !== 'canc') return;
     setBusyId(row.id);
     try {
       if (row.result === 'conf') {
@@ -188,11 +209,11 @@ export default function DropiSyncFailuresPanel() {
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-2xl font-extrabold tabular-nums text-destructive">{rows.length}</span>
             <span className="text-sm font-semibold text-foreground">
-              {rows.length === 1 ? 'gestión no llegó a Dropi' : 'gestiones no llegaron a Dropi'}
+              {rows.length === 1 ? 'gestión o edición no llegó a Dropi' : 'gestiones y ediciones no llegaron a Dropi'}
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Quedaron en el CRM pero Dropi las rechazó (últimos {WINDOW_DAYS} días). Podés reintentarlas acá.
+            Quedaron en el CRM pero Dropi las rechazó (últimos {WINDOW_DAYS} días). Las gestiones se reintentan acá; las ediciones se reaplican desde el pedido.
             {botCount > 0 && <> {botCount} son del bot de Dropi — esas solo se gestionan en el panel de Dropi.</>}
           </p>
         </div>
@@ -213,6 +234,7 @@ export default function DropiSyncFailuresPanel() {
         <div className="border-t border-destructive/30 max-h-[22rem] overflow-y-auto bg-card/50 divide-y divide-border">
           {rows.map(r => {
             const isBot = r.notes.startsWith(BOT_PREFIX);
+            const isEdit = (EDIT_RESULTS as readonly string[]).includes(r.result);
             return (
               <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
                 <div className="flex-1 min-w-0">
@@ -220,9 +242,10 @@ export default function DropiSyncFailuresPanel() {
                     <span className="font-medium text-foreground truncate">{r.nombre || 'Pedido'}</span>
                     {r.externalId && <span className="text-[10px] font-mono text-muted-foreground">#{r.externalId}</span>}
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                      r.result === 'conf' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'
+                      isEdit ? 'bg-warning/15 text-warning'
+                        : r.result === 'conf' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'
                     }`}>
-                      {r.result === 'conf' ? 'Confirmación' : 'Cancelación'}
+                      {isEdit ? (EDIT_LABEL[r.result] ?? 'Edición') : r.result === 'conf' ? 'Confirmación' : 'Cancelación'}
                     </span>
                     <span className="text-[10px] text-muted-foreground">{timeAgo(r.createdAt)}</span>
                   </div>
@@ -232,7 +255,13 @@ export default function DropiSyncFailuresPanel() {
                     </p>
                   )}
                 </div>
-                {isBot ? (
+                {isEdit ? (
+                  // Sin retry automático posible: no guardamos el payload del
+                  // intento. La asesora reabre el pedido y la aplica de nuevo.
+                  <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
+                    <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
+                  </span>
+                ) : isBot ? (
                   <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
                     <Bot size={11} aria-hidden="true" /> Pedido del bot — gestionar en panel Dropi
                   </span>

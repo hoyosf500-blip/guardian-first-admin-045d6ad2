@@ -66,7 +66,10 @@ export default function AdminTab() {
     const { data } = await supabase
       .from('sync_logs')
       .select('id, created_at, error_message')
-      .eq('status', 'error')
+      // 'warn' incluido: dropi-change-carrier loguea status 'warn' cuando la
+      // orden vieja pudo quedar activa (riesgo de doble envío) — con el filtro
+      // solo-'error' esos avisos no aparecían en ningún lado.
+      .in('status', ['error', 'warn'])
       .eq('store_id', activeStoreId)
       .gte('created_at', twentyFourHoursAgo)
       .order('created_at', { ascending: false })
@@ -242,7 +245,7 @@ export default function AdminTab() {
             <div className="flex-1 min-w-0">
               <h4 className="text-sm font-semibold text-destructive">Sincronización fallida</h4>
               <p className="text-xs text-destructive/80 mt-0.5 mb-2">
-                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length} error(es) en las últimas 24 horas
+                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length} error(es)/aviso(s) en las últimas 24 horas
               </p>
               <div className="space-y-1.5">
                 {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).map(sync => (

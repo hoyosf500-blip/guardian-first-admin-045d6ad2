@@ -29,13 +29,18 @@ export interface DropiWebCfg {
   storeUrl: string;
 }
 
-/** Error tipado del flujo web para distinguir "abortar con 422" del resto. */
+/** Error tipado del flujo web para distinguir "abortar con 422" del resto.
+ *  `body` (opcional) = body crudo que devolvió Dropi, para diagnóstico —
+ *  dropi-change-carrier lo devuelve al cliente como `dropiBody`. Es el 3er
+ *  parámetro opcional para no romper los throws existentes (message, status). */
 export class WebFallbackError extends Error {
   status: number;
-  constructor(message: string, status = 422) {
+  body?: unknown;
+  constructor(message: string, status = 422, body?: unknown) {
     super(message);
     this.name = "WebFallbackError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -96,11 +101,26 @@ export async function dropiWebFetch(
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-site",
   };
-  const res = await fetch(url, {
-    method: init.method,
-    headers,
-    body: init.body != null ? JSON.stringify(init.body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: init.method,
+      headers,
+      body: init.body != null ? JSON.stringify(init.body) : undefined,
+      // Timeout duro: sin señal de aborto, un hang de Dropi mata la función por
+      // wall-clock (a veces DESPUÉS de crear una orden) sin dejar rastro del motivo.
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (e) {
+    // AbortSignal.timeout aborta con DOMException "TimeoutError" (o "AbortError"
+    // según runtime) — se convierte en error legible, no un TypeError críptico.
+    // Status 504 y NO 0: los callers usan e.status como HTTP status de su
+    // respuesta (shopify-push-dropi hace `json(..., e.status)`) y 0 es inválido.
+    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      throw new WebFallbackError(`Dropi no respondió en 30s (${path}).`, 504);
+    }
+    throw e;
+  }
   const text = await res.text();
   // logBody:false para endpoints que devuelven listados con datos de clientes
   // (nombre/teléfono/dirección) — evita volcar PII a los logs en cada llamada.
@@ -188,11 +208,15 @@ export async function fetchWebProductInfo(
       const obj = body?.objects ?? body?.data ?? {};
       if (obj?.user_id != null) supplierId = String(obj.user_id);
       if (obj?.type) productType = String(obj.type);
+    } else {
+      // Antes degradaba a SIMPLE/supplier null en silencio total — dejar rastro.
+      console.warn(`[dropi-web] PASO A: producto ${dropiId} respondió ${status} — degrado a type SIMPLE / supplier null`);
     }
   } catch (e) {
     // Un 401 acá NO aborta (a diferencia del resto): seguimos con fallback de supplier.
     // Pero si el session token es inválido de plano, los pasos C-D también fallarán.
     if (e instanceof WebFallbackError && e.status === 422) throw e;
+    console.error("[dropi-web] PASO A falló para producto", dropiId, e);
   }
   return { dropiId, quantity, price, productType, supplierId };
 }
@@ -214,13 +238,14 @@ export async function getOriginCity(
     body: { id: dropiId, destination, type: productType },
   });
   if (status < 200 || status >= 300) {
-    throw new WebFallbackError(`Dropi /api/orders/getOriginCityForCalculateShipping respondió ${status}.`, 422);
+    // El body de Dropi viaja en el error → el caller lo expone como dropiBody.
+    throw new WebFallbackError(`Dropi /api/orders/getOriginCityForCalculateShipping respondió ${status}.`, 422, body);
   }
   const data = body?.data ?? {};
   const cityRemitente = data?.city_dropi ?? null;
   const warehouse = data?.warehouse ?? null;
   if (!cityRemitente) {
-    throw new WebFallbackError(`El producto Dropi ${dropiId} no tiene stock en bodega (sin ciudad de origen).`, 422);
+    throw new WebFallbackError(`El producto Dropi ${dropiId} no tiene stock en bodega (sin ciudad de origen).`, 422, body);
   }
   return { cityRemitente, warehouse, warehouseId: Number(warehouse?.id) };
 }
@@ -265,7 +290,7 @@ export async function cotizaEnvioOptions(
   };
   const { status, body } = await dropiWebFetch(cfg, `/api/orders/cotizaEnvioTransportadoraV2`, { method: "POST", body: reqBody });
   if (status < 200 || status >= 300) {
-    throw new WebFallbackError(`Dropi /api/orders/cotizaEnvioTransportadoraV2 respondió ${status}.`, 422);
+    throw new WebFallbackError(`Dropi /api/orders/cotizaEnvioTransportadoraV2 respondió ${status}.`, 422, body);
   }
   // deno-lint-ignore no-explicit-any
   const options: any[] = Array.isArray(body?.objects) ? body.objects : [];
@@ -275,6 +300,25 @@ export async function cotizaEnvioOptions(
     const precio = Number(o?.objects?.precioEnvio);
     return Number.isFinite(precio) && o?.distributionCompany?.id != null;
   });
+  // 200 pero sin NINGUNA opción usable (isSuccess:false, objects vacío o todas
+  // las transportadoras con .error): antes se devolvía lista vacía y el motivo
+  // real de Dropi se perdía ("no cotizó" genérico en el caller). Se lanza con
+  // el message de Dropi + los primeros .error por transportadora, y el body
+  // completo como dropiBody.
+  if (valid.length === 0) {
+    const motivos = options
+      .filter((o) => o?.error)
+      .slice(0, 3)
+      .map((o) => `${String(o?.distributionCompany?.name || o?.transportadora || "?")}: ${String(o.error).slice(0, 140)}`);
+    const dropiMsg = String(body?.message || "").trim();
+    throw new WebFallbackError(
+      "Ninguna transportadora cotizó este envío." +
+        (dropiMsg ? ` Dropi: ${dropiMsg}` : "") +
+        (motivos.length ? ` — ${motivos.join(" | ")}` : ""),
+      422,
+      body,
+    );
+  }
   valid.sort((a, b) => Number(a?.objects?.precioEnvio) - Number(b?.objects?.precioEnvio));
   return valid.map((o) => ({
     id: o.distributionCompany.id,

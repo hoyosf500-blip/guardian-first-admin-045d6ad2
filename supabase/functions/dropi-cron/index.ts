@@ -1019,10 +1019,19 @@ Deno.serve(async (req: Request) => {
     // por-id — el GET de integración da 404) y Dropi crea el pedido REAL con
     // otro id, mismo teléfono. El stub queda PENDIENTE en Guardian y las
     // asesoras lo gestionan en vano (conf/canc/edición mueren contra la API).
-    // Acá: pedidos ACTIVOS que compartan tienda + últimos 9 dígitos de teléfono
-    // → al MÁS VIEJO del par se le hace el GET de integración; SOLO si da la
-    // señal 404 (stub confirmado — un cliente con 2 compras reales NO la da)
-    // se marca REEMPLAZADA local (excluida de colas y métricas, PR #111).
+    //
+    // CLASE "HERMANA DESPACHADA" (barrido manual 2026-07-12: 23 stubs así, 21
+    // EC + 2 CO): el reenvío REAL casi siempre ya avanzó (GUIA_GENERADA / POR
+    // RECOLECTAR / EN TRÁNSITO / NOVEDAD...), así que un pool limitado a
+    // PENDIENTE* nunca forma el par y el stub queda pendiente para siempre.
+    // Por eso el pool son TODOS los estados NO terminales; el candidato a
+    // retirar sigue siendo únicamente el MÁS VIEJO del grupo y SOLO si él mismo
+    // está en PENDIENTE / PENDIENTE CONFIRMACION — un "más viejo" con guía es
+    // un pedido real: nunca retirar algo despachado.
+    //
+    // Al MÁS VIEJO se le hace el GET de integración; SOLO si da la señal 404
+    // (stub confirmado — un cliente con 2 compras reales NO la da) se marca
+    // REEMPLAZADA local (excluida de colas y métricas, PR #111).
     // Verificado 2026-07-13: la marca sobrevive a las corridas del cron (el
     // stub no reaparece en la ventana del sync porque su estado nunca cambia);
     // si Dropi lo re-listara vivo, el upsert lo resucita solo (auto-corrección,
@@ -1032,11 +1041,13 @@ Deno.serve(async (req: Request) => {
       activesFrom.setUTCDate(activesFrom.getUTCDate() - 4);
       const { data: actives } = await sb
         .from("orders")
-        .select("id, external_id, phone, store_id, created_at")
-        .in("estado", ["PENDIENTE", "PENDIENTE CONFIRMACION"])
+        .select("id, external_id, phone, store_id, created_at, estado")
+        // Todos los NO terminales (sintaxis PostgREST de not-in: los valores
+        // con espacios van entre comillas dobles dentro del paréntesis).
+        .not("estado", "in", '("CANCELADO","ENTREGADO","REEMPLAZADA","DEVOLUCION","DEVOLUCION EN CAMINO","NOVEDAD SOLUCIONADA","RECHAZADO")')
         .gte("created_at", activesFrom.toISOString())
         .limit(500);
-      type ParRow = { id: string; external_id: string | null; phone: string | null; store_id: string; created_at: string };
+      type ParRow = { id: string; external_id: string | null; phone: string | null; store_id: string; created_at: string; estado: string | null };
       const porTel = new Map<string, ParRow[]>();
       for (const o of (actives || []) as ParRow[]) {
         const digits = String(o.phone || "").replace(/\D/g, "");
@@ -1059,6 +1070,10 @@ Deno.serve(async (req: Request) => {
           return String(a.created_at).localeCompare(String(b.created_at));
         });
         const viejo = ordenados[0];
+        // Guard hermana-despachada: solo un "más viejo" AÚN pendiente puede ser
+        // stub retirable. Si ya tiene guía / avanzó de estado, es un pedido
+        // real (cliente con 2 compras, reenvío legítimo, etc.) → skip.
+        if (viejo.estado !== "PENDIENTE" && viejo.estado !== "PENDIENTE CONFIRMACION") continue;
         if (!viejo.external_id) continue;
         const sidPar = String(viejo.store_id);
         let cfgPar = pairCfgByStore.get(sidPar);
