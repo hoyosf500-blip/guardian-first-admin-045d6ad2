@@ -54,8 +54,6 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  // Timestamp del último cambio realtime recibido — dispara el pulso "en vivo".
-  const [livePulseAt, setLivePulseAt] = useState(0);
   // Reloj local: re-renderiza cada 30s para que "hace X min" nunca quede viejo
   // entre recargas de sync_logs (el poll es cada 2 min).
   const [, setNowTick] = useState(0);
@@ -91,12 +89,12 @@ export default function SyncFreshness({ onAuditClick }: Props) {
     return () => clearInterval(id);
   }, []);
 
-  // PULSO EN VIVO: un canal liviano que escucha cambios de `orders` de la tienda
-  // activa. Cuando llega uno (el cron acaba de traer datos, o una operadora
-  // gestionó algo), encendemos el pulso "en vivo" 4s y recargamos la frescura.
-  // Es independiente del realtime de OrderContext (que refresca las colas): acá
-  // solo alimenta la señal visible de "se está moviendo". Debounce simple para
-  // no recargar sync_logs en cada fila de un burst del cron.
+  // Frescura al día SIN parpadeo: un canal liviano escucha cambios de `orders`
+  // de la tienda activa y, con debounce, recarga los sync_logs para que el
+  // "hace X min · N pedidos" quede al día. NO anima nada (el dueño reportó que
+  // los parpadeos molestaban y reseteaban el trabajo): solo actualiza el texto
+  // en silencio. Es independiente del realtime de OrderContext (que mueve las
+  // colas) y no toca el tablero. Debounce para no recargar en cada fila del burst.
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeStoreId) return;
@@ -112,7 +110,6 @@ export default function SyncFreshness({ onAuditClick }: Props) {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'orders', filter: `store_id=eq.${activeStoreId}` },
           () => {
-            setLivePulseAt(Date.now());
             if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
             reloadTimerRef.current = setTimeout(() => { void load(); }, 1500);
           },
@@ -179,11 +176,12 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   else if (recentAllZeroOrWarn || lastSuccessAgeHrs > 24) color = 'yellow';
   else color = 'green';
 
-  // VERDE — píldora VISIBLE (antes era un puntito con la info en un tooltip).
-  // Muestra la última corrida del cron y el pulso "en vivo" cuando llega un
-  // cambio realtime, para que el dueño VEA que la data está fresca y se mueve.
+  // VERDE — píldora VISIBLE y CALMA (antes era un puntito con la info en tooltip).
+  // Muestra la última corrida del cron. SIN animaciones ni parpadeos (el dueño
+  // reportó que los parpadeos molestaban): solo texto que se actualiza en
+  // silencio. El tablero se mueve solo por el realtime de OrderContext; este
+  // banner solo informa que la sincronización está al día.
   if (color === 'green') {
-    const live = now - livePulseAt < 4000;
     const lastRunMs = now - new Date(last.created_at).getTime();
     // Cambios de la última corrida CON novedades (el synced_count de la más
     // reciente que trajo algo) — "N pedidos actualizados".
@@ -197,18 +195,8 @@ export default function SyncFreshness({ onAuditClick }: Props) {
           {cambios > 0 && lastSuccess && (
             <> · {cambios} {cambios === 1 ? 'pedido actualizado' : 'pedidos actualizados'}</>
           )}
+          {' · '}se actualiza solo cada 5 min
         </span>
-        {live ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-success">
-            <span className="w-1.5 h-1.5 rounded-full bg-success animate-ping" aria-hidden />
-            en vivo
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground" title="La sincronización con Dropi corre sola cada 5 minutos y los cambios entran en vivo.">
-            <span className="w-1.5 h-1.5 rounded-full bg-success/70" aria-hidden />
-            automático cada 5 min
-          </span>
-        )}
       </div>
     );
   }
