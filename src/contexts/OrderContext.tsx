@@ -580,6 +580,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const today = bogotaToday();
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
 
+    // Trazabilidad honesta del push: si este resultado va a disparar un push a
+    // Dropi (conf/canc con externalId), la fila nace 'pending' y se promueve a
+    // 'synced' SOLO cuando Dropi confirma (ver .then de cada invoke abajo).
+    // Antes nacía 'synced' hardcodeado ANTES del push — mentía si Dropi fallaba.
+    // 'pending' es un valor ya contemplado por dropi-cron (restore failed/pending).
+    // Sin push que hacer (noresp, o pedido sin externalId) queda 'synced' directo.
+    const willPushToDropi = (result === 'conf' || result === 'canc') && !!order.externalId;
+
     const { error, data: insertedResult } = await supabase.from('order_results').insert({
       order_id: order.dbId,
       phone: order.phone,
@@ -588,7 +596,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       operator_id: user.id,
       result_date: today,
       result_time: now,
-      dropi_sync_status: 'synced',
+      dropi_sync_status: willPushToDropi ? 'pending' : 'synced',
       // CRÍTICO: pasar store_id de la tienda activa. La columna tiene default
       // '00000...001' (CO legacy); sin esto, en tiendas Ecuador (u otras)
       // el INSERT viola la RLS `oresults_ins` (store_id IN auth_store_ids())
@@ -645,7 +653,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // con el mismo toastId, evitando toasts contradictorios.
         toast.loading(`Confirmando — ${order.nombre.split(' ')[0]}…`, { id: toastId });
 
-        const markDropiFailure = async (errMsg: string) => {
+        const markDropiFailure = async (errMsg: string, code?: string) => {
           if (revertedRef.current) return;
           revertedRef.current = true;
           // BUG A fix: do NOT silently rollback. Keep the local confirmation,
@@ -656,13 +664,24 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
             }).update({
               dropi_sync_status: 'failed',
-              result_notes: `Dropi sync pendiente - reintentar (${errMsg})`,
+              // code 'pedido_bot' = la edge CONFIRMÓ (PUT + GET de integración)
+              // que es un pedido del bot sin superficie API por-id. El prefijo
+              // "BOT-SIN-API: " (MISMO string exacto que BOT_NOTES_PREFIX en
+              // dropi-cron) lo excluye del retry del cron desde el primer tick
+              // (sin quemar los 5 intentos del CAP) y el panel de fallos lo
+              // muestra como badge informativo en vez de botón "Reintentar".
+              result_notes: (code === 'pedido_bot' ? 'BOT-SIN-API: ' : '') +
+                `Dropi sync pendiente - reintentar (${errMsg})`,
             }).eq('id', insertedResultId);
           }
-          toast.error(
-            '⚠ Confirmación guardada localmente pero Dropi no respondió. Aparecerá en la pestaña "Novedades" para reintentar.',
-            { id: toastId, duration: 10000 },
-          );
+          // Toast HONESTO. El texto viejo ("Aparecerá en la pestaña Novedades")
+          // mentía — nada lee esas filas en Novedades. Los pedidos del bot de
+          // Dropi (code 'pedido_bot') no se pueden actualizar por API NUNCA:
+          // el retry del cron falla eterno, hay que ir al panel de Dropi.
+          const honestMsg = code === 'pedido_bot'
+            ? 'Pedido del bot de Dropi: la confirmación quedó en el CRM pero Dropi no permite actualizarlo por API — confirmalo en el panel de Dropi'
+            : 'La confirmación quedó en el CRM pero NO llegó a Dropi — el sistema la reintenta solo cada 5 min. Si en una hora sigue fallando, gestionalo en el panel.';
+          toast.error(honestMsg, { id: toastId, duration: 10000 });
         };
 
         // Audit H4: await en .catch para evitar floating promise — si el componente
@@ -670,11 +689,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         supabase.functions
           .invoke('dropi-update-order', { body: { externalId: order.externalId } })
           .then(async (res) => {
-            const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
-            if (res?.error || data?.ok === false) {
-              const msg = res?.error?.message || data?.error || 'Error desconocido';
-              await markDropiFailure(msg);
+            const data = res?.data as { ok?: boolean; error?: string; code?: string } | null | undefined;
+            // Chequeo ESTRICTO: éxito SOLO si la función respondió ok:true.
+            // Antes el criterio era `data?.ok === false` — un 200 sin campo
+            // `ok` (función vieja, respuesta malformada) se celebraba como
+            // confirmado sin haber tocado Dropi.
+            if (res?.error || data?.ok !== true) {
+              const msg = res?.error?.message || data?.error || 'la función Dropi no confirmó el cambio (respuesta sin ok:true)';
+              await markDropiFailure(msg, data?.code);
             } else {
+              // Dropi confirmó el push → promover la fila 'pending' a 'synced'
+              // para que el retry del cron no la vuelva a tocar.
+              if (insertedResultId) {
+                await (supabase.from('order_results') as unknown as {
+                  update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+                }).update({ dropi_sync_status: 'synced' }).eq('id', insertedResultId);
+              }
               toast.success(`Confirmado — ${order.nombre.split(' ')[0]}`, { id: toastId, duration: 2500 });
             }
           })
@@ -704,8 +734,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             result_notes: `Cancelación en Dropi pendiente - reintentar (${errMsg})`,
           }).eq('id', insertedResultId);
         }
+        // Toast HONESTO: la cancelación NO llegó a Dropi y el pedido sigue
+        // vivo allá; decirle a la operadora exactamente qué va a pasar.
         toast.error(
-          '⚠ Cancelación guardada localmente pero Dropi no la aceptó — el pedido podría reaparecer. Revisá/cancelá en el panel Dropi.',
+          'La cancelación quedó SOLO en el CRM — Dropi la rechazó. El sistema la reintenta cada 5 min; si el pedido sigue vivo en el panel en una hora, cancelalo a mano.',
           { id: toastId, duration: 10000 },
         );
       };
@@ -724,6 +756,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               (data?.canceled !== true ? 'la función Dropi no confirmó la cancelación (¿falta redeploy?)' : 'Error desconocido');
             await markCancelFailure(msg);
           } else {
+            // Dropi confirmó la cancelación → promover la fila 'pending' a
+            // 'synced' para que el cron no la trate como push pendiente.
+            if (insertedResultId) {
+              await (supabase.from('order_results') as unknown as {
+                update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+              }).update({ dropi_sync_status: 'synced' }).eq('id', insertedResultId);
+            }
             // El edge ya marcó estado='CANCELADO' server-side; reflejarlo local ya.
             setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
             const nombre = order.nombre.split(' ')[0];

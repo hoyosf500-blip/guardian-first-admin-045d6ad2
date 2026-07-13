@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { dropiHostFor } from "../_shared/dropiHosts.ts";
+import { loadStoreConfig, type StoreDropiConfig } from "../_shared/dropiStoreConfig.ts";
+import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
+import { cancelOrderInDropi, dropiGetOrder, notFoundSignal, type CancelOrderResult } from "../_shared/dropiCancelOrder.ts";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
@@ -95,6 +98,65 @@ async function dropiPutOrderRetry(
   } catch (e) {
     return { ok: false, httpStatus: 0, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+// ---- CAP anti-eterno para los retries (conf y canc) ----
+// Pedidos del bot de Dropi (LucidBot/FINAL_ORDER): NINGUNA superficie por-id
+// los escribe — el PUT de integración devuelve 200 {isSuccess:false, status:404,
+// "Orden no encontrada"} y el PUT web da "Error SQL desconocido [1001][9999]".
+// Sin cap, el retry de esas filas fallaba ETERNO los 7 días de la ventana
+// (~84 PUTs inútiles/día por fila). Tras RETRY_MAX_BOT_ATTEMPTS fallos con
+// señal de esa clase, la fila se marca con el prefijo BOT-SIN-API en
+// result_notes y el select de retries la excluye para siempre.
+const RETRY_MAX_BOT_ATTEMPTS = 5;
+const BOT_NOTES_PREFIX = "BOT-SIN-API: ";
+const BOT_SIGNAL_RE = /orden no encontrada|no existe|not found|error sql desconocido/i;
+// Filtro PostgREST NULL-safe: `not.ilike` a secas descartaría también las filas
+// con result_notes NULL (NULL NOT ILIKE ... → NULL → excluida). El patrón va
+// SIN el ":" del prefijo para esquivar chars reservados del parser de or=().
+const NOT_BOT_FILTER = "result_notes.is.null,result_notes.not.ilike.BOT-SIN-API*";
+
+function isBotClassFailure(httpStatus: number, errText: string): boolean {
+  return httpStatus === 404 || BOT_SIGNAL_RE.test(String(errText || ""));
+}
+
+// ---- Filas 'pending' ATASCADAS ----
+// El cliente (OrderContext.markResult) inserta la fila 'pending' y la promueve
+// a 'synced' (Dropi confirmó) o 'failed' (markDropiFailure/markCancelFailure)
+// al resolver el invoke. Si la pestaña muere en el medio, la fila queda
+// 'pending' PARA SIEMPRE: el restore sí la contempla (failed+pending) pero el
+// retry solo miraba 'failed' → el push a Dropi se perdía en silencio. Tras
+// esta gracia (holgada vs el wall-limit ~150s del edge) un 'pending' viejo se
+// trata igual que 'failed'. El timestamp va entre comillas dobles: el parser
+// de or=() de PostgREST corta en chars reservados (mismo motivo por el que
+// NOT_BOT_FILTER va sin el ":" del prefijo).
+const STALE_PENDING_GRACE_MS = 15 * 60_000;
+function retryStatusFilter(): string {
+  const staleIso = new Date(Date.now() - STALE_PENDING_GRACE_MS).toISOString();
+  return `dropi_sync_status.eq.failed,and(dropi_sync_status.eq.pending,created_at.lt."${staleIso}")`;
+}
+
+/** Lee el contador "(intento N)" que los retries acumulan en result_notes. */
+function parseRetryAttempts(notes: string | null | undefined): number {
+  const m = /\(intento (\d+)\)/i.exec(String(notes || ""));
+  return m ? Number(m[1]) || 0 : 0;
+}
+
+/** Nota de fallo con contador; al fallo Nº RETRY_MAX_BOT_ATTEMPTS con señal
+ *  clase-bot antepone BOT-SIN-API (el select de retries la excluye → esa fila
+ *  no se reintenta nunca más). */
+function buildRetryFailureNotes(
+  label: string,
+  attempts: number,
+  httpStatus: number,
+  errText: string,
+): string {
+  const base = `${label} falló (intento ${attempts}) [${httpStatus}]: ${errText || ""}`.slice(0, 420);
+  if (attempts >= RETRY_MAX_BOT_ATTEMPTS && isBotClassFailure(httpStatus, errText)) {
+    return (BOT_NOTES_PREFIX +
+      `pedido sin superficie API por-id (clase bot) — no se reintenta más. ` + base).slice(0, 500);
+  }
+  return base;
 }
 
 function chunkDateRange(from: string, to: string, maxDays: number) {
@@ -741,10 +803,13 @@ Deno.serve(async (req: Request) => {
       const retryFromStr = retryFrom.toISOString().split("T")[0];
       const { data: failedRows } = await sb
         .from("order_results")
-        .select("id, order_id, result_date")
+        .select("id, order_id, result_date, result_notes")
         .eq("result", "conf")
-        .eq("dropi_sync_status", "failed")
+        // 'failed' + 'pending' atascado (ver retryStatusFilter).
+        .or(retryStatusFilter())
         .gte("result_date", retryFromStr)
+        // CAP anti-eterno: filas marcadas BOT-SIN-API no se reintentan más.
+        .or(NOT_BOT_FILTER)
         .limit(50);
       if (failedRows && failedRows.length > 0) {
         const orderIds = (failedRows as Array<{ order_id: string }>).map(r => r.order_id);
@@ -768,23 +833,28 @@ Deno.serve(async (req: Request) => {
         // aunque no haya throttle); +20s cabe en el wall limit (~150s).
         const postDeadline = globalDeadline + 20_000;
         let retryOk = 0, retryFail = 0, retryDeferred = 0;
-        for (const row of failedRows as Array<{ id: string; order_id: string }>) {
+        for (const row of failedRows as Array<{ id: string; order_id: string; result_notes: string | null }>) {
           if (Date.now() > postDeadline) break;
+          // Cinturón extra por si el filtro .or() del select no excluyó la fila.
+          if (String(row.result_notes || "").startsWith(BOT_NOTES_PREFIX)) continue;
           const ord = orderById.get(row.order_id);
           if (!ord || !ord.external_id) continue;
           const sid = String(ord.store_id);
           if (throttled429.has(sid)) { retryDeferred++; continue; }
           const cfg = cfgByStore.get(sid);
           if (!cfg) continue;
+          const prevAttempts = parseRetryAttempts(row.result_notes);
           const r = await dropiPutOrderRetry(cfg.base, cfg.apiKey, cfg.storeUrl, ord.external_id, "PENDIENTE");
           if (r.httpStatus === 429) {
             // 429 → posponer los retries de ESA tienda (no abortar el loop:
             // un 429 de EC no debe starvear los retries de CO). El próximo
-            // tick reintenta; la fila queda failed, no se pierde nada.
+            // tick reintenta; la fila queda failed, no se pierde nada. El
+            // contador "(intento N)" se conserva para no resetear el CAP.
             throttled429.add(sid);
             retryDeferred++;
             await sb.from("order_results").update({
-              result_notes: "Reintento pospuesto: Dropi throttled (429)",
+              result_notes: "Reintento pospuesto: Dropi throttled (429)" +
+                (prevAttempts > 0 ? ` (intento ${prevAttempts})` : ""),
             }).eq("id", row.id);
             continue;
           }
@@ -797,7 +867,13 @@ Deno.serve(async (req: Request) => {
           } else {
             retryFail++;
             await sb.from("order_results").update({
-              result_notes: `Reintento dropi-cron falló [${r.httpStatus}]: ${r.error || ""}`.slice(0, 500),
+              // Normaliza los 'pending' atascados: tras el primer reintento
+              // fallido la fila queda 'failed' (visible en el panel y en todos
+              // los filtros downstream). No-op para las que ya eran 'failed'.
+              dropi_sync_status: "failed",
+              result_notes: buildRetryFailureNotes(
+                "Reintento dropi-cron", prevAttempts + 1, r.httpStatus, r.error || "",
+              ),
             }).eq("id", row.id);
           }
           // Mismo espaciado que el resto del cron (antes 500ms = 2 req/s,
@@ -810,8 +886,213 @@ Deno.serve(async (req: Request) => {
       console.warn("dropi-cron retry-failed exception:", err);
     }
 
+    // Reintento de CANCELACIONES cuyo push a Dropi falló (result='canc',
+    // dropi_sync_status='failed' — markCancelFailure del cliente). Mismo patrón
+    // que el retry de conf: ventana 7 días, máx 20 por corrida, backoff 429 por
+    // tienda y CAP anti-eterno BOT-SIN-API. A diferencia del conf (PUT de
+    // integración con api_key), acá se reusa el MISMO núcleo del mode:"cancel"
+    // de dropi-change-carrier (cancelOrderInDropi: PUT web CANCELADO →
+    // fantasma GET 404 → rechazo), que necesita session token web fresco por
+    // tienda (ensureFreshSessionToken). Si el login de una tienda falla, se
+    // saltean SUS filas esta corrida (el próximo tick reintenta).
+    try {
+      const retryFrom = new Date();
+      retryFrom.setUTCDate(retryFrom.getUTCDate() - 7);
+      const retryFromStr = retryFrom.toISOString().split("T")[0];
+      const { data: cancRows } = await sb
+        .from("order_results")
+        .select("id, order_id, reason, result_notes")
+        .eq("result", "canc")
+        // 'failed' + 'pending' atascado (ver retryStatusFilter).
+        .or(retryStatusFilter())
+        .gte("result_date", retryFromStr)
+        // CAP anti-eterno: filas marcadas BOT-SIN-API no se reintentan más.
+        .or(NOT_BOT_FILTER)
+        .limit(20);
+      if (cancRows && cancRows.length > 0) {
+        const cancOrderIds = (cancRows as Array<{ order_id: string }>).map((r) => r.order_id);
+        const { data: ordersForCancel } = await sb
+          .from("orders").select("id, external_id, store_id").in("id", cancOrderIds);
+        const cancOrderById = new Map<string, { external_id: string | null; store_id: string }>();
+        (ordersForCancel || []).forEach((o: { id: string; external_id: string | null; store_id: string }) => {
+          cancOrderById.set(o.id, { external_id: o.external_id, store_id: o.store_id });
+        });
+        // Config + session token fresco por tienda, UNA sola vez por corrida.
+        // null = tienda salteada (login falló / sin credenciales) — como pide el
+        // patrón del mode:cancel, si ensureFreshSessionToken no puede entrar,
+        // esa tienda no se toca en esta corrida.
+        const cancelCfgByStore = new Map<string, StoreDropiConfig | null>();
+        // Mismo backoff 429 por tienda que el retry de conf: tiendas que ESTA
+        // corrida ya vio throttleadas ni se intentan.
+        const cancelThrottled = new Set<string>(
+          perStore.filter((p) => p.throttled === true).map((p) => String(p.store_id)),
+        );
+        // Misma gracia de +20s del retry de conf sobre el deadline global.
+        const cancelDeadline = globalDeadline + 20_000;
+        let cancOk = 0, cancFail = 0, cancDeferred = 0, cancSkipped = 0;
+        for (const row of cancRows as Array<{ id: string; order_id: string; reason: string | null; result_notes: string | null }>) {
+          if (Date.now() > cancelDeadline) break;
+          // Cinturón extra por si el filtro .or() del select no excluyó la fila.
+          if (String(row.result_notes || "").startsWith(BOT_NOTES_PREFIX)) continue;
+          const ord = cancOrderById.get(row.order_id);
+          if (!ord || !ord.external_id) continue;
+          const sid = String(ord.store_id);
+          if (cancelThrottled.has(sid)) { cancDeferred++; continue; }
 
+          let storeCfg = cancelCfgByStore.get(sid);
+          if (storeCfg === undefined) {
+            try {
+              const loaded = await loadStoreConfig(sb, sid);
+              if (!loaded.apiKey) throw new Error("tienda sin Clave API de Dropi");
+              loaded.sessionToken = await ensureFreshSessionToken(sb, loaded);
+              storeCfg = loaded;
+            } catch (e) {
+              console.warn(
+                `dropi-cron: cancel-retry — credenciales/login fallaron para la tienda ${sid}, se saltea esta corrida:`,
+                e instanceof Error ? e.message : e,
+              );
+              storeCfg = null;
+            }
+            cancelCfgByStore.set(sid, storeCfg);
+          }
+          if (!storeCfg) { cancSkipped++; continue; }
 
+          const prevAttempts = parseRetryAttempts(row.result_notes);
+          let res: CancelOrderResult;
+          try {
+            res = await cancelOrderInDropi(storeCfg, sb, {
+              externalId: ord.external_id,
+              orderId: row.order_id,
+              storeId: sid,
+              reason: String(row.reason || ""),
+            });
+          } catch (e) {
+            // cancelOrderInDropi no debería lanzar por fallos de Dropi, pero un
+            // error inesperado no debe tumbar el resto de la cola.
+            res = {
+              ok: false, code: "dropi_rejected", dropiStatus: 0,
+              error: (e instanceof Error ? e.message : String(e)).slice(0, 300),
+            };
+          }
+
+          if (res.ok) {
+            cancOk++;
+            await sb.from("order_results").update({
+              dropi_sync_status: "synced",
+              result_notes: "cancel reintentado ok por cron" +
+                ("dropiMissing" in res && res.dropiMissing
+                  ? " (la orden ya no existía en Dropi — cancelada local)"
+                  : ""),
+            }).eq("id", row.id);
+          } else if (res.dropiStatus === 429) {
+            // 429 → posponer los retries de ESA tienda; el contador "(intento N)"
+            // se conserva para no resetear el CAP.
+            cancelThrottled.add(sid);
+            cancDeferred++;
+            await sb.from("order_results").update({
+              result_notes: "Reintento de cancelación pospuesto: Dropi throttled (429)" +
+                (prevAttempts > 0 ? ` (intento ${prevAttempts})` : ""),
+            }).eq("id", row.id);
+          } else {
+            cancFail++;
+            await sb.from("order_results").update({
+              // Normaliza los 'pending' atascados (mismo motivo que en conf).
+              dropi_sync_status: "failed",
+              result_notes: buildRetryFailureNotes(
+                "Reintento de cancelación dropi-cron", prevAttempts + 1, res.dropiStatus, res.error || "",
+              ),
+            }).eq("id", row.id);
+          }
+          // Mismo espaciado que el resto del cron.
+          await sleep(RATE_LIMIT_MS);
+        }
+        console.log(
+          `dropi-cron: retry cancelaciones failed → ${cancOk} OK / ${cancFail} aún fallan / ${cancDeferred} pospuestos por throttle / ${cancSkipped} sin credenciales`,
+        );
+      }
+    } catch (err) {
+      console.warn("dropi-cron cancel-retry exception:", err);
+    }
+
+    // Resolver PARES stub+reenvío del bot de Dropi (auditoría 2026-07-12).
+    // El bot deja un STUB (invisible para el panel y para TODAS las superficies
+    // por-id — el GET de integración da 404) y Dropi crea el pedido REAL con
+    // otro id, mismo teléfono. El stub queda PENDIENTE en Guardian y las
+    // asesoras lo gestionan en vano (conf/canc/edición mueren contra la API).
+    // Acá: pedidos ACTIVOS que compartan tienda + últimos 9 dígitos de teléfono
+    // → al MÁS VIEJO del par se le hace el GET de integración; SOLO si da la
+    // señal 404 (stub confirmado — un cliente con 2 compras reales NO la da)
+    // se marca REEMPLAZADA local (excluida de colas y métricas, PR #111).
+    // Verificado 2026-07-13: la marca sobrevive a las corridas del cron (el
+    // stub no reaparece en la ventana del sync porque su estado nunca cambia);
+    // si Dropi lo re-listara vivo, el upsert lo resucita solo (auto-corrección,
+    // mismo principio que el fantasma-cancel). Máx 5 checks por corrida.
+    try {
+      const activesFrom = new Date();
+      activesFrom.setUTCDate(activesFrom.getUTCDate() - 4);
+      const { data: actives } = await sb
+        .from("orders")
+        .select("id, external_id, phone, store_id, created_at")
+        .in("estado", ["PENDIENTE", "PENDIENTE CONFIRMACION"])
+        .gte("created_at", activesFrom.toISOString())
+        .limit(500);
+      type ParRow = { id: string; external_id: string | null; phone: string | null; store_id: string; created_at: string };
+      const porTel = new Map<string, ParRow[]>();
+      for (const o of (actives || []) as ParRow[]) {
+        const digits = String(o.phone || "").replace(/\D/g, "");
+        if (digits.length < 7) continue;
+        const key = `${o.store_id}:${digits.slice(-9)}`;
+        const arr = porTel.get(key) || [];
+        arr.push(o);
+        porTel.set(key, arr);
+      }
+      const pairCfgByStore = new Map<string, StoreDropiConfig | null>();
+      let pairChecks = 0;
+      let stubsResueltos = 0;
+      for (const grupo of porTel.values()) {
+        if (grupo.length < 2) continue;
+        if (pairChecks >= 5) break;
+        // El más viejo por external_id numérico (Dropi autoincrementa); fallback created_at.
+        const ordenados = [...grupo].sort((a, b) => {
+          const na = Number(a.external_id), nb = Number(b.external_id);
+          if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+          return String(a.created_at).localeCompare(String(b.created_at));
+        });
+        const viejo = ordenados[0];
+        if (!viejo.external_id) continue;
+        const sidPar = String(viejo.store_id);
+        let cfgPar = pairCfgByStore.get(sidPar);
+        if (cfgPar === undefined) {
+          try {
+            const loaded = await loadStoreConfig(sb, sidPar);
+            cfgPar = loaded.apiKey ? loaded : null;
+          } catch {
+            cfgPar = null;
+          }
+          pairCfgByStore.set(sidPar, cfgPar);
+        }
+        if (!cfgPar) continue;
+        pairChecks++;
+        try {
+          const check = await dropiGetOrder(cfgPar.base, cfgPar.apiKey, cfgPar.storeUrl, viejo.external_id);
+          if (!check.ok && notFoundSignal(check.httpStatus, check.body)) {
+            await sb.from("orders").update({ estado: "REEMPLAZADA" }).eq("id", viejo.id);
+            stubsResueltos++;
+            console.log(
+              `dropi-cron: par stub+reenvío — stub #${viejo.external_id} → REEMPLAZADA (grupo de ${grupo.length}, tel …${String(viejo.phone || "").slice(-4)})`,
+            );
+          }
+        } catch (e) {
+          console.warn(`dropi-cron: check de stub #${viejo.external_id} falló:`, e instanceof Error ? e.message : e);
+        }
+        await sleep(RATE_LIMIT_MS);
+      }
+      if (stubsResueltos > 0) {
+        console.log(`dropi-cron: ${stubsResueltos} stubs de bot retirados de la cola (pares resueltos)`);
+      }
+    } catch (err) {
+      console.warn("dropi-cron pares stub+reenvío exception:", err);
+    }
 
     // Cancelar pedidos huérfanos (global).
     try {

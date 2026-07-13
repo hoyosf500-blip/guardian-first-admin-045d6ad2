@@ -5,6 +5,7 @@ import { useShopifyPending, useShopifyValueMismatches, type ShopifyPendingItem }
 import { usePushToDropi } from '@/hooks/usePushToDropi';
 import DropiProductSearch from '@/components/DropiProductSearch';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
+import { useShopifyPushAttempts } from '@/hooks/useShopifyPushAttempts';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
 import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
 import { matchesQuery } from '@/lib/textSearch';
@@ -27,9 +28,16 @@ function loadDone(storeId: string): Set<string> {
   catch { return new Set(); }
 }
 
+// "No es duplicado" vive en localStorage (antes sessionStorage): si se
+// evaporaba al cerrar la pestaña, el mismo pedido amanecía BLOQUEADO otra vez
+// y la operadora sentía que "no deja subir". Se lee también la clave legacy de
+// sessionStorage para no perder overrides de la sesión en curso al deployar.
 function loadOverrides(storeId: string): Set<string> {
-  try { return new Set(JSON.parse(sessionStorage.getItem(DUP_OVERRIDE_KEY(storeId)) || '[]')); }
-  catch { return new Set(); }
+  const read = (store: Storage): string[] => {
+    try { return JSON.parse(store.getItem(DUP_OVERRIDE_KEY(storeId)) || '[]'); }
+    catch { return []; }
+  };
+  return new Set([...read(localStorage), ...read(sessionStorage)]);
 }
 
 function loadMismatchFixed(storeId: string): Set<string> {
@@ -89,11 +97,16 @@ export default function ShopifyPendingPanel() {
   const [unmappedProducts, setUnmappedProducts] = useState<Array<{ product_id: number; title: string; count: number }>>([]);
   const [linkingId, setLinkingId] = useState<number | null>(null);
   const [manualLink, setManualLink] = useState<Record<number, string>>({});
+  // Errores del ÚLTIMO bulk de ESTA sesión, por id de pedido — feedback inmediato
+  // en la fila sin esperar el refetch de shopify_pushed_orders (y cubre fallos
+  // que el edge no persiste, ej. bloqueo server-side previo al claim).
+  const [lastBulkErrors, setLastBulkErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setDone(activeStoreId ? loadDone(activeStoreId) : new Set());
     setDupOverrides(activeStoreId ? loadOverrides(activeStoreId) : new Set());
     setMismatchFixed(activeStoreId ? loadMismatchFixed(activeStoreId) : new Set());
+    setLastBulkErrors({});
   }, [activeStoreId]);
 
   useEffect(() => {
@@ -110,6 +123,12 @@ export default function ShopifyPendingPanel() {
   // que YA existen con ese mismo teléfono (regla "teléfono repetido siempre").
   const pendingPhones = useMemo(() => uniquePhones(pending), [pending]);
   const { dupMap } = useDuplicatePhones(activeStoreId, pendingPhones);
+
+  // Intentos previos de push por pedido (shopify_pushed_orders): cada fila
+  // muestra SU razón de no-pasar (falló con motivo / quedó a medias / ya se
+  // subió pero el teléfono no matcheó). Complementa el guard anti-dup.
+  const pendingIdsForAttempts = useMemo(() => pending.map(p => p.id), [pending]);
+  const { attempts, refetch: refetchAttempts } = useShopifyPushAttempts(activeStoreId, pendingIdsForAttempts);
 
   // Limpieza del set local: si un pedido ya NO está pendiente (entró a Dropi),
   // lo sacamos del set para no inflar el "ya metidos".
@@ -170,7 +189,7 @@ export default function ShopifyPendingPanel() {
     if (!activeStoreId) return;
     setDupOverrides(prev => {
       const next = new Set(prev).add(p.id);
-      try { sessionStorage.setItem(DUP_OVERRIDE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      try { localStorage.setItem(DUP_OVERRIDE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
       return next;
     });
     if (user) {
@@ -235,34 +254,83 @@ export default function ShopifyPendingPanel() {
     // Omite duplicados: nunca subir en lote algo que ya está en Dropi.
     const skipped = visible.filter(p => isBlockedByDuplicate(p, dupMap, dupOverrides));
     const targets = visible.filter(p => !isBlockedByDuplicate(p, dupMap, dupOverrides));
-    let okCount = 0; const fails: string[] = [];
+
+    // Camino "el botón no hace nada": si TODOS los visibles están bloqueados
+    // por duplicado, no hay nada que invocar (el guard es correcto) — pero hay
+    // que DECIRLO claro y llevar a la operadora a la lista para resolver fila
+    // por fila. Antes: un solo toast de "omitidos" y cero acción → parecía roto.
+    if (targets.length === 0) {
+      setBulkRunning(false);
+      setExpanded(true);
+      toast.warning(
+        `Subidos 0 · Bloqueados por duplicado ${skipped.length} · Con error 0`,
+        {
+          description: 'Todos los pendientes tienen un pedido en Dropi con el mismo teléfono. Revisalos abajo: «No es duplicado» (recompra real) o «Quitar del CRM» (ya está en Dropi).',
+          duration: 12000,
+        },
+      );
+      return;
+    }
+
+    let okCount = 0; const fails: Array<{ name: string; error: string }> = [];
+    const newErrors: Record<string, string> = {};
     // Recolecta los productos sin vínculo que hicieron fallar pedidos: se muestran
     // abajo para vincularlos UNA vez (el mapeo es por producto/tienda → desbloquea
     // todos los pedidos con ese producto). Clave = shopify product_id.
     const unmap = new Map<number, { product_id: number; title: string; count: number }>();
-    for (const p of targets) {
-      // allow_duplicate solo si la operadora marcó "No es duplicado" en ESE pedido
-      // (los otros duplicados ya se excluyeron arriba). El guard server-side revalida.
-      const r = await confirmPush(p.id, undefined, dupOverrides.has(p.id));
-      if (r.ok) { okCount++; markDone(p.id); }
-      else {
-        fails.push(`${p.name}: ${r.error || 'error'}`);
-        for (const u of (r.unmapped ?? [])) {
-          if (typeof u.product_id !== 'number' || u.product_id <= 0) continue;
-          const e = unmap.get(u.product_id) || { product_id: u.product_id, title: u.title || `Producto ${u.product_id}`, count: 0 };
-          e.count++; unmap.set(u.product_id, e);
+    try {
+      for (const p of targets) {
+        // allow_duplicate solo si la operadora marcó "No es duplicado" en ESE pedido
+        // (los otros duplicados ya se excluyeron arriba). El guard server-side revalida.
+        const r = await confirmPush(p.id, undefined, dupOverrides.has(p.id));
+        if (r.ok) { okCount++; markDone(p.id); }
+        else {
+          const msg = r.blocked === 'duplicate_phone'
+            ? 'bloqueado por duplicado (teléfono ya en Dropi)'
+            : (r.error || 'error');
+          fails.push({ name: p.name, error: msg });
+          newErrors[p.id] = msg;
+          for (const u of (r.unmapped ?? [])) {
+            if (typeof u.product_id !== 'number' || u.product_id <= 0) continue;
+            const e = unmap.get(u.product_id) || { product_id: u.product_id, title: u.title || `Producto ${u.product_id}`, count: 0 };
+            e.count++; unmap.set(u.product_id, e);
+          }
         }
+        await new Promise(res => setTimeout(res, 400)); // pacing suave
       }
-      await new Promise(res => setTimeout(res, 400)); // pacing suave
+    } finally {
+      // Pase lo que pase, soltar el botón: sin esto, una excepción dejaba
+      // "Subir todos" deshabilitado para siempre (otro camino de "no deja").
+      setBulkRunning(false);
     }
-    setBulkRunning(false);
+    setLastBulkErrors(prev => ({ ...prev, ...newErrors }));
     setUnmappedProducts([...unmap.values()].sort((a, b) => b.count - a.count));
-    if (okCount > 0) toast.success(`${okCount} pedido(s) subido(s) a Dropi`);
-    if (skipped.length > 0) toast.warning(`${skipped.length} omitido(s) por posible duplicado — revisalos en la lista`);
-    if (unmap.size > 0) toast.warning(`${unmap.size} producto(s) sin vincular — vinculalos abajo y reintentá`);
-    else if (fails.length > 0) toast.error(`${fails.length} no se pudieron subir`, { description: fails.slice(0, 4).join(' · ') });
+
+    // UN resumen claro (en vez de 2-3 toasts sueltos): qué subió, qué quedó
+    // bloqueado por duplicado y qué falló (con el motivo más común).
+    const topReason = (() => {
+      if (fails.length === 0) return '';
+      const counts = new Map<string, number>();
+      for (const f of fails) {
+        const k = f.error.slice(0, 120);
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    })();
+    const summary = `Subidos ${okCount} · Bloqueados por duplicado ${skipped.length} · Con error ${fails.length}`;
+    const descParts: string[] = [];
+    if (skipped.length > 0) descParts.push('Duplicados: revisalos abajo en la lista.');
+    if (topReason) descParts.push(`Motivo más común: ${topReason}`);
+    if (unmap.size > 0) descParts.push(`${unmap.size} producto(s) sin vincular — vinculalos abajo y tocá «Reintentar faltantes».`);
+    const description = descParts.join(' ') || undefined;
+    if (fails.length === 0 && skipped.length === 0) toast.success(summary, { description });
+    else if (okCount > 0) toast.warning(summary, { description, duration: 12000 });
+    else toast.error(summary, { description, duration: 12000 });
+    // Si quedó algo por resolver, abrir la lista: ahí cada fila muestra su razón.
+    if (fails.length > 0 || skipped.length > 0) setExpanded(true);
     void refetch();
-  }, [activeStoreId, bulkRunning, visible, dupMap, dupOverrides, confirmPush, markDone, refetch]);
+    void refetchAttempts();
+  }, [activeStoreId, bulkRunning, visible, dupMap, dupOverrides, confirmPush, markDone, refetch, refetchAttempts]);
 
   // Vincula un producto Shopify→Dropi (una vez por tienda) y lo saca de la lista de
   // sin-vínculo. Después basta "Reintentar faltantes" para subir los que dependían de él.
@@ -644,6 +712,12 @@ export default function ShopifyPendingPanel() {
                     const dupHits = dupMatchesFor(p.phone, dupMap);
                     const overridden = dupOverrides.has(p.id);
                     const blocked = dupHits.length > 0 && !overridden;
+                    // Razón de no-pasar de ESTA fila: error del último bulk de la
+                    // sesión (más fresco) o el último intento persistido en
+                    // shopify_pushed_orders (sobrevive refresh/sesión).
+                    const att = attempts.get(p.id);
+                    const prevErr = lastBulkErrors[p.id]
+                      || (att?.status === 'error' ? (att.error_message || 'falló el intento anterior') : '');
                     return (
                     <div key={p.id}>
                       <div className={`px-4 py-2.5 flex items-center gap-3 text-sm ${blocked ? 'bg-destructive/5' : ''}`}>
@@ -659,6 +733,30 @@ export default function ShopifyPendingPanel() {
                               <span className={`text-[10px] px-1.5 py-0.5 rounded inline-flex items-center gap-1 ${blocked ? 'bg-destructive/15 text-destructive' : 'bg-muted text-muted-foreground'}`}>
                                 <Ban size={9} /> {blocked ? 'duplicado' : 'no es duplicado'}
                               </span>
+                            )}
+                            {/* Razón de no-pasar (cuando NO es el bloqueo por duplicado,
+                                que ya tiene su badge + strip "Ya en Dropi" abajo). */}
+                            {!blocked && prevErr && (
+                              <span title={prevErr}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning inline-flex items-center gap-1 max-w-[18rem] min-w-0">
+                                <AlertTriangle size={9} className="flex-shrink-0" aria-hidden="true" />
+                                <span className="truncate">falló: {prevErr}</span>
+                              </span>
+                            )}
+                            {!blocked && !prevErr && att?.status === 'created' && (
+                              <span title="Un intento anterior YA creó la orden en Dropi, pero el cruce por teléfono no la encontró — verificá en Dropi antes de re-subir (re-subir crearía un doble)."
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning">
+                                ya se subió{att.dropi_order_id ? ` (Dropi #${att.dropi_order_id})` : ''} — verificá
+                              </span>
+                            )}
+                            {!blocked && !prevErr && att?.status === 'pending' && (
+                              <span title="Un intento anterior quedó a medias (sin confirmación de Dropi) — verificá en el panel de Dropi antes de reintentar."
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning">
+                                intento a medias — verificá
+                              </span>
+                            )}
+                            {!blocked && !prevErr && !att && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">listo para subir</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">

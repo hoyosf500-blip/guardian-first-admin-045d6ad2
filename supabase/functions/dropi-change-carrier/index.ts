@@ -54,6 +54,7 @@ import {
   type QuoteLine,
 } from "../_shared/dropiWebQuote.ts";
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
+import { cancelOrderInDropi } from "../_shared/dropiCancelOrder.ts";
 
 interface ChangeCarrierBody {
   externalId?: string;
@@ -757,90 +758,26 @@ Deno.serve(async (req: Request) => {
     }
 
     // =========================== MODE: CANCEL ===========================
-    // Cancela DE VERDAD el pedido en Dropi. Camino = el mismo PUT que el
-    // "Cancelar orden" del panel (request capturado en vivo 2026-07-06):
-    //   PUT /api/orders/myorders/{externalId} { status:"CANCELADO", reasonComment }
-    // Tras el éxito, marca orders.estado='CANCELADO' (durable + inmediato) para
-    // que el pedido salga de la cola sin depender del cron y no reaparezca. Si el
-    // PUT falla, NO toca el estado local (el pedido sigue vivo en Dropi) y
-    // devuelve ok:false → el cliente conserva su overlay local y avisa "reintentar".
+    // Cancela DE VERDAD el pedido en Dropi. El NÚCLEO vive en
+    // _shared/dropiCancelOrder.ts (cancelOrderInDropi) — extraído 1:1 de este
+    // branch (verificado e2e 2026-07-08) para que dropi-cron pueda reintentar
+    // cancelaciones fallidas con la MISMA mecánica:
+    //   (a) PUT web {status:"CANCELADO", reasonComment} → CANCELADO local.
+    //   (b) Fantasma (PUT falla + GET integración 404 "Orden no encontrada")
+    //       → cancel SOLO local + dropiMissing:true.
+    //   (c) Existe pero rechazó → ok:false + code:"dropi_rejected" (el cliente
+    //       conserva su overlay local y avisa "reintentar").
+    // El resultado discriminado tiene EXACTAMENTE el shape que el cliente
+    // espera (canceled===true / dropiMissing / code:"dropi_rejected"), así que
+    // se devuelve tal cual.
     if (mode === "cancel") {
-      const reasonComment = String(body.reason || "").trim() ||
-        "Cancelado desde el CRM (gestión de confirmación).";
-      const orderId = (orderRow as { id: string }).id;
-      const markLocalCanceled = async () => {
-        const { error: updErr } = await sbAdmin
-          .from("orders").update({ estado: "CANCELADO" }).eq("id", orderId);
-        if (updErr) console.error("[cancel] UPDATE local CANCELADO falló:", updErr.message);
-      };
-
-      // 1) Cancelar la orden VIVA en Dropi (PUT status=CANCELADO, mismo request del
-      //    "Cancelar orden" del panel). Éxito → CANCELADO local (durable, inmediato).
-      let put: { status: number; body?: Record<string, unknown> } | null = null;
-      let putThrew: string | null = null;
-      try {
-        put = await dropiWebFetch(
-          cfg, `/api/orders/myorders/${encodeURIComponent(externalId)}`,
-          { method: "PUT", body: { status: "CANCELADO", reasonComment } },
-        );
-      } catch (e) {
-        putThrew = e instanceof Error ? e.message.slice(0, 300) : "error";
-        console.error("[cancel] PUT CANCELADO lanzó:", e);
-      }
-      const putOk = !!put && put.status >= 200 && put.status < 300 && put.body?.isSuccess !== false;
-      if (putOk) {
-        await markLocalCanceled();
-        return jsonOk({ ok: true, canceled: true, externalId, dropiStatus: put!.status });
-      }
-
-      // 2) El PUT falló. ¿La orden EXISTE en Dropi? Si NO (FANTASMA: fue borrada o
-      //    reemplazada en Dropi pero quedó atascada PENDIENTE en Guardian — Guardian
-      //    solo upsertea, nunca borra al sincronizar), cancelarla LOCAL es correcto y
-      //    seguro: no hay nada vivo en Dropi que "mantener". Esto mata el fantasma
-      //    (caso Manuel Macías) que reaparecía al caducar el overlay local a los 7
-      //    días. Dropi devuelve HTTP 200 con {isSuccess:false, status:404,
-      //    message:"Orden no encontrada"} para estos → dropiGetOrder da ok:false.
-      //
-      //    INVESTIGADO 2026-07-10: NO existe una "segunda opinión" barata para
-      //    confirmar el fantasma. El detalle v2 devuelve datos hasta para pedidos
-      //    BORRADOS (probado: Manuel Macías muerto y Yolanda viva se ven idénticos)
-      //    y la lista de integración es carísima en EC (ignora filtros de fecha →
-      //    4400 filas + 429). La protección REAL contra un falso positivo (pedido
-      //    de bot LucidBot vivo pero 404 en integración) es el PROPIO CRON: si
-      //    Dropi todavía lista el pedido, el próximo upsert (≤5 min) pisa el
-      //    estado local y el pedido REAPARECE solo en la cola. Verificado: los 7
-      //    fantasmas cancelados el 09-jul siguen CANCELADO tras 30h de cron OK.
-      // Señal de "no existe": 404 explícito o el mensaje textual de Dropi
-      // ("Orden no encontrada"). NO usar status 400 a secas — un bad-request
-      // genérico NO es fantasma.
-      const notFoundSignal = (httpStatus: number, b: Record<string, unknown>) =>
-        httpStatus === 404 ||
-        (b.isSuccess === false &&
-          (Number(b.status) === 404 ||
-            /no encontrada|no existe|not found/i.test(String(b.message || ""))));
-      let ghost = false;
-      try {
-        const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
-        ghost = notFoundSignal(check.httpStatus, (check.body || {}) as Record<string, unknown>);
-      } catch (e) {
-        console.error("[cancel] check de existencia falló:", e);
-      }
-      if (ghost) {
-        await markLocalCanceled();
-        return jsonOk({
-          ok: true, canceled: true, dropiMissing: true, externalId,
-          note: "La orden no existe para la API de Dropi — se canceló localmente. Si reaparece en unos minutos, es un pedido del panel/bot de Dropi: cancelalo desde el panel.",
-        });
-      }
-
-      // 3) La orden EXISTE en Dropi pero rechazó la cancelación → fallo real. NO
-      //    tocar el estado local (sigue viva) → el cliente conserva su overlay y
-      //    avisa "reintentar". Distinguir fantasma de fallo real evita esconder un
-      //    pedido vivo Y evita dejar un fantasma atascado para siempre.
-      return jsonOk({
-        ok: false, code: "dropi_rejected", dropiStatus: put?.status ?? 0,
-        error: putThrew || String(put?.body?.message || put?.body?.error || "Dropi rechazó la cancelación").slice(0, 300),
+      const result = await cancelOrderInDropi(cfg, sbAdmin, {
+        externalId,
+        orderId: (orderRow as { id: string }).id,
+        storeId,
+        reason: String(body.reason || ""),
       });
+      return jsonOk(result as unknown as Record<string, unknown>);
     }
 
     // =========================== MODE: QUOTE ===========================

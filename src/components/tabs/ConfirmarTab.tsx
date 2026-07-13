@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { findSupersededPendingConf, type ProgressedOrder } from '@/lib/duplicateOrders';
+import { detectDuplicatePairs } from '@/lib/duplicatePairs';
 import { buildActiveDupIndex, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import { useShopifyValueMismatches } from '@/hooks/useShopifyPending';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,6 +20,7 @@ import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
 import ShopifyPendingPanel from '@/components/confirmar/ShopifyPendingPanel';
+import DropiSyncFailuresPanel from '@/components/confirmar/DropiSyncFailuresPanel';
 import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
@@ -202,6 +204,39 @@ export default function ConfirmarTab({ profile }: Props) {
     [workQueue, supersededIds],
   );
 
+  // ⚠ YA REENVIADO (pares stub+reenvío, auditoría 2026-07-12): el mismo
+  // teléfono tiene DOS pedidos ACTIVOS (PENDIENTE / PENDIENTE CONFIRMACION) —
+  // típico bot LucidBot: al reenviar/editar, Dropi crea un # nuevo y el viejo
+  // queda vivo. Cruzamos la cola visible con los "progressed" de esos mismos
+  // teléfonos (incluyen los PENDIENTE del reenvío, ya cargados arriba — cero
+  // queries extra) y señalamos el pedido VIEJO del par para que la asesora
+  // gestione el # nuevo y no confirme/cancele la guía equivocada.
+  const resentOldInQueue = useMemo(() => {
+    const pairs = detectDuplicatePairs([
+      ...visibleQueue.map(o => ({
+        externalId: String(o.externalId ?? ''),
+        phone: o.phone,
+        estado: o.estado,
+        createdAt: o.createdAt ?? null,
+      })),
+      ...progressedOrders.map(p => ({
+        externalId: String(p.external_id ?? ''),
+        phone: p.phone,
+        estado: p.estado,
+        createdAt: p.created_at ?? null,
+      })),
+    ]);
+    // Solo señalamos viejos que están EN la cola visible (fila accionable acá)
+    // y aún sin gestionar.
+    const byExt = new Map(visibleQueue.map(o => [String(o.externalId ?? ''), o]));
+    const out: Array<{ order: OrderData; nuevoId: string }> = [];
+    for (const { viejo, nuevo } of pairs.values()) {
+      const row = byExt.get(viejo.externalId);
+      if (row && !row.result) out.push({ order: row, nuevoId: nuevo.externalId });
+    }
+    return out;
+  }, [visibleQueue, progressedOrders]);
+
   // Alertas POR PEDIDO para CallView/WorkList (chips en la ficha misma):
   //  - duplicado: cliente con OTRO pedido en curso (Dropi o repetido en la cola)
   //  - sobreprecio: valor Dropi > total Shopify (mismo dato del banner de arriba;
@@ -350,6 +385,10 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {/* Contador anti-fuga: pedidos de Shopify que aún no llegaron a Dropi. */}
       <ShopifyPendingPanel />
+
+      {/* Gestiones (conf/canc) que quedaron en el CRM pero NO llegaron a Dropi
+          (order_results dropi_sync_status='failed') — visibles + reintento manual. */}
+      <DropiSyncFailuresPanel />
 
       <ClosingReportDialog open={closing} onClose={() => setClosing(false)} />
 
@@ -678,6 +717,37 @@ export default function ConfirmarTab({ profile }: Props) {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Pares stub+reenvío: cada fila señala el pedido VIEJO de la cola con
+              el chip "⚠ YA REENVIADO" y el # nuevo que sí hay que gestionar.
+              Mismo patrón visual que los chips DUP/DE MÁS (PR #107) — acá va
+              como strip pegado a la lista porque el pedido viejo NO se debe
+              gestionar (es un aviso de exclusión, no un dato más de la fila). */}
+          {resentOldInQueue.length > 0 && (
+            <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 overflow-hidden">
+              <div className="px-4 py-2.5 flex items-center gap-2 text-xs">
+                <AlertTriangle size={14} className="text-warning shrink-0" aria-hidden="true" />
+                <span className="font-semibold text-foreground">
+                  {resentOldInQueue.length} pedido{resentOldInQueue.length > 1 ? 's' : ''} viejo{resentOldInQueue.length > 1 ? 's' : ''} con reenvío activo
+                </span>
+                <span className="text-muted-foreground">— gestioná el # nuevo, no estos</span>
+              </div>
+              <div className="border-t border-warning/30 divide-y divide-border">
+                {resentOldInQueue.map(({ order, nuevoId }) => (
+                  <div key={order.externalId || order.dbId} className="px-4 py-2 flex items-center gap-2 text-xs flex-wrap">
+                    <span className="font-medium text-foreground truncate">{order.nombre}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">#{order.externalId}</span>
+                    <span
+                      title={`Este cliente ya tiene un pedido más nuevo activo (#${nuevoId}) — gestioná ese y no toques este`}
+                      className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-warning/15 text-warning border-warning/30 inline-flex items-center gap-0.5"
+                    >
+                      ⚠ YA REENVIADO — gestioná el #{nuevoId}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

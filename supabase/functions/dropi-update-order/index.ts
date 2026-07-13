@@ -33,6 +33,20 @@
 //
 // The default new status is "PENDIENTE" (move orders from PENDIENTE
 // CONFIRMACION → PENDIENTE the moment the operator confirms the call).
+//
+// VERIFY-AFTER-PUT (2026-07-12)
+// -----------------------------
+// El PUT de Dropi puede devolver 200 {isSuccess:true} y NO aplicar el cambio
+// (mismo patrón visto con distribution_company_id en dropi-change-carrier).
+// Por eso, tras un PUT "ok", hacemos un GET al mismo endpoint de integración
+// y comparamos el status real:
+//   - status nuevo (o un estado POSTERIOR del funnel) → { ok:true, verified:true }
+//   - status NO cambió → FALLO { ok:false, code:'put_ignorado' } + sync_logs error
+//   - PUT falló con señal 404/"Orden no encontrada" y el GET la confirma →
+//     { ok:false, code:'pedido_bot' } (pedidos del bot LucidBot/FINAL_ORDER:
+//     ninguna superficie por-id los escribe; NO deben reintentarse eterno).
+// Respuesta SIEMPRE JSON: { ok, code?, verified?, externalId, newStatus,
+// dropiHttpStatus, error? }.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
@@ -83,6 +97,104 @@ async function dropiPutOrder(
 
   const ok = res.ok && body.isSuccess !== false;
   return { ok, httpStatus: res.status, body, rawText };
+}
+
+/** GET del pedido en el MISMO endpoint de integración que el PUT.
+ *  Usado para VERIFY-AFTER-PUT y para confirmar la señal "Orden no encontrada"
+ *  (mismo helper que dropi-change-carrier). */
+async function dropiGetOrder(
+  base: string,
+  apiKey: string,
+  storeUrl: string,
+  externalId: string,
+): Promise<DropiResult> {
+  const res = await fetch(
+    `${base}/integrations/orders/myorders/${encodeURIComponent(externalId)}`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "dropi-integration-key": apiKey,
+        "Origin": storeUrl,
+      },
+    },
+  );
+  const rawText = await res.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    body = { raw: rawText };
+  }
+  const ok = res.ok && body.isSuccess !== false;
+  return { ok, httpStatus: res.status, body, rawText };
+}
+
+/** Extrae el status del cuerpo de un pedido Dropi (integration GET).
+ *  Mismo patrón de shapes que parseOrderTotal en dropi-change-carrier
+ *  (objects | data | order | raíz; objects puede venir como array). */
+function parseOrderStatus(body: Record<string, unknown>): string | null {
+  const raw = body.objects ?? body.data ?? body.order ?? body;
+  const order = (Array.isArray(raw) ? raw[0] : raw) as
+    | Record<string, unknown>
+    | undefined;
+  const s = String(order?.status ?? "").trim();
+  return s ? s : null;
+}
+
+/** Normaliza un status Dropi para comparar: mayúsculas, sin acentos,
+ *  `_` → espacio, espacios colapsados ("GUIA_GENERADA" ≡ "GUIA GENERADA"). */
+function normalizeStatus(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Orden del funnel Dropi. Un status con rank MAYOR que el pedido en el PUT
+// también cuenta como verificado (alguien/la transportadora lo movió adelante).
+// CANCELADO/REEMPLAZADA van en -1: NO son "posterior del funnel" — si el GET
+// los muestra tras un PUT ok, el cambio NO quedó aplicado como se pidió.
+const FUNNEL_RANK: Record<string, number> = {
+  "CANCELADO": -1,
+  "REEMPLAZADA": -1,
+  "PENDIENTE CONFIRMACION": 0,
+  "POR CONFIRMAR": 0,
+  "PENDIENTE": 1,
+  "CONFIRMADO": 2,
+  "PREPARADO PARA TRANSPORTADORA": 3,
+  "GUIA GENERADA": 4,
+  "EN BODEGA TRANSPORTADORA": 5,
+  "EN PROCESAMIENTO": 5,
+  "EN RUTA": 6,
+  "EN TRANSITO": 6,
+  "EN REPARTO": 7,
+  "INTENTO DE ENTREGA": 7,
+  "NOVEDAD": 7,
+  "REEXPEDICION": 7,
+  "RECLAME EN OFICINA": 7,
+  "EN OFICINA": 7,
+  "ENTREGADO": 8,
+  "EN DEVOLUCION": 8,
+  "DEVOLUCION": 8,
+  "DEVUELTO": 8,
+};
+
+/** Señal de "la orden no existe para esta superficie": 404 explícito o el
+ *  200 {isSuccess:false, status:404, "Orden no encontrada"} típico de los
+ *  pedidos del bot (LucidBot/FINAL_ORDER) y de los borrados en Dropi.
+ *  NO usar un 400 a secas — un bad-request genérico no es esta señal. */
+function notFoundSignal(httpStatus: number, b: Record<string, unknown>): boolean {
+  return (
+    httpStatus === 404 ||
+    (b.isSuccess === false &&
+      (Number(b.status) === 404 ||
+        /no encontrada|no existe|not found/i.test(String(b.message || ""))))
+  );
 }
 
 async function dropiSanityCheck(
@@ -279,11 +391,9 @@ Deno.serve(async (req: Request) => {
     // ---- PUT order status via integration-key ----
     const res = await dropiPutOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId, newStatus);
 
-    if (!res.ok) {
-      const errorMsg = `Dropi PUT [${res.httpStatus}]: ${String(
-        res.body.message || res.body.error || res.rawText || "error",
-      ).slice(0, 500)}`;
-
+    // Log de error en sync_logs con contexto completo. Antes se insertaba
+    // status='error' SIN error_message NI store_id — imposible de diagnosticar.
+    const logSyncError = async (message: string) => {
       await sb.from("sync_logs").insert({
         source: "dropi-update-order",
         status: "error",
@@ -291,13 +401,64 @@ Deno.serve(async (req: Request) => {
         duplicates_count: 0,
         total_count: 1,
         triggered_by: user?.id ?? null,
+        store_id: storeId,
+        error_message: message.slice(0, 500),
       });
+    };
+
+    if (!res.ok) {
+      const errorMsg = `Dropi PUT [${res.httpStatus}]: ${String(
+        res.body.message || res.body.error || res.rawText || "error",
+      ).slice(0, 300)}`;
+
+      // ---- ¿Pedido del bot? El PUT falló con señal "Orden no encontrada":
+      // confirmamos con un GET a la MISMA superficie de integración. Los
+      // pedidos del bot de Dropi (LucidBot/FINAL_ORDER) están VIVOS en el
+      // panel pero dan 404 en toda superficie por-id — reintentarlos eterno
+      // (cron, ventana 7d) nunca va a funcionar. Esta clase NO debe
+      // reintentarse: se gestiona a mano en el panel de Dropi.
+      if (notFoundSignal(res.httpStatus, res.body)) {
+        let getConfirmsNotFound = false;
+        try {
+          const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+          getConfirmsNotFound = notFoundSignal(check.httpStatus, check.body);
+        } catch (e) {
+          // GET lanzó (red): no podemos confirmar la clase → caer al error genérico.
+          console.error("dropi-update-order: GET de confirmación 404 lanzó:", e);
+        }
+        if (getConfirmsNotFound) {
+          const botError =
+            "Pedido del bot de Dropi — la API no permite actualizarlo; gestionalo en el panel de Dropi.";
+          await logSyncError(
+            `pedido_bot: PUT y GET integración dan "Orden no encontrada" | external_id=${externalId} → ${newStatus}`,
+          );
+          // HTTP 200 con ok:false para que el cliente pueda LEER code/error
+          // (con un 5xx, supabase.functions.invoke deja data=null).
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              code: "pedido_bot",
+              error: botError,
+              externalId,
+              newStatus,
+              dropiHttpStatus: res.httpStatus,
+            }),
+            {
+              status: 200,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+      }
+
+      await logSyncError(`${errorMsg} | external_id=${externalId} → ${newStatus}`);
 
       return new Response(
         JSON.stringify({
           ok: false,
           error: errorMsg,
           externalId,
+          newStatus,
           dropiHttpStatus: res.httpStatus,
         }),
         {
@@ -307,7 +468,73 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ---- Success ----
+    // ---- VERIFY-AFTER-PUT ----
+    // El PUT de Dropi puede devolver 200 {isSuccess:true} y NO aplicar el
+    // cambio (patrón ya verificado con distribution_company_id en
+    // dropi-change-carrier). Nunca confiar en el 200: releer el pedido.
+    let verified = false;
+    let currentStatus: string | null = null;
+    let putIgnored = false; // GET ok y el status quedó en un estado ANTERIOR (no aplicó)
+    try {
+      const after = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+      if (after.ok) {
+        currentStatus = parseOrderStatus(after.body);
+        if (currentStatus) {
+          const cur = normalizeStatus(currentStatus);
+          const target = normalizeStatus(newStatus);
+          const rankCur = FUNNEL_RANK[cur];
+          const rankTarget = FUNNEL_RANK[target];
+          if (cur === target) {
+            verified = true;
+          } else if (rankCur !== undefined && rankTarget !== undefined && rankCur > rankTarget) {
+            // Estado POSTERIOR del funnel: la transportadora/otro flujo ya lo
+            // movió adelante — el pedido no está atascado, cuenta como aplicado.
+            verified = true;
+          } else if (rankCur !== undefined && rankTarget !== undefined) {
+            // Sigue en un estado ANTERIOR (típico: "PENDIENTE CONFIRMACION")
+            // o en CANCELADO/REEMPLAZADA → Dropi ignoró el PUT.
+            putIgnored = true;
+          } else {
+            // Status no enumerado en FUNNEL_RANK: casi seguro un estado de
+            // transportadora posterior. No fallamos, pero no juramos verified.
+            console.warn(
+              `dropi-update-order: status desconocido en verify: "${currentStatus}" (${externalId})`,
+            );
+          }
+        }
+      } else {
+        // GET falló (throttle/404 raro tras PUT ok): no castigamos un PUT que
+        // Dropi aceptó — devolvemos ok:true pero verified:false.
+        console.warn(
+          `dropi-update-order: GET de verificación falló [${after.httpStatus}] para ${externalId} — PUT ok sin verificar`,
+        );
+      }
+    } catch (e) {
+      console.error("dropi-update-order: verify GET lanzó:", e);
+    }
+
+    if (putIgnored) {
+      const ignoredMsg = `PUT 200 pero Dropi no aplicó (status sigue ${currentStatus})`;
+      await logSyncError(`${ignoredMsg} | external_id=${externalId} → ${newStatus}`);
+      // HTTP 200 con ok:false: el cliente actual ya trata data.ok===false como
+      // fallo (markDropiFailure) y además puede leer code/error.
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "put_ignorado",
+          error: ignoredMsg,
+          externalId,
+          newStatus,
+          dropiHttpStatus: res.httpStatus,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // ---- Success (éxito no lleva error_message; sí store_id) ----
     await sb.from("sync_logs").insert({
       source: "dropi-update-order",
       status: "success",
@@ -315,11 +542,13 @@ Deno.serve(async (req: Request) => {
       duplicates_count: 0,
       total_count: 1,
       triggered_by: user?.id ?? null,
+      store_id: storeId,
     });
 
     return new Response(
       JSON.stringify({
         ok: true,
+        verified,
         externalId,
         newStatus,
         dropiHttpStatus: res.httpStatus,
