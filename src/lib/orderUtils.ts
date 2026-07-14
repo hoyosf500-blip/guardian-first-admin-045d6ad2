@@ -235,8 +235,16 @@ const BOGOTA_OFFSET_MS = 5 * 3600 * 1000;
 export function isClosedOutByCloser(
   fecha: string | null | undefined,
   closerMs: number | undefined,
+  estado?: string | null,
 ): boolean {
   if (closerMs === undefined) return false;
+  // NO esconder un pedido VIVO EN TRÁNSITO/GESTIÓN (despachado, novedad, oficina)
+  // por el cierre de OTRO pedido del mismo teléfono: es un envío DISTINTO que
+  // necesita seguimiento propio (auditoría 2026-07-14). El match del closer es
+  // por phone (touchpoints no tiene order_id), así que sin este guard un pedido
+  // EN REPARTO desaparecía del tablero de TODAS las asesoras cuando se cerraba
+  // un hermano del mismo teléfono → riesgo de entrega perdida sin seguimiento.
+  if (estado && (isDespachado(estado) || isNovedad(estado) || isOficina(estado))) return false;
   const created = parseDate(fecha || '');
   if (!created) return false;
   return closerMs >= created.getTime() + BOGOTA_OFFSET_MS;

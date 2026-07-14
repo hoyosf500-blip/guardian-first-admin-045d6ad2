@@ -790,13 +790,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // ni dejar filas de ruido. Simétrico a confirm_order_locally (rama conf).
       const { data: cancOk, error: cancErr } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>
-      ) => Promise<{ data: boolean | null; error: { message: string } | null }>)(
+      ) => Promise<{ data: boolean | null; error: { message: string; code?: string } | null }>)(
         'cancel_order_locally', { p_order_id: order.dbId }
       );
-      if (cancErr || cancOk === false) {
-        // Otra asesora ya lo gestionó (o el RPC falló): revertir UI + borrar la
-        // fila order_results huérfana + liberar el lock in-memory. No se empuja
-        // a Dropi (evita el doble-cancel / cancelar-lo-que-otro-confirmó).
+      // BLINDAJE (auditoría 2026-07-14): si el RPC NO existe (migración
+      // 20260714120000 aún no aplicada — Lovable publica el bundle pero NO
+      // auto-aplica migraciones), NO abortamos: seguimos con el push directo
+      // como pre-Tanda-D. Sin esto, un desfase de deploy tumbaría TODA
+      // cancelación del día (fail-closed). PGRST202 = función inexistente.
+      const rpcMissing = !!cancErr && (
+        cancErr.code === 'PGRST202' ||
+        /could not find the function|does not exist|schema cache/i.test(cancErr.message || '')
+      );
+      if (!rpcMissing && (cancErr || cancOk === false)) {
+        // Otra asesora ya lo gestionó (o error real del RPC): revertir UI +
+        // borrar la fila order_results huérfana + liberar el lock in-memory. No
+        // se empuja a Dropi (evita el doble-cancel / cancelar-lo-que-otro-confirmó).
         if (insertedResult?.id) await supabase.from('order_results').delete().eq('id', insertedResult.id);
         setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
         setCounter(prev => ({ ...prev, canc: Math.max(0, prev.canc - 1) }));
@@ -804,8 +813,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         toast.error(cancErr ? `Cancelación local falló: ${cancErr.message}` : 'Ese pedido ya fue gestionado por otra asesora', { id: toastId });
         return;
       }
-      // Ganó la carrera: reflejar CANCELADO local ya (realtime lo propaga al resto).
-      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
+      // Ganó la carrera (flip atómico OK) → reflejar CANCELADO local ya (realtime
+      // lo propaga). Si el RPC faltaba (rpcMissing), NO flipeamos acá: lo hará el
+      // .then de Dropi OK como pre-Tanda-D (y el push procede igual).
+      if (!rpcMissing) {
+        setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
+      }
       toast.loading(`Cancelando en Dropi — ${order.nombre.split(' ')[0]}…`, { id: toastId });
 
       const markCancelFailure = async (errMsg: string) => {

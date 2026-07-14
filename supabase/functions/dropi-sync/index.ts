@@ -473,6 +473,34 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Restore SIMÉTRICO de CANCELACIONES (auditoría 2026-07-14): la Tanda D
+    // flipea estado='CANCELADO' optimista al marcar canc; si el push a Dropi
+    // falló, el upsert de arriba (que trae el pedido aún PENDIENTE en Dropi)
+    // revertía el CANCELADO local → el pedido cancelado REAPARECÍA en la cola de
+    // confirmación (la asesora lo re-llamaba). Re-aplicamos CANCELADO a las canc
+    // de hoy que el upsert haya revertido a PENDIENTE CONFIRMACION. (Las canc ya
+    // sincronizadas están CANCELADO en Dropi → el upsert las trae CANCELADO → el
+    // WHERE no las toca; solo re-cancela las que Dropi aún no reflejó.)
+    const { data: cancelledToday } = await sb
+      .from("order_results")
+      .select("order_id")
+      .eq("result", "canc")
+      .eq("result_date", todayDate)
+      .eq("store_id", storeId);
+
+    if (cancelledToday && cancelledToday.length > 0) {
+      const cancelledIds = cancelledToday.map((r) => r.order_id);
+      for (let i = 0; i < cancelledIds.length; i += 50) {
+        const batch = cancelledIds.slice(i, i + 50);
+        await sb
+          .from("orders")
+          .update({ estado: "CANCELADO" })
+          .in("id", batch)
+          .eq("store_id", storeId)
+          .eq("estado", "PENDIENTE CONFIRMACION");
+      }
+    }
+
     // Detectar y cancelar pedidos huérfanos: cuando Dropi edita un pedido,
     // crea uno nuevo y deja el viejo en PENDIENTE CONFIRMACION. Esta RPC
     // busca pedidos viejos con un duplicado más nuevo en estado terminal

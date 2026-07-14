@@ -990,6 +990,14 @@ Deno.serve(async (req: Request) => {
                 });
                   if (sib) rescueNote = "confirmado vía web (rescate cron)";
                 }
+              } else {
+                // Login web caído (token CO 2FA vencido, credenciales) → el
+                // rescate NO se pudo intentar: DIFERIR sin contar el intento,
+                // igual que cap/headroom. Sin esto la fila quemaba sus 5
+                // intentos y moría BOT-SIN-API sin un solo rescate real —
+                // cuando el login se recupera, ya es tarde. (El comentario de
+                // arriba listaba "login caído" pero el código no lo cubría.)
+                rescueDeferred = true;
               }
             }
           }

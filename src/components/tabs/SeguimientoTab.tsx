@@ -182,7 +182,7 @@ export default function SeguimientoTab() {
       // operadoras. Team-wide; el cruce por fecha (isClosedOutByCloser) evita
       // esconder un pedido NUEVO de un cliente que ya tuvo un cierre viejo.
       return deduped.filter(
-        (o) => !isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined),
+        (o) => !isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined, o.estado),
       );
     },
     [filteredByDate, supersededIds, segClosedPhones],
@@ -191,7 +191,7 @@ export default function SeguimientoTab() {
   const hiddenClosedCount = useMemo(
     () => filteredByDate.filter(o =>
       !supersededIds.has(String(o.externalId ?? '')) &&
-      isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined),
+      isClosedOutByCloser(o.fecha, o.phone ? segClosedPhones.get(o.phone) : undefined, o.estado),
     ).length,
     [filteredByDate, supersededIds, segClosedPhones],
   );

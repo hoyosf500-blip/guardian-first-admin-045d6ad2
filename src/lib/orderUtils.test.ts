@@ -145,6 +145,19 @@ describe('isClosedOutByCloser', () => {
     expect(isClosedOutByCloser('garbage', bogotaStart)).toBe(false);
     expect(isClosedOutByCloser(null, bogotaStart)).toBe(false);
   });
+
+  it('pedido VIVO EN TRÁNSITO no se esconde por el cierre de un hermano del teléfono', () => {
+    // Regresión auditoría 2026-07-14: un pedido EN REPARTO/NOVEDAD/OFICINA es un
+    // envío distinto vivo — no debe desaparecer del tablero por un closer del phone.
+    const cerrado = bogotaStart + 3 * 86400000; // cierre posterior → sin el guard escondería
+    expect(isClosedOutByCloser(creado, cerrado, 'EN REPARTO')).toBe(false);
+    expect(isClosedOutByCloser(creado, cerrado, 'NOVEDAD')).toBe(false);
+    expect(isClosedOutByCloser(creado, cerrado, 'RECLAME EN OFICINA')).toBe(false);
+    // Estado terminal/entregado SÍ se esconde (ya no necesita seguimiento).
+    expect(isClosedOutByCloser(creado, cerrado, 'ENTREGADO')).toBe(true);
+    // Sin estado (llamadas viejas de 2 args) → comportamiento intacto.
+    expect(isClosedOutByCloser(creado, cerrado)).toBe(true);
+  });
 });
 
 describe('cleanPhone', () => {
