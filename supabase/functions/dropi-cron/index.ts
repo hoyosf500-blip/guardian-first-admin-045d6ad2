@@ -110,7 +110,11 @@ async function dropiPutOrderRetry(
 // result_notes y el select de retries la excluye para siempre.
 const RETRY_MAX_BOT_ATTEMPTS = 5;
 const BOT_NOTES_PREFIX = "BOT-SIN-API: ";
-const BOT_SIGNAL_RE = /orden no encontrada|no existe|not found|error sql desconocido/i;
+// "no (se )?encontr" cubre "Orden no encontrada" Y "No se encontró registro" —
+// esta última era LA variante real de los pedidos bot EC y el regex viejo no la
+// matcheaba: el cap nunca disparaba y el cron martilló stubs REEMPLAZADA hasta
+// 138 intentos (~550 PUTs inútiles/día alimentando el throttle 429, 2026-07-13).
+const BOT_SIGNAL_RE = /no (se )?encontr|no existe|not found|error sql desconocido/i;
 // Filtro PostgREST NULL-safe: `not.ilike` a secas descartaría también las filas
 // con result_notes NULL (NULL NOT ILIKE ... → NULL → excluida). El patrón va
 // SIN el ":" del prefijo para esquivar chars reservados del parser de or=().
@@ -831,10 +835,10 @@ Deno.serve(async (req: Request) => {
       if (failedRows && failedRows.length > 0) {
         const orderIds = (failedRows as Array<{ order_id: string }>).map(r => r.order_id);
         const { data: ordersForRetry } = await sb
-          .from("orders").select("id, external_id, store_id").in("id", orderIds);
-        const orderById = new Map<string, { external_id: string | null; store_id: string }>();
-        (ordersForRetry || []).forEach((o: { id: string; external_id: string | null; store_id: string }) => {
-          orderById.set(o.id, { external_id: o.external_id, store_id: o.store_id });
+          .from("orders").select("id, external_id, store_id, estado").in("id", orderIds);
+        const orderById = new Map<string, { external_id: string | null; store_id: string; estado: string | null }>();
+        (ordersForRetry || []).forEach((o: { id: string; external_id: string | null; store_id: string; estado: string | null }) => {
+          orderById.set(o.id, { external_id: o.external_id, store_id: o.store_id, estado: o.estado });
         });
         // Anti-throttle 2026-07-07: antes este loop re-PUTeaba hasta 50 filas
         // cada 5 min PARA SIEMPRE, a 2 req/s, sin mirar 429 ni deadline — el
@@ -856,6 +860,20 @@ Deno.serve(async (req: Request) => {
           if (String(row.result_notes || "").startsWith(BOT_NOTES_PREFIX)) continue;
           const ord = orderById.get(row.order_id);
           if (!ord || !ord.external_id) continue;
+          // Fila OBSOLETA (2026-07-13): la orden local ya está REEMPLAZADA/
+          // CANCELADA (stub superado por una hermana del forwarding de Dropi).
+          // Confirmarla en Dropi sería un ERROR aunque el PUT funcionara — y el
+          // cron llegó a martillar 46 de estas hasta 138 intentos c/u porque el
+          // cap de clase-bot no matcheaba "No se encontró registro". Se termina
+          // acá mismo (mismo mecanismo BOT-SIN-API) SIN gastar un PUT.
+          if (ord.estado && /CANCELAD|REEMPLAZAD|RECHAZAD/i.test(String(ord.estado))) {
+            await sb.from("order_results").update({
+              dropi_sync_status: "failed",
+              result_notes: (BOT_NOTES_PREFIX +
+                `orden local ${ord.estado} (stub superado) — confirmación obsoleta, no se reintenta más.`).slice(0, 500),
+            }).eq("id", row.id);
+            continue;
+          }
           const sid = String(ord.store_id);
           if (throttled429.has(sid)) { retryDeferred++; continue; }
           const cfg = cfgByStore.get(sid);
@@ -949,10 +967,10 @@ Deno.serve(async (req: Request) => {
       if (cancRows && cancRows.length > 0) {
         const cancOrderIds = (cancRows as Array<{ order_id: string }>).map((r) => r.order_id);
         const { data: ordersForCancel } = await sb
-          .from("orders").select("id, external_id, store_id").in("id", cancOrderIds);
-        const cancOrderById = new Map<string, { external_id: string | null; store_id: string }>();
-        (ordersForCancel || []).forEach((o: { id: string; external_id: string | null; store_id: string }) => {
-          cancOrderById.set(o.id, { external_id: o.external_id, store_id: o.store_id });
+          .from("orders").select("id, external_id, store_id, estado").in("id", cancOrderIds);
+        const cancOrderById = new Map<string, { external_id: string | null; store_id: string; estado: string | null }>();
+        (ordersForCancel || []).forEach((o: { id: string; external_id: string | null; store_id: string; estado: string | null }) => {
+          cancOrderById.set(o.id, { external_id: o.external_id, store_id: o.store_id, estado: o.estado });
         });
         // Config + session token fresco por tienda, UNA sola vez por corrida.
         // null = tienda salteada (login falló / sin credenciales) — como pide el
@@ -973,6 +991,19 @@ Deno.serve(async (req: Request) => {
           if (String(row.result_notes || "").startsWith(BOT_NOTES_PREFIX)) continue;
           const ord = cancOrderById.get(row.order_id);
           if (!ord || !ord.external_id) continue;
+          // Fila OBSOLETA (mismo guard que el retry de conf, 2026-07-13): la
+          // orden local ya está REEMPLAZADA/RECHAZADA (stub superado) — no hay
+          // nada que cancelar en Dropi. Terminal sin gastar requests. OJO: acá
+          // NO se incluye CANCELADO (ese es justamente el estado objetivo del
+          // cancel local; la fila puede seguir failed porque Dropi no lo tiene).
+          if (ord.estado && /REEMPLAZAD|RECHAZAD/i.test(String(ord.estado))) {
+            await sb.from("order_results").update({
+              dropi_sync_status: "failed",
+              result_notes: (BOT_NOTES_PREFIX +
+                `orden local ${ord.estado} (stub superado) — cancelación obsoleta, no se reintenta más.`).slice(0, 500),
+            }).eq("id", row.id);
+            continue;
+          }
           const sid = String(ord.store_id);
           if (cancelThrottled.has(sid)) { cancDeferred++; continue; }
 
