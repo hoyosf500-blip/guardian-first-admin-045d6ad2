@@ -4,6 +4,7 @@ import { dropiHostFor } from "../_shared/dropiHosts.ts";
 import { loadStoreConfig, type StoreDropiConfig } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { cancelOrderInDropi, dropiGetOrder, notFoundSignal, type CancelOrderResult } from "../_shared/dropiCancelOrder.ts";
+import { checkOrderLivenessWeb } from "../_shared/dropiOrderLiveness.ts";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
@@ -1062,14 +1063,36 @@ Deno.serve(async (req: Request) => {
                 (prevAttempts > 0 ? ` (intento ${prevAttempts})` : ""),
             }).eq("id", row.id);
           } else {
-            cancFail++;
-            await sb.from("order_results").update({
-              // Normaliza los 'pending' atascados (mismo motivo que en conf).
-              dropi_sync_status: "failed",
-              result_notes: buildRetryFailureNotes(
-                "Reintento de cancelación dropi-cron", prevAttempts + 1, res.dropiStatus, res.error || "",
-              ),
-            }).eq("id", row.id);
+            // ¿YA está muerta en Dropi? (cancelada a mano en el panel, por otro
+            // camino, o reemplazada): Dropi rechaza el PUT CANCELADO sobre una
+            // orden ya cancelada ("Error al actualizar la orden...") y la fila
+            // quedaba failed ETERNA aunque la meta (que no se despache) ya está
+            // cumplida. Verificación web (v2) → muerta = éxito idempotente.
+            // Caso real: #6107398 (Fausto) cancelada 2026-07-13 y su fila de
+            // retry seguía gritando en el panel de fallos.
+            let deadEstado: string | null = null;
+            try {
+              const live = await checkOrderLivenessWeb(storeCfg, ord.external_id);
+              if (live.state === "dead") deadEstado = live.estado || "CANCELADO";
+            } catch (e) {
+              console.warn(`dropi-cron: verify 'ya cancelada' de #${ord.external_id} falló:`, e instanceof Error ? e.message : e);
+            }
+            if (deadEstado) {
+              cancOk++;
+              await sb.from("order_results").update({
+                dropi_sync_status: "synced",
+                result_notes: `verificada ${deadEstado} en Dropi (v2) — nada pendiente`,
+              }).eq("id", row.id);
+            } else {
+              cancFail++;
+              await sb.from("order_results").update({
+                // Normaliza los 'pending' atascados (mismo motivo que en conf).
+                dropi_sync_status: "failed",
+                result_notes: buildRetryFailureNotes(
+                  "Reintento de cancelación dropi-cron", prevAttempts + 1, res.dropiStatus, res.error || "",
+                ),
+              }).eq("id", row.id);
+            }
           }
           // Mismo espaciado que el resto del cron.
           await sleep(RATE_LIMIT_MS);

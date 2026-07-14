@@ -23,6 +23,23 @@ const BOT_PREFIX = 'BOT-SIN-API:';
 const WINDOW_DAYS = 7;
 const POLL_MS = 5 * 60_000; // poll suave — nada agresivo, la DB ya va justa
 
+// Gestión OBSOLETA (2026-07-13): si el PEDIDO ya está muerto localmente
+// (reemplazado por una hermana del forwarding de Dropi / cancelado / rechazado),
+// la conf o edición que falló ya no tiene NADA que gestionar — el pedido real
+// del cliente vive en otra fila que se gestionó aparte. Mostrarlas acá solo
+// mete ruido (el 13-jul el panel gritaba "50" y 49 eran stubs REEMPLAZADA).
+// OJO: para 'canc' el estado CANCELADO local NO la vuelve obsoleta — ese es
+// justamente el objetivo del canc y la fila failed significa que Dropi aún no
+// lo tiene (esa sí se reintenta / la cierra el cron al verificarla muerta).
+const MOOT_CONF_EDIT_RE = /CANCELAD|REEMPLAZAD|RECHAZAD/i;
+const MOOT_CANC_RE = /REEMPLAZAD|RECHAZAD/i;
+
+function isMootRow(result: string, estado: string | null | undefined): boolean {
+  const e = String(estado ?? '');
+  if (!e) return false;
+  return result === 'canc' ? MOOT_CANC_RE.test(e) : MOOT_CONF_EDIT_RE.test(e);
+}
+
 // Resultados de edición (OrderEditorDialog, patrón pending→synced/failed).
 const EDIT_RESULTS = ['cambio_transportadora', 'cambio_valor', 'edicion_completa', 'edicion_orden'] as const;
 const EDIT_LABEL: Record<string, string> = {
@@ -64,6 +81,7 @@ function shortReason(notes: string): string {
 export default function DropiSyncFailuresPanel() {
   const { activeStoreId } = useStore();
   const [rows, setRows] = useState<FailedGestion[]>([]);
+  const [mootCount, setMootCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -100,21 +118,30 @@ export default function DropiSyncFailuresPanel() {
         if (!byOrder.has(key)) byOrder.set(key, r);
       }
 
-      // Join liviano: resolver external_id/nombre con una 2ª query por id IN.
+      // Join liviano: resolver external_id/nombre/estado con una 2ª query por id IN.
       // (las keys del map son compuestas `${order_id}:${result}` — deduplicar acá)
-      const meta = new Map<string, { externalId: string; nombre: string }>();
+      const meta = new Map<string, { externalId: string; nombre: string; estado: string }>();
       const orderIds = [...new Set([...byOrder.values()].map(r => r.order_id))];
       if (orderIds.length > 0) {
         const { data: ords } = await supabase
           .from('orders')
-          .select('id, external_id, nombre')
+          .select('id, external_id, nombre, estado')
           .in('id', orderIds);
         for (const o of ords ?? []) {
-          meta.set(o.id, { externalId: String(o.external_id ?? ''), nombre: o.nombre ?? '' });
+          meta.set(o.id, {
+            externalId: String(o.external_id ?? ''),
+            nombre: o.nombre ?? '',
+            estado: String((o as { estado?: string | null }).estado ?? ''),
+          });
         }
       }
 
-      setRows([...byOrder.values()].map(r => ({
+      // Filtrar las gestiones OBSOLETAS (pedido local muerto/reemplazado):
+      // se cuentan aparte para transparencia, pero no piden acción a nadie.
+      const all = [...byOrder.values()];
+      const actionable = all.filter(r => !isMootRow(r.result, meta.get(r.order_id)?.estado));
+      setMootCount(all.length - actionable.length);
+      setRows(actionable.map(r => ({
         id: r.id,
         orderId: r.order_id,
         result: r.result,
@@ -215,6 +242,7 @@ export default function DropiSyncFailuresPanel() {
           <p className="text-xs text-muted-foreground mt-0.5">
             Quedaron en el CRM pero Dropi las rechazó (últimos {WINDOW_DAYS} días). Las gestiones se reintentan acá; las ediciones se reaplican desde el pedido.
             {botCount > 0 && <> {botCount} son del bot de Dropi — esas solo se gestionan en el panel de Dropi.</>}
+            {mootCount > 0 && <> Se ocultaron {mootCount} obsoletas (el pedido fue reemplazado o cancelado — nada que hacer).</>}
           </p>
         </div>
         <button onClick={() => void load()} aria-label="Actualizar lista de fallos"
