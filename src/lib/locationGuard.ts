@@ -25,6 +25,19 @@ function normalize(s: string): string {
 }
 
 /**
+ * ¿`haystack` contiene `needle` como palabra completa? Usa límite de palabra
+ * (\b) en vez de includes crudo para que una ciudad corta que es substring
+ * de otra distinta NO pase el guard (ej. "Baba" dentro de "Babahoyo", o
+ * "Cali" dentro de "Calima"). Ambos strings ya vienen normalizados (NFD sin
+ * acentos, lowercase), así que \b opera sobre ascii.
+ */
+function containsWord(haystack: string, needle: string): boolean {
+  if (!needle) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`).test(haystack);
+}
+
+/**
  * Verifica que el `text` (description, formattedAddress, etc.) coincida con
  * la ubicación del pedido. Estricto: la ciudad tiene prioridad y NO se
  * compensa con coincidencia de departamento.
@@ -43,12 +56,12 @@ export function locationMatches(
   // Si tenemos ciudad usable (>=3 chars), exigirla. No aceptar match
   // solo por departamento — Neiva y Pitalito están ambos en Huila.
   if (c.length >= 3) {
-    return t.includes(c);
+    return containsWord(t, c);
   }
 
   // Sin ciudad útil: caer al departamento si está.
   if (d.length >= 3) {
-    return t.includes(d);
+    return containsWord(t, d);
   }
 
   // Sin info: no podemos validar — aceptar.

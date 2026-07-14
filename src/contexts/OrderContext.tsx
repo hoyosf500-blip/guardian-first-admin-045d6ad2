@@ -243,7 +243,22 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // sobre INSERT filtrado por operator_id=me.
   useEffect(() => {
     if (!user || !activeStoreId) return;
-    const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
+    const loadDay = bogotaToday();
+    coverageDayRef.current = loadDay;
+    const todayStartIso = new Date(`${loadDay}T00:00:00-05:00`).toISOString();
+
+    // #16: si cruzamos la medianoche Bogotá con la pestaña abierta, los sets de
+    // cobertura tienen el conteo de AYER. Antes de agregar cualquier fila nueva
+    // (o en el chequeo periódico de abajo) reseteamos ambos sets al detectar el
+    // cambio de día. Devuelve true si hubo reset (para no seguir con `prev` viejo).
+    const rolloverIfNeeded = (): boolean => {
+      const day = bogotaToday();
+      if (day === coverageDayRef.current) return false;
+      coverageDayRef.current = day;
+      setMyConfirmTouchedToday(new Set());
+      setMySegTouchedToday(new Set());
+      return true;
+    };
 
     // Hallazgo "cola-hoy": la carga inicial de myConfirmTouchedToday vivía SOLO
     // dentro de loadWorkQueue. Tras recargar la página en una ruta que no lo
@@ -299,6 +314,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           if (row.module !== 'confirmar') return;
           if (row.store_id !== activeStoreId) return;
           if (!row.order_id) return;
+          // Nuevo día → los sets se vacían; la fila de abajo (que ES de hoy)
+          // se agrega sobre el set ya reseteado (setState funcional en orden).
+          rolloverIfNeeded();
           setMyConfirmTouchedToday(prev => {
             if (prev.has(row.order_id!)) return prev;
             const next = new Set(prev);
@@ -320,6 +338,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           if (!row.action?.startsWith('SEG:')) return;
           if (row.store_id !== activeStoreId) return;
           if (!row.phone) return;
+          rolloverIfNeeded();
           setMySegTouchedToday(prev => {
             if (prev.has(row.phone!)) return prev;
             const next = new Set(prev);
@@ -330,7 +349,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       )
       .subscribe();
 
-    return () => { void supabase.removeChannel(channel); };
+    // Pestaña ociosa que cruza medianoche sin eventos: el chequeo periódico
+    // vacía los sets al cambiar de día para que el chip no muestre lo de ayer.
+    const dayCheck = setInterval(() => { rolloverIfNeeded(); }, 60 * 1000);
+
+    return () => {
+      clearInterval(dayCheck);
+      void supabase.removeChannel(channel);
+    };
   }, [user, activeStoreId]);
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
@@ -351,6 +377,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // Teléfonos cuyo aviso "disponible para reintentar" YA se mostró esta sesión.
   // Evita el spam del toast en cada poll/refresh (buildWorkQueue corre seguido).
   const announcedRetryPhonesRef = useRef<Set<string>>(new Set());
+  // #16: día Bogotá con el que se cargaron los sets de cobertura del día
+  // (myConfirmTouchedToday / mySegTouchedToday). Con una pestaña abierta que
+  // cruza la medianoche, el chip "Has llamado a X" conservaba el conteo de
+  // ayer. Comparamos contra este ref en cada evento realtime (y en un chequeo
+  // periódico para la pestaña ociosa) y reseteamos los sets al cambiar de día.
+  const coverageDayRef = useRef(bogotaToday());
 
   useEffect(() => {
     requestNotificationPermission();
@@ -646,6 +678,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // permanentemente en markingInFlight y la operadora no puede
         // reintentar la confirmación hasta recargar la página.
         markingInFlight.current.delete(order.dbId);
+        // #17 data-loss: si otra asesora ya confirmó el pedido, la fila
+        // order_results 'conf' que insertamos arriba quedaría huérfana e
+        // inflaría productividad/cobertura (y el cron la re-empujaría a Dropi).
+        // La borramos. El touchpoint aún NO existe en este punto (se inserta
+        // más abajo, tras el bloque conf), así que no hay nada más que limpiar.
+        if (insertedResult?.id) {
+          await supabase.from('order_results').delete().eq('id', insertedResult.id);
+        }
         return;
       }
       setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'PENDIENTE' } : o));
@@ -665,8 +705,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           // mark the order_results row as failed so dropi-cron retries it,
           // and warn the operator with a destructive long-duration toast.
           if (insertedResultId) {
-            await (supabase.from('order_results') as unknown as {
-              update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+            const { data: upd } = await (supabase.from('order_results') as unknown as {
+              update: (v: Record<string, unknown>) => {
+                eq: (c: string, v: string) => { select: (c: string) => Promise<{ data: unknown[] | null }> };
+              };
             }).update({
               dropi_sync_status: 'failed',
               // code 'pedido_bot' = la edge CONFIRMÓ (PUT + GET de integración)
@@ -677,7 +719,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               // muestra como badge informativo en vez de botón "Reintentar".
               result_notes: (code === 'pedido_bot' ? 'BOT-SIN-API: ' : '') +
                 `Dropi sync pendiente - reintentar (${errMsg})`,
-            }).eq('id', insertedResultId);
+            }).eq('id', insertedResultId).select('id');
+            // #706: .select detecta el no-op de RLS. Si 0 filas, la marca
+            // 'failed' NO quedó — el cron no la reintentaría y la fuga sería silenciosa.
+            if (!upd || upd.length === 0) {
+              console.warn('[markDropiFailure] 0 filas al marcar failed (RLS sin aplicar?)', { id: insertedResultId });
+            }
           }
           // Toast HONESTO. El texto viejo ("Aparecerá en la pestaña Novedades")
           // mentía — nada lee esas filas en Novedades. Los pedidos del bot de
@@ -706,9 +753,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
               // Dropi confirmó el push → promover la fila 'pending' a 'synced'
               // para que el retry del cron no la vuelva a tocar.
               if (insertedResultId) {
-                await (supabase.from('order_results') as unknown as {
-                  update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
-                }).update({ dropi_sync_status: 'synced' }).eq('id', insertedResultId);
+                const { data: upd } = await (supabase.from('order_results') as unknown as {
+                  update: (v: Record<string, unknown>) => {
+                    eq: (c: string, v: string) => { select: (c: string) => Promise<{ data: unknown[] | null }> };
+                  };
+                }).update({ dropi_sync_status: 'synced' }).eq('id', insertedResultId).select('id');
+                // #706: 0 filas = la promoción a 'synced' no pegó (RLS) → el cron
+                // seguiría reintentando un push ya aplicado. Lo dejamos visible.
+                if (!upd || upd.length === 0) {
+                  console.warn('[markResult conf] 0 filas al promover a synced (RLS sin aplicar?)', { id: insertedResultId });
+                }
               }
               toast.success(`Confirmado — ${order.nombre.split(' ')[0]}`, { id: toastId, duration: 2500 });
             }
@@ -732,12 +786,19 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
       const markCancelFailure = async (errMsg: string) => {
         if (insertedResultId) {
-          await (supabase.from('order_results') as unknown as {
-            update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+          const { data: upd } = await (supabase.from('order_results') as unknown as {
+            update: (v: Record<string, unknown>) => {
+              eq: (c: string, v: string) => { select: (c: string) => Promise<{ data: unknown[] | null }> };
+            };
           }).update({
             dropi_sync_status: 'failed',
             result_notes: `Cancelación en Dropi pendiente - reintentar (${errMsg})`,
-          }).eq('id', insertedResultId);
+          }).eq('id', insertedResultId).select('id');
+          // #706: 0 filas = la marca 'failed' no pegó (RLS) → el cron no
+          // reintentaría la cancelación y el pedido seguiría vivo en Dropi.
+          if (!upd || upd.length === 0) {
+            console.warn('[markCancelFailure] 0 filas al marcar failed (RLS sin aplicar?)', { id: insertedResultId });
+          }
         }
         // Toast HONESTO: la cancelación NO llegó a Dropi y el pedido sigue
         // vivo allá; decirle a la operadora exactamente qué va a pasar.
@@ -764,9 +825,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // Dropi confirmó la cancelación → promover la fila 'pending' a
             // 'synced' para que el cron no la trate como push pendiente.
             if (insertedResultId) {
-              await (supabase.from('order_results') as unknown as {
-                update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
-              }).update({ dropi_sync_status: 'synced' }).eq('id', insertedResultId);
+              const { data: upd } = await (supabase.from('order_results') as unknown as {
+                update: (v: Record<string, unknown>) => {
+                  eq: (c: string, v: string) => { select: (c: string) => Promise<{ data: unknown[] | null }> };
+                };
+              }).update({ dropi_sync_status: 'synced' }).eq('id', insertedResultId).select('id');
+              // #706: 0 filas = la promoción a 'synced' no pegó (RLS) → el cron
+              // volvería a intentar cancelar un pedido ya cancelado.
+              if (!upd || upd.length === 0) {
+                console.warn('[markResult canc] 0 filas al promover a synced (RLS sin aplicar?)', { id: insertedResultId });
+              }
             }
             // El edge ya marcó estado='CANCELADO' server-side; reflejarlo local ya.
             setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
@@ -784,41 +852,33 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         });
     }
 
-    if (error) {
-      // OLD-6: incluir el mensaje del error para que la operadora pueda
-      // diferenciar entre red, RLS, validación, etc.
-      toast.error(`Error guardando resultado: ${error.message || 'desconocido'}`);
-      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
-      setCounter(prev => ({
-        conf: prev.conf - (result === 'conf' ? 1 : 0),
-        canc: prev.canc - (result === 'canc' ? 1 : 0),
-        noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
-      }));
-    } else {
-      if (insertedResult?.id) {
-        setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
-      }
+    // NOTA: el viejo `if (error)` que envolvía este tramo era CÓDIGO MUERTO —
+    // cualquier error del insert ya hizo `return` arriba (rama de error del
+    // insert de order_results). Además su revert restaba `noresp`, que
+    // markResult nunca incrementa optimísticamente. Eliminado.
+    if (insertedResult?.id) {
+      setLastMark(prev => prev ? { ...prev, resultId: insertedResult.id } : prev);
+    }
 
-      const { data: tpData } = await supabase.from('touchpoints').insert({
-        phone: order.phone,
-        action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
-        operator_id: user.id,
-        action_date: today,
-        action_time: now,
-        store_id: activeStoreId,
-      }).select('id').single();
+    const { data: tpData } = await supabase.from('touchpoints').insert({
+      phone: order.phone,
+      action: result === 'conf' ? 'Confirmado' : result === 'canc' ? `Cancelado: ${reason || ''}` : 'No respondió',
+      operator_id: user.id,
+      action_date: today,
+      action_time: now,
+      store_id: activeStoreId,
+    }).select('id').single();
 
-      if (tpData?.id) {
-        setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
-      }
+    if (tpData?.id) {
+      setLastMark(prev => prev ? { ...prev, touchpointId: tpData.id } : prev);
+    }
 
-      // Release the per-order lock now that this operator is done with it.
-      // Use rpc cast — claim/release_order are not yet in generated types.
-      if (order.dbId) {
-        await (supabase.rpc as unknown as (
-          fn: string, args: Record<string, unknown>
-        ) => Promise<{ error: unknown }>)('release_order', { p_order_id: order.dbId });
-      }
+    // Release the per-order lock now that this operator is done with it.
+    // Use rpc cast — claim/release_order are not yet in generated types.
+    if (order.dbId) {
+      await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ error: unknown }>)('release_order', { p_order_id: order.dbId });
     }
     markingInFlight.current.delete(order.dbId);
   // MED-1: timerStart NO se lee dentro del callback (solo se setea con

@@ -95,12 +95,21 @@ export async function getShopOrderIdV2(cfg: LivenessCfg, externalId: string): Pr
   }
 }
 
+const LISTING_PAGE_SIZE = 15;
+
 /** ¿La orden está viva en Dropi? Señal ÚNICA confiable (calibrada en vivo
  *  2026-07-13): el LISTADO web buscado por el TELÉFONO del cliente.
  *   - La orden APARECE → decide su status.
- *   - NO aparece pero el listado devolvió OTRAS órdenes del mismo cliente →
- *     'dead': las REEMPLAZADA reciben deleted_at y desaparecen del listado
- *     (probado: el stub #6110807 no aparece mientras la viva #6110951 sí).
+ *   - NO aparece, el listado devolvió OTRAS órdenes del mismo cliente Y la
+ *     página NO está llena (objs.length < LISTING_PAGE_SIZE) → 'dead': las
+ *     REEMPLAZADA reciben deleted_at y desaparecen del listado (probado: el
+ *     stub #6110807 no aparece mientras la viva #6110951 sí).
+ *   - NO aparece pero la página vino LLENA (objs.length === LISTING_PAGE_SIZE) →
+ *     'unknown': con >15 pedidos del cliente el target VIVO puede estar en la
+ *     página 2 y no traerlo NO es prueba de muerte. Declarar 'dead' acá sería
+ *     un falso muerto → REEMPLAZADA (pair-resolver) o cancel-retry falso
+ *     mientras Dropi despacha. El sesgo del módulo es JAMÁS 'dead' con página
+ *     posiblemente incompleta (guard de página-llena).
  *   - Listado vacío o falló → 'unknown' (JAMÁS asumir muerto sin evidencia).
  *  El detalle v2 NO sirve: responde para órdenes borradas y NO trae status.
  *  `phone` es OBLIGATORIO para decidir; sin él devuelve 'unknown'. Nunca tira. */
@@ -118,7 +127,7 @@ export async function checkOrderLivenessWeb(
     try {
       const { status, body } = await dropiWebFetch(
         cfg,
-        `/api/orders/myorders?result_number=15&start=0&textToSearch=${encodeURIComponent(term)}`,
+        `/api/orders/myorders?result_number=${LISTING_PAGE_SIZE}&start=0&textToSearch=${encodeURIComponent(term)}`,
         { method: "GET", logBody: false },
       );
       if (status < 200 || status >= 300) continue;
@@ -135,8 +144,11 @@ export async function checkOrderLivenessWeb(
           via: "listing",
         };
       }
-      // Ausente con OTRAS órdenes del cliente presentes → soft-deleted.
-      if (objs.length > 0) {
+      // Ausente con OTRAS órdenes del cliente presentes → soft-deleted, PERO
+      // solo si la página NO está llena. Si vino con LISTING_PAGE_SIZE filas la
+      // página puede estar truncada (>15 pedidos del cliente) y el target VIVO
+      // caer en la 2da página → jamás 'dead' con página posiblemente incompleta.
+      if (objs.length > 0 && objs.length < LISTING_PAGE_SIZE) {
         return { state: "dead", estado: null, via: "listing" };
       }
     } catch (e) {

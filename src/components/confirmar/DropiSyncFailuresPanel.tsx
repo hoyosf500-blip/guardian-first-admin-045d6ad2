@@ -99,7 +99,15 @@ export default function DropiSyncFailuresPanel() {
         .in('result', ['conf', 'canc', ...EDIT_RESULTS])
         .gte('created_at', since)
         .order('created_at', { ascending: false })
-        .limit(50);
+        // 200 y no 50: el .limit corre en el SERVIDOR (DESC) ANTES del filtrado
+        // cliente de moot/applied/dedupe. Tras una tanda de recreates (13-jul:
+        // 50 filas, 49 stubs REEMPLAZADA) un top-50 podía ser TODO moot → una
+        // cancelación genuina más vieja pero dentro de 7d nunca se cargaba y el
+        // panel hacía return null ocultando pérdidas reales. Con 200 los fallos
+        // accionables de 7d rara vez se pasan tras filtrar moot; el filtrado
+        // cliente ya existente reduce a lo accionable. (No movemos moot al
+        // server: depende de orders.estado, ausente en order_results → join grande.)
+        .limit(200);
       if (error) throw error;
 
       // Una fila por (pedido, tipo de gestión) — la más reciente gana (la query
@@ -248,6 +256,41 @@ export default function DropiSyncFailuresPanel() {
     }
   }, [busyId, load]);
 
+  // Descartar manual SOLO para filas de edición / duplicado vivo: no tienen
+  // retry (retry() hace early-return para todo lo que no sea conf/canc) ni
+  // settle automático, así que la alerta "Cancelá el duplicado #X" / "reaplicá
+  // la edición" gritaba por 7 días aunque ya la hubieran resuelto a mano. Este
+  // botón promueve la fila a 'synced' con prefijo RESUELTO MANUAL: para que
+  // deje de ser 'failed' y desaparezca del panel. NO toca el flujo de conf/canc.
+  const resolveManual = useCallback(async (row: FailedGestion) => {
+    if (busyId) return;
+    setBusyId(row.id);
+    try {
+      // .select('id') detecta el no-op silencioso (mismo patrón que retry/settle:
+      // sin política UPDATE en order_results el UPDATE por JWT devuelve 0 filas
+      // sin error). Best-effort: si RLS bloquea, el refetch la mantiene visible.
+      const { data: resolved } = await supabase.from('order_results')
+        .update({
+          dropi_sync_status: 'synced',
+          result_notes: `RESUELTO MANUAL: ${row.notes}`.slice(0, 300),
+        })
+        .eq('id', row.id)
+        .select('id');
+      if ((resolved ?? []).length === 0) {
+        console.warn('[DropiSyncFailures] resolveManual no actualizó filas (¿RLS de UPDATE rota?)', row.id);
+        toast.error('No se pudo marcar como resuelta (permisos)');
+      } else {
+        toast.success(`#${row.externalId || row.orderId} marcada como resuelta ✓`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(`No se pudo marcar como resuelta: ${msg}`);
+    } finally {
+      setBusyId(null);
+      void load();
+    }
+  }, [busyId, load]);
+
   // Guards: sin tienda, sin primera carga o sin fallos → no estorbar la cola.
   if (!activeStoreId || !loaded || rows.length === 0) return null;
 
@@ -323,30 +366,46 @@ export default function DropiSyncFailuresPanel() {
                 {isDup ? (
                   // La acción es CANCELAR el duplicado vivo, no reaplicar nada.
                   // Link directo a la ficha del duplicado (id de la nota, o el
-                  // propio pedido si la nota no trae referencia).
-                  dupRef ? (
-                    <a href={`/pedido/${dupRef}`}
-                      className="text-[10px] px-2 py-1 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive font-medium inline-flex items-center gap-1 flex-shrink-0 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                      <Copy size={11} aria-hidden="true" /> Cancelá el duplicado #{dupRef}
-                    </a>
-                  ) : (
-                    <span className="text-[10px] px-2 py-1 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive font-medium inline-flex items-center gap-1 flex-shrink-0">
-                      <Copy size={11} aria-hidden="true" /> Cancelá el duplicado en el panel de Dropi
-                    </span>
-                  )
+                  // propio pedido si la nota no trae referencia). + botón para
+                  // descartar la alerta una vez resuelta a mano (no tiene retry).
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {dupRef ? (
+                      <a href={`/pedido/${dupRef}`}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive font-medium inline-flex items-center gap-1 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                        <Copy size={11} aria-hidden="true" /> Cancelá el duplicado #{dupRef}
+                      </a>
+                    ) : (
+                      <span className="text-[10px] px-2 py-1 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive font-medium inline-flex items-center gap-1">
+                        <Copy size={11} aria-hidden="true" /> Cancelá el duplicado en el panel de Dropi
+                      </span>
+                    )}
+                    <button onClick={() => void resolveManual(r)} disabled={busyId !== null}
+                      title="Marcar como resuelta y quitar del panel"
+                      className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:bg-muted/40 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                      {busyId === r.id ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : null} Ya lo resolví
+                    </button>
+                  </div>
                 ) : isEdit ? (
                   // Sin retry automático posible: no guardamos el payload del
-                  // intento. La asesora reabre el pedido y la aplica de nuevo.
-                  r.externalId ? (
-                    <a href={`/pedido/${r.externalId}`}
-                      className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-                      <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
-                    </a>
-                  ) : (
-                    <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
-                      <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
-                    </span>
-                  )
+                  // intento. La asesora reabre el pedido y la aplica de nuevo. +
+                  // botón para descartar la alerta una vez reaplicada a mano.
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {r.externalId ? (
+                      <a href={`/pedido/${r.externalId}`}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                        <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
+                      </a>
+                    ) : (
+                      <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1">
+                        <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
+                      </span>
+                    )}
+                    <button onClick={() => void resolveManual(r)} disabled={busyId !== null}
+                      title="Marcar como resuelta y quitar del panel"
+                      className="h-7 px-2.5 rounded-lg border border-border bg-card text-xs font-medium text-foreground hover:bg-muted/40 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                      {busyId === r.id ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : null} Ya lo resolví
+                    </button>
+                  </div>
                 ) : isBot ? (
                   <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
                     <Bot size={11} aria-hidden="true" /> Pedido del bot — gestionar en panel Dropi

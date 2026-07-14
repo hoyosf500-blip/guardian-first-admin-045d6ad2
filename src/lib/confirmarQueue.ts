@@ -58,10 +58,16 @@ export function isRetryReady(o: ConfirmarQueueOrder): boolean {
 }
 
 /**
- * Días efectivos del pedido para ordenar por frescura.
+ * Días efectivos del pedido para el DESEMPATE FINO (intra-día).
  * Prefiere `createdAt` (tiene HORA → distingue "hace 5 min" de "hace 20 h" el
  * mismo día). Si no viene o está malformado, cae a `dias` (granularidad de día).
  * Devuelve un número de días como float (más chico = más nuevo).
+ *
+ * OJO: esta señal NO define el bucket — para eso está `realAgeDays`. Usar
+ * `createdAt` como señal GRUESA rompe la cola: un zombie backfilleado recibe
+ * `created_at = now()` en nuestra DB y aparentaría "fresco" aunque en Dropi
+ * tenga 30 días. `effectiveAgeDays` sólo ordena DENTRO de un bucket ya fijado
+ * por la edad real.
  */
 export function effectiveAgeDays(
   o: ConfirmarQueueOrder,
@@ -74,6 +80,35 @@ export function effectiveAgeDays(
     }
   }
   return Math.max(0, o.dias ?? 0);
+}
+
+/**
+ * Edad REAL del pedido (antigüedad en Dropi), en días — la señal GRUESA que
+ * define el BUCKET. `o.dias` (lo que Dropi reporta) MANDA sobre `createdAt`.
+ *
+ * Por qué (Hallazgo 4, corrección): `createdAt` es el timestamp de inserción en
+ * NUESTRA DB (default `now()`). Un pedido zombie de hace 30 días re-importado
+ * hoy recibe `created_at = hoy` → con `effectiveAgeDays` caería en el bucket
+ * "fresco" y FLOTARÍA AL TOPE, exactamente lo contrario del propósito del
+ * módulo. Usando `dias` (edad real) el zombie cae en "por cancelar" (D4+) y el
+ * `createdAt` reciente sólo desempata dentro de su bucket. Si `dias` falta, se
+ * deriva de `createdAt` como último recurso.
+ */
+export function realAgeDays(
+  o: ConfirmarQueueOrder,
+  nowMs: number = Date.now(),
+): number {
+  if (typeof o.dias === 'number' && Number.isFinite(o.dias)) {
+    return Math.max(0, o.dias);
+  }
+  // Sin `dias` confiable: derivar de createdAt (granularidad de día).
+  if (o.createdAt) {
+    const t = Date.parse(o.createdAt);
+    if (Number.isFinite(t)) {
+      return Math.max(0, (nowMs - t) / 86400000);
+    }
+  }
+  return 0;
 }
 
 /** ¿El pedido entró HOY? (menos de 1 día de antigüedad efectiva) */
@@ -95,7 +130,9 @@ const BUCKET_CANCEL = 4;   // D4+ "por cancelar" → al fondo
 function bucketOf(o: ConfirmarQueueOrder, nowMs: number): number {
   if (hasDueReminder(o, nowMs)) return BUCKET_REMINDER;
   if (isRetryReady(o)) return BUCKET_RETRY;
-  const age = effectiveAgeDays(o, nowMs);
+  // Bucket por edad REAL (Dropi), NO por createdAt: un zombie backfilleado no
+  // debe colarse al bucket "fresco" sólo porque su fila se insertó hoy.
+  const age = realAgeDays(o, nowMs);
   if (age < 1) return BUCKET_FRESH;
   if (age >= DIAS_POR_CANCELAR) return BUCKET_CANCEL;
   return BUCKET_OLD;
@@ -105,7 +142,8 @@ function bucketOf(o: ConfirmarQueueOrder, nowMs: number): number {
  * Comparador PURO de la cola de Confirmar. Ordena así (menor primero):
  *   1) recordatorio vencido, 2) reintento listo, 3) frescos de hoy (más nuevo
  *   primero), 4) viejos (más nuevo primero), 5) D4+ por cancelar (al fondo).
- * Dentro de cada bucket, el más NUEVO va primero (menor edad efectiva).
+ * Dentro de cada bucket, el más NUEVO va primero: primero por edad REAL
+ * (`realAgeDays`, Dropi) y, a igualdad, por `createdAt` (desempate intra-día).
  * Estable ante empates (edad idéntica → devuelve 0, `Array.sort` conserva orden).
  */
 export function compareConfirmar(
@@ -116,7 +154,11 @@ export function compareConfirmar(
   const ba = bucketOf(a, nowMs);
   const bb = bucketOf(b, nowMs);
   if (ba !== bb) return ba - bb;
-  // Mismo bucket → el más nuevo (menor edad efectiva) primero.
+  // Mismo bucket → primero por edad REAL (grueso: el más nuevo en Dropi arriba).
+  const ra = realAgeDays(a, nowMs);
+  const rb = realAgeDays(b, nowMs);
+  if (ra !== rb) return ra - rb;
+  // Misma edad real → desempate FINO por createdAt (distingue intra-día).
   const aa = effectiveAgeDays(a, nowMs);
   const ab = effectiveAgeDays(b, nowMs);
   if (aa !== ab) return aa - ab;

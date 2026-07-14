@@ -517,7 +517,7 @@ export default function DashboardTab() {
               <div className="flex-1 min-w-0">
                 <div
                   className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1"
-                  title="Tasa personal: tus confirmados / lo gestionado por vos hoy (conf+canc+noresp). NO sobre el inflow total del día — eso lo ves en /admin → Productividad."
+                  title="Tasa personal: tus confirmados / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD. NO sobre el inflow total del día — eso lo ves en /admin → Productividad."
                 >
                   Tasa personal
                 </div>

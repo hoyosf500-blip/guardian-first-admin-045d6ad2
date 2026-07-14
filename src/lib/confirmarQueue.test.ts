@@ -4,6 +4,7 @@ import {
   splitCalientesVsViejos,
   cooldownHoursForAttempt,
   effectiveAgeDays,
+  realAgeDays,
   isFreshToday,
   hasDueReminder,
   isRetryReady,
@@ -100,6 +101,16 @@ describe('compareConfirmar', () => {
     expect(sortIds([c10, c4, c6])).toEqual(['c4', 'c6', 'c10']);
   });
 
+  it('11) REGRESIÓN: zombie backfilleado (dias alto, createdAt reciente) NO flota sobre un fresco real', () => {
+    // El zombie de hace 30 días fue re-insertado hoy → created_at ≈ hace 5 min,
+    // pero su edad REAL en Dropi es 30 días. NO debe colarse al bucket "fresco".
+    const zombie = ord({ id: 'zombie', createdAt: hoursAgo(0.08), dias: 30 });
+    // Comprador genuinamente nuevo: entró hace 2 h (createdAt MÁS viejo que el zombie).
+    const nuevo = ord({ id: 'nuevo', createdAt: hoursAgo(2), dias: 0 });
+    // Con el bug (bucket por createdAt) el zombie iba PRIMERO; ahora manda la edad real.
+    expect(sortIds([zombie, nuevo])).toEqual(['nuevo', 'zombie']);
+  });
+
   it('10) escenario mixto completo respeta la jerarquía de buckets', () => {
     const list = [
       ord({ id: 'cancel8', dias: 8 }),
@@ -160,6 +171,17 @@ describe('helpers puros', () => {
     expect(effectiveAgeDays(ord({ createdAt: hoursAgo(24), dias: 99 }), NOW)).toBeCloseTo(1, 5);
     expect(effectiveAgeDays(ord({ createdAt: hoursAgo(-5), dias: 0 }), NOW)).toBe(0); // futuro → 0
     expect(effectiveAgeDays(ord({ dias: 3 }), NOW)).toBe(3);
+  });
+
+  it('realAgeDays: manda `dias` (edad Dropi) por sobre createdAt reciente', () => {
+    // Zombie backfilleado: createdAt=hace 1h pero dias=30 → edad real 30, no 0.04.
+    expect(realAgeDays(ord({ createdAt: hoursAgo(1), dias: 30 }), NOW)).toBe(30);
+    // Sin `dias`: cae a createdAt (día completo).
+    expect(realAgeDays(ord({ createdAt: hoursAgo(48) }), NOW)).toBeCloseTo(2, 5);
+    // Sin nada → 0.
+    expect(realAgeDays(ord({}), NOW)).toBe(0);
+    // `dias` en 0 es válido (no cae al fallback de createdAt).
+    expect(realAgeDays(ord({ createdAt: daysAgo(9), dias: 0 }), NOW)).toBe(0);
   });
 
   it('isFreshToday: <1 día efectivo', () => {

@@ -7,23 +7,28 @@
 //   (a) Orden VIVA en Dropi → PUT /api/orders/myorders/{id} {status:"CANCELADO",
 //       reasonComment} (mismo request del "Cancelar orden" del panel, session
 //       token web) + marca orders.estado='CANCELADO' local. → canceled:true.
-//   (b) FANTASMA (el PUT falla y un GET de integración confirma que la orden YA
-//       NO existe en Dropi — 404 "Orden no encontrada"): se cancela SOLO local.
+//   (b) FANTASMA (el PUT falla, un GET de integración da 404 Y el canal WEB
+//       confirma la muerte por teléfono): se cancela SOLO local.
 //       → canceled:true + dropiMissing:true.
 //   (c) Orden viva pero Dropi rechaza → ok:false + code:"dropi_rejected".
 //
-// INVESTIGADO 2026-07-10: NO existe una "segunda opinión" barata para
-// confirmar el fantasma (el detalle v2 devuelve datos hasta para pedidos
-// BORRADOS y la lista de integración es carísima en EC). La protección REAL
-// contra un falso positivo (pedido de bot LucidBot vivo pero 404 en
-// integración) es el PROPIO CRON: si Dropi todavía lista el pedido, el
-// próximo upsert (≤5 min) pisa el estado local y el pedido REAPARECE solo.
+// FIX #6 (2026-07-14) — el 404 de integración YA NO es prueba de muerte: los
+// pedidos clase-bot (LucidBot / "reenviados a dropiX") dan 404 por-id AUNQUE
+// estén VIVOS en el panel (mismo criterio que guardReplacedOldOrder /
+// retireBotStubIfGone ya abandonaron). Un PUT web transitorio fallido (session
+// token vencido ~1h) sobre un bot VIVO marcaría CANCELADO local un FALSO
+// fantasma. Por eso, antes de declarar fantasma, se confirma por el canal WEB
+// (checkOrderLivenessWeb, listado por TELÉFONO): SOLO state==='dead' es
+// fantasma; 'unknown'/'alive' → se devuelve el fallo real para reintentar (no
+// se toca el estado local). Sesgo conservador: mejor un cancel que se reintenta
+// (barato) que un falso fantasma que esconde un pedido vivo → doble envío.
 //
 // El caller es responsable de tener cfg.sessionToken FRESCO
 // (ensureFreshSessionToken) — acá no se renueva nada.
 
 // deno-lint-ignore-file no-explicit-any
 import { dropiWebFetch } from "./dropiWebQuote.ts";
+import { checkOrderLivenessWeb } from "./dropiOrderLiveness.ts";
 
 /** Config mínima para cancelar: panel web (base+sessionToken+storeUrl) +
  *  integration-key (apiKey) para el check de existencia del fantasma.
@@ -138,23 +143,69 @@ export async function cancelOrderInDropi(
     return { ok: true, canceled: true, externalId, dropiStatus: put!.status };
   }
 
-  // 2) El PUT falló. ¿La orden EXISTE en Dropi? Si NO (FANTASMA: fue borrada o
-  //    reemplazada en Dropi pero quedó atascada PENDIENTE en Guardian — Guardian
-  //    solo upsertea, nunca borra al sincronizar), cancelarla LOCAL es correcto
-  //    y seguro: no hay nada vivo en Dropi que "mantener".
-  let ghost = false;
+  // 2) El PUT falló. ¿La orden es un FANTASMA (fue borrada/reemplazada en Dropi
+  //    pero quedó atascada PENDIENTE en Guardian — Guardian solo upsertea, nunca
+  //    borra al sincronizar)? El 404 de la API de INTEGRACIÓN es solo un HINT:
+  //    los pedidos clase-bot dan 404 por-id AUNQUE estén VIVOS (ver FIX #6 en la
+  //    cabecera). Antes de cancelar local hay que CONFIRMAR la muerte por el
+  //    canal WEB (listado por teléfono). Sin ese segundo veredicto 'dead',
+  //    NUNCA marcar CANCELADO local: se devuelve el fallo real para reintentar.
+  let intMissing = false;
   try {
     const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
-    ghost = notFoundSignal(check.httpStatus, (check.body || {}) as Record<string, unknown>);
+    intMissing = notFoundSignal(check.httpStatus, (check.body || {}) as Record<string, unknown>);
   } catch (e) {
-    console.error("[dropi-cancel] check de existencia falló:", e);
+    console.error("[dropi-cancel] check de existencia (integración) falló:", e);
   }
-  if (ghost) {
-    await markLocalCanceled();
-    return {
-      ok: true, canceled: true, dropiMissing: true, externalId,
-      note: "La orden no existe para la API de Dropi — se canceló localmente. Si reaparece en unos minutos, es un pedido del panel/bot de Dropi: cancelalo desde el panel.",
-    };
+
+  if (intMissing) {
+    // Segunda opinión por el canal WEB (session token), buscando por el TELÉFONO
+    // del cliente. El teléfono sale del propio order row (sbAdmin, sin tocar los
+    // call-sites). SOLO state==='dead' confirma el fantasma.
+    let phone = "";
+    try {
+      const { data: ordRow } = await sbAdmin
+        .from("orders").select("phone").eq("id", orderId).maybeSingle();
+      phone = String(ordRow?.phone || "").trim();
+    } catch (e) {
+      console.error("[dropi-cancel] lectura de phone para liveness web falló:", e);
+    }
+
+    let confirmedDead = false;
+    if (phone) {
+      try {
+        const live = await checkOrderLivenessWeb(cfg, externalId, { phone });
+        confirmedDead = live.state === "dead";
+        if (!confirmedDead) {
+          // 'alive' o 'unknown' (p.ej. session token vencido → el listado web
+          //  también falla): NO es prueba de muerte. No tocar el estado local.
+          console.warn(
+            `[dropi-cancel] #${externalId}: 404 integración pero liveness web='${live.state}' ` +
+            `(${live.estado ?? "s/estado"}) — posible pedido bot VIVO; NO se cancela local, se reintenta.`,
+          );
+        }
+      } catch (e) {
+        console.error("[dropi-cancel] liveness web falló:", e);
+      }
+    } else {
+      // Sin teléfono no hay segundo veredicto confiable. ÚLTIMO RECURSO: se
+      // conserva el comportamiento viejo (404 integración ⇒ fantasma) para no
+      // dejar fantasmas sin teléfono atascados para siempre, PERO se loguea el
+      // riesgo de falso positivo (un bot vivo sin teléfono legible).
+      confirmedDead = true;
+      console.warn(
+        `[dropi-cancel] #${externalId}: 404 integración y SIN teléfono para confirmar por web — ` +
+        `se cancela local por el 404 (último recurso, RIESGO de falso fantasma si es un bot vivo).`,
+      );
+    }
+
+    if (confirmedDead) {
+      await markLocalCanceled();
+      return {
+        ok: true, canceled: true, dropiMissing: true, externalId,
+        note: "La orden no existe para Dropi — se canceló localmente. Si reaparece en unos minutos, es un pedido del panel/bot de Dropi: cancelalo desde el panel.",
+      };
+    }
   }
 
   // 3) La orden EXISTE en Dropi pero rechazó la cancelación → fallo real. NO

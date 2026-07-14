@@ -41,4 +41,20 @@ describe('locationMatches (contrato)', () => {
       'Huila',
     )).toBe(false);
   });
+
+  // Fix #45: ciudad corta que es substring de otra distinta NO debe matchear.
+  it('ciudad-substring NO matchea (Baba dentro de Babahoyo)', () => {
+    expect(locationMatches(
+      'Direccion en Babahoyo, Los Rios',
+      'Baba',
+      'Los Rios',
+    )).toBe(false);
+  });
+  it('ciudad-substring NO matchea (Cali dentro de Calima)', () => {
+    expect(locationMatches(
+      'Vereda en Calima, Valle',
+      'Cali',
+      'Valle',
+    )).toBe(false);
+  });
 });

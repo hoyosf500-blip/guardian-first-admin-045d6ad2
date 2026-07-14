@@ -467,10 +467,15 @@ export default function CrmCallView({
     if (detectedKind === 'pickup_office') return;
 
     const heur = heuristicValidate(previewDireccion, countryCode);
-    if (heur.decision === 'green') return;
+    // heuristicValidate solo setea .decision para pickup_office / rural-CO;
+    // para direcciones URBANAS devuelve solo score. Derivamos la decisión del
+    // score (mismos cortes que visualDecisionCrm: 80=green/50=yellow) para que
+    // una green urbana fuerte NO se reescriba en falso a yellow.
+    const derived = heur.decision ?? (heur.score >= 80 ? 'green' : heur.score >= 50 ? 'yellow' : 'red');
+    if (derived === 'green') return;
 
     staleGreenOverrideIdsCrm.add(previewDbId);
-    const decision = heur.decision ?? 'yellow';
+    const decision = derived;
     const missing_fields = heur.missing_fields ?? issuesToMissingFields(heur.issues ?? []);
     void supabase
       .from('orders')

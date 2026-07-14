@@ -57,4 +57,12 @@ describe('mapAddressKind', () => {
   it('"pasaje comercial" detecta pickup_office', () => {
     expect(mapAddressKind('pasaje comercial centro de Bogotá local 5')).toBe('pickup_office');
   });
+
+  // Fix #19: "centro comercial" como REFERENCIA (no destino) NO es pickup.
+  it('domicilio cerca del centro comercial NO es pickup', () => {
+    expect(mapAddressKind('Calle 8 #5-67 casa a 3 cuadras del centro comercial, entrega a domicilio')).toBe('urban');
+  });
+  it('recojo en el centro comercial local 5 SÍ es pickup', () => {
+    expect(mapAddressKind('recojo en el centro comercial local 5')).toBe('pickup_office');
+  });
 });

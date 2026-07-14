@@ -1,13 +1,18 @@
 import { useOrders } from '@/contexts/OrderContext';
 import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
-import { CONF_TARGET_PCT } from '@/lib/confirmationRate';
+import { CONF_TARGET_PCT, confRateBySample } from '@/lib/confirmationRate';
 
 export default function CounterBar() {
   const { workQueue, counter } = useOrders();
   const total = counter.conf + counter.canc + counter.noresp;
   const goal = workQueue.length || 1;
   const pct = Math.min(100, Math.round(total / goal * 100));
-  const tasa = total > 0 ? Math.round(counter.conf / total * 100) : 0;
+  // Tasa de confirmación MADURA: conf ÷ (conf+canc), SIN noresp en el denominador
+  // (fuente única confirmationRate.ts). Antes se usaba conf÷(conf+canc+noresp),
+  // fórmula diluida obsoleta que pintaba rojo un día con muchos N/R aunque la
+  // confirmación real superara la meta. Solo decide el COLOR de la barra vs meta;
+  // el conteo crudo mostrado sigue siendo cobertura (total/goal).
+  const tasa = confRateBySample(counter.conf, counter.canc).tasa ?? 0;
 
   if (workQueue.length === 0) return null;
 

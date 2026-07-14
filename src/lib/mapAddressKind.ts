@@ -15,9 +15,15 @@ const PICKUP_PATTERNS = [
   /\bof\s+(inter[\s-]?rapid|servientrega|envia|coordinadora|tcc|domina|veloces)/i,
   // "local NN" + transportadora cerca o "comercial" → punto de retiro comercial.
   /\blocal\s+\d+.*\b(inter|servientrega|envia|coordinadora|tcc|domina|comercial)/i,
-  // Pasaje comercial / centro comercial (referencia comercial, no domicilio).
-  /\bpasaje\s+comercial\b/i,
-  /\bcentro\s+comercial\b/i,
+  // Centro/pasaje comercial SOLO cuenta como retiro cuando es el DESTINO de
+  // recogida, no una simple referencia ("casa cerca del centro comercial,
+  // entrega a domicilio"). Para no clasificar mal esos casos se exige que:
+  //   (a) el "centro/pasaje comercial" abra la dirección (es el núcleo), o
+  //   (b) venga acompañado de una palabra de recogida (reclamo/recojo/retiro/
+  //       oficina/local/stand/of) inmediatamente antes o después.
+  /^\s*(?:pasaje|centro)\s+comercial\b/i,
+  /\b(?:recl(?:amo|ama|amar|amará)|recojo|recoge|retir\w*|oficina|local\s*\d*|stand)\b[^.]{0,30}(?:pasaje|centro)\s+comercial\b/i,
+  /\b(?:pasaje|centro)\s+comercial\b[^.]{0,30}\b(?:local|stand|oficina|of)\b/i,
   // "hotel <nombre>" + "of <transportadora>" → casi siempre punto de retiro.
   /hotel\s+\w+\s+of\s+\w+/i,
 ];

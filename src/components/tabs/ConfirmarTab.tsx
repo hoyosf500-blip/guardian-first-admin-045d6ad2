@@ -47,6 +47,24 @@ interface Props {
   onLogout: () => void;
 }
 
+// Días calendario REALES desde la fecha del pedido, recalculados en cada render
+// (misma lógica que WorkList.diasReales, que es con lo que se colorean las filas).
+// El campo `o.dias` se congela en la última sincronización: con el sync atrasado/
+// throttleado (caso Ecuador) un pedido viejo mostraba días de menos → los pills
+// d7/d46 contradecían el color de las filas. Fallback a `o.dias` si la fecha no parsea.
+function diasReales(o: OrderData): number {
+  try {
+    const d = parseDate(o.fecha);
+    if (d && !isNaN(d.getTime())) {
+      const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+      if (diff >= 0) return diff;
+    }
+  } catch {
+    // ignore — caemos al fallback
+  }
+  return Math.max(0, o.dias ?? 0);
+}
+
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
@@ -356,7 +374,12 @@ export default function ConfirmarTab({ profile }: Props) {
   }, [filteredItems]);
 
   const total = counter.conf + counter.canc + counter.noresp;
-  const pending = visibleQueue.filter(o => !o.result).length;
+  // "por confirmar" debe alinearse con lo que la operadora realmente ve/puede
+  // accionar: la lista (filteredItems) esconde los lockeados por otra asesora
+  // (isLockedByOther). Si el headline los contara, superaría la lista.
+  const pending = visibleQueue.filter(
+    o => !o.result && !isLockedByOther(o, user?.id ?? null, Date.now()),
+  ).length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -526,10 +549,14 @@ export default function ConfirmarTab({ profile }: Props) {
               solo los pendientes que todavía no marcaste — accionable. */}
           {(() => {
             const tocadosHoy = myConfirmTouchedToday.size;
-            const sinTocarEnCola = visibleQueue.filter(o => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
+            // Contar sobre EL MISMO arreglo que alimenta la lista (filteredItems,
+            // ya con isLockedByOther + filtro 'pending'/activo + fecha/búsqueda
+            // aplicados). Antes se contaba sobre visibleQueue crudo → el chip
+            // decía 8 pero la lista mostraba 5 y no bajaba (divergían).
+            const sinTocarEnCola = filteredItems.filter(o => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
             const tone = sinTocarEnCola === 0
               ? 'success'
-              : sinTocarEnCola >= Math.max(1, Math.ceil(visibleQueue.length / 2))
+              : sinTocarEnCola >= Math.max(1, Math.ceil(filteredItems.length / 2))
                 ? 'danger'
                 : 'warning';
             const dotTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
@@ -570,8 +597,8 @@ export default function ConfirmarTab({ profile }: Props) {
               final, separado por un border-l. Ahorra una fila en desktop y
               mantiene la misma jerarquía en mobile (wrap natural). */}
           {(() => {
-            const d7 = visibleQueue.filter(o => o.dias >= 7 && !o.result).length;
-            const d46 = visibleQueue.filter(o => o.dias >= 4 && o.dias <= 6 && !o.result).length;
+            const d7 = visibleQueue.filter(o => diasReales(o) >= 7 && !o.result).length;
+            const d46 = visibleQueue.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6 && !o.result; }).length;
             return (
               <div className="mb-4 bg-card border border-border rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 hover:border-border-strong transition-colors">
                 <div className="flex items-baseline gap-2">

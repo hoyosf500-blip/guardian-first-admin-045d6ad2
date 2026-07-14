@@ -1194,6 +1194,19 @@ Deno.serve(async (req: Request) => {
       console.warn("dropi-cron cancel-retry exception:", err);
     }
 
+    // Cancelar pedidos huérfanos (global). Va ANTES del barrido web del
+    // pair-resolver: es un RPC barato (una sola llamada) y el pair-resolver
+    // puede quedarse sin tiempo (login+listado por tienda) y morir contra el
+    // wall-limit del edge. Corriendo primero, un pair-resolver truncado por
+    // deadline NO se lleva puesto el cancel_orphan.
+    try {
+      const { data, error: cancelOrphanError } = await sb.rpc("cancel_orphan_pending_orders");
+      if (cancelOrphanError) console.warn("cancel_orphan_pending_orders error:", cancelOrphanError.message);
+      else if (((data as number) || 0) > 0) console.log(`Cancelados ${data} pedidos huérfanos`);
+    } catch (err) {
+      console.warn("cancel_orphan_pending_orders exception:", err);
+    }
+
     // Resolver PARES stub+reenvío del bot de Dropi (auditoría 2026-07-12).
     // El bot deja un STUB (invisible para el panel y para TODAS las superficies
     // por-id — el GET de integración da 404) y Dropi crea el pedido REAL con
@@ -1232,6 +1245,14 @@ Deno.serve(async (req: Request) => {
         // con espacios van entre comillas dobles dentro del paréntesis).
         .not("estado", "in", '("CANCELADO","ENTREGADO","REEMPLAZADA","DEVOLUCION","DEVOLUCION EN CAMINO","NOVEDAD SOLUCIONADA","RECHAZADO")')
         .gte("created_at", activesFrom.toISOString())
+        // ORDER BY determinístico: sin él, el .limit(500) trunca en orden
+        // arbitrario y en tiendas con >500 no-terminales la HERMANA de un stub
+        // puede caer fuera de la página → el par nunca se forma y el stub queda
+        // pendiente para siempre. Orden estable (created_at, external_id) hace
+        // que la truncación sea reproducible y que las hermanas del mismo
+        // cliente (compradas casi a la vez) caigan juntas dentro de la página.
+        .order("created_at", { ascending: true })
+        .order("external_id", { ascending: true })
         .limit(500);
       type ParRow = { id: string; external_id: string | null; phone: string | null; store_id: string; created_at: string; estado: string | null };
       const porTel = new Map<string, ParRow[]>();
@@ -1246,7 +1267,17 @@ Deno.serve(async (req: Request) => {
       const pairCfgByStore = new Map<string, StoreDropiConfig | null>();
       let pairChecks = 0;
       let stubsResueltos = 0;
+      // Guarda de headroom (gemela del conf-retry, `Date.now() + 60_000 <=
+      // postDeadline`): este barrido corre DESPUÉS de los dos loops de retry
+      // (conf+canc) que pueden consumir hasta globalDeadline+20s, y cada
+      // iteración cara hace login web (ensureFreshSessionToken) + liveness web
+      // + sleep — sin la guarda una corrida pesada cruza el wall-limit del edge
+      // (~150s) y muere a mitad. Con +20s de gracia cabe en el wall limit; se
+      // deja headroom de 15s por iteración (login puede ser lento). Lo que no
+      // alcance a resolver esta corrida se resuelve en la próxima.
+      const pairDeadline = globalDeadline + 20_000;
       for (const grupo of porTel.values()) {
+        if (Date.now() + 15_000 > pairDeadline) break;
         if (grupo.length < 2) continue;
         if (pairChecks >= 5) break;
         // El más viejo por external_id numérico (Dropi autoincrementa); fallback created_at.
@@ -1304,15 +1335,6 @@ Deno.serve(async (req: Request) => {
       }
     } catch (err) {
       console.warn("dropi-cron pares stub+reenvío exception:", err);
-    }
-
-    // Cancelar pedidos huérfanos (global).
-    try {
-      const { data, error: cancelOrphanError } = await sb.rpc("cancel_orphan_pending_orders");
-      if (cancelOrphanError) console.warn("cancel_orphan_pending_orders error:", cancelOrphanError.message);
-      else if (((data as number) || 0) > 0) console.log(`Cancelados ${data} pedidos huérfanos`);
-    } catch (err) {
-      console.warn("cancel_orphan_pending_orders exception:", err);
     }
 
     console.log(`dropi-cron: Done — ${grandSynced} synced / ${grandTotal} from Dropi, ${activeConfigs.length} tiendas`);

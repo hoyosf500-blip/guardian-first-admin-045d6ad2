@@ -316,6 +316,11 @@ Deno.serve(async (req: Request) => {
     let fallbackVia: "web" | "web_sibling" | null = null;
     let fallbackStatus = 0;
     let liveExternalId = externalId;
+    // Carrera 23505 en el retarget (el cron ya trajo la hermana viva como fila
+    // propia): la fila stub quedó REEMPLAZADA (muerta) y orderRow.id ya NO es la
+    // fila viva. En ese caso el UPDATE de datos del cliente (abajo, ~:490) debe
+    // ir a la fila viva por external_id, no a la stub muerta.
+    let retargetReplaced = false;
 
     if (!dropi.ok) {
       const detail = String(dropi.body.message || dropi.body.error || dropi.rawText || "error").slice(0, 500);
@@ -445,6 +450,7 @@ Deno.serve(async (req: Request) => {
                   //     a la viva (o queda REEMPLAZADA si el cron ya la trajo)
                   //     + rastro warn en sync_logs.
                   const retarget = await retargetLocalOrder(sbAdmin, { orderRowId: orderRow.id, siblingId: sibling.id });
+                  retargetReplaced = retarget === "replaced";
                   await sbAdmin.from("sync_logs").insert({
                     source: "dropi-update-order-full",
                     status: "warn", synced_count: 1, duplicates_count: 0, total_count: 1,
@@ -487,7 +493,7 @@ Deno.serve(async (req: Request) => {
     // Usar sbAdmin: la membresía ya se validó arriba (línea ~115) y Dropi YA
     // aceptó el cambio. Si RLS con sbUser bloquea, queda Dropi actualizado y
     // DB local desincronizado — bug peor que el riesgo de bypass.
-    const { error: updateErr } = await sbAdmin
+    const localUpdate = sbAdmin
       .from("orders")
       .update({
         nombre: fullName,
@@ -495,8 +501,15 @@ Deno.serve(async (req: Request) => {
         email: email || null,
         last_edit_sync_at: new Date().toISOString(),
         last_edited_by: user.id,
-      })
-      .eq("id", orderRow.id);
+      });
+    // Si el retarget colisionó (23505), orderRow.id es la fila stub REEMPLAZADA
+    // (muerta) y la fila VIVA es otra (external_id = liveExternalId). Escribimos
+    // los datos del cliente en la viva por external_id para que su ficha local
+    // no quede con datos viejos. En el caso normal (retargeteada o sin
+    // fallback) orderRow.id ya apunta a la fila correcta.
+    const { error: updateErr } = await (retargetReplaced
+      ? localUpdate.eq("external_id", liveExternalId)
+      : localUpdate.eq("id", orderRow.id));
 
     if (updateErr) {
       // OJO: dropiAccepted:true — Dropi SÍ guardó los datos; lo que falló fue
