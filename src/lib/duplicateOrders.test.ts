@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { findSupersededPendingConf, findSupersededInSeg, type ProgressedOrder } from './duplicateOrders';
+import {
+  findSupersededPendingConf,
+  findSupersededPendingConfDetailed,
+  findSupersededInSeg,
+  isLocallyDead,
+  type ProgressedOrder,
+} from './duplicateOrders';
 import type { OrderData } from './orderUtils';
 
 // Fixtures mínimas: el helper solo lee phone, producto, externalId, fecha.
@@ -48,6 +54,77 @@ describe('findSupersededPendingConf', () => {
   it('matchea aunque el teléfono venga con prefijo de país / formato distinto', () => {
     const res = findSupersededPendingConf([pc({ phone: '0983975354' })], [prog({ phone: '+593983975354' })]);
     expect(res.has('5563193')).toBe(true);
+  });
+});
+
+describe('findSupersededPendingConfDetailed', () => {
+  it('el wrapper findSupersededPendingConf == keys del mapa detallado (equivalencia)', () => {
+    // Mismos fixtures que arriba: un match, un no-match por producto y un
+    // no-match por recompra vieja.
+    const pendings = [
+      pc({}),
+      pc({ externalId: '7000001', producto: 'OTRO PRODUCTO' }),
+      pc({ externalId: '7000002', fecha: '2026-05-26' }),
+    ];
+    const progs = [prog({}), prog({ external_id: '5570000', estado: 'ENTREGADO', fecha: '2026-03-01' })];
+    const set = findSupersededPendingConf(pendings, progs);
+    const map = findSupersededPendingConfDetailed(pendings, progs);
+    expect(new Set(map.keys())).toEqual(set);
+  });
+
+  it('devuelve byExternalId/byEstado del pedido que superó', () => {
+    const map = findSupersededPendingConfDetailed([pc({})], [prog({})]);
+    expect(map.get('5563193')).toEqual({ byExternalId: '5569313', byEstado: 'PENDIENTE' });
+  });
+
+  it('con dos progresados que matchean, elige el external_id numérico más alto (el más nuevo)', () => {
+    const a = prog({ external_id: '5569313', estado: 'PENDIENTE' });
+    const b = prog({ external_id: '5570000', estado: 'GUIA_GENERADA' });
+    // No importa el orden de llegada: gana el ID más alto.
+    const m1 = findSupersededPendingConfDetailed([pc({})], [a, b]);
+    expect(m1.get('5563193')).toEqual({ byExternalId: '5570000', byEstado: 'GUIA_GENERADA' });
+    const m2 = findSupersededPendingConfDetailed([pc({})], [b, a]);
+    expect(m2.get('5563193')).toEqual({ byExternalId: '5570000', byEstado: 'GUIA_GENERADA' });
+  });
+});
+
+describe('isLocallyDead', () => {
+  it('estados muertos localmente (cancelado/reemplazado/rechazado) → true', () => {
+    expect(isLocallyDead('REEMPLAZADA')).toBe(true);
+    expect(isLocallyDead('CANCELADO')).toBe(true);
+    expect(isLocallyDead('RECHAZADO')).toBe(true);
+  });
+
+  it('estados vivos o vacíos → false (esos NO van al panel pasivo)', () => {
+    expect(isLocallyDead('PENDIENTE CONFIRMACION')).toBe(false);
+    expect(isLocallyDead('PENDIENTE')).toBe(false);
+    expect(isLocallyDead('GUIA_GENERADA')).toBe(false);
+    expect(isLocallyDead(null)).toBe(false);
+    expect(isLocallyDead(undefined)).toBe(false);
+    expect(isLocallyDead('')).toBe(false);
+  });
+});
+
+describe('regresión incidente 2026-07-13 — duplicado VIVO #6107398', () => {
+  it('el pendiente vivo aparece en el mapa apuntando a #6107408 y NO está muerto → tarjeta accionable, no panel pasivo', () => {
+    const pendiente = pc({
+      externalId: '6107398',
+      estado: 'PENDIENTE CONFIRMACION',
+      phone: '990155096',
+      producto: 'EJERCITADOR PELVICO (Pantalla digital)',
+      fecha: '2026-07-13',
+    });
+    const reenvio = prog({
+      external_id: '6107408',
+      estado: 'PENDIENTE',
+      phone: '990155096',
+      producto: 'EJERCITADOR PELVICO (Pantalla digital)',
+      fecha: '2026-07-13',
+    });
+    const map = findSupersededPendingConfDetailed([pendiente], [reenvio]);
+    expect(map.get('6107398')).toEqual({ byExternalId: '6107408', byEstado: 'PENDIENTE' });
+    // Lo que rutea a la tarjeta con botón "Cancelar en Dropi": el viejo sigue vivo.
+    expect(isLocallyDead(pendiente.estado)).toBe(false);
   });
 });
 

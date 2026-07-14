@@ -51,6 +51,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, storeIdFromExternalId, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
+import { dropiWebFetch, WebFallbackError } from "../_shared/dropiWebQuote.ts";
+import { dropiGetOrderV2Detail, parseV2Status } from "../_shared/dropiOrderLiveness.ts";
 
 const DEFAULT_NEW_STATUS = "PENDIENTE";
 
@@ -187,14 +190,91 @@ const FUNNEL_RANK: Record<string, number> = {
 /** Señal de "la orden no existe para esta superficie": 404 explícito o el
  *  200 {isSuccess:false, status:404, "Orden no encontrada"} típico de los
  *  pedidos del bot (LucidBot/FINAL_ORDER) y de los borrados en Dropi.
+ *  Variantes reales: "Orden no encontrada", "no encontrado" y "No se encontró
+ *  registro" — esta última fue LA de los ~20 confirms fallidos del 2026-07-13
+ *  y el regex viejo (/no encontrada|.../) NO la matcheaba, así que esos fallos
+ *  caían al error genérico sin clasificarse como pedido bot. Alineado con la
+ *  variante probada de _shared/dropiCancelOrder.ts.
  *  NO usar un 400 a secas — un bad-request genérico no es esta señal. */
 function notFoundSignal(httpStatus: number, b: Record<string, unknown>): boolean {
   return (
     httpStatus === 404 ||
     (b.isSuccess === false &&
       (Number(b.status) === 404 ||
-        /no encontrada|no existe|not found/i.test(String(b.message || ""))))
+        /no (se )?encontr|no existe|not found/i.test(String(b.message || ""))))
   );
+}
+
+/** FALLBACK WEB para confirmar pedidos clase-bot (2026-07-13): la API de
+ *  integración no los ve ("No se encontró registro") pero el canal WEB del
+ *  panel SÍ los escribe — el mismo PUT /api/orders/myorders/{id} que usa la
+ *  cancelación (dropiCancelOrder, verificado en vivo hoy sobre un pedido bot:
+ *  #6107398 quedó CANCELADO). Tras el PUT, VERIFICA por el detalle v2 que el
+ *  status realmente avanzó (nunca creer el 200 de Dropi). Nunca tira. */
+async function webConfirmFallback(
+  cfg: { base: string; sessionToken: string; apiKey: string; storeUrl: string },
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  externalId: string,
+  newStatus: string,
+): Promise<
+  | { ok: true; verified: boolean; currentStatus: string | null; putStatus: number }
+  | { ok: false; detail: string; putStatus: number; putBody?: unknown }
+> {
+  try {
+    cfg.sessionToken = await ensureFreshSessionToken(sb, cfg);
+  } catch (e) {
+    const msg = e instanceof WebFallbackError ? e.message : (e instanceof Error ? e.message : String(e));
+    return { ok: false, detail: `sin sesión web: ${msg}`.slice(0, 300), putStatus: 0 };
+  }
+  let putStatus = 0;
+  let putBody: Record<string, unknown> | undefined;
+  try {
+    const put = await dropiWebFetch(
+      cfg,
+      `/api/orders/myorders/${encodeURIComponent(externalId)}`,
+      { method: "PUT", body: { status: newStatus } },
+    );
+    putStatus = put.status;
+    putBody = put.body as Record<string, unknown>;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, detail: `PUT web lanzó: ${msg}`.slice(0, 300), putStatus: 0 };
+  }
+  const putOk = putStatus >= 200 && putStatus < 300 && putBody?.isSuccess !== false;
+  // Verificar SIEMPRE por v2 (el PUT web también puede devolver 200 ignorando).
+  let currentStatus: string | null = null;
+  try {
+    const v2 = await dropiGetOrderV2Detail(cfg, externalId);
+    if (v2.ok) currentStatus = parseV2Status(v2.body);
+  } catch (e) {
+    console.error("dropi-update-order: verify v2 del fallback web lanzó:", e);
+  }
+  if (currentStatus) {
+    const rank = FUNNEL_RANK[normalizeStatus(currentStatus)];
+    const target = FUNNEL_RANK[normalizeStatus(newStatus)];
+    if (rank !== undefined && target !== undefined && rank >= target) {
+      return { ok: true, verified: true, currentStatus, putStatus };
+    }
+    // v2 legible y el status NO avanzó → el PUT web no aplicó de verdad.
+    return {
+      ok: false,
+      detail: `PUT web [${putStatus}] pero el status sigue ${currentStatus}`,
+      putStatus,
+      putBody,
+    };
+  }
+  if (putOk) {
+    // PUT aceptado y v2 ilegible: no castigamos (mismo criterio leniente que
+    // el verify de integración) pero queda verified:false y logueado.
+    return { ok: true, verified: false, currentStatus: null, putStatus };
+  }
+  return {
+    ok: false,
+    detail: String(putBody?.message || putBody?.error || `PUT web falló [${putStatus}]`).slice(0, 300),
+    putStatus,
+    putBody,
+  };
 }
 
 async function dropiSanityCheck(
@@ -371,6 +451,40 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ---- PROBE (solo admin, 2026-07-13): diagnóstico crudo del camino de
+    // confirmación sobre UN pedido — integration PUT + fallback web + v2.
+    // Ejecuta los PUTs DE VERDAD (la gracia es confirmar un pedido bot real que
+    // las asesoras necesitan confirmado) pero no escribe sync_logs de éxito.
+    if (body.probe === true) {
+      const isAdmin = (roles || []).some((r: { role: string }) => r.role === "admin");
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "probe es solo para admin" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const integrationPut = await dropiPutOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId, newStatus);
+      const web = await webConfirmFallback(cfg, sb, externalId, newStatus);
+      let v2After: Record<string, unknown> = {};
+      try {
+        const v2 = await dropiGetOrderV2Detail(cfg, externalId);
+        v2After = { httpStatus: v2.httpStatus, statusParsed: v2.ok ? parseV2Status(v2.body) : null };
+      } catch (e) {
+        v2After = { error: e instanceof Error ? e.message : String(e) };
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          probe: true,
+          externalId,
+          newStatus,
+          integrationPut: { status: integrationPut.httpStatus, body: integrationPut.body },
+          webFallback: web,
+          v2After,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // ---- DryRun: just a sanity GET so the admin can verify connectivity ----
     if (dryRun) {
       const check = await dropiSanityCheck(cfg.base, cfg.apiKey, cfg.storeUrl);
@@ -466,10 +580,40 @@ Deno.serve(async (req: Request) => {
           console.error("dropi-update-order: GET de confirmación 404 lanzó:", e);
         }
         if (getConfirmsNotFound) {
+          // FALLBACK WEB (2026-07-13): la integración no ve pedidos clase-bot
+          // pero el canal web del panel SÍ los escribe (verificado hoy: el PUT
+          // web CANCELADO mató al bot #6107398). Intentar el mismo PUT con el
+          // status pedido + verificación v2 ANTES de rendirse con pedido_bot.
+          // Degradación segura: si el web también falla, la respuesta es la
+          // misma de siempre (pedido_bot) con el detalle del fallback.
+          const web = await webConfirmFallback(cfg, sb, externalId, newStatus);
+          if (web.ok) {
+            await sb.from("sync_logs").insert({
+              source: "dropi-update-order",
+              status: "success",
+              synced_count: 1,
+              duplicates_count: 0,
+              total_count: 1,
+              triggered_by: user?.id ?? null,
+              store_id: storeId,
+            });
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                verified: web.verified,
+                via: "web",
+                externalId,
+                newStatus,
+                currentStatus: web.currentStatus,
+                dropiHttpStatus: web.putStatus,
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
           const botError =
-            "Pedido del bot de Dropi — la API no permite actualizarlo; gestionalo en el panel de Dropi.";
+            `Pedido del bot de Dropi — la API no permite actualizarlo y el fallback web tampoco pudo (${web.detail}); gestionalo en el panel de Dropi.`;
           await logSyncError(
-            `pedido_bot: PUT y GET integración dan "Orden no encontrada" | external_id=${externalId} → ${newStatus}`,
+            `pedido_bot: PUT y GET integración dan "Orden no encontrada"; fallback web falló (${web.detail}) | external_id=${externalId} → ${newStatus}`,
           );
           // HTTP 200 con ok:false para que el cliente pueda LEER code/error
           // (con un 5xx, supabase.functions.invoke deja data=null).

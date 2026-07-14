@@ -64,6 +64,13 @@ interface ApplyResponse {
   warning?: string;
   dropiHttpStatus?: number;
   dropiBody?: unknown;
+  /** Cul-de-sac "ya fue reenviada" (code:'orden_ya_enviada'): el pedido hermano
+   *  ACTIVO al que Dropi forwardeó la compra — el que sí hay que gestionar. */
+  activeSibling?: { externalId: string; estado: string; total?: string };
+  siblings?: Array<{ externalId: string; estado: string }>;
+  /** Incidente 2026-07-13 (#6107398): duplicados que quedaron VIVOS en Dropi
+   *  tras la edición — hay que cancelarlos para evitar doble despacho. */
+  duplicatesAlive?: Array<{ externalId: string; estado: string }>;
 }
 
 interface Props {
@@ -384,6 +391,36 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const d = await parseInvoke<ApplyResponse>(data, error);
     if (d?.ok !== true) {
       const shortMsg = d?.error || (error instanceof Error ? error.message : 'Error desconocido');
+      // Cul-de-sac "ya fue reenviada": Dropi forwardeó la compra a OTRA orden
+      // viva — reintentar acá NO sirve (y es lo que duplicaba). Lo útil es ir
+      // al pedido hermano activo y gestionarlo, así que el toast lo linkea.
+      if (d?.code === 'orden_ya_enviada') {
+        await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
+        const sib = d?.activeSibling?.externalId;
+        toast.error(`${partialPrefix(clientApplied)}${shortMsg}`, {
+          description: dropiErrorDescription(shortMsg, d?.dropiHttpStatus, d?.dropiBody),
+          duration: 15000,
+          ...(sib
+            ? { action: { label: `Ver #${sib}`, onClick: () => window.open(`/pedido/${sib}`, '_blank') } }
+            : {}),
+        });
+        return null;
+      }
+      // EDICIÓN INCIERTA (incidente 2026-07-13, #6107398): la recreación no
+      // confirmó ni negó — el reintento a ciegas es justo lo que deja
+      // duplicados VIVOS en Dropi. El mensaje del server ya dice NO reintentes;
+      // acá NO invitamos al retry.
+      if (d?.code === 'creacion_incierta') {
+        await settleAudit(auditId, 'failed', `EDICIÓN INCIERTA — no reintentar: ${shortMsg}`);
+        toast.error(`${partialPrefix(clientApplied)}${shortMsg}`, {
+          description: dropiErrorDescription(
+            'Verificá en el panel de Dropi si la orden nueva quedó creada ANTES de tocar nada.',
+            d?.dropiHttpStatus, d?.dropiBody,
+          ),
+          duration: 20000,
+        });
+        return null;
+      }
       await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
       // Título según lo que REALMENTE llevaba este intento — el label fijo
       // "Transportadora/cantidades/valor" confundía cuando solo se tocó el
@@ -431,6 +468,31 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const d = await parseInvoke<ApplyResponse>(data, error);
     if (d?.ok !== true) {
       const shortMsg = d?.error || (error instanceof Error ? error.message : 'Error desconocido');
+      // Mismos culs-de-sac que en runApplyEdit: ni "ya fue reenviada" ni la
+      // creación incierta se arreglan reintentando — no invitamos al retry.
+      if (d?.code === 'orden_ya_enviada') {
+        await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
+        const sib = d?.activeSibling?.externalId;
+        toast.error(`${partialPrefix(clientApplied)}${shortMsg}`, {
+          description: dropiErrorDescription(shortMsg, d?.dropiHttpStatus, d?.dropiBody),
+          duration: 15000,
+          ...(sib
+            ? { action: { label: `Ver #${sib}`, onClick: () => window.open(`/pedido/${sib}`, '_blank') } }
+            : {}),
+        });
+        return null;
+      }
+      if (d?.code === 'creacion_incierta') {
+        await settleAudit(auditId, 'failed', `EDICIÓN INCIERTA — no reintentar: ${shortMsg}`);
+        toast.error(`${partialPrefix(clientApplied)}${shortMsg}`, {
+          description: dropiErrorDescription(
+            'Verificá en el panel de Dropi si la orden nueva quedó creada ANTES de tocar nada.',
+            d?.dropiHttpStatus, d?.dropiBody,
+          ),
+          duration: 20000,
+        });
+        return null;
+      }
       await settleAudit(auditId, 'failed', `EDICIÓN falló: ${shortMsg}`);
       toast.error(`${partialPrefix(clientApplied)}Valor: NO se aplicó`, {
         description: dropiErrorDescription(
@@ -492,6 +554,20 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
             : `Orden actualizada (${parts})`,
         );
         if (applyResult.warning) toast.warning(applyResult.warning, { duration: 12000 });
+        // DUPLICADO VIVO reportado por el server (incidente 2026-07-13): la
+        // orden vieja quedó ACTIVA en Dropi tras la edición → riesgo de doble
+        // despacho. Toast largo + link directo para cancelarla YA.
+        if (applyResult.duplicatesAlive?.length) {
+          const ids = applyResult.duplicatesAlive.map(x => `#${x.externalId}`);
+          const first = applyResult.duplicatesAlive[0].externalId;
+          toast.error(
+            `DUPLICADO VIVO en Dropi: ${ids.join(', ')} — cancelalo para evitar doble envío`,
+            {
+              duration: 30000,
+              action: { label: 'Ver', onClick: () => window.open(`/pedido/${first}`, '_blank') },
+            },
+          );
+        }
         // Función deployada VIEJA (sin el PUT REEMPLAZADA): la orden vieja queda viva
         // en Dropi → duplicado. Con la función nueva, oldReplaced viene true/false y
         // el caso false ya llega explicado en applyResult.warning.

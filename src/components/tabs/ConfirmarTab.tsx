@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
-import { findSupersededPendingConf, type ProgressedOrder } from '@/lib/duplicateOrders';
+import { findSupersededPendingConfDetailed, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { detectDuplicatePairs } from '@/lib/duplicatePairs';
 import { buildActiveDupIndex, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import { useShopifyValueMismatches } from '@/hooks/useShopifyPending';
@@ -30,6 +30,16 @@ import { cn, bogotaToday, formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 
 interface Props {
@@ -40,7 +50,7 @@ interface Props {
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
@@ -62,6 +72,9 @@ export default function ConfirmarTab({ profile }: Props) {
   // para detectar PENDIENTE CONFIRMACION duplicados/viejos y ocultarlos (ver abajo).
   const [progressedOrders, setProgressedOrders] = useState<ProgressedOrder[]>([]);
   const [dupExpanded, setDupExpanded] = useState(false);
+  // Duplicado VIVO cuya cancelación se está confirmando (AlertDialog).
+  // null = sin diálogo abierto. Mismo patrón que NotesPanel.
+  const [dupToCancel, setDupToCancel] = useState<OrderData | null>(null);
   const today = bogotaToday();
 
   // Preservación de scroll: cada refresh de realtime (cron Dropi cada 5 min,
@@ -190,10 +203,18 @@ export default function ConfirmarTab({ profile }: Props) {
   }, [phoneSig, activeStoreId]);
 
   // Duplicados: PENDIENTE CONFIRMACION ya superados por un pedido real más nuevo
-  // del mismo cliente+producto. Se ocultan de la cola (no se cancela nada).
-  const supersededIds = useMemo(
-    () => findSupersededPendingConf(workQueue, progressedOrders),
+  // del mismo cliente+producto. Se ocultan de la cola, pero desde el incidente
+  // 2026-07-13 (#6107398 vivo en Dropi, oculto sin botones, nadie lo podía
+  // cancelar → riesgo de doble despacho) se separan en dos destinos:
+  //  - muertos localmente (cancelado/reemplazado/rechazado) → panel pasivo.
+  //  - VIVOS → tarjeta roja accionable con "Cancelar en Dropi".
+  const supersededMap = useMemo(
+    () => findSupersededPendingConfDetailed(workQueue, progressedOrders),
     [workQueue, progressedOrders],
+  );
+  const supersededIds = useMemo(
+    () => new Set(supersededMap.keys()),
+    [supersededMap],
   );
   const visibleQueue = useMemo(
     () => workQueue.filter(o => !supersededIds.has(String(o.externalId))),
@@ -202,6 +223,15 @@ export default function ConfirmarTab({ profile }: Props) {
   const hiddenDuplicates = useMemo(
     () => workQueue.filter(o => supersededIds.has(String(o.externalId))),
     [workQueue, supersededIds],
+  );
+  // Split del incidente: solo los muertos localmente van al panel pasivo.
+  const hiddenDeadDups = useMemo(
+    () => hiddenDuplicates.filter(o => isLocallyDead(o.estado)),
+    [hiddenDuplicates],
+  );
+  const liveDups = useMemo(
+    () => hiddenDuplicates.filter(o => !isLocallyDead(o.estado)),
+    [hiddenDuplicates],
   );
 
   // ⚠ YA REENVIADO (pares stub+reenvío, auditoría 2026-07-12): el mismo
@@ -694,20 +724,101 @@ export default function ConfirmarTab({ profile }: Props) {
             <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} />
           </div>
 
-          {hiddenDuplicates.length > 0 && (
+          {/* ⚠ DUPLICADOS VIVOS (incidente 2026-07-13, #6107398): el pedido viejo
+              del par duplicado sigue ACTIVO en Dropi (no está cancelado ni
+              reemplazado ni rechazado) → puede despacharse dos veces. Antes caía
+              al panel pasivo de abajo, sin botones, y nadie lo podía cancelar.
+              Acá va con acción directa: "Cancelar en Dropi" vía markResult('canc')
+              (la cancelación se sincroniza con Dropi de verdad). */}
+          {liveDups.length > 0 && (
+            <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 overflow-hidden">
+              <div className="px-4 py-2.5 flex items-center gap-2 text-xs">
+                <AlertTriangle size={14} className="text-destructive shrink-0" aria-hidden="true" />
+                <span className="font-semibold text-foreground">
+                  ⚠ {liveDups.length} DUPLICADO{liveDups.length > 1 ? 'S' : ''} VIVO{liveDups.length > 1 ? 'S' : ''} en Dropi
+                </span>
+                <span className="text-muted-foreground">— el pedido viejo sigue activo y puede despacharse dos veces</span>
+              </div>
+              <div className="border-t border-destructive/30 divide-y divide-border">
+                {liveDups.map(o => {
+                  const info = supersededMap.get(String(o.externalId));
+                  return (
+                    <div key={o.externalId || o.dbId} className="px-4 py-2 flex items-center gap-2 text-xs flex-wrap">
+                      <span className="font-medium text-foreground truncate">{o.nombre}</span>
+                      <a href={`/pedido/${o.externalId}`} className="font-mono text-[10px] text-primary hover:underline">#{o.externalId}</a>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-destructive/15 text-destructive border-destructive/30">
+                        {o.estado}
+                      </span>
+                      <span className="text-muted-foreground truncate">{o.producto}</span>
+                      <span className="tabular-nums text-muted-foreground">{formatCOP(Number(o.valor || 0))}</span>
+                      {info && (
+                        <span className="text-muted-foreground">
+                          más nuevo:{' '}
+                          <a href={`/pedido/${info.byExternalId}`} className="font-mono text-primary hover:underline">#{info.byExternalId}</a>
+                        </span>
+                      )}
+                      <span className="ml-auto">
+                        {o.result ? (
+                          <span className="text-[10px] font-semibold text-muted-foreground">Gestionado</span>
+                        ) : (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="h-7 text-[11px]"
+                            onClick={() => setDupToCancel(o)}
+                          >
+                            Cancelar en Dropi
+                          </Button>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Confirmación de cancelación del duplicado vivo — AlertDialog (shadcn),
+              mismo patrón que NotesPanel (estilizado, accesible, respeta el tema). */}
+          <AlertDialog open={!!dupToCancel} onOpenChange={(op) => { if (!op) setDupToCancel(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Cancelar el pedido #{dupToCancel?.externalId} en Dropi?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Es un duplicado: queda vivo el pedido #{dupToCancel ? (supersededMap.get(String(dupToCancel.externalId))?.byExternalId ?? '?') : ''} del mismo cliente. La cancelación se envía a Dropi de verdad.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Volver</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (!dupToCancel) return;
+                    const nuevoId = supersededMap.get(String(dupToCancel.externalId))?.byExternalId ?? '?';
+                    void markResult(dupToCancel, 'canc', `Duplicado — ya existe el pedido #${nuevoId} del mismo cliente`);
+                    setDupToCancel(null);
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Cancelar en Dropi
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {hiddenDeadDups.length > 0 && (
             <div className="mb-4 rounded-xl border border-border bg-muted/40 overflow-hidden">
               <button onClick={() => setDupExpanded(e => !e)}
                 className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs">
                 <AlertTriangle size={14} className="text-muted-foreground shrink-0" aria-hidden="true" />
                 <span className="font-semibold text-foreground">
-                  {hiddenDuplicates.length} pedido{hiddenDuplicates.length > 1 ? 's' : ''} oculto{hiddenDuplicates.length > 1 ? 's' : ''} por duplicado
+                  {hiddenDeadDups.length} pedido{hiddenDeadDups.length > 1 ? 's' : ''} oculto{hiddenDeadDups.length > 1 ? 's' : ''} por duplicado
                 </span>
                 <span className="text-muted-foreground">— ya hay un pedido más nuevo del mismo cliente</span>
                 <span className="ml-auto text-muted-foreground">{dupExpanded ? 'Ocultar' : 'Ver'}</span>
               </button>
               {dupExpanded && (
                 <div className="border-t border-border divide-y divide-border">
-                  {hiddenDuplicates.map(o => (
+                  {hiddenDeadDups.map(o => (
                     <div key={o.externalId || o.dbId} className="px-4 py-2 flex items-center gap-3 text-xs">
                       <span className="font-medium text-foreground truncate">{o.nombre}</span>
                       <span className="font-mono text-[10px] text-muted-foreground">#{o.externalId}</span>
