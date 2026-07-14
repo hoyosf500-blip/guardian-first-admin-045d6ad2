@@ -3,8 +3,9 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { dropiHostFor } from "../_shared/dropiHosts.ts";
 import { loadStoreConfig, type StoreDropiConfig } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
-import { cancelOrderInDropi, dropiGetOrder, notFoundSignal, type CancelOrderResult } from "../_shared/dropiCancelOrder.ts";
+import { cancelOrderInDropi, dropiGetOrder, type CancelOrderResult } from "../_shared/dropiCancelOrder.ts";
 import { checkOrderLivenessWeb } from "../_shared/dropiOrderLiveness.ts";
+import { confirmLiveSibling, webConfirmFallback } from "../_shared/dropiConfirmOrder.ts";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
@@ -124,6 +125,17 @@ const NOT_BOT_FILTER = "result_notes.is.null,result_notes.not.ilike.BOT-SIN-API*
 function isBotClassFailure(httpStatus: number, errText: string): boolean {
   return httpStatus === 404 || BOT_SIGNAL_RE.test(String(errText || ""));
 }
+
+// ---- Rescate WEB en el retry de confirmaciones (W4, 2026-07-13) ----
+// Los pedidos clase-bot NO son escribibles por integración pero SÍ por el
+// canal web (webConfirmFallback) o vía su hermana viva (confirmLiveSibling) —
+// el MISMO rescate que corre cuando la asesora confirma desde el CRM. Antes el
+// cron solo quemaba el cap BOT-SIN-API sin intentarlo. CAP de 3 rescates por
+// corrida: presupuesto anti-throttle — cada rescate cuesta varios requests web
+// (login + PUT + listado-teléfono, y hasta detalles v2 si hay hermanas) y el
+// cron corre cada 5 min; sin cap, una cola grande de clase-bot re-dispararía
+// el mismo 429 que originó los failed.
+const CRON_MAX_WEB_RESCUES = 3;
 
 // ---- "YA confirmado" (no es un fallo) ----
 // El PUT PENDIENTE CONFIRMACION → PENDIENTE falla con "La orden no se encuentra
@@ -836,10 +848,10 @@ Deno.serve(async (req: Request) => {
       if (failedRows && failedRows.length > 0) {
         const orderIds = (failedRows as Array<{ order_id: string }>).map(r => r.order_id);
         const { data: ordersForRetry } = await sb
-          .from("orders").select("id, external_id, store_id, estado").in("id", orderIds);
-        const orderById = new Map<string, { external_id: string | null; store_id: string; estado: string | null }>();
-        (ordersForRetry || []).forEach((o: { id: string; external_id: string | null; store_id: string; estado: string | null }) => {
-          orderById.set(o.id, { external_id: o.external_id, store_id: o.store_id, estado: o.estado });
+          .from("orders").select("id, external_id, store_id, estado, phone, nombre").in("id", orderIds);
+        const orderById = new Map<string, { id: string; external_id: string | null; store_id: string; estado: string | null; phone: string | null; nombre: string | null }>();
+        (ordersForRetry || []).forEach((o: { id: string; external_id: string | null; store_id: string; estado: string | null; phone: string | null; nombre: string | null }) => {
+          orderById.set(o.id, { id: o.id, external_id: o.external_id, store_id: o.store_id, estado: o.estado, phone: o.phone, nombre: o.nombre });
         });
         // Anti-throttle 2026-07-07: antes este loop re-PUTeaba hasta 50 filas
         // cada 5 min PARA SIEMPRE, a 2 req/s, sin mirar 429 ni deadline — el
@@ -854,6 +866,12 @@ Deno.serve(async (req: Request) => {
         // tras dos tiendas pesadas (el retry se saltearía TODA corrida pesada
         // aunque no haya throttle); +20s cabe en el wall limit (~150s).
         const postDeadline = globalDeadline + 20_000;
+        // Config + session token web fresco por tienda, UNA sola vez por
+        // corrida (mismo patrón lazy del cancel-retry): null = tienda salteada
+        // (login falló / sin credenciales) — sin sesión web no hay rescate y
+        // la fila sigue el flujo normal de conteo de intentos.
+        const confWebCfgByStore = new Map<string, StoreDropiConfig | null>();
+        let rescatesWeb = 0;
         let retryOk = 0, retryFail = 0, retryDeferred = 0;
         for (const row of failedRows as Array<{ id: string; order_id: string; result_notes: string | null }>) {
           if (Date.now() > postDeadline) break;
@@ -914,11 +932,63 @@ Deno.serve(async (req: Request) => {
             }
             await sleep(RATE_LIMIT_MS);
           }
-          if (r.ok || alreadyConfirmed) {
+          // RESCATE WEB clase-bot (W4): el PUT de integración no los ve, pero
+          // el canal web SÍ — mismo camino que cuando la asesora confirma desde
+          // el CRM (webConfirmFallback y, si el stub no es escribible, la
+          // hermana viva vía confirmLiveSibling). Éxito → la fila queda synced
+          // SIN sumar el intento BOT (la meta se cumplió). Fallo → sigue el
+          // flujo normal y ahí sí cuenta el intento.
+          let rescueNote: string | null = null;
+          if (
+            !r.ok && !alreadyConfirmed &&
+            isBotClassFailure(r.httpStatus, r.error || "") &&
+            rescatesWeb < CRON_MAX_WEB_RESCUES &&
+            // Headroom de 60s: un rescate encadena varios requests web (login +
+            // PUT + listado; con hermana: +detalles v2 +PUT +listado) con
+            // timeouts de 30s c/u y SIN deadline interno — arrancarlo al filo
+            // de postDeadline puede matar la corrida a mitad del post-proceso.
+            Date.now() + 60_000 <= postDeadline
+          ) {
+            let webCfg = confWebCfgByStore.get(sid);
+            if (webCfg === undefined) {
+              try {
+                const loaded = await loadStoreConfig(sb, sid);
+                if (!loaded.apiKey) throw new Error("tienda sin Clave API de Dropi");
+                loaded.sessionToken = await ensureFreshSessionToken(sb, loaded);
+                webCfg = loaded;
+              } catch (e) {
+                console.warn(
+                  `dropi-cron: rescate web — credenciales/login fallaron para la tienda ${sid}, se saltea esta corrida:`,
+                  e instanceof Error ? e.message : e,
+                );
+                webCfg = null;
+              }
+              confWebCfgByStore.set(sid, webCfg);
+            }
+            if (webCfg) {
+              rescatesWeb++;
+              const web = await webConfirmFallback(webCfg, sb, ord.external_id, "PENDIENTE", String(ord.phone || ""));
+              if (web.ok) {
+                rescueNote = "confirmado vía web (rescate cron)";
+              } else {
+                const sib = await confirmLiveSibling(webCfg, sb, {
+                  stubId: ord.external_id,
+                  newStatus: "PENDIENTE",
+                  phone: String(ord.phone || ""),
+                  nombre: String(ord.nombre || ""),
+                  orderRowId: ord.id,
+                  storeId: sid,
+                  source: "dropi-cron",
+                });
+                if (sib) rescueNote = "confirmado vía web (rescate cron)";
+              }
+            }
+          }
+          if (r.ok || alreadyConfirmed || rescueNote) {
             retryOk++;
             await sb.from("order_results").update({
               dropi_sync_status: "synced",
-              result_notes: null,
+              result_notes: rescueNote,
             }).eq("id", row.id);
           } else {
             retryFail++;
@@ -1120,9 +1190,15 @@ Deno.serve(async (req: Request) => {
     // está en PENDIENTE / PENDIENTE CONFIRMACION — un "más viejo" con guía es
     // un pedido real: nunca retirar algo despachado.
     //
-    // Al MÁS VIEJO se le hace el GET de integración; SOLO si da la señal 404
-    // (stub confirmado — un cliente con 2 compras reales NO la da) se marca
-    // REEMPLAZADA local (excluida de colas y métricas, PR #111).
+    // Al MÁS VIEJO se le corre checkOrderLivenessWeb (canal web, session
+    // token): la señal de muerte es el LISTADO buscado por teléfono — ausente
+    // del listado CON hermanas visibles del mismo cliente = borrado/soft-delete
+    // (las REEMPLAZADA reciben deleted_at y desaparecen), o presente con status
+    // terminal. El 404 del GET de integración YA NO se usa: para pedidos
+    // clase-bot es MENTIROSO — dan 404 aunque estén VIVOS en el panel
+    // (incidente Fausto 2026-07-13) — y retirar por esa señal arriesga doble
+    // envío. SOLO live.state==='dead' marca REEMPLAZADA local (excluida de
+    // colas y métricas, PR #111); 'alive'/'unknown' → skip logueado.
     // Verificado 2026-07-13: la marca sobrevive a las corridas del cron (el
     // stub no reaparece en la ventana del sync porque su estado nunca cambia);
     // si Dropi lo re-listara vivo, el upsert lo resucita solo (auto-corrección,
@@ -1171,7 +1247,12 @@ Deno.serve(async (req: Request) => {
         if (cfgPar === undefined) {
           try {
             const loaded = await loadStoreConfig(sb, sidPar);
-            cfgPar = loaded.apiKey ? loaded : null;
+            if (!loaded.apiKey) throw new Error("tienda sin Clave API de Dropi");
+            // El liveness va por el canal WEB → necesita session token fresco.
+            // Si el login falla → null → skip (degradación segura: sin sesión
+            // no se retira NADA a ciegas).
+            loaded.sessionToken = await ensureFreshSessionToken(sb, loaded);
+            cfgPar = loaded;
           } catch {
             cfgPar = null;
           }
@@ -1180,12 +1261,18 @@ Deno.serve(async (req: Request) => {
         if (!cfgPar) continue;
         pairChecks++;
         try {
-          const check = await dropiGetOrder(cfgPar.base, cfgPar.apiKey, cfgPar.storeUrl, viejo.external_id);
-          if (!check.ok && notFoundSignal(check.httpStatus, check.body)) {
+          const live = await checkOrderLivenessWeb(cfgPar, viejo.external_id, { phone: String(viejo.phone || "") });
+          if (live.state === "dead") {
             await sb.from("orders").update({ estado: "REEMPLAZADA" }).eq("id", viejo.id);
             stubsResueltos++;
             console.log(
               `dropi-cron: par stub+reenvío — stub #${viejo.external_id} → REEMPLAZADA (grupo de ${grupo.length}, tel …${String(viejo.phone || "").slice(-4)})`,
+            );
+          } else {
+            // 'alive' o 'unknown' → NO retirar (sesgo conservador del liveness:
+            // sin evidencia de muerte, un retiro en falso arriesga doble envío).
+            console.log(
+              `dropi-cron: par stub+reenvío — #${viejo.external_id} liveness=${live.state} (via ${live.via}${live.estado ? `, ${live.estado}` : ""}) → skip`,
             );
           }
         } catch (e) {

@@ -266,14 +266,26 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
 
   const settleAudit = async (id: string | null, status: 'synced' | 'failed', notes?: string) => {
     if (!id) return;
-    // Best-effort (mismo cast que los updates de order_results en OrderContext);
-    // si RLS bloquea, la fila queda 'pending' y el panel la muestra a los 15 min.
-    await (supabase.from('order_results') as unknown as {
-      update: (v: Record<string, unknown>) => { eq: (c: string, v: string) => Promise<unknown> };
+    // Respaldo client-side: ya existe política UPDATE en order_results
+    // (migración 20260714000000) y además las edges settlean server-side por
+    // auditId — este settle queda como respaldo para ventanas de edge vieja.
+    // El guard 'pending' evita pisar el veredicto del server: si la edge ya
+    // settleó a 'synced' y la RESPUESTA se perdió en el transporte, el branch
+    // failed del cliente NO debe reescribirla a 'failed' (falso positivo).
+    // El .select('id') detecta el no-op (0 filas = ya settleada o RLS).
+    const { data } = await (supabase.from('order_results') as unknown as {
+      update: (v: Record<string, unknown>) => {
+        eq: (c: string, v: string) => {
+          eq: (c: string, v: string) => { select: (c: string) => Promise<{ data: unknown[] | null }> };
+        };
+      };
     }).update({
       dropi_sync_status: status,
       ...(notes ? { result_notes: notes.slice(0, 300) } : {}),
-    }).eq('id', id);
+    }).eq('id', id).eq('dropi_sync_status', 'pending').select('id');
+    if (!data || data.length === 0) {
+      console.warn('[settleAudit] 0 filas (ya settleada por la edge, o RLS sin aplicar)', { id, status });
+    }
   };
 
   // ---- Pasos del submit ----
@@ -305,6 +317,9 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const { data, error } = await supabase.functions.invoke('dropi-update-order-full', {
       body: {
         externalId: order.externalId,
+        // Settle server-authoritative: la edge marca synced/failed esta fila
+        // aunque el cliente muera antes de settlear (null → la edge lo ignora).
+        auditId,
         nombre: form.nombre.trim(),
         apellido: form.apellido.trim(),
         phone: phoneToSend,
@@ -377,6 +392,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       body: {
         externalId: order.externalId,
         mode: 'apply_edit',
+        // Settle server-authoritative por auditId (null → la edge lo ignora).
+        auditId,
         ...(carrierChanged && selectedCarrier
           ? { distributionCompanyId: selectedCarrier.id, name: selectedCarrier.name }
           : {}),
@@ -462,7 +479,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       via: 'apply_value',
     });
     const { data, error } = await supabase.functions.invoke('dropi-change-carrier', {
-      body: { externalId: order.externalId, mode: 'apply_value', newValor: finalTotal },
+      // auditId → settle server-authoritative (null → la edge lo ignora).
+      body: { externalId: order.externalId, mode: 'apply_value', newValor: finalTotal, auditId },
     });
     // parseInvoke: rescata el body real aunque la edge haya respondido non-2xx.
     const d = await parseInvoke<ApplyResponse>(data, error);

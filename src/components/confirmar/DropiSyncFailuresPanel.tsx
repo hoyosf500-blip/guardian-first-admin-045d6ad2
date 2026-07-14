@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
+import { EDIT_RESULTS, EDIT_LABEL, isDuplicadoVivo, editAppliedEvidence, parseFirstOrderRef } from '@/lib/dropiSyncFailures';
 import { toast } from 'sonner';
-import { CloudOff, ChevronDown, ChevronUp, RefreshCw, Loader2, Bot, Pencil } from 'lucide-react';
+import { CloudOff, ChevronDown, ChevronUp, RefreshCw, Loader2, Bot, Pencil, Copy } from 'lucide-react';
 
 // Gestiones (conf/canc) Y ediciones (transportadora/valor/edición de orden)
 // que quedaron en el CRM pero NUNCA llegaron a Dropi
@@ -40,15 +41,6 @@ function isMootRow(result: string, estado: string | null | undefined): boolean {
   return result === 'canc' ? MOOT_CANC_RE.test(e) : MOOT_CONF_EDIT_RE.test(e);
 }
 
-// Resultados de edición (OrderEditorDialog, patrón pending→synced/failed).
-const EDIT_RESULTS = ['cambio_transportadora', 'cambio_valor', 'edicion_completa', 'edicion_orden'] as const;
-const EDIT_LABEL: Record<string, string> = {
-  cambio_transportadora: 'Transportadora',
-  cambio_valor: 'Valor',
-  edicion_completa: 'Edición de orden',
-  edicion_orden: 'Datos del cliente',
-};
-
 interface FailedGestion {
   id: string;
   orderId: string;
@@ -82,6 +74,7 @@ export default function DropiSyncFailuresPanel() {
   const { activeStoreId } = useStore();
   const [rows, setRows] = useState<FailedGestion[]>([]);
   const [mootCount, setMootCount] = useState(0);
+  const [appliedCount, setAppliedCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -100,7 +93,7 @@ export default function DropiSyncFailuresPanel() {
       const stalePendingIso = new Date(Date.now() - 15 * 60_000).toISOString();
       const { data, error } = await supabase
         .from('order_results')
-        .select('id, order_id, result, result_notes, created_at')
+        .select('id, order_id, result, result_notes, created_at, dropi_sync_status')
         .eq('store_id', activeStoreId)
         .or(`dropi_sync_status.eq.failed,and(dropi_sync_status.eq.pending,created_at.lt."${stalePendingIso}")`)
         .in('result', ['conf', 'canc', ...EDIT_RESULTS])
@@ -120,28 +113,50 @@ export default function DropiSyncFailuresPanel() {
 
       // Join liviano: resolver external_id/nombre/estado con una 2ª query por id IN.
       // (las keys del map son compuestas `${order_id}:${result}` — deduplicar acá)
-      const meta = new Map<string, { externalId: string; nombre: string; estado: string }>();
+      const meta = new Map<string, { externalId: string; nombre: string; estado: string; lastEditSyncAt: string | null }>();
       const orderIds = [...new Set([...byOrder.values()].map(r => r.order_id))];
       if (orderIds.length > 0) {
         const { data: ords } = await supabase
           .from('orders')
-          .select('id, external_id, nombre, estado')
+          .select('id, external_id, nombre, estado, last_edit_sync_at')
           .in('id', orderIds);
         for (const o of ords ?? []) {
           meta.set(o.id, {
             externalId: String(o.external_id ?? ''),
             nombre: o.nombre ?? '',
             estado: String((o as { estado?: string | null }).estado ?? ''),
+            lastEditSyncAt: (o as { last_edit_sync_at?: string | null }).last_edit_sync_at ?? null,
           });
         }
       }
 
       // Filtrar las gestiones OBSOLETAS (pedido local muerto/reemplazado):
       // se cuentan aparte para transparencia, pero no piden acción a nadie.
+      // EXENTAS las alertas de duplicado vivo: la hermana duplicada sigue viva
+      // en DROPI aunque el pedido ANCLA local esté cancelado/reemplazado —
+      // ocultarla por el estado local es el mismo modo de pérdida silenciosa
+      // del incidente 2026-07-13.
       const all = [...byOrder.values()];
-      const actionable = all.filter(r => !isMootRow(r.result, meta.get(r.order_id)?.estado));
+      const actionable = all.filter(r =>
+        isDuplicadoVivo(r.result_notes ?? '') || !isMootRow(r.result, meta.get(r.order_id)?.estado)
+      );
       setMootCount(all.length - actionable.length);
-      setRows(actionable.map(r => ({
+
+      // Supresión por EVIDENCIA (2026-07-13): si orders.last_edit_sync_at es
+      // >= al created_at de la auditoría, la edición SÍ aplicó en Dropi (el
+      // settle del cliente era no-op por RLS sin política UPDATE) — gritarla
+      // como "no aplicada" es falso positivo. SOLO filas 'pending' (la clase
+      // huérfana del bug de RLS): una fila 'failed' es un veredicto explícito
+      // del settle y last_edit_sync_at es a nivel PEDIDO — una edición
+      // POSTERIOR de otro tipo que sí aplicó la estamparía y ocultaría un
+      // fallo genuino. EXENTAS también las alertas de duplicado vivo.
+      const visible = actionable.filter(r => {
+        if (isDuplicadoVivo(r.result_notes ?? '')) return true;
+        if ((r as { dropi_sync_status?: string }).dropi_sync_status !== 'pending') return true;
+        return !editAppliedEvidence(r.result, r.created_at, meta.get(r.order_id)?.lastEditSyncAt);
+      });
+      setAppliedCount(actionable.length - visible.length);
+      setRows(visible.map(r => ({
         id: r.id,
         orderId: r.order_id,
         result: r.result,
@@ -186,9 +201,15 @@ export default function DropiSyncFailuresPanel() {
           // la fila con el prefijo BOT-SIN-API: (mismo string que dropi-cron)
           // para que salga del retry del cron y acá pase a badge informativo.
           if (data?.code === 'pedido_bot' && !row.notes.startsWith(BOT_PREFIX)) {
-            await supabase.from('order_results').update({
+            // .select('id') para DETECTAR el no-op silencioso: si RLS vuelve a
+            // bloquear el UPDATE (bug 2026-07-13, faltaba política UPDATE en
+            // order_results), devuelve 0 filas y acá queda rastro visible.
+            const { data: tagged } = await supabase.from('order_results').update({
               result_notes: `BOT-SIN-API: ${data?.error || 'pedido del bot de Dropi — gestionar en el panel'}`.slice(0, 300),
-            }).eq('id', row.id);
+            }).eq('id', row.id).select('id');
+            if ((tagged ?? []).length === 0) {
+              console.warn('[DropiSyncFailures] tag BOT-SIN-API no actualizó filas (¿RLS de UPDATE rota de nuevo?)', row.id);
+            }
           }
           throw new Error(res?.error?.message || data?.error || 'Dropi no confirmó el cambio');
         }
@@ -205,12 +226,18 @@ export default function DropiSyncFailuresPanel() {
       // Éxito → promover la fila a 'synced' para que salga de la lista y el
       // cron no la re-toque. Best-effort: si RLS bloquea (fila de otra
       // operadora), el refetch la mantiene visible y el cron la cierra después.
-      await supabase.from('order_results')
+      // .select('id') detecta el no-op silencioso (bug 2026-07-13: sin política
+      // UPDATE en order_results el UPDATE por JWT devolvía 0 filas sin error).
+      const { data: settled } = await supabase.from('order_results')
         .update({
           dropi_sync_status: 'synced',
           result_notes: `Reintento manual OK · antes: ${row.notes}`.slice(0, 300),
         })
-        .eq('id', row.id);
+        .eq('id', row.id)
+        .select('id');
+      if ((settled ?? []).length === 0) {
+        console.warn('[DropiSyncFailures] settle a synced no actualizó filas (¿RLS de UPDATE rota de nuevo?)', row.id);
+      }
       toast.success(`#${row.externalId} — ${row.result === 'conf' ? 'confirmación' : 'cancelación'} empujada a Dropi ✓`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -243,6 +270,7 @@ export default function DropiSyncFailuresPanel() {
             Quedaron en el CRM pero Dropi las rechazó (últimos {WINDOW_DAYS} días). Las gestiones se reintentan acá; las ediciones se reaplican desde el pedido.
             {botCount > 0 && <> {botCount} son del bot de Dropi — esas solo se gestionan en el panel de Dropi.</>}
             {mootCount > 0 && <> Se ocultaron {mootCount} obsoletas (el pedido fue reemplazado o cancelado — nada que hacer).</>}
+            {appliedCount > 0 && <> · {appliedCount} ediciones se verificaron aplicadas en Dropi y se ocultaron.</>}
           </p>
         </div>
         <button onClick={() => void load()} aria-label="Actualizar lista de fallos"
@@ -262,7 +290,15 @@ export default function DropiSyncFailuresPanel() {
         <div className="border-t border-destructive/30 max-h-[22rem] overflow-y-auto bg-card/50 divide-y divide-border">
           {rows.map(r => {
             const isBot = r.notes.startsWith(BOT_PREFIX);
-            const isEdit = (EDIT_RESULTS as readonly string[]).includes(r.result);
+            // Alerta de DUPLICADO VIVO (dropi-change-carrier detectó una hermana
+            // viva en Dropi): NO es una edición de datos — la acción es cancelar
+            // el duplicado, no reaplicar nada.
+            const isDup = isDuplicadoVivo(r.notes);
+            const isEdit = !isDup && (EDIT_RESULTS as readonly string[]).includes(r.result);
+            // SOLO el id parseado de la nota: r.externalId NO sirve de fallback —
+            // tras un recreate la fila ancla ya apunta a la orden NUEVA (la buena);
+            // un CTA "Cancelá el duplicado #<buena>" haría cancelar el pedido correcto.
+            const dupRef = isDup ? (parseFirstOrderRef(r.notes) ?? '') : '';
             return (
               <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
                 <div className="flex-1 min-w-0">
@@ -270,10 +306,11 @@ export default function DropiSyncFailuresPanel() {
                     <span className="font-medium text-foreground truncate">{r.nombre || 'Pedido'}</span>
                     {r.externalId && <span className="text-[10px] font-mono text-muted-foreground">#{r.externalId}</span>}
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                      isEdit ? 'bg-warning/15 text-warning'
-                        : r.result === 'conf' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'
+                      isDup ? 'bg-destructive/15 text-destructive'
+                        : isEdit ? 'bg-warning/15 text-warning'
+                          : r.result === 'conf' ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'
                     }`}>
-                      {isEdit ? (EDIT_LABEL[r.result] ?? 'Edición') : r.result === 'conf' ? 'Confirmación' : 'Cancelación'}
+                      {isDup ? 'Duplicado vivo' : isEdit ? (EDIT_LABEL[r.result] ?? 'Edición') : r.result === 'conf' ? 'Confirmación' : 'Cancelación'}
                     </span>
                     <span className="text-[10px] text-muted-foreground">{timeAgo(r.createdAt)}</span>
                   </div>
@@ -283,12 +320,33 @@ export default function DropiSyncFailuresPanel() {
                     </p>
                   )}
                 </div>
-                {isEdit ? (
+                {isDup ? (
+                  // La acción es CANCELAR el duplicado vivo, no reaplicar nada.
+                  // Link directo a la ficha del duplicado (id de la nota, o el
+                  // propio pedido si la nota no trae referencia).
+                  dupRef ? (
+                    <a href={`/pedido/${dupRef}`}
+                      className="text-[10px] px-2 py-1 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive font-medium inline-flex items-center gap-1 flex-shrink-0 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                      <Copy size={11} aria-hidden="true" /> Cancelá el duplicado #{dupRef}
+                    </a>
+                  ) : (
+                    <span className="text-[10px] px-2 py-1 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive font-medium inline-flex items-center gap-1 flex-shrink-0">
+                      <Copy size={11} aria-hidden="true" /> Cancelá el duplicado en el panel de Dropi
+                    </span>
+                  )
+                ) : isEdit ? (
                   // Sin retry automático posible: no guardamos el payload del
                   // intento. La asesora reabre el pedido y la aplica de nuevo.
-                  <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
-                    <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
-                  </span>
+                  r.externalId ? (
+                    <a href={`/pedido/${r.externalId}`}
+                      className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+                      <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
+                    </a>
+                  ) : (
+                    <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
+                      <Pencil size={11} aria-hidden="true" /> Edición no aplicada en Dropi — reabrí el pedido y aplicala de nuevo
+                    </span>
+                  )
                 ) : isBot ? (
                   <span className="text-[10px] px-2 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning font-medium inline-flex items-center gap-1 flex-shrink-0">
                     <Bot size={11} aria-hidden="true" /> Pedido del bot — gestionar en panel Dropi
