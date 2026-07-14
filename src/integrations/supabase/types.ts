@@ -2601,6 +2601,7 @@ export type Database = {
         }[]
       }
       auth_store_ids: { Args: never; Returns: string[] }
+      cancel_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       cancel_orphan_pending_orders: { Args: never; Returns: number }
       categorize_personal_movement: {
         Args: { p_descripcion: string; p_moneda?: string }
