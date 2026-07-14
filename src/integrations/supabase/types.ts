@@ -1905,6 +1905,54 @@ export type Database = {
         }
         Relationships: []
       }
+      wa_ad_attributions: {
+        Row: {
+          body: string | null
+          conversation_id: string | null
+          created_at: string
+          ctwa_clid: string | null
+          headline: string | null
+          id: string
+          media_type: string | null
+          phone: string
+          raw: Json | null
+          source_id: string | null
+          source_url: string | null
+          store_id: string
+          wa_message_id: string
+        }
+        Insert: {
+          body?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          ctwa_clid?: string | null
+          headline?: string | null
+          id?: string
+          media_type?: string | null
+          phone: string
+          raw?: Json | null
+          source_id?: string | null
+          source_url?: string | null
+          store_id: string
+          wa_message_id: string
+        }
+        Update: {
+          body?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          ctwa_clid?: string | null
+          headline?: string | null
+          id?: string
+          media_type?: string | null
+          phone?: string
+          raw?: Json | null
+          source_id?: string | null
+          source_url?: string | null
+          store_id?: string
+          wa_message_id?: string
+        }
+        Relationships: []
+      }
       wa_ai_runs: {
         Row: {
           action: string | null
