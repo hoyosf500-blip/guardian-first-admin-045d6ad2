@@ -782,6 +782,30 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // falla, marcamos la fila 'failed' + avisamos, NUNCA en silencio.
       const toastId = `dropi-cancel-${order.externalId}`;
       const insertedResultId = insertedResult?.id;
+
+      // GUARDA ATÓMICA (#9): flipear estado a CANCELADO server-side ANTES del
+      // push saca el pedido de la cola de TODAS las asesoras vía realtime (no
+      // solo del overlay client-side de ESTA pestaña). SOLO la primera gana
+      // (FOUND); si otra ya lo confirmó/canceló, abortamos sin empujar a Dropi
+      // ni dejar filas de ruido. Simétrico a confirm_order_locally (rama conf).
+      const { data: cancOk, error: cancErr } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ data: boolean | null; error: { message: string } | null }>)(
+        'cancel_order_locally', { p_order_id: order.dbId }
+      );
+      if (cancErr || cancOk === false) {
+        // Otra asesora ya lo gestionó (o el RPC falló): revertir UI + borrar la
+        // fila order_results huérfana + liberar el lock in-memory. No se empuja
+        // a Dropi (evita el doble-cancel / cancelar-lo-que-otro-confirmó).
+        if (insertedResult?.id) await supabase.from('order_results').delete().eq('id', insertedResult.id);
+        setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
+        setCounter(prev => ({ ...prev, canc: Math.max(0, prev.canc - 1) }));
+        markingInFlight.current.delete(order.dbId);
+        toast.error(cancErr ? `Cancelación local falló: ${cancErr.message}` : 'Ese pedido ya fue gestionado por otra asesora', { id: toastId });
+        return;
+      }
+      // Ganó la carrera: reflejar CANCELADO local ya (realtime lo propaga al resto).
+      setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, estado: 'CANCELADO' } : o));
       toast.loading(`Cancelando en Dropi — ${order.nombre.split(' ')[0]}…`, { id: toastId });
 
       const markCancelFailure = async (errMsg: string) => {

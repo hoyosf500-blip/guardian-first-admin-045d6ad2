@@ -1057,8 +1057,13 @@ export default function CallView({ items, alerts }: Props) {
                 // botón coincide con lo que ve la operadora en la card.
                 validation_decision: visualDecision,
                 telefonoValido: validarTelefono(o.phone, countryCode),
+                // includes, NO igualdad exacta: la transportadora viene verbatim
+                // de Dropi (distribution_company.name) y puede ser "COORDINADORA
+                // MERCANTIL", "Coordinadora S.A.", etc. Con !== 'coordinadora' el
+                // gate fallaba ABIERTO (dejaba despachar sin cédula) en toda
+                // variante de nombre. Coordinadora EXIGE cédula del destinatario.
                 documentoSiCoordinadora:
-                  (o.transportadora || '').toLowerCase() !== 'coordinadora' ||
+                  !(o.transportadora || '').toLowerCase().includes('coordinadora') ||
                   Boolean(o.documentoDestinatario),
                 isAdmin,
                 overrideChecked: addressOverride,
