@@ -1478,7 +1478,7 @@ Deno.serve(async (req: Request) => {
             return jsonOk({
               ok: false,
               code: "orden_ya_enviada",
-              error: `Dropi bloqueó el cambio: esta compra ya fue reenviada dentro de Dropi y recrearla generaría un pedido DUPLICADO (doble envío al cliente).${sibTxtV} Gestioná la orden activa del cliente; acá no se creó ni cambió nada.${retiredStubV ? " Este pedido era el BORRADOR del bot de Dropi y se retiró de la cola automáticamente — gestioná la orden activa del cliente." : ""}`,
+              error: `Este pedido lo generó el bot de WhatsApp y Dropi ya lo reenvió — desde el CRM no se puede cambiar la transportadora (recrearlo duplicaría el envío al cliente).${sibTxtV} Cambiá la transportadora directamente en el panel de Dropi (así lo hacen siempre). Acá no se creó ni cambió nada.${retiredStubV ? " Este pedido era el BORRADOR del bot de Dropi y se retiró de la cola automáticamente — gestioná la orden activa del cliente." : ""}`,
               dropiHttpStatus: postV.status,
               dropiBody: postV.respBody,
               ...(sibsV[0] ? { activeSibling: { externalId: sibsV[0].id, estado: sibsV[0].status, total: sibsV[0].total } } : {}),
@@ -1843,7 +1843,7 @@ Deno.serve(async (req: Request) => {
             return jsonOk({
               ok: false,
               code: "orden_ya_enviada",
-              error: `Dropi bloqueó la edición: esta compra ya fue reenviada dentro de Dropi y recrearla generaría un pedido DUPLICADO (doble envío al cliente).${sibTxtE} Gestioná la orden activa del cliente; acá no se creó ni cambió nada.${retiredStubE ? " Este pedido era el BORRADOR del bot de Dropi y se retiró de la cola automáticamente — gestioná la orden activa del cliente." : ""}`,
+              error: `Este pedido lo generó el bot de WhatsApp y Dropi ya lo reenvió — desde el CRM no se puede editarlo (recrearlo duplicaría el envío al cliente).${sibTxtE} Si necesitás cambiar la transportadora u otro dato, hacelo directamente en el panel de Dropi (así lo hacen siempre). Acá no se creó ni cambió nada.${retiredStubE ? " Este pedido era el BORRADOR del bot de Dropi y se retiró de la cola automáticamente — gestioná la orden activa del cliente." : ""}`,
               dropiHttpStatus: postE.status,
               dropiBody: postE.respBody,
               ...(sibsE[0] ? { activeSibling: { externalId: sibsE[0].id, estado: sibsE[0].status, total: sibsE[0].total } } : {}),
@@ -2149,7 +2149,7 @@ Deno.serve(async (req: Request) => {
           return jsonOk({
             ok: false,
             code: "orden_ya_enviada",
-            error: `Dropi bloqueó el cambio: esta compra ya fue reenviada dentro de Dropi y recrearla generaría un pedido DUPLICADO (doble envío al cliente).${sibTxtA} Gestioná la orden activa del cliente; acá no se creó ni cambió nada.${retiredStubA ? " Este pedido era el BORRADOR del bot de Dropi y se retiró de la cola automáticamente — gestioná la orden activa del cliente." : ""}`,
+            error: `Este pedido lo generó el bot de WhatsApp y Dropi ya lo reenvió — desde el CRM no se puede cambiar la transportadora (recrearlo duplicaría el envío al cliente).${sibTxtA} Cambiá la transportadora directamente en el panel de Dropi (así lo hacen siempre). Acá no se creó ni cambió nada.${retiredStubA ? " Este pedido era el BORRADOR del bot de Dropi y se retiró de la cola automáticamente — gestioná la orden activa del cliente." : ""}`,
             dropiHttpStatus: postA.status,
             dropiBody: postA.respBody,
             ...(sibsA[0] ? { activeSibling: { externalId: sibsA[0].id, estado: sibsA[0].status, total: sibsA[0].total } } : {}),
