@@ -3198,6 +3198,7 @@ export type Database = {
         Returns: undefined
       }
       redeem_store_invite: { Args: { p_token: string }; Returns: string }
+      release_all_my_locks: { Args: never; Returns: number }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       set_active_store: { Args: { p_store_id: string }; Returns: undefined }
