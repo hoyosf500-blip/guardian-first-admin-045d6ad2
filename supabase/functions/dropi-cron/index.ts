@@ -938,49 +938,58 @@ Deno.serve(async (req: Request) => {
           // hermana viva vía confirmLiveSibling). Éxito → la fila queda synced
           // SIN sumar el intento BOT (la meta se cumplió). Fallo → sigue el
           // flujo normal y ahí sí cuenta el intento.
+          // ¿Fallo de clase-bot (rescatable por el canal web) sin resolver?
+          const isBotRescuable = !r.ok && !alreadyConfirmed && isBotClassFailure(r.httpStatus, r.error || "");
           let rescueNote: string | null = null;
-          if (
-            !r.ok && !alreadyConfirmed &&
-            isBotClassFailure(r.httpStatus, r.error || "") &&
-            rescatesWeb < CRON_MAX_WEB_RESCUES &&
+          // Bot rescatable al que NO le tocó rescate ESTA corrida (cap de 3,
+          // sin headroom, o login web caído). NO debe contar como intento
+          // hacia el CAP BOT-SIN-API: benchearlo sin haberlo intentado ni una
+          // vez lo abandonaría para siempre (bug: las filas del fondo de la
+          // cola caían a "no se reintenta más" con 0 rescates reales).
+          let rescueDeferred = false;
+          if (isBotRescuable) {
             // Headroom de 60s: un rescate encadena varios requests web (login +
             // PUT + listado; con hermana: +detalles v2 +PUT +listado) con
             // timeouts de 30s c/u y SIN deadline interno — arrancarlo al filo
             // de postDeadline puede matar la corrida a mitad del post-proceso.
-            Date.now() + 60_000 <= postDeadline
-          ) {
-            let webCfg = confWebCfgByStore.get(sid);
-            if (webCfg === undefined) {
-              try {
-                const loaded = await loadStoreConfig(sb, sid);
-                if (!loaded.apiKey) throw new Error("tienda sin Clave API de Dropi");
-                loaded.sessionToken = await ensureFreshSessionToken(sb, loaded);
-                webCfg = loaded;
-              } catch (e) {
-                console.warn(
-                  `dropi-cron: rescate web — credenciales/login fallaron para la tienda ${sid}, se saltea esta corrida:`,
-                  e instanceof Error ? e.message : e,
-                );
-                webCfg = null;
+            const hayCupo = rescatesWeb < CRON_MAX_WEB_RESCUES;
+            const hayHeadroom = Date.now() + 60_000 <= postDeadline;
+            if (!hayCupo || !hayHeadroom) {
+              rescueDeferred = true; // le toca en la próxima corrida
+            } else {
+              let webCfg = confWebCfgByStore.get(sid);
+              if (webCfg === undefined) {
+                try {
+                  const loaded = await loadStoreConfig(sb, sid);
+                  if (!loaded.apiKey) throw new Error("tienda sin Clave API de Dropi");
+                  loaded.sessionToken = await ensureFreshSessionToken(sb, loaded);
+                  webCfg = loaded;
+                } catch (e) {
+                  console.warn(
+                    `dropi-cron: rescate web — credenciales/login fallaron para la tienda ${sid}, se saltea esta corrida:`,
+                    e instanceof Error ? e.message : e,
+                  );
+                  webCfg = null;
+                }
+                confWebCfgByStore.set(sid, webCfg);
               }
-              confWebCfgByStore.set(sid, webCfg);
-            }
-            if (webCfg) {
-              rescatesWeb++;
-              const web = await webConfirmFallback(webCfg, sb, ord.external_id, "PENDIENTE", String(ord.phone || ""));
-              if (web.ok) {
-                rescueNote = "confirmado vía web (rescate cron)";
-              } else {
-                const sib = await confirmLiveSibling(webCfg, sb, {
-                  stubId: ord.external_id,
-                  newStatus: "PENDIENTE",
-                  phone: String(ord.phone || ""),
-                  nombre: String(ord.nombre || ""),
-                  orderRowId: ord.id,
-                  storeId: sid,
-                  source: "dropi-cron",
+              if (webCfg) {
+                rescatesWeb++;
+                const web = await webConfirmFallback(webCfg, sb, ord.external_id, "PENDIENTE", String(ord.phone || ""));
+                if (web.ok) {
+                  rescueNote = "confirmado vía web (rescate cron)";
+                } else {
+                  const sib = await confirmLiveSibling(webCfg, sb, {
+                    stubId: ord.external_id,
+                    newStatus: "PENDIENTE",
+                    phone: String(ord.phone || ""),
+                    nombre: String(ord.nombre || ""),
+                    orderRowId: ord.id,
+                    storeId: sid,
+                    source: "dropi-cron",
                 });
-                if (sib) rescueNote = "confirmado vía web (rescate cron)";
+                  if (sib) rescueNote = "confirmado vía web (rescate cron)";
+                }
               }
             }
           }
@@ -989,6 +998,16 @@ Deno.serve(async (req: Request) => {
             await sb.from("order_results").update({
               dropi_sync_status: "synced",
               result_notes: rescueNote,
+            }).eq("id", row.id);
+          } else if (rescueDeferred) {
+            // Bot rescatable sin cupo/headroom esta corrida: NO cuenta intento
+            // (conserva el contador actual, sin +1) y NO antepone BOT-SIN-API,
+            // así sigue en el select y se rescata en una próxima corrida.
+            retryDeferred++;
+            await sb.from("order_results").update({
+              dropi_sync_status: "failed",
+              result_notes: "Rescate web diferido (cap/headroom de la corrida) — se reintenta en la próxima" +
+                (prevAttempts > 0 ? ` (intento ${prevAttempts})` : ""),
             }).eq("id", row.id);
           } else {
             retryFail++;

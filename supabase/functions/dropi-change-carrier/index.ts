@@ -1694,10 +1694,20 @@ Deno.serve(async (req: Request) => {
       } else {
         linesE = prepE.lines;
       }
-      // Total final: el valor explícito manda; si no, la suma de las líneas.
+      // Total final (el recaudo COD del pedido recreado):
+      //  - valor explícito editado → ese;
+      //  - editó líneas → la suma de las líneas nuevas (quiso ese total);
+      //  - SOLO cambió transportadora → el valor REAL del pedido
+      //    (orderRow.valor), que respeta el descuento a nivel de ORDEN
+      //    (Releasit). Sumar las líneas descartaría ese descuento y
+      //    SOBRE-COBRARÍA al cliente. Fallback a la suma si no hay valor.
+      //    Idéntico criterio que el modo `apply` (Number(orderRow.valor) || suma).
+      const sumaLineasE = roundMoney(linesE.reduce((s, l) => s + l.price * l.quantity, 0), cfg.countryCode);
       const totalE = newValorE !== null
         ? newValorE
-        : roundMoney(linesE.reduce((s, l) => s + l.price * l.quantity, 0), cfg.countryCode);
+        : wantsLines
+          ? sumaLineasE
+          : (Number(orderRow.valor) || sumaLineasE);
 
       const countryE = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
       let destCityE;

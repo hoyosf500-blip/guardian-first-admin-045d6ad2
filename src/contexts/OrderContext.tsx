@@ -335,8 +335,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
   const markingInFlight = useRef(new Set<string>());
-  // Coordination flag so undoLast and rollbackDropiFailure don't both decrement the counter.
-  const revertedRef = useRef(false);
+  // Coordinación undoLast ↔ markDropiFailure POR PEDIDO (dbId). Antes era un
+  // único boolean compartido: con dos confirmaciones en vuelo (avance
+  // inmediato + Dropi throttleado EC), el fallo de la 1ª ponía el flag en true
+  // y el fallo de la 2ª retornaba temprano → toast colgado, sin aviso de error,
+  // fila sin marcar failed (si era bot, el cron quemaba sus reintentos) =
+  // fuga silenciosa. Un Set de dbId aísla cada confirmación.
+  const revertedIds = useRef(new Set<string>());
   // Fix D4: cada llamada a buildWorkQueue incrementa este id. El fetch
   // async de order_results valida que el id siga siendo el suyo antes de
   // hacer setWorkQueue/setCounter — si llegó un build más nuevo (p. ej.
@@ -550,7 +555,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // cliente con 2 pedidos puede confirmar ambos en paralelo.
     if (markingInFlight.current.has(order.dbId)) return;
     markingInFlight.current.add(order.dbId);
-    revertedRef.current = false;
+    revertedIds.current.delete(order.dbId);
 
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result, reason } : o));
     setCounter(prev => {
@@ -654,8 +659,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         toast.loading(`Confirmando — ${order.nombre.split(' ')[0]}…`, { id: toastId });
 
         const markDropiFailure = async (errMsg: string, code?: string) => {
-          if (revertedRef.current) return;
-          revertedRef.current = true;
+          if (revertedIds.current.has(order.dbId!)) return;
+          revertedIds.current.add(order.dbId!);
           // BUG A fix: do NOT silently rollback. Keep the local confirmation,
           // mark the order_results row as failed so dropi-cron retries it,
           // and warn the operator with a destructive long-duration toast.
@@ -826,12 +831,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
 
   const undoLast = useCallback(async () => {
     if (!lastMark || !user) return;
-    if (revertedRef.current) {
+    if (lastMark.order.dbId && revertedIds.current.has(lastMark.order.dbId)) {
       setLastMark(null);
       toast.info('Ya fue revertido por el rollback de Dropi');
       return;
     }
-    revertedRef.current = true;
+    if (lastMark.order.dbId) revertedIds.current.add(lastMark.order.dbId);
     const { order, result, resultId, touchpointId } = lastMark;
 
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
