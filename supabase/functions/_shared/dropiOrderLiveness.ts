@@ -71,59 +71,73 @@ export async function dropiGetOrderV2Detail(
   return { ok, httpStatus: res.status, body };
 }
 
-/** Extrae el status del detalle v2 (data.status / objects.status / status). */
+/** Extrae el status del detalle v2. OJO (verificado en vivo 2026-07-13): el
+ *  detalle v2 de EC NO incluye `status` (keys: id, client, products,
+ *  shop_order_id, ...) — casi siempre devuelve null. NO usar para liveness;
+ *  queda por compatibilidad/por si otros países sí lo traen. */
 export function parseV2Status(body: Record<string, unknown>): string | null {
   const data = (body.data ?? body.objects ?? body) as Record<string, unknown>;
   const st = String(data?.status ?? "").trim().toUpperCase();
   return st || null;
 }
 
-/** ¿La orden está viva en Dropi? Ladder de 2 señales:
- *   1) Detalle v2 → status DEAD_STATUS_RE = dead; status vivo = alive.
- *   2) v2 sin respuesta útil → listado web por teléfono/nombre (si el caller
- *      pasó searchText): si el listado LO ENCUENTRA decide por su status.
- *      La AUSENCIA en el listado NO decide nada (textToSearch no busca por id).
- *   3) Nada respondió → 'unknown'. Nunca tira. */
+/** shop_order_id del detalle v2 — la llave EXACTA de "misma compra" entre un
+ *  stub forwardeado y su hermana viva (verificado: stub #6110094 y viva
+ *  #6111108 comparten shop_order_id 3708533). null si no se pudo leer. */
+export async function getShopOrderIdV2(cfg: LivenessCfg, externalId: string): Promise<string | null> {
+  try {
+    const v2 = await dropiGetOrderV2Detail(cfg, externalId);
+    if (!v2.ok) return null;
+    const data = (v2.body.data ?? v2.body.objects ?? v2.body) as Record<string, unknown>;
+    return data?.shop_order_id != null ? String(data.shop_order_id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** ¿La orden está viva en Dropi? Señal ÚNICA confiable (calibrada en vivo
+ *  2026-07-13): el LISTADO web buscado por el TELÉFONO del cliente.
+ *   - La orden APARECE → decide su status.
+ *   - NO aparece pero el listado devolvió OTRAS órdenes del mismo cliente →
+ *     'dead': las REEMPLAZADA reciben deleted_at y desaparecen del listado
+ *     (probado: el stub #6110807 no aparece mientras la viva #6110951 sí).
+ *   - Listado vacío o falló → 'unknown' (JAMÁS asumir muerto sin evidencia).
+ *  El detalle v2 NO sirve: responde para órdenes borradas y NO trae status.
+ *  `phone` es OBLIGATORIO para decidir; sin él devuelve 'unknown'. Nunca tira. */
 export async function checkOrderLivenessWeb(
   cfg: LivenessCfg,
   externalId: string,
-  opts?: { searchText?: string },
+  opts?: { phone?: string; fallbackName?: string },
 ): Promise<Liveness> {
-  // Señal 1: detalle v2.
-  try {
-    const v2 = await dropiGetOrderV2Detail(cfg, externalId);
-    if (v2.ok) {
-      const st = parseV2Status(v2.body);
-      if (st) {
-        return { state: DEAD_STATUS_RE.test(st) ? "dead" : "alive", estado: st, via: "v2" };
-      }
-    }
-  } catch (e) {
-    console.error("[dropiOrderLiveness] v2 check falló:", e);
-  }
-  // Señal 2: listado web (solo puede decidir si ENCUENTRA la orden).
-  const search = String(opts?.searchText || "").trim();
-  if (search.length >= 4) {
+  const terms: string[] = [];
+  const digits = String(opts?.phone || "").replace(/\D/g, "").slice(-9);
+  if (digits.length >= 7) terms.push(digits);
+  const name = String(opts?.fallbackName || "").trim();
+  if (name.length >= 4) terms.push(name);
+  for (const term of terms) {
     try {
       const { status, body } = await dropiWebFetch(
         cfg,
-        `/api/orders/myorders?result_number=15&start=0&textToSearch=${encodeURIComponent(search)}`,
+        `/api/orders/myorders?result_number=15&start=0&textToSearch=${encodeURIComponent(term)}`,
         { method: "GET", logBody: false },
       );
-      if (status >= 200 && status < 300) {
-        // deno-lint-ignore no-explicit-any
-        const objs: any[] = Array.isArray((body as Record<string, unknown>)?.objects)
-          ? (body as { objects: unknown[] }).objects as any[]
-          : [];
-        const hit = objs.find((o) => String(o?.id) === externalId);
-        if (hit) {
-          const st = String(hit.status || "").trim().toUpperCase() || null;
-          return {
-            state: st && DEAD_STATUS_RE.test(st) ? "dead" : "alive",
-            estado: st,
-            via: "listing",
-          };
-        }
+      if (status < 200 || status >= 300) continue;
+      // deno-lint-ignore no-explicit-any
+      const objs: any[] = Array.isArray((body as Record<string, unknown>)?.objects)
+        ? (body as { objects: unknown[] }).objects as any[]
+        : [];
+      const hit = objs.find((o) => String(o?.id) === externalId);
+      if (hit) {
+        const st = String(hit.status || "").trim().toUpperCase() || null;
+        return {
+          state: st && DEAD_STATUS_RE.test(st) ? "dead" : "alive",
+          estado: st,
+          via: "listing",
+        };
+      }
+      // Ausente con OTRAS órdenes del cliente presentes → soft-deleted.
+      if (objs.length > 0) {
+        return { state: "dead", estado: null, via: "listing" };
       }
     } catch (e) {
       console.error("[dropiOrderLiveness] listing check falló:", e);

@@ -968,10 +968,10 @@ Deno.serve(async (req: Request) => {
       if (cancRows && cancRows.length > 0) {
         const cancOrderIds = (cancRows as Array<{ order_id: string }>).map((r) => r.order_id);
         const { data: ordersForCancel } = await sb
-          .from("orders").select("id, external_id, store_id, estado").in("id", cancOrderIds);
-        const cancOrderById = new Map<string, { external_id: string | null; store_id: string; estado: string | null }>();
-        (ordersForCancel || []).forEach((o: { id: string; external_id: string | null; store_id: string; estado: string | null }) => {
-          cancOrderById.set(o.id, { external_id: o.external_id, store_id: o.store_id, estado: o.estado });
+          .from("orders").select("id, external_id, store_id, estado, phone").in("id", cancOrderIds);
+        const cancOrderById = new Map<string, { external_id: string | null; store_id: string; estado: string | null; phone: string | null }>();
+        (ordersForCancel || []).forEach((o: { id: string; external_id: string | null; store_id: string; estado: string | null; phone: string | null }) => {
+          cancOrderById.set(o.id, { external_id: o.external_id, store_id: o.store_id, estado: o.estado, phone: o.phone });
         });
         // Config + session token fresco por tienda, UNA sola vez por corrida.
         // null = tienda salteada (login falló / sin credenciales) — como pide el
@@ -1072,7 +1072,7 @@ Deno.serve(async (req: Request) => {
             // retry seguía gritando en el panel de fallos.
             let deadEstado: string | null = null;
             try {
-              const live = await checkOrderLivenessWeb(storeCfg, ord.external_id);
+              const live = await checkOrderLivenessWeb(storeCfg, ord.external_id, { phone: String(ord.phone || "") });
               if (live.state === "dead") deadEstado = live.estado || "CANCELADO";
             } catch (e) {
               console.warn(`dropi-cron: verify 'ya cancelada' de #${ord.external_id} falló:`, e instanceof Error ? e.message : e);
