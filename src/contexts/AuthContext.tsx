@@ -97,6 +97,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // Liberar TODOS mis locks ANTES de cerrar sesión. Sin esto quedaban
+    // huérfanos hasta que el cron release-stale-locks los limpiara (15 min),
+    // escondiendo esos clientes de TODO el equipo por el filtro isLockedByOther
+    // (bug auditoría 2026-07-14). Best-effort: un fallo de red no debe impedir
+    // el logout. Se corre con la sesión AÚN válida (auth.uid() todavía existe).
+    try {
+      await (supabase.rpc as unknown as (fn: string) => Promise<unknown>)('release_all_my_locks');
+    } catch (e) {
+      console.warn('[signOut] no se pudieron liberar los locks:', e);
+    }
     await supabase.auth.signOut();
   };
 
