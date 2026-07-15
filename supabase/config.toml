@@ -10,3 +10,9 @@ verify_jwt = false
 # service role key (que ES un JWT válido).
 [functions.wa-webhook]
 verify_jwt = false
+
+# dropi-webhook lo llama Dropi (API oficial de Integraciones) SIN JWT de Supabase
+# cada vez que un pedido creado por nuestra integración (shop_type "Guardian")
+# cambia de estado. Se valida con DROPI_WEBHOOK_SECRET (?secret= / header).
+[functions.dropi-webhook]
+verify_jwt = false

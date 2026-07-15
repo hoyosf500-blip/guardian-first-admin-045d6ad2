@@ -35,3 +35,6 @@ supabase/.temp/
 
 # Capturas de pantalla (solo raíz)
 /*.png
+
+# Script de prueba sandbox Dropi (tiene credenciales — NO subir)
+scripts/dropi-sandbox-test.mjs
