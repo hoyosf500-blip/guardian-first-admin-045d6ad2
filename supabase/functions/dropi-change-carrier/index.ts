@@ -58,6 +58,7 @@ import { cancelOrderInDropi } from "../_shared/dropiCancelOrder.ts";
 import {
   checkOrderLivenessWeb,
   listActiveOrdersByPhone,
+  getShopOrderIdV2,
   type SiblingOrder,
 } from "../_shared/dropiOrderLiveness.ts";
 import { settleAuditRow, deriveSettleFromPayload } from "../_shared/settleAudit.ts";
@@ -592,13 +593,11 @@ async function retireBotStubIfGone(
   sbAdmin: any,
   externalId: string,
   rowId: string,
-  liveSiblingsCount: number,
+  sibs: SiblingOrder[],
   phone: string,
+  oldShopOrderId: string,
 ): Promise<boolean> {
-  try {
-    if (liveSiblingsCount < 1) return false;
-    const liveness = await checkOrderLivenessWeb(cfg, externalId, { phone });
-    if (liveness.state !== "dead") return false;
+  const doRetire = async (motivo: string): Promise<boolean> => {
     const { error } = await sbAdmin
       .from("orders")
       .update({ estado: "REEMPLAZADA" })
@@ -607,8 +606,35 @@ async function retireBotStubIfGone(
       console.error("[retireBotStubIfGone] update local falló:", error);
       return false;
     }
-    console.log(`[retireBotStubIfGone] stub del bot #${externalId} verificado ${liveness.estado || "MUERTO"} en Dropi (v2) — retirado de la cola (REEMPLAZADA local).`);
+    console.log(`[retireBotStubIfGone] #${externalId} retirado de la cola (REEMPLAZADA local) — ${motivo}.`);
     return true;
+  };
+  try {
+    if (!Array.isArray(sibs) || sibs.length < 1) return false;
+    // PRUEBA DURA de reemplazo (caso Dalia 2026-07-14): cuando el equipo cambia
+    // la transportadora en el panel de Dropi, se crea un pedido NUEVO (id mayor)
+    // con el MISMO shop_order_id y el viejo queda REEMPLAZADA en Dropi. Guardian
+    // lo sincroniza en ~5min, pero en esa ventana el viejo sigue en la cola y la
+    // asesora que intenta editarlo choca con "ya fue enviada". Si detectamos que
+    // una hermana MÁS NUEVA comparte el shop_order_id del pedido actual, el actual
+    // ES el viejo reemplazado → sacarlo YA (sin esperar al sync). El match EXACTO
+    // de shop_order_id + id más nuevo hace el falso-positivo prácticamente nulo.
+    const oldShop = String(oldShopOrderId || "").trim();
+    if (oldShop) {
+      const oldNum = Number(externalId);
+      for (const s of sibs.slice(0, 4)) {
+        if (!(Number(s.id) > oldNum)) continue; // solo hermanas MÁS NUEVAS
+        const sib = await getShopOrderIdV2(cfg, s.id);
+        if (sib && sib === oldShop) {
+          return await doRetire(`reemplazado por #${s.id} (mismo shop_order_id ${oldShop})`);
+        }
+      }
+    }
+    // Fallback conservador previo: el listado web da al pedido como MUERTO
+    // (soft-deleted). Sesgo: ante la duda ('unknown') NO retira.
+    const liveness = await checkOrderLivenessWeb(cfg, externalId, { phone });
+    if (liveness.state !== "dead") return false;
+    return await doRetire(`v2/listado lo da ${liveness.estado || "MUERTO"}`);
   } catch (e) {
     console.error("[retireBotStubIfGone] check de existencia falló:", e);
     return false;
@@ -1474,7 +1500,7 @@ Deno.serve(async (req: Request) => {
               ? ` Orden(es) activa(s) del cliente en Dropi: ${sibsV.map((s) => `#${s.id} (${s.status}${s.total ? `, $${s.total}` : ""})`).join(", ")}.`
               : "";
             // Auto-retiro SOLO con evidencia positiva: v2 dice muerto Y hay hermana viva.
-            const retiredStubV = await retireBotStubIfGone(cfg, sbAdmin, externalId, String(orderRow.id), sibsV.length, String(orderRow.phone || clientV.phone || ""));
+            const retiredStubV = await retireBotStubIfGone(cfg, sbAdmin, externalId, String(orderRow.id), sibsV, String(orderRow.phone || clientV.phone || ""), clientV.shopOrderId);
             return jsonOk({
               ok: false,
               code: "orden_ya_enviada",
@@ -1839,7 +1865,7 @@ Deno.serve(async (req: Request) => {
               ? ` Orden(es) activa(s) del cliente en Dropi: ${sibsE.map((s) => `#${s.id} (${s.status}${s.total ? `, $${s.total}` : ""})`).join(", ")}.`
               : "";
             // Auto-retiro SOLO con evidencia positiva: v2 dice muerto Y hay hermana viva.
-            const retiredStubE = await retireBotStubIfGone(cfg, sbAdmin, externalId, String(orderRow.id), sibsE.length, String(orderRow.phone || clientE.phone || ""));
+            const retiredStubE = await retireBotStubIfGone(cfg, sbAdmin, externalId, String(orderRow.id), sibsE, String(orderRow.phone || clientE.phone || ""), clientE.shopOrderId);
             return jsonOk({
               ok: false,
               code: "orden_ya_enviada",
@@ -2145,7 +2171,7 @@ Deno.serve(async (req: Request) => {
             ? ` Orden(es) activa(s) del cliente en Dropi: ${sibsA.map((s) => `#${s.id} (${s.status}${s.total ? `, $${s.total}` : ""})`).join(", ")}.`
             : "";
           // Auto-retiro SOLO con evidencia positiva: v2 dice muerto Y hay hermana viva.
-          const retiredStubA = await retireBotStubIfGone(cfg, sbAdmin, externalId, String(orderRow.id), sibsA.length, String(orderRow.phone || client.phone || ""));
+          const retiredStubA = await retireBotStubIfGone(cfg, sbAdmin, externalId, String(orderRow.id), sibsA, String(orderRow.phone || client.phone || ""), client.shopOrderId);
           return jsonOk({
             ok: false,
             code: "orden_ya_enviada",
