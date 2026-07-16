@@ -25,7 +25,10 @@ import { useStore } from '@/contexts/StoreContext';
  */
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
-const PING_INTERVAL_MS = 60 * 1000;
+// COST 2026-07-16: 60s → 5min. Reduce ~80% de writes de heartbeat. El server
+// cappea cada bucket a 300s (ver record_operator_heartbeat) para no perder
+// jornada tras un flush espaciado.
+const PING_INTERVAL_MS = 5 * 60 * 1000;
 const TICK_INTERVAL_MS = 1000;
 // Throttle el mousemove (que se dispara cientos de veces por segundo) a 1
 // "marca de actividad" por segundo. Para los demás eventos no hace falta.
