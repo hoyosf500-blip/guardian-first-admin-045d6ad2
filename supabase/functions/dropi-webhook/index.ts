@@ -11,10 +11,11 @@
 // para pedidos existentes hacemos UPDATE DIRIGIDO (estado/guía/transportadora) y
 // NUNCA pisamos valor/flete/costo_prod con ceros.
 //
-// SEGURIDAD: público (Dropi lo llama sin JWT — verify_jwt=false en config.toml).
-// Si DROPI_WEBHOOK_SECRET está seteado, exige ?secret= (o header x-dropi-secret).
-// Mientras no esté seteado, procesa igual (para poder probar antes de coordinar
-// el secreto con Dropi TI) y avisa por log.
+// SEGURIDAD: público al TCP (Dropi lo llama sin JWT — verify_jwt=false en config.toml),
+// pero exige el secreto compartido DROPI_WEBHOOK_SECRET (fail-closed, igual que
+// wa-webhook): header x-dropi-secret (preferido) o ?secret=. Sin secreto configurado,
+// o si no coincide, devuelve 401 a TODO — nunca procesa un POST anónimo (los external_id
+// de Dropi son enumerables; un tercero podría sobrescribir estados de pedidos reales).
 //
 // IDEMPOTENTE: re-procesar la misma notificación deja el mismo estado.
 // SIEMPRE responde 200 (ack) salvo secreto inválido — un webhook que devuelve
@@ -49,16 +50,14 @@ Deno.serve(async (req) => {
     return json({ ok: false, error: "POST only" }, 405, corsHeaders);
   }
 
-  // ---- Secreto (opcional hasta coordinarlo con Dropi TI) ----
+  // ---- Secreto OBLIGATORIO (fail-closed) ----
+  // Preferimos el header sobre ?secret= (el query string se filtra a access-logs/proxies).
+  // Configurar con: supabase secrets set DROPI_WEBHOOK_SECRET=<uuid>
   const url = new URL(req.url);
-  const expected = Deno.env.get("DROPI_WEBHOOK_SECRET");
-  if (expected) {
-    const provided = url.searchParams.get("secret") || req.headers.get("x-dropi-secret") || "";
-    if (provided !== expected) {
-      return json({ ok: false, error: "unauthorized" }, 401, corsHeaders);
-    }
-  } else {
-    console.warn("[dropi-webhook] DROPI_WEBHOOK_SECRET no seteado — procesando sin validar (setealo antes de producción).");
+  const expected = Deno.env.get("DROPI_WEBHOOK_SECRET") || "";
+  const provided = req.headers.get("x-dropi-secret") || url.searchParams.get("secret") || "";
+  if (!expected || provided !== expected) {
+    return json({ ok: false, error: "unauthorized" }, 401, corsHeaders);
   }
 
   // ---- Payload ----
@@ -103,10 +102,12 @@ Deno.serve(async (req) => {
       if (status) patch.estado = status;
       if (guia) patch.guia = guia;
       if (transportadora) patch.transportadora = transportadora;
-      // Transición PENDIENTE CONFIRMACION -> otro estado ⇒ sellar fecha_conf.
-      const wasPendConf = String(existing.estado || "").toUpperCase() === "PENDIENTE CONFIRMACION";
-      const nowPendConf = status === "PENDIENTE CONFIRMACION";
-      if (wasPendConf && status && !nowPendConf && !existing.fecha_conf) {
+      // Sellar fecha_conf cuando el pedido deja la cola de confirmación (idempotente:
+      // solo si aún no está sellada). Antes solo sellaba si HABÍAMOS visto el estado
+      // previo "PENDIENTE CONFIRMACION"; si un sync lo adelantaba, nunca sellaba. Ahora
+      // sella con cualquier estado post-cola, excepto cancelaciones (nunca se confirmaron).
+      const CANCEL_STATES = new Set(["CANCELADO", "RECHAZADO", "ANULADO"]);
+      if (status && !existing.fecha_conf && status !== "PENDIENTE CONFIRMACION" && !CANCEL_STATES.has(status)) {
         patch.fecha_conf = bogotaToday();
         patch.dias_conf = 0;
       }
@@ -162,9 +163,12 @@ Deno.serve(async (req) => {
     // notificación (el payload del webhook no trae updated_at).
     const enriched = { ...o, updated_at: nowIso };
     const row = mapDropiOrderToRow(enriched, uploadedBy, bogotaToday(), storeId);
+    // insert-only (ignoreDuplicates): si el pedido ya existe (carrera con el sync o
+    // con Guardian entre el SELECT y este upsert), NO lo pisamos con el payload PARCIAL
+    // del webhook — traería flete=0 y costo_prod=0 y violaría el invariante del header.
     const { error: insErr } = await sbAdmin
       .from("orders")
-      .upsert(row, { onConflict: "external_id", ignoreDuplicates: false });
+      .upsert(row, { onConflict: "external_id", ignoreDuplicates: true });
     if (insErr) {
       console.error("[dropi-webhook] insert falló", externalId, insErr.message);
       return json({ ok: false, action: "insert_failed", external_id: externalId }, 200, corsHeaders);

@@ -1,5 +1,16 @@
 # Dropi Relay — Proxy HTTP autenticado
 
+> ⚠️ **OJO — hay DOS "dropi-relay" con roles OPUESTOS. No confundir:**
+>
+> | | Este (`supabase/functions/dropi-relay`) | El del VPS (`vps/dropi-relay/`) |
+> |---|---|---|
+> | Dirección | **INBOUND**: le presta la IP de *este* Supabase a un **tercero externo** | **OUTBOUND**: da IP fija a **nuestras propias** llamadas a Dropi |
+> | Corre en | Supabase Edge (IP AWS que **rota**) | VPS Hostinger `2.25.69.238` (IP **fija**, whitelisteada) |
+> | Lo usa | "tu amiga" (proyecto externo) | Las edge functions de Guardian (Fase B) |
+> | Doc | este archivo | `vps/dropi-relay/README.md` |
+>
+> Este documento describe **solo el relay INBOUND de Supabase**.
+
 Este proyecto expone un endpoint relay que permite a sistemas externos ejecutar
 requests a la API de Dropi a través de la infraestructura de Supabase Edge
 Functions de **este** proyecto. Útil cuando el JWT de Rushmira tiene IP

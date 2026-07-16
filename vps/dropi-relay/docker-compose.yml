@@ -1,0 +1,20 @@
+services:
+  dropi-relay:
+    image: denoland/deno:alpine
+    container_name: dropi-relay
+    restart: always
+    command: run --allow-net --allow-env /relay.ts
+    environment:
+      - RELAY_SECRET=${RELAY_SECRET}
+      - PORT=8081
+      - UPSTREAM_TIMEOUT_MS=30000
+    volumes:
+      - ./relay.ts:/relay.ts:ro
+    networks:
+      - evolution_default
+
+# Red externa: la crea el stack de Evolution (bot WhatsApp). Caddy vive ahi y
+# resuelve `dropi-relay:8081` por nombre. NO se toca ese stack.
+networks:
+  evolution_default:
+    external: true
