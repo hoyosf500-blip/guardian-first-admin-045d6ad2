@@ -4,6 +4,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
+import { PROVINCIAS_ECUADOR } from '@/lib/ecuadorGeo';
+import { useStore } from '@/contexts/StoreContext';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { User, MapPin } from 'lucide-react';
@@ -84,19 +86,29 @@ interface Props {
 }
 
 export default function CustomerForm({ value: form, onChange, isAdmin }: Props) {
+  // País de la tienda activa → el catálogo de geografía es country-aware.
+  // Colombia usa el catálogo DANE (dropdown depto + ciudad); Ecuador usa las 24
+  // provincias (con sugerencias) y la ciudad/cantón como texto libre.
+  const { activeStore } = useStore();
+  const isEC = (activeStore?.country_code || 'CO').toUpperCase() === 'EC';
+  const DEPTOS = isEC ? PROVINCIAS_ECUADOR : DEPARTAMENTOS_NOMBRES;
+
   // Build depto option list. Si el depto del pedido matchea la lista canónica
   // case-insensitive, se normaliza al casing canónico para que el Select lo
   // encuentre; si no existe, se antepone el valor crudo para no perder data.
   const deptoOptions = useMemo(() => {
-    const list = [...DEPARTAMENTOS_NOMBRES];
+    const list = [...DEPTOS];
     if (!form.departamento) return list;
     const canonical = list.find(d => d.toLowerCase() === form.departamento.toLowerCase());
     if (!canonical) list.unshift(form.departamento);
     return list;
-  }, [form.departamento]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.departamento, isEC]);
 
   useEffect(() => {
-    if (!form.departamento) return;
+    // Solo normalizamos casing en Colombia (dropdown canónico). En EC la ciudad es
+    // texto libre y no queremos re-casificar la provincia guardada.
+    if (isEC || !form.departamento) return;
     const canonical = DEPARTAMENTOS_NOMBRES.find(
       d => d.toLowerCase() === form.departamento.toLowerCase(),
     );
@@ -106,7 +118,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.departamento]);
 
-  const ciudades = useMemo(() => getCiudadesDe(form.departamento), [form.departamento]);
+  const ciudades = useMemo(() => (isEC ? [] : getCiudadesDe(form.departamento)), [form.departamento, isEC]);
 
   const ciudadOptions = useMemo(() => {
     const list = [...ciudades];
@@ -185,36 +197,58 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
         </header>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Departamento *</Label>
-            <Select
-              value={form.departamento || undefined}
-              onValueChange={(v) => onChange(f => ({ ...f, departamento: v, ciudad: '' }))}
-            >
-              <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-              <SelectContent>
-                {deptoOptions.map(d => (
-                  <SelectItem key={d} value={d}>{d}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label className="text-xs">{isEC ? 'Provincia *' : 'Departamento *'}</Label>
+            {isEC ? (
+              <>
+                <Input
+                  list="ec-provincias"
+                  value={form.departamento}
+                  onChange={e => onChange(f => ({ ...f, departamento: e.target.value }))}
+                  placeholder="Ej. Guayas"
+                />
+                <datalist id="ec-provincias">
+                  {PROVINCIAS_ECUADOR.map(p => <option key={p} value={p} />)}
+                </datalist>
+              </>
+            ) : (
+              <Select
+                value={form.departamento || undefined}
+                onValueChange={(v) => onChange(f => ({ ...f, departamento: v, ciudad: '' }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                <SelectContent>
+                  {deptoOptions.map(d => (
+                    <SelectItem key={d} value={d}>{d}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">Ciudad *</Label>
-            <Select
-              value={form.ciudad || undefined}
-              onValueChange={(v) => onChange(f => ({ ...f, ciudad: v }))}
-              disabled={!form.departamento}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elige depto. primero'} />
-              </SelectTrigger>
-              <SelectContent>
-                {ciudadOptions.map(c => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isEC ? (
+              <Input
+                value={form.ciudad}
+                onChange={e => onChange(f => ({ ...f, ciudad: e.target.value }))}
+                placeholder="Ej. Guayaquil"
+              />
+            ) : (
+              <Select
+                value={form.ciudad || undefined}
+                onValueChange={(v) => onChange(f => ({ ...f, ciudad: v }))}
+                disabled={!form.departamento}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elige depto. primero'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {ciudadOptions.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="md:col-span-2 space-y-2">
