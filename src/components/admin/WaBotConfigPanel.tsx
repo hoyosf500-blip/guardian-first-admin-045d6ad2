@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { useStore } from '@/contexts/StoreContext';
 import { Bot, Save, Loader2, Sparkles, Power, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 
 // wa_bot_config es nueva y aún no está en los tipos generados → cast sin `any`
@@ -119,10 +120,13 @@ export default function WaBotConfigPanel() {
     greeting !== (saved.greeting ?? '');
 
   return (
-    <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden">
+    <motion.div {...fadeUp} className="">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <Bot size={16} className="text-accent" />
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Bot size={15} />
+        </span>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Bot de WhatsApp · {activeStore?.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -133,7 +137,7 @@ export default function WaBotConfigPanel() {
 
       <div className="px-5 py-4 space-y-5">
         {/* Switch global on/off */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card/40 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <Power size={15} className={enabled ? 'text-success' : 'text-muted-foreground'} />
             <div>
@@ -157,22 +161,22 @@ export default function WaBotConfigPanel() {
         {/* Nombre del asesor + modelo */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Nombre del asesor</label>
+            <label className="hud-label">Nombre del asesor</label>
             <input
               type="text"
               value={agentName}
               onChange={e => setAgentName(e.target.value)}
               placeholder="Sara"
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">Con el que el bot se presenta. Vacío = "Sara".</p>
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1"><Sparkles size={10} /> Modelo de IA</label>
+            <label className="hud-label flex items-center gap-1"><Sparkles size={10} /> Modelo de IA</label>
             <select
               value={model}
               onChange={e => setModel(e.target.value)}
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             >
               {MODEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -182,13 +186,13 @@ export default function WaBotConfigPanel() {
 
         {/* Prompt / personalidad */}
         <div>
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Personalidad e instrucciones GENERALES (prompt)</label>
+          <label className="hud-label">Personalidad e instrucciones GENERALES (prompt)</label>
           <textarea
             value={systemPrompt}
             onChange={e => setSystemPrompt(e.target.value)}
             placeholder={PROMPT_PLACEHOLDER}
             rows={10}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
+            className="mt-1 w-full rounded-xl border border-border bg-card/40 px-3 py-2.5 text-sm text-foreground leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
           />
           <div className="mt-1.5 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-[11px] text-muted-foreground">
             🔒 <strong className="text-foreground">Seguridad siempre activa:</strong> aunque dejes esto vacío o cambies todo, el bot
@@ -201,13 +205,13 @@ export default function WaBotConfigPanel() {
 
         {/* Saludo */}
         <div>
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1"><MessageSquare size={10} /> Saludo (opcional)</label>
+          <label className="hud-label flex items-center gap-1"><MessageSquare size={10} /> Saludo (opcional)</label>
           <textarea
             value={greeting}
             onChange={e => setGreeting(e.target.value)}
             placeholder="¡Hola! Soy Sara de Mi Tienda 💛 ¿En qué te ayudo con tu pedido?"
             rows={2}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
+            className="mt-1 w-full rounded-xl border border-border bg-card/40 px-3 py-2.5 text-sm text-foreground resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
           />
           <p className="mt-1 text-[11px] text-muted-foreground">Cómo abre la conversación cuando es el primer mensaje del cliente.</p>
         </div>
@@ -227,6 +231,7 @@ export default function WaBotConfigPanel() {
           </button>
         </div>
       </div>
+    </TiltCard>
     </motion.div>
   );
 }

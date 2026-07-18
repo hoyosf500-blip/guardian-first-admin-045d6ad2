@@ -137,7 +137,7 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
 
   if (isLoading) {
     return (
-      <section className="rounded-xl border border-border bg-card p-5">
+      <section className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={14} className="animate-spin" />
           Cargando pauta…
@@ -148,8 +148,9 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
 
   if (isError) {
     return (
-      <section className="rounded-xl border border-red/40 bg-red/5 p-4">
-        <div className="flex items-start gap-2 text-sm text-red">
+      <section className="relative rounded-2xl border border-danger/30 bg-danger/[0.07] p-4 pl-5 shadow-card3d">
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+        <div className="flex items-start gap-2 text-sm text-danger">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold">No pude leer la pauta.</span>{' '}
@@ -164,14 +165,16 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
 
   return (
     <section className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Megaphone size={14} className="text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <Megaphone size={14} />
+          </span>
+          <h3 className="text-sm font-semibold text-foreground truncate">
             Pauta — <span className="capitalize">{fmtMonth(yearMonth)}</span>
           </h3>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setEditingDialog({ open: true, row: null })} className="h-8">
+        <Button size="sm" variant="outline" onClick={() => setEditingDialog({ open: true, row: null })} className="h-8 rounded-xl shrink-0">
           <Plus size={12} className="mr-1.5" />
           Agregar cuenta
         </Button>
@@ -192,8 +195,8 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
 
       {/* Sección 2: Distribución por método de pago */}
       {curr.total > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-2">
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-4 space-y-2.5">
+          <div className="hud-label text-muted-foreground mb-2">
             Por método de pago
           </div>
           {(['mastercard_usd', 'mastercard_cop', 'amex_cop', 'wallet', 'other'] as const)
@@ -209,13 +212,13 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
                       <span>{info.icon}</span>
                       <span className="text-foreground">{info.label}</span>
                     </span>
-                    <span className={`font-bold tabular-nums ${TONE_TEXT[info.tone]}`}>
+                    <span className={`font-bold font-mono tabular-nums ${TONE_TEXT[info.tone]}`}>
                       {formatCOP(amount)}
                       <span className="text-muted-foreground font-normal ml-1.5">{Math.round(pct)}%</span>
                     </span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted/30 overflow-hidden">
-                    <div className={`h-full ${TONE_BG[info.tone]}`} style={{ width: `${pct}%` }} />
+                  <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+                    <div className={`h-full rounded-full ${TONE_BG[info.tone]}`} style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -225,22 +228,22 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
 
       {/* Sección 3: Tabla de cuentas */}
       {rows.length > 0 ? (
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/30 text-muted-foreground text-[10px] uppercase tracking-wider">
+            <thead className="bg-foreground/[0.03] text-muted-foreground">
               <tr>
-                <th className="px-4 py-2 text-left font-semibold">Plataforma</th>
-                <th className="px-4 py-2 text-left font-semibold">Cuenta</th>
-                <th className="px-4 py-2 text-right font-semibold">Monto COP</th>
-                <th className="px-4 py-2 text-left font-semibold">Pago</th>
-                <th className="px-4 py-2 text-right font-semibold">Acción</th>
+                <th className="px-4 py-2.5 text-left font-semibold">Plataforma</th>
+                <th className="px-4 py-2.5 text-left font-semibold">Cuenta</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Monto COP</th>
+                <th className="px-4 py-2.5 text-left font-semibold">Pago</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {rows.map((row) => {
                 const info = PAYMENT_METHOD_INFO[row.payment_method];
                 return (
-                  <tr key={row.id} className="hover:bg-muted/20">
+                  <tr key={row.id} className="hover:bg-foreground/[0.035] transition-colors">
                     <td className="px-4 py-2 text-xs text-foreground">{PLATFORM_LABELS[row.platform]}</td>
                     <td className="px-4 py-2 text-xs text-foreground">{row.account_name}</td>
                     <td className="px-4 py-2 text-right text-xs font-mono tabular-nums text-foreground">{formatCOP(row.amount_cop)}</td>
@@ -263,7 +266,7 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
           </table>
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center">
+        <div className="rounded-2xl border border-dashed border-border bg-card/40 p-6 text-center">
           <p className="text-sm text-muted-foreground mb-2">Sin pauta cargada para este mes</p>
           <Button size="sm" variant="outline" onClick={() => setEditingDialog({ open: true, row: null })}>
             <Plus size={12} className="mr-1.5" />
@@ -273,21 +276,22 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
       )}
 
       {/* Sección 4: Calendario de cierres */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-2.5">
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-4 space-y-2.5">
+        <div className="flex items-center gap-1.5 hud-label text-muted-foreground mb-1">
           <CalendarClock size={12} />
           Próximo ciclo TC
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="rounded-lg border border-border bg-card/50 p-2.5">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Cierre Mastercard</div>
-            <div className="text-sm font-bold text-foreground">{fmtDate(cutoffMC.cierre)}</div>
-            <div className="text-[10px] text-muted-foreground">en {daysUntil(cutoffMC.cierre)} días</div>
+          <div className="rounded-xl border border-border bg-card/40 p-3 hover:border-border-strong transition-colors">
+            <div className="hud-label text-muted-foreground">Cierre Mastercard</div>
+            <div className="text-sm font-bold font-mono tabular-nums text-foreground mt-1">{fmtDate(cutoffMC.cierre)}</div>
+            <div className="text-[10px] font-mono tabular-nums text-muted-foreground">en {daysUntil(cutoffMC.cierre)} días</div>
           </div>
-          <div className="rounded-lg border border-red/30 bg-red/5 p-2.5">
-            <div className="text-[10px] uppercase tracking-wider text-red font-semibold">Vence pago</div>
-            <div className="text-sm font-bold text-red">{fmtDate(cutoffMC.vencimiento)}</div>
-            <div className="text-[10px] text-muted-foreground">en {daysUntil(cutoffMC.vencimiento)} días</div>
+          <div className="relative rounded-xl border border-danger/30 bg-danger/[0.06] p-3 pl-4">
+            <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-danger" aria-hidden="true" />
+            <div className="hud-label text-danger">Vence pago</div>
+            <div className="text-sm font-bold font-mono tabular-nums text-danger mt-1">{fmtDate(cutoffMC.vencimiento)}</div>
+            <div className="text-[10px] font-mono tabular-nums text-muted-foreground">en {daysUntil(cutoffMC.vencimiento)} días</div>
           </div>
         </div>
         <p className="text-[10px] text-muted-foreground leading-relaxed">
@@ -297,31 +301,43 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
       </div>
 
       {/* Sección 5: Alertas */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <header className="px-4 py-2.5 border-b border-border flex items-center gap-1.5">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+        <header className="px-4 py-3 border-b border-border flex items-center gap-1.5">
           <AlertTriangle size={12} className="text-accent" />
-          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">Alertas operativas</span>
+          <span className="hud-label text-muted-foreground">Alertas operativas</span>
         </header>
         {alerts.length === 0 ? (
-          <div className="px-4 py-3 inline-flex items-center gap-2 text-sm text-green">
-            <CheckCircle2 size={14} />
-            <span>Todo en orden</span>
+          <div className="px-4 py-3">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
+              <CheckCircle2 size={13} />
+              Todo en orden
+            </span>
           </div>
         ) : (
           <ul className="divide-y divide-border">
             {alerts.map((a, i) => (
               <li
                 key={i}
-                className={`px-4 py-2.5 flex items-start gap-2.5 text-xs ${
-                  a.tone === 'danger' ? 'bg-red/5' : a.tone === 'warning' ? 'bg-orange/5' : 'bg-green/5'
+                className={`relative px-4 py-3 pl-5 flex items-start gap-2.5 text-xs transition-colors ${
+                  a.tone === 'danger'
+                    ? 'bg-danger/[0.06] hover:bg-danger/[0.1]'
+                    : a.tone === 'warning'
+                      ? 'bg-warning/[0.06] hover:bg-warning/[0.1]'
+                      : 'bg-success/[0.06] hover:bg-success/[0.1]'
                 }`}
               >
+                <span
+                  className={`absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full ${
+                    a.tone === 'danger' ? 'bg-danger' : a.tone === 'warning' ? 'bg-warning' : 'bg-success'
+                  }`}
+                  aria-hidden="true"
+                />
                 {a.tone === 'danger' ? (
-                  <AlertCircle size={14} className="text-red shrink-0 mt-0.5" />
+                  <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />
                 ) : a.tone === 'warning' ? (
-                  <AlertTriangle size={14} className="text-orange shrink-0 mt-0.5" />
+                  <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
                 ) : (
-                  <CheckCircle2 size={14} className="text-green shrink-0 mt-0.5" />
+                  <CheckCircle2 size={14} className="text-success shrink-0 mt-0.5" />
                 )}
                 <span className="text-foreground">{a.text}</span>
               </li>
@@ -350,17 +366,17 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, prev, delta, bold }: KpiCardProps) {
   const goingUp = delta !== null && delta > 0;
-  const tone = goingUp ? 'text-red' : delta !== null && delta < 0 ? 'text-green' : 'text-muted-foreground';
+  const tone = goingUp ? 'text-danger' : delta !== null && delta < 0 ? 'text-success' : 'text-muted-foreground';
   return (
-    <div className={`rounded-xl border ${bold ? 'border-accent/40 bg-accent/5' : 'border-border bg-card'} p-3 space-y-1`}>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{label}</div>
-      <div className={`text-xl font-bold tabular-nums ${bold ? 'text-accent' : 'text-foreground'}`}>
+    <div className={`rounded-2xl border shadow-card3d ${bold ? 'border-accent/40 bg-accent/[0.07]' : 'border-border bg-card/40'} p-4 space-y-1.5`}>
+      <div className="hud-label text-muted-foreground">{label}</div>
+      <div className={`text-2xl font-bold font-mono tabular-nums ${bold ? 'text-accent' : 'text-foreground'}`}>
         {formatCOP(value)}
       </div>
       {delta !== null ? (
         <div className={`text-[11px] inline-flex items-center gap-1 ${tone}`}>
           {goingUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-          <span className="font-mono">{delta > 0 ? '+' : ''}{delta}%</span>
+          <span className="font-mono tabular-nums">{delta > 0 ? '+' : ''}{delta}%</span>
           <span className="text-muted-foreground">vs mes anterior ({formatCOP(prev)})</span>
         </div>
       ) : (

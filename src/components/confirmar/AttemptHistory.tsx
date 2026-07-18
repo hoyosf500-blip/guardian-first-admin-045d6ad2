@@ -5,9 +5,9 @@ import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, type Attempt
 import { bogotaToday } from '@/lib/utils';
 
 const TONE_DOT: Record<string, string> = {
-  green: 'bg-green',
-  red: 'bg-red',
-  yellow: 'bg-yellow',
+  green: 'bg-success',
+  red: 'bg-danger',
+  yellow: 'bg-warning',
   muted: 'bg-muted-foreground',
 };
 
@@ -29,8 +29,8 @@ export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] })
   const hidden = attempts.length - shown.length;
 
   return (
-    <div className="mb-3 rounded-lg border border-input bg-surface/60 px-3 py-2">
-      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+    <div className="mb-3 rounded-xl border border-border bg-card/40 px-3 py-2.5">
+      <div className="hud-label flex items-center gap-1.5 mb-1.5 text-muted-foreground">
         <History size={12} />
         Intentos previos ({attempts.length})
       </div>
@@ -47,7 +47,7 @@ export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] })
               {a.result === 'canc' && a.reason && (
                 <span className="text-muted-foreground/80 italic truncate max-w-[120px]">({a.reason})</span>
               )}
-              <span className="ml-auto text-muted-foreground/70 tabular-nums shrink-0">
+              <span className="ml-auto text-muted-foreground/70 font-mono tabular-nums shrink-0">
                 {day ? `${day} ` : ''}{clock}
               </span>
             </li>

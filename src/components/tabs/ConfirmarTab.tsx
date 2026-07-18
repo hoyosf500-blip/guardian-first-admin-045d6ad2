@@ -24,6 +24,7 @@ import DropiSyncFailuresPanel from '@/components/confirmar/DropiSyncFailuresPane
 import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
 import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
+import { TiltCard, CountUp } from '@/components/ui3d';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, bogotaToday, formatCOP } from '@/lib/utils';
@@ -392,12 +393,12 @@ export default function ConfirmarTab({ profile }: Props) {
       {/* Page header — patrón pro coherente con Logística/Rescate */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
+          <div className="hud-label truncate text-accent">
             Cola · Operadora
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-            <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
-              <Phone size={18} strokeWidth={2.25} />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+            <span className="inline-flex w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent items-center justify-center shrink-0" aria-hidden="true">
+              <Phone size={20} strokeWidth={2.25} />
             </span>
             Confirmar
           </h1>
@@ -407,7 +408,7 @@ export default function ConfirmarTab({ profile }: Props) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5 h-9">
+          <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5 h-9 rounded-xl bg-card/40 border-border hover:border-border-strong">
             <Moon size={14} /> Cerrar turno
           </Button>
           {excelLoaded && (
@@ -425,7 +426,7 @@ export default function ConfirmarTab({ profile }: Props) {
                   sessionStorage.removeItem('confirmar:callOrderId');
                 } catch { /* storage disabled */ }
               }}
-              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-lg bg-card border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="inline-flex h-9 items-center gap-1.5 px-3 rounded-xl bg-card/40 border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               Cambiar archivo
             </button>
@@ -502,9 +503,9 @@ export default function ConfirmarTab({ profile }: Props) {
               }
             }}
             disabled={syncing}
-            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-xl bg-surface border border-border hover:border-accent/30 hover:bg-accent/5 transition-colors duration-200 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-2xl bg-card/40 border border-border shadow-card3d hover:border-accent/40 hover:bg-accent/5 transition-colors duration-200 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
-            <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/20 flex items-center justify-center group-hover:bg-accent/25 transition-colors duration-200">
+            <div className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center group-hover:bg-accent/25 transition-colors duration-200">
               {syncing ? <RefreshCw size={20} className="text-accent animate-spin" aria-hidden="true" /> : <CloudDownload size={20} className="text-accent" aria-hidden="true" />}
             </div>
             <div className="text-left">
@@ -530,7 +531,7 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {excelLoaded && workQueue.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
-          <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-card/40 border border-border flex items-center justify-center mb-4">
             <Phone size={24} className="text-muted-foreground" aria-hidden="true" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">No hay pedidos disponibles para confirmar</h3>
@@ -539,7 +540,7 @@ export default function ConfirmarTab({ profile }: Props) {
           </p>
           <button
             onClick={() => { resetOrders(); setExcelLoaded(false); }}
-            className="mt-4 text-xs px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors"
+            className="mt-4 text-sm px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors"
           >
             Volver al inicio
           </button>
@@ -571,7 +572,8 @@ export default function ConfirmarTab({ profile }: Props) {
             const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
             const bgTone = tone === 'success' ? 'bg-success/5' : tone === 'warning' ? 'bg-warning/5' : 'bg-danger/5';
             return (
-              <div className={`mb-3 rounded-xl border ${borderTone} ${bgTone} px-4 py-3 flex items-center flex-wrap gap-x-4 gap-y-2`}>
+              <div className={`relative mb-3 rounded-2xl border ${borderTone} ${bgTone} px-4 py-3 pl-5 shadow-card3d flex items-center flex-wrap gap-x-4 gap-y-2`}>
+                <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${dotTone}`} aria-hidden="true" />
                 <span className={`h-2 w-2 rounded-full shrink-0 ${dotTone}`} aria-hidden="true" />
                 <div className="text-sm font-semibold text-foreground">
                   Tu cola hoy
@@ -608,10 +610,15 @@ export default function ConfirmarTab({ profile }: Props) {
             const d7 = visibleQueue.filter(o => diasReales(o) >= 7 && !o.result).length;
             const d46 = visibleQueue.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6 && !o.result; }).length;
             return (
-              <div className="glass-panel glass-panel-hover mb-4 rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2">
+              <TiltCard
+                sheen
+                brackets
+                wrapperClassName="mb-4"
+                className="bg-card/40 border border-border rounded-3xl px-5 py-4 shadow-card3d-lg flex flex-wrap items-baseline gap-x-5 gap-y-2"
+              >
                 <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-3xl font-extrabold tabular-nums text-accent leading-none num-glow-accent">{pending}</span>
-                  <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">por confirmar</span>
+                  <CountUp value={pending} className="text-4xl font-extrabold text-accent leading-none num-glow-accent" />
+                  <span className="hud-label">por confirmar</span>
                 </div>
                 <div className="flex items-baseline gap-x-4 gap-y-1 flex-wrap text-xs">
                   <span className="inline-flex items-baseline gap-1">
@@ -633,25 +640,25 @@ export default function ConfirmarTab({ profile }: Props) {
                   {/* Estos conteos son de TODA la tienda (todas las operadoras),
                       no personales. Se etiqueta para no confundir con "Tu cola hoy"
                       y con el banner personal de arriba. */}
-                  <span className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground/70">
+                  <span className="hud-label text-muted-foreground/70">
                     equipo · toda la tienda
                   </span>
                 </div>
                 {(d7 > 0 || d46 > 0) && (
                   <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:border-l sm:border-border/60 sm:pl-5">
                     {d7 > 0 && (
-                      <span className="pill pill-danger">
-                        <span className="w-1.5 h-1.5 rounded-full bg-danger" aria-hidden="true" /> {d7} cancelar (D7+)
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
+                        <span className="w-1.5 h-1.5 rounded-full bg-danger" aria-hidden="true" /> <span className="font-mono tabular-nums">{d7}</span> cancelar (D7+)
                       </span>
                     )}
                     {d46 > 0 && (
-                      <span className="pill pill-warning">
-                        <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" /> {d46} urgente (D4-6)
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-warning/14 border border-warning/30 text-warning">
+                        <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" /> <span className="font-mono tabular-nums">{d46}</span> urgente (D4-6)
                       </span>
                     )}
                   </div>
                 )}
-              </div>
+              </TiltCard>
             );
           })()}
 
@@ -663,13 +670,14 @@ export default function ConfirmarTab({ profile }: Props) {
               <button
                 onClick={() => { setView('list'); setFilter(active ? 'pending' : 'retry'); }}
                 aria-pressed={active}
-                className={`w-full flex items-center gap-3 mb-4 rounded-xl border px-4 py-3 text-left transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none ${
-                  active ? 'bg-warning/20 border-warning/50' : 'bg-warning/10 border-warning/25 hover:bg-warning/15'
+                className={`relative w-full flex items-center gap-3 mb-4 rounded-2xl border px-4 py-3 pl-5 shadow-card3d text-left transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none ${
+                  active ? 'bg-warning/20 border-warning/50' : 'bg-warning/10 border-warning/25 hover:bg-warning/15 hover:border-warning/40'
                 }`}>
+                <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
                 <RotateCcw size={16} className="text-warning shrink-0" aria-hidden="true" strokeWidth={2.25} />
                 <div className="min-w-0 flex-1">
                   <span className="text-xs font-bold text-warning">
-                    {retryOrders.length} pedido{retryOrders.length > 1 ? 's' : ''} para reintentar
+                    <span className="font-mono tabular-nums">{retryOrders.length}</span> pedido{retryOrders.length > 1 ? 's' : ''} para reintentar
                   </span>
                   <span className="text-[11px] text-muted-foreground ml-2">
                     No contestaron antes — volver a llamar
@@ -689,12 +697,12 @@ export default function ConfirmarTab({ profile }: Props) {
               indistinguibles del fondo) a h-9/text-xs con el ícono más visible
               — el popover trigger ya cubría todo el botón (asChild forwardea
               onClick), pero el target era demasiado chiquito. */}
-          <div className="glass-panel rounded-xl p-3 sm:p-4 mb-4 space-y-3">
+          <div className="bg-card/40 border border-border rounded-2xl shadow-card3d p-3 sm:p-4 mb-4 space-y-3">
             <div className="flex items-center flex-wrap gap-2">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className={cn(
-                    "h-9 gap-1.5 text-xs font-medium rounded-lg cursor-pointer",
+                    "h-9 gap-1.5 text-xs font-medium rounded-xl bg-card/40 border-border hover:border-border-strong cursor-pointer",
                     !dateFrom && "text-muted-foreground"
                   )}>
                     <CalendarIcon size={14} aria-hidden="true" />
@@ -715,7 +723,7 @@ export default function ConfirmarTab({ profile }: Props) {
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className={cn(
-                    "h-9 gap-1.5 text-xs font-medium rounded-lg cursor-pointer",
+                    "h-9 gap-1.5 text-xs font-medium rounded-xl bg-card/40 border-border hover:border-border-strong cursor-pointer",
                     !dateTo && "text-muted-foreground"
                   )}>
                     <CalendarIcon size={14} aria-hidden="true" />
@@ -740,15 +748,17 @@ export default function ConfirmarTab({ profile }: Props) {
                 </Button>
               )}
 
-              <div className="flex gap-1 bg-card border border-border rounded-lg p-0.5 ml-auto">
+              <div className="inline-flex flex-wrap gap-2 ml-auto">
                 {([
                   { key: 'list' as const, icon: List, label: 'Lista' },
                   { key: 'call' as const, icon: Phone, label: 'Llamar' },
                 ]).map(v => (
                   <button key={v.key} onClick={() => setView(v.key)}
                     aria-pressed={view === v.key}
-                    className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-md text-xs font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                      view === v.key ? 'bg-accent-gradient text-white shadow-glow' : 'text-muted-foreground hover:text-foreground'
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                      view === v.key
+                        ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                        : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
                     }`}>
                     <v.icon size={13} aria-hidden="true" /> {v.label}
                   </button>
@@ -766,8 +776,9 @@ export default function ConfirmarTab({ profile }: Props) {
               Acá va con acción directa: "Cancelar en Dropi" vía markResult('canc')
               (la cancelación se sincroniza con Dropi de verdad). */}
           {liveDups.length > 0 && (
-            <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 overflow-hidden">
-              <div className="px-4 py-2.5 flex items-center gap-2 text-xs">
+            <div className="relative mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+              <div className="px-4 py-2.5 pl-5 flex items-center gap-2 text-xs">
                 <AlertTriangle size={14} className="text-destructive shrink-0" aria-hidden="true" />
                 <span className="font-semibold text-foreground">
                   ⚠ {liveDups.length} DUPLICADO{liveDups.length > 1 ? 'S' : ''} VIVO{liveDups.length > 1 ? 'S' : ''} en Dropi
@@ -778,18 +789,18 @@ export default function ConfirmarTab({ profile }: Props) {
                 {liveDups.map(o => {
                   const info = supersededMap.get(String(o.externalId));
                   return (
-                    <div key={o.externalId || o.dbId} className="px-4 py-2 flex items-center gap-2 text-xs flex-wrap">
+                    <div key={o.externalId || o.dbId} className="px-4 pl-5 py-2 flex items-center gap-2 text-xs flex-wrap transition-colors hover:bg-destructive/5">
                       <span className="font-medium text-foreground truncate">{o.nombre}</span>
-                      <a href={`/pedido/${o.externalId}`} className="font-mono text-[10px] text-primary hover:underline">#{o.externalId}</a>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-destructive/15 text-destructive border-destructive/30">
+                      <a href={`/pedido/${o.externalId}`} className="font-mono tabular-nums text-[10px] text-primary hover:underline">#{o.externalId}</a>
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg border bg-destructive/15 text-destructive border-destructive/30">
                         {o.estado}
                       </span>
                       <span className="text-muted-foreground truncate">{o.producto}</span>
-                      <span className="tabular-nums text-muted-foreground">{formatCOP(Number(o.valor || 0))}</span>
+                      <span className="font-mono tabular-nums text-muted-foreground">{formatCOP(Number(o.valor || 0))}</span>
                       {info && (
                         <span className="text-muted-foreground">
                           más nuevo:{' '}
-                          <a href={`/pedido/${info.byExternalId}`} className="font-mono text-primary hover:underline">#{info.byExternalId}</a>
+                          <a href={`/pedido/${info.byExternalId}`} className="font-mono tabular-nums text-primary hover:underline">#{info.byExternalId}</a>
                         </span>
                       )}
                       <span className="ml-auto">
@@ -799,7 +810,7 @@ export default function ConfirmarTab({ profile }: Props) {
                           <Button
                             variant="destructive"
                             size="sm"
-                            className="h-7 text-[11px]"
+                            className="h-7 rounded-xl text-[11px]"
                             onClick={() => setDupToCancel(o)}
                           >
                             Cancelar en Dropi
@@ -841,9 +852,10 @@ export default function ConfirmarTab({ profile }: Props) {
           </AlertDialog>
 
           {hiddenDeadDups.length > 0 && (
-            <div className="mb-4 rounded-xl border border-border bg-muted/40 overflow-hidden">
+            <div className="relative mb-4 rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-muted-foreground/40" aria-hidden="true" />
               <button onClick={() => setDupExpanded(e => !e)}
-                className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-xs">
+                className="w-full flex items-center gap-2 px-4 pl-5 py-2.5 text-left text-xs transition-colors hover:bg-foreground/5">
                 <AlertTriangle size={14} className="text-muted-foreground shrink-0" aria-hidden="true" />
                 <span className="font-semibold text-foreground">
                   {hiddenDeadDups.length} pedido{hiddenDeadDups.length > 1 ? 's' : ''} oculto{hiddenDeadDups.length > 1 ? 's' : ''} por duplicado
@@ -854,11 +866,11 @@ export default function ConfirmarTab({ profile }: Props) {
               {dupExpanded && (
                 <div className="border-t border-border divide-y divide-border">
                   {hiddenDeadDups.map(o => (
-                    <div key={o.externalId || o.dbId} className="px-4 py-2 flex items-center gap-3 text-xs">
+                    <div key={o.externalId || o.dbId} className="px-4 pl-5 py-2 flex items-center gap-3 text-xs transition-colors hover:bg-foreground/5">
                       <span className="font-medium text-foreground truncate">{o.nombre}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground">#{o.externalId}</span>
+                      <span className="font-mono tabular-nums text-[10px] text-muted-foreground">#{o.externalId}</span>
                       <span className="text-muted-foreground">{o.producto}</span>
-                      <span className="ml-auto tabular-nums text-muted-foreground">{formatCOP(Number(o.valor || 0))}</span>
+                      <span className="ml-auto font-mono tabular-nums text-muted-foreground">{formatCOP(Number(o.valor || 0))}</span>
                     </div>
                   ))}
                 </div>
@@ -872,8 +884,9 @@ export default function ConfirmarTab({ profile }: Props) {
               como strip pegado a la lista porque el pedido viejo NO se debe
               gestionar (es un aviso de exclusión, no un dato más de la fila). */}
           {resentOldInQueue.length > 0 && (
-            <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 overflow-hidden">
-              <div className="px-4 py-2.5 flex items-center gap-2 text-xs">
+            <div className="relative mb-4 rounded-2xl border border-warning/40 bg-warning/10 shadow-card3d overflow-hidden">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+              <div className="px-4 pl-5 py-2.5 flex items-center gap-2 text-xs">
                 <AlertTriangle size={14} className="text-warning shrink-0" aria-hidden="true" />
                 <span className="font-semibold text-foreground">
                   {resentOldInQueue.length} pedido{resentOldInQueue.length > 1 ? 's' : ''} viejo{resentOldInQueue.length > 1 ? 's' : ''} con reenvío activo
@@ -882,12 +895,12 @@ export default function ConfirmarTab({ profile }: Props) {
               </div>
               <div className="border-t border-warning/30 divide-y divide-border">
                 {resentOldInQueue.map(({ order, nuevoId }) => (
-                  <div key={order.externalId || order.dbId} className="px-4 py-2 flex items-center gap-2 text-xs flex-wrap">
+                  <div key={order.externalId || order.dbId} className="px-4 pl-5 py-2 flex items-center gap-2 text-xs flex-wrap transition-colors hover:bg-warning/5">
                     <span className="font-medium text-foreground truncate">{order.nombre}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">#{order.externalId}</span>
+                    <span className="font-mono tabular-nums text-[10px] text-muted-foreground">#{order.externalId}</span>
                     <span
                       title={`Este cliente ya tiene un pedido más nuevo activo (#${nuevoId}) — gestioná ese y no toques este`}
-                      className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-warning/15 text-warning border-warning/30 inline-flex items-center gap-0.5"
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg border bg-warning/15 text-warning border-warning/30 inline-flex items-center gap-0.5"
                     >
                       ⚠ YA REENVIADO — gestioná el #{nuevoId}
                     </span>

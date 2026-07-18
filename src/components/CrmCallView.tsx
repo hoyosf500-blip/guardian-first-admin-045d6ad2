@@ -589,8 +589,8 @@ export default function CrmCallView({
     void copyToClipboard(o.guia, 'Guía copiada');
   };
 
-  const pColor = diasEnEstatus >= 5 ? 'text-red-500' : diasEnEstatus >= 3 ? 'text-amber-500' : diasEnEstatus >= 2 ? 'text-orange-400' : 'text-green-500';
-  const pDot = diasEnEstatus >= 5 ? 'bg-red-500' : diasEnEstatus >= 3 ? 'bg-amber-500' : diasEnEstatus >= 2 ? 'bg-orange-400' : 'bg-green-500';
+  const pColor = diasEnEstatus >= 5 ? 'text-danger' : diasEnEstatus >= 3 ? 'text-warning' : diasEnEstatus >= 2 ? 'text-attention' : 'text-success';
+  const pDot = diasEnEstatus >= 5 ? 'bg-danger' : diasEnEstatus >= 3 ? 'bg-warning' : diasEnEstatus >= 2 ? 'bg-attention' : 'bg-success';
 
   // Validador-direcciones: pickup + stale-green override visual inmediato.
   // Mientras el effect de override hace el UPDATE + realtime refresca,
@@ -610,16 +610,16 @@ export default function CrmCallView({
   return (
     <div>
       {/* Persistent "currently attending" banner — survives tab switches */}
-      <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
-        <User size={12} className="text-primary" />
-        <span className="text-muted-foreground">Atendiendo:</span>
-        <span className="font-semibold text-foreground truncate">{o.nombre}</span>
-        <span className="text-muted-foreground">·</span>
-        <span className="font-mono text-foreground">{formatPhone(o.phone)}</span>
+      <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/16 px-3 py-1.5 text-xs text-accent shadow-glow3d">
+        <User size={12} className="text-accent" />
+        <span className="opacity-80">Atendiendo:</span>
+        <span className="font-semibold truncate">{o.nombre}</span>
+        <span className="opacity-60">·</span>
+        <span className="font-mono tabular-nums">{formatPhone(o.phone)}</span>
       </div>
       {/* Nav header */}
       <div className="flex justify-between items-center mb-2">
-        <span className="text-xs text-muted-foreground font-mono">{idx + 1} / {items.length}</span>
+        <span className="text-xs text-muted-foreground font-mono tabular-nums">{idx + 1} / {items.length}</span>
         <div className="flex gap-1.5">
           {/* Refrescar desde Dropi: trae el estado AHORA de este pedido en
               tiempo real, sin esperar al cron. Pensado para los casos en que
@@ -630,7 +630,7 @@ export default function CrmCallView({
             disabled={isRefreshing || !o.externalId || !activeStoreId}
             aria-label="Refrescar este pedido desde Dropi (trae el estado actual en vivo)"
             title="Trae el estado actual desde la API de Dropi (estado, guía, transportadora)"
-            className="px-3 py-1.5 rounded-md bg-accent/10 border border-accent/40 text-accent text-xs font-semibold disabled:opacity-30 inline-flex items-center gap-1.5 hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="px-3 py-2 rounded-xl bg-accent/16 border border-accent/40 text-accent text-xs font-semibold disabled:opacity-30 inline-flex items-center gap-1.5 hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
             <span className="hidden sm:inline">{isRefreshing ? 'Refrescando…' : 'Refrescar Dropi'}</span>
@@ -638,14 +638,14 @@ export default function CrmCallView({
           <button
             onClick={() => navCall(-1)}
             disabled={idx <= 0}
-            className="px-3 py-1.5 rounded-md bg-card border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <ChevronLeft size={14} aria-hidden="true" />
           </button>
           <button
             onClick={() => navCall(1)}
             disabled={idx >= items.length - 1}
-            className="px-3 py-1.5 rounded-md bg-card border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <ChevronRight size={14} />
           </button>
@@ -659,28 +659,28 @@ export default function CrmCallView({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -12 }}
           transition={{ duration: 0.2 }}
-          className="bg-surface border border-border rounded-xl p-5 mb-4 hover:border-border-strong transition-colors duration-200"
+          className="bg-card/40 border border-border rounded-3xl p-6 mb-4 shadow-card3d-lg hover:border-border-strong transition-colors duration-200"
         >
           {/* Header: badges */}
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <div className={`w-2 h-2 rounded-full ${pDot}`} />
+            <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} />
             <span className={`text-xs font-bold ${pColor}`}>
-              {diasEnEstatus}d sin movimiento
+              <span className="font-mono tabular-nums">{diasEnEstatus}d</span> sin movimiento
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-semibold uppercase tracking-wide">
+            <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">
               {o.estado}
             </span>
             {o.transportadora && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-500 border border-cyan-500/20 font-semibold inline-flex items-center gap-1">
-                <Truck size={10} />
+              <span className="text-[11px] px-2.5 py-1 rounded-lg bg-info/14 text-info border border-info/30 font-semibold inline-flex items-center gap-1.5">
+                <Truck size={11} />
                 {o.transportadora}
               </span>
             )}
             {alert && alert.level !== 'ok' && alert.level !== 'watch' && (
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                alert.level === 'lost' ? 'bg-muted text-muted-foreground' :
-                alert.level === 'critical' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
-                'bg-orange-500/10 text-orange-500 border border-orange-500/20'
+              <span className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold ${
+                alert.level === 'lost' ? 'bg-card/40 border border-border text-muted-foreground' :
+                alert.level === 'critical' ? 'bg-danger/14 text-danger border border-danger/30' :
+                'bg-warning/14 text-warning border border-warning/30'
               }`}>
                 {alert.label}
               </span>
@@ -691,11 +691,11 @@ export default function CrmCallView({
           <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>
 
           {/* Customer name + external ID */}
-          <div className="text-xl font-bold mb-1 text-foreground">{o.nombre}</div>
+          <div className="text-2xl font-bold tracking-tight mb-1 text-foreground">{o.nombre}</div>
           {o.externalId && (
             <a
               href={`/pedido/${o.externalId}`}
-              className="inline-block text-[10px] font-mono text-primary hover:underline mb-3"
+              className="inline-block text-[10px] font-mono tabular-nums text-primary hover:underline mb-3"
             >
               #{o.externalId}
             </a>
@@ -705,7 +705,7 @@ export default function CrmCallView({
           <div className="text-sm text-muted-foreground mb-3 leading-relaxed space-y-1.5">
             <div className="flex items-center gap-1.5 flex-wrap">
               <PhoneIcon size={12} />
-              <button onClick={copyPhone} className="text-cyan-500 hover:underline font-mono">
+              <button onClick={copyPhone} className="text-cyan hover:underline font-mono tabular-nums">
                 {formatPhone(o.phone)}
               </button>
               <button
@@ -725,7 +725,7 @@ export default function CrmCallView({
                 <button
                   type="button"
                   onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success/13 text-success border border-success/30 hover:bg-success/22 transition-colors"
                 >
                   <MessageSquare size={10} /> WhatsApp
                 </button>
@@ -745,7 +745,7 @@ export default function CrmCallView({
                 {o.producto || '—'}{o.cantidad > 1 ? ` × ${o.cantidad}` : ''}
               </span>
               {o.valor > 0 && (
-                <span className="inline-flex items-center gap-1 text-foreground font-semibold">
+                <span className="inline-flex items-center gap-1 text-foreground font-semibold font-mono tabular-nums">
                   <DollarSign size={12} />{formatCOP(o.valor)}
                 </span>
               )}
@@ -848,7 +848,7 @@ export default function CrmCallView({
                 busque manualmente por nombre o teléfono. */}
             {o.guia ? (
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <div className="flex items-center gap-1.5 bg-secondary/50 rounded-lg px-2.5 py-2 font-mono text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5 bg-card/40 border border-border rounded-xl px-2.5 py-2 font-mono tabular-nums text-xs text-muted-foreground">
                   <Tag size={12} className="text-muted-foreground/60" aria-hidden="true" />
                   <span className="truncate">{o.guia}</span>
                   <button onClick={copyGuia} aria-label="Copiar guía" className="hover:text-foreground p-1 -m-1">
@@ -863,7 +863,7 @@ export default function CrmCallView({
                     onClick={copyGuia}
                     aria-label={`Rastrear guía ${o.guia} en ${o.transportadora}. Copia la guía al portapapeles.`}
                     title="Abre la página de la transportadora y copia la guía al portapapeles"
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent border-2 border-accent px-4 h-9 text-xs font-bold text-accent-foreground hover:bg-accent/85 hover:border-accent/85 transition-colors shadow-sm no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                    className="btn-accent-3d inline-flex items-center gap-1.5 rounded-xl px-4 h-9 text-sm font-semibold text-accent-foreground no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                   >
                     <ExternalLink size={14} aria-hidden="true" /> Rastrear guía
                   </a>
@@ -878,13 +878,13 @@ export default function CrmCallView({
                     rel="noopener noreferrer"
                     aria-label={`Abrir página de ${o.transportadora} para buscar manualmente`}
                     title={`Abre ${o.transportadora} — buscá por nombre o teléfono mientras se genera la guía`}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent/60 px-2.5 py-2 text-xs text-foreground transition-colors no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-accent/40 bg-accent/5 hover:bg-accent/10 hover:border-accent/60 px-2.5 py-2 text-xs text-foreground transition-colors no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                   >
                     <ExternalLink size={12} className="text-accent" aria-hidden="true" />
                     <span>Sin guía aún · <span className="font-semibold">{o.transportadora}</span></span>
                   </a>
                 ) : (
-                  <div className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
+                  <div className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-border bg-card/40 px-2.5 py-2 text-xs text-muted-foreground">
                     <Tag size={12} className="text-muted-foreground/60" aria-hidden="true" />
                     <span>Sin guía aún · {o.transportadora}</span>
                   </div>
@@ -895,10 +895,14 @@ export default function CrmCallView({
 
           {/* Novedad banner */}
           {o.novedad && (
-            <div className="p-3 rounded-xl mb-4 text-xs bg-orange-500/10 border border-orange-500/20 flex items-start gap-2">
-              <AlertTriangle size={14} className="text-orange-500 mt-0.5 flex-shrink-0" />
+            <div className="relative p-3 pl-4 rounded-2xl mb-4 text-xs bg-warning/10 border border-warning/25 flex items-start gap-2">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+              <AlertTriangle size={14} className="text-warning mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <div className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide mb-0.5">
+                {/* Sin .hud-label: incluye el nombre de la transportadora, que
+                    es dato de Dropi, y el fallback en minúscula. hud-label lo
+                    forzaría a MAYÚSCULAS y cambiaría el texto que se ve. */}
+                <div className="font-mono text-[10px] tracking-wide font-semibold text-warning mb-0.5">
                   Novedad de {o.transportadora || 'transportadora'}
                 </div>
                 <div className="text-foreground leading-relaxed">{o.novedad}</div>
@@ -912,19 +916,19 @@ export default function CrmCallView({
           {isDelayed && (() => {
             const tier = diasEnEstatus >= 5 ? 'critico' : diasEnEstatus >= 3 ? 'alerta' : 'aviso';
             const tierLabel = tier === 'critico' ? 'Crítico' : tier === 'alerta' ? 'Alerta' : 'Aviso';
-            const tierBg = tier === 'critico' ? 'bg-red-500/10 border-red-500/30' : tier === 'alerta' ? 'bg-amber-500/10 border-amber-500/30' : 'bg-orange-400/10 border-orange-400/30';
-            const tierText = tier === 'critico' ? 'text-red-500' : tier === 'alerta' ? 'text-amber-500' : 'text-orange-400';
+            const tierBg = tier === 'critico' ? 'bg-danger/10 border-danger/30' : tier === 'alerta' ? 'bg-warning/10 border-warning/30' : 'bg-warning/8 border-warning/25';
+            const tierText = tier === 'critico' ? 'text-danger' : tier === 'alerta' ? 'text-warning' : 'text-attention';
             const action = tier === 'critico' ? 'Posible pérdida' : tier === 'alerta' ? 'Llamar + reclamar' : 'Monitorear';
             return (
-              <div className={`mb-4 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 border ${tierBg}`}
+              <div className={`mb-4 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 border ${tierBg}`}
                    role="status" aria-label={`Demora ${tierLabel}: ${diasEnEstatus} días sin movimiento. ${action}`}>
-                <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${tierText} bg-current/10 border border-current/30`}
+                <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-lg ${tierText} bg-current/10 border border-current/30`}
                       aria-hidden="true">
                   {tierLabel}
                 </span>
                 <Clock size={12} className={tierText} aria-hidden="true" />
                 <span className={`text-[11px] font-semibold ${tierText}`}>
-                  {diasEnEstatus}d sin movimiento — {action}
+                  <span className="font-mono tabular-nums">{diasEnEstatus}d</span> sin movimiento — {action}
                 </span>
               </div>
             );
@@ -933,14 +937,14 @@ export default function CrmCallView({
           {/* History */}
           {tps.length > 0 && (
             <div className="mb-4">
-              <h4 className="text-[10px] font-semibold text-muted-foreground mb-2 inline-flex items-center gap-1 uppercase tracking-wider">
+              <h4 className="hud-label text-muted-foreground mb-2 inline-flex items-center gap-1.5">
                 <MessageSquare size={10} /> Historial ({tps.length})
               </h4>
               <div className="space-y-1 max-h-48 overflow-y-auto">
                 {tps.slice(0, 6).map(tp => (
-                  <div key={tp.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card border border-border/20 text-[10px]">
-                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <User size={9} className="text-primary/70" />
+                  <div key={tp.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors text-[10px]">
+                    <div className="w-5 h-5 rounded-lg bg-accent/14 border border-accent/30 flex items-center justify-center flex-shrink-0">
+                      <User size={9} className="text-accent" />
                     </div>
                     <span className="font-semibold text-foreground">{getOperatorName(tp.operator_id)}</span>
                     <span className="text-muted-foreground truncate">{tp.action.replace(/^(SEG|RESCUE): ?/, '')}</span>
@@ -955,18 +959,19 @@ export default function CrmCallView({
 
           {/* Managed state or action buttons */}
           {currentManaged ? (
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3">
+            <div className="relative flex items-center justify-between gap-3 rounded-2xl bg-success/10 border border-success/25 px-4 py-3 pl-5">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-success" aria-hidden="true" />
               <div className="flex items-center gap-2">
-                <CheckCircle size={16} className="text-emerald-500" />
+                <CheckCircle size={16} className="text-success" />
                 <div>
-                  <div className="text-[10px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400 font-bold">Gestionado</div>
+                  <div className="hud-label text-success">Gestionado</div>
                   <div className="text-xs text-foreground font-semibold">{currentManaged}</div>
                 </div>
               </div>
               <button
                 onClick={() => navCall(1)}
                 disabled={idx >= items.length - 1}
-                className="px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-semibold disabled:opacity-40 inline-flex items-center gap-1"
+                className="px-3 py-2 rounded-xl bg-success/16 border border-success/40 text-success text-[11px] font-semibold disabled:opacity-40 inline-flex items-center gap-1 hover:bg-success/25 transition-colors"
               >
                 Siguiente <ChevronRight size={12} />
               </button>

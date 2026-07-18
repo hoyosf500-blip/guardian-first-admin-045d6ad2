@@ -155,10 +155,12 @@ export default function CfoPersonalCardUploader() {
   }, [processFiles]);
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5">
       <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2">
-          <FileText size={18} className="text-accent" />
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <FileText size={15} />
+          </span>
           <h3 className="font-semibold text-sm">Importar extractos de tarjeta</h3>
         </div>
         <span className="text-xs text-muted-foreground">PDF · Bancolombia</span>
@@ -169,8 +171,8 @@ export default function CfoPersonalCardUploader() {
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         className={[
-          'rounded-md border-2 border-dashed p-6 text-center transition-colors cursor-pointer',
-          isDragging ? 'border-accent bg-accent/5' : 'border-border hover:bg-muted/30',
+          'rounded-2xl border-2 border-dashed p-6 text-center transition-colors cursor-pointer',
+          isDragging ? 'border-accent bg-accent/[0.08]' : 'border-border hover:border-border-strong hover:bg-foreground/[0.03]',
           processing ? 'opacity-60 pointer-events-none' : '',
         ].join(' ')}
         onClick={() => inputRef.current?.click()}
@@ -205,10 +207,10 @@ export default function CfoPersonalCardUploader() {
           {results.map((r, idx) => (
             <div
               key={`${r.filename}-${idx}`}
-              className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded bg-muted/30"
+              className="flex items-center justify-between gap-2 text-xs px-2.5 py-2 rounded-lg bg-card/40 border border-border hover:border-border-strong transition-colors"
             >
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                {r.ok ? <CheckCircle2 size={14} className="text-green shrink-0" /> : <AlertCircle size={14} className="text-red shrink-0" />}
+                {r.ok ? <CheckCircle2 size={14} className="text-success shrink-0" /> : <AlertCircle size={14} className="text-danger shrink-0" />}
                 <span className="truncate">{r.filename}</span>
                 {r.metadata?.tarjeta && <span className="text-muted-foreground shrink-0">{r.metadata.tarjeta}</span>}
               </div>

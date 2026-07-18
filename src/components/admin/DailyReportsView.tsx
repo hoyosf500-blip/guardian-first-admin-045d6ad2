@@ -297,7 +297,7 @@ export default function DailyReportsView() {
   return (
     <div className="space-y-5">
       {/* Filtros de rango compartidos por las dos vistas */}
-      <div className="bg-card rounded-xl border border-border px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-card/40 rounded-2xl border border-border shadow-card3d px-5 py-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-muted-foreground">
           Reportes diarios — rango compartido por las dos vistas
         </div>
@@ -319,7 +319,7 @@ export default function DailyReportsView() {
       )}
 
       {loading && (
-        <div className="bg-card rounded-xl border border-border flex items-center justify-center py-12">
+        <div className="bg-card/40 rounded-2xl border border-border shadow-card3d flex items-center justify-center py-12">
           <Loader2 size={20} className="animate-spin text-muted-foreground" />
         </div>
       )}
@@ -328,11 +328,13 @@ export default function DailyReportsView() {
       {!loading && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-          className="bg-card rounded-xl border border-border overflow-hidden"
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden"
         >
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <ClipboardList size={16} className="text-primary" />
+              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <ClipboardList size={15} />
+              </span>
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Vista por día — cohort de inflow</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -343,7 +345,7 @@ export default function DailyReportsView() {
             <button
               onClick={exportDaysCsv}
               disabled={days.length === 0}
-              className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-secondary/80 transition-colors disabled:opacity-50"
+              className="h-8 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
             >
               <Download size={12} /> CSV
             </button>
@@ -355,7 +357,7 @@ export default function DailyReportsView() {
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-muted/50 text-muted-foreground text-[10px] uppercase tracking-wider">
+                  <tr className="bg-card/40 border-b border-border text-muted-foreground text-[10px] uppercase tracking-[0.2em] font-mono">
                     <th className="px-3 py-2 font-semibold">Fecha</th>
                     <th
                       className="px-3 py-2 font-semibold text-center"
@@ -463,11 +465,13 @@ export default function DailyReportsView() {
       {!loading && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }}
-          className="bg-card rounded-xl border border-border overflow-hidden"
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden"
         >
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Users size={16} className="text-primary" />
+              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Users size={15} />
+              </span>
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Apertura y cierre por operadora</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -478,7 +482,7 @@ export default function DailyReportsView() {
             <button
               onClick={exportShiftsCsv}
               disabled={shifts.length === 0}
-              className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-secondary/80 transition-colors disabled:opacity-50"
+              className="h-8 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
             >
               <Download size={12} /> CSV
             </button>
@@ -490,7 +494,7 @@ export default function DailyReportsView() {
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-muted/50 text-muted-foreground text-[10px] uppercase tracking-wider">
+                  <tr className="bg-card/40 border-b border-border text-muted-foreground text-[10px] uppercase tracking-[0.2em] font-mono">
                     <th className="px-2 py-2 font-semibold">Fecha</th>
                     <th className="px-2 py-2 font-semibold">Tipo</th>
                     <th className="px-2 py-2 font-semibold">Operadora</th>
@@ -559,7 +563,7 @@ export default function DailyReportsView() {
       {!loading && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
-          className="bg-card rounded-xl border border-border overflow-hidden"
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden"
         >
           <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2">
@@ -581,7 +585,7 @@ export default function DailyReportsView() {
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-muted/50 text-muted-foreground text-[10px] uppercase tracking-wider">
+                  <tr className="bg-card/40 border-b border-border text-muted-foreground text-[10px] uppercase tracking-[0.2em] font-mono">
                     <th className="px-3 py-2 font-semibold">Fecha</th>
                     <th className="px-3 py-2 font-semibold">Operadora</th>
                     <th className="px-3 py-2 font-semibold text-center">Atendidos</th>

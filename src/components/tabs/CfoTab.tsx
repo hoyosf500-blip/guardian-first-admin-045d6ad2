@@ -27,6 +27,7 @@ import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
+import { TiltCard } from '@/components/ui3d';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -227,12 +228,41 @@ function walletTone(saldo: number | null, costosFijos: number): 'success' | 'war
   return 'danger';
 }
 
-const TONE_CLASSES: Record<string, { border: string; bg: string; text: string }> = {
-  success: { border: 'border-green/40', bg: 'bg-green/5', text: 'text-green' },
-  warning: { border: 'border-orange/40', bg: 'bg-orange/5', text: 'text-orange' },
-  danger:  { border: 'border-red/40',   bg: 'bg-red/5',   text: 'text-red' },
-  muted:   { border: 'border-border',   bg: 'bg-card',    text: 'text-muted-foreground' },
+const TONE_CLASSES: Record<string, { border: string; bg: string; text: string; glow: string }> = {
+  success: { border: 'border-success/28', bg: 'bg-success/[0.07]', text: 'text-success', glow: 'shadow-[0_0_30px_-18px_hsl(var(--success))]' },
+  warning: { border: 'border-warning/28', bg: 'bg-warning/[0.07]', text: 'text-warning', glow: 'shadow-[0_0_30px_-18px_hsl(var(--warning))]' },
+  danger:  { border: 'border-danger/28',  bg: 'bg-danger/[0.07]',  text: 'text-danger',  glow: 'shadow-[0_0_30px_-18px_hsl(var(--danger))]' },
+  muted:   { border: 'border-border',     bg: 'bg-card/40',        text: 'text-foreground', glow: 'shadow-card3d' },
 };
+
+// Pills de sub-tab (patrón 3D). Se pasan por className a los TabsTrigger de
+// shadcn — solo presentación, el estado sigue siendo el de <Tabs>.
+const TABS_LIST_CLS =
+  'inline-flex flex-wrap w-full justify-start gap-2 h-auto p-0 bg-transparent';
+const TAB_PILL_CLS = [
+  'shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+  'bg-card/40 border border-border text-muted-foreground',
+  'hover:text-foreground hover:border-border-strong',
+  'data-[state=active]:bg-accent/16 data-[state=active]:border-accent/40',
+  'data-[state=active]:text-accent data-[state=active]:font-semibold',
+  'data-[state=active]:shadow-glow3d',
+].join(' ');
+
+/**
+ * Parte una cifra ya formateada ("$ 18.400.000") en símbolo + número para
+ * poder pintar el símbolo más chico, como en el diseño. Presentación pura:
+ * NO reformatea ni recalcula nada, solo separa el prefijo no numérico.
+ */
+function splitCurrency(formatted: string): { symbol: string; rest: string } {
+  const m = /^([^0-9-]*)(.*)$/.exec(formatted);
+  if (!m) return { symbol: '', rest: formatted };
+  const symbol = m[1].trim();
+  const rest = m[2].trim();
+  // Sin símbolo, sin resto, o resto sin dígitos (ej. "—", "63%") → se pinta
+  // la cadena tal cual. Nunca se pierde ni un carácter del valor original.
+  if (!symbol || !/\d/.test(rest)) return { symbol: '', rest: formatted };
+  return { symbol, rest };
+}
 
 export default function CfoTab() {
   const [yearMonth, setYearMonth] = useState<string>(() => toYearMonth(new Date()));
@@ -352,15 +382,17 @@ export default function CfoTab() {
   return (
     <div className="space-y-5">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
+        <div className="min-w-0 space-y-1">
+          <div className="hud-label text-accent truncate whitespace-nowrap">
             CFO · Cómo voy
           </div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2">
-            <DollarSign size={18} className="text-accent" strokeWidth={2.25} />
-            <span className="capitalize">{monthLabel(yearMonth)}</span>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+            <span className="w-11 h-11 shrink-0 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+              <DollarSign size={20} strokeWidth={2.25} />
+            </span>
+            <span className="capitalize truncate">{monthLabel(yearMonth)}</span>
           </h2>
-          <p className="text-sm text-muted-foreground capitalize">
+          <p className="text-sm text-muted-foreground capitalize pl-14">
             {hasPrevMonth ? `Comparativa vs ${monthLabel(prevYearMonth)}` : 'Primer mes — sin comparación'}
           </p>
         </div>
@@ -369,7 +401,7 @@ export default function CfoTab() {
           <WalletSyncBadge size="sm" />
           <WalletSyncButton size="sm" variant="outline" label="Sync wallet" />
           <Select value={yearMonth} onValueChange={setYearMonth}>
-            <SelectTrigger className="h-9 w-48 text-xs">
+            <SelectTrigger className="h-9 w-48 text-xs rounded-xl bg-card/40 border-border hover:border-border-strong transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -384,8 +416,9 @@ export default function CfoTab() {
       </header>
 
       {!curr.has_inputs && !curr.loading && (
-        <div className="rounded-xl border border-orange/30 bg-orange/5 px-4 py-3 flex items-start gap-3">
-          <AlertCircle size={16} className="text-orange shrink-0 mt-0.5" />
+        <div className="relative rounded-2xl border border-warning/30 bg-warning/5 px-4 py-3 pl-5 shadow-card3d flex items-start gap-3">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+          <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
           <div className="text-xs text-foreground/90">
             <span className="font-semibold">Sin inputs cargados</span>
             <span className="text-muted-foreground"> — edita para ver utilidad neta real (incluye pauta y tarjeta).</span>
@@ -396,19 +429,19 @@ export default function CfoTab() {
       <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
         <div className="overflow-x-auto -mx-1 px-1">
           <TabsList
-            className="inline-flex w-full justify-start gap-0.5 h-auto p-1"
+            className={TABS_LIST_CLS}
             aria-label="Secciones del CFO"
           >
-            <TabsTrigger value="como-voy" className="shrink-0"><Gauge size={13} className="mr-1.5" /> Cómo voy</TabsTrigger>
-            <TabsTrigger value="pauta" className="shrink-0"><Megaphone size={13} className="mr-1.5" /> Pauta</TabsTrigger>
-            <TabsTrigger value="tarjeta" className="shrink-0"><CreditCard size={13} className="mr-1.5" /> Tarjeta</TabsTrigger>
-            <TabsTrigger value="bitacora" className="shrink-0"><BookOpen size={13} className="mr-1.5" /> Bitácora</TabsTrigger>
+            <TabsTrigger value="como-voy" className={TAB_PILL_CLS}><Gauge size={13} className="mr-1.5" /> Cómo voy</TabsTrigger>
+            <TabsTrigger value="pauta" className={TAB_PILL_CLS}><Megaphone size={13} className="mr-1.5" /> Pauta</TabsTrigger>
+            <TabsTrigger value="tarjeta" className={TAB_PILL_CLS}><CreditCard size={13} className="mr-1.5" /> Tarjeta</TabsTrigger>
+            <TabsTrigger value="bitacora" className={TAB_PILL_CLS}><BookOpen size={13} className="mr-1.5" /> Bitácora</TabsTrigger>
           </TabsList>
         </div>
 
         {/* TAB: Cómo voy — KPIs + embudo + P&L + top productos + alertas */}
         <TabsContent value="como-voy" className="mt-4 space-y-5">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="Utilidad neta real"
               value={formatCOP(curr.utilidad_neta)}
@@ -416,6 +449,7 @@ export default function CfoTab() {
               icon={<DollarSign size={14} />}
               delta={deltaArrow(curr.utilidad_neta, prev.utilidad_neta, { higherIsBetter: true })}
               loading={curr.loading}
+              hero
             />
             <KpiCard
               label="Tasa de efectividad"
@@ -528,34 +562,47 @@ interface KpiCardProps {
   delta: { Icon: typeof TrendingUp; tone: string; label: string } | null;
   loading: boolean;
   subtitle?: string;
+  /** Card héroe de la pantalla (sheen + brackets + radio/sombra mayor). */
+  hero?: boolean;
 }
 
-function KpiCard({ label, value, tone, icon, delta, loading, subtitle }: KpiCardProps) {
+function KpiCard({ label, value, tone, icon, delta, loading, subtitle, hero }: KpiCardProps) {
   const cls = TONE_CLASSES[tone];
+  const money = splitCurrency(value);
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
-      className={`rounded-xl border ${cls.border} ${cls.bg} p-4 space-y-1.5 min-h-[112px]`}
     >
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-        <span className={cls.text}>{icon}</span>
-        {label}
-      </div>
-      {loading ? (
-        <div className="h-7 w-24 rounded bg-muted/40 animate-pulse" />
-      ) : (
-        <div className={`text-2xl font-bold tabular-nums ${cls.text}`}>{value}</div>
-      )}
-      {subtitle && !loading && (
-        <div className="text-[10px] text-muted-foreground">{subtitle}</div>
-      )}
-      {delta && !loading && (
-        <div className={`text-[11px] inline-flex items-center gap-1 ${delta.tone}`}>
-          <delta.Icon size={11} />
-          <span className="font-mono">{delta.label}</span>
-          <span className="text-muted-foreground">vs mes anterior</span>
+      <TiltCard
+        sheen={hero}
+        brackets={hero}
+        className={`${hero ? 'rounded-3xl p-5 shadow-card3d-lg' : 'rounded-2xl p-5 shadow-card3d'} border ${cls.border} ${cls.bg} ${cls.glow} space-y-2 min-h-[130px]`}
+      >
+        <div className="tilt-layer-1 flex items-center gap-1.5 hud-label text-muted-foreground">
+          <span className={cls.text}>{icon}</span>
+          {label}
         </div>
-      )}
+        {loading ? (
+          <div className="h-9 w-28 rounded bg-muted/40 animate-pulse" />
+        ) : (
+          <div className={`tilt-layer-2 font-mono tabular-nums font-bold leading-none ${hero ? 'text-3xl' : 'text-[28px]'} ${cls.text}`}>
+            {money.symbol && (
+              <span className="text-[0.6em] font-semibold mr-1.5 align-baseline opacity-80">{money.symbol}</span>
+            )}
+            {money.rest}
+          </div>
+        )}
+        {subtitle && !loading && (
+          <div className="text-[11px] font-mono tabular-nums text-muted-foreground">{subtitle}</div>
+        )}
+        {delta && !loading && (
+          <div className={`text-[11px] inline-flex items-center gap-1 ${delta.tone}`}>
+            <delta.Icon size={11} />
+            <span className="font-mono tabular-nums">{delta.label}</span>
+            <span className="text-muted-foreground">vs mes anterior</span>
+          </div>
+        )}
+      </TiltCard>
     </motion.div>
   );
 }
@@ -569,36 +616,40 @@ function Funnel({
 
   if (loading) {
     return (
-      <section className="rounded-xl border border-border bg-card p-4">
+      <section className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d">
         <div className="h-32 animate-pulse bg-muted/30 rounded" />
       </section>
     );
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card p-5 space-y-3">
-      <header className="flex items-center gap-2 mb-1">
-        <PackageIcon size={14} className="text-accent" />
-        <h3 className="text-sm font-semibold text-foreground">Embudo del mes</h3>
-      </header>
-      <div className="space-y-2">
-        <FunnelBar label="Generados" value={generados} pct={100} tone="bg-accent" />
-        <FunnelBar
-          label="Entregados"
-          value={entregados}
-          pct={pctEnt}
-          tone="bg-green"
-          extra={`${fmtPct(pctEnt)}`}
-        />
-        <FunnelBar
-          label="Netos cobrados"
-          value={netos}
-          pct={pctNetos}
-          tone="bg-orange"
-          extra={`${fmtPct(pctNetos)} · entregados − devueltos`}
-        />
-      </div>
-    </section>
+    <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
+      <section className="space-y-3">
+        <header className="flex items-center gap-2 mb-1">
+          <span className="w-7 h-7 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0">
+            <PackageIcon size={14} />
+          </span>
+          <h3 className="text-sm font-semibold text-foreground">Embudo del mes</h3>
+        </header>
+        <div className="space-y-3">
+          <FunnelBar label="Generados" value={generados} pct={100} tone="bg-accent-gradient" />
+          <FunnelBar
+            label="Entregados"
+            value={entregados}
+            pct={pctEnt}
+            tone="bg-success"
+            extra={`${fmtPct(pctEnt)}`}
+          />
+          <FunnelBar
+            label="Netos cobrados"
+            value={netos}
+            pct={pctNetos}
+            tone="bg-warning"
+            extra={`${fmtPct(pctNetos)} · entregados − devueltos`}
+          />
+        </div>
+      </section>
+    </TiltCard>
   );
 }
 
@@ -607,16 +658,16 @@ function FunnelBar({
 }: { label: string; value: number; pct: number; tone: string; extra?: string }) {
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-1">
+      <div className="flex items-baseline justify-between mb-1.5 gap-3">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="text-sm font-bold tabular-nums text-foreground">
+        <span className="text-sm font-bold font-mono tabular-nums text-foreground">
           {value}
           {extra && <span className="text-[10px] text-muted-foreground ml-2 font-normal">{extra}</span>}
         </span>
       </div>
-      <div className="h-2.5 rounded-full bg-muted/30 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
         <div
-          className={`h-full ${tone}`}
+          className={`h-full rounded-full ${tone}`}
           style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
         />
       </div>
@@ -628,10 +679,10 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
   const isNegative = snap.utilidad_neta < 0;
 
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
-      <header className="px-5 py-3 border-b border-border flex items-center justify-between">
+    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+      <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-foreground">P&L del mes</h3>
-        <Button size="sm" variant="outline" onClick={onEdit} className="h-8">
+        <Button size="sm" variant="outline" onClick={onEdit} className="h-8 rounded-xl">
           <Pencil size={12} className="mr-1.5" />
           Editar inputs manuales
         </Button>
@@ -639,32 +690,34 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
       {snap.loading ? (
         <div className="p-8"><div className="h-32 animate-pulse bg-muted/30 rounded" /></div>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="bg-muted/30 text-muted-foreground text-[10px] uppercase tracking-wider">
-            <tr>
-              <th className="px-5 py-2 text-left font-semibold">Concepto</th>
-              <th className="px-5 py-2 text-right font-semibold">Valor</th>
-              <th className="px-5 py-2 text-left font-semibold">Origen</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            <PnlRow label="Utilidad bruta Dropi" value={snap.utilidad_bruta} sign="+" origin="financial_summary" />
-            <PnlRow label="Inversión Meta Ads" value={snap.ads_meta} sign="-" origin="monthly_ad_spend" />
-            <PnlRow label="Inversión TikTok Ads" value={snap.ads_tiktok} sign="-" origin="monthly_ad_spend" />
-            <PnlRow label="Costos fijos" value={snap.costos_fijos} sign="-" origin="app_settings" />
-            <PnlRow label="Intereses tarjeta" value={snap.tarjeta_interes} sign="-" origin="input manual" />
-            <tr className={isNegative ? 'bg-red/10' : 'bg-green/10'}>
-              <td className="px-5 py-3 font-bold text-foreground">UTILIDAD NETA REAL</td>
-              <td className={`px-5 py-3 text-right font-bold tabular-nums ${isNegative ? 'text-red' : 'text-green'}`}>
-                {`= ${formatCOP(snap.utilidad_neta)}`}
-              </td>
-              <td className="px-5 py-3 text-xs text-muted-foreground">calculado</td>
-            </tr>
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-foreground/[0.03] text-muted-foreground">
+              <tr>
+                <th className="px-5 py-2.5 text-left font-semibold">Concepto</th>
+                <th className="px-5 py-2.5 text-right font-semibold">Valor</th>
+                <th className="px-5 py-2.5 text-left font-semibold">Origen</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              <PnlRow label="Utilidad bruta Dropi" value={snap.utilidad_bruta} sign="+" origin="financial_summary" />
+              <PnlRow label="Inversión Meta Ads" value={snap.ads_meta} sign="-" origin="monthly_ad_spend" />
+              <PnlRow label="Inversión TikTok Ads" value={snap.ads_tiktok} sign="-" origin="monthly_ad_spend" />
+              <PnlRow label="Costos fijos" value={snap.costos_fijos} sign="-" origin="app_settings" />
+              <PnlRow label="Intereses tarjeta" value={snap.tarjeta_interes} sign="-" origin="input manual" />
+              <tr className={isNegative ? 'bg-danger/[0.09]' : 'bg-success/[0.09]'}>
+                <td className="px-5 py-3.5 font-bold text-foreground whitespace-nowrap">UTILIDAD NETA REAL</td>
+                <td className={`px-5 py-3.5 text-right font-bold font-mono tabular-nums whitespace-nowrap ${isNegative ? 'text-danger' : 'text-success'}`}>
+                  {`= ${formatCOP(snap.utilidad_neta)}`}
+                </td>
+                <td className="px-5 py-3.5 text-xs text-muted-foreground">calculado</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
       {snap.notas && !snap.loading && (
-        <div className="px-5 py-3 border-t border-border bg-muted/20 text-xs text-muted-foreground">
+        <div className="px-5 py-3 border-t border-border bg-foreground/[0.02] text-xs text-muted-foreground">
           <span className="font-semibold text-foreground">Nota: </span>{snap.notas}
         </div>
       )}
@@ -676,12 +729,12 @@ function PnlRow({
   label, value, sign, origin,
 }: { label: string; value: number; sign: '+' | '-'; origin: string }) {
   return (
-    <tr>
-      <td className="px-5 py-2 text-foreground">{label}</td>
-      <td className={`px-5 py-2 text-right font-mono tabular-nums ${sign === '-' ? 'text-red' : 'text-green'}`}>
+    <tr className="hover:bg-foreground/[0.035] transition-colors">
+      <td className="px-5 py-2.5 text-foreground">{label}</td>
+      <td className={`px-5 py-2.5 text-right font-mono tabular-nums whitespace-nowrap ${sign === '-' ? 'text-danger' : 'text-success'}`}>
         {sign === '-' ? '-' : '+'}{formatCOP(value)}
       </td>
-      <td className="px-5 py-2 text-xs text-muted-foreground">{origin}</td>
+      <td className="px-5 py-2.5 text-xs font-mono text-muted-foreground">{origin}</td>
     </tr>
   );
 }
@@ -695,8 +748,8 @@ interface ProductRow {
 
 function TopProductsBlock({ products, loading }: { products: ProductRow[]; loading: boolean }) {
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
-      <header className="px-5 py-3 border-b border-border">
+    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+      <header className="px-5 py-3.5 border-b border-border">
         <h3 className="text-sm font-semibold text-foreground">Top 5 productos por entregados</h3>
       </header>
       {loading ? (
@@ -706,7 +759,10 @@ function TopProductsBlock({ products, loading }: { products: ProductRow[]; loadi
       ) : (
         <ul className="divide-y divide-border">
           {products.map((p, i) => (
-            <li key={p.producto} className="px-5 py-2.5 flex items-center justify-between gap-3">
+            <li
+              key={p.producto}
+              className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-foreground/[0.035] transition-colors"
+            >
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
                   {String(i + 1).padStart(2, '0')}
@@ -715,10 +771,10 @@ function TopProductsBlock({ products, loading }: { products: ProductRow[]; loadi
                   {p.producto}
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-xs shrink-0 tabular-nums">
+              <div className="flex items-center gap-3 text-xs shrink-0 font-mono tabular-nums">
                 <span className="text-foreground font-semibold">{p.entregados}</span>
                 <span className="text-muted-foreground">{fmtPct(p.tasa_entrega)}</span>
-                <span className="text-green font-mono text-[10px]">
+                <span className="text-success text-[10px]">
                   {formatCOP(p.valor_entregado ?? 0)}
                 </span>
               </div>
@@ -734,30 +790,40 @@ function AlertsBlock({
   alerts, loading,
 }: { alerts: Array<{ tone: 'danger' | 'warning'; text: string }>; loading: boolean }) {
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
-      <header className="px-5 py-3 border-b border-border">
+    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+      <header className="px-5 py-3.5 border-b border-border">
         <h3 className="text-sm font-semibold text-foreground">Alertas</h3>
       </header>
       {loading ? (
         <div className="p-5"><Loader2 size={16} className="animate-spin text-muted-foreground" /></div>
       ) : alerts.length === 0 ? (
-        <div className="p-5 inline-flex items-center gap-2 text-sm text-green">
-          <CheckCircle2 size={14} />
-          <span>Todo en orden</span>
+        <div className="p-5">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
+            <CheckCircle2 size={13} />
+            Todo en orden
+          </span>
         </div>
       ) : (
         <ul className="divide-y divide-border">
           {alerts.map((a, i) => (
             <li
               key={i}
-              className={`px-5 py-2.5 flex items-start gap-2.5 text-xs ${
-                a.tone === 'danger' ? 'bg-red/5' : 'bg-orange/5'
+              className={`relative px-5 py-3 pl-6 flex items-start gap-2.5 text-xs transition-colors ${
+                a.tone === 'danger'
+                  ? 'bg-danger/[0.06] hover:bg-danger/[0.1]'
+                  : 'bg-warning/[0.06] hover:bg-warning/[0.1]'
               }`}
             >
+              <span
+                className={`absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full ${
+                  a.tone === 'danger' ? 'bg-danger' : 'bg-warning'
+                }`}
+                aria-hidden="true"
+              />
               {a.tone === 'danger' ? (
-                <AlertCircle size={14} className="text-red shrink-0 mt-0.5" />
+                <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />
               ) : (
-                <AlertTriangle size={14} className="text-orange shrink-0 mt-0.5" />
+                <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
               )}
               <span className="text-foreground">{a.text}</span>
             </li>

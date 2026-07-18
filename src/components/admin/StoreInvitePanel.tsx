@@ -4,6 +4,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { UserPlus, Loader2, Copy, Check, Link2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { TiltCard } from '@/components/ui3d';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -54,10 +55,13 @@ export default function StoreInvitePanel() {
   }
 
   return (
-    <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-      <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <UserPlus size={16} className="text-primary" />
-        <div>
+    <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="md:col-span-2">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+      <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <UserPlus size={15} />
+        </span>
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground">Invitar a tu equipo · {activeStore.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Elegí el rol, generá el link y mandáselo. Al registrarse queda <span className="font-medium text-foreground">solo en {activeStore.name}</span> con ese rol — no ve otras tiendas. El link vence en 7 días y sirve una sola vez.
@@ -67,11 +71,11 @@ export default function StoreInvitePanel() {
 
       <div className="px-5 py-4 space-y-3">
         <div>
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Rol de la invitación</label>
+          <label className="hud-label">Rol de la invitación</label>
           <select
             value={role}
             onChange={e => { setRole(e.target.value as 'operator' | 'supervisor'); setLink(''); }}
-            className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
           >
             <option value="operator">Operadora — solo Confirmar / Seguimiento / Novedades</option>
             <option value="supervisor">Supervisor — además Admin y Logística (no CFO)</option>
@@ -80,7 +84,7 @@ export default function StoreInvitePanel() {
         <button
           onClick={generate}
           disabled={generating}
-          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-accent-3d h-9 px-4 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {generating ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
           {generating ? 'Generando…' : 'Generar link de invitación'}
@@ -92,11 +96,11 @@ export default function StoreInvitePanel() {
               readOnly
               value={link}
               onFocus={e => e.currentTarget.select()}
-              className="flex-1 h-10 rounded-lg border border-border bg-background px-3 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="flex-1 h-10 rounded-xl border border-border bg-card/40 px-3 text-xs font-mono tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
             <button
               onClick={copy}
-              className="h-10 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors"
+              className="h-10 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors"
             >
               {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
               {copied ? 'Copiado' : 'Copiar'}
@@ -104,6 +108,7 @@ export default function StoreInvitePanel() {
           </div>
         )}
       </div>
+    </TiltCard>
     </motion.div>
   );
 }

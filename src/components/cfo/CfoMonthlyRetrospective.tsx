@@ -75,7 +75,7 @@ export default function CfoMonthlyRetrospective({ defaultYearMonth }: Props) {
 
   if (listQ.isLoading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-center gap-2 text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-6 flex items-center justify-center gap-2 text-muted-foreground">
         <Loader2 size={16} className="animate-spin" />
         <span className="text-sm">Cargando bitácora…</span>
       </div>
@@ -83,10 +83,12 @@ export default function CfoMonthlyRetrospective({ defaultYearMonth }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <BookOpenCheck size={18} className="text-accent" />
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <BookOpenCheck size={15} />
+          </span>
           <h3 className="font-semibold text-sm">Bitácora mensual</h3>
           <span className="text-xs text-muted-foreground">
             ({existingByYM.size} {existingByYM.size === 1 ? 'mes documentado' : 'meses documentados'})
@@ -221,10 +223,10 @@ function RetroCard({
   }
 
   return (
-    <div className="rounded-md border border-border bg-card overflow-hidden">
+    <div className="rounded-xl border border-border bg-card/40 hover:border-border-strong transition-colors overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full px-3 py-2 flex items-center justify-between gap-2 hover:bg-muted/30 transition"
+        className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 hover:bg-foreground/[0.035] transition-colors"
       >
         <div className="flex items-center gap-2 text-left">
           {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -232,17 +234,17 @@ function RetroCard({
           {row && (
             <div className="flex items-center gap-1.5 ml-2 flex-wrap">
               {row.fugas.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-red bg-red/10 border border-red/30 rounded px-1.5 py-0.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-danger bg-danger/14 border border-danger/30 rounded-lg px-2 py-0.5">
                   <AlertTriangle size={9} /> {row.fugas.length} {row.fugas.length === 1 ? 'fuga' : 'fugas'}
                 </span>
               )}
               {row.aciertos.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-green bg-green/10 border border-green/30 rounded px-1.5 py-0.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-success bg-success/14 border border-success/30 rounded-lg px-2 py-0.5">
                   <CheckCircle2 size={9} /> {row.aciertos.length} {row.aciertos.length === 1 ? 'acierto' : 'aciertos'}
                 </span>
               )}
               {row.decisiones.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-orange bg-orange/10 border border-orange/30 rounded px-1.5 py-0.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-warning bg-warning/14 border border-warning/30 rounded-lg px-2 py-0.5">
                   <Clock size={9} /> {row.decisiones.filter(d => d.status === 'pendiente').length} pend
                 </span>
               )}
@@ -251,7 +253,7 @@ function RetroCard({
         </div>
         <div className="flex items-center gap-2">
           {hasSnapshot ? (
-            <span className="text-[10px] text-green inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
               <Camera size={10} /> Diag capturado
             </span>
           ) : (
@@ -262,7 +264,7 @@ function RetroCard({
 
       {isOpen && (
         <div className="border-t border-border p-3 space-y-4 text-xs">
-          <div className="rounded border border-border/50 bg-muted/10 p-3 space-y-2">
+          <div className="rounded-xl border border-border bg-foreground/[0.03] p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-xs font-semibold flex items-center gap-1.5">
                 <Camera size={12} className="text-accent" />
@@ -502,9 +504,9 @@ function DiagItem({ label, value, kind, tone }: {
     else                     display = String(Math.round(Number(value)));
   }
   return (
-    <div className="rounded bg-card border border-border/40 px-2 py-1.5">
+    <div className="rounded-xl bg-card/40 border border-border px-2.5 py-2 hover:border-border-strong transition-colors">
       <div className="text-[10px] text-muted-foreground">{label}</div>
-      <div className={`text-xs font-semibold tabular-nums ${toneCls}`}>{display}</div>
+      <div className={`text-xs font-semibold font-mono tabular-nums mt-0.5 ${toneCls}`}>{display}</div>
     </div>
   );
 }

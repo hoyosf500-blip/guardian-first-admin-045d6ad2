@@ -18,6 +18,7 @@ import SetupWizard from '@/components/SetupWizard';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
 import type { LucideIcon } from 'lucide-react';
+import { IconRail, HudTopbar, AuroraBackdrop } from '@/components/ui3d';
 
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 
@@ -31,16 +32,17 @@ function InlineRouteLoader() {
 }
 
 // adminOnly  → solo admin GLOBAL (Fabian). managerOnly → owner/supervisor de la tienda activa.
-interface NavItem { path: string; icon: LucideIcon; label: string; adminOnly?: boolean; managerOnly?: boolean }
+// section    → rótulo mono de la topbar HUD ("Dashboard / OPERADORA"), tomado del handoff.
+interface NavItem { path: string; icon: LucideIcon; label: string; section: string; adminOnly?: boolean; managerOnly?: boolean }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-  { path: '/confirmar', icon: Phone, label: 'Confirmar' },
-  { path: '/seguimiento', icon: Package, label: 'Seguimiento' },
-  { path: '/novedades', icon: AlertTriangle, label: 'Novedades' },
-  { path: '/admin', icon: Settings, label: 'Admin', managerOnly: true },
-  { path: '/logistica', icon: Truck, label: 'Logística', managerOnly: true },
-  ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', adminOnly: true } as NavItem] : []),
+  { path: '/dashboard', icon: BarChart3, label: 'Dashboard', section: 'Operadora' },
+  { path: '/confirmar', icon: Phone, label: 'Confirmar', section: 'Operadora' },
+  { path: '/seguimiento', icon: Package, label: 'Seguimiento', section: 'CRM' },
+  { path: '/novedades', icon: AlertTriangle, label: 'Novedades', section: 'Gestión' },
+  { path: '/admin', icon: Settings, label: 'Admin', section: 'Sistema', managerOnly: true },
+  { path: '/logistica', icon: Truck, label: 'Logística', section: 'Operación', managerOnly: true },
+  ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', section: 'Finanzas', adminOnly: true } as NavItem] : []),
 ];
 
 function LiveClock() {
@@ -163,8 +165,11 @@ function ProtectedLayoutInner() {
       ]
     : visibleTabs;
   const activePath = location.pathname;
-  const activeLabel = visibleTabs.find(t => activePath.startsWith(t.path))?.label
+  const activeTab = visibleTabs.find(t => activePath.startsWith(t.path));
+  const activeLabel = activeTab?.label
     || (activePath.startsWith('/pedido') ? 'Detalle Pedido' : 'Panel');
+  const activeSection = activeTab?.section
+    || (activePath.startsWith('/pedido') ? 'Pedido' : '');
 
   const isConfirmar = activePath === '/confirmar';
   const userInitial = (profile?.display_name || 'U')[0].toUpperCase();
@@ -185,122 +190,123 @@ function ProtectedLayoutInner() {
           aria-label="Navegación principal"
           className={[
             'flex flex-col flex-shrink-0 z-50',
-            'bg-surface/70 backdrop-blur-xl border-r border-border',
+            'bg-surface/70 border-r border-border',
             isMobile
               ? 'fixed inset-y-0 left-0 w-64 transition-transform duration-300 ease-out'
-              : 'relative w-56',
+              : 'relative w-20',
             isMobile && !sidebarOpen ? '-translate-x-full' : 'translate-x-0',
           ].join(' ')}
         >
-          <div className="h-14 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-accent-gradient flex items-center justify-center shadow-glow flex-shrink-0 overflow-hidden">
-                {brandLogoUrl
-                  ? <img src={brandLogoUrl} alt="" className="w-full h-full object-cover" />
-                  : <Package size={16} className="text-white" aria-hidden="true" />}
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-foreground leading-tight truncate">{brandName}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Panel COD</div>
-              </div>
-            </div>
-            {isMobile && (
-              <button
-                onClick={() => setSidebarOpen(false)}
-                aria-label="Cerrar menú"
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
-
-          <div className="px-3 pt-3">
-            <StoreSelector />
-          </div>
-
-          <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto" aria-label="Secciones del CRM">
-            {orderedTabs.map(tab => {
-              const Icon = tab.icon;
-              const isActive = activePath.startsWith(tab.path);
-              return (
-                <button
-                  key={tab.path}
-                  onClick={() => { navigate(tab.path); if (isMobile) setSidebarOpen(false); }}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={[
-                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium',
-                    'transition-colors duration-200 cursor-pointer',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                    isActive
-                      ? 'bg-accent-gradient text-white shadow-glow'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-card',
-                  ].join(' ')}
+          <IconRail
+            className="w-full"
+            items={orderedTabs}
+            activePath={activePath}
+            showLabels={isMobile}
+            onNavigate={(path) => { navigate(path); if (isMobile) setSidebarOpen(false); }}
+            top={
+              <>
+                <div className={`h-[52px] flex items-center border-b border-border ${isMobile ? 'px-4 gap-2.5' : 'px-2 justify-center'}`}>
+                  <div
+                    className="w-9 h-9 rounded-xl bg-accent-gradient flex items-center justify-center shadow-glow flex-shrink-0 overflow-hidden"
+                    title={brandName}
+                  >
+                    {brandLogoUrl
+                      ? <img src={brandLogoUrl} alt="" className="w-full h-full object-cover" />
+                      : <Package size={17} className="text-white" aria-hidden="true" />}
+                  </div>
+                  {isMobile && (
+                    <>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-foreground leading-tight truncate">{brandName}</div>
+                        <div className="hud-label text-subtle leading-tight">Panel COD</div>
+                      </div>
+                      <button
+                        onClick={() => setSidebarOpen(false)}
+                        aria-label="Cerrar menú"
+                        className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer"
+                      >
+                        <X size={16} />
+                      </button>
+                    </>
+                  )}
+                </div>
+                {isMobile && (
+                  <div className="px-3 pt-3">
+                    <StoreSelector />
+                  </div>
+                )}
+              </>
+            }
+            bottom={
+              <div className={`border-t border-border p-2 flex items-center gap-2 ${isMobile ? '' : 'flex-col'}`}>
+                <div
+                  className="w-9 h-9 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent flex-shrink-0"
+                  title={`${profile?.display_name || 'Usuario'} · ${
+                    isAdmin ? 'Administrador'
+                    : store.activeStore?.role === 'owner' ? 'Dueño'
+                    : store.activeStore?.role === 'supervisor' ? 'Supervisor'
+                    : 'Operadora'
+                  }`}
+                  aria-hidden="true"
                 >
-                  <Icon size={17} aria-hidden="true" />
-                  <span>{tab.label}</span>
+                  {userInitial}
+                </div>
+                {isMobile && (
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-foreground truncate">{profile?.display_name || 'Usuario'}</div>
+                    <div className="text-[10px] text-muted-foreground">{
+                      isAdmin ? 'Administrador'
+                      : store.activeStore?.role === 'owner' ? 'Dueño'
+                      : store.activeStore?.role === 'supervisor' ? 'Supervisor'
+                      : 'Operadora'
+                    }</div>
+                  </div>
+                )}
+                <button onClick={signOut} aria-label="Cerrar sesión" title="Cerrar sesión"
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+                  <LogOut size={14} />
                 </button>
-              );
-            })}
-          </nav>
-
-          <div className="p-3 border-t border-border flex-shrink-0">
-            <div className="flex items-center gap-2.5 px-2 py-2">
-              <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent flex-shrink-0" aria-hidden="true">
-                {userInitial}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-foreground truncate">{profile?.display_name || 'Usuario'}</div>
-                <div className="text-[10px] text-muted-foreground">{
-                  isAdmin ? 'Administrador'
-                  : store.activeStore?.role === 'owner' ? 'Dueño'
-                  : store.activeStore?.role === 'supervisor' ? 'Supervisor'
-                  : 'Operadora'
-                }</div>
-              </div>
-              <button onClick={signOut} aria-label="Cerrar sesión" title="Cerrar sesión"
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-                <LogOut size={14} />
-              </button>
-            </div>
-          </div>
+            }
+          />
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <header className="h-12 bg-surface/80 backdrop-blur-md border-b border-border flex items-center justify-between px-4 flex-shrink-0 gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              {isMobile && (
-                <button onClick={() => setSidebarOpen(true)} aria-label="Abrir menú"
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-                  <Menu size={18} />
+          <HudTopbar
+            title={activeLabel}
+            section={activeSection}
+            onMenu={isMobile ? () => setSidebarOpen(true) : undefined}
+            right={
+              <>
+                {/* En escritorio el rail mide 80px y no cabe el selector de
+                    tienda: vive acá para que cambiar de tienda siga a un click. */}
+                {!isMobile && <div className="w-44"><StoreSelector /></div>}
+                <LiveClock />
+                <button onClick={toggleTheme}
+                  aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+                  className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+                  {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
                 </button>
-              )}
-              <h1 className="text-sm font-semibold text-foreground truncate">{activeLabel}</h1>
-            </div>
+                <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent"
+                  aria-label={`Usuario: ${profile?.display_name || 'Usuario'}`}
+                  title={profile?.display_name || 'Usuario'}>
+                  {userInitial}
+                </div>
+              </>
+            }
+          />
 
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <LiveClock />
-              <button onClick={toggleTheme}
-                aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-                {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
-              </button>
-              <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent"
-                aria-label={`Usuario: ${profile?.display_name || 'Usuario'}`}
-                title={profile?.display_name || 'Usuario'}>
-                {userInitial}
-              </div>
+          <main className="relative flex-1 overflow-y-auto p-4 md:p-6 bg-aurora">
+            <AuroraBackdrop />
+            <div className="relative">
+              <OpeningReportGate>
+                <div className="mb-3"><SyncFreshness /></div>
+                {isConfirmar && <CounterBar />}
+                <Suspense fallback={<InlineRouteLoader />}>
+                  <Outlet />
+                </Suspense>
+              </OpeningReportGate>
             </div>
-          </header>
-
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-aurora">
-            <OpeningReportGate>
-              <div className="mb-3"><SyncFreshness /></div>
-              {isConfirmar && <CounterBar />}
-              <Suspense fallback={<InlineRouteLoader />}>
-                <Outlet />
-              </Suspense>
-            </OpeningReportGate>
           </main>
         </div>
       </div>

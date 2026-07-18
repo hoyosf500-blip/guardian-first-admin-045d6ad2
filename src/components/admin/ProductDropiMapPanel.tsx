@@ -6,6 +6,7 @@ import { usePushToDropi, type ShopifyProductLite } from '@/hooks/usePushToDropi'
 import DropiProductSearch from '@/components/DropiProductSearch';
 import { Link2, Save, Loader2, Trash2, CheckCircle2, AlertTriangle, RefreshCw, Package } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
@@ -133,9 +134,12 @@ export default function ProductDropiMapPanel() {
   }
 
   return (
-    <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-      <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <Link2 size={16} className="text-primary" />
+    <motion.div {...fadeUp} className="md:col-span-2">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+      <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Link2 size={15} />
+        </span>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Vínculos de productos Shopify → Dropi · {activeStore.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -213,7 +217,7 @@ export default function ProductDropiMapPanel() {
             {/* Huérfanos: vínculos cuyo producto ya no está en Shopify */}
             {orphans.length > 0 && (
               <div className="space-y-1">
-                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Otros vínculos (producto no encontrado en Shopify)</div>
+                <div className="hud-label">Otros vínculos (producto no encontrado en Shopify)</div>
                 <div className="rounded-lg border border-border divide-y divide-border">
                   {orphans.map(r => (
                     <div key={r.shopify_product_id} className="px-3 py-2 grid grid-cols-[1fr,1fr,2rem] gap-2 items-center text-sm font-mono">
@@ -234,22 +238,22 @@ export default function ProductDropiMapPanel() {
               <summary className="cursor-pointer text-muted-foreground select-none">Agregar un vínculo a mano (por id)</summary>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-[1fr,1fr,7rem,auto] gap-2 items-end">
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Id Shopify</label>
+                  <label className="hud-label">Id Shopify</label>
                   <input inputMode="numeric" value={mShopifyId} onChange={e => setMShopifyId(e.target.value)} placeholder="9483772952801"
-                    className="mt-1 w-full h-9 rounded-lg border border-border bg-background px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                    className="mt-1 w-full h-9 rounded-xl border border-border bg-card/40 px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Id Dropi</label>
+                  <label className="hud-label">Id Dropi</label>
                   <input inputMode="numeric" value={mDropiId} onChange={e => setMDropiId(e.target.value)} placeholder="2034257"
-                    className="mt-1 w-full h-9 rounded-lg border border-border bg-background px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                    className="mt-1 w-full h-9 rounded-xl border border-border bg-card/40 px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Variación</label>
+                  <label className="hud-label">Variación</label>
                   <input inputMode="numeric" value={mVariationId} onChange={e => setMVariationId(e.target.value)} placeholder="—"
-                    className="mt-1 w-full h-9 rounded-lg border border-border bg-background px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                    className="mt-1 w-full h-9 rounded-xl border border-border bg-card/40 px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </div>
                 <button onClick={saveManual} disabled={savingManual || !mShopifyId.trim() || !mDropiId.trim()}
-                  className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="h-9 px-4 btn-accent-3d rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                   {savingManual ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar
                 </button>
               </div>
@@ -257,6 +261,7 @@ export default function ProductDropiMapPanel() {
           </>
         )}
       </div>
+    </TiltCard>
     </motion.div>
   );
 }

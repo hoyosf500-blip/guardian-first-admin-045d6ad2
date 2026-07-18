@@ -289,13 +289,15 @@ export default function ProductivityDashboard() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex rounded-lg border border-border bg-card p-0.5">
+          <div className="inline-flex flex-wrap gap-2">
             {(['today', '7d', '30d'] as Range[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  range === r ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+                className={`px-4 py-2 rounded-xl text-sm transition-colors ${
+                  range === r
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
                 }`}
               >
                 {r}
@@ -305,7 +307,7 @@ export default function ProductivityDashboard() {
           <button
             onClick={() => load(true)}
             disabled={refreshing}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:border-border-strong hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/40 transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             aria-label="Refrescar"
           >
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
@@ -330,7 +332,7 @@ export default function ProductivityDashboard() {
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-border bg-card p-10 flex items-center justify-center">
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-10 flex items-center justify-center">
           <Loader2 className="animate-spin text-accent" size={20} aria-hidden="true" />
         </div>
       ) : !error ? (
@@ -503,7 +505,7 @@ export default function ProductivityDashboard() {
 
           {/* Top performer callout */}
           {leader && leader.confirmados > 0 && (
-            <div className="rounded-xl border border-accent/25 bg-card p-3.5 flex items-center gap-3">
+            <div className="rounded-2xl border border-accent/30 bg-card/40 shadow-card3d p-3.5 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent/12">
                 <Trophy size={16} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
               </div>
@@ -956,7 +958,7 @@ export default function ProductivityDashboard() {
 
 function Section({ title, dotClass, note, children }: { title: string; dotClass: string; note?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
+    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
       <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} aria-hidden="true" />

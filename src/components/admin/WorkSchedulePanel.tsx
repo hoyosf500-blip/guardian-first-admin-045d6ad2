@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Clock, Save, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { TiltCard } from '@/components/ui3d';
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import {
   useStoreSchedule,
@@ -76,9 +77,11 @@ export default function WorkSchedulePanel() {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center gap-2 mb-1">
-        <Clock size={16} className="text-accent" aria-hidden="true" />
+    <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
+      <div className="flex items-center gap-2.5 mb-1">
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Clock size={15} />
+        </span>
         <h3 className="text-sm font-bold text-foreground">Horario laboral de la tienda</h3>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
@@ -92,14 +95,14 @@ export default function WorkSchedulePanel() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground mb-1.5">Jornada</div>
+              <div className="hud-label mb-1.5">Jornada</div>
               <div className="flex items-center gap-2">
                 <input
                   type="time"
                   aria-label="Inicio de jornada"
                   value={toHHMM(form.work_start_min)}
                   onChange={set('work_start_min')}
-                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="rounded-xl border border-border bg-card/40 px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 />
                 <span className="text-muted-foreground text-xs">a</span>
                 <input
@@ -107,21 +110,21 @@ export default function WorkSchedulePanel() {
                   aria-label="Fin de jornada"
                   value={toHHMM(form.work_end_min)}
                   onChange={set('work_end_min')}
-                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="rounded-xl border border-border bg-card/40 px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 />
               </div>
               {invalidWork && <p className="text-[11px] text-danger mt-1">El inicio debe ser antes del fin.</p>}
             </div>
 
             <div>
-              <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground mb-1.5">Almuerzo (excluido)</div>
+              <div className="hud-label mb-1.5">Almuerzo (excluido)</div>
               <div className="flex items-center gap-2">
                 <input
                   type="time"
                   aria-label="Inicio de almuerzo"
                   value={toHHMM(form.lunch_start_min)}
                   onChange={set('lunch_start_min')}
-                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="rounded-xl border border-border bg-card/40 px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 />
                 <span className="text-muted-foreground text-xs">a</span>
                 <input
@@ -129,7 +132,7 @@ export default function WorkSchedulePanel() {
                   aria-label="Fin de almuerzo"
                   value={toHHMM(form.lunch_end_min)}
                   onChange={set('lunch_end_min')}
-                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="rounded-xl border border-border bg-card/40 px-2 py-1.5 text-sm font-mono tabular-nums focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 />
               </div>
               {invalidLunch && <p className="text-[11px] text-danger mt-1">El inicio debe ser antes del fin.</p>}
@@ -151,6 +154,6 @@ export default function WorkSchedulePanel() {
           </div>
         </div>
       )}
-    </div>
+    </TiltCard>
   );
 }

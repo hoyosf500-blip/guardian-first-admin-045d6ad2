@@ -129,7 +129,7 @@ export default function InactivityDetailModal({
                 return (
                   <li
                     key={`${r.warning_date}-${r.numero}`}
-                    className="rounded-lg border border-border bg-background px-4 py-3 flex items-center justify-between gap-4"
+                    className="rounded-xl border border-border bg-card/40 px-4 py-3 flex items-center justify-between gap-4"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <span

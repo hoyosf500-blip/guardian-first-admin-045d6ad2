@@ -156,7 +156,7 @@ export default function CancelledReasonsModal({
                   {rows.map((r, i) => {
                     const age = ages[i];
                     return (
-                      <li key={r.external_id ?? i} className="rounded-lg border border-border bg-background p-3">
+                      <li key={r.external_id ?? i} className="rounded-xl border border-border bg-card/40 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-foreground truncate">{r.nombre || '(sin nombre)'}</div>

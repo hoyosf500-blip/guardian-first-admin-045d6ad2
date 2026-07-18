@@ -67,7 +67,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
 
   if (paymentsQuery.isLoading || residualQuery.isLoading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-center gap-2 text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-6 flex items-center justify-center gap-2 text-muted-foreground">
         <Loader2 size={16} className="animate-spin" />
         <span className="text-sm">Cargando histórico…</span>
       </div>
@@ -76,15 +76,15 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
 
   if (pagos.length === 0 && residual.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
         Aún no hay datos. Subí los extractos PDF de las TC en el bloque de arriba.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+      <div className="px-4 py-3.5 border-b border-border flex items-center justify-between gap-2 flex-wrap">
         <h3 className="font-semibold text-sm">Cuánto pagué · Cuánto me falta</h3>
         <div className="flex items-center gap-2 text-xs">
           <label className="text-muted-foreground">TRM:</label>
@@ -93,7 +93,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
             value={trm}
             onChange={e => setTrm(Number(e.target.value) || 3800)}
             min={1000} max={10000} step={10}
-            className="w-20 bg-background border border-border rounded px-2 py-1 text-xs tabular-nums"
+            className="w-20 bg-card/40 border border-border rounded-lg px-2 py-1 text-xs font-mono tabular-nums hover:border-border-strong transition-colors"
           />
         </div>
       </div>
@@ -101,12 +101,12 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
 
         {/* ═══ COLUMNA IZQUIERDA: lo pagado ═══ */}
-        <div className="bg-green/5">
+        <div className="bg-success/[0.06]">
           <div className="px-4 py-4 border-b border-border/50">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-green font-semibold mb-1">
+            <div className="flex items-center gap-2 hud-label text-success mb-1.5">
               <CheckCircle2 size={14} /> YA PAGUÉ
             </div>
-            <div className="text-2xl font-bold text-green tabular-nums">
+            <div className="text-3xl font-bold text-success font-mono tabular-nums">
               {formatCOP(totalPagadoCop)}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
@@ -122,11 +122,11 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
             ) : (
               <ul className="divide-y divide-border/50">
                 {pagos.map(p => (
-                  <li key={p.id} className="px-4 py-2 flex items-start justify-between gap-2 text-xs hover:bg-green/5">
+                  <li key={p.id} className="px-4 py-2.5 flex items-start justify-between gap-2 text-xs hover:bg-success/10 transition-colors">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <Calendar size={11} className="text-muted-foreground shrink-0" />
-                        <span className="text-muted-foreground tabular-nums">{fmtFecha(p.fecha)}</span>
+                        <span className="text-muted-foreground font-mono tabular-nums">{fmtFecha(p.fecha)}</span>
                         <span className="text-muted-foreground">·</span>
                         <span className="text-muted-foreground">{p.tarjeta}</span>
                       </div>
@@ -134,8 +134,8 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                         {p.descripcion}
                       </div>
                     </div>
-                    <div className="text-right tabular-nums shrink-0">
-                      <div className="font-semibold text-green">
+                    <div className="text-right font-mono tabular-nums shrink-0">
+                      <div className="font-semibold text-success">
                         {p.moneda === 'USD' ? `USD ${p.monto.toFixed(2)}` : formatCOP(p.monto)}
                       </div>
                       {p.moneda === 'USD' && (
@@ -152,12 +152,12 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
         </div>
 
         {/* ═══ COLUMNA DERECHA: lo que falta ═══ */}
-        <div className="bg-red/5">
+        <div className="bg-danger/[0.06]">
           <div className="px-4 py-4 border-b border-border/50">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-red font-semibold mb-1">
+            <div className="flex items-center gap-2 hud-label text-danger mb-1.5">
               <AlertCircle size={14} /> ME FALTA
             </div>
-            <div className="text-2xl font-bold text-red tabular-nums">
+            <div className="text-3xl font-bold text-danger font-mono tabular-nums">
               {formatCOP(totalFaltaCop)}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
@@ -173,7 +173,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
             ) : (
               <ul className="divide-y divide-border/50">
                 {residual.map(r => (
-                  <li key={`${r.tarjeta}-${r.moneda}`} className="px-4 py-3 hover:bg-red/5">
+                  <li key={`${r.tarjeta}-${r.moneda}`} className="px-4 py-3 hover:bg-danger/10 transition-colors">
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="flex items-center gap-1.5 text-xs">
                         <CreditCard size={11} className="text-muted-foreground" />
@@ -188,8 +188,8 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                       <span className="text-[11px] text-muted-foreground">
                         {r.num_compras} compra{r.num_compras === 1 ? '' : 's'} a cuotas
                       </span>
-                      <div className="text-right tabular-nums">
-                        <div className="font-semibold text-red">
+                      <div className="text-right font-mono tabular-nums">
+                        <div className="font-semibold text-danger">
                           {r.moneda === 'USD' ? `USD ${r.saldo_pendiente.toFixed(2)}` : formatCOP(r.saldo_pendiente)}
                         </div>
                         {r.moneda === 'USD' && (
@@ -215,24 +215,24 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
 
               <div className="text-[11px] text-muted-foreground -mt-1">
                 Si dejás todo en 36 cuotas al 25.5% EA pagás{' '}
-                <strong className="text-orange">+{formatCOP(interesTotalSiDejara)}</strong> de interés.
+                <strong className="text-warning font-mono tabular-nums">+{formatCOP(interesTotalSiDejara)}</strong> de interés.
               </div>
 
               {walletDisponible != null && (
-                <div className="flex items-center justify-between text-xs bg-muted/30 rounded p-2">
+                <div className="flex items-center justify-between text-xs bg-foreground/[0.04] border border-border rounded-lg px-2.5 py-2">
                   <span className="text-muted-foreground">Wallet Dropi disponible:</span>
-                  <span className="tabular-nums font-medium">{formatCOP(walletDisponible)}</span>
+                  <span className="font-mono tabular-nums font-medium">{formatCOP(walletDisponible)}</span>
                 </div>
               )}
 
               {faltaParaLiquidar != null && faltaParaLiquidar > 0 && (
-                <div className="flex items-center justify-between text-xs bg-orange/10 rounded p-2">
-                  <span className="text-orange">Falta acumular:</span>
-                  <span className="tabular-nums font-semibold text-orange">{formatCOP(faltaParaLiquidar)}</span>
+                <div className="flex items-center justify-between text-xs bg-warning/[0.1] border border-warning/30 rounded-lg px-2.5 py-2">
+                  <span className="text-warning">Falta acumular:</span>
+                  <span className="font-mono tabular-nums font-semibold text-warning">{formatCOP(faltaParaLiquidar)}</span>
                 </div>
               )}
               {faltaParaLiquidar === 0 && (
-                <div className="text-xs bg-green/10 rounded p-2 text-green font-semibold">
+                <div className="text-xs bg-success/[0.1] border border-success/30 rounded-lg px-2.5 py-2 text-success font-semibold">
                   ✓ Tenés cash en wallet para liquidar todo
                 </div>
               )}
@@ -247,7 +247,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                     onChange={e => setPagoSimulado(Number(e.target.value) || 0)}
                     placeholder="0"
                     min={0} max={totalFaltaCop} step={100000}
-                    className="w-32 bg-background border border-border rounded px-2 py-1 text-xs tabular-nums text-right"
+                    className="w-32 bg-card/40 border border-border rounded-lg px-2 py-1 text-xs font-mono tabular-nums text-right hover:border-border-strong transition-colors"
                   />
                 </div>
                 <input
@@ -255,7 +255,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                   value={pagoCapped}
                   onChange={e => setPagoSimulado(Number(e.target.value))}
                   min={0} max={Math.ceil(totalFaltaCop)} step={100000}
-                  className="w-full accent-green"
+                  className="w-full accent-success"
                 />
                 <div className="flex justify-end gap-1">
                   <button
@@ -281,18 +281,18 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
               {/* Resultados */}
               {pagoCapped > 0 && (
                 <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="rounded border border-red/30 bg-red/5 p-2">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Deuda restante</div>
-                    <div className="tabular-nums font-semibold text-red mt-0.5">
+                  <div className="rounded-xl border border-danger/30 bg-danger/[0.07] p-2.5">
+                    <div className="hud-label text-muted-foreground">Deuda restante</div>
+                    <div className="font-mono tabular-nums font-semibold text-danger mt-1">
                       {formatCOP(deudaRestante)}
                     </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                    <div className="text-[10px] font-mono tabular-nums text-muted-foreground mt-0.5">
                       {pctLiquidado.toFixed(0)}% liquidado
                     </div>
                   </div>
-                  <div className="rounded border border-green/30 bg-green/5 p-2">
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Interés ahorrado</div>
-                    <div className="tabular-nums font-semibold text-green mt-0.5">
+                  <div className="rounded-xl border border-success/30 bg-success/[0.07] p-2.5">
+                    <div className="hud-label text-muted-foreground">Interés ahorrado</div>
+                    <div className="font-mono tabular-nums font-semibold text-success mt-1">
                       {formatCOP(interesAhorrado)}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5">

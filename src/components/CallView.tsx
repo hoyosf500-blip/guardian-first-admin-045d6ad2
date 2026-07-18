@@ -14,6 +14,7 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare } from 'lucide-react';
+import { TiltCard } from '@/components/ui3d';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
@@ -662,14 +663,14 @@ export default function CallView({ items, alerts }: Props) {
   if (!items.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
-        <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
+        <CheckCircle2 size={40} className="mx-auto mb-3 text-success" />
         <p className="text-sm">¡Todos gestionados!</p>
       </div>
     );
   }
 
-  const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
-  const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
+  const pColor = o.dias >= 7 ? 'text-danger' : o.dias >= 4 ? 'text-warning' : 'text-success';
+  const pDot = o.dias >= 7 ? 'bg-danger' : o.dias >= 4 ? 'bg-warning' : 'bg-success';
 
   const handleMark = async (result: string, reason?: string) => {
     // Fix 1 (2026-07-07): calcular el SIGUIENTE con la cola FRESCA de ESTE render
@@ -738,30 +739,36 @@ export default function CallView({ items, alerts }: Props) {
   return (
     <>
       {!o.result && (
-        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/14 border border-accent/34 text-xs font-semibold text-accent shadow-glow">
+        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/16 border border-accent/40 text-xs font-semibold text-accent shadow-glow3d">
           <Phone size={12} />
-          Atendiendo: {o.nombre} · {formatPhone(o.phone)}
+          Atendiendo: {o.nombre} · <span className="font-mono tabular-nums">{formatPhone(o.phone)}</span>
         </div>
       )}
       <div className="flex justify-between items-center mb-2">
-        <span className="text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
+        <span className="font-mono tabular-nums text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-1.5">
-          <button onClick={() => navCall(-1)} disabled={callIdx <= 0} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center">
+          <button onClick={() => navCall(-1)} disabled={callIdx <= 0} className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
             <ChevronLeft size={14} />
           </button>
-          <button onClick={() => navCall(1)} disabled={callIdx >= items.length - 1} className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center">
+          <button onClick={() => navCall(1)} disabled={callIdx >= items.length - 1} className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
             <ChevronRight size={14} />
           </button>
         </div>
       </div>
 
-      <div className="glass-panel rounded-2xl p-5 mb-4 relative overflow-hidden">
+      <TiltCard
+        sheen
+        brackets
+        wrapperClassName="mb-4"
+        className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg"
+      >
         {/* Orbe aurora decorativo (Dirección 3D) */}
         <div className="pointer-events-none absolute -left-10 -top-24 w-72 h-72 rounded-full blur-[50px] bg-accent/15" aria-hidden="true" />
         {o.retryCount && !o.result && (
-          <div className="flex items-center gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2">
-            <RotateCcw size={14} className="text-emerald-500" />
-            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+          <div className="relative flex items-center gap-2 mb-3 rounded-xl bg-success/10 border border-success/30 px-3 py-2 pl-4">
+            <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-success" aria-hidden="true" />
+            <RotateCcw size={14} className="text-success" />
+            <span className="text-[11px] font-semibold text-success">
               Luz verde ✓ — ya pasaron las 2h, volvé a llamar (intento {Number(o.retryCount) + 1}/3)
             </span>
           </div>
@@ -781,16 +788,17 @@ export default function CallView({ items, alerts }: Props) {
             Solo se muestra si hay intentos previos → no ensucia pedidos frescos. */}
         <AttemptHistory attempts={attempts} />
         {vip?.isVip && !o.result && (
-          <div className="flex items-center justify-between gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+          <div className="relative flex items-center justify-between gap-2 mb-3 rounded-xl bg-success/10 border border-success/25 px-3 py-2 pl-4">
+            <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-success" aria-hidden="true" />
             <div className="flex items-center gap-2">
-              <Star size={14} className="text-emerald-500 fill-emerald-500" />
-              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                CLIENTE VIP — {vip.entregados}/{vip.total} entregados ({vip.efectividad}%)
+              <Star size={14} className="text-success fill-success" />
+              <span className="text-[11px] font-semibold text-success">
+                CLIENTE VIP — <span className="font-mono tabular-nums">{vip.entregados}/{vip.total}</span> entregados (<span className="font-mono tabular-nums">{vip.efectividad}%</span>)
               </span>
             </div>
             <button
               onClick={() => handleMark('conf')}
-              className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors whitespace-nowrap"
+              className="text-[10px] font-bold px-2.5 py-1.5 rounded-xl bg-success/16 border border-success/40 text-success hover:bg-success/25 transition-colors whitespace-nowrap"
             >
               Confirmar sin llamar
             </button>
@@ -803,7 +811,8 @@ export default function CallView({ items, alerts }: Props) {
           const dups = dupAlertsFor(alerts?.dupByPhone, o);
           if (dups.length === 0) return null;
           return (
-            <div className="mb-3 rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 space-y-1">
+            <div className="relative mb-3 rounded-xl bg-destructive/10 border border-destructive/30 px-3 py-2 pl-4 space-y-1">
+              <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-danger" aria-hidden="true" />
               <div className="flex items-center gap-2">
                 <AlertTriangle size={14} className="text-destructive flex-shrink-0" aria-hidden="true" />
                 <span className="text-[11px] font-bold text-destructive uppercase tracking-wide">
@@ -817,9 +826,9 @@ export default function CallView({ items, alerts }: Props) {
                       href={`/pedido/${d.externalId}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="font-mono text-cyan hover:underline"
+                      className="font-mono tabular-nums text-cyan hover:underline"
                     >#{d.externalId}</a>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-semibold">{d.estado}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-lg bg-card/40 border border-border font-semibold">{d.estado}</span>
                     {d.fecha && <span className="text-muted-foreground">{d.fecha}</span>}
                     {d.source === 'cola' && <span className="text-[10px] text-muted-foreground">(en esta cola)</span>}
                   </li>
@@ -838,18 +847,19 @@ export default function CallView({ items, alerts }: Props) {
           const oc = overchargeFor(alerts?.mismatchByExt, o);
           if (!oc) return null;
           return (
-            <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2 flex-wrap">
+            <div className="relative mb-3 flex items-center justify-between gap-2 rounded-xl bg-warning/10 border border-warning/30 px-3 py-2 pl-4 flex-wrap">
+              <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-warning" aria-hidden="true" />
               <div className="flex items-center gap-2 min-w-0">
-                <DollarSign size={14} className="text-amber-500 flex-shrink-0" aria-hidden="true" />
-                <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-                  Cobra de más: Dropi {formatCOP(o.valor)} vs Shopify {formatCOP(oc.shopifyTotal)} (+{formatCOP(oc.overcharge)})
+                <DollarSign size={14} className="text-warning flex-shrink-0" aria-hidden="true" />
+                <span className="text-[11px] font-semibold text-warning">
+                  Cobra de más: Dropi <span className="font-mono tabular-nums">{formatCOP(o.valor)}</span> vs Shopify <span className="font-mono tabular-nums">{formatCOP(oc.shopifyTotal)}</span> (+<span className="font-mono tabular-nums">{formatCOP(oc.overcharge)}</span>)
                 </span>
               </div>
               {!o.guia && o.externalId && (
                 <button
                   type="button"
                   onClick={() => setEditorState({ order: o, suggestedTotal: oc.shopifyTotal })}
-                  className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors whitespace-nowrap"
+                  className="text-[10px] font-bold px-2.5 py-1.5 rounded-xl bg-warning/16 border border-warning/40 text-warning hover:bg-warning/25 transition-colors whitespace-nowrap"
                 >
                   Corregir a {formatCOP(oc.shopifyTotal)}
                 </button>
@@ -858,17 +868,17 @@ export default function CallView({ items, alerts }: Props) {
           );
         })()}
         {!o.result && <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>}
-        <div className="flex items-center gap-2 mb-1 flex-wrap">
-          <div className={`w-2 h-2 rounded-full ${pDot}`} />
-          <span className={`text-xs font-bold ${pColor}`}>D{o.dias}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-semibold">{o.estado}</span>
+        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} />
+          <span className={`font-mono tabular-nums text-xs font-bold ${pColor}`}>D{o.dias}</span>
+          <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
         </div>
 
-        <div className="text-xl font-bold mb-1">{o.nombre}</div>
+        <div className="text-2xl font-bold tracking-tight mb-1.5 text-foreground">{o.nombre}</div>
 
         <div className="text-sm text-muted-foreground mb-4 leading-relaxed space-y-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <Phone size={12} /> <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button>
+            <Phone size={12} /> <button onClick={copyPhone} className="font-mono tabular-nums text-cyan hover:underline">{formatPhone(o.phone)}</button>
             {/* Contacto de 1 click — antes el teléfono SOLO se copiaba. */}
             <a
               href={`tel:+${waPhone}`}
@@ -880,7 +890,7 @@ export default function CallView({ items, alerts }: Props) {
               type="button"
               onClick={handleWhatsApp}
               title={waEnabled ? 'Abrir WhatsApp del cliente' : 'Abrir WhatsApp (canal externo)'}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success/13 text-success border border-success/30 hover:bg-success/22 transition-colors"
             >
               <MessageSquare size={10} aria-hidden="true" /> WhatsApp
             </button>
@@ -889,20 +899,21 @@ export default function CallView({ items, alerts }: Props) {
           </div>
           <div className="flex items-center gap-1.5">
             <Package size={12} /> {o.producto || '—'}
-            {o.valor > 0 && <><span className="mx-2" /><DollarSign size={12} /> {formatCOP(o.valor)}</>}
+            {o.valor > 0 && <><span className="mx-2" /><DollarSign size={12} /> <span className="font-mono tabular-nums font-semibold text-foreground">{formatCOP(o.valor)}</span></>}
           </div>
         </div>
 
         {o.novedad && (
-          <div className={`p-2.5 rounded-lg mb-3 text-xs inline-flex items-start gap-1.5 w-full ${o.novedadSol ? 'bg-green/10 border border-green/20' : 'bg-orange/10 border border-orange/20'}`}>
-            {o.novedadSol ? <CheckCircle2 size={12} className="text-green mt-0.5" /> : <AlertTriangle size={12} className="text-orange mt-0.5" />}
+          <div className={`relative p-2.5 pl-4 rounded-xl mb-3 text-xs inline-flex items-start gap-1.5 w-full ${o.novedadSol ? 'bg-success/10 border border-success/25' : 'bg-warning/10 border border-warning/25'}`}>
+            <span className={`absolute left-0 top-2 bottom-2 w-1 rounded-full ${o.novedadSol ? 'bg-success' : 'bg-warning'}`} aria-hidden="true" />
+            {o.novedadSol ? <CheckCircle2 size={12} className="text-success mt-0.5" /> : <AlertTriangle size={12} className="text-warning mt-0.5" />}
             <span>{o.novedadSol ? 'RESUELTA' : 'NOVEDAD'}: {o.novedad}</span>
           </div>
         )}
 
         {o.guia && (
           <div className="text-xs mb-2 inline-flex items-center gap-1.5">
-            <Tag size={12} /> Guía: <a href={getTrackingUrl(o.transportadora, o.guia, countryCode) || '#'} target="_blank" rel="noreferrer" className="text-cyan">{o.guia}</a>
+            <Tag size={12} /> Guía: <a href={getTrackingUrl(o.transportadora, o.guia, countryCode) || '#'} target="_blank" rel="noreferrer" className="font-mono tabular-nums text-cyan">{o.guia}</a>
             {o.transportadora && ` (${o.transportadora})`}
           </div>
         )}
@@ -1030,11 +1041,11 @@ export default function CallView({ items, alerts }: Props) {
               onClick={() => setEditorState({ order: o })}
               title="Editar orden (datos, transportadora, cantidades y valor)"
               aria-label="Editar orden"
-              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-success/12 border border-success/30 text-success text-sm font-semibold hover:bg-success/20 hover:border-success/45 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
             >
-              <UserCog size={14} aria-hidden="true" /> Editar orden
+              <UserCog size={15} aria-hidden="true" /> Editar orden
               {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
-              {o.valor > 0 && <span className="opacity-70">· {formatCOP(o.valor)}</span>}
+              {o.valor > 0 && <span className="font-mono tabular-nums opacity-70">· {formatCOP(o.valor)}</span>}
             </button>
           </div>
         )}
@@ -1044,9 +1055,9 @@ export default function CallView({ items, alerts }: Props) {
             scrollea por la dirección/notas/sugerencias. Si el card scroll fuera
             del viewport, sticky se va con él (esperado).
             En sm+ vuelve a layout inline (mt-4) porque la card cabe en pantalla. */}
-        <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card/95 backdrop-blur sm:bg-transparent sm:backdrop-blur-none -mx-5 sm:mx-0 px-5 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
+        <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card sm:bg-transparent -mx-6 sm:mx-0 px-6 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
         {!o.result ? (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2.5">
             {/* Validador-direcciones: el botón Confirmar pasa por el gate
                 (validación dirección + teléfono + documento Coordinadora +
                 override admin). Si el gate bloquea, el Button queda
@@ -1076,20 +1087,20 @@ export default function CallView({ items, alerts }: Props) {
                 <CheckCircle2 size={16} aria-hidden="true" /> Confirmó
               </span>
             </DespachoGateButton>
-            <button onClick={() => setShowCancelModal(true)} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97] transition-transform">
+            <button onClick={() => setShowCancelModal(true)} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 active:scale-[0.97] transition-all">
               <XCircle size={16} aria-hidden="true" /> Canceló
             </button>
-            <button onClick={() => handleMark('noresp')} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-3.5 rounded-xl bg-muted text-muted-foreground font-bold text-sm active:scale-[0.97] transition-transform">
+            <button onClick={() => handleMark('noresp')} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-card/40 border border-border text-muted-foreground font-bold text-sm hover:text-foreground hover:border-border-strong active:scale-[0.97] transition-all">
               <PhoneOff size={16} aria-hidden="true" /> No contestó
             </button>
           </div>
         ) : (
           <div className="text-center py-3 text-sm font-semibold inline-flex items-center gap-1.5 justify-center w-full">
-            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-green" aria-hidden="true" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-red" aria-hidden="true" /> Cancelado</> : <><PhoneOff size={16} aria-hidden="true" /> No respondió</>}
+            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-success" aria-hidden="true" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-danger" aria-hidden="true" /> Cancelado</> : <><PhoneOff size={16} aria-hidden="true" /> No respondió</>}
           </div>
         )}
         </div>
-      </div>
+      </TiltCard>
 
       {/* Notas y recordatorios del cliente — visible para toda la tienda.
           Por phone (no solo orderId): si el mismo cliente tiene otro pedido,
@@ -1107,9 +1118,9 @@ export default function CallView({ items, alerts }: Props) {
         >
           {/* Bottom-sheet en mobile; centrado en PC (sm+), que es donde más
               trabajan las operadoras. Mismo contenido, solo cambia el anclaje. */}
-          <div className="bg-surface rounded-t-2xl sm:rounded-2xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] sm:pb-6 w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up sm:animate-none" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border border-border shadow-card3d-lg rounded-t-3xl sm:rounded-3xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] sm:pb-6 w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up sm:animate-none" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-4 inline-flex items-center gap-2">
-              <XCircle size={18} className="text-red" /> Motivo de cancelación
+              <XCircle size={18} className="text-danger" /> Motivo de cancelación
             </h3>
             {!cancelOtroMode ? (
               <div className="grid gap-2">
@@ -1121,7 +1132,7 @@ export default function CallView({ items, alerts }: Props) {
                     <button
                       key={reason}
                       onClick={() => (isOtro ? setCancelOtroMode(true) : handleMark('canc', reason))}
-                      className="w-full text-left py-3 px-4 rounded-lg bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80 transition-colors"
+                      className="w-full text-left py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors"
                     >
                       {reason}
                     </button>
@@ -1141,19 +1152,19 @@ export default function CallView({ items, alerts }: Props) {
                   placeholder="Escribí el motivo de la cancelación…"
                   rows={3}
                   maxLength={200}
-                  className="w-full rounded-lg border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full rounded-xl border border-border bg-card/40 p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-accent/40"
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => { setCancelOtroMode(false); setCancelOtroText(''); }}
-                    className="py-3 px-4 rounded-lg bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80 transition-colors"
+                    className="py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors"
                   >
                     Volver
                   </button>
                   <button
                     disabled={!cancelOtroText.trim()}
                     onClick={() => handleMark('canc', cancelOtroText.trim())}
-                    className="py-3 px-4 rounded-lg bg-red/15 text-red border border-red/25 font-bold text-sm hover:bg-red/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="py-3 px-4 rounded-xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Confirmar cancelación
                   </button>

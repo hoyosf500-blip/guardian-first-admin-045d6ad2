@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { useStore } from '@/contexts/StoreContext';
 import { Smartphone, Plug, Save, Loader2, QrCode, Copy, CheckCircle2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 
 // wa_channels RPCs no están en los tipos generados → cast sin `any`
@@ -123,10 +124,13 @@ export default function WaChannelsPanel() {
   }
 
   return (
-    <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden">
+    <motion.div {...fadeUp} className="">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <Smartphone size={16} className="text-accent" />
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Smartphone size={15} />
+        </span>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Canales WhatsApp · {activeStore?.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -152,7 +156,7 @@ export default function WaChannelsPanel() {
           ) : channels.map((c) => {
             const st = STATUS_STYLE[c.status] || { label: c.status, cls: 'bg-muted text-muted-foreground border-border' };
             return (
-              <div key={c.channel_id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
+              <div key={c.channel_id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card/40 px-4 py-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Plug size={15} className="text-muted-foreground shrink-0" />
                   <div className="min-w-0">
@@ -171,7 +175,7 @@ export default function WaChannelsPanel() {
         {/* Webhook a configurar en el gateway */}
         {webhookUrl && (
           <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2.5">
-            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1">
+            <div className="hud-label mb-1 flex items-center gap-1">
               <QrCode size={11} /> Webhook a configurar en el gateway {provider === 'waha' ? '(WAHA: evento "message")' : '(evento messages.upsert, webhookByEvents = false)'}
             </div>
             <div className="flex items-center gap-2">
@@ -186,16 +190,16 @@ export default function WaChannelsPanel() {
 
         {/* Form de alta (solo dueño) */}
         {!isOwnerOfActive ? (
-          <div className="rounded-lg border border-border bg-background px-4 py-3 text-xs text-muted-foreground">
+          <div className="rounded-xl border border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
             Solo el <strong>dueño</strong> de la tienda puede registrar o editar el canal.
           </div>
         ) : (
-          <div className="rounded-lg border border-border bg-background p-4 space-y-4">
+          <div className="rounded-xl border border-border bg-card/40 p-4 space-y-4">
             <div className="text-sm font-medium text-foreground">Registrar / actualizar canal</div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Proveedor</label>
+                <label className="hud-label">Proveedor</label>
                 <select
                   value={provider}
                   onChange={e => setProvider(e.target.value as 'evolution' | 'whapi' | 'waha')}
@@ -207,7 +211,7 @@ export default function WaChannelsPanel() {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Número (con código país)</label>
+                <label className="hud-label">Número (con código país)</label>
                 <input
                   type="text" value={phone} onChange={e => setPhone(e.target.value)} placeholder="573164291009"
                   className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
@@ -218,7 +222,7 @@ export default function WaChannelsPanel() {
             {isServer && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <label className="hud-label">
                     {provider === 'waha' ? 'URL del server WAHA' : 'URL del server Evolution'}
                   </label>
                   <input
@@ -228,7 +232,7 @@ export default function WaChannelsPanel() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                  <label className="hud-label">
                     {provider === 'waha' ? 'Sesión (session name)' : 'Instancia (instance name)'}
                   </label>
                   <input
@@ -241,7 +245,7 @@ export default function WaChannelsPanel() {
             )}
 
             <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+              <label className="hud-label">
                 {provider === 'evolution' ? 'API key de Evolution (apikey)' : provider === 'waha' ? 'API key de WAHA (X-Api-Key)' : 'Token de Whapi (Bearer)'}
               </label>
               <input
@@ -283,6 +287,7 @@ export default function WaChannelsPanel() {
           </div>
         )}
       </div>
+    </TiltCard>
     </motion.div>
   );
 }

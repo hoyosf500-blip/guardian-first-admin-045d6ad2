@@ -3,6 +3,7 @@ import { Lightbulb, Copy, ArrowRightLeft, CheckCircle2, Info } from 'lucide-reac
 import { useCityCarrierMatrix } from '@/hooks/useCityCarrierMatrix';
 import { deriveCarrierRecommendations } from '@/lib/carrierRecommendations';
 import { copyToClipboard } from '@/lib/clipboard';
+import { StatTile } from '@/components/ui3d';
 import type { LogisticsFilters, CarrierRecommendation } from '@/lib/logistics.types';
 
 interface Props {
@@ -31,13 +32,13 @@ export default memo(function CarrierRecommendations({
 
   if (matrix.isLoading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 skeleton-shimmer min-h-[300px]" />
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 skeleton-shimmer min-h-[300px]" />
     );
   }
 
   if (matrix.isError) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-sm text-danger">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 text-sm text-danger">
         Error cargando recomendaciones: {matrix.error?.message}
       </div>
     );
@@ -45,7 +46,7 @@ export default memo(function CarrierRecommendations({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-center">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 text-center">
         <Info size={28} className="mx-auto text-muted-foreground mb-2" aria-hidden="true" />
         <p className="text-sm font-semibold text-foreground">Sin recomendaciones disponibles</p>
         <p className="text-xs text-muted-foreground mt-1">
@@ -69,11 +70,13 @@ export default memo(function CarrierRecommendations({
         <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
       </div>
 
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
         <header className="px-5 py-4 border-b border-border/60">
           <div className="flex items-center gap-2">
-            <Lightbulb size={14} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
-            <h2 className="text-sm font-bold text-foreground uppercase tracking-[0.08em]">
+            <span className="w-8 h-8 rounded-xl bg-warning/14 border border-warning/30 text-warning glow-warning flex items-center justify-center shrink-0" aria-hidden="true">
+              <Lightbulb size={14} strokeWidth={2.25} />
+            </span>
+            <h2 className="text-sm font-bold text-foreground tracking-tight">
               Recomendaciones de transportadora por ciudad
             </h2>
           </div>
@@ -86,14 +89,14 @@ export default memo(function CarrierRecommendations({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border/60 bg-muted/20">
-              <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Ciudad</th>
-              <th className="text-right px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Vol.</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mejor carrier</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Peor carrier</th>
-              <th className="text-center px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground" title="Diferencia de puntos entre el MEJOR y el PEOR carrier de la ciudad (el spread), no la ganancia exacta de cambiar desde tu carrier actual.">Δ pts</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Acción</th>
-              <th className="text-right px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground"></th>
+            <tr className="border-b border-border/60 bg-foreground/[0.03]">
+              <th className="text-left px-4 py-2.5 hud-label">Ciudad</th>
+              <th className="text-right px-3 py-2.5 hud-label">Vol.</th>
+              <th className="text-left px-3 py-2.5 hud-label">Mejor carrier</th>
+              <th className="text-left px-3 py-2.5 hud-label">Peor carrier</th>
+              <th className="text-center px-3 py-2.5 hud-label" title="Diferencia de puntos entre el MEJOR y el PEOR carrier de la ciudad (el spread), no la ganancia exacta de cambiar desde tu carrier actual.">Δ pts</th>
+              <th className="text-left px-3 py-2.5 hud-label">Acción</th>
+              <th className="text-right px-3 py-2.5 hud-label"></th>
             </tr>
           </thead>
           <tbody>
@@ -116,33 +119,29 @@ interface StatsBannerProps {
   hint: string;
 }
 function StatsBanner({ tone, icon: Icon, label, value, hint }: StatsBannerProps) {
-  const styles = {
-    success: { card: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent',
-               text: 'text-success', iconBg: 'bg-success/15 border-success/40' },
-    warning: { card: 'border-warning/30 bg-gradient-to-br from-warning/8 via-warning/3 to-transparent',
-               text: 'text-warning', iconBg: 'bg-warning/15 border-warning/40' },
-    danger:  { card: 'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent',
-               text: 'text-danger', iconBg: 'bg-danger/15 border-danger/40' },
-  }[tone];
   return (
-    <article className={`rounded-2xl border-2 ${styles.card} p-4 flex items-center gap-3`}>
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${styles.iconBg}`}>
-        <Icon size={16} className={styles.text} aria-hidden="true" strokeWidth={2.25} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
-          {label}
-        </div>
-        <div className={`font-extrabold text-2xl tabular-nums leading-none mt-0.5 ${styles.text}`}>
-          {value}
-        </div>
-        <div className="text-[10px] text-muted-foreground mt-1 truncate">
-          {hint}
-        </div>
-      </div>
-    </article>
+    <StatTile
+      icon={Icon}
+      label={label}
+      value={value}
+      tone={tone}
+      title={hint}
+      extra={<span className="text-[10px] text-muted-foreground block truncate">{hint}</span>}
+    />
   );
 }
+
+// Tono semántico de la fila → barra lateral y badge de veredicto.
+const ROW_BAR: Record<'success' | 'warning' | 'danger', string> = {
+  success: 'border-success',
+  warning: 'border-warning',
+  danger:  'border-danger',
+};
+const ROW_BADGE: Record<'success' | 'warning' | 'danger', string> = {
+  success: 'bg-success/14 border-success/30 text-success',
+  warning: 'bg-warning/14 border-warning/30 text-warning',
+  danger:  'bg-danger/14 border-danger/30 text-danger',
+};
 
 interface RowProps {
   row: CarrierRecommendation;
@@ -174,8 +173,9 @@ function RecommendationRow({ row, filters }: RowProps) {
   };
 
   return (
-    <tr className="border-b border-border/40 hover:bg-muted/10 transition-colors">
-      <td className="px-4 py-2.5">
+    <tr className="border-b border-border/40 hover:bg-foreground/[0.03] transition-colors">
+      {/* Barra semántica lateral: el veredicto de la fila se lee antes del texto. */}
+      <td className={`px-4 py-2.5 border-l-2 ${ROW_BAR[badgeTone]}`}>
         <div className="font-semibold text-foreground truncate max-w-[160px]" title={row.ciudad}>
           {row.ciudad}
         </div>
@@ -216,7 +216,7 @@ function RecommendationRow({ row, filters }: RowProps) {
         </span>
       </td>
       <td className="px-3 py-2.5">
-        <span className={`pill pill-${badgeTone} text-[11px] font-semibold inline-flex items-center gap-1`}>
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${ROW_BADGE[badgeTone]}`}>
           {isMantener ? (
             <CheckCircle2 size={11} aria-hidden="true" />
           ) : (
@@ -234,7 +234,7 @@ function RecommendationRow({ row, filters }: RowProps) {
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 h-7 rounded-md border border-border bg-card px-2.5 text-[11px] font-medium text-foreground hover:bg-muted/40 hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="inline-flex items-center gap-1.5 h-7 rounded-xl border border-border bg-card/40 px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           aria-label={`Copiar mensaje WhatsApp para ${row.ciudad}`}
           title="Copiar mensaje para WhatsApp"
         >

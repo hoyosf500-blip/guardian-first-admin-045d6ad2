@@ -93,6 +93,12 @@ export default {
           DEFAULT: "hsl(var(--ai))",
           foreground: "hsl(var(--ai-foreground))",
         },
+        // Nivel intermedio warning→danger. NO usar `orange`/`yellow` para esto:
+        // son alias legacy con el mismo HSL que `warning`.
+        attention: {
+          DEFAULT: "hsl(var(--attention))",
+          foreground: "hsl(var(--attention-foreground))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -110,6 +116,12 @@ export default {
         sm: "calc(var(--radius) - 4px)", /* 4px tight */
         xl: "calc(var(--radius) + 4px)", /* 12px large cards */
       },
+      boxShadow: {
+        /* Dirección 3D — card, glow de acento y elevación del rail */
+        card3d: "0 20px 50px -30px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05)",
+        "card3d-lg": "0 30px 70px -30px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08)",
+        glow3d: "0 0 18px -6px hsl(var(--accent))",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },
@@ -119,10 +131,35 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        /* ── Dirección 3D · solo transform/opacity (compositor GPU) ── */
+        "gb-float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+        "gb-spin": { to: { transform: "rotate(360deg)" } },
+        "gb-draw": { to: { strokeDashoffset: "0" } },
+        "gb-rise": {
+          from: { transform: "scaleY(0)", opacity: "0" },
+          to: { transform: "scaleY(1)", opacity: "1" },
+        },
+        "gb-pulse": {
+          "0%, 100%": { opacity: ".5" },
+          "50%": { opacity: "1" },
+        },
+        "gb-sheen": {
+          "0%": { transform: "translateX(-130%) skewX(-18deg)" },
+          "55%, 100%": { transform: "translateX(320%) skewX(-18deg)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "gb-float": "gb-float 11s ease-in-out infinite",
+        "gb-spin": "gb-spin 9s linear infinite",
+        "gb-draw": "gb-draw 1.4s ease .3s forwards",
+        "gb-rise": "gb-rise .6s ease both",
+        "gb-pulse": "gb-pulse 2s infinite",
+        "gb-sheen": "gb-sheen 7s ease-in-out infinite",
       },
     },
   },

@@ -4,6 +4,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { Search, Shield, Activity, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import DropiAuditModal from './DropiAuditModal';
+import { TiltCard } from '@/components/ui3d';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -69,22 +70,32 @@ export default function DropiParityPanel() {
   return (
     <>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Shield size={16} className="text-accent" />
-            <div>
+        className="md:col-span-2">
+        <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <Shield size={15} />
+            </span>
+            <div className="min-w-0">
               <h3 className="text-sm font-semibold text-foreground">Paridad con Dropi</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Compara Guardian vs Dropi y reconcilia divergencias. Backstop manual del cron.
               </p>
             </div>
           </div>
-          <div className={`flex items-center gap-1.5 text-xs text-${healthColor}`}>
-            <Activity size={12} />
-            <span className="font-semibold">{healthLabel}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
+              healthColor === 'success' ? 'bg-success/14 border border-success/30 text-success'
+              : healthColor === 'warning' ? 'bg-warning/14 border border-warning/30 text-warning'
+              : healthColor === 'destructive' ? 'bg-danger/14 border border-danger/30 text-danger'
+              : 'bg-card/40 border border-border text-muted-foreground'
+            }`}>
+              <Activity size={11} />
+              {healthLabel}
+            </span>
             {health?.last_health_checked_at && (
-              <span className="text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
                 · {format(new Date(health.last_health_checked_at), 'd MMM HH:mm', { locale: es })}
               </span>
             )}
@@ -97,7 +108,7 @@ export default function DropiParityPanel() {
               onClick={() => setOpen(true)}
               disabled={!canAudit}
               title={canAudit ? '' : 'Falta dropi_api_key en Credenciales Dropi'}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-accent-3d inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Search size={14} /> Auditar paridad ahora
             </button>
@@ -109,10 +120,10 @@ export default function DropiParityPanel() {
           </div>
 
           {history.length > 0 && (
-            <div className="border border-border rounded-lg overflow-hidden">
+            <div className="border border-border rounded-xl overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-secondary text-muted-foreground">
-                  <tr>
+                <thead className="bg-card/40 text-muted-foreground">
+                  <tr className="border-b border-border">
                     <th className="text-left px-3 py-2">Fecha</th>
                     <th className="text-right px-3 py-2">Guardian</th>
                     <th className="text-right px-3 py-2">Dropi</th>
@@ -122,18 +133,18 @@ export default function DropiParityPanel() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {history.map(r => (
-                    <tr key={r.id}>
-                      <td className="px-3 py-2 text-muted-foreground">
+                    <tr key={r.id} className="hover:bg-card/40 transition-colors">
+                      <td className="px-3 py-2 text-muted-foreground font-mono tabular-nums">
                         {format(new Date(r.created_at), "d MMM HH:mm", { locale: es })}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono">{r.guardian_count}</td>
-                      <td className="px-3 py-2 text-right font-mono">{r.dropi_count}</td>
-                      <td className="px-3 py-2 text-right font-mono">
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{r.guardian_count}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{r.dropi_count}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">
                         {r.divergences_found === 0
                           ? <CheckCircle2 size={12} className="text-success inline" />
                           : <span className="text-warning font-bold">{r.divergences_found}</span>}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono text-success">{r.divergences_applied}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-success">{r.divergences_applied}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -141,6 +152,7 @@ export default function DropiParityPanel() {
             </div>
           )}
         </div>
+        </TiltCard>
       </motion.div>
 
       <DropiAuditModal
