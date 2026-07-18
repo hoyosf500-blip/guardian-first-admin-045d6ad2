@@ -85,7 +85,6 @@ Solo se crea primitivo lo que aparece 3+ veces en los mockups.
 | `<GaugeRing>` | anillo cónico del hero | Dashboard, CFO |
 | `<StatTile>` | chip + cifra + label + sparkline | Dashboard, Logística, Novedades, CFO |
 | `<Sparkline>` | `polyline` con `stroke-dasharray` | StatTile |
-| `<StackedBars>` | "Gestiones por día" | Dashboard |
 | `<RankRow>` | fila de ranking con barra | Dashboard, Productividad |
 | `<AuroraBackdrop>` | blobs difuminados + retícula | shell, Login |
 | `<IconRail>` / `<HudTopbar>` | shell nuevo | ProtectedLayout |
@@ -94,12 +93,20 @@ Solo se crea primitivo lo que aparece 3+ veces en los mockups.
 queries ni el cliente de Supabase. Esto hace que cualquier cambio de datos en una pantalla
 salte a la vista en el diff.
 
+**Los gráficos siguen en recharts.** El mockup dibuja "Gestiones por día" como 7 barras
+apiladas con el número impreso dentro de cada segmento. La app tiene selector 7d/15d/30d:
+a 30 días no cabe ningún número, y se perderían tooltip y leyenda. Los dos gráficos del
+Dashboard se **restilizan** (stroke con gradiente accent→cyan, glow, grid por token)
+manteniendo `AreaChart`/`BarChart`. No se construye un primitivo `StackedBars`.
+
 ### Restricciones de rendimiento
 
-1. **`backdrop-filter` con techo.** El glass se queda en cards y toolbars (pocas por
-   pantalla). **No** va en filas de `CrmTable` ni tarjetas de `SegBoard` — ahí panel sólido
-   `rgba(255,255,255,.035)`. 100 filas con blur degradan el scroll en máquinas flojas, y el
-   handoff pide explícitamente evitar `backdrop-filter` por internet lento.
+1. **`backdrop-filter`: nada nuevo lo usa.** Al escribir los primitivos quedó claro que no
+   hace falta ninguno — `bg-card/40` sobre la aurora ya da la profundidad. Así se cumple al
+   pie el pedido del handoff ("sin `backdrop-filter`, para no pesar en internet lento") y se
+   evita el riesgo real: 100 filas de `CrmTable` con blur degradan el scroll en máquinas
+   flojas. Los `.glass-panel` que ya existen en `ConfirmarTab` y `AuthPage` se conservan
+   (son pocos y ya están en producción); se revisan en la tanda 9.
 2. **Todo lo animado usa solo `transform`/`opacity`** (compositor GPU).
 3. **El tilt se apaga solo** en móvil, táctil y `prefers-reduced-motion`. La decisión vive
    en `useTilt`, no se reimplementa por pantalla.
