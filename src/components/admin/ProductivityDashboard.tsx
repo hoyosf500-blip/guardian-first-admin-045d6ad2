@@ -7,8 +7,10 @@ import { useActiveStoreId } from '@/contexts/StoreContext';
 import { useShopifyPending } from '@/hooks/useShopifyPending';
 import { ShoppingBag } from 'lucide-react';
 import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
-import { computeJornadaReal, shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, blockRangeLabel, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
-import { gestionesPorHora, densidadTurno, esMouseVivoNoProduce, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
+import { computeJornadaReal, shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, blockRangeLabel, computeEnSuPuestoSec, UMBRAL_HUECO_MIN, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
+import { scheduleFromMinutes, DEFAULT_SCHEDULE } from '@/lib/inactivityWindow';
+import { useStoreSchedule } from '@/hooks/useStoreSchedule';
+import { gestionesPorHora, esMouseVivoNoProduce, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 
 interface ActivityRow {
@@ -99,12 +101,18 @@ const RANGE_LABELS: Record<Range, string> = {
  *  tasa de RESOLUCIÓN (Seguimiento/Novedades) es otra métrica y pasa su propio
  *  benchmark operativo. Verde >= target; ámbar en la banda "cerca" (5 pts). */
 function RateBar({ value, target = CONF_TARGET_PCT }: { value: number; target?: number }) {
-  const pct = Math.max(0, Math.min(100, value));
-  const tone = pct >= target ? 'success' : pct >= target - 5 ? 'warning' : 'danger';
+  // El valor REAL puede pasar de 100% (ej. confirmar pedidos viejos además de los
+  // que entraron hoy) → mostramos el número honesto en el label; solo el ANCHO de
+  // la barra se topa en lleno (una barra no puede pasar de 100%). Antes el label
+  // también se clampeaba a 100 y se veía "topado", inconsistente con "Contactó del
+  // día" que sí muestra el % crudo.
+  const raw = Math.max(0, value);
+  const barPct = Math.min(100, raw);
+  const tone = raw >= target ? 'success' : raw >= target - 5 ? 'warning' : 'danger';
   return (
     <div className={`data-bar tone-${tone}`}>
-      <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
-      <span className="data-bar-value">{pct.toFixed(0)}%</span>
+      <div className="data-bar-fill" style={{ width: `${barPct}%` }} aria-hidden="true" />
+      <span className="data-bar-value">{raw.toFixed(0)}%</span>
     </div>
   );
 }
@@ -130,6 +138,9 @@ export default function ProductivityDashboard() {
   // Shopify configurado, el hook devuelve configured:false → no mostramos nada.
   const activeStoreId = useActiveStoreId();
   const shopifyPending = useShopifyPending(activeStoreId);
+  // Horario laboral de la tienda (excluye almuerzo) → base de "En su puesto".
+  const { data: scheduleMin } = useStoreSchedule(activeStoreId);
+  const schedule = scheduleMin ? scheduleFromMinutes(scheduleMin) : DEFAULT_SCHEDULE;
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -377,8 +388,8 @@ export default function ProductivityDashboard() {
               title="Jornada"
               dotClass="bg-info"
               note={isToday
-                ? 'Horas REALES por evidencia de trabajo: suma de los bloques donde registró acciones (confirmar / seguimiento), cortando si pasa +15 min sin tocar nada. "En el CRM" es el heartbeat de mouse aparte — subcuenta el trabajo al teléfono, por eso NO es el titular.'
-                : 'Suma de horas trabajadas de todos los días del rango (por evidencia de acciones). El detalle de bloques y "En / fuera del CRM" solo aplica en Hoy.'}
+                ? 'Horas EN SU PUESTO: desde que entró hasta que salió (dentro del horario de la tienda), menos almuerzo y ratos de inactividad. Debajo, "marcando": los ratos con evidencia de acciones. "En el CRM" es el heartbeat de mouse, referencia aparte.'
+                : 'Suma de horas trabajadas de todos los días del rango. El detalle por día ("en su puesto" / "En el CRM") solo aplica en Hoy.'}
             >
               <div className="overflow-x-auto">
                 <table className="data-table">
@@ -386,7 +397,7 @@ export default function ProductivityDashboard() {
                     <tr>
                       <th className="w-10">#</th>
                       <th>Operadora</th>
-                      <th className="text-right" title="HORAS REALES: suma de los bloques donde registró acciones de trabajo (order_results + touchpoints), cortando el bloque si hay +15 min sin ninguna acción. Es lo más fiel a cuántas horas trabajó — no depende del mouse.">Trabajó</th>
+                      <th className="text-right" title="Horas EN SU PUESTO: desde su primera hasta su última señal del día, dentro del horario de la tienda, descontando el almuerzo y los ratos de inactividad. Debajo, en chico, 'marcando': los ratos con evidencia de acciones (order_results + touchpoints).">En su puesto</th>
                       <th className="text-right" title="Primera → última señal del día (acción de trabajo o movimiento de mouse), zona Bogotá.">Turno</th>
                       <th className="text-right" title="Heartbeat de mouse/teclado en la pestaña del CRM: activa (movió en los últimos 5 min) · quieta (con el CRM abierto pero sin mover). Subcuenta el trabajo telefónico — es referencia secundaria, no las horas reales.">En el CRM</th>
                       <th className="text-right" title="Tiempo con el CRM cerrado o en segundo plano (no hubo heartbeat). Puede ser trabajo al teléfono/WhatsApp o ausencia — por eso NO castiga las horas reales de arriba. Solo en Hoy.">Fuera del CRM</th>
@@ -420,38 +431,42 @@ export default function ProductivityDashboard() {
                             nowMs,
                           })
                         : null;
-                      // Turno = primera → última señal (trabajo o mouse, lo que haya).
-                      const turnoStart = w?.first_event ?? a?.first_action_at ?? null;
-                      const turnoEnd = w?.last_event ?? a?.last_active_at ?? null;
-                      // "Desconectada" = ahora − última señal (la más reciente entre
-                      // acción de trabajo y mouse). Solo en 'today'.
+                      // Ventana del turno = primera → última señal del día (acción de
+                      // trabajo o mouse): la más temprana y la más tardía entre ambas
+                      // fuentes. Con el heartbeat caído usa solo los eventos de trabajo.
+                      const firstSignalMs = Math.min(
+                        Date.parse(w?.first_event ?? '') || Infinity,
+                        Date.parse(a?.first_action_at ?? '') || Infinity,
+                      );
                       const lastSignalMs = Math.max(
                         Date.parse(w?.last_event ?? '') || 0,
                         Date.parse(a?.last_active_at ?? '') || 0,
                       );
+                      const turnoStart = Number.isFinite(firstSignalMs) ? new Date(firstSignalMs).toISOString() : null;
+                      const turnoEnd = lastSignalMs > 0 ? new Date(lastSignalMs).toISOString() : null;
+                      // Inactividad LABORAL confirmada (SUM de las advertencias) — se
+                      // descuenta de "en su puesto".
+                      const inactivityLostSec = inactivityByOp.get(op.id)?.total_lost_seconds ?? 0;
+                      // TITULAR "En su puesto": ventana del turno dentro del horario de la
+                      // tienda (excl. almuerzo) − inactividad, con piso en lo que marcó.
+                      // Solo 'today' aplica la ventana laboral; en 7d/30d cae al worked
+                      // (suma del rango) porque la ventana cruza varios días.
+                      const enSuPuestoSec = isToday
+                        ? computeEnSuPuestoSec({ turnoStart, turnoEnd, inactivityLostSec, workedSec, schedule })
+                        : (workedSec ?? null);
+                      // "Desconectada" = ahora − última señal. Solo en 'today'.
                       const desconectadaMin = isToday && lastSignalMs > 0
                         ? Math.max(0, Math.floor((nowMs - lastSignalMs) / 60000))
                         : null;
-                      // Señales anti-"mama gallo" (solo 'today', sobre evidencia):
-                      // densidad del turno + bandera mouse-vivo-no-produce. La
-                      // bandera se mide sobre el ESFUERZO TOTAL (marcadas de
-                      // Confirmar + acciones de Seguimiento + Rescate), NO solo
-                      // Confirmar: si repartió el día entre colas, su esfuerzo de
-                      // confirmar es bajo pero SÍ trabajó → no la acusamos falso.
-                      // El heartbeat de mouse cubre todas las colas, así que el
-                      // numerador también debe cubrirlas.
+                      // Bandera anti-"mama gallo" (solo 'today'): mouse muy activo con
+                      // poco trabajo. Se mide sobre el ESFUERZO TOTAL (Confirmar +
+                      // Seguimiento + Rescate) porque el mouse cubre todas las colas.
                       const prod = prodByOp.get(op.id);
                       const esfuerzoTotal = prod
                         ? (prod.intentos_total ?? prod.total_atendidos ?? 0)
                           + (prod.seg_acciones ?? 0)
                           + (prod.rescate_acciones ?? 0)
                         : null;
-                      const startMs = Date.parse(turnoStart ?? '');
-                      const endMs = Date.parse(turnoEnd ?? '');
-                      const turnoSpanSec = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
-                        ? (endMs - startMs) / 1000
-                        : null;
-                      const densidad = isToday ? densidadTurno(workedSec, turnoSpanSec) : null;
                       const mouseVivo = isToday && esMouseVivoNoProduce({
                         activeSeconds: a?.active_seconds,
                         atendidos: esfuerzoTotal,
@@ -465,31 +480,27 @@ export default function ProductivityDashboard() {
                             </span>
                           </td>
                           <td className="font-semibold text-foreground">{op.name}</td>
-                          {/* TITULAR — horas reales por evidencia + bloques del día. */}
+                          {/* TITULAR — "En su puesto" (horas que trabajó de verdad).
+                              Debajo, en chico, "marcando" = evidencia de acciones + bloques. */}
                           <td className="text-right">
                             <div className="inline-flex flex-col items-end gap-0.5">
                               <span
-                                className={`font-mono tabular-nums font-bold text-sm ${workedSec == null ? 'text-muted-foreground' : 'text-success'}`}
-                                title={workedSec == null
-                                  ? 'Sin acciones de trabajo registradas en el período'
-                                  : `${blocks.length} bloque${blocks.length === 1 ? '' : 's'} de trabajo`}
+                                className={`font-mono tabular-nums font-bold text-sm ${enSuPuestoSec == null ? 'text-muted-foreground' : 'text-success'}`}
+                                title={isToday
+                                  ? 'Horas EN SU PUESTO: desde su primera hasta su última señal del día, dentro del horario de la tienda, descontando el almuerzo y los ratos de inactividad. Es lo más cercano a cuántas horas trabajó de verdad — no depende del mouse.'
+                                  : 'Horas trabajadas del rango (suma por evidencia de acciones).'}
                               >
-                                {workedSec == null ? '—' : formatDurationHM(workedSec)}
+                                {enSuPuestoSec == null ? '—' : formatDurationHM(enSuPuestoSec)}
                               </span>
-                              {isToday && blocks.length > 0 && (
+                              {isToday && (
+                                <span className="text-[10px] text-muted-foreground">en su puesto</span>
+                              )}
+                              {isToday && workedSec != null && (
                                 <span
                                   className="text-[10px] text-muted-foreground tabular-nums max-w-[240px] truncate"
-                                  title={blockRangeLabel(blocks, formatTimeBogota)}
+                                  title={`Marcando pedidos ${formatDurationHM(workedSec)} en ${blocks.length} bloque${blocks.length === 1 ? '' : 's'}${blocks.length > 0 ? ` · ${blockRangeLabel(blocks, formatTimeBogota)}` : ''}`}
                                 >
-                                  {blocks.length > 1 ? `${blocks.length} bloques · ` : ''}{blockRangeLabel(blocks, formatTimeBogota)}
-                                </span>
-                              )}
-                              {densidad != null && (
-                                <span
-                                  className={`text-[10px] tabular-nums ${densidad < 0.5 ? 'text-warning' : 'text-muted-foreground'}`}
-                                  title="Del turno (primera a última señal del día), qué parte realmente trabajó. Bajo = mucho tiempo muerto dentro de la jornada."
-                                >
-                                  {Math.round(densidad * 100)}% del turno
+                                  marcando {formatDurationHM(workedSec)}{blocks.length > 0 ? ` · ${blockRangeLabel(blocks, formatTimeBogota)}` : ''}
                                 </span>
                               )}
                             </div>

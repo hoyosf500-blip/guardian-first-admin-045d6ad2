@@ -5,10 +5,12 @@ import {
   asWorkedBlocks,
   sumWorkedSeconds,
   blockRangeLabel,
+  computeEnSuPuestoSec,
   UMBRAL_HUECO_MIN,
   UMBRAL_DESCONECTADA_MIN,
   UMBRAL_SIN_CONF_MIN,
 } from './jornadaMath';
+import { DEFAULT_SCHEDULE } from './inactivityWindow';
 
 // Timestamps del caso REAL de producción (2026-07-01): empezó 7:27 Bogotá,
 // última actividad 9:07 → 100 min transcurridos, heartbeat solo 42 min.
@@ -254,5 +256,98 @@ describe('constantes de umbral', () => {
     expect(UMBRAL_HUECO_MIN).toBe(10);
     expect(UMBRAL_DESCONECTADA_MIN).toBe(10);
     expect(UMBRAL_SIN_CONF_MIN).toBe(120);
+  });
+});
+
+describe('computeEnSuPuestoSec', () => {
+  // Bogotá = UTC-5. 9:15 a. m. Bogotá = 14:15Z; 4:02 p. m. Bogotá = 21:02Z.
+  const T0915 = '2026-07-17T14:15:00Z';
+  const T1602 = '2026-07-17T21:02:00Z';
+
+  it('caso Mayra: turno 9:15→16:02, almuerzo excluido, −59m inactividad = 4h48m', () => {
+    // presencia laboral = (9:15→16:02 dentro de 9–17) − almuerzo 12:30–13:30
+    //   = 6h47m − 1h = 5h47m = 20820 s; menos 59m (3540 s) = 17280 s = 4h48m.
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: T0915,
+        turnoEnd: T1602,
+        inactivityLostSec: 3540,
+        workedSec: 6780, // 1h53m marcando — queda por debajo, no es el piso
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBe(17280);
+  });
+
+  it('resta la inactividad de la presencia laboral', () => {
+    // Turno 9:00→17:00 completo = 8h − 1h almuerzo = 7h (25200 s); −1h inactividad.
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: '2026-07-17T14:00:00Z', // 9:00
+        turnoEnd: '2026-07-17T22:00:00Z',   // 17:00
+        inactivityLostSec: 3600,
+        workedSec: 0,
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBe(21600);
+  });
+
+  it('piso = worked_seconds: trabajo fuera del horario (noche) no cae por debajo de la evidencia', () => {
+    // 18:00→20:00 Bogotá: fuera del horario 9–17 → presencia laboral 0, pero marcó
+    // 1h → devuelve la evidencia (3600), nunca menos.
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: '2026-07-17T23:00:00Z', // 18:00 Bogotá
+        turnoEnd: '2026-07-18T01:00:00Z',   // 20:00 Bogotá (mismo día Bogotá)
+        inactivityLostSec: 0,
+        workedSec: 3600,
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBe(3600);
+  });
+
+  it('rango multi-día (turno en fechas Bogotá distintas) → cae al piso worked (suma del rango)', () => {
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: '2026-07-10T14:00:00Z',
+        turnoEnd: '2026-07-17T21:00:00Z',
+        inactivityLostSec: 0,
+        workedSec: 36000, // 10h sumadas en el rango
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBe(36000);
+  });
+
+  it('inactividad mayor que la presencia → 0 (clamp), nunca negativo', () => {
+    // 9:15→9:30 = 900 s de presencia; −1h inactividad → clamp a 0 (sin evidencia).
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: '2026-07-17T14:15:00Z',
+        turnoEnd: '2026-07-17T14:30:00Z',
+        inactivityLostSec: 3600,
+        workedSec: 0,
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBe(0);
+  });
+
+  it('sin ventana válida y sin evidencia → null; con evidencia → devuelve la evidencia', () => {
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: null,
+        turnoEnd: null,
+        inactivityLostSec: 0,
+        workedSec: 0,
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBeNull();
+    expect(
+      computeEnSuPuestoSec({
+        turnoStart: null,
+        turnoEnd: null,
+        inactivityLostSec: 0,
+        workedSec: 6780,
+        schedule: DEFAULT_SCHEDULE,
+      }),
+    ).toBe(6780);
   });
 });

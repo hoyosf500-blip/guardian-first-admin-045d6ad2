@@ -25,6 +25,8 @@
 // El caller (ProductivityDashboard) gatea con range==='today' y cae al
 // cálculo viejo activo ÷ (activo + inactivo) en rangos multi-día.
 
+import { workingSecondsLost, type WorkSchedule } from './inactivityWindow';
+
 /** Minutos de hueco (CRM cerrado) a partir de los cuales se muestra el chip ámbar. */
 export const UMBRAL_HUECO_MIN = 10;
 /** Minutos sin actividad desde la última señal para mostrar el badge "desconectada". */
@@ -209,4 +211,54 @@ export function shouldAlertSinConfirmar(input: SinConfirmarInput): boolean {
   const startMs = parseTsMs(input.startedAt);
   if (startMs == null || !Number.isFinite(input.nowMs)) return false;
   return (input.nowMs - startMs) / 60000 >= umbral;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "EN SU PUESTO" — horas que la operadora estuvo trabajando (decisión del dueño
+// 2026-07-17). Reemplaza a "Trabajó" como número TITULAR de la Jornada: "Trabajó"
+// solo contaba los ratos MARCANDO pedidos (order_results + touchpoints) y
+// subcontaba grave el trabajo telefónico ("obvio trabajó más" — reporte del dueño).
+//
+// Definición: la ventana de su turno (primera → última señal del día, sea acción
+// de trabajo o mouse) intersectada con el HORARIO de la tienda y EXCLUYENDO el
+// almuerzo (vía workingSecondsLost), menos el tiempo de INACTIVIDAD confirmada
+// (las advertencias). Es "estuvo de X a Y en su puesto, menos lo que estuvo sin
+// hacer nada". PISO = worked_seconds (evidencia): nunca muestra menos de lo que
+// demostrablemente trabajó (cubre también horas fuera del horario configurado).
+//
+// Ventaja operativa: se calcula 100% en el cliente desde datos que YA se guardan
+// (eventos de trabajo + advertencias de inactividad + horario), así que da un
+// número realista aunque el heartbeat "En el CRM" esté caído.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EnSuPuestoInput {
+  /** Primera señal del día (ISO): la más temprana entre acción de trabajo y mouse. */
+  turnoStart: string | null | undefined;
+  /** Última señal del día (ISO): la más reciente entre acción de trabajo y mouse. */
+  turnoEnd: string | null | undefined;
+  /** Segundos de inactividad LABORAL confirmada (SUM lost_seconds de las advertencias). */
+  inactivityLostSec: number | null | undefined;
+  /** worked_seconds del RPC (evidencia de marcado) — piso, nunca se muestra menos. */
+  workedSec: number | null | undefined;
+  /** Horario de la tienda (segundos-del-día) — excluye almuerzo. */
+  schedule: WorkSchedule;
+}
+
+/**
+ * Segundos "en su puesto". null solo si no hay NI ventana válida NI evidencia de
+ * trabajo. Para rangos multi-día (turnoStart y turnoEnd en fechas Bogotá
+ * distintas) `workingSecondsLost` devuelve 0 → cae al piso worked_seconds (la
+ * suma del rango), que es el comportamiento correcto para 7d/30d.
+ */
+export function computeEnSuPuestoSec(input: EnSuPuestoInput): number | null {
+  const worked = Math.max(0, input.workedSec ?? 0);
+  const startMs = parseTsMs(input.turnoStart);
+  const endMs = parseTsMs(input.turnoEnd);
+  if (startMs == null || endMs == null || endMs <= startMs) {
+    return worked > 0 ? worked : null;
+  }
+  const presencia = workingSecondsLost(new Date(startMs), new Date(endMs), input.schedule);
+  const inact = Math.max(0, input.inactivityLostSec ?? 0);
+  const neto = Math.max(0, presencia - inact);
+  return Math.max(neto, worked);
 }
