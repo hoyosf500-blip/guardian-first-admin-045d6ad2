@@ -738,7 +738,7 @@ export default function CallView({ items, alerts }: Props) {
   return (
     <>
       {!o.result && (
-        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
+        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/14 border border-accent/34 text-xs font-semibold text-accent shadow-glow">
           <Phone size={12} />
           Atendiendo: {o.nombre} · {formatPhone(o.phone)}
         </div>
@@ -755,7 +755,9 @@ export default function CallView({ items, alerts }: Props) {
         </div>
       </div>
 
-      <div className="bg-gradient-to-b from-card to-surface border border-input rounded-2xl p-5 mb-4">
+      <div className="glass-panel rounded-2xl p-5 mb-4 relative overflow-hidden">
+        {/* Orbe aurora decorativo (Dirección 3D) */}
+        <div className="pointer-events-none absolute -left-10 -top-24 w-72 h-72 rounded-full blur-[50px] bg-accent/15" aria-hidden="true" />
         {o.retryCount && !o.result && (
           <div className="flex items-center gap-2 mb-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2">
             <RotateCcw size={14} className="text-emerald-500" />
