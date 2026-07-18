@@ -265,10 +265,12 @@ export default function AdminTab() {
                       )}
                     </div>
                     <button
+                      type="button"
                       onClick={() => setDismissedAlerts(prev => new Set([...prev, sync.id]))}
-                      className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                      className="flex-shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      aria-label="Descartar aviso"
                     >
-                      <X size={12} />
+                      <X size={12} aria-hidden="true" />
                     </button>
                   </div>
                 ))}

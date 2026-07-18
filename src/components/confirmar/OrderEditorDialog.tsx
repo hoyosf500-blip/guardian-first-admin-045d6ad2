@@ -624,8 +624,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         onOpenChange(op);
       }}
     >
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0 flex flex-col rounded-[20px] sm:rounded-[20px] shadow-[0_40px_90px_-30px_rgba(0,0,0,0.35)] dark:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.75),0_0_60px_-30px_hsl(var(--accent)/0.55)]">
+        <DialogHeader className="px-[22px] py-[18px] border-b border-border bg-muted/30 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center flex-shrink-0 text-accent-foreground shadow-glow">
               <Pencil size={18} aria-hidden="true" />
@@ -639,7 +639,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           </div>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-2">
+        <div className="flex-1 overflow-y-auto px-[22px] py-[22px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* ---- Columna izquierda: cliente + dirección ---- */}
           <CustomerForm value={form} onChange={setForm} isAdmin={isAdmin} />
 
@@ -704,8 +705,9 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
             )}
           </div>
         </div>
+        </div>
 
-        <DialogFooter className="gap-2 pt-2">
+        <DialogFooter className="gap-2 px-[22px] py-4 border-t border-border bg-muted/30 shrink-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancelar
           </Button>

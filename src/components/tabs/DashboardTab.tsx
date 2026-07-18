@@ -15,7 +15,7 @@ import {
   CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare,
   Download, TrendingUp, TrendingDown, Minus, Package, ChevronDown,
   BarChart3, Activity, Layers, CloudOff, CloudDownload, RefreshCw,
-  Trophy, Users, Calendar as CalendarIcon,
+  Trophy, Calendar as CalendarIcon,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -455,13 +455,13 @@ export default function DashboardTab() {
             </span>
           </span>
           {/* Period tabs */}
-          <div className="inline-flex flex-wrap gap-2">
+          <div className="inline-flex flex-wrap gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border">
             {[{ n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
               <button key={p.n} onClick={() => setPeriod(p.n)}
-                className={`px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                className={`px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                   period === p.n
                     ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                    : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}>{p.l}</button>
             ))}
           </div>
@@ -566,7 +566,7 @@ export default function DashboardTab() {
             <TiltCard
               sheen
               brackets
-              wrapperClassName="md:col-span-5"
+              wrapperClassName="md:col-span-6"
               className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col"
             >
               <div className="flex items-center justify-between gap-3 tilt-layer-2">
@@ -641,7 +641,12 @@ export default function DashboardTab() {
             </TiltCard>
 
             {/* Compact KPIs */}
-            <div className="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* 2x2 como el mockup, pero solo desde 390px de viewport. Medido en
+                vivo a 360px: la columna deja 151px, y el TrendBadge ("+128 vs
+                ayer", whitespace-nowrap, 95px) se come los 16px de padding de la
+                tarjeta y lo recorta el overflow-hidden del TiltCard. Debajo de
+                ese ancho se apilan, que es como estaba antes del rediseño. */}
+            <div className="md:col-span-6 grid grid-cols-1 min-[390px]:grid-cols-2 gap-4">
             {[
               { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, tone: 'success' as const, spark: sparkData.conf },
               { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, tone: 'danger' as const, spark: sparkData.canc },
@@ -688,7 +693,13 @@ export default function DashboardTab() {
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={tickStyle} axisLine={false} tickLine={false} unit="%" />
                     <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v}%`, 'Tasa']} />
-                    <Area type="monotone" dataKey="tasa" stroke="url(#tGradLine)" strokeWidth={3} strokeLinecap="round" fill="url(#tGrad)" style={{ filter: `drop-shadow(0 0 8px ${CHART_ACCENT})` }} dot={{ r: 2, fill: CHART_ACCENT, strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: hsl('--background') }} />
+                    <Area type="monotone" dataKey="tasa" stroke="url(#tGradLine)" strokeWidth={3} strokeLinecap="round" fill="url(#tGrad)" style={{ filter: `drop-shadow(0 0 8px ${CHART_ACCENT})` }} dot={(p: { cx?: number; cy?: number; index?: number }) => p.index === chartData.length - 1
+                      // Punto final destacado: ancla la vista en el dato más reciente.
+                      // El mockup usa fill:#fff, pero en tema claro la card es casi
+                      // blanca y el punto desaparecería: se usa --background + aro cian.
+                      ? <circle key={`dot-${p.index}`} cx={p.cx} cy={p.cy} r={5} fill={hsl('--background')} stroke={CHART_CYAN} strokeWidth={2} style={{ filter: `drop-shadow(0 0 8px ${CHART_CYAN})` }} />
+                      : <circle key={`dot-${p.index}`} cx={p.cx} cy={p.cy} r={2} fill={CHART_ACCENT} />
+                    } activeDot={{ r: 4, strokeWidth: 2, stroke: hsl('--background') }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -765,7 +776,7 @@ export default function DashboardTab() {
           {operatorRanking.length > 1 && (
             <motion.div {...fadeUp(0.15)} className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d mb-5">
               <div className="flex items-center gap-2 mb-4">
-                <Users size={14} className="text-accent" aria-hidden="true" />
+                <Trophy size={14} className="text-warning" aria-hidden="true" />
                 <h3
                   className="text-sm font-semibold text-foreground"
                   title="Tasa personal de cada operadora: confirmados / lo gestionado (conf+canc+noresp). NO sobre el inflow total del día."

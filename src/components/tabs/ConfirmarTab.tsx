@@ -647,13 +647,13 @@ export default function ConfirmarTab({ profile }: Props) {
                 {(d7 > 0 || d46 > 0) && (
                   <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:border-l sm:border-border/60 sm:pl-5">
                     {d7 > 0 && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
-                        <span className="w-1.5 h-1.5 rounded-full bg-danger" aria-hidden="true" /> <span className="font-mono tabular-nums">{d7}</span> cancelar (D7+)
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
+                        <span className="w-1.5 h-1.5 rounded-full bg-danger glow-danger" aria-hidden="true" /> <span className="font-mono tabular-nums">{d7}</span> cancelar (D7+)
                       </span>
                     )}
                     {d46 > 0 && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-warning/14 border border-warning/30 text-warning">
-                        <span className="w-1.5 h-1.5 rounded-full bg-warning" aria-hidden="true" /> <span className="font-mono tabular-nums">{d46}</span> urgente (D4-6)
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-warning/14 border border-warning/30 text-warning">
+                        <span className="w-1.5 h-1.5 rounded-full bg-warning glow-warning" aria-hidden="true" /> <span className="font-mono tabular-nums">{d46}</span> urgente (D4-6)
                       </span>
                     )}
                   </div>

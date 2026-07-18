@@ -669,7 +669,7 @@ export default function CallView({ items, alerts }: Props) {
   }
 
   const pColor = o.dias >= 7 ? 'text-danger' : o.dias >= 4 ? 'text-warning' : 'text-success';
-  const pDot = o.dias >= 7 ? 'bg-danger' : o.dias >= 4 ? 'bg-warning' : 'bg-success';
+  const pDot = o.dias >= 7 ? 'bg-danger glow-danger' : o.dias >= 4 ? 'bg-warning glow-warning' : 'bg-success glow-success';
 
   const handleMark = async (result: string, reason?: string) => {
     // Fix 1 (2026-07-07): calcular el SIGUIENTE con la cola FRESCA de ESTE render
@@ -737,13 +737,20 @@ export default function CallView({ items, alerts }: Props) {
 
   return (
     <>
+      {/* UNA sola fila: el chip a la izquierda y, agrupados a la derecha, el
+          contador junto a las flechas — el contador es parte del control de
+          navegación, no un dato suelto en el borde opuesto de la pantalla.
+          `ml-auto` es obligatorio: el chip es condicional a `!o.result`, y sin
+          él un justify-between con un solo hijo empujaría la navegación a la
+          izquierda al marcar un resultado. */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2">
       {!o.result && (
-        <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/16 border border-accent/40 text-xs font-semibold text-accent shadow-glow3d">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/16 border border-accent/40 text-xs font-semibold text-accent shadow-glow3d">
           <Phone size={12} />
           Atendiendo: {o.nombre} · <span className="font-mono tabular-nums">{formatPhone(o.phone)}</span>
         </div>
       )}
-      <div className="flex justify-between items-center mb-2">
+        <div className="ml-auto flex items-center gap-2">
         <span className="font-mono tabular-nums text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-2">
           <button aria-label="Pedido anterior" onClick={() => navCall(-1)} disabled={callIdx <= 0} className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
@@ -752,6 +759,7 @@ export default function CallView({ items, alerts }: Props) {
           <button aria-label="Pedido siguiente" onClick={() => navCall(1)} disabled={callIdx >= items.length - 1} className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
             <ChevronRight size={14} aria-hidden="true" />
           </button>
+        </div>
         </div>
       </div>
 
@@ -882,7 +890,7 @@ export default function CallView({ items, alerts }: Props) {
         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
           <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} aria-hidden="true" />
           <span className={`font-mono tabular-nums text-xs font-bold ${pColor}`}>D{o.dias}</span>
-          <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
+          <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-full bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
         </div>
 
         <div className="text-2xl font-bold tracking-tight mb-1.5 text-foreground">{o.nombre}</div>
@@ -1087,7 +1095,7 @@ export default function CallView({ items, alerts }: Props) {
               Por phone (no solo orderId): si el mismo cliente tiene otro pedido,
               la asesora ve la nota previa que dejó otra compañera. */}
           {o.dbId && (
-            <NotesPanel phone={o.phone} orderId={o.dbId} variant="compact" />
+            <NotesPanel phone={o.phone} orderId={o.dbId} variant="rail" />
           )}
         </aside>
 
@@ -1138,6 +1146,18 @@ export default function CallView({ items, alerts }: Props) {
                 overrideChecked: addressOverride,
               }}
               onConfirm={() => handleMark('conf')}
+              // Solo presentación: iguala la caja de "Canceló"/"No contestó"
+              // (h-auto es imprescindible — sin él el h-10 del variant default
+              // gana sobre py-4) y recupera el degradado + glow de acento del
+              // handoff. Tokens por tema, nunca hex: --success ya está afinado
+              // para claro (157 63% 26%) y oscuro (#34e5a0), y
+              // text-success-foreground da la tinta correcta en ambos.
+              // `active:scale-[0.97] transition-all` NO es adorno: sus dos
+              // hermanos de fila lo tienen, y sin él el botón más importante
+              // es el único que no se hunde al tocarlo en el celular. El
+              // `transition-all` además reemplaza al `transition-colors` de la
+              // base, que no anima `filter` y hacía saltar el brightness.
+              className="w-full py-4 h-auto rounded-2xl font-bold text-sm bg-success text-success-foreground bg-gradient-to-br from-success to-success/80 border border-success/50 glow-success hover:bg-success hover:brightness-110 active:scale-[0.97] transition-all"
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 <CheckCircle2 size={16} aria-hidden="true" /> Confirmó

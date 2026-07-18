@@ -24,7 +24,6 @@ import {
   MessageSquare,
   Send,
   X,
-  User,
 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 
@@ -141,37 +140,43 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
   return (
     <>
-      {/* Persistent "currently attending" banner — survives tab switches */}
-      <div className="mb-2 flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs">
-        <User size={12} className="text-primary" />
-        <span className="text-muted-foreground">Atendiendo:</span>
-        <span className="font-semibold text-foreground truncate">{o.nombre}</span>
-        <span className="text-muted-foreground">·</span>
-        <span className="font-mono text-foreground">{formatPhone(o.phone)}</span>
-      </div>
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs text-muted-foreground">{callIdx + 1} / {visibleItems.length}</span>
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => navCall(-1)}
-            disabled={callIdx <= 0 || submitting}
-            className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <button
-            onClick={() => navCall(1)}
-            disabled={submitting}
-            className="px-3 py-1.5 rounded-md bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center"
-          >
-            <ChevronRight size={14} />
-          </button>
+      {/* Persistent "currently attending" chip + navegación, en UNA sola fila
+          (mockup Novedades3DBody.dc.html:46) — survives tab switches */}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="pill-warning inline-flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs">
+          <AlertTriangle size={12} className="shrink-0" />
+          <span className="dark:opacity-80">Atendiendo:</span>
+          <span className="font-semibold truncate">{o.nombre}</span>
+          <span className="dark:opacity-60">·</span>
+          <span className="font-mono">{formatPhone(o.phone)}</span>
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{callIdx + 1} / {visibleItems.length}</span>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => navCall(-1)}
+              disabled={callIdx <= 0 || submitting}
+              className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              onClick={() => navCall(1)}
+              disabled={submitting}
+              className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="bg-gradient-to-b from-card to-surface border border-input rounded-2xl p-5 mb-4">
+      <div className="bg-gradient-to-b from-card to-surface border border-border-strong rounded-2xl p-5 mb-4 shadow-card3d-lg flex flex-col gap-[22px] lg:flex-row lg:flex-wrap">
+        {/* Columna A: datos del cliente (mockup: flex 1 1 340px). Apilada en
+            móvil, lado a lado desde lg — las asesoras entran desde el celular. */}
+        <div className="flex flex-col gap-3.5 lg:flex-1 lg:basis-[340px] lg:min-w-[280px]">
         {/* Header: badges */}
-        <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className={`w-2 h-2 rounded-full ${pDot}`} />
           <span className={`text-xs font-bold ${pColor}`}>D{o.dias}</span>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-semibold">{o.estado}</span>
@@ -184,13 +189,13 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
         </div>
 
         {/* Dropi fingerprint */}
-        <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>
+        <div><FingerprintBadge phone={o.phone} /></div>
 
         {/* Customer name */}
-        <div className="text-xl font-bold mb-1">{o.nombre}</div>
+        <div className="text-xl font-bold">{o.nombre}</div>
 
         {/* Contact + location line */}
-        <div className="text-sm text-muted-foreground mb-3 leading-relaxed space-y-1">
+        <div className="text-sm text-muted-foreground leading-relaxed space-y-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Phone size={12} />
             <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button>
@@ -245,7 +250,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
         {/* Novedad banner */}
         {o.novedad && (
-          <div className="p-3 rounded-xl mb-4 text-xs bg-attention/10 border border-attention/20 flex items-start gap-2">
+          <div className="p-3 rounded-xl text-xs bg-attention/10 border border-attention/20 flex items-start gap-2">
             <AlertTriangle size={14} className="text-attention mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <div className="text-[10px] font-bold text-attention uppercase tracking-wide mb-0.5">
@@ -255,7 +260,10 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             </div>
           </div>
         )}
+        </div>
 
+        {/* Columna B: panel de resolución (mockup: flex 1 1 300px) */}
+        <div className="flex flex-col gap-3 lg:flex-1 lg:basis-[300px] lg:min-w-[260px]">
         {/* Gestión: marca local (la colaboradora ya resolvió en Dropi). */}
         {submitting ? (
           <div className="text-center py-4 text-sm font-semibold inline-flex items-center gap-2 justify-center w-full text-green">
@@ -265,7 +273,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
         ) : (
           <>
             {/* Nota opcional (solo aplica a "Resuelta") */}
-            <div className="mb-4">
+            <div className="flex flex-1 flex-col min-h-0">
               <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">
                 Nota de la gestión <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span>
               </label>
@@ -275,7 +283,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                 placeholder="Ej: Cliente confirma estar en casa mañana entre 2-5pm. Barrio correcto: Chapinero."
                 rows={2}
                 disabled={submitting}
-                className="w-full rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none disabled:opacity-60"
+                className="w-full flex-1 min-h-[120px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none disabled:opacity-60"
               />
               <div className="flex justify-end mt-1">
                 <span className={`text-[10px] ${solution.length > 450 ? 'text-attention' : 'text-muted-foreground'}`}>
@@ -285,34 +293,35 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             </div>
 
             {/* 3 resultados: Resuelta / Devolución / Sin respuesta */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => doMark('resuelta')}
                 disabled={submitting}
-                className="inline-flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-green/15 text-green border border-green/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-gradient-to-br from-success to-success/85 text-success-foreground border border-transparent shadow-[0_8px_22px_-8px_hsl(var(--success)/0.4)] dark:shadow-[0_8px_22px_-8px_hsl(var(--success)/0.9)] font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 <CheckCircle2 size={16} /> Resuelta
               </button>
               <button
                 onClick={() => setShowReturnConfirm(true)}
                 disabled={submitting}
-                className="inline-flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-red/15 text-red border border-red/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 <Truck size={16} /> Devolución
               </button>
               <button
                 onClick={() => doMark('sin_respuesta')}
                 disabled={submitting}
-                className="inline-flex flex-col items-center justify-center gap-1 py-3 rounded-xl bg-yellow/15 text-yellow border border-yellow/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-muted/50 text-muted-foreground border border-border font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 <PhoneOff size={16} /> Sin respuesta
               </button>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-2 text-center">
+            <p className="text-[10px] text-muted-foreground text-center">
               "Sin respuesta" deja la novedad en la cola para reintentar.
             </p>
           </>
         )}
+        </div>
       </div>
 
       {/* Confirm modal para "Devolución" */}

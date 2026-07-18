@@ -138,10 +138,10 @@ export default function ProductLinesEditor({
       )}
 
       {/* Total a recaudar: derivado de las líneas, con override manual opcional */}
-      <div className="rounded-lg border border-border p-3 space-y-2">
+      <div className="rounded-xl border border-accent/30 bg-accent/[0.08] px-3.5 py-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total a recaudar</span>
-          <span className={`font-mono text-base font-bold ${totalChanged ? 'text-warning' : ''}`}>
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground dark:text-accent">Total a recaudar</span>
+          <span className={`font-mono text-xl font-bold ${totalChanged ? 'text-warning' : ''}`}>
             {formatCOP(finalTotal)}
           </span>
         </div>

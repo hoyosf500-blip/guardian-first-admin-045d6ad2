@@ -110,12 +110,21 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
       className={cn(
         // Sin TiltCard a propósito: son cientos de tarjetas y el tilt destruiría
         // el scroll del tablero. Solo superficie + borde que reacciona al hover.
+        // bg-card/40 = el panel translúcido del handoff (el mockup usa
+        // rgba(255,255,255,.04) sobre la aurora). En CLARO no queda invisible:
+        // la regla de compatibilidad de index.css ya opaca .bg-card/40 con
+        // :root:not(.dark) — por eso NO hace falta pasarlo a bg-card, y hacerlo
+        // solo rompería el vidrio en oscuro, que es el look aprobado.
         'group bg-card/40 rounded-xl border p-3.5 shadow-card3d cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
         // Estados terminales (entregado/devolución/cancelado/indemnizada) van
         // atenuados: la asesora no tiene nada que hacer con ellos y competían
         // visualmente con las columnas donde sí hay trabajo.
         tone === 'success' || tone === 'danger' || tone === 'muted' ? 'opacity-75' : '',
         selected ? 'border-accent ring-2 ring-accent/60 shadow-card3d' : 'border-border',
+        // Riel de 2px con el color de la fase (el mismo mapa TONE del encabezado
+        // de columna). Va DESPUÉS del ternario a propósito: si fuera antes,
+        // border-accent/border-border pisaría el borde superior vía twMerge.
+        tone && !selected ? cn('border-t-2', TONE[tone].headBar) : '',
       )}
     >
       {/* Fila de badges arriba (patrón del handoff: "● D3  PRIORIDAD"), para que
@@ -155,6 +164,16 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             {o.producto && o.ciudad ? ' · ' : ''}
             {o.ciudad}
           </span>
+        </div>
+      )}
+
+      {/* Motivo de la novedad / instrucción de la transportadora. Solo en fases
+          vivas: `novedad` sobrevive en pedidos ya terminales (entregado/devuelto)
+          y ahí sería una advertencia sobre algo que ya no se puede gestionar. */}
+      {o.novedad && (tone === 'warning' || tone === 'accent' || tone === 'info' || tone === 'neutral') && (
+        <div className="mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/12 px-2 py-1.5">
+          <AlertTriangle size={11} className="text-warning mt-0.5 shrink-0" aria-hidden="true" />
+          <span className="text-xs text-foreground/90 leading-snug line-clamp-2">{o.novedad}</span>
         </div>
       )}
 
@@ -462,14 +481,14 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
         return (
           <section
             key={col.key}
-            className={cn('snap-start shrink-0 w-[286px] flex flex-col rounded-2xl border border-border bg-card/40 shadow-card3d border-t-[3px]', t.headBar)}
+            className="snap-start shrink-0 w-[286px] flex flex-col gap-2.5"
           >
             {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓). */}
             <button
               type="button"
               onClick={() => setFocusedKey(col.key)}
               title={`Concentrarse solo en ${col.label}`}
-              className="group/h flex items-center gap-2 px-3 py-3 border-b border-border/60 text-left hover:bg-card/60 transition-colors"
+              className="group/h flex items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-card/60 transition-colors"
             >
               <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
               <span className="text-foreground/90">{col.icon}</span>

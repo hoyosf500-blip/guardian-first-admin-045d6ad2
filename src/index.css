@@ -473,10 +473,23 @@
   :where(.hud-label) { color: hsl(var(--subtle)); }
 
   /* Hairline superior de las cards (el handoff lo pide en todas).
-     Era blanco literal → invisible sobre card blanca. Con --foreground se
-     invierte solo: filo claro en oscuro, filo oscuro en claro. Lo hereda cada
-     TiltCard, así que son ~39 cards. */
-  .hairline-top { box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.06); }
+     Lo hereda cada TiltCard, así que son ~39 cards.
+
+     Se pinta con background-image, NO con box-shadow, y la razón importa:
+     `box-shadow` es UNA sola propiedad. Cuando esta clase la declaraba, le
+     ganaba a la utilidad `shadow-card3d` del mismo elemento (las utilidades de
+     Tailwind salen antes en la hoja) y BORRABA la sombra de elevación. 26 de
+     39 TiltCard + 8 sitios directos combinan las dos clases: ~34 tarjetas de
+     la app se veían planas, sin la sombra que es la firma del diseño.
+     Como `bg-card/40` es background-COLOR, el background-image queda libre y
+     los dos efectos conviven. Verificado: ningún elemento con .hairline-top
+     usa degradado propio. */
+  .hairline-top {
+    background-image: linear-gradient(hsl(var(--foreground) / 0.06), hsl(var(--foreground) / 0.06));
+    background-size: 100% 1px;
+    background-repeat: no-repeat;
+    background-position: top;
+  }
 
   /* Brackets cian en las esquinas de la card hero. */
   .corner-bracket { position: absolute; width: 18px; height: 18px; opacity: 0.6; pointer-events: none; }

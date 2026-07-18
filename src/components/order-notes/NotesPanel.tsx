@@ -35,9 +35,10 @@ interface Props {
   phone?: string | null;
   /** Order id de la fila actual. Cada nueva nota se guarda con este order_id. */
   orderId?: string | null;
-  /** Estilo: 'full' (card grande, como OrderDetailPage) o 'compact' (más denso,
-   *  para CallView que ya está en un panel). */
-  variant?: 'full' | 'compact';
+  /** Estilo: 'full' (card grande, como OrderDetailPage), 'compact' (más denso,
+   *  para paneles anidados como CrmCallView) o 'rail' (card propia del rail
+   *  derecho de CallView, gemela de la card de dirección que tiene encima). */
+  variant?: 'full' | 'compact' | 'rail';
 }
 
 /** "hace 5 min", "hace 2 h", "ayer", "hace 3 d". */
@@ -201,9 +202,14 @@ export default function NotesPanel({ phone, orderId, variant = 'full' }: Props) 
     return [...withReminder, ...without];
   }, [notes]);
 
-  const containerCls = variant === 'compact'
-    ? 'bg-card border border-border/50 rounded-lg p-3 space-y-3'
-    : 'bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200';
+  // 'rail' se iguala a la card de dirección que va justo encima en el rail de
+  // CallView (mismo radio, padding y elevación). 'compact' se deja intacto: lo
+  // consume CrmCallView ANIDADO dentro de otra card y ahí debe seguir plano.
+  const containerCls = variant === 'rail'
+    ? 'bg-card/40 border border-border rounded-3xl p-5 space-y-3 shadow-card3d hairline-top'
+    : variant === 'compact'
+      ? 'bg-card border border-border/50 rounded-lg p-3 space-y-3'
+      : 'bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200';
 
   return (
     <motion.section

@@ -88,6 +88,11 @@ export default function SegCounterBar() {
 
   return (
     <div className="bg-card/40 border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 flex-wrap shadow-card3d">
+      {/* Rótulo de la barra (espeja "Equipo hoy" de CounterBar). Se oculta en
+          celular para no apretar la fila: las asesoras trabajan desde el móvil. */}
+      <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground shrink-0 hidden sm:inline">
+        Productividad hoy
+      </span>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5 text-sm">
           <div className="w-6 h-6 rounded-lg bg-info/14 border border-info/30 flex items-center justify-center">

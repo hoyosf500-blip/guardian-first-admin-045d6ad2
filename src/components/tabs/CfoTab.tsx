@@ -387,7 +387,7 @@ export default function CfoTab() {
             CFO · Cómo voy
           </div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
-            <span className="w-11 h-11 shrink-0 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+            <span className="w-11 h-11 shrink-0 rounded-2xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center">
               <DollarSign size={20} strokeWidth={2.25} />
             </span>
             <span className="capitalize truncate">{monthLabel(yearMonth)}</span>
@@ -486,22 +486,21 @@ export default function CfoTab() {
             />
           </div>
 
-          <Funnel
-            generados={curr.total_ordenes}
-            entregados={curr.total_entregadas}
-            devueltos={curr.total_devueltas}
-            loading={curr.loading}
-          />
-
-          <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
             <TopProductsBlock
               products={topProducts}
               loading={logForProducts.products.isLoading}
             />
-            <AlertsBlock alerts={alerts} loading={curr.loading} />
+            <Funnel
+              generados={curr.total_ordenes}
+              entregados={curr.total_entregadas}
+              devueltos={curr.total_devueltas}
+              loading={curr.loading}
+            />
           </div>
+
+          <AlertsBlock alerts={alerts} loading={curr.loading} />
         </TabsContent>
 
         {/* Las sub-tabs Finanzas + Billetera + Rentabilidad viven ahora
@@ -616,14 +615,17 @@ function Funnel({
 
   if (loading) {
     return (
-      <section className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d">
+      <section className="h-full rounded-2xl border border-border bg-card/40 p-4 shadow-card3d">
         <div className="h-32 animate-pulse bg-muted/30 rounded" />
       </section>
     );
   }
 
   return (
-    <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
+    <TiltCard
+      wrapperClassName="h-full"
+      className="h-full bg-card/40 border border-border rounded-2xl p-5 shadow-card3d"
+    >
       <section className="space-y-3">
         <header className="flex items-center gap-2 mb-1">
           <span className="w-7 h-7 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0">
@@ -644,7 +646,7 @@ function Funnel({
             label="Netos cobrados"
             value={netos}
             pct={pctNetos}
-            tone="bg-warning"
+            tone="bg-success"
             extra={`${fmtPct(pctNetos)} · entregados − devueltos`}
           />
         </div>

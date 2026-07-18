@@ -468,10 +468,10 @@ export default function OrderDetailPage() {
           </div>
         </div>
         <span className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border ${
-          estadoUpper.includes('ENTREGADO') ? 'bg-success/14 text-success border-success/30' :
-          estadoUpper.includes('DEVOL') ? 'bg-danger/14 text-danger border-danger/30' :
-          estadoUpper.includes('NOVEDAD') ? 'bg-warning/14 text-warning border-warning/30' :
-          'bg-info/14 text-info border-info/30'
+          estadoUpper.includes('ENTREGADO') ? 'bg-success/14 text-success border-success/30 glow-success' :
+          estadoUpper.includes('DEVOL') ? 'bg-danger/14 text-danger border-danger/30 glow-danger' :
+          estadoUpper.includes('NOVEDAD') ? 'bg-warning/14 text-warning border-warning/30 glow-warning' :
+          'bg-info/14 text-info border-info/30 glow-info'
         }`}>
           {order.estado}
         </span>
@@ -547,7 +547,7 @@ export default function OrderDetailPage() {
       {/* SLA Alert Card */}
       <SlaAlertCard order={orderData} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
         {/* Info card */}
         <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
           <h3 className="hud-label flex items-center gap-2">
@@ -689,16 +689,17 @@ export default function OrderDetailPage() {
         </TiltCard>
 
         {/* Financial card */}
-        <TiltCard sheen brackets wrapperClassName="md:col-span-2"
-          className="bg-card/40 border border-border rounded-3xl p-6 space-y-4 shadow-card3d-lg">
+        <TiltCard sheen brackets
+          className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
           <h3 className="hud-label flex items-center gap-2">
             <DollarSign size={13} aria-hidden="true" className="text-success" /> Financiero
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={formatCOP(valor)} mono />
-            <InfoRow icon={<Truck size={13} />} label="Flete" value={formatCOP(flete)} mono />
-            <InfoRow icon={<Package size={13} />} label="Costo producto" value={formatCOP(costoProd)} mono />
-            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={formatCOP(valor - flete - costoProd)} highlight mono />
+          <div className="flex flex-col gap-[11px]">
+            <StatementRow label="Valor total" value={formatCOP(valor)} />
+            <StatementRow label="Flete" value={formatCOP(flete)} muted />
+            <StatementRow label="Costo producto" value={formatCOP(costoProd)} muted />
+            <div className="h-px bg-border" aria-hidden="true" />
+            <StatementRow label="Ganancia est." value={formatCOP(valor - flete - costoProd)} total />
           </div>
         </TiltCard>
       </div>
@@ -721,6 +722,16 @@ export default function OrderDetailPage() {
       {/* Notas y recordatorios — componente compartido (también usado en CallView). */}
       <NotesPanel phone={order.phone} orderId={order.id} variant="full" />
     </main>
+  );
+}
+
+/** Fila etiqueta/valor del mini estado de resultados de la tarjeta Financiero. */
+function StatementRow({ label, value, muted, total }: { label: string; value: string; muted?: boolean; total?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between gap-3 ${total ? 'text-[13px] font-bold' : 'text-xs'}`}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`font-mono tabular-nums ${total ? 'text-success' : muted ? 'text-muted-foreground' : 'text-foreground font-semibold'}`}>{value}</span>
+    </div>
   );
 }
 

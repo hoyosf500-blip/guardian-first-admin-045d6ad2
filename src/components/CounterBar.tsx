@@ -36,7 +36,7 @@ export default function CounterBar() {
     : 'bg-muted/60 text-muted-foreground border-border';
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 shadow-ds-xs">
+    <div className="bg-card border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 shadow-card3d">
       {/* Estos números son de TODA la tienda (todas las operadoras), NO personales
           — se etiqueta para no confundir con el banner personal "tu día". */}
       <span className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground shrink-0 hidden sm:inline">

@@ -299,7 +299,7 @@ export default function LogisticaTab() {
             Análisis · Admin
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
-            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+            <span className="w-11 h-11 rounded-2xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center shrink-0" aria-hidden="true">
               <Truck size={20} strokeWidth={2.25} />
             </span>
             Logística

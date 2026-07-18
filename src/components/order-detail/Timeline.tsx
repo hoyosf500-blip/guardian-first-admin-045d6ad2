@@ -27,16 +27,16 @@ interface Props {
 
 const CATEGORY_META: Record<
   TimelineCategory,
-  { icon: LucideIcon; dot: string; text: string }
+  { icon: LucideIcon; dot: string; glow: string; text: string }
 > = {
-  dropi:    { icon: Cloud,         dot: 'bg-cyan',    text: 'text-cyan' },
-  call:     { icon: Phone,         dot: 'bg-info',    text: 'text-info' },
-  whatsapp: { icon: MessageSquare, dot: 'bg-success', text: 'text-success' },
-  sms:      { icon: Mail,          dot: 'bg-accent',  text: 'text-accent' },
-  note:     { icon: FileText,      dot: 'bg-warning', text: 'text-warning' },
-  status:   { icon: CheckCircle2,  dot: 'bg-muted-foreground', text: 'text-muted-foreground' },
-  system:   { icon: Zap,           dot: 'bg-muted-foreground', text: 'text-muted-foreground' },
-  novedad:  { icon: AlertTriangle, dot: 'bg-warning', text: 'text-warning' },
+  dropi:    { icon: Cloud,         dot: 'bg-cyan',    glow: '',             text: 'text-cyan' },
+  call:     { icon: Phone,         dot: 'bg-info',    glow: 'glow-info',    text: 'text-info' },
+  whatsapp: { icon: MessageSquare, dot: 'bg-success', glow: 'glow-success', text: 'text-success' },
+  sms:      { icon: Mail,          dot: 'bg-accent',  glow: 'glow-accent',  text: 'text-accent' },
+  note:     { icon: FileText,      dot: 'bg-warning', glow: 'glow-warning', text: 'text-warning' },
+  status:   { icon: CheckCircle2,  dot: 'bg-muted-foreground', glow: '', text: 'text-muted-foreground' },
+  system:   { icon: Zap,           dot: 'bg-muted-foreground', glow: '', text: 'text-muted-foreground' },
+  novedad:  { icon: AlertTriangle, dot: 'bg-warning', glow: 'glow-warning', text: 'text-warning' },
 };
 
 function dayLabel(date: Date): string {
@@ -96,10 +96,8 @@ export default function Timeline({ events, allowedCategories, compact = false, e
                 >
                   {/* Dot + icon */}
                   <div
-                    className={`absolute -left-[9px] w-4 h-4 rounded-full ${meta.dot} ring-2 ring-background flex items-center justify-center`}
-                  >
-                    <div className="w-1.5 h-1.5 rounded-full bg-background" />
-                  </div>
+                    className={`absolute -left-[9px] w-4 h-4 rounded-full ${meta.dot} ${meta.glow} outline outline-2 outline-background`}
+                  />
 
                   <div className="flex items-start gap-2">
                     <Icon size={13} className={`${meta.text} flex-shrink-0 mt-0.5`} />

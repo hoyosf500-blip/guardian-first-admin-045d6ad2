@@ -72,17 +72,22 @@ export default memo(function DateRangeFilter({ value, onChange }: Props) {
     <div className="flex items-center gap-2 flex-wrap">
       <Calendar size={14} className="text-muted-foreground" aria-hidden="true" />
       <span className="text-xs text-muted-foreground">Rango:</span>
-      <div className="flex gap-1">
+      <div className="flex gap-0.5 rounded-[10px] border border-border bg-muted/40 p-[3px]">
         {PRESETS.map(p => (
           <button
             key={p.label}
             type="button"
             onClick={() => applyPreset(p)}
             aria-pressed={activePreset === p.label}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+            // El activo lleva el degradado del mockup SOLO en oscuro. En claro
+            // --accent-foreground es blanco y el final del degradado (--accent2,
+            // #a56ef7) queda en 3.4:1 — bajo AA para 12px. El --accent sólido da
+            // 4.8:1, así que claro se queda en sólido y oscuro luce el degradado
+            // (ahí el texto es casi negro y contrasta de sobra en ambos extremos).
+            className={`px-3 py-1 rounded-[7px] text-xs font-semibold border border-transparent transition-colors ${
               activePreset === p.label
-                ? 'bg-accent text-accent-foreground border-accent'
-                : 'bg-card text-muted-foreground border-border hover:text-foreground'
+                ? 'bg-accent dark:bg-accent-gradient text-accent-foreground'
+                : 'bg-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             {p.label}

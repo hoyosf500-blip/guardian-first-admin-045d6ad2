@@ -15,9 +15,9 @@ interface Props {
 
 const LEVEL_STYLES: Record<AlertLevel, { bg: string; border: string; borderL: string; text: string; iconClass: string }> = {
   ok:       { bg: 'bg-card/40', border: 'border-border', borderL: 'bg-success', text: 'text-success', iconClass: 'text-success' },
-  watch:    { bg: 'bg-card/40', border: 'border-border', borderL: 'bg-warning', text: 'text-warning', iconClass: 'text-warning' },
-  alert:    { bg: 'bg-card/40', border: 'border-border', borderL: 'bg-warning', text: 'text-warning', iconClass: 'text-warning' },
-  critical: { bg: 'bg-card/40', border: 'border-border', borderL: 'bg-danger',  text: 'text-danger',  iconClass: 'text-danger' },
+  watch:    { bg: 'bg-warning/10', border: 'border-warning/25', borderL: 'bg-warning', text: 'text-warning', iconClass: 'text-warning' },
+  alert:    { bg: 'bg-warning/10', border: 'border-warning/25', borderL: 'bg-warning', text: 'text-warning', iconClass: 'text-warning' },
+  critical: { bg: 'bg-danger/10',  border: 'border-danger/25',  borderL: 'bg-danger',  text: 'text-danger',  iconClass: 'text-danger' },
   lost:     { bg: 'bg-card/40', border: 'border-border', borderL: 'bg-muted-foreground', text: 'text-muted-foreground', iconClass: 'text-muted-foreground' },
 };
 

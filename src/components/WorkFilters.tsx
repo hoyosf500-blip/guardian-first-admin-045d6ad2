@@ -80,7 +80,7 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
               className={`inline-flex items-center gap-1.5 px-3 min-h-[36px] rounded-lg text-xs font-semibold transition-colors duration-200 border cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
                 isActive
                   ? 'bg-accent/12 text-accent border-accent/30 shadow-ds-xs'
-                  : 'bg-muted/40 text-muted-foreground border-transparent hover:bg-muted/70 hover:text-foreground'
+                  : 'bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70 hover:text-foreground'
               }`}
             >
               <Icon size={13} className={isActive ? meta.color : ''} aria-hidden="true" />

@@ -69,9 +69,9 @@ export default function CarrierPicker({ options, loading, error, currentName, se
             key={`${opt.id}-${opt.name}`}
             type="button"
             onClick={() => onSelect(opt)}
-            className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+            className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-left transition-[color,background-color,border-color,box-shadow] ${
               isSelected
-                ? 'border-cyan bg-cyan/10'
+                ? 'border-cyan bg-cyan/10 shadow-[0_0_18px_-6px_hsl(var(--cyan)/0.4)] dark:shadow-[0_0_18px_-6px_hsl(var(--cyan)/0.9)]'
                 : 'border-border bg-card hover:bg-muted/50'
             }`}
           >
@@ -88,7 +88,7 @@ export default function CarrierPicker({ options, loading, error, currentName, se
                 </span>
               )}
             </div>
-            <span className="font-mono text-sm font-semibold flex-shrink-0">
+            <span className={`font-mono text-sm font-semibold flex-shrink-0 ${isSelected ? 'text-cyan' : ''}`}>
               {formatCOP(opt.shippingAmount)}
             </span>
           </button>

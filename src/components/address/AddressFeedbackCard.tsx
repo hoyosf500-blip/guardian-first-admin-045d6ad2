@@ -79,7 +79,7 @@ export function AddressFeedbackCard({
       // — mientras tanto mostramos placeholder pulsante para que la operadora
       // sepa que el sistema está trabajando, en vez de no ver nada.
       return (
-        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden />
           <span>Validando dirección...</span>
         </div>
@@ -89,7 +89,7 @@ export function AddressFeedbackCard({
     // (edge function devolvió decision:null o el fallback heurístico tampoco
     // resolvió). Card estática para que la operadora siga trabajando.
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden />
         <span>Sin validar — escribir libre</span>
       </div>
@@ -98,7 +98,7 @@ export function AddressFeedbackCard({
 
   if (decision === 'green') {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
+      <div className="flex items-center gap-2 rounded-xl border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
         <Check size={14} />
         <span>Dirección verificada</span>
       </div>
@@ -107,7 +107,7 @@ export function AddressFeedbackCard({
 
   if (decision === 'pickup_office') {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-info/40 bg-info/10 px-3 py-2 text-sm text-info">
+      <div className="flex items-center gap-2 rounded-xl border border-info/40 bg-info/10 px-3 py-2 text-sm text-info">
         <Store size={14} />
         <span>Retiro en oficina{carrier ? ` · ${carrier}` : ''}</span>
       </div>
@@ -116,16 +116,26 @@ export function AddressFeedbackCard({
 
   if (decision === 'yellow') {
     return (
-      <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm space-y-3">
+      <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm space-y-3">
         <div>
           <div className="mb-1 flex items-center gap-2 text-warning font-medium">
             <AlertTriangle size={14} />
             <span>Confirmar con cliente:</span>
           </div>
-          <ul className="ml-6 list-disc text-foreground">
+          {/* Chips en vez de viñetas (handoff). Tokens por tema, nunca los rgba
+              del mockup — el ámbar claro está oscurecido a propósito por
+              contraste. text-xs (12px) y no los 11px del mockup: piso de
+              legibilidad, las asesoras trabajan desde el celular. */}
+          {/* Sigue siendo <ul>/<li>: los chips son una LISTA de campos que
+              faltan. Con display:flex el navegador descarta la semántica de
+              lista, por eso el role explícito. Preflight ya quita marcador,
+              margen y padding, así que se ve idéntico a un <div>. */}
+          <ul role="list" className="flex flex-wrap gap-1.5">
             {missingFields.length > 0
-              ? missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)
-              : <li>Verifica datos clave antes de despachar</li>}
+              ? missingFields.map((f) => (
+                  <li role="listitem" key={f} className="text-xs font-semibold px-2 py-1 rounded-lg bg-warning/14 text-warning border border-warning/30">{FIELD_LABEL_ES[f] ?? f}</li>
+                ))
+              : <li role="listitem" className="text-xs font-semibold px-2 py-1 rounded-lg bg-warning/14 text-warning border border-warning/30">Verifica datos clave antes de despachar</li>}
           </ul>
         </div>
         {/* Sugerencias de Google Maps removidas a pedido — la operadora
@@ -136,14 +146,16 @@ export function AddressFeedbackCard({
   }
 
   return (
-    <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm space-y-3">
+    <div className="rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm space-y-3">
       <div>
         <div className="mb-1 flex items-center gap-2 text-danger font-medium">
           <AlertCircle size={14} />
           <span>Falta:</span>
         </div>
-        <ul className="ml-6 list-disc text-foreground">
-          {missingFields.map((f) => <li key={f}>{FIELD_LABEL_ES[f] ?? f}</li>)}
+        <ul role="list" className="flex flex-wrap gap-1.5">
+          {missingFields.map((f) => (
+            <li role="listitem" key={f} className="text-xs font-semibold px-2 py-1 rounded-lg bg-danger/14 text-danger border border-danger/30">{FIELD_LABEL_ES[f] ?? f}</li>
+          ))}
         </ul>
       </div>
 

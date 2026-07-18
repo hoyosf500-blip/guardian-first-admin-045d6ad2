@@ -149,7 +149,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
         </header>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="edit-nombre" className="text-xs">Nombre *</Label>
+            <Label htmlFor="edit-nombre" className="text-xs uppercase tracking-wider">Nombre *</Label>
             <Input
               id="edit-nombre"
               value={form.nombre}
@@ -157,7 +157,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="edit-apellido" className="text-xs">Apellido</Label>
+            <Label htmlFor="edit-apellido" className="text-xs uppercase tracking-wider">Apellido</Label>
             <Input
               id="edit-apellido"
               value={form.apellido}
@@ -165,7 +165,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="edit-phone" className="text-xs">Teléfono (solo dígitos)</Label>
+            <Label htmlFor="edit-phone" className="text-xs uppercase tracking-wider">Teléfono (solo dígitos)</Label>
             <Input
               id="edit-phone"
               inputMode="numeric"
@@ -175,7 +175,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="edit-email" className="text-xs">Email (opcional)</Label>
+            <Label htmlFor="edit-email" className="text-xs uppercase tracking-wider">Email (opcional)</Label>
             <Input
               id="edit-email"
               type="email"
@@ -197,7 +197,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
         </header>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">{isEC ? 'Provincia *' : 'Departamento *'}</Label>
+            <Label className="text-xs uppercase tracking-wider">{isEC ? 'Provincia *' : 'Departamento *'}</Label>
             {isEC ? (
               <>
                 <Input
@@ -226,7 +226,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Ciudad *</Label>
+            <Label className="text-xs uppercase tracking-wider">Ciudad *</Label>
             {isEC ? (
               <Input
                 value={form.ciudad}
@@ -252,7 +252,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
           </div>
 
           <div className="md:col-span-2 space-y-2">
-            <Label htmlFor="edit-direccion" className="text-xs">Dirección *</Label>
+            <Label htmlFor="edit-direccion" className="text-xs uppercase tracking-wider">Dirección *</Label>
             <AddressAutocomplete
               value={form.direccion}
               ciudad={form.ciudad}
