@@ -409,7 +409,23 @@ export default function ProductivityDashboard() {
                           <td className="text-right">
                             {isToday ? (
                               pct == null ? (
-                                <span className="font-mono text-muted-foreground text-xs" title="Sin señales del día todavía.">—</span>
+                                // computeHorarioCompliance devuelve null cuando
+                                // salida <= entrada, y eso pasa en DOS casos muy
+                                // distintos: sin ninguna señal, o con UNA sola
+                                // (recién se conectó). Antes ambos mostraban "—"
+                                // con el tooltip "Sin señales del día todavía",
+                                // que MIENTE cuando la fila ya muestra la hora
+                                // de entrada.
+                                lastSignalMs > 0 ? (
+                                  <span
+                                    className="font-mono text-xs text-muted-foreground"
+                                    title="Se conectó pero todavía no hay un tramo de trabajo medible (entrada y última señal coinciden). El porcentaje aparece cuando pase más tiempo."
+                                  >
+                                    recién entró
+                                  </span>
+                                ) : (
+                                  <span className="font-mono text-muted-foreground text-xs" title="Sin señales del día todavía.">—</span>
+                                )
                               ) : (
                                 <div className="inline-flex flex-col items-end gap-0.5">
                                   <span
@@ -524,10 +540,28 @@ export default function ProductivityDashboard() {
             </div>
           )}
 
-          {/* Las secciones de outcome (Confirmar / Seguimiento / Rescate / Novedades)
-              solo se muestran si hay productividad medible. Si solo hay jornada
-              registrada pero todavía nadie confirmó nada, NO renderizamos tablas
-              vacías — la Jornada de arriba ya cuenta la historia. */}
+          {/* Las secciones de outcome (Confirmar / Seguimiento / Rescate /
+              Novedades) se muestran SIEMPRE que haya alguien en el período.
+
+              Antes se ocultaban enteras con `rows.length > 0` para no dibujar
+              tablas vacías. El efecto real era peor: el dueño abría
+              Productividad un día tranquilo, veía solo la Jornada y creía que
+              las secciones se habían perdido. Ahora se muestran con un estado
+              vacío explícito — "existe y hoy no hay datos" se lee distinto de
+              "ya no está". */}
+          {rows.length === 0 && jornadaOps.length > 0 && (
+            <div className="rounded-2xl border border-dashed border-border bg-card/40 p-6 text-center">
+              <p className="text-sm font-semibold text-foreground mb-1">
+                Todavía sin gestiones en {RANGE_LABELS[range].toLowerCase()}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Las tablas de Confirmar, Seguimiento y Novedades aparecen acá apenas
+                el equipo registre la primera acción. La Jornada de arriba ya muestra
+                quién entró.
+              </p>
+            </div>
+          )}
+
           {rows.length > 0 && <>
 
           {/* Confirmar — el `note` muestra la COBERTURA DEL EQUIPO (cuánto del

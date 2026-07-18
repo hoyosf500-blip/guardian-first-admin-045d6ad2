@@ -204,7 +204,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
               <button
                 type="button"
                 onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-emerald-600 dark:text-emerald-400 border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-success border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
               >
                 <MessageSquare size={10} /> WhatsApp
               </button>
@@ -245,10 +245,10 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
         {/* Novedad banner */}
         {o.novedad && (
-          <div className="p-3 rounded-xl mb-4 text-xs bg-orange-500/10 border border-orange-500/20 flex items-start gap-2">
-            <AlertTriangle size={14} className="text-orange-500 mt-0.5 flex-shrink-0" />
+          <div className="p-3 rounded-xl mb-4 text-xs bg-attention/10 border border-attention/20 flex items-start gap-2">
+            <AlertTriangle size={14} className="text-attention mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <div className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wide mb-0.5">
+              <div className="text-[10px] font-bold text-attention uppercase tracking-wide mb-0.5">
                 Novedad de {o.transportadora || 'transportadora'}
               </div>
               <div className="text-foreground leading-relaxed">{o.novedad}</div>
@@ -278,7 +278,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                 className="w-full rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none disabled:opacity-60"
               />
               <div className="flex justify-end mt-1">
-                <span className={`text-[10px] ${solution.length > 450 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[10px] ${solution.length > 450 ? 'text-attention' : 'text-muted-foreground'}`}>
                   {solution.length}/500
                 </span>
               </div>

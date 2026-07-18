@@ -36,7 +36,7 @@ export default function CarrierPicker({ options, loading, error, currentName, se
 
   if (error) {
     return (
-      <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-700 dark:text-orange-400 space-y-2">
+      <div className="rounded-lg border border-attention/30 bg-attention/10 p-3 text-sm text-attention dark:text-attention space-y-2">
         <div className="flex items-start gap-2">
           <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
           <span>{error}</span>

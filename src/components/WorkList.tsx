@@ -69,7 +69,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
 
   return (
     <>
-    <div className="space-y-0 glass-panel rounded-xl overflow-hidden">
+    <div className="space-y-0 glass-panel rounded-xl overflow-hidden shadow-card3d">
       {items.slice(0, visibleCount).map((o, i) => {
         const pLevel = getPriorityLevel(calcPriority(o));
         const pCfg = PRIORITY_CONFIG[pLevel];
@@ -149,7 +149,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
                   onKeyDown={(e) => e.stopPropagation()}
                   aria-label={`Editar datos del pedido de ${o.nombre}`}
                   title="Editar datos del cliente"
-                  className="w-9 h-9 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/40 text-emerald-500 inline-flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                  className="w-9 h-9 rounded-md bg-success/12 hover:bg-success/20 border border-success/30 hover:border-success/45 text-success inline-flex items-center justify-center transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
                 >
                   <UserCog size={15} aria-hidden="true" />
                 </button>
@@ -169,7 +169,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
                 <span
                   title={`Dropi cobra ${formatCOP(o.valor)} y el cliente aceptó ${formatCOP(overchargeFor(alerts?.mismatchByExt, o)!.shopifyTotal)} en Shopify — corregilo desde la ficha`}
                   aria-label="Valor distinto a Shopify"
-                  className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30 inline-flex items-center gap-0.5"
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 bg-warning/15 text-warning border-warning/30 inline-flex items-center gap-0.5"
                 >
                   <DollarSign size={9} aria-hidden="true" /> DE MÁS
                 </span>
@@ -218,7 +218,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
               })()}
               {/* Retry badge */}
               {o.retryCount && !o.result && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-orange-500/15 text-orange-500 border border-orange-500/20 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Reintento ${o.retryCount} de 3`}>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold font-mono tabular-nums bg-attention/15 text-attention border border-attention/30 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Reintento ${o.retryCount} de 3`}>
                   <RotateCcw size={9} aria-hidden="true" /> {o.retryCount}/3
                 </span>
               )}
@@ -239,7 +239,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
       })}
       {items.length > visibleCount && (
         <div className="px-4 py-3 flex items-center justify-between bg-card/40 border-t border-border">
-          <p className="text-xs text-muted-foreground">Mostrando {visibleCount} de {items.length}</p>
+          <p className="text-xs text-muted-foreground font-mono tabular-nums">Mostrando {visibleCount} de {items.length}</p>
           <button
             onClick={() => setVisibleCount(prev => prev + 50)}
             className="text-xs px-4 py-1.5 rounded-lg bg-accent-gradient text-white font-semibold shadow-glow hover:brightness-110 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"

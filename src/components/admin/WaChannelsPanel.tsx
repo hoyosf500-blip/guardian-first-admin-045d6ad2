@@ -23,7 +23,7 @@ interface ChannelStatus {
 
 const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
   connected: { label: 'Conectado', cls: 'bg-success/10 text-success border-success/20' },
-  qr_pending: { label: 'Esperando QR', cls: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+  qr_pending: { label: 'Esperando QR', cls: 'bg-warning/10 text-warning border-warning/20' },
   disconnected: { label: 'Desconectado', cls: 'bg-destructive/10 text-destructive border-destructive/20' },
 };
 

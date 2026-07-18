@@ -389,14 +389,24 @@ export default function DashboardTab() {
   const tasaStroke = tasa >= CONF_TARGET_PCT ? CHART_SUCCESS : tasa >= CONF_TARGET_PCT - 5 ? CHART_WARNING : CHART_DANGER;
   const tasaBg     = tasa >= CONF_TARGET_PCT ? 'bg-success/10 border border-success/25' : tasa >= CONF_TARGET_PCT - 5 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
 
+  // Píldora de tendencia. Se llamaba "badge" pero era texto suelto sin fondo ni
+  // borde: en la card hero quedaba como contrapeso del rótulo "Tasa personal"
+  // sin ningún peso visual. El handoff la pide como chip con tinte semántico.
   function TrendBadge({ current, previous, suffix = '' }: { current: number; previous: number; suffix?: string }) {
+    const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-semibold whitespace-nowrap';
     const diff = current - previous;
-    if (diff === 0) return <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"><Minus size={10} /> sin cambio</span>;
+    if (diff === 0) {
+      return (
+        <span className={`${base} bg-muted/50 border-border text-muted-foreground`}>
+          <Minus size={10} aria-hidden="true" /> sin cambio
+        </span>
+      );
+    }
     const up = diff > 0;
     return (
-      <span className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${up ? 'text-success' : 'text-danger'}`}>
-        {up ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-        {up ? '+' : ''}{diff}{suffix} vs ayer
+      <span className={`${base} ${up ? 'bg-success/14 border-success/30 text-success' : 'bg-danger/14 border-danger/30 text-danger'}`}>
+        {up ? <TrendingUp size={10} aria-hidden="true" /> : <TrendingDown size={10} aria-hidden="true" />}
+        <span className="font-mono tabular-nums">{up ? '+' : ''}{diff}{suffix}</span> vs ayer
       </span>
     );
   }

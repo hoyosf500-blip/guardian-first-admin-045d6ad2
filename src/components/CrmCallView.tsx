@@ -526,8 +526,8 @@ export default function CrmCallView({
   if (!items.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10">
-          <CheckCircle size={20} className="text-emerald-500" />
+        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-success/10">
+          <CheckCircle size={20} className="text-success" />
         </div>
         <h3 className="text-base font-semibold text-foreground">Nada para gestionar</h3>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">

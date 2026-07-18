@@ -84,7 +84,7 @@ function freshnessDot(o: OrderData): { cls: string; title: string } {
   return { cls: 'bg-danger', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpen }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -110,7 +110,11 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
       className={cn(
         // Sin TiltCard a propósito: son cientos de tarjetas y el tilt destruiría
         // el scroll del tablero. Solo superficie + borde que reacciona al hover.
-        'group bg-card/40 rounded-xl border p-3.5 cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        'group bg-card/40 rounded-xl border p-3.5 shadow-card3d cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        // Estados terminales (entregado/devolución/cancelado/indemnizada) van
+        // atenuados: la asesora no tiene nada que hacer con ellos y competían
+        // visualmente con las columnas donde sí hay trabajo.
+        tone === 'success' || tone === 'danger' || tone === 'muted' ? 'opacity-75' : '',
         selected ? 'border-accent ring-2 ring-accent/60 shadow-card3d' : 'border-border',
       )}
     >

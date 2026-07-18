@@ -82,30 +82,30 @@ export default function SegCounterBar() {
   const pendientes = Math.max(0, stats.myActions - stats.myResolved);
   const tasa = stats.myActions > 0 ? Math.round((stats.myResolved / stats.myActions) * 100) : 0;
   const tasaTone =
-    tasa >= 50 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25'
-    : tasa >= 25 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25'
+    tasa >= 50 ? 'bg-success/14 text-success border-success/30'
+    : tasa >= 25 ? 'bg-warning/14 text-warning border-warning/30'
     : 'bg-muted/60 text-muted-foreground border-border';
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 flex-wrap shadow-ds-xs">
+    <div className="bg-card/40 border border-border rounded-2xl p-3.5 mb-4 flex items-center gap-4 flex-wrap shadow-card3d">
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-blue-500/10 border border-blue-500/25 flex items-center justify-center">
-            <ListChecks size={13} className="text-blue-500" aria-hidden="true" />
+          <div className="w-6 h-6 rounded-lg bg-info/14 border border-info/30 flex items-center justify-center">
+            <ListChecks size={13} className="text-info" aria-hidden="true" />
           </div>
           <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myActions}</span>
           <span className="text-xs text-muted-foreground">acciones</span>
         </div>
         <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
-            <CheckCircle2 size={13} className="text-emerald-500" aria-hidden="true" />
+          <div className="w-6 h-6 rounded-lg bg-success/14 border border-success/30 flex items-center justify-center">
+            <CheckCircle2 size={13} className="text-success" aria-hidden="true" />
           </div>
           <span className="font-mono text-sm font-bold text-foreground tabular-nums">{stats.myResolved}</span>
           <span className="text-xs text-muted-foreground">resueltos</span>
         </div>
         <div className="flex items-center gap-1.5 text-sm">
-          <div className="w-6 h-6 rounded-lg bg-amber-500/10 border border-amber-500/25 flex items-center justify-center">
-            <Hourglass size={13} className="text-amber-500" aria-hidden="true" />
+          <div className="w-6 h-6 rounded-lg bg-warning/14 border border-warning/30 flex items-center justify-center">
+            <Hourglass size={13} className="text-warning" aria-hidden="true" />
           </div>
           <span className="font-mono text-sm font-bold text-foreground tabular-nums">{pendientes}</span>
           <span className="text-xs text-muted-foreground">pendientes</span>
@@ -120,7 +120,7 @@ export default function SegCounterBar() {
           <span>Equipo</span>
           <span className="font-mono font-bold text-foreground tabular-nums">{stats.teamActions}</span>
           <span>/</span>
-          <span className="font-mono text-emerald-500 tabular-nums">{stats.teamResolved}</span>
+          <span className="font-mono text-success tabular-nums">{stats.teamResolved}</span>
           <span>resueltos</span>
         </div>
       </div>

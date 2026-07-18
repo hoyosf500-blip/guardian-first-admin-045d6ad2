@@ -56,16 +56,16 @@ export default function StatTile({
         isZero ? 'border-border/50 opacity-75' : 'border-border',
       ].join(' ')}
     >
+      {/* Anatomía del handoff: chip + delta arriba · cifra · rótulo ·
+          sparkline ancho abajo. Antes el sparkline iba arriba encajonado en
+          80px y el delta al pie: la línea de tendencia quedaba ilegible y el
+          delta perdía el lugar de lectura que le da el mockup. */}
       <div title={title}>
-        <div className="flex items-center justify-between tilt-layer-2">
-          <span className={`w-9 h-9 rounded-xl border flex items-center justify-center ${t.chip} ${t.glow}`}>
+        <div className="flex items-start justify-between gap-2 tilt-layer-2">
+          <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${t.chip} ${t.glow}`}>
             <Icon size={17} aria-hidden="true" />
           </span>
-          {spark.length > 1 && (
-            <span className="w-20">
-              <Sparkline data={spark} color={t.stroke} height={26} />
-            </span>
-          )}
+          {extra && <div className="text-right min-w-0">{extra}</div>}
         </div>
 
         <div className={`text-[34px] font-bold leading-none mt-3 tilt-layer-3 ${isZero ? 'text-muted-foreground' : t.text}`}>
@@ -74,7 +74,11 @@ export default function StatTile({
 
         <div className="hud-label text-subtle mt-2 tilt-layer-1">{label}</div>
 
-        {extra && <div className="mt-2 tilt-layer-1">{extra}</div>}
+        {spark.length > 1 && (
+          <div className="mt-2 tilt-layer-1">
+            <Sparkline data={spark} color={t.stroke} height={26} />
+          </div>
+        )}
       </div>
     </TiltCard>
   );

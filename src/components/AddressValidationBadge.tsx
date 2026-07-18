@@ -32,16 +32,16 @@ const STATUS_TONE: Record<AddressValidationStatus, {
 }> = {
   valid: {
     icon: CheckCircle2,
-    bgClass: 'bg-emerald-500/15',
-    textClass: 'text-emerald-500',
-    ringClass: 'ring-emerald-500/30',
+    bgClass: 'bg-success/15',
+    textClass: 'text-success',
+    ringClass: 'ring-success/30',
     label: 'Dirección válida',
   },
   suspicious: {
     icon: AlertTriangle,
-    bgClass: 'bg-amber-500/15',
-    textClass: 'text-amber-500',
-    ringClass: 'ring-amber-500/30',
+    bgClass: 'bg-warning/15',
+    textClass: 'text-warning',
+    ringClass: 'ring-warning/30',
     label: 'Dirección sospechosa',
   },
   invalid: {
