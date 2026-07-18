@@ -15,7 +15,7 @@ import {
   CheckCircle2, XCircle, PhoneOff, Clock, Send, Copy, MessageSquare,
   Download, TrendingUp, TrendingDown, Minus, Package, ChevronDown,
   BarChart3, Activity, Layers, CloudOff, CloudDownload, RefreshCw,
-  Trophy, Users,
+  Trophy, Users, Calendar as CalendarIcon,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -36,7 +36,7 @@ const fadeUp = (delay = 0) => ({
 export default function DashboardTab() {
   const { allOrders, counter, workQueue } = useOrders();
   const { user, profile } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isManagerOfActive } = useStore();
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -430,9 +430,15 @@ export default function DashboardTab() {
           <div className="hud-label mb-1 truncate">
             Resumen · Operadora
           </div>
+          {/* Avatar con la inicial + punto de "en línea", como el mockup: es la
+              pantalla personal de la operadora, así que el header lleva su cara,
+              no un ícono genérico de gráfico. */}
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
-            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
-              <BarChart3 size={20} strokeWidth={2.25} />
+            <span className="relative flex-shrink-0" aria-hidden="true">
+              <span className="w-11 h-11 rounded-2xl bg-accent-gradient shadow-glow flex items-center justify-center text-white text-base font-bold">
+                {(profile?.display_name || 'U')[0].toUpperCase()}
+              </span>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-success border-2 border-background glow-success" />
             </span>
             {greeting}
           </h1>
@@ -441,6 +447,13 @@ export default function DashboardTab() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Chip de fecha del mockup, antes del selector de período. */}
+          <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-card/40 border border-border text-xs text-muted-foreground">
+            <CalendarIcon size={13} className="text-accent" aria-hidden="true" />
+            <span className="font-mono tabular-nums">
+              {new Date().toLocaleDateString('es-CO', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+            </span>
+          </span>
           {/* Period tabs */}
           <div className="inline-flex flex-wrap gap-2">
             {[{ n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
@@ -569,6 +582,20 @@ export default function DashboardTab() {
               <div className="flex justify-center py-4 tilt-layer-3">
                 <GaugeRing value={tasa} label="confirmación" size={190} />
               </div>
+
+              {/* Este panel mide la tasa PERSONAL del usuario que está mirando
+                  (today_call_stats filtra por operator_id = auth.uid()). Para un
+                  dueño o supervisor que no atiende llamadas siempre da 0, y ver
+                  ceros sin explicación se lee como "la pantalla está rota".
+                  Se dice explícitamente y se apunta a dónde están los del equipo. */}
+              {total === 0 && isManagerOfActive && (
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                  Estás en <span className="text-foreground font-semibold">0</span> porque este panel
+                  mide <span className="text-foreground font-semibold">tus</span> llamadas, y hoy no
+                  registraste ninguna. Los números del equipo están en{' '}
+                  <span className="text-accent font-semibold">Admin → Productividad</span>.
+                </div>
+              )}
 
               <div className="tilt-layer-1 space-y-3">
                 <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
