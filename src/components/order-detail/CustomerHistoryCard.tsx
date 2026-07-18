@@ -215,11 +215,19 @@ const TABS: { key: OrderCategory; label: string; activeClass: string }[] = [
 // Muted fill for the gauge background — works in light and dark themes
 const GAUGE_REST_COLOR = 'hsl(var(--foreground) / 0.12)';
 
+// Tope de filas del historial. Si la muestra llega al tope, sabemos que hay más
+// pedidos aunque el conteo exacto no se haya podido leer.
+const HISTORY_LIMIT = 20;
+
 // ═════════════════════════════════════════════════════════════════════
 
 export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Props) {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
+  // Conteo REAL de pedidos del cliente (el historial de abajo viene topado en 20 filas)
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  // La lectura del historial falló: NO es lo mismo que "no tiene pedidos previos".
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<OrderCategory>('todos');
   const { ask: askAi, get: getAi } = useAiInsight();
@@ -236,17 +244,36 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data } = await supabase
-        .from('orders')
-        .select('id, external_id, nombre, estado, fecha, fecha_conf, valor, guia, novedad, novedad_sol, producto, transportadora, ciudad')
-        .eq('phone', currentPhone)
-        .neq('id', currentOrderId)
-        .order('fecha', { ascending: false, nullsFirst: false })
-        .limit(20);
-      if (!cancelled) {
-        setOrders((data as HistoryOrder[]) || []);
+      setLoadError(false);
+      const [historyRes, countRes] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('id, external_id, nombre, estado, fecha, fecha_conf, valor, guia, novedad, novedad_sol, producto, transportadora, ciudad')
+          .eq('phone', currentPhone)
+          .neq('id', currentOrderId)
+          .order('fecha', { ascending: false, nullsFirst: false })
+          .limit(HISTORY_LIMIT),
+        // El historial de arriba es una MUESTRA (.limit(20)). Pedimos el conteo exacto
+        // aparte para no rotular esa muestra como "Total".
+        supabase
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .eq('phone', currentPhone),
+      ]);
+      if (cancelled) return;
+      // Si la consulta falló, `data` viene null. Sin este guard la tarjeta
+      // mostraría "Primer pedido de este cliente" — un dato inventado a partir
+      // de una lectura que nunca ocurrió.
+      if (historyRes?.error) {
+        setLoadError(true);
+        setOrders([]);
+        setTotalCount(null);
         setLoading(false);
+        return;
       }
+      setOrders((historyRes?.data as HistoryOrder[]) || []);
+      setTotalCount(typeof countRes?.count === 'number' ? countRes.count : null);
+      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [currentPhone, currentOrderId]);
@@ -283,9 +310,22 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   const novedades = orders.filter(o => o.novedad).length;
   const completados = entregados + devoluciones;
   const deliveryScore = completados > 0 ? Math.round((entregados / completados) * 100) : null;
-  const efectividad = Math.round((entregados / total) * 100);
+  // Solo los pedidos CONCLUIDOS (entregados + devueltos) son un desenlace. Con el pedido
+  // actual y los que van en camino en el denominador, un cliente sin nada resuelto daba 0%.
+  const efectividad = completados > 0 ? Math.round((entregados / completados) * 100) : null;
   const badge = calcBadge(total, entregados, devoluciones);
 
+  // `total` sale de la muestra de 20; `totalReal` es el conteo exacto del cliente.
+  // Si el conteo no se pudo leer Y la muestra llegó al tope, NO sabemos cuántos son:
+  // ahí `totalReal` queda null y se rotula "N+" (al menos N), nunca como total cerrado.
+  const hitLimit = orders.length >= HISTORY_LIMIT;
+  const totalReal = totalCount ?? (hitLimit ? null : total);
+  const totalLabel = totalReal === null ? `${total}+` : String(totalReal);
+  const esMuestra = totalReal === null || totalReal > total;
+
+  // OJO: 50 es un relleno para que el gauge tenga geometría, NO una medición.
+  // Solo puede usarse dentro de un `deliveryScore !== null`. Nunca mostrarlo ni
+  // mandarlo a la IA sin ese guard: sería inventar un nivel de riesgo.
   const gaugeScore = deliveryScore ?? 50;
   const scoreConfig = getScoreConfig(gaugeScore);
   const gaugeData = [
@@ -326,6 +366,24 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
     );
   }
 
+  // La lectura falló: decirlo. Un historial vacío por error NO es "cliente nuevo".
+  if (loadError) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        className="bg-card/40 border border-danger/40 rounded-2xl p-5 shadow-card3d">
+        <div className="flex items-start gap-3">
+          <AlertTriangle size={18} className="text-danger flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-bold text-danger">No pudimos leer la huella del comprador</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              La consulta del historial falló. No sabemos si este cliente ya compró antes — no lo trates como primer pedido.
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
   if (orders.length === 0) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -356,7 +414,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             <Shield size={15} />
           </span>
           <h3 className="text-sm font-bold text-foreground">Huella del comprador</h3>
-          <span className="text-xs text-muted-foreground font-mono tabular-nums">· {total} pedido{total === 1 ? '' : 's'}</span>
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">· {totalLabel} pedido{totalReal === 1 ? '' : 's'}</span>
         </div>
         {badge && (
           <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold ${badge.className}`}>
@@ -449,18 +507,23 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Entregadas</span>
-                    <span className="font-bold text-success font-mono tabular-nums">{totals.delivered} ({dropiScore ?? 0}%)</span>
+                    <span className="font-bold text-success font-mono tabular-nums">{totals.delivered} ({dropiScore === null ? '—' : `${dropiScore}%`})</span>
                   </div>
                   <div className="w-full h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                     <div className="h-full rounded-full bg-success transition-all" style={{ width: `${dropiScore ?? 0}%` }} />
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Devoluciones</span>
-                    <span className="font-bold text-danger font-mono tabular-nums">{totals.returned} ({dropiScore !== null ? 100 - dropiScore : 0}%)</span>
+                    <span className="font-bold text-danger font-mono tabular-nums">{totals.returned} ({dropiScore === null ? '—' : `${100 - dropiScore}%`})</span>
                   </div>
                   <div className="w-full h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                     <div className="h-full rounded-full bg-danger transition-all" style={{ width: `${dropiScore !== null ? 100 - dropiScore : 0}%` }} />
                   </div>
+                  {dropiScore === null && (
+                    <p className="text-[10px] text-muted-foreground pt-0.5">
+                      Ningún pedido concluido todavía — sin base para calcular porcentajes.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -481,7 +544,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         <div className="relative flex-shrink-0" style={{ width: 130, height: 130 }}>
           <PieChart width={130} height={130}>
             <Pie
-              data={gaugeData}
+              data={deliveryScore !== null ? gaugeData : [{ value: 1 }]}
               cx={60}
               cy={60}
               innerRadius={42}
@@ -493,13 +556,19 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
               animationBegin={0}
               animationDuration={800}
             >
-              <Cell fill={scoreConfig.color} />
-              <Cell fill={GAUGE_REST_COLOR} />
+              {deliveryScore !== null ? (
+                <>
+                  <Cell fill={scoreConfig.color} />
+                  <Cell fill={GAUGE_REST_COLOR} />
+                </>
+              ) : (
+                <Cell fill={GAUGE_REST_COLOR} />
+              )}
             </Pie>
           </PieChart>
           {/* Score number in center */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className={`text-3xl font-bold font-mono tabular-nums ${scoreConfig.textClass}`}>
+            <span className={`text-3xl font-bold font-mono tabular-nums ${deliveryScore !== null ? scoreConfig.textClass : 'text-muted-foreground'}`}>
               {deliveryScore !== null ? gaugeScore : '—'}
             </span>
           </div>
@@ -513,7 +582,11 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             </span>
           </div>
           <div className="flex items-center justify-center sm:justify-start gap-2 mb-3">
-            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${scoreConfig.bgClass} ${scoreConfig.textClass}`}>
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${
+              deliveryScore !== null
+                ? `${scoreConfig.bgClass} ${scoreConfig.textClass}`
+                : 'bg-muted/40 border border-border text-muted-foreground'
+            }`}>
               {deliveryScore !== null ? scoreConfig.label : 'Sin datos'}
             </span>
           </div>
@@ -521,7 +594,8 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             {insights.map((text, i) => (
               <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
                 <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  gaugeScore >= 80 ? 'bg-success' : gaugeScore >= 50 ? 'bg-warning' : 'bg-danger'
+                  deliveryScore === null ? 'bg-muted-foreground'
+                    : gaugeScore >= 80 ? 'bg-success' : gaugeScore >= 50 ? 'bg-warning' : 'bg-danger'
                 }`} />
                 <span>{text}</span>
               </li>
@@ -535,7 +609,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         <div className="p-3 text-center">
           <div className="hud-label">Total</div>
           <div className="text-lg font-bold text-foreground font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
-            <Package size={14} className="text-muted-foreground" />{total}
+            <Package size={14} className="text-muted-foreground" />{totalLabel}
           </div>
         </div>
         <div className="p-3 text-center">
@@ -553,25 +627,46 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         <div className="p-3 text-center">
           <div className="hud-label">Efectividad</div>
           <div className={`text-lg font-bold font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5 ${
-            efectividad >= 80 ? 'text-success' : efectividad >= 50 ? 'text-warning' : 'text-danger'
+            efectividad === null ? 'text-muted-foreground'
+              : efectividad >= 80 ? 'text-success' : efectividad >= 50 ? 'text-warning' : 'text-danger'
           }`}>
-            {efectividad >= 80 && <Star size={14} />}
-            {efectividad < 50 && <AlertTriangle size={14} />}
-            {efectividad}%
+            {efectividad !== null && efectividad >= 80 && <Star size={14} />}
+            {efectividad !== null && efectividad < 50 && <AlertTriangle size={14} />}
+            {efectividad === null ? '—' : `${efectividad}%`}
           </div>
+          {efectividad === null && (
+            <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Sin pedidos concluidos</div>
+          )}
         </div>
       </div>
+
+      {/* La query del historial trae máximo 20 filas: avisamos que las métricas son de una muestra */}
+      {esMuestra && (
+        <div className="px-5 py-2 border-b border-border text-[11px] text-muted-foreground">
+          Entregados, devueltos, efectividad, probabilidad de entrega y la etiqueta del cliente salen
+          de los últimos <span className="font-mono tabular-nums">{orders.length}</span> pedidos
+          {totalReal === null ? (
+            <>, y no pudimos leer el total del historial: hay más de los que ves.</>
+          ) : (
+            <>, no de los <span className="font-mono tabular-nums">{totalReal}</span> del historial completo.</>
+          )}
+        </div>
+      )}
 
       {/* ── AI customer profile ── */}
       {orders.length >= 2 && (() => {
         const aiKey = `profile-${currentPhone}`;
         const ai = getAi(aiKey);
         const buildCtx = () => [
-          `Total pedidos: ${total}`,
+          `Total pedidos: ${totalReal === null ? `al menos ${total}` : totalReal}${esMuestra ? ` (las cifras de abajo salen de los últimos ${orders.length})` : ''}`,
           `Entregados: ${entregados}`,
           `Devoluciones: ${devoluciones}`,
-          `Efectividad: ${efectividad}%`,
-          `Score probabilidad entrega: ${gaugeScore}/100 (${scoreConfig.label})`,
+          efectividad === null
+            ? 'Efectividad: sin datos — ningún pedido concluido todavía'
+            : `Efectividad: ${efectividad}%`,
+          deliveryScore === null
+            ? 'Score probabilidad entrega: sin datos — cliente sin pedidos concluidos, no afirmes un nivel de riesgo'
+            : `Score probabilidad entrega: ${deliveryScore}/100 (${scoreConfig.label})`,
           `Productos pedidos: ${[...new Set(orders.map(o => o.producto).filter(Boolean))].join(', ')}`,
           `Ciudades: ${[...new Set(orders.map(o => o.ciudad).filter(Boolean))].join(', ') || 'N/A'}`,
           `Transportadoras usadas: ${[...new Set(orders.map(o => o.transportadora).filter(Boolean))].join(', ')}`,

@@ -1,5 +1,6 @@
 import { memo, useMemo } from 'react';
 import { MapPin } from 'lucide-react';
+import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { CityReturns } from '@/lib/logistics.types';
 
 interface Props {
@@ -36,9 +37,25 @@ export default memo(function GeoDistribution({ rows }: Props) {
       .slice(0, 6)
       .map((r, idx) => {
         const token = CITY_PALETTE[idx % CITY_PALETTE.length];
+        // Madurez SOLO como compuerta del veredicto de color — la tasa que se
+        // muestra sigue siendo la del server (`tasa_devolucion`), sin cambiar
+        // fórmula ni umbrales. Mismo criterio que la tabla de abajo
+        // (CityReturnsTable), que para la MISMA ciudad ya muestra "—" cuando
+        // nada concluyó: sin esto los dos paneles se contradecían.
+        const m = deriveDeliveryMaturity(
+          r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0,
+        );
         return {
           ...r,
-          pct: total > 0 ? (r.total_pedidos / total) * 100 : 0,
+          pct: total > 0 ? ((r.total_pedidos ?? 0) / total) * 100 : 0,
+          resueltos: m.resueltos,
+          prelim: isRatePreliminary(m),
+          // `isRatePreliminary` dispara por DOS motivos distintos (muestra
+          // chica O cohorte inmaduro). Guardamos con cuál para que el tooltip
+          // diga el motivo REAL: en un rango reciente la mayoría de las
+          // ciudades son prelim. por cohorte inmaduro, no por pocos datos.
+          muestraChica: m.resueltos < MIN_RESUELTOS_CONFIABLE,
+          pctConcluido: m.pctConcluido,
           color: `hsl(var(${token}))`,
           // Aro suave del dot. Antes era `${c.color}22` — el idiom `+22`
           // sólo sirve con hex de 6 dígitos; sobre un `hsl(...)` producía
@@ -82,7 +99,15 @@ export default memo(function GeoDistribution({ rows }: Props) {
           <h2 className="text-sm font-bold text-foreground tracking-tight">Distribución geográfica</h2>
         </div>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          Top {top.length} ciudades por volumen de envíos
+          Top {top.length} de {rows.length} ciudades por volumen de envíos
+        </p>
+        {/* El denominador de los % es la suma de las ciudades RECIBIDAS, no el
+            total de envíos del rango: la consulta que alimenta este panel pide
+            un tope de filas, así que puede faltar la cola larga de ciudades.
+            Decirlo evita leer estos % como reparto del país entero. */}
+        <p className="text-[10px] text-muted-foreground/80 mt-1 leading-snug">
+          % sobre los {total.toLocaleString('es-CO')} envíos de estas {rows.length} ciudades
+          {' '}— puede no incluir todas las ciudades del rango.
         </p>
       </header>
 
@@ -122,22 +147,52 @@ export default memo(function GeoDistribution({ rows }: Props) {
               />
             </div>
             <div className="flex items-center justify-between text-[10px] text-muted-foreground tabular-nums">
-              <span>{c.total_pedidos.toLocaleString('es-CO')} envíos</span>
-              <span className={
-                c.tasa_devolucion >= 30 ? 'text-danger font-bold' :
-                c.tasa_devolucion >= 15 ? 'text-warning font-semibold' :
-                'text-success font-medium'
-              }>
-                {c.tasa_devolucion.toFixed(1)}% devol.
-              </span>
+              <span>{(c.total_pedidos ?? 0).toLocaleString('es-CO')} envíos</span>
+              {/* Sin desenlaces no hay tasa: "0.0% devol." en verde hacía ver
+                  impecable a una ciudad donde simplemente no concluyó ningún
+                  pedido todavía. Con muestra chica se marca prelim. en gris en
+                  vez de gritar rojo/verde sobre 1-4 concluidos. */}
+              {c.resueltos === 0 ? (
+                <span className="text-muted-foreground" title="Sin pedidos concluidos aún — todavía no hay tasa de devolución">
+                  — devol.
+                </span>
+              ) : !Number.isFinite(c.tasa_devolucion) ? (
+                /* La consulta no trajo la tasa (drift del RPC). Antes el
+                   `?? 0` la imprimía como "0.0%" y el semáforo la pintaba
+                   VERDE: un veredicto inventado sobre un dato que no llegó. */
+                <span className="text-muted-foreground" title="La consulta no devolvió la tasa de devolución de esta ciudad">
+                  — devol.
+                </span>
+              ) : (
+                <span
+                  className={
+                    c.prelim ? 'text-muted-foreground' :
+                    c.tasa_devolucion >= 30 ? 'text-danger font-bold' :
+                    c.tasa_devolucion >= 15 ? 'text-warning font-semibold' :
+                    'text-success font-medium'
+                  }
+                  title={
+                    !c.prelim ? undefined
+                      : c.muestraChica
+                        ? `Preliminar: solo ${c.resueltos} pedido(s) concluido(s) — hacen falta ${MIN_RESUELTOS_CONFIABLE} para que la tasa sea confiable`
+                        : `Preliminar: solo el ${c.pctConcluido}% de los pedidos concluyó — la tasa todavía puede moverse`
+                  }
+                >
+                  {c.tasa_devolucion.toFixed(1)}% devol.{c.prelim ? ' ·prelim.' : ''}
+                </span>
+              )}
             </div>
           </div>
         ))}
 
         {otros.count > 0 && (
           <div className="pt-3 mt-3 border-t border-border/40 flex items-center justify-between text-xs">
+            {/* Antes decía "Otros (N ciudades)", que se lee como "todo el resto
+                del país". En realidad son las ciudades restantes DE ESTA LISTA
+                (que viene topeada), así que el conteo prometía un universo que
+                no medimos. "listadas" lo deja literalmente cierto. */}
             <span className="text-muted-foreground">
-              Otros ({otros.count} ciudades)
+              Otras {otros.count} ciudades listadas
             </span>
             <div className="flex items-center gap-2">
               <span className="font-mono text-muted-foreground tabular-nums">

@@ -94,10 +94,22 @@ export interface NovedadesSeguimientoData {
   porCulpa: CulpaRow[];
   carriersProblematicos: DimensionRow[];
   ciudadesProblematicas: DimensionRow[];
+  /** true si el universo de `porCulpa` / `carriersProblematicos` /
+   *  `ciudadesProblematicas` quedó INCOMPLETO — sea porque se alcanzó el tope de
+   *  lotes o porque alguna consulta de lote falló. Esas tasas son entonces una
+   *  muestra, no el total del período. */
+  muestraParcial: boolean;
+  /** Teléfonos con marca que quedaron fuera del universo, por tope o por lote
+   *  que no se pudo leer (0 = análisis completo). */
+  telefonosOmitidos: number;
 }
 
 const RANGE_DAYS: Record<SeguimientoRange, number> = { today: 0, '7d': 6, '30d': 29 };
-const MAX_PHONES = 400;
+/** Tamaño de lote del `.in('phone', ...)` — mismo patrón que CrmTable.tsx. */
+const PHONE_BATCH = 100;
+/** Freno anti-runaway (30 × 100 = 3.000 teléfonos por rango). Si se alcanza,
+ *  el hook reporta `muestraParcial` en vez de callarse. */
+const MAX_PHONE_BATCHES = 30;
 const NOVEDAD_QUEUE_FILTER = 'estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%';
 
 interface OrderLite {
@@ -134,6 +146,8 @@ const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | '
   porCulpa: [],
   carriersProblematicos: [],
   ciudadesProblematicas: [],
+  muestraParcial: false,
+  telefonosOmitidos: 0,
 };
 
 /**
@@ -195,17 +209,36 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       const pend = (pendRes.data ?? []) as PendOrder[];
       const memberIds = (memberRes.data ?? []).map((m) => m.user_id as string);
 
-      // Teléfonos a enriquecer (de las marcas).
-      const phones = Array.from(new Set(tps.map((t) => t.phone))).slice(0, MAX_PHONES);
+      // Teléfonos a enriquecer (de las marcas). Se traen TODOS, en lotes: estas
+      // órdenes son el universo del desglose por culpa y de las tablas de
+      // transportadoras/ciudades problemáticas, así que un corte arbitrario
+      // volvería esas tasas una muestra disfrazada de total.
+      const allPhones = Array.from(new Set(tps.map((t) => t.phone)));
+      const phones = allPhones.slice(0, PHONE_BATCH * MAX_PHONE_BATCHES);
+      // Teléfonos que quedan FUERA del universo. Dos causas, mismo efecto sobre
+      // las tasas: los que cortó el tope de lotes y los de cualquier lote que la
+      // consulta no pudo leer (se suman abajo). Un lote fallido deja un hueco tan
+      // real como el tope: si no se contara, el hook reportaría "análisis
+      // completo" sobre un universo mutilado.
+      let telefonosOmitidos = allPhones.length - phones.length;
 
       // 4) Órdenes de esos teléfonos (estado real, novedad, valor, etc.).
-      const orderRes = phones.length
-        ? await supabase
-            .from('orders')
-            .select('id, phone, estado, novedad, last_movement_at, valor, transportadora, ciudad, nombre')
-            .eq('store_id', activeStoreId)
-            .in('phone', phones)
-        : { data: [] as OrderLite[] };
+      const orderRows: OrderLite[] = [];
+      for (let i = 0; i < phones.length; i += PHONE_BATCH) {
+        const batch = phones.slice(i, i + PHONE_BATCH);
+        const { data: rows, error: batchErr } = await supabase
+          .from('orders')
+          .select('id, phone, estado, novedad, last_movement_at, valor, transportadora, ciudad, nombre')
+          .eq('store_id', activeStoreId)
+          .in('phone', batch);
+        if (seq !== seqRef.current) return; // una carga más nueva ganó
+        if (batchErr || !rows) {
+          // El lote no se pudo leer: sus teléfonos no están en el universo.
+          telefonosOmitidos += batch.length;
+          continue;
+        }
+        orderRows.push(...(rows as OrderLite[]));
+      }
 
       // 5) Nombres del roster + operadores que marcaron.
       const operatorIds = Array.from(
@@ -221,7 +254,7 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       const memberSet = new Set(memberIds);
 
       // phone → mejor orden (movimiento más reciente).
-      const orders = (orderRes.data ?? []) as OrderLite[];
+      const orders = orderRows;
       const bestByPhone = new Map<string, OrderLite>();
       for (const o of orders) {
         const prev = bestByPhone.get(o.phone);
@@ -397,6 +430,8 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
         porCulpa,
         carriersProblematicos,
         ciudadesProblematicas,
+        muestraParcial: telefonosOmitidos > 0,
+        telefonosOmitidos,
       });
     } finally {
       if (seq === seqRef.current) setLoading(false);

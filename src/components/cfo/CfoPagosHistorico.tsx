@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   CheckCircle2, AlertCircle, Loader2, CreditCard, Calendar,
-  Calculator, TrendingDown, Zap,
+  Calculator, TrendingDown, Zap, AlertTriangle,
 } from 'lucide-react';
 import {
   usePersonalPaymentsList, usePersonalResidualDebt,
@@ -35,6 +35,12 @@ interface Props {
 
 export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
   const [trm, setTrm] = useState<number>(3800);
+  // La TRM arranca en un valor SUPUESTO (3800): nadie la midió, no viene de
+  // ninguna fuente, es el valor inicial del useState. Mientras el usuario no la
+  // fije a mano, todo total que mezcle dólares es una CONVERSIÓN estimada y no
+  // un saldo verificado — se marca con "≈" + nota en vez de mostrarse como
+  // cifra dura. Si todo está en COP la TRM no toca nada y la cifra sí es dura.
+  const [trmFijada, setTrmFijada] = useState<boolean>(false);
   const [pagoSimulado, setPagoSimulado] = useState<number>(0);
 
   const paymentsQuery = usePersonalPaymentsList();
@@ -52,6 +58,22 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
     () => residual.reduce((acc, r) => acc + (r.moneda === 'USD' ? r.saldo_pendiente * trm : r.saldo_pendiente), 0),
     [residual, trm],
   );
+
+  // Porción en dólares de cada lado: es la que depende de la TRM.
+  const usdPagado = useMemo(
+    () => pagos.reduce((acc, p) => acc + (p.moneda === 'USD' ? p.monto : 0), 0),
+    [pagos],
+  );
+  const usdFalta = useMemo(
+    () => residual.reduce((acc, r) => acc + (r.moneda === 'USD' ? r.saldo_pendiente : 0), 0),
+    [residual],
+  );
+  const pagadoEsEstimado = usdPagado > 0 && !trmFijada;
+  const faltaEsEstimado = usdFalta > 0 && !trmFijada;
+
+  const notaTrm = (usd: number) =>
+    `Incluye USD ${usd.toFixed(2)} convertido a TRM ${trm.toLocaleString('es-CO')}`
+    + (trmFijada ? ' (fijada a mano).' : ' — tasa supuesta, nadie la verificó.');
 
   // ─── Calculadora de pago ────────────────────────────────────────
   // El user pidió saber: si pago $X de un golpe, cuánto baja la deuda
@@ -74,6 +96,61 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
     );
   }
 
+  // Si la consulta FALLA los hooks caen a [] y el bloque mostraría "$0 pagado /
+  // $0 pendiente" o el cartel "Aún no hay datos, subí los extractos" — o sea,
+  // un error de lectura disfrazado de "no debés nada" / "no cargaste nada".
+  // Basta que UNA de las dos falle: media pantalla en $0 miente igual.
+  if (paymentsQuery.isError || residualQuery.isError) {
+    const err = (paymentsQuery.error ?? residualQuery.error) as Error | null;
+    return (
+      <div className="rounded-2xl border border-danger/40 bg-danger/5 p-6">
+        <div className="flex items-start gap-3">
+          <AlertTriangle size={18} className="text-danger shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-danger">
+              No pudimos cargar el histórico de pagos
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              {err?.message ?? 'Error desconocido'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              No mostramos totales para no dar una cifra que nadie pudo leer.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // React Query v5: si la consulta quedó PAUSADA (sin conexión — networkMode
+  // 'online' por defecto) el estado es status='pending' + fetchStatus='paused',
+  // o sea isLoading FALSE e isError FALSE, pero `data` sigue undefined y el
+  // `?? []` la vuelve lista vacía. Sin este corte se caía al empty state y la
+  // pantalla afirmaba "Aún no hay datos, subí los extractos" encima de una deuda
+  // real que sólo no se pudo leer.
+  // OJO: `data === undefined` es "nunca resolvió"; `data === []` es un cero
+  // MEDIDO (la consulta respondió y no hay filas) y sigue su curso normal.
+  if (paymentsQuery.data === undefined || residualQuery.data === undefined) {
+    return (
+      <div className="rounded-2xl border border-border bg-card/40 p-6">
+        <div className="flex items-start gap-3">
+          <AlertTriangle size={18} className="text-muted-foreground shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              Histórico de pagos sin cargar
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              La consulta quedó pendiente, normalmente por falta de conexión. No es que no haya datos: no los pudimos leer.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              No mostramos totales para no dar una cifra que nadie pudo leer.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (pagos.length === 0 && residual.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
@@ -91,7 +168,13 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
           <input
             type="number"
             value={trm}
-            onChange={e => setTrm(Number(e.target.value) || 3800)}
+            onChange={e => {
+              const v = Number(e.target.value);
+              setTrm(v || 3800);
+              // Solo cuenta como "fijada" si quedó un número usable; si borra el
+              // campo volvemos al supuesto 3800 y a marcar los totales como ≈.
+              setTrmFijada(Number.isFinite(v) && v > 0);
+            }}
             min={1000} max={10000} step={10}
             className="w-20 bg-card/40 border border-border rounded-lg px-2 py-1 text-xs font-mono tabular-nums hover:border-border-strong transition-colors"
           />
@@ -107,11 +190,16 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
               <CheckCircle2 size={14} /> YA PAGUÉ
             </div>
             <div className="text-3xl font-bold text-success font-mono tabular-nums">
-              {formatCOP(totalPagadoCop)}
+              {pagadoEsEstimado ? '≈ ' : ''}{formatCOP(totalPagadoCop)}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
               en {pagos.length} pago{pagos.length === 1 ? '' : 's'} hecho{pagos.length === 1 ? '' : 's'}
             </div>
+            {usdPagado > 0 && (
+              <div className="text-[11px] text-muted-foreground mt-1">
+                {notaTrm(usdPagado)}
+              </div>
+            )}
           </div>
 
           <div className="max-h-[420px] overflow-y-auto">
@@ -158,11 +246,16 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
               <AlertCircle size={14} /> ME FALTA
             </div>
             <div className="text-3xl font-bold text-danger font-mono tabular-nums">
-              {formatCOP(totalFaltaCop)}
+              {faltaEsEstimado ? '≈ ' : ''}{formatCOP(totalFaltaCop)}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
               en cuotas diferidas pendientes
             </div>
+            {usdFalta > 0 && (
+              <div className="text-[11px] text-muted-foreground mt-1">
+                {notaTrm(usdFalta)}
+              </div>
+            )}
           </div>
 
           <div className="max-h-[420px] overflow-y-auto">
@@ -216,6 +309,9 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
               <div className="text-[11px] text-muted-foreground -mt-1">
                 Si dejás todo en 36 cuotas al 25.5% EA pagás{' '}
                 <strong className="text-warning font-mono tabular-nums">+{formatCOP(interesTotalSiDejara)}</strong> de interés.
+                <span className="block mt-0.5">
+                  Proyección propia (interés simple sobre saldo promedio), no una cotización del banco.
+                </span>
               </div>
 
               {walletDisponible != null && (
@@ -228,12 +324,25 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
               {faltaParaLiquidar != null && faltaParaLiquidar > 0 && (
                 <div className="flex items-center justify-between text-xs bg-warning/[0.1] border border-warning/30 rounded-lg px-2.5 py-2">
                   <span className="text-warning">Falta acumular:</span>
-                  <span className="font-mono tabular-nums font-semibold text-warning">{formatCOP(faltaParaLiquidar)}</span>
+                  <span className="font-mono tabular-nums font-semibold text-warning">
+                    {faltaEsEstimado ? '≈ ' : ''}{formatCOP(faltaParaLiquidar)}
+                  </span>
                 </div>
               )}
+              {/* El veredicto compara el wallet REAL contra una deuda que, si hay
+                  dólares y nadie fijó la TRM, está convertida a una tasa supuesta.
+                  En ese caso se muestra en tono neutro: no es un "estás cubierto"
+                  verificado, es una comparación contra un número estimado. */}
               {faltaParaLiquidar === 0 && (
-                <div className="text-xs bg-success/[0.1] border border-success/30 rounded-lg px-2.5 py-2 text-success font-semibold">
+                <div className={faltaEsEstimado
+                  ? 'text-xs bg-foreground/[0.04] border border-border rounded-lg px-2.5 py-2 text-muted-foreground font-medium'
+                  : 'text-xs bg-success/[0.1] border border-success/30 rounded-lg px-2.5 py-2 text-success font-semibold'}>
                   ✓ Tenés cash en wallet para liquidar todo
+                  {faltaEsEstimado && (
+                    <span className="block font-normal mt-0.5">
+                      Estimado: la deuda en dólares se comparó a una TRM supuesta. Fijá la TRM para confirmarlo.
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -284,7 +393,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                   <div className="rounded-xl border border-danger/30 bg-danger/[0.07] p-2.5">
                     <div className="hud-label text-muted-foreground">Deuda restante</div>
                     <div className="font-mono tabular-nums font-semibold text-danger mt-1">
-                      {formatCOP(deudaRestante)}
+                      {faltaEsEstimado ? '≈ ' : ''}{formatCOP(deudaRestante)}
                     </div>
                     <div className="text-[10px] font-mono tabular-nums text-muted-foreground mt-0.5">
                       {pctLiquidado.toFixed(0)}% liquidado
@@ -296,7 +405,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                       {formatCOP(interesAhorrado)}
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5">
-                      vs dejar 36 cuotas
+                      vs dejar 36 cuotas · estimado
                     </div>
                   </div>
                 </div>

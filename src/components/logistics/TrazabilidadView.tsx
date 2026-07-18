@@ -129,12 +129,17 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
   // que "Tasa de despachos" del Simulador (unitEconomics.tasaDespachos). Antes
   // esta dividía por total+cancelados y las dos tabs mostraban hasta 11 puntos
   // de diferencia para la misma pregunta (auditoría 2026-07-07).
+  // `null` = denominador 0, o sea NO hay con qué calcular la tasa. Antes caían a
+  // 0 y la RateCard pintaba "0.0%" en verde (despacho) y "0.0%" en rojo
+  // (cancelación) para un rango SIN pedidos: un veredicto con color sobre un
+  // dato que no existe. Un 0 medido (hay pedidos y ninguno despachó) sigue
+  // siendo 0 y sigue pintándose con su tono (auditoría 2026-07-18).
   const tasaDespacho = totalActivos > 0
     ? (despachadasReales / totalActivos) * 100
-    : 0;
+    : null;
   const tasaCancelacion = totalEntrados > 0
     ? (cancelados / totalEntrados) * 100
-    : 0;
+    : null;
 
   // % por fila (sobre total despachadas)
   const pct = (n: number) => despachadasReales > 0 ? (n / despachadasReales) * 100 : 0;
@@ -143,10 +148,14 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
   // dividían por totalPendientes → tres denominadores en una columna que no
   // cerraba consigo misma (auditoría 2026-07-07).
   const pctPend = (n: number) => totalEntrados > 0 ? (n / totalEntrados) * 100 : 0;
-  // Distribución de valor pendiente proporcional (no tenemos breakdown por sub-tipo).
-  const valorPendDistr = (n: number) => totalPendientes > 0
-    ? valorPendientes * (n / totalPendientes)
-    : 0;
+  // NO hay valor por sub-tipo de pendiente: logistics_summary devuelve UN solo
+  // valor_pendientes agregado. Antes se repartía proporcional a la cantidad
+  // (valorPendientes * n / totalPendientes) y se pintaba igual que la fila TOTAL
+  // real — un número que no medía nada: era la cantidad de la columna de al lado
+  // reescalada, y asumía que el ticket promedio de "por confirmar" es igual al de
+  // "sin despachar" (falso: lo caro es justo lo que la asesora no logra cerrar).
+  // Ahora esas celdas van "—" y la plata se muestra SOLO en el total, que sí es
+  // medido (auditoría 2026-07-18).
 
   return (
     <div className="space-y-6">
@@ -178,14 +187,18 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
         <HeroKpi
           label="Despachados reales"
           value={despachadasReales.toLocaleString('es-CO')}
-          subline={`${tasaDespacho.toFixed(1)}% de generados sin cancelar`}
+          subline={tasaDespacho === null
+            ? 'Sin pedidos generados en el rango'
+            : `${tasaDespacho.toFixed(1)}% de generados sin cancelar`}
           tone="success"
           icon={PackageCheck}
         />
         <HeroKpi
           label="Cancelados"
           value={cancelados.toLocaleString('es-CO')}
-          subline={`${tasaCancelacion.toFixed(1)}% del total · ${formatCOP(valorCancelado)}`}
+          subline={tasaCancelacion === null
+            ? 'Sin pedidos en el rango'
+            : `${tasaCancelacion.toFixed(1)}% del total · ${formatCOP(valorCancelado)}`}
           tone="danger"
           icon={PackageX}
         />
@@ -273,14 +286,14 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
               <Row
                 tone="warning"
                 label="Pendientes (sin despachar)"
-                ventas={valorPendDistr(pendSinDespachar)}
+                ventas={null}
                 guias={pendSinDespachar}
                 pct={pctPend(pendSinDespachar)}
               />
               <Row
                 tone="info"
                 label="Pendientes por confirmar"
-                ventas={valorPendDistr(pendPorConfirmar)}
+                ventas={null}
                 guias={pendPorConfirmar}
                 pct={pctPend(pendPorConfirmar)}
               />
@@ -289,12 +302,20 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{formatCOP(valorPendientes)}</td>
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">{totalPendientes.toLocaleString('es-CO')}</td>
                 <td className="px-5 py-2.5 text-right font-mono font-bold tabular-nums text-foreground">
-                  {totalEntrados > 0 ? ((totalPendientes / totalEntrados) * 100).toFixed(1) : '0.0'}%
+                  {totalEntrados > 0
+                    ? `${((totalPendientes / totalEntrados) * 100).toFixed(1)}%`
+                    : <span className="text-muted-foreground/60" title="No hay pedidos en el rango: no hay sobre qué calcular el porcentaje">—</span>}
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p className="px-5 py-2.5 border-t border-border/60 text-[11px] text-muted-foreground">
+          El valor pendiente llega como un solo total: no hay desglose medido por tipo, por eso esas celdas van en “—”.
+          {migrationStale
+            ? ' La fila Total tampoco es confiable mientras falte aplicar la migration (ver aviso arriba).'
+            : ' La plata de la fila Total sí es real.'}
+        </p>
       </section>
 
       {enPreparacion > 0 && (
@@ -522,7 +543,8 @@ function HeroKpi({ label, value, subline, tone, icon: Icon }: HeroKpiProps) {
 interface RowProps {
   tone: 'success' | 'info' | 'warning' | 'danger';
   label: string;
-  ventas: number;
+  /** `null` = la fuente no reporta el valor de esta fila. Se muestra "—", nunca $0. */
+  ventas: number | null;
   guias: number;
   pct: number;
 }
@@ -536,7 +558,11 @@ function Row({ tone, label, ventas, guias, pct }: RowProps) {
   return (
     <tr className="border-b border-border/40 last:border-b-0">
       <td className={`px-5 py-2.5 font-semibold ${labelColor}`}>{label}</td>
-      <td className="px-5 py-2.5 text-right font-mono tabular-nums text-foreground">{formatCOP(ventas)}</td>
+      <td className="px-5 py-2.5 text-right font-mono tabular-nums text-foreground">
+        {ventas === null
+          ? <span className="text-muted-foreground/60" title="La fuente no desglosa el valor por tipo de pendiente">—</span>
+          : formatCOP(ventas)}
+      </td>
       <td className="px-5 py-2.5 text-right font-mono tabular-nums text-foreground">{guias.toLocaleString('es-CO')}</td>
       <td className="px-5 py-2.5 text-right font-mono tabular-nums text-muted-foreground">{pct.toFixed(1)}%</td>
     </tr>
@@ -545,23 +571,33 @@ function Row({ tone, label, ventas, guias, pct }: RowProps) {
 
 interface RateCardProps {
   label: string;
-  pct: number;
+  /** `null` = denominador 0: no hay con qué calcular. Se muestra "—" en tono
+   *  neutro, nunca "0.0%" con color de veredicto. Un 0 medido es `0`, no `null`. */
+  pct: number | null;
   subline: string;
   tone: 'success' | 'danger';
 }
 function RateCard({ label, pct, subline, tone }: RateCardProps) {
-  const styles = {
-    success: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent text-success',
-    danger:  'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent text-danger',
-  }[tone];
-  const textColor = tone === 'success' ? 'text-success' : 'text-danger';
+  const noData = pct === null;
+  const styles = noData
+    ? 'border-border bg-muted/10'
+    : {
+        success: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent text-success',
+        danger:  'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent text-danger',
+      }[tone];
+  const textColor = noData
+    ? 'text-muted-foreground'
+    : tone === 'success' ? 'text-success' : 'text-danger';
   return (
     <article className={`rounded-2xl border-2 ${styles} p-5`}>
       <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
         {label}
       </div>
-      <div className={`font-extrabold tabular-nums leading-none mt-2 text-4xl ${textColor}`}>
-        {pct.toFixed(1)}%
+      <div
+        className={`font-extrabold tabular-nums leading-none mt-2 text-4xl ${textColor}`}
+        title={noData ? 'No hay pedidos en el rango: no hay con qué calcular esta tasa' : undefined}
+      >
+        {noData ? '—' : `${pct.toFixed(1)}%`}
       </div>
       <div className="text-[11px] text-muted-foreground mt-2 tabular-nums">
         {subline}

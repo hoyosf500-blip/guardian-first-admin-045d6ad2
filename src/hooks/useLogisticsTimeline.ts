@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import type { TimelineEntry, TimelineFilters, LogisticsFilters } from '@/lib/logistics.types';
 
 interface RpcResult<T> {
@@ -56,11 +57,20 @@ export function useLogisticsTimeline(
   const transportadoraKey = transportadora?.trim() || null;
   const searchKey = search?.trim() || null;
 
+  // storeId en la key: logistics_timeline resuelve la tienda SERVER-side
+  // (_resolve_scope_store), así que sin esto un cambio de tienda servía el
+  // cache de la tienda anterior bajo la misma key — se veían las guías de
+  // Colombia rotuladas como el timeline de Ecuador. Mismo patrón que
+  // useLogisticsStats.ts y useCityList.ts.
+  const storeId = useActiveStoreId();
+  const storeKey = storeId ?? 'none';
+
   return useQuery<TimelineResult>({
     queryKey: [
-      'logistics', fromDate, toDate, 'timeline',
+      'logistics', storeKey, fromDate, toDate, 'timeline',
       estadosKey, transportadoraKey, searchKey, ciudadKey, page, pageSize,
     ],
+    enabled: Boolean(storeId),
     queryFn: async () => {
       const base = {
         p_from_date: fromDate,
@@ -93,6 +103,14 @@ export function useLogisticsTimeline(
     // El realtime de useLogisticsStats invalida toda la queryKey 'logistics'
     // cuando hay cambios en orders, así que aquí basta con un floor corto.
     staleTime: 30 * 1000,
-    placeholderData: (prev) => prev,
+    // Mantener las filas previas mientras se refetchea evita el parpadeo al
+    // pasar de página o cambiar un filtro DENTRO de la misma tienda. Pero al
+    // CAMBIAR de tienda ese mismo placeholder dejaba las guías de la tienda
+    // anterior en pantalla con `isLoading=false`, así que el skeleton de
+    // TrazabilidadView nunca disparaba y nada avisaba que lo mostrado no era
+    // de esta tienda. Solo reusamos el placeholder si venía de la MISMA tienda.
+    placeholderData: (prev, prevQuery) => (
+      prevQuery?.queryKey?.[1] === storeKey ? prev : undefined
+    ),
   });
 }

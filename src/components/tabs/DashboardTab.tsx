@@ -6,7 +6,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
 import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
-import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
+import { deriveDeliveryMaturity, isRatePreliminary } from '@/lib/logisticsRates';
+import { confRateBySample, CONF_TARGET_PCT, MATURITY_MIN_RESUELTOS } from '@/lib/confirmationRate';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -41,12 +42,23 @@ export default function DashboardTab() {
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [dbOrders, setDbOrders] = useState<Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }>>([]);
+  // El fetch pagina de a 1000 y cortaba con `break` silencioso ante cualquier
+  // error, dejando lo acumulado hasta ahí. Si fallaba la página 3 de 6, la
+  // pantalla rotulaba "Total pedidos" sobre una muestra truncada; si fallaba la
+  // página 1, mostraba 0 y todos los KPIs en cero. Se recuerda qué pasó para
+  // poder decirlo en pantalla en vez de hacer pasar el corte por un total.
+  const [dbOrdersCarga, setDbOrdersCarga] = useState<'ok' | 'parcial' | 'error'>('ok');
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [resyncing, setResyncing] = useState(false);
 
   // F5: operator ranking — today's results for ALL operators
-  interface OperatorStat { name: string; operatorId: string; conf: number; canc: number; noresp: number; total: number; tasa: number; }
+  // `tasa` es number|NULL a propósito: una operadora cuyo día fue todo N/R
+  // (conf=0, canc=0) NO tiene tasa de confirmación — nadie decidió nada. Pintarla
+  // "0% en rojo" la deja indistinguible de quien confirmó 0 de 30 resueltos, y es
+  // el dueño quien mira esta tabla para comparar rendimiento. `inmaduro` viaja
+  // aparte para no dar por concluyente un 100% sacado de 1 sola gestión.
+  interface OperatorStat { name: string; operatorId: string; conf: number; canc: number; noresp: number; total: number; tasa: number | null; inmaduro: boolean; resueltos: number; }
   const [operatorRanking, setOperatorRanking] = useState<OperatorStat[]>([]);
 
   // ─────────────────────────────────────────────────────────────
@@ -117,6 +129,11 @@ export default function DashboardTab() {
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
         .map(r => {
           const total = Number(r.conf) + Number(r.canc) + Number(r.noresp);
+          // Tasa MADURA conf÷(conf+canc), igual que toda la app (no ÷total).
+          // Se conserva el null y el flag `inmaduro` que devuelve el helper: el
+          // `?? 0` que había acá los aplastaba y la tabla emitía un veredicto
+          // rojo sobre una medición que no existía.
+          const rate = confRateBySample(Number(r.conf), Number(r.canc));
           return {
             operatorId: r.operator_id,
             name: r.display_name || 'Operador',
@@ -124,8 +141,9 @@ export default function DashboardTab() {
             canc: Number(r.canc),
             noresp: Number(r.noresp),
             total,
-            // Tasa MADURA conf÷(conf+canc), igual que toda la app (no ÷total).
-            tasa: confRateBySample(Number(r.conf), Number(r.canc)).tasa ?? 0,
+            tasa: rate.tasa,
+            inmaduro: rate.inmaduro,
+            resueltos: rate.resueltos,
           };
         });
       ranking.sort((a, b) => b.total - a.total);
@@ -142,13 +160,14 @@ export default function DashboardTab() {
       const allData: Array<{ producto: string; estado: string; valor: number; ciudad: string; transportadora: string }> = [];
       let from = 0;
       const pageSize = 1000;
+      let fallo = false;
       while (true) {
         if (cancelled) return;
         const { data, error } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
           .eq('store_id', activeStoreId)
           .order('created_at', { ascending: false })
           .range(from, from + pageSize - 1);
-        if (error) { console.error('Error loading orders:', error.message); break; }
+        if (error) { console.error('Error loading orders:', error.message); fallo = true; break; }
         if (!data || data.length === 0) break;
         allData.push(...data.map(o => ({
           producto: o.producto || 'Sin producto',
@@ -160,7 +179,10 @@ export default function DashboardTab() {
         if (data.length < pageSize) break;
         from += pageSize;
       }
-      if (!cancelled) setDbOrders(allData);
+      if (!cancelled) {
+        setDbOrders(allData);
+        setDbOrdersCarga(!fallo ? 'ok' : allData.length > 0 ? 'parcial' : 'error');
+      }
     };
     fetchAllOrders();
     return () => { cancelled = true; };
@@ -255,7 +277,26 @@ export default function DashboardTab() {
     return { ageMin, ageLabel, isError, healthy, warning, broken };
   }, [lastSync, nowTick]);
 
-  const hoyISO = new Date().toISOString().split('T')[0];
+  // ─────────────────────────────────────────────────────────────
+  // FECHAS: siempre calendario BOGOTÁ, nunca UTC.
+  //
+  // `new Date().toISOString()` da la fecha UTC. Entre las 19:00 y la medianoche
+  // de Bogotá la fecha UTC ya es la del día siguiente, así que:
+  //   · "hoy" apuntaba a MAÑANA → un bucket que por definición tiene 0 filas se
+  //     dibujaba como dato real y la operadora leía un desplome en su sparkline
+  //     justo cuando cierra la jornada;
+  //   · "ayer" (UTC − 1 día) apuntaba a HOY en Bogotá → el badge comparaba el día
+  //     contra sí mismo y siempre decía "sin cambio".
+  // counter / order_results / today_call_stats son todos hora Bogotá, igual que
+  // bogotaToday() (utils.ts). Se desplaza sobre la fecha CALENDARIO, sin volver
+  // a pasar por toISOString() de una hora local.
+  const shiftDiasISO = (iso: string, dias: number): string => {
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + dias);
+    return dt.toISOString().split('T')[0];
+  };
+  const hoyISO = bogotaToday();
 
   const chartData = useMemo(() => {
     // Generamos las N fechas (incluyendo hoy) y delegamos la dedup al
@@ -264,8 +305,7 @@ export default function DashboardTab() {
     // toca un solo lugar (computeDailyCounter) y el chart la hereda.
     const dates: string[] = [];
     for (let i = 0; i < period; i++) {
-      const d = new Date(); d.setDate(d.getDate() - (period - 1 - i));
-      dates.push(d.toISOString().split('T')[0]);
+      dates.push(shiftDiasISO(hoyISO, -(period - 1 - i)));
     }
     // Dos fuentes según el alcance, pero UN solo formato de salida para que
     // todo lo de abajo (gráficos, sparklines, KPIs) no sepa de dónde vino.
@@ -283,7 +323,12 @@ export default function DashboardTab() {
         // Marca el día de hoy para poder resaltarlo en el gráfico. Con 30 días
         // seleccionados, sin esto la operadora no sabe cuál barra es la suya.
         esHoy: date === hoyISO,
-        ...d, tasa: confRateBySample(d.conf, d.canc).tasa ?? 0, total: t
+        // tasa NULLABLE a propósito: un domingo, un festivo o un día sin cola no
+        // tiene tasa — nadie resolvió nada. El `?? 0` lo graficaba como 0%,
+        // visualmente idéntico a un día catastrófico donde se canceló todo, y el
+        // dueño leía desplomes de rendimiento que nunca ocurrieron. Con null,
+        // recharts corta la línea (connectNulls={false}) y el hueco dice la verdad.
+        ...d, tasa: confRateBySample(d.conf, d.canc).tasa, total: t
       };
     });
   }, [historyData, equipoDiario, verEquipo, period, hoyISO]);
@@ -291,15 +336,19 @@ export default function DashboardTab() {
   // Comparativo de ayer. Usa la MISMA fn que CounterBar (computeDailyCounter)
   // para que "ayer" en el dashboard nunca diverja del cierre real del día.
   const yesterdayData = useMemo(() => {
-    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-    const yd = yesterday.toISOString().split('T')[0];
+    const yd = shiftDiasISO(hoyISO, -1);
     const r = verEquipo ? equipoDiario.find(e => e.fecha === yd) : null;
     const { conf, canc, noresp } = verEquipo
       ? { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0 }
       : computeDailyCounter(historyData, yd);
     const total = conf + canc + noresp;
-    return { conf, canc, noresp, total, tasa: confRateBySample(conf, canc).tasa ?? 0 };
-  }, [historyData, equipoDiario, verEquipo]);
+    // tasa NULLABLE: si ayer no hubo NINGÚN resuelto (domingo, festivo, franco,
+    // primer día de la operadora) no existe base contra la cual comparar.
+    // TrendBadge ya trae el guard correcto (`previous === null` → no dibuja
+    // nada); el `?? 0` que había acá era justamente lo que lo desactivaba, y la
+    // píldora terminaba anunciando "+85% vs ayer" contra un 0% que nadie midió.
+    return { conf, canc, noresp, total, tasa: confRateBySample(conf, canc).tasa };
+  }, [historyData, equipoDiario, verEquipo, hoyISO]);
 
   const sparkData = useMemo(() => {
     const last7 = chartData.slice(-7);
@@ -329,6 +378,18 @@ export default function DashboardTab() {
   const tasaInfo = confRateBySample(hoy.conf, hoy.canc);
   const tasa = tasaInfo.tasa ?? 0;
   const tasaSinBase = tasaInfo.tasa === null || tasaInfo.inmaduro;
+  // `sinResueltos` es MÁS FUERTE que `tasaSinBase`: no es "muestra chica", es que
+  // NO HAY MEDICIÓN (conf+canc === 0). Con muestra chica el aro sigue mostrando
+  // un número que sí se midió (y el chip avisa que no concluye); sin resueltos,
+  // cualquier cifra en el aro es inventada — va "—".
+  const sinResueltos = tasaInfo.tasa === null;
+  // Cierre de turno: SIEMPRE personal (counter), nunca el alcance en pantalla.
+  // El mensaje ya lista counter.conf/canc/noresp, pero la tasa y el total salían
+  // de `hoy`, que en modo Equipo es la tienda entera: el jefe recibía "Conf: 5 …
+  // Tasa: 78%" mezclando dos universos. Nullable para no firmar un 0% inventado.
+  const cierreInfo = confRateBySample(counter.conf, counter.canc);
+  const cierreTotal = counter.conf + counter.canc + counter.noresp;
+  const cierreTasaTexto = cierreInfo.tasa === null ? 'sin resueltos aún' : `${cierreInfo.tasa}%`;
   const pendLeft = workQueue.filter(o => !o.result).length;
   // Cuando NO se pudo leer al equipo, las cifras de arriba son ceros de relleno.
   // Se usa para no pintarlas como si fueran una medición.
@@ -352,17 +413,29 @@ export default function DashboardTab() {
   [allOrders, dbOrders]);
 
   const totalOrders = ordersForStats.length;
+  // `allOrders` NO es "todos los pedidos de la tienda": OrderContext lo llena
+  // con la cola de PENDIENTE CONFIRMACION (o con lo que se subió por Excel).
+  // Mientras esa cola exista, `totalOrders` cuenta la COLA — llamarlo "Total
+  // pedidos" le dice al dueño que su tienda tiene 53 pedidos cuando tiene 53
+  // SIN CONFIRMAR. Solo es el universo cuando sale de `dbOrders` y la
+  // paginación no se cortó; en cualquier otro caso es una muestra y se rotula
+  // como tal.
+  const totalEsUniverso = allOrders.length === 0 && dbOrdersCarga === 'ok';
 
   const prods = useMemo(() => {
-    const byProd: Record<string, { total: number; entreg: number; canc: number; nov: number }> = {};
+    // `devol` es nuevo y NO cambia ninguna cifra existente: se usa solo para
+    // saber cuántos pedidos del producto llegaron a un desenlace FINAL, y así
+    // poder decir cuándo la columna "Efect." todavía no concluye nada.
+    const byProd: Record<string, { total: number; entreg: number; canc: number; nov: number; devol: number }> = {};
     ordersForStats.forEach(o => {
       const p = o.producto || 'Sin producto';
-      if (!byProd[p]) byProd[p] = { total: 0, entreg: 0, canc: 0, nov: 0 };
+      if (!byProd[p]) byProd[p] = { total: 0, entreg: 0, canc: 0, nov: 0, devol: 0 };
       byProd[p].total++;
       const e = (o.estado || '').toUpperCase();
       if (e.includes('ENTREGAD')) byProd[p].entreg++;
       else if (e.includes('CANCEL')) byProd[p].canc++;
       else if (e.includes('NOVEDAD')) byProd[p].nov++;
+      else if (e.includes('DEVOL')) byProd[p].devol++;
     });
     return Object.entries(byProd).sort((a, b) => b[1].total - a[1].total);
   }, [ordersForStats]);
@@ -417,12 +490,12 @@ export default function DashboardTab() {
   };
   const copiarResumen = () => {
     void copyToClipboard(
-      `Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTasa: ${tasa}%\nPendientes: ${pendLeft}\nTotal: ${total}`,
+      `Cierre — ${formatDateES(hoyISO)}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTasa: ${cierreTasaTexto}\nPendientes: ${pendLeft}\nTotal: ${cierreTotal}`,
       'Copiado al portapapeles',
     );
   };
   const enviarWA = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(new Date().toISOString().split('T')[0])}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal: ${total} | Tasa: ${tasa}%\nPendientes: ${pendLeft}`)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(hoyISO)}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal: ${cierreTotal} | Tasa: ${cierreTasaTexto}\nPendientes: ${pendLeft}`)}`, '_blank');
   };
 
   // Chart theming uses HSL CSS vars so dark/light modes adapt automatically.
@@ -538,7 +611,9 @@ export default function DashboardTab() {
             {greeting}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {formatDateES(new Date().toISOString().split('T')[0])} · Tu progreso del día y tendencia reciente.
+            {/* hoyISO, no toISOString(): a partir de las 19:00 de Bogotá el
+                encabezado anunciaba la fecha de MAÑANA sobre las cifras de hoy. */}
+            {formatDateES(hoyISO)} · Tu progreso del día y tendencia reciente.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -546,7 +621,7 @@ export default function DashboardTab() {
           <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-card/40 border border-border text-xs text-muted-foreground">
             <CalendarIcon size={13} className="text-accent" aria-hidden="true" />
             <span className="font-mono tabular-nums">
-              {new Date().toLocaleDateString('es-CO', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+              {new Date().toLocaleDateString('es-CO', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'America/Bogota' })}
             </span>
           </span>
           {/* Alcance: solo para quien manda en la tienda. La asesora no lo ve
@@ -656,6 +731,32 @@ export default function DashboardTab() {
         </motion.div>
       )}
 
+      {/* La base de "Total pedidos", "Detalle por producto" y el desglose por
+          estado se pagina de a 1000. Si una página falla, el conteo deja de ser
+          un total y pasa a ser una muestra cortada — y sin este aviso la
+          pantalla la presentaba como si fuera el universo completo. Solo aplica
+          cuando esas cifras SALEN de `dbOrders` (con `allOrders` en memoria, la
+          fuente es otra y el corte no las afecta). */}
+      {allOrders.length === 0 && dbOrdersCarga !== 'ok' && (
+        <motion.div {...fadeUp(0.04)} className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 ${
+          dbOrdersCarga === 'error' ? 'border-danger/30 bg-danger/10' : 'border-warning/30 bg-warning/10'
+        }`}>
+          <CloudOff size={16} className={`mt-0.5 flex-shrink-0 ${dbOrdersCarga === 'error' ? 'text-danger' : 'text-warning'}`} aria-hidden="true" />
+          <div className="text-[11px] leading-relaxed">
+            <span className={`font-semibold ${dbOrdersCarga === 'error' ? 'text-danger' : 'text-warning'}`}>
+              {dbOrdersCarga === 'error'
+                ? 'No se pudieron cargar los pedidos.'
+                : 'Datos parciales: no se pudieron cargar todos los pedidos.'}
+            </span>{' '}
+            <span className="text-muted-foreground">
+              {dbOrdersCarga === 'error'
+                ? 'Los ceros de "Pedidos cargados", el detalle por producto y el desglose por estado NO significan que no haya pedidos: significan que no se pudo leer la base. Recargá la página.'
+                : 'Las cifras de "Pedidos cargados", el detalle por producto y el desglose por estado salen de una muestra cortada, no del total. Recargá la página para verlas completas.'}
+            </span>
+          </div>
+        </motion.div>
+      )}
+
       {!hasData ? (
         /* Empty state */
         <motion.div {...fadeUp(0.05)} className="flex flex-col items-center justify-center py-20 text-center">
@@ -690,11 +791,42 @@ export default function DashboardTab() {
                 >
                   {verEquipo ? 'Tasa del equipo' : 'Tasa personal'}
                 </div>
-                <TrendBadge current={tasa} previous={yesterdayData.tasa} suffix="%" />
+                {/* Sin resueltos HOY no hay `current` que comparar: el delta
+                    sería tan inventado como el que producía el `?? 0` de ayer. */}
+                <TrendBadge current={tasa} previous={sinResueltos ? null : yesterdayData.tasa} suffix="%" />
               </div>
 
               <div className="flex justify-center py-4 tilt-layer-3">
-                <GaugeRing value={tasa} label="confirmación" size={190} />
+                {/* Sin un solo pedido resuelto, el aro marcaba 0% — una cifra que
+                    nadie midió, con el mismo peso visual que un 0% real. Va "—"
+                    en tono neutro: no sabemos nada todavía, y eso no es un mal
+                    resultado. Mismo patrón que el gauge de CustomerHistoryCard. */}
+                {sinResueltos ? (
+                  <div
+                    className="flex flex-col items-center justify-center rounded-full border border-dashed border-border bg-muted/20 text-center px-6"
+                    style={{ width: 190, height: 190 }}
+                    role="img"
+                    aria-label={datosIncompletos
+                      ? 'Tasa de confirmación: no se pudieron leer los datos del equipo'
+                      : 'Tasa de confirmación sin datos todavía'}
+                  >
+                    <span className="text-5xl font-bold text-muted-foreground leading-none">—</span>
+                    <span className="hud-label mt-3">confirmación</span>
+                    {/* Cuando la consulta del equipo falló, `hoy` son ceros de
+                        relleno: decir "Sin pedidos resueltos hoy" sería afirmar
+                        un hecho sobre la operación que NO se midió. Son dos
+                        cosas distintas y la leyenda tiene que distinguirlas. */}
+                    <span className="text-[11px] text-muted-foreground mt-1.5 leading-snug">
+                      {!datosIncompletos
+                        ? 'Sin pedidos resueltos hoy'
+                        : equipoEstado === 'error'
+                          ? 'No se pudieron leer los datos del equipo'
+                          : 'Datos del equipo sin cargar'}
+                    </span>
+                  </div>
+                ) : (
+                  <GaugeRing value={tasa} label="confirmación" size={190} />
+                )}
               </div>
 
               {/* Este panel mide la tasa PERSONAL del usuario que está mirando
@@ -734,7 +866,14 @@ export default function DashboardTab() {
                     un dato que no concluye nada. Se dice cuántas hay y ya. */}
                 {tasaSinBase ? (
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-muted/50 border border-border text-muted-foreground">
-                    Muestra insuficiente · {tasaInfo.resueltos} {tasaInfo.resueltos === 1 ? 'gestión resuelta' : 'gestiones resueltas'} hoy
+                    {/* Con la consulta del equipo caída, "0 gestiones resueltas
+                        hoy" es una afirmación sobre la operación que nadie midió
+                        — y contradice el banner rojo de acá arriba. */}
+                    {!datosIncompletos
+                      ? <>Muestra insuficiente · {tasaInfo.resueltos} {tasaInfo.resueltos === 1 ? 'gestión resuelta' : 'gestiones resueltas'} hoy</>
+                      : equipoEstado === 'error'
+                        ? 'Sin medición · no se pudieron leer los datos del equipo'
+                        : 'Sin medición · datos del equipo sin cargar'}
                   </div>
                 ) : (
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
@@ -801,7 +940,10 @@ export default function DashboardTab() {
               // prev: null — no hay conteo de "total de pedidos de ayer" en los
               // datos que carga esta pantalla. Antes decía 0, que no es "sin
               // dato": es un dato FALSO que produciría un delta inventado.
-              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: null, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
+              // El rótulo solo dice "Total" cuando la cifra ES el total: si la
+              // fuente es la cola en memoria, o la paginación se cortó, lo que
+              // se ve es una muestra y se llama por su nombre.
+              { icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k) => (
               <StatTile
                 key={k.label}
@@ -825,6 +967,9 @@ export default function DashboardTab() {
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                   <Activity size={14} className="text-accent" aria-hidden="true" /> Tasa de confirmación
                 </h3>
+                <span className="text-[10px] text-muted-foreground" title="Los días sin ningún pedido resuelto (domingos, festivos, días sin cola) no tienen tasa: la línea se corta en vez de caer a 0%.">
+                  días sin resueltos = sin línea
+                </span>
               </div>
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
@@ -842,8 +987,19 @@ export default function DashboardTab() {
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={tickStyle} axisLine={false} tickLine={false} unit="%" />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v}%`, 'Tasa']} />
-                    <Area type="monotone" dataKey="tasa" stroke="url(#tGradLine)" strokeWidth={3} strokeLinecap="round" fill="url(#tGrad)" style={{ filter: `drop-shadow(0 0 8px ${CHART_ACCENT})` }} dot={(p: { cx?: number; cy?: number; index?: number }) => p.index === chartData.length - 1
+                    {/* "sin datos" y no "0%": ese día no hubo nada que medir.
+                        filterNull={false} es OBLIGATORIO: recharts descarta por
+                        defecto las entradas con valor null, así que el formatter
+                        de abajo nunca llegaba a correr y al pasar el mouse por
+                        un hueco no aparecía nada — el día quedaba sin explicar. */}
+                    <Tooltip contentStyle={tooltipStyle} filterNull={false} formatter={(v: number | null) => [v == null ? 'sin datos' : `${v}%`, 'Tasa']} />
+                    {/* connectNulls={false}: el hueco de un día sin resueltos
+                        queda VISIBLE. Unir los extremos dibujaría una pendiente
+                        que atraviesa un día que nadie midió. */}
+                    <Area type="monotone" dataKey="tasa" connectNulls={false} stroke="url(#tGradLine)" strokeWidth={3} strokeLinecap="round" fill="url(#tGrad)" style={{ filter: `drop-shadow(0 0 8px ${CHART_ACCENT})` }} dot={(p: { cx?: number; cy?: number; index?: number }) => (p.index != null && chartData[p.index]?.tasa == null)
+                      // Sin dato no hay punto: un dot sobre el eje se leería como 0%.
+                      ? <g key={`dot-${p.index}`} />
+                      : p.index === chartData.length - 1
                       // Punto final destacado: ancla la vista en el dato más reciente.
                       // El mockup usa fill:#fff, pero en tema claro la card es casi
                       // blanca y el punto desaparecería: se usa --background + aro cian.
@@ -960,10 +1116,17 @@ export default function DashboardTab() {
                   <tbody>
                     {operatorRanking.map((op, idx) => {
                       const isMe = op.operatorId === user?.id;
+                      // Sin resueltos (día entero de N/R) NO hay tasa que juzgar:
+                      // ni color ni cifra. Con muestra chica hay cifra pero no
+                      // veredicto — un 100% sacado de 1 gestión no es un 100%.
+                      const sinBase = op.tasa === null;
+                      const prelim = !sinBase && op.inmaduro;
                       // El umbral es de negocio (CONF_TARGET_PCT), no de
                       // presentación: verde en meta, ámbar en la banda "cerca",
                       // rojo debajo. Sin esto una tasa de 20% se ve igual que 90%.
-                      const tasaC = op.tasa >= CONF_TARGET_PCT ? 'text-success' : op.tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
+                      const tasaC = sinBase || prelim
+                        ? 'text-muted-foreground'
+                        : op.tasa >= CONF_TARGET_PCT ? 'text-success' : op.tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
                       return (
                         <tr
                           key={op.operatorId}
@@ -984,13 +1147,28 @@ export default function DashboardTab() {
                           <td className="px-3 py-2.5 text-center font-mono tabular-nums text-danger">{op.canc}</td>
                           <td className="px-3 py-2.5 text-center font-mono tabular-nums text-muted-foreground">{op.noresp}</td>
                           <td className="px-3 py-2.5 text-center font-mono tabular-nums text-foreground">{op.total}</td>
-                          <td className={`px-3 py-2.5 text-center font-mono tabular-nums font-bold ${tasaC}`}>{op.tasa}%</td>
+                          <td
+                            className={`px-3 py-2.5 text-center font-mono tabular-nums font-bold ${tasaC}`}
+                            title={sinBase
+                              ? 'Sin pedidos resueltos hoy (solo no respondió) — no hay tasa de confirmación que medir. Es contactabilidad, no calidad de venta.'
+                              : prelim
+                                ? `Preliminar: solo ${op.resueltos} ${op.resueltos === 1 ? 'pedido resuelto' : 'pedidos resueltos'} hoy — la tasa todavía no es concluyente`
+                                : undefined}
+                          >
+                            {sinBase ? '—' : `${op.tasa}%${prelim ? '·pr' : ''}`}
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+              {/* Sin esta línea, "—" y "·pr" son ruido. Con ella, la tabla dice
+                  cuándo NO está midiendo — que es la mitad de la verdad. */}
+              <p className="mt-3 text-[10px] text-muted-foreground leading-relaxed">
+                <span className="font-mono">—</span> sin pedidos resueltos hoy (solo no respondió): no hay tasa que medir.
+                {' '}<span className="font-mono">·pr</span> preliminar: menos de {MATURITY_MIN_RESUELTOS} resueltos, la tasa aún no concluye.
+              </p>
             </motion.div>
           )}
 
@@ -1030,13 +1208,30 @@ export default function DashboardTab() {
                         <th className="px-3 py-2.5 font-medium">Entreg.</th>
                         <th className="px-3 py-2.5 font-medium">Canc.</th>
                         <th className="px-3 py-2.5 font-medium">Nov.</th>
-                        <th className="px-3 py-2.5 font-medium">Efect.</th>
+                        <th
+                          className="px-3 py-2.5 font-medium"
+                          title="Entregados ÷ total del producto (incluye los que siguen en tránsito). «—» = ningún pedido concluido todavía; «·pr» = todavía queda buena parte del producto sin desenlace, la cifra puede moverse."
+                        >
+                          Efect.
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {prods.map(([name, d]) => {
                         const efect = d.total > 0 ? Math.round(d.entreg / d.total * 100) : 0;
-                        const ec = efect >= 55 ? 'text-success' : efect >= 40 ? 'text-warning' : 'text-danger';
+                        // La FÓRMULA no cambia (sigue siendo entregados ÷ total,
+                        // igual que siempre) — lo que cambia es cuándo se emite
+                        // veredicto sobre ella. Un producto lanzado esta semana,
+                        // con 30 despachos y ninguno cerrado, marcaba 0% en ROJO:
+                        // se lee "este producto no entrega" cuando lo cierto es
+                        // "todavía no se resolvió ninguno". Mismo criterio de
+                        // madurez que CarrierStatsTable (deriveDeliveryMaturity).
+                        const mad = deriveDeliveryMaturity(d.entreg, d.devol, d.total);
+                        const sinConcluidos = mad.resueltos === 0;
+                        const prelim = !sinConcluidos && isRatePreliminary(mad);
+                        const ec = sinConcluidos || prelim
+                          ? 'text-muted-foreground'
+                          : efect >= 55 ? 'text-success' : efect >= 40 ? 'text-warning' : 'text-danger';
                         return (
                           <tr key={name} className="border-b border-border last:border-0 hover:bg-card transition-colors duration-200">
                             <td className="px-5 py-2.5 font-medium max-w-[160px]">
@@ -1046,7 +1241,22 @@ export default function DashboardTab() {
                             <td className="px-3 py-2.5 text-center font-mono tabular-nums text-success">{d.entreg}</td>
                             <td className="px-3 py-2.5 text-center font-mono tabular-nums text-danger">{d.canc}</td>
                             <td className="px-3 py-2.5 text-center font-mono tabular-nums text-warning">{d.nov}</td>
-                            <td className={`px-3 py-2.5 text-center font-mono tabular-nums font-bold ${ec}`}>{efect}%</td>
+                            <td
+                              className={`px-3 py-2.5 text-center font-mono tabular-nums font-bold ${ec}`}
+                              title={sinConcluidos
+                                ? 'Ningún pedido de este producto llegó todavía a entrega ni devolución — no hay efectividad que medir'
+                                : prelim
+                                  // Se dicen los HECHOS (cuántos concluyeron de
+                                  // cuántos) y no un veredicto sobre la calidad
+                                  // estadística: "aún no es confiable" era falso
+                                  // en cohortes grandes, donde el % concluido
+                                  // baja por los cancelados/pendientes y no por
+                                  // falta de muestra.
+                                  ? `Preliminar: ${mad.resueltos} de ${d.total} pedidos llegaron a entrega o devolución (${mad.pctConcluido}%). El resto sigue sin desenlace logístico, así que esta cifra todavía puede moverse.`
+                                  : undefined}
+                            >
+                              {sinConcluidos ? '—' : `${efect}%${prelim ? '·pr' : ''}`}
+                            </td>
                           </tr>
                         );
                       })}
@@ -1062,7 +1272,7 @@ export default function DashboardTab() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="hud-label">Resumen del día</h3>
-                <p className="text-[10px] text-muted-foreground/70 mt-1 font-mono tabular-nums">{formatDateES(new Date().toISOString().split('T')[0])}</p>
+                <p className="text-[10px] text-muted-foreground/70 mt-1 font-mono tabular-nums">{formatDateES(hoyISO)}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

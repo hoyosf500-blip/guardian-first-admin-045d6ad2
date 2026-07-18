@@ -152,6 +152,11 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const usingCohorte = isSingleMonth && !cohorte.isError && cohorte.data?.operativo != null;
   const operativoBase = usingCohorte ? cohorte.data!.operativo : gananciaNeta;
   const operativoLoading = cohorte.isLoading || gananciaLoading;
+  // La base cayó al wallet Y el wallet FALLÓ: `gananciaNeta` es 0 por el `?? 0`
+  // de arriba, no por una medición. Sin este flag el tile pinta "$0" en verde,
+  // indistinguible de un período real sin caja — y contradice al aviso de error
+  // que la card "Wallet REAL" de al lado ya muestra. Mismo caso que FinanzasTab.
+  const operativoSinDato = !usingCohorte && gananciaError;
   const movimientosSinLink = usingCohorte ? (cohorte.data?.movimientos_sin_link ?? 0) : 0;
   const valorPreparacion = full?.valorPreparacion ?? 0;
   const valorOtros = full?.valorOtros ?? 0;
@@ -291,21 +296,28 @@ export default function MesActualResumen({ summary, filters }: Props) {
           tone="accent"
           hint="solo despachado (sin pend./prep./rechazo) · = Dropi"
         />
+        {/* El hint es 0/0 cuando no hay pedidos sin cancelar: `pctOf` devuelve 0
+            y el tile decía "0% completado", que se lee como "no entregamos
+            nada" cuando en realidad no hay denominador. */}
         <KpiCard
           label="Entregados"
           value={entregadoCount.toLocaleString('es-CO')}
           icon={CheckCircle2}
           tone="success"
-          hint={`${pctCompletado.toFixed(0)}% completado`}
+          hint={generadosSinCancel > 0
+            ? `${pctCompletado.toFixed(0)}% completado`
+            : '— sin base para el %'}
         />
         {/* OPERATIVO_BASE — ver const operativoBase arriba: cohorte de pedido
             (reconcilia con la "Utilidad Total" de Dropi), con fallback al wallet. */}
         <KpiCard
           label={usingCohorte ? 'Operativo del mes' : 'Caja del período'}
-          value={operativoLoading ? '…' : formatCOP(operativoBase)}
+          value={operativoLoading ? '…' : operativoSinDato ? '—' : formatCOP(operativoBase)}
           icon={Wallet}
-          tone={walletStale ? 'warning' : operativoBase >= 0 ? 'success' : 'danger'}
-          hint={walletStale
+          tone={operativoSinDato || walletStale ? 'warning' : operativoBase >= 0 ? 'success' : 'danger'}
+          hint={operativoSinDato
+            ? '⚠ no se pudo cargar la caja del wallet — no es $0 real'
+            : walletStale
             ? '⚠ wallet viejo, sincronizá'
             : usingCohorte
               ? 'pedidos del mes · realizado a hoy'
@@ -430,6 +442,26 @@ export default function MesActualResumen({ summary, filters }: Props) {
               Solo con rango de MES COMPLETO: la pauta/admin son inputs mensuales
               y en un sub-rango restarían el mes entero de la caja de una semana. */}
           {isSingleMonth ? (
+            /* Mientras el operativo CARGA, `operativoBase` todavía es 0 (ninguna
+               de las dos queries respondió): la card mostraría "Neto real
+               −$pauta −admin", una PÉRDIDA en pesos que nadie midió, y el bloque
+               de error de abajo podría dispararse aunque el cohorte esté por
+               llegar bien. Skeleton primero — mismo patrón que "Wallet REAL". */
+            operativoLoading ? (
+              <div className="h-24 animate-pulse bg-muted/30 rounded-2xl" />
+            ) : operativoSinDato ? (
+              /* Sin operativo medido, el Neto Real (operativo − pauta − admin)
+                 sería 0 − pauta − admin = una PÉRDIDA en pesos que nadie midió.
+                 Preferimos no mostrar la cifra y decir por qué. */
+              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 flex items-start gap-2">
+                <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
+                <p className="text-[11px] text-warning leading-relaxed">
+                  No se pudo cargar el <strong>operativo del mes</strong>, así que el{' '}
+                  <strong>Neto Real</strong> no se muestra: restarle pauta y admin a una base
+                  que no se pudo medir daría una pérdida inventada. Recargá o tocá Sincronizar.
+                </p>
+              </div>
+            ) : (
             <NetoRealCard
               operativo={operativoBase}
               yearMonth={yearMonth}
@@ -439,6 +471,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
               pedidosEnCalle={enLaCalleCount}
               movimientosSinLink={movimientosSinLink}
             />
+            )
           ) : (
             <p className="text-[11px] text-muted-foreground">
               El <strong className="text-foreground">Neto Real</strong> (operativo − pauta − admin) se calcula

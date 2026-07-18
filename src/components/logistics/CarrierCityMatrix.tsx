@@ -1,7 +1,12 @@
 import { memo, useMemo } from 'react';
 import { Grid3x3, Info } from 'lucide-react';
 import { useCityCarrierMatrix } from '@/hooks/useCityCarrierMatrix';
-import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
+import {
+  deriveDeliveryMaturity,
+  isRatePreliminary,
+  MIN_RESUELTOS_CONFIABLE,
+  DELIVERY_MATURITY_THRESHOLD,
+} from '@/lib/logisticsRates';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 
 interface Props {
@@ -33,7 +38,17 @@ export default memo(function CarrierCityMatrix({
       ciudad: string;
       departamento: string;
       total: number;
-      byCarrier: Record<string, { tasa: number; total: number; entregados: number }>;
+      byCarrier: Record<string, {
+        /** null = todavía no hay NINGÚN desenlace (ni entregado ni devuelto). */
+        tasa: number | null;
+        total: number;
+        entregados: number;
+        resueltos: number;
+        /** (entregados+devueltos+rechazados) ÷ total. Para decir POR QUÉ es prelim. */
+        pctConcluido: number;
+        /** muestra chica o cohorte sin concluir → no pintar verde/rojo. */
+        prelim: boolean;
+      }>;
     }>();
 
     for (const r of data) {
@@ -43,11 +58,20 @@ export default memo(function CarrierCityMatrix({
       // tránsito) — la misma que usa la tabla de recomendaciones de arriba.
       // Antes acá iba r.tasa_entrega cruda del RPC (÷ COUNT con tránsito) y el
       // heatmap pintaba rojo a carriers que la tabla declaraba óptimos.
+      // `tasaEntregaMadura` es null A PROPÓSITO cuando no hay resueltos. Antes se
+      // aplastaba con `?? 0` y una celda 100% en tránsito se pintaba "0% rojo",
+      // igual que una transportadora que efectivamente falló todo. Se propaga el
+      // null y el render lo muestra como "—" neutro.
       const m = deriveDeliveryMaturity(r.entregados, r.devueltos, r.total_pedidos, r.rechazados ?? 0);
       const cell = {
-        tasa: m.tasaEntregaMadura ?? 0,
+        tasa: m.tasaEntregaMadura,
         total: r.total_pedidos,
         entregados: r.entregados,
+        resueltos: m.resueltos,
+        pctConcluido: m.pctConcluido,
+        // Mismo criterio que la tabla de transportadoras y el piso de muestra del
+        // ranking de recomendaciones (MIN_RESUELTOS_RANK = MIN_RESUELTOS_CONFIABLE).
+        prelim: isRatePreliminary(m),
       };
       const existing = cityMap.get(key);
       if (existing) {
@@ -127,6 +151,12 @@ export default memo(function CarrierCityMatrix({
             Sin datos
           </span>
         </div>
+        <p className="text-[10px] text-muted-foreground mt-1.5">
+          Gris con “—” = todavía sin entregas ni devoluciones que midan a la transportadora
+          (los rechazos del cliente no cuentan): no hay tasa, no es 0%.
+          Gris con “prelim.” = menos de {MIN_RESUELTOS_CONFIABLE} pedidos concluidos
+          o menos del {DELIVERY_MATURITY_THRESHOLD}% del cohorte concluido: la tasa aún no es confiable.
+        </p>
       </header>
 
       <div className="overflow-x-auto">
@@ -175,15 +205,52 @@ export default memo(function CarrierCityMatrix({
                       </td>
                     );
                   }
-                  const { bg, ring, text } = cellStyle(cell.tasa);
+                  // Sin desenlaces todavía: nada entregado NI devuelto. No hay tasa
+                  // que mostrar — neutro, nunca rojo (no sabemos si va bien o mal).
+                  if (cell.tasa == null) {
+                    return (
+                      <td
+                        key={c}
+                        className="px-2 py-2 text-center bg-muted/20 ring-1 ring-border"
+                        title={`${c} en ${row.ciudad}: todavía sin entregas ni devoluciones que midan a la transportadora sobre ${cell.total} despachados. No hay tasa que mostrar (no es 0%).`}
+                      >
+                        <div className="font-mono font-bold tabular-nums text-xs text-muted-foreground">
+                          —
+                        </div>
+                        <div className="text-[9px] text-muted-foreground tabular-nums">
+                          {cell.total}
+                        </div>
+                      </td>
+                    );
+                  }
+                  const { bg, ring, text } = cell.prelim ? PRELIM_STYLE : cellStyle(cell.tasa);
+                  const baseTitle = `${c} en ${row.ciudad}: ${cell.entregados}/${cell.total} entregados (${cell.tasa.toFixed(1)}%)`;
+                  // El % NO es entregados÷total: es la tasa MADURA (÷ concluidos, sin
+                  // tránsito ni rechazos). Sin esta aclaración el tooltip se lee
+                  // "6/12 entregados (100.0%)" y la fracción no produce el número.
+                  const denomNote = ` · el % es sobre ${cell.resueltos} concluido${cell.resueltos === 1 ? '' : 's'} (entregados+devueltos), no sobre ${cell.total}`;
+                  // Motivo REAL del "prelim.": muestra chica, cohorte sin concluir, o ambos.
+                  const prelimReasons = [
+                    cell.resueltos < MIN_RESUELTOS_CONFIABLE
+                      ? `solo ${cell.resueltos} concluido${cell.resueltos === 1 ? '' : 's'} (mínimo ${MIN_RESUELTOS_CONFIABLE})`
+                      : null,
+                    cell.pctConcluido < DELIVERY_MATURITY_THRESHOLD
+                      ? `el cohorte concluyó ${cell.pctConcluido}% (mínimo ${DELIVERY_MATURITY_THRESHOLD}%)`
+                      : null,
+                  ].filter(Boolean).join(' y ');
                   return (
                     <td
                       key={c}
                       className={`px-2 py-2 text-center ${bg} ${ring} ring-1`}
-                      title={`${c} en ${row.ciudad}: ${cell.entregados}/${cell.total} entregados (${cell.tasa.toFixed(1)}%)`}
+                      title={
+                        cell.prelim
+                          ? `${baseTitle}${denomNote} · Preliminar: ${prelimReasons}, la tasa todavía no es confiable`
+                          : `${baseTitle}${denomNote}`
+                      }
                     >
                       <div className={`font-mono font-bold tabular-nums text-xs ${text}`}>
                         {cell.tasa.toFixed(0)}%
+                        {cell.prelim && <span className="font-normal text-[9px]"> prelim.</span>}
                       </div>
                       <div className="text-[9px] text-muted-foreground tabular-nums">
                         {cell.total}
@@ -199,6 +266,16 @@ export default memo(function CarrierCityMatrix({
     </div>
   );
 });
+
+/** Celda con tasa calculada pero NO confiable (muestra chica o cohorte en
+ *  tránsito): se muestra el número, en tono neutro y marcado "prelim." — pintarla
+ *  verde/roja sería un veredicto sobre ruido estadístico. Mismo criterio que la
+ *  tabla de transportadoras. */
+const PRELIM_STYLE = {
+  bg: 'bg-muted/20',
+  ring: 'ring-border',
+  text: 'text-muted-foreground',
+} as const;
 
 function cellStyle(tasa: number): { bg: string; ring: string; text: string } {
   if (tasa >= 80) {

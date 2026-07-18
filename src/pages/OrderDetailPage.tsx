@@ -134,6 +134,9 @@ export default function OrderDetailPage() {
 
   const [order, setOrder] = useState<OrderRow | null>(null);
   const [loading, setLoading] = useState(true);
+  // Distingue "la consulta falló" de "el pedido no existe": sin esto, un error
+  // de red/RLS se mostraba como el veredicto "Pedido no encontrado".
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [touchpoints, setTouchpoints] = useState<Touchpoint[]>([]);
   const [orderResults, setOrderResults] = useState<OrderResultRow[]>([]);
   const [statusChanges, setStatusChanges] = useState<TimelineStatusChange[]>([]);
@@ -158,6 +161,7 @@ export default function OrderDetailPage() {
   useEffect(() => {
     if (!externalId) return;
     setLoading(true);
+    setLoadError(null);
 
     const load = async () => {
       const { data: orders, error } = await supabase
@@ -166,7 +170,13 @@ export default function OrderDetailPage() {
         .eq('external_id', externalId)
         .limit(1);
 
-      if (error || !orders?.length) {
+      if (error) {
+        setLoadError(getErrorMessage(error));
+        setLoading(false);
+        return;
+      }
+
+      if (!orders?.length) {
         setLoading(false);
         return;
       }
@@ -409,7 +419,16 @@ export default function OrderDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-4" role="alert">
         <Package size={32} className="text-muted-foreground" />
-        <p className="text-sm font-semibold text-foreground">Pedido no encontrado</p>
+        {loadError ? (
+          <>
+            <p className="text-sm font-semibold text-foreground">No se pudo consultar el pedido</p>
+            <p className="text-xs text-muted-foreground max-w-sm text-center">
+              Falló la lectura de la base ({loadError}). No sabemos si el pedido existe o no.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm font-semibold text-foreground">Pedido no encontrado</p>
+        )}
         <p className="text-xs text-muted-foreground">ID: {externalId}</p>
         <button onClick={() => navigate(-1)} className="text-xs text-accent hover:underline mt-2 cursor-pointer">← Volver</button>
       </div>
@@ -417,9 +436,28 @@ export default function OrderDetailPage() {
   }
 
   const trackUrl = getTrackingUrl(order.transportadora || '', order.guia || '', countryCode);
-  const valor = Number(order.valor) || 0;
-  const flete = Number(order.flete) || 0;
-  const costoProd = Number(order.costo_prod) || 0;
+
+  // Financiero — distinguir "no hay dato" de "es cero". Dropi no siempre manda
+  // flete/costo_prod; con `Number(null) || 0` esos nulls se imprimían como $0
+  // medidos y la "Ganancia est." terminaba siendo el precio de venta completo.
+  // null = no lo sabemos → la fila lo dice y la ganancia NO se calcula.
+  const numOrNull = (v: number | null | undefined): number | null => {
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  const valor = numOrNull(order.valor);
+  const flete = numOrNull(order.flete);
+  const costoProd = numOrNull(order.costo_prod);
+  const gananciaEst =
+    valor !== null && flete !== null && costoProd !== null
+      ? valor - flete - costoProd
+      : null;
+  const faltantesFinanciero = [
+    valor === null ? 'el valor' : null,
+    flete === null ? 'el flete' : null,
+    costoProd === null ? 'el costo del producto' : null,
+  ].filter(Boolean).join(' · ');
 
   const estadoUpper = (order.estado || '').toUpperCase();
   const showConfirmShortcut = isPendiente(estadoUpper);
@@ -642,7 +680,7 @@ export default function OrderDetailPage() {
                   `Estado: ${order.estado}`,
                   `Días sin movimiento: ${order.dias_conf || order.dias || 0}`,
                   `Transportadora: ${order.transportadora || 'N/A'}`,
-                  `Valor: ${formatCOP(Number(order.valor) || 0)}`,
+                  `Valor: ${valor !== null ? formatCOP(valor) : 'sin dato'}`,
                   `Ciudad: ${order.ciudad || 'N/A'}`,
                   `Dirección: ${order.direccion || 'N/A'}`,
                 ].join('\n');
@@ -695,11 +733,21 @@ export default function OrderDetailPage() {
             <DollarSign size={13} aria-hidden="true" className="text-success" /> Financiero
           </h3>
           <div className="flex flex-col gap-[11px]">
-            <StatementRow label="Valor total" value={formatCOP(valor)} />
-            <StatementRow label="Flete" value={formatCOP(flete)} muted />
-            <StatementRow label="Costo producto" value={formatCOP(costoProd)} muted />
+            <StatementRow label="Valor total" value={valor !== null ? formatCOP(valor) : 'Sin dato'} missing={valor === null} />
+            <StatementRow label="Flete" value={flete !== null ? formatCOP(flete) : 'Sin dato'} muted missing={flete === null} />
+            <StatementRow label="Costo producto" value={costoProd !== null ? formatCOP(costoProd) : 'Sin dato'} muted missing={costoProd === null} />
             <div className="h-px bg-border" aria-hidden="true" />
-            <StatementRow label="Ganancia est." value={formatCOP(valor - flete - costoProd)} total />
+            <StatementRow
+              label="Ganancia est."
+              value={gananciaEst !== null ? formatCOP(gananciaEst) : '—'}
+              total
+              missing={gananciaEst === null}
+            />
+            {gananciaEst === null && (
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                No se puede calcular. Falta: {faltantesFinanciero}. No se asume $0.
+              </p>
+            )}
           </div>
         </TiltCard>
       </div>
@@ -725,12 +773,16 @@ export default function OrderDetailPage() {
   );
 }
 
-/** Fila etiqueta/valor del mini estado de resultados de la tarjeta Financiero. */
-function StatementRow({ label, value, muted, total }: { label: string; value: string; muted?: boolean; total?: boolean }) {
+/**
+ * Fila etiqueta/valor del mini estado de resultados de la tarjeta Financiero.
+ * `missing` = el dato no existe (no es 0): se pinta en tono neutro/muted, nunca
+ * con el verde de "ganancia", para no leerse como una cifra medida.
+ */
+function StatementRow({ label, value, muted, total, missing }: { label: string; value: string; muted?: boolean; total?: boolean; missing?: boolean }) {
   return (
     <div className={`flex items-center justify-between gap-3 ${total ? 'text-[13px] font-bold' : 'text-xs'}`}>
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono tabular-nums ${total ? 'text-success' : muted ? 'text-muted-foreground' : 'text-foreground font-semibold'}`}>{value}</span>
+      <span className={`font-mono tabular-nums ${missing ? 'text-muted-foreground' : total ? 'text-success' : muted ? 'text-muted-foreground' : 'text-foreground font-semibold'}`}>{value}</span>
     </div>
   );
 }

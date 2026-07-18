@@ -1,9 +1,9 @@
-import { memo } from 'react';
-import { TrendingUp, TrendingDown, Minus, GitCompare, Package, CheckCircle2, RotateCcw, Truck as TruckIcon } from 'lucide-react';
+import { memo, type ReactNode } from 'react';
+import { TrendingUp, TrendingDown, Minus, GitCompare, Package, CheckCircle2, RotateCcw, Truck as TruckIcon, AlertTriangle } from 'lucide-react';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
 import { formatCOP } from '@/lib/utils';
-import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
+import { deriveDeliveryMaturity, isRatePreliminary, MIN_RESUELTOS_CONFIABLE } from '@/lib/logisticsRates';
 import type { LogisticsFilters, LogisticsSummary } from '@/lib/logistics.types';
 
 // Tasa MADURA (÷ entregados+devueltos) desde los conteos del summary. Antes esta
@@ -11,11 +11,39 @@ import type { LogisticsFilters, LogisticsSummary } from '@/lib/logistics.types';
 // pendientes/tránsito en el denominador), así que el período en curso (inmaduro,
 // medio cohorte en camino) siempre parecía "empeorar" vs un período pasado ya
 // concluido. Era el único de los 7 componentes de /logística sin madurez.
-function maduras(s: LogisticsSummary | null): { entrega: number; devolucion: number } {
-  if (!s) return { entrega: 0, devolucion: 0 };
-  const m = deriveDeliveryMaturity(s.entregados ?? 0, s.devueltos ?? 0, s.total_pedidos ?? 0, s.rechazados ?? 0);
-  return { entrega: m.tasaEntregaMadura ?? 0, devolucion: m.tasaDevolucionMadura ?? 0 };
+//
+// HONESTIDAD: `tasaEntregaMadura` es null A PROPÓSITO cuando no hay pedidos
+// concluidos (entregados+devueltos = 0) — quiere decir "no hay con qué medir".
+// Antes se aplastaba con `?? 0`, así que un período recién arrancado (todo en
+// tránsito) se mostraba como "0.0% de entrega" y disparaba el veredicto rojo
+// "Empeoramiento" sobre algo que nadie midió. Ahora el null se propaga hasta el
+// render y la pantalla muestra "—".
+interface Maduras {
+  entrega: number | null;
+  devolucion: number | null;
+  /** Cohorte inmaduro o muestra chica → la tasa NO es concluyente (gris + "prelim."). */
+  prelim: boolean;
+  resueltos: number;
 }
+function maduras(s: LogisticsSummary | null): Maduras {
+  if (!s) return { entrega: null, devolucion: null, prelim: false, resueltos: 0 };
+  const m = deriveDeliveryMaturity(s.entregados ?? 0, s.devueltos ?? 0, s.total_pedidos ?? 0, s.rechazados ?? 0);
+  return {
+    entrega: m.tasaEntregaMadura,
+    devolucion: m.tasaDevolucionMadura,
+    prelim: isRatePreliminary(m),
+    resueltos: m.resueltos,
+  };
+}
+
+/** "62.0%" · "62.0% · prelim." · "—" cuando no hay nada concluido. */
+function fmtTasa(v: number | null, prelim: boolean): string {
+  if (v == null) return '—';
+  return `${v.toFixed(1)}%${prelim ? ' · prelim.' : ''}`;
+}
+
+const SIN_CONCLUIDOS_HINT =
+  'Sin pedidos concluidos (entregados o devueltos) en este período: todavía no hay con qué calcular la tasa. No es 0%.';
 
 interface Props {
   periodA: LogisticsFilters;
@@ -36,8 +64,47 @@ export default memo(function ComparisonView({
   const a = useLogisticsStats(periodA);
   const b = useLogisticsStats(periodB);
 
+  const aError = a.summary.isError;
+  const bError = b.summary.isError;
+
+  // Esta vista consume SOLO `summary`; los otros 3 queries del hook (carriers /
+  // cities / products) no se renderizan acá. Por eso miramos el estado de
+  // `summary` y no el `isLoading`/`isError` agregado del hook: si
+  // `logistics_by_product` tarda o se cae, no tiene por qué dejar en "cargando"
+  // una columna cuyo summary YA llegó, ni tapar la comparación.
+  //
+  // react-query v5: `isPending` = todavía no hay resultado (incluye la query
+  // DESHABILITADA mientras StoreContext resuelve la tienda). No es lo mismo que
+  // "la base respondió y vino vacío" — ese caso es isSuccess con data null.
+  const aPending = a.summary.isPending;
+  const bPending = b.summary.isPending;
+
+  // Un período solo sirve como base de comparación cuando YA se leyó de verdad.
+  // Antes cada columna solo miraba SU propio isLoading: la que terminaba primero
+  // se comparaba contra `compareTo = null` → ceros de relleno → flechas verdes
+  // "+62.0 pts" contra un período que la base todavía no había devuelto.
+  const aReady = a.summary.isSuccess && !!a.summary.data;
+  const bReady = b.summary.isSuccess && !!b.summary.data;
+
   return (
     <div className="space-y-4">
+      {(aError || bError) && (
+        <div className="rounded-xl border border-danger/40 bg-danger/5 p-4 flex items-start gap-3">
+          <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-danger">
+              {aError && bError
+                ? 'No pudimos cargar ninguno de los dos períodos'
+                : `No pudimos cargar el período ${aError ? 'A' : 'B'}`}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {(a.summary.error as Error)?.message ?? (b.summary.error as Error)?.message ?? 'Error desconocido'}
+              {' · '}No hay comparación válida: no tomes decisiones con esta pantalla hasta que cargue.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PeriodHeader label="Período A" accent="info"   range={periodA} onChange={onPeriodAChange} />
         <PeriodHeader label="Período B" accent="accent" range={periodB} onChange={onPeriodBChange} />
@@ -48,19 +115,23 @@ export default memo(function ComparisonView({
           label="Período A"
           accent="info"
           summary={a.summary.data ?? null}
-          isLoading={a.isLoading}
+          isPending={aPending}
+          isError={aError}
           compareTo={b.summary.data ?? null}
+          compareReady={bReady}
         />
         <PeriodColumn
           label="Período B"
           accent="accent"
           summary={b.summary.data ?? null}
-          isLoading={b.isLoading}
+          isPending={bPending}
+          isError={bError}
           compareTo={a.summary.data ?? null}
+          compareReady={aReady}
         />
       </div>
 
-      {a.summary.data && b.summary.data && (
+      {aReady && bReady && a.summary.data && b.summary.data && (
         <DeltaSummary periodA={a.summary.data} periodB={b.summary.data} />
       )}
     </div>
@@ -98,19 +169,73 @@ function PeriodHeader({
   );
 }
 
+/** Columna sin KPIs: la consulta falló (danger) o respondió vacía (muted).
+ *  Mantiene el encabezado del período para que no se pierda cuál es cuál. */
+function NoticeCard({
+  label, accentBorder, tone, children,
+}: {
+  label: string;
+  accentBorder: string;
+  tone: 'danger' | 'muted';
+  children: ReactNode;
+}) {
+  return (
+    <div className={`rounded-xl border-2 ${accentBorder} bg-card overflow-hidden`}>
+      <header className="px-5 py-3 border-b border-border/60 bg-muted/10">
+        <h3 className="text-[11px] uppercase tracking-[0.08em] font-bold text-muted-foreground">
+          {label}
+        </h3>
+      </header>
+      <div className="p-5 flex items-start gap-2">
+        <AlertTriangle
+          size={14}
+          className={`shrink-0 mt-0.5 ${tone === 'danger' ? 'text-danger' : 'text-muted-foreground'}`}
+          aria-hidden="true"
+        />
+        <p className="text-xs text-muted-foreground">{children}</p>
+      </div>
+    </div>
+  );
+}
+
 interface PeriodColumnProps {
   label: string;
   accent: 'info' | 'accent';
   summary: LogisticsSummary | null;
-  isLoading: boolean;
+  /** La consulta todavía no devolvió resultado (o está deshabilitada esperando tienda). */
+  isPending: boolean;
+  isError: boolean;
   compareTo: LogisticsSummary | null;
+  /** false mientras el OTRO período carga o falla → no se dibuja ningún delta. */
+  compareReady: boolean;
 }
-function PeriodColumn({ label, accent, summary, isLoading, compareTo }: PeriodColumnProps) {
+function PeriodColumn({ label, accent, summary, isPending, isError, compareTo, compareReady }: PeriodColumnProps) {
   const accentBorder = accent === 'info' ? 'border-info/40' : 'border-accent/40';
 
-  if (isLoading || !summary) {
+  // ORDEN IMPORTA: primero el error (en v5 un query con error ya NO está
+  // pending, así que nunca queda escondido detrás del shimmer), después el
+  // "todavía no hay respuesta" (shimmer honesto), y recién al final el
+  // "respondió y vino vacío". Fusionarlos haría que una consulta que jamás
+  // corrió se anunciara como "Sin datos", que es afirmar algo que no sabemos.
+  if (isError) {
+    return (
+      <NoticeCard label={label} accentBorder={accentBorder} tone="danger">
+        No pudimos leer los datos de este período. Los KPIs no se muestran para no inventar cifras.
+      </NoticeCard>
+    );
+  }
+
+  if (isPending) {
     return (
       <div className={`rounded-xl border-2 ${accentBorder} bg-card p-5 skeleton-shimmer min-h-[400px]`} />
+    );
+  }
+
+  if (!summary) {
+    return (
+      <NoticeCard label={label} accentBorder={accentBorder} tone="muted">
+        Sin datos para este período.
+      </NoticeCard>
     );
   }
 
@@ -121,10 +246,16 @@ function PeriodColumn({ label, accent, summary, isLoading, compareTo }: PeriodCo
   // Tasas MADURAS (÷ concluidos), no las crudas del RPC, para no comparar
   // manzanas (período inmaduro) con peras (período concluido).
   const mThis = maduras(summary);
-  const mCompare = maduras(compareTo);
-  const tasaEntrega = mThis.entrega;
-  const tasaDevolucion = mThis.devolucion;
+  // `cmp` es null mientras el otro período no esté leído → todos los rawCompare
+  // quedan en null y KpiLine no dibuja delta (en vez de comparar contra 0).
+  const cmp = compareReady ? compareTo : null;
+  const mCompare = maduras(cmp);
   const valorEntregado = summary.valor_entregado ?? 0;
+  // Muestra chica / cohorte inmaduro en CUALQUIERA de los dos lados: se muestra
+  // el número pero sin veredicto verde/rojo (con 1-4 concluidos la tasa salta a
+  // 0%/100% por puro ruido).
+  const tasaPrelim = mThis.prelim || mCompare.prelim;
+  const prelimHint = `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o cohorte todavía en tránsito — la tasa aún no es confiable.`;
 
   return (
     <div className={`rounded-xl border-2 ${accentBorder} bg-card overflow-hidden`}>
@@ -134,15 +265,34 @@ function PeriodColumn({ label, accent, summary, isLoading, compareTo }: PeriodCo
         </h3>
       </header>
       <div className="p-5 space-y-3">
-        <KpiLine icon={Package}      label="Total pedidos" value={total.toLocaleString('es-CO')}      rawValue={total}      rawCompare={compareTo?.total_pedidos ?? 0} format="absolute" />
-        <KpiLine icon={CheckCircle2} label="Entregados"    value={entregados.toLocaleString('es-CO')} rawValue={entregados} rawCompare={compareTo?.entregados ?? 0}    format="absolute" tone="success" />
-        <KpiLine icon={RotateCcw}    label="Devueltos"     value={devueltos.toLocaleString('es-CO')}  rawValue={devueltos}  rawCompare={compareTo?.devueltos ?? 0}     format="absolute" tone="danger" inverseDelta />
-        <KpiLine icon={TruckIcon}    label="En tránsito"   value={enTransito.toLocaleString('es-CO')} rawValue={enTransito} rawCompare={compareTo?.en_transito ?? 0}   format="absolute" />
+        <KpiLine icon={Package}      label="Total pedidos" value={total.toLocaleString('es-CO')}      rawValue={total}      rawCompare={cmp ? (cmp.total_pedidos ?? 0) : null} format="absolute" />
+        <KpiLine icon={CheckCircle2} label="Entregados"    value={entregados.toLocaleString('es-CO')} rawValue={entregados} rawCompare={cmp ? (cmp.entregados ?? 0) : null}    format="absolute" tone="success" />
+        <KpiLine icon={RotateCcw}    label="Devueltos"     value={devueltos.toLocaleString('es-CO')}  rawValue={devueltos}  rawCompare={cmp ? (cmp.devueltos ?? 0) : null}     format="absolute" tone="danger" inverseDelta />
+        <KpiLine icon={TruckIcon}    label="En tránsito"   value={enTransito.toLocaleString('es-CO')} rawValue={enTransito} rawCompare={cmp ? (cmp.en_transito ?? 0) : null}   format="absolute" />
 
         <div className="pt-3 mt-3 border-t border-border/60 space-y-3">
-          <KpiLine label="Tasa de entrega"     value={`${tasaEntrega.toFixed(1)}%`}    rawValue={tasaEntrega}     rawCompare={mCompare.entrega}    format="points"   tone="success" />
-          <KpiLine label="Tasa de devolución"  value={`${tasaDevolucion.toFixed(1)}%`} rawValue={tasaDevolucion}  rawCompare={mCompare.devolucion} format="points"   tone="danger" inverseDelta />
-          <KpiLine label="Valor entregado"     value={formatCOP(valorEntregado)}       rawValue={valorEntregado}  rawCompare={compareTo?.valor_entregado ?? 0} format="absolute" tone="success" />
+          <KpiLine
+            label="Tasa de entrega"
+            value={fmtTasa(mThis.entrega, mThis.prelim)}
+            rawValue={mThis.entrega}
+            rawCompare={mCompare.entrega}
+            format="points"
+            tone={mThis.entrega == null || mThis.prelim ? 'muted' : 'success'}
+            neutralDelta={tasaPrelim}
+            hint={mThis.entrega == null ? SIN_CONCLUIDOS_HINT : mThis.prelim ? prelimHint : undefined}
+          />
+          <KpiLine
+            label="Tasa de devolución"
+            value={fmtTasa(mThis.devolucion, mThis.prelim)}
+            rawValue={mThis.devolucion}
+            rawCompare={mCompare.devolucion}
+            format="points"
+            tone={mThis.devolucion == null || mThis.prelim ? 'muted' : 'danger'}
+            inverseDelta
+            neutralDelta={tasaPrelim}
+            hint={mThis.devolucion == null ? SIN_CONCLUIDOS_HINT : mThis.prelim ? prelimHint : undefined}
+          />
+          <KpiLine label="Valor entregado"     value={formatCOP(valorEntregado)}       rawValue={valorEntregado}  rawCompare={cmp ? (cmp.valor_entregado ?? 0) : null} format="absolute" tone="success" />
         </div>
       </div>
     </div>
@@ -153,18 +303,30 @@ interface KpiLineProps {
   icon?: typeof Package;
   label: string;
   value: string;
-  rawValue: number;
-  rawCompare: number;
+  /** null = no hay dato medido (no es 0) → no se dibuja delta. */
+  rawValue: number | null;
+  /** null = el otro período no está leído o no tiene nada concluido. */
+  rawCompare: number | null;
   format: 'absolute' | 'points';
-  tone?: 'success' | 'danger';
+  tone?: 'success' | 'danger' | 'muted';
   inverseDelta?: boolean;
+  /** Hay número pero la muestra es preliminar → delta en gris, sin veredicto. */
+  neutralDelta?: boolean;
+  /** Tooltip que explica por qué el valor es "—" o por qué es preliminar. */
+  hint?: string;
 }
-function KpiLine({ icon: Icon, label, value, rawValue, rawCompare, format, tone, inverseDelta }: KpiLineProps) {
-  const valueClass = tone === 'success' ? 'text-success' : tone === 'danger' ? 'text-danger' : 'text-foreground';
+function KpiLine({ icon: Icon, label, value, rawValue, rawCompare, format, tone, inverseDelta, neutralDelta, hint }: KpiLineProps) {
+  const valueClass = tone === 'success' ? 'text-success'
+    : tone === 'danger' ? 'text-danger'
+    : tone === 'muted' ? 'text-muted-foreground'
+    : 'text-foreground';
 
+  // Sin dato en CUALQUIERA de los dos lados no hay comparación posible: se omite
+  // el delta. Antes el lado faltante llegaba como 0 y la fila afirmaba
+  // "+62.0 pts" contra un período que nadie había medido.
   let delta: number | null = null;
   let deltaLabel = '';
-  if (rawCompare > 0 || rawValue > 0) {
+  if (rawValue != null && rawCompare != null && (rawCompare > 0 || rawValue > 0)) {
     if (format === 'absolute') {
       if (rawCompare > 0) {
         delta = ((rawValue - rawCompare) / rawCompare) * 100;
@@ -180,7 +342,7 @@ function KpiLine({ icon: Icon, label, value, rawValue, rawCompare, format, tone,
   }
 
   let deltaTone: 'success' | 'danger' | 'neutral';
-  if (delta === null || Math.abs(delta) < 0.05) {
+  if (delta === null || Math.abs(delta) < 0.05 || neutralDelta) {
     deltaTone = 'neutral';
   } else {
     const isUp = delta > 0;
@@ -198,7 +360,7 @@ function KpiLine({ icon: Icon, label, value, rawValue, rawCompare, format, tone,
     : delta > 0 ? TrendingUp : TrendingDown;
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex items-center justify-between gap-3" title={hint}>
       <div className="flex items-center gap-2 min-w-0">
         {Icon && <Icon size={13} className="text-muted-foreground shrink-0" aria-hidden="true" />}
         <span className="text-xs text-muted-foreground truncate">{label}</span>
@@ -220,6 +382,27 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
   // Tasas MADURAS (÷ concluidos) para el resumen del delta también.
   const mA = maduras(periodA);
   const mB = maduras(periodB);
+
+  // Si algún período no tiene NADA concluido, no hay tasa que comparar. Antes el
+  // `?? 0` la volvía 0.0% y esta card dictaminaba "Empeoramiento: tasa de entrega
+  // cayó" con "62.0% → 0.0% (-62.0 pts)" sobre un período que nadie midió.
+  if (mA.entrega == null || mB.entrega == null || mA.devolucion == null || mB.devolucion == null) {
+    const cual = mA.entrega == null && mB.entrega == null
+      ? 'Ninguno de los dos períodos tiene'
+      : mA.entrega == null ? 'El período A todavía no tiene' : 'El período B todavía no tiene';
+    return (
+      <div className="rounded-xl border border-border bg-muted/20 p-4 flex items-start gap-3">
+        <GitCompare size={16} className="text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" strokeWidth={2.25} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-muted-foreground">Sin datos concluidos para comparar</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {cual} pedidos entregados ni devueltos, así que no hay tasa de entrega que comparar. No es 0%: es que todavía no concluyó nada.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const tasaA = mA.entrega;
   const tasaB = mB.entrega;
   const deltaTasa = tasaB - tasaA;
@@ -228,12 +411,18 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
   const devB = mB.devolucion;
   const deltaDev = devB - devA;
 
+  // Muestra chica o cohorte a medio camino: se muestran los números pero SIN
+  // veredicto (con 1-4 concluidos la tasa salta a 0%/100% por ruido).
+  const prelim = mA.prelim || mB.prelim;
+
   const isPositive = deltaTasa > 0 && deltaDev <= 0;
-  const tone = Math.abs(deltaTasa) < 1 && Math.abs(deltaDev) < 1
+  const baseTone = Math.abs(deltaTasa) < 1 && Math.abs(deltaDev) < 1
     ? 'neutral'
     : isPositive ? 'success' : (deltaTasa < -3 || deltaDev > 3) ? 'danger' : 'warning';
+  const tone = prelim ? 'neutral' : baseTone;
 
   const headline = (() => {
+    if (prelim) return `Comparación preliminar: alguno de los períodos tiene menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o sigue mayormente en tránsito. Todavía no hay veredicto.`;
     if (tone === 'neutral') return 'Sin cambios significativos entre los períodos.';
     if (tone === 'success') return 'Mejora operativa: la tasa de entrega subió y/o devoluciones bajaron.';
     if (tone === 'warning') return 'Cambios mixtos. Revisar detalle.';
@@ -255,6 +444,9 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
         <p className="text-xs text-muted-foreground mt-1 tabular-nums">
           Tasa de entrega: <span className="font-mono">{tasaA.toFixed(1)}% → {tasaB.toFixed(1)}%</span> ({deltaTasa > 0 ? '+' : ''}{deltaTasa.toFixed(1)} pts) ·
           {' '}Devolución: <span className="font-mono">{devA.toFixed(1)}% → {devB.toFixed(1)}%</span> ({deltaDev > 0 ? '+' : ''}{deltaDev.toFixed(1)} pts)
+          {prelim && (
+            <> · <span className="font-semibold">prelim.</span> ({mA.resueltos} y {mB.resueltos} pedidos concluidos)</>
+          )}
         </p>
       </div>
     </div>

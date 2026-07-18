@@ -88,22 +88,39 @@ function monthLabel(yearMonth: string): string {
   });
 }
 
+// HONESTIDAD DE DATOS: todo lo que sale de una RPC es `| null`.
+// null = "no lo pudimos medir" (RPC caída, tienda sin resolver, período sin
+// filas). NUNCA se colapsa a 0 con `?? 0`: un 0 en plata se lee como medición
+// y acá se resta de la pauta/costos fijos → fabricaba una PÉRDIDA en pesos que
+// nadie midió. La UI pinta "—" en tono neutro cuando el valor es null.
 interface CfoSnapshot {
   loading: boolean;
-  total_ordenes: number;
-  total_entregadas: number;
-  total_devueltas: number;
-  total_cancelados: number;
-  tasa_entrega: number;
-  utilidad_bruta: number;
-  ingresos_brutos: number;
+  /** financial_summary no respondió → el P&L entero es incalculable. Corta el render. */
+  hasFinError: boolean;
+  /** costos fijos / inputs manuales / pauta no se pudieron leer → utilidad_neta = null. */
+  hasInputsError: boolean;
+  /** cayeron LAS DOS fuentes de pauta (granular + manual) → el gasto es desconocido. */
+  ads_error: boolean;
+  /** monthly_business_inputs no respondió → intereses de tarjeta desconocidos. */
+  tarjeta_error: boolean;
+  errorMessage: string | null;
+  total_ordenes: number | null;
+  total_entregadas: number | null;
+  total_devueltas: number | null;
+  total_cancelados: number | null;
+  tasa_entrega: number | null;
+  utilidad_bruta: number | null;
+  ingresos_brutos: number | null;
   ads_meta: number;
   ads_tiktok: number;
   ads_total: number;
-  costos_fijos: number;
+  /** null = no se pudo leer app_settings. 0 = leído pero sin configurar. */
+  costos_fijos: number | null;
+  /** costos fijos leídos pero en 0 → la utilidad neta queda sobreestimada. */
+  costos_fijos_sin_cargar: boolean;
   tarjeta_interes: number;
   tarjeta_pago: number;
-  utilidad_neta: number;
+  utilidad_neta: number | null;
   roas: number | null;
   wallet_saldo: number | null;
   has_inputs: boolean;
@@ -132,10 +149,30 @@ function useCfoSnapshot(yearMonth: string): CfoSnapshot {
     walletQuery.isLoading || inputsQuery.isLoading || costosQuery.isLoading ||
     adSpendQuery.isLoading;
 
+  // financial_summary es la fuente de TODA la plata del P&L. useFinancialSummary
+  // LANZA a propósito cuando el RPC falla o cuando no hay tienda activa resuelta
+  // ("Sin tienda activa..."), justamente para que la pantalla pinte un banner en
+  // vez de ceros. Antes acá nadie miraba isError → fin=undefined, isLoading=false
+  // y `?? 0` convertía la caída en "UTILIDAD NETA REAL -$3.500.000" en rojo.
+  const hasFinError = finQuery.isError;
+  // Estos tres alimentan la RESTA de la utilidad neta. Si alguno no cargó, el
+  // término desaparece en silencio y la utilidad sale INFLADA hacia arriba.
+  const hasInputsError =
+    costosQuery.isError || inputsQuery.isError || adSpendQuery.isError;
+  const errorMessage =
+    (finQuery.error as Error | null)?.message ??
+    (costosQuery.error as Error | null)?.message ??
+    (inputsQuery.error as Error | null)?.message ??
+    (adSpendQuery.error as Error | null)?.message ??
+    null;
+
   const fin = finQuery.data;
   const logSummary = logQuery.summary.data;
   const inputs = inputsQuery.data;
-  const costos_fijos = costosQuery.data ?? 0;
+  // `?? null` (no `?? 0`): una query deshabilitada (sin tienda activa) o caída
+  // deja data=undefined con isLoading=false. 0 sería una cifra inventada.
+  const costos_fijos = costosQuery.data ?? null;
+  const costos_fijos_sin_cargar = costos_fijos === 0;
 
   const adsByPlatform = (adSpendQuery.data ?? []).reduce(
     (acc, r) => {
@@ -150,25 +187,48 @@ function useCfoSnapshot(yearMonth: string): CfoSnapshot {
   const ads_meta   = adsByPlatform.meta   > 0 ? adsByPlatform.meta   : (inputs?.ads_meta   ?? 0);
   const ads_tiktok = adsByPlatform.tiktok > 0 ? adsByPlatform.tiktok : (inputs?.ads_tiktok ?? 0);
   const ads_total = ads_meta + ads_tiktok;
+  // La pauta tiene cadena de fallback (granular → manual): solo es DESCONOCIDA
+  // si cayeron las dos fuentes. Los intereses salen únicamente de los inputs.
+  const ads_error = adSpendQuery.isError && inputsQuery.isError;
+  const tarjeta_error = inputsQuery.isError;
   const tarjeta_interes = inputs?.tarjeta_interes ?? 0;
   const tarjeta_pago = inputs?.tarjeta_pago ?? 0;
 
-  const utilidad_bruta = fin?.utilidad_bruta ?? 0;
-  const ingresos_brutos = fin?.ingresos_brutos ?? 0;
-  const utilidad_neta = utilidad_bruta - ads_total - costos_fijos - tarjeta_interes;
+  // Sin la fila de financial_summary no hay utilidad bruta que reportar.
+  const utilidad_bruta = fin ? fin.utilidad_bruta : null;
+  const ingresos_brutos = fin ? fin.ingresos_brutos : null;
+  // La FÓRMULA no cambia (bruta − pauta − costos fijos − intereses); lo que
+  // cambia es que solo se calcula cuando TODOS sus términos existen de verdad.
+  const utilidad_neta =
+    utilidad_bruta != null && costos_fijos != null && !hasInputsError
+      ? utilidad_bruta - ads_total - costos_fijos - tarjeta_interes
+      : null;
 
-  const roas: number | null = ads_total > 0 ? ingresos_brutos / ads_total : null;
+  const roas: number | null =
+    ads_total > 0 && ingresos_brutos != null ? ingresos_brutos / ads_total : null;
+
+  // Se preserva el orden de fallback original (fin → logistics); solo se
+  // reemplaza el `?? 0` final por `?? null`.
+  const total_ordenes = fin?.total_ordenes ?? logSummary?.total_pedidos ?? null;
+  // DENOMINADOR CERO: el RPC calcula tasa_entrega_pct = entregadas/total_ordenes
+  // y devuelve 0 cuando total_ordenes = 0 (CASE WHEN ... ELSE 0, migration
+  // 20260707120000). Ese 0 es 0/0, no una medición, y acá se pintaba rojo con la
+  // alerta "Efectividad baja: 0% (umbral 55%)" en un mes donde no hubo un solo
+  // pedido que medir. Con pedidos en el período un 0% SÍ es real y sigue en rojo.
+  const tasa_raw = fin?.tasa_entrega_pct ?? logSummary?.tasa_entrega ?? null;
+  const tasa_entrega = total_ordenes === 0 ? null : tasa_raw;
 
   return {
     loading,
-    total_ordenes: fin?.total_ordenes ?? logSummary?.total_pedidos ?? 0,
-    total_entregadas: fin?.total_entregadas ?? logSummary?.entregados ?? 0,
-    total_devueltas: fin?.total_devueltas ?? logSummary?.devueltos ?? 0,
-    total_cancelados: fin?.total_cancelados ?? 0,
-    tasa_entrega: fin?.tasa_entrega_pct ?? logSummary?.tasa_entrega ?? 0,
+    hasFinError, hasInputsError, ads_error, tarjeta_error, errorMessage,
+    total_ordenes,
+    total_entregadas: fin?.total_entregadas ?? logSummary?.entregados ?? null,
+    total_devueltas: fin?.total_devueltas ?? logSummary?.devueltos ?? null,
+    total_cancelados: fin?.total_cancelados ?? null,
+    tasa_entrega,
     utilidad_bruta, ingresos_brutos,
     ads_meta, ads_tiktok, ads_total,
-    costos_fijos, tarjeta_interes, tarjeta_pago,
+    costos_fijos, costos_fijos_sin_cargar, tarjeta_interes, tarjeta_pago,
     utilidad_neta, roas,
     wallet_saldo: walletQuery.data?.ultimoSaldo ?? null,
     has_inputs: Boolean(inputs),
@@ -203,12 +263,16 @@ function deltaArrow(curr: number, prev: number, opts?: { higherIsBetter?: boolea
   };
 }
 
-function utilidadTone(v: number): 'success' | 'warning' | 'danger' {
+// Los umbrales NO cambian. Lo único que se agrega es el caso null → 'muted':
+// sin dato no hay veredicto, y el rojo diría "está mal" sobre algo que nadie midió.
+function utilidadTone(v: number | null): 'success' | 'warning' | 'danger' | 'muted' {
+  if (v == null) return 'muted';
   if (v > 0) return 'success';
   if (v === 0) return 'warning';
   return 'danger';
 }
-function efectividadTone(v: number): 'success' | 'warning' | 'danger' {
+function efectividadTone(v: number | null): 'success' | 'warning' | 'danger' | 'muted' {
+  if (v == null) return 'muted';
   if (v >= 65) return 'success';
   if (v >= 55) return 'warning';
   return 'danger';
@@ -219,9 +283,9 @@ function roasTone(v: number | null): 'success' | 'warning' | 'danger' | 'muted' 
   if (v >= 2.5) return 'warning';
   return 'danger';
 }
-function walletTone(saldo: number | null, costosFijos: number): 'success' | 'warning' | 'danger' | 'muted' {
+function walletTone(saldo: number | null, costosFijos: number | null): 'success' | 'warning' | 'danger' | 'muted' {
   if (saldo == null) return 'muted';
-  if (costosFijos === 0) return 'muted';
+  if (costosFijos == null || costosFijos === 0) return 'muted';
   const meses = saldo / costosFijos;
   if (meses >= 2) return 'success';
   if (meses >= 1) return 'warning';
@@ -303,22 +367,25 @@ export default function CfoTab() {
   const alerts = useMemo(() => {
     const out: Array<{ tone: 'danger' | 'warning'; text: string }> = [];
     if (curr.loading) return out;
-    if (curr.utilidad_neta < 0) {
+    // Ningún veredicto se emite sobre un valor ausente: una alerta roja sobre
+    // "0%" que en realidad es "no cargó" hace que el dueño cambie de
+    // transportadora o apriete al equipo por un número que nadie midió.
+    if (curr.utilidad_neta != null && curr.utilidad_neta < 0) {
       out.push({ tone: 'danger', text: `Utilidad neta negativa: ${formatCOP(curr.utilidad_neta)}` });
     }
-    if (curr.tasa_entrega < 55) {
+    if (curr.tasa_entrega != null && curr.tasa_entrega < 55) {
       out.push({ tone: 'danger', text: `Efectividad baja: ${fmtPct(curr.tasa_entrega)} (umbral 55%)` });
     }
     if (curr.ads_total > 0 && curr.roas != null && curr.roas < 2.5) {
       out.push({ tone: 'danger', text: `ROAS bajo: ${curr.roas.toFixed(2)}x (umbral 2.5x)` });
     }
     if (
-      curr.wallet_saldo != null && curr.costos_fijos > 0 &&
+      curr.wallet_saldo != null && curr.costos_fijos != null && curr.costos_fijos > 0 &&
       curr.wallet_saldo < curr.costos_fijos
     ) {
       out.push({ tone: 'danger', text: `Wallet < 1 mes de costos fijos (${formatCOP(curr.wallet_saldo)})` });
     }
-    if (curr.tasa_entrega >= 55 && curr.tasa_entrega < 65) {
+    if (curr.tasa_entrega != null && curr.tasa_entrega >= 55 && curr.tasa_entrega < 65) {
       out.push({ tone: 'warning', text: `Efectividad: ${fmtPct(curr.tasa_entrega)} — apuntar a ≥65%` });
     }
     if (curr.ads_total > 0 && curr.roas != null && curr.roas >= 2.5 && curr.roas < 3.5) {
@@ -415,7 +482,25 @@ export default function CfoTab() {
         </div>
       </header>
 
-      {!curr.has_inputs && !curr.loading && (
+      {/* Los inputs manuales que se RESTAN de la utilidad no se pudieron leer.
+          Sin este aviso el término desaparecía en silencio y la utilidad neta
+          salía inflada hacia arriba sin que nada lo indicara. */}
+      {curr.hasInputsError && !curr.loading && (
+        <div className="relative rounded-2xl border border-danger/40 bg-danger/5 px-4 py-3 pl-5 shadow-card3d flex items-start gap-3">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+          <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" />
+          <div className="text-xs text-foreground/90">
+            <span className="font-semibold">No pudimos leer los costos fijos / inputs del mes</span>
+            <span className="text-muted-foreground">
+              {' '}— la utilidad neta no se puede calcular. Reintentá recargando la página.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* "Sin inputs cargados" solo es un diagnóstico válido si las consultas
+          RESPONDIERON. Con una consulta caída, has_inputs también sería false. */}
+      {!curr.has_inputs && !curr.loading && !curr.hasInputsError && !curr.hasFinError && (
         <div className="relative rounded-2xl border border-warning/30 bg-warning/5 px-4 py-3 pl-5 shadow-card3d flex items-start gap-3">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
           <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
@@ -441,23 +526,58 @@ export default function CfoTab() {
 
         {/* TAB: Cómo voy — KPIs + embudo + P&L + top productos + alertas */}
         <TabsContent value="como-voy" className="mt-4 space-y-5">
+          {curr.hasFinError ? (
+            /* Corte duro: financial_summary es la fuente de TODA la plata de
+               esta vista. Con el RPC caído no se pinta ni un KPI — antes se
+               mostraba una pérdida en pesos (bruta=0 menos pauta y costos
+               fijos) que se leía como un mes desastroso medido de verdad.
+               Mismo banner que /logistica → Finanzas. */
+            <div className="rounded-xl border border-danger/40 bg-danger/5 p-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={18} className="text-danger shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-semibold text-danger">
+                    No pudimos cargar las finanzas del mes
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {curr.errorMessage ?? 'Error desconocido'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    No se muestra ningún número para no mostrar cifras sin
+                    respaldo. Recargá la página para reintentar.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="Utilidad neta real"
-              value={formatCOP(curr.utilidad_neta)}
+              value={curr.utilidad_neta != null ? formatCOP(curr.utilidad_neta) : '—'}
               tone={utilTone}
               icon={<DollarSign size={14} />}
-              delta={deltaArrow(curr.utilidad_neta, prev.utilidad_neta, { higherIsBetter: true })}
+              delta={
+                curr.utilidad_neta != null && prev.utilidad_neta != null
+                  ? deltaArrow(curr.utilidad_neta, prev.utilidad_neta, { higherIsBetter: true })
+                  : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
+              }
               loading={curr.loading}
+              subtitle={curr.utilidad_neta == null ? 'No se pudo calcular' : undefined}
               hero
             />
             <KpiCard
               label="Tasa de efectividad"
-              value={fmtPct(curr.tasa_entrega)}
+              value={curr.tasa_entrega != null ? fmtPct(curr.tasa_entrega) : '—'}
               tone={efTone}
               icon={<Target size={14} />}
-              delta={deltaArrow(curr.tasa_entrega, prev.tasa_entrega, { higherIsBetter: true })}
+              delta={
+                curr.tasa_entrega != null && prev.tasa_entrega != null
+                  ? deltaArrow(curr.tasa_entrega, prev.tasa_entrega, { higherIsBetter: true })
+                  : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
+              }
               loading={curr.loading}
+              subtitle={curr.tasa_entrega == null ? 'Sin datos del período' : undefined}
             />
             <KpiCard
               label="ROAS bruto"
@@ -479,8 +599,12 @@ export default function CfoTab() {
               delta={null}
               loading={curr.loading}
               subtitle={
-                curr.wallet_saldo != null && curr.costos_fijos > 0
-                  ? `${(curr.wallet_saldo / curr.costos_fijos).toFixed(1)} meses de runway`
+                /* PROYECCIÓN, no medición: asume ingreso futuro CERO y una
+                   quema igual a los costos fijos (que no incluyen pauta, el
+                   gasto más grande del negocio). El rótulo lo dice explícito
+                   para que no se lea como un dato medido. */
+                curr.wallet_saldo != null && curr.costos_fijos != null && curr.costos_fijos > 0
+                  ? `≈${(curr.wallet_saldo / curr.costos_fijos).toFixed(1)} meses estimados si no entrara nada más (no cuenta pauta)`
                   : undefined
               }
             />
@@ -491,6 +615,7 @@ export default function CfoTab() {
             <TopProductsBlock
               products={topProducts}
               loading={logForProducts.products.isLoading}
+              isError={logForProducts.products.isError}
             />
             <Funnel
               generados={curr.total_ordenes}
@@ -500,7 +625,17 @@ export default function CfoTab() {
             />
           </div>
 
-          <AlertsBlock alerts={alerts} loading={curr.loading} />
+          {/* "Todo en orden" es un VEREDICTO: solo vale si los dos números que
+              disparan las alertas de plata y de efectividad existen. Sin ellos
+              la lista queda vacía porque no se pudo evaluar nada, no porque
+              esté todo bien. */}
+          <AlertsBlock
+            alerts={alerts}
+            loading={curr.loading}
+            evaluable={curr.utilidad_neta != null && curr.tasa_entrega != null}
+          />
+          </>
+          )}
         </TabsContent>
 
         {/* Las sub-tabs Finanzas + Billetera + Rentabilidad viven ahora
@@ -513,7 +648,10 @@ export default function CfoTab() {
           <CfoAdSpendTracker
             yearMonth={yearMonth}
             prevYearMonth={prevYearMonth}
-            walletGenerated={curr.utilidad_bruta}
+            /* undefined (no 0) cuando la bruta no se pudo medir: el tracker
+               guarda `walletGenerated != null` y así no compara la pauta
+               contra un wallet inventado en $0. */
+            walletGenerated={curr.utilidad_bruta ?? undefined}
           />
         </TabsContent>
 
@@ -608,11 +746,10 @@ function KpiCard({ label, value, tone, icon, delta, loading, subtitle, hero }: K
 
 function Funnel({
   generados, entregados, devueltos, loading,
-}: { generados: number; entregados: number; devueltos: number; loading: boolean }) {
-  const netos = Math.max(0, entregados - devueltos);
-  const pctEnt = generados > 0 ? (entregados / generados) * 100 : 0;
-  const pctNetos = generados > 0 ? (netos / generados) * 100 : 0;
-
+}: {
+  generados: number | null; entregados: number | null;
+  devueltos: number | null; loading: boolean;
+}) {
   if (loading) {
     return (
       <section className="h-full rounded-2xl border border-border bg-card/40 p-4 shadow-card3d">
@@ -620,6 +757,31 @@ function Funnel({
       </section>
     );
   }
+
+  // Sin conteos no hay embudo. Antes se pintaba "Generados 0 / Entregados 0",
+  // indistinguible de un mes real sin ventas.
+  if (generados == null || entregados == null || devueltos == null) {
+    return (
+      <TiltCard
+        wrapperClassName="h-full"
+        className="h-full bg-card/40 border border-border rounded-2xl p-5 shadow-card3d"
+      >
+        <section className="space-y-3">
+          <header className="flex items-center gap-2 mb-1">
+            <span className="w-7 h-7 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0">
+              <PackageIcon size={14} />
+            </span>
+            <h3 className="text-sm font-semibold text-foreground">Embudo del mes</h3>
+          </header>
+          <p className="text-sm text-muted-foreground">Sin datos en este mes</p>
+        </section>
+      </TiltCard>
+    );
+  }
+
+  const netos = Math.max(0, entregados - devueltos);
+  const pctEnt = generados > 0 ? (entregados / generados) * 100 : 0;
+  const pctNetos = generados > 0 ? (netos / generados) * 100 : 0;
 
   return (
     <TiltCard
@@ -678,7 +840,8 @@ function FunnelBar({
 }
 
 function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
-  const isNegative = snap.utilidad_neta < 0;
+  const neta = snap.utilidad_neta;
+  const isNegative = neta != null && neta < 0;
 
   return (
     <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
@@ -703,19 +866,39 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
             </thead>
             <tbody className="divide-y divide-border">
               <PnlRow label="Utilidad bruta Dropi" value={snap.utilidad_bruta} sign="+" origin="financial_summary" />
-              <PnlRow label="Inversión Meta Ads" value={snap.ads_meta} sign="-" origin="monthly_ad_spend" />
-              <PnlRow label="Inversión TikTok Ads" value={snap.ads_tiktok} sign="-" origin="monthly_ad_spend" />
+              <PnlRow label="Inversión Meta Ads" value={snap.ads_error ? null : snap.ads_meta} sign="-" origin="monthly_ad_spend" />
+              <PnlRow label="Inversión TikTok Ads" value={snap.ads_error ? null : snap.ads_tiktok} sign="-" origin="monthly_ad_spend" />
               <PnlRow label="Costos fijos" value={snap.costos_fijos} sign="-" origin="app_settings" />
-              <PnlRow label="Intereses tarjeta" value={snap.tarjeta_interes} sign="-" origin="input manual" />
-              <tr className={isNegative ? 'bg-danger/[0.09]' : 'bg-success/[0.09]'}>
+              <PnlRow label="Intereses tarjeta" value={snap.tarjeta_error ? null : snap.tarjeta_interes} sign="-" origin="input manual" />
+              {/* Sin valor: fondo neutro, NUNCA el rojo de "perdiste plata". */}
+              <tr
+                className={
+                  neta == null
+                    ? 'bg-foreground/[0.04]'
+                    : isNegative ? 'bg-danger/[0.09]' : 'bg-success/[0.09]'
+                }
+              >
                 <td className="px-5 py-3.5 font-bold text-foreground whitespace-nowrap">UTILIDAD NETA REAL</td>
-                <td className={`px-5 py-3.5 text-right font-bold font-mono tabular-nums whitespace-nowrap ${isNegative ? 'text-danger' : 'text-success'}`}>
-                  {`= ${formatCOP(snap.utilidad_neta)}`}
+                <td className={`px-5 py-3.5 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
+                  neta == null
+                    ? 'text-muted-foreground'
+                    : isNegative ? 'text-danger' : 'text-success'
+                }`}>
+                  {neta != null ? `= ${formatCOP(neta)}` : '—'}
                 </td>
-                <td className="px-5 py-3.5 text-xs text-muted-foreground">calculado</td>
+                <td className="px-5 py-3.5 text-xs text-muted-foreground">
+                  {neta != null ? 'calculado' : 'sin datos suficientes'}
+                </td>
               </tr>
             </tbody>
           </table>
+        </div>
+      )}
+      {/* Costos fijos leídos pero en $0: el término se resta como 0 y la
+          utilidad neta queda por encima de la real. Se dice en vez de callarlo. */}
+      {snap.costos_fijos_sin_cargar && !snap.loading && (
+        <div className="px-5 py-3 border-t border-border bg-warning/[0.06] text-xs text-warning">
+          Costos fijos sin cargar — la utilidad neta está sobreestimada.
         </div>
       )}
       {snap.notas && !snap.loading && (
@@ -729,14 +912,21 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
 
 function PnlRow({
   label, value, sign, origin,
-}: { label: string; value: number; sign: '+' | '-'; origin: string }) {
+}: { label: string; value: number | null; sign: '+' | '-'; origin: string }) {
+  // value == null → "—" en tono neutro. Un "+ $0" con el sello "financial_summary"
+  // al lado hacía pasar una RPC que no respondió por una medición en cero.
+  const missing = value == null;
   return (
     <tr className="hover:bg-foreground/[0.035] transition-colors">
       <td className="px-5 py-2.5 text-foreground">{label}</td>
-      <td className={`px-5 py-2.5 text-right font-mono tabular-nums whitespace-nowrap ${sign === '-' ? 'text-danger' : 'text-success'}`}>
-        {sign === '-' ? '-' : '+'}{formatCOP(value)}
+      <td className={`px-5 py-2.5 text-right font-mono tabular-nums whitespace-nowrap ${
+        missing ? 'text-muted-foreground' : sign === '-' ? 'text-danger' : 'text-success'
+      }`}>
+        {missing ? '—' : `${sign === '-' ? '-' : '+'}${formatCOP(value)}`}
       </td>
-      <td className="px-5 py-2.5 text-xs font-mono text-muted-foreground">{origin}</td>
+      <td className="px-5 py-2.5 text-xs font-mono text-muted-foreground">
+        {missing ? 'sin datos' : origin}
+      </td>
     </tr>
   );
 }
@@ -748,7 +938,9 @@ interface ProductRow {
   valor_entregado?: number;
 }
 
-function TopProductsBlock({ products, loading }: { products: ProductRow[]; loading: boolean }) {
+function TopProductsBlock({
+  products, loading, isError,
+}: { products: ProductRow[]; loading: boolean; isError?: boolean }) {
   return (
     <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
       <header className="px-5 py-3.5 border-b border-border">
@@ -756,6 +948,11 @@ function TopProductsBlock({ products, loading }: { products: ProductRow[]; loadi
       </header>
       {loading ? (
         <div className="p-5"><div className="h-32 animate-pulse bg-muted/30 rounded" /></div>
+      ) : isError ? (
+        /* La consulta falló: lista vacía ≠ "no hubo productos". */
+        <div className="p-5 text-sm text-danger text-center">
+          No pudimos cargar los productos
+        </div>
       ) : products.length === 0 ? (
         <div className="p-5 text-sm text-muted-foreground text-center">Sin datos en este mes</div>
       ) : (
@@ -776,8 +973,8 @@ function TopProductsBlock({ products, loading }: { products: ProductRow[]; loadi
               <div className="flex items-center gap-3 text-xs shrink-0 font-mono tabular-nums">
                 <span className="text-foreground font-semibold">{p.entregados}</span>
                 <span className="text-muted-foreground">{fmtPct(p.tasa_entrega)}</span>
-                <span className="text-success text-[10px]">
-                  {formatCOP(p.valor_entregado ?? 0)}
+                <span className={p.valor_entregado != null ? 'text-success text-[10px]' : 'text-muted-foreground text-[10px]'}>
+                  {p.valor_entregado != null ? formatCOP(p.valor_entregado) : '—'}
                 </span>
               </div>
             </li>
@@ -789,8 +986,13 @@ function TopProductsBlock({ products, loading }: { products: ProductRow[]; loadi
 }
 
 function AlertsBlock({
-  alerts, loading,
-}: { alerts: Array<{ tone: 'danger' | 'warning'; text: string }>; loading: boolean }) {
+  alerts, loading, evaluable = true,
+}: {
+  alerts: Array<{ tone: 'danger' | 'warning'; text: string }>;
+  loading: boolean;
+  /** false = faltan los datos que disparan las alertas → sin lista vacía "verde". */
+  evaluable?: boolean;
+}) {
   return (
     <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
       <header className="px-5 py-3.5 border-b border-border">
@@ -800,10 +1002,18 @@ function AlertsBlock({
         <div className="p-5"><Loader2 size={16} className="animate-spin text-muted-foreground" /></div>
       ) : alerts.length === 0 ? (
         <div className="p-5">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
-            <CheckCircle2 size={13} />
-            Todo en orden
-          </span>
+          {evaluable ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
+              <CheckCircle2 size={13} />
+              Todo en orden
+            </span>
+          ) : (
+            /* Tono neutro, nunca verde: no sabemos si está en orden. */
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-foreground/[0.04] border border-border text-muted-foreground">
+              <Minus size={13} />
+              Sin datos suficientes para evaluar
+            </span>
+          )}
         </div>
       ) : (
         <ul className="divide-y divide-border">
