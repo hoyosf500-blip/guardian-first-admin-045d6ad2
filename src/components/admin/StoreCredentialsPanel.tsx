@@ -40,7 +40,7 @@ function decodeJwtExp(token: string): number | null {
  * era single-tenant y rompía cuando se agregaba una segunda tienda.
  */
 export default function StoreCredentialsPanel() {
-  const { activeStore, activeStoreId, isManagerOfActive, refresh } = useStore();
+  const { activeStore, activeStoreId, isManagerOfActive, isOwnerOfActive, refresh } = useStore();
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
@@ -89,6 +89,9 @@ export default function StoreCredentialsPanel() {
   const [savingShop, setSavingShop] = useState(false);
   const [testingShop, setTestingShop] = useState(false);
   const [shopTestMsg, setShopTestMsg] = useState<string | null>(null);
+  // Auto-envío Shopify → Dropi (robot shopify-auto-push, cron cada 15 min).
+  const [shopAutoPush, setShopAutoPush] = useState(false);
+  const [shopAutoPushBusy, setShopAutoPushBusy] = useState(false);
 
   useEffect(() => {
     if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
@@ -166,6 +169,14 @@ export default function StoreCredentialsPanel() {
       setShopAuthMode(row?.auth_mode ?? null);
       setShopClientId('');
       setShopClientSecret('');
+      // Estado del auto-envío (RPC aparte; degrada a false si la migración aún
+      // no corrió → el toggle sale apagado sin romper).
+      try {
+        const { data: ap } = await (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>
+        ) => Promise<{ data: boolean | null }>)('get_store_shopify_auto_push', { p_store_id: activeStoreId });
+        if (!cancelled) setShopAutoPush(Boolean(ap));
+      } catch { if (!cancelled) setShopAutoPush(false); }
     })();
     return () => { cancelled = true; };
   }, [activeStoreId, isManagerOfActive]);
@@ -320,6 +331,25 @@ export default function StoreCredentialsPanel() {
     } catch (e) {
       setShopTestMsg('Falló: ' + (e instanceof Error ? e.message : 'error'));
     } finally { setTestingShop(false); }
+  }
+
+  async function toggleAutoPush(next: boolean) {
+    if (!activeStoreId || shopAutoPushBusy) return;
+    const prev = shopAutoPush;
+    setShopAutoPush(next);            // optimista
+    setShopAutoPushBusy(true);
+    const { error } = await (supabase.rpc as unknown as (
+      fn: string, args: Record<string, unknown>
+    ) => Promise<{ error: { message: string } | null }>)(
+      'set_store_shopify_auto_push', { p_store_id: activeStoreId, p_enabled: next },
+    );
+    setShopAutoPushBusy(false);
+    if (error) {
+      setShopAutoPush(prev);          // revertir
+      toast.error('No se pudo cambiar el auto-envío', { description: error.message });
+      return;
+    }
+    toast.success(next ? 'Auto-envío a Dropi ACTIVADO' : 'Auto-envío a Dropi apagado');
   }
 
   if (!user) return null;
@@ -598,6 +628,27 @@ export default function StoreCredentialsPanel() {
               </button>
             </div>
           </div>
+
+          {/* Auto-envío: un robot sube solo los pedidos limpios cada 15 min */}
+          {shopConfigured && (
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-border">
+              <div className="flex-1">
+                <div className="text-sm font-medium text-foreground">Auto-envío a Dropi</div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Un robot sube solo los pedidos <strong>limpios</strong> cada 15 min (los dudosos —duplicado, precio raro, sin cobertura— quedan para el panel). Así no depende de que alguien apriete el botón.
+                  {!isOwnerOfActive && <span className="block text-warning mt-0.5">Solo el dueño puede cambiarlo.</span>}
+                </p>
+              </div>
+              <button
+                type="button" role="switch" aria-checked={shopAutoPush}
+                disabled={!isOwnerOfActive || shopAutoPushBusy}
+                onClick={() => toggleAutoPush(!shopAutoPush)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${shopAutoPush ? 'bg-primary' : 'bg-muted'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${shopAutoPush ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
 

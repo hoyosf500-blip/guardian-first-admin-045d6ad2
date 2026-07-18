@@ -589,6 +589,29 @@ async function createOrderViaWeb(
   return String(orderId);
 }
 
+/** Anti-duplicado con SERVICE ROLE (camino de cron): mismos criterios que la RPC
+ *  find_duplicate_phones — un pedido NO cancelado en la misma tienda con el mismo
+ *  teléfono normalizado (últimos 9 dígitos). La RPC no sirve acá porque se apoya
+ *  en is_store_member(auth.uid()) y el cron no tiene usuario. Ventana acotada a
+ *  60 días: el duplicado a evitar es reciente (lo acaba de crear Dropify). */
+async function findDuplicatesServiceRole(
+  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, storeId: string, phoneNorm: string,
+): Promise<Array<{ external_id?: string; estado?: string }>> {
+  const since = new Date(Date.now() - 60 * 86400000).toISOString();
+  const { data } = await sb.from("orders")
+    .select("external_id, estado, phone")
+    .eq("store_id", storeId)
+    .ilike("phone", `%${phoneNorm}`)
+    .gte("created_at", since)
+    .limit(50);
+  return ((data || []) as Array<{ external_id: string; estado: string; phone: string }>)
+    .filter((o) => String(o.phone || "").replace(/\D/g, "").slice(-9) === phoneNorm
+      && !String(o.estado || "").toUpperCase().includes("CANCEL"))
+    .map((o) => ({ external_id: o.external_id, estado: o.estado }));
+}
+
 Deno.serve(async (req: Request) => {
   const cors = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -599,19 +622,37 @@ Deno.serve(async (req: Request) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    // Auth
+    // Auth — dos caminos:
+    //  (a) CRON: el robot shopify-auto-push llama con x-cron-secret válido (y la
+    //      service-role key como Bearer para pasar el gateway). Salta el JWT de
+    //      usuario y la membresía; el anti-duplicado corre con service role.
+    //  (b) USUARIO: el panel anti-fuga llama con el JWT del miembro (flujo normal).
+    const cronHeader = req.headers.get("x-cron-secret");
+    let isCron = false;
+    if (cronHeader) {
+      const { data: cs } = await sb.from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
+      if (!cs?.value || cs.value !== cronHeader) {
+        return json({ ok: false, error: "Cron secret inválido" }, 401, cors);
+      }
+      isCron = true;
+    }
+
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ ok: false, error: "No autorizado" }, 401, cors);
-    const anonClient = createClient(supabaseUrl, anonKey);
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
-    if (authError || !user) return json({ ok: false, error: "Token inválido" }, 401, cors);
-    // Cliente CON el JWT del usuario: necesario para la RPC find_duplicate_phones,
-    // que usa is_store_member(auth.uid()) → con el service role (auth.uid() NULL)
-    // haría hard-stop y devolvería vacío (no detectaría duplicados). La membresía
-    // del usuario ya se valida abajo, así que este cliente pasa el guard de la RPC.
-    const sbUser = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    let userId: string | null = null;
+    // sbUser: cliente con el JWT del usuario, necesario para la RPC
+    // find_duplicate_phones (usa is_store_member(auth.uid())). En el camino de
+    // cron no hay usuario → el anti-duplicado usa una consulta con service role.
+    let sbUser: ReturnType<typeof createClient> | null = null;
+    if (!isCron) {
+      if (!authHeader) return json({ ok: false, error: "No autorizado" }, 401, cors);
+      const anonClient = createClient(supabaseUrl, anonKey);
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(authHeader.replace("Bearer ", ""));
+      if (authError || !user) return json({ ok: false, error: "Token inválido" }, 401, cors);
+      userId = user.id;
+      sbUser = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+    }
 
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* noop */ }
@@ -632,7 +673,7 @@ Deno.serve(async (req: Request) => {
     const forcePush = body.force === true;
     if (!storeId) return json({ ok: false, error: "Falta store_id" }, 400, cors);
 
-    if (!(await isStoreMember(sb, user.id, storeId))) {
+    if (!isCron && !(await isStoreMember(sb, userId!, storeId))) {
       return json({ ok: false, error: "No sos miembro de esta tienda" }, 403, cors);
     }
 
@@ -1022,19 +1063,27 @@ Deno.serve(async (req: Request) => {
     const phoneNorm = String(client.phone || "").replace(/\D/g, "").slice(-9);
     if (!allowDuplicate && phoneNorm.length >= 7) {
       try {
-        const { data: dups, error: dupErr } = await sbUser.rpc("find_duplicate_phones", {
-          p_store_id: storeId, p_phones: [phoneNorm],
-        });
-        if (!dupErr && Array.isArray(dups) && dups.length > 0) {
-          const list = (dups as Array<{ external_id?: string; estado?: string; fecha?: string }>).slice(0, 5);
-          const preview = list.slice(0, 3)
+        // Camino de cron: consulta con service role (sin auth.uid()). Camino de
+        // usuario: la RPC find_duplicate_phones con el JWT del miembro.
+        let list: Array<{ external_id?: string; estado?: string }> = [];
+        if (isCron) {
+          list = await findDuplicatesServiceRole(sb, storeId, phoneNorm);
+        } else {
+          const { data: dups, error: dupErr } = await sbUser!.rpc("find_duplicate_phones", {
+            p_store_id: storeId, p_phones: [phoneNorm],
+          });
+          if (!dupErr && Array.isArray(dups)) list = dups as Array<{ external_id?: string; estado?: string }>;
+        }
+        if (list.length > 0) {
+          const top = list.slice(0, 5);
+          const preview = top.slice(0, 3)
             .map((d) => `#${d.external_id}${d.estado ? ` (${d.estado})` : ""}`).join(", ");
           return json({
             ok: false,
             blocked: "duplicate_phone",
             error: `Ya hay un pedido en Dropi con este teléfono: ${preview}. ` +
               `Si es una recompra real, subilo con "No es duplicado".`,
-            duplicates: list,
+            duplicates: top,
           }, 409, cors);
         }
       } catch { /* fallo de infra del guard → no bloquear el push honesto */ }
@@ -1092,7 +1141,7 @@ Deno.serve(async (req: Request) => {
     let claimId: string | null = null;
     {
       const ins = await sb.from("shopify_pushed_orders")
-        .insert({ store_id: storeId, shopify_order_id: shopifyOrderId, status: "pending", payload: dropiPayload, pushed_by: user.id })
+        .insert({ store_id: storeId, shopify_order_id: shopifyOrderId, status: "pending", payload: dropiPayload, pushed_by: userId })
         .select("id").maybeSingle();
       if (!ins.error) {
         claimId = (ins.data as { id?: string } | null)?.id ?? null;
@@ -1134,7 +1183,7 @@ Deno.serve(async (req: Request) => {
         // orden real en Dropi = doble guía = doble flete. El candado UNIQUE solo
         // serializa el PRIMER INSERT, no dos UPDATE sobre una fila ya existente.
         const upd = await sb.from("shopify_pushed_orders")
-          .update({ status: "pending", payload: dropiPayload, pushed_by: user.id, pushed_at: new Date().toISOString(), dropi_order_id: null, error_message: null })
+          .update({ status: "pending", payload: dropiPayload, pushed_by: userId, pushed_at: new Date().toISOString(), dropi_order_id: null, error_message: null })
           .eq("id", ex.id).eq("status", ex.status).eq("pushed_at", ex.pushed_at)
           .select("id").maybeSingle();
         if (upd.error || !upd.data) {

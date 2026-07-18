@@ -16,3 +16,10 @@ verify_jwt = false
 # cambia de estado. Se valida con DROPI_WEBHOOK_SECRET (?secret= / header).
 [functions.dropi-webhook]
 verify_jwt = false
+
+# shopify-auto-push lo dispara pg_cron (cada 15 min) SIN JWT de Supabase; su
+# seguridad la maneja internamente con x-cron-secret (app_settings.cron_shared_secret),
+# igual que dropi-cron/health/nightly. shopify-push-dropi NO va acá: el robot lo
+# llama con la service-role key como Bearer (pasa el gateway) + x-cron-secret.
+[functions.shopify-auto-push]
+verify_jwt = false
