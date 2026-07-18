@@ -387,11 +387,13 @@ export default function DashboardTab() {
       {/* Page header — patrón pro coherente con Logística/Rescate */}
       <motion.header {...fadeUp(0)} className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
             Resumen · Operadora
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-            <BarChart3 size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+            <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
+              <BarChart3 size={18} strokeWidth={2.25} />
+            </span>
             {greeting}
           </h1>
           <p className="text-sm text-muted-foreground">

@@ -84,7 +84,7 @@ export default function NovedadesTab() {
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-warning to-warning/70 text-warning-foreground shadow-ds-md" aria-hidden="true">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-warning to-warning/70 text-warning-foreground glow-warning" aria-hidden="true">
             <AlertTriangle size={18} />
           </div>
           <div>

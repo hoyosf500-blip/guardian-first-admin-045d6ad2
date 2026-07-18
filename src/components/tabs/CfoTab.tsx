@@ -353,7 +353,7 @@ export default function CfoTab() {
     <div className="space-y-5">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
             CFO · Cómo voy
           </div>
           <h2 className="text-xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2">

@@ -190,11 +190,13 @@ export default function AdminTab() {
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Page header — patrón pro coherente con Logística/Rescate */}
       <header className="space-y-1.5">
-        <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+        <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
           Panel · Admin
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-          <Key size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+          <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
+            <Key size={18} strokeWidth={2.25} />
+          </span>
           Administración
         </h1>
         <p className="text-sm text-muted-foreground">
