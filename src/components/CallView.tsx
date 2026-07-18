@@ -755,13 +755,23 @@ export default function CallView({ items, alerts }: Props) {
         </div>
       </div>
 
+      {/* Cockpit en DOS COLUMNAS desde lg (patrón del handoff).
+          Antes la dirección vivía dentro de la ficha y las notas quedaban
+          debajo de todo: en 1366px la asesora tenía que scrollear entre el
+          teléfono del cliente y el campo donde anota lo que le está dictando.
+          Ahora la columna izquierda es "con quién hablo y qué decido" y el
+          rail derecho es "qué escribo": dirección arriba, notas abajo, ambos
+          a la vista mientras habla.
+          Debajo de lg vuelve a una sola columna en el mismo orden de lectura. */}
+      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0">
       {/* SIN TiltCard ni sheen a propósito: esta es la ficha del modo llamada.
           La asesora la mira fijo mientras habla por teléfono y escribe notas —
           una card que se inclina con el mouse y un brillo que la cruza cada 7s
           distraen y marean en una jornada larga. El resto de la app sí los usa;
           acá el criterio es que no se mueva nada. */}
       <div
-        className="relative overflow-hidden mb-4 bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg hairline-top"
+        className="relative overflow-hidden bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg hairline-top"
       >
         {/* Orbe aurora decorativo (Dirección 3D) */}
         <div className="pointer-events-none absolute -left-10 -top-24 w-72 h-72 rounded-full blur-[50px] bg-accent/15" aria-hidden="true" />
@@ -919,6 +929,100 @@ export default function CallView({ items, alerts }: Props) {
           </div>
         )}
 
+
+        {/* Edición de orden unificada estilo Dropi: datos + dirección +
+            transportadora + producto + valor en un solo diálogo. */}
+        {!o.result && o.externalId && (
+          <div className="mb-3 grid gap-2">
+            <button
+              type="button"
+              onClick={() => setEditorState({ order: o })}
+              title="Editar orden (datos, transportadora, cantidades y valor)"
+              aria-label="Editar orden"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-success/12 border border-success/30 text-success text-sm font-semibold hover:bg-success/20 hover:border-success/45 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
+            >
+              <UserCog size={15} aria-hidden="true" /> Editar orden
+              {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
+              {o.valor > 0 && <span className="font-mono tabular-nums opacity-70">· {formatCOP(o.valor)}</span>}
+            </button>
+          </div>
+        )}
+
+        {/* Sticky action bar en mobile: los 3 botones quedan pegados al fondo
+            del viewport mientras la asesora scrollea DENTRO de la ficha.
+            En sm+ vuelve a layout inline (mt-4) porque la card cabe en pantalla.
+
+            OJO — desde que dirección y notas se movieron al rail derecho, en
+            móvil (1 columna) esos dos bloques van DEBAJO de esta barra, y el
+            sticky solo flota mientras su contenedor (la card) está en pantalla:
+            al bajar a la dirección, los botones se van con la card. En
+            escritorio no aplica (todo entra a la vez). Si se confirma que las
+            asesoras trabajan desde el celular, hay que sacar esta barra de la
+            card y ubicarla como fila 2 del grid, después del rail. */}
+        <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card sm:bg-transparent -mx-6 sm:mx-0 px-6 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
+        {!o.result ? (
+          <div className="grid grid-cols-3 gap-2.5">
+            {/* Validador-direcciones: el botón Confirmar pasa por el gate
+                (validación dirección + teléfono + documento Coordinadora +
+                override admin). Si el gate bloquea, el Button queda
+                deshabilitado y el tooltip explica la razón. */}
+            <DespachoGateButton
+              gate={{
+                // Validador-direcciones: usar visualDecision (que aplica los
+                // overrides client-side de pickup_office y stale-green ANTES
+                // de que el UPDATE+realtime corrija la fila en DB) — así el
+                // botón coincide con lo que ve la operadora en la card.
+                validation_decision: visualDecision,
+                telefonoValido: validarTelefono(o.phone, countryCode),
+                // includes, NO igualdad exacta: la transportadora viene verbatim
+                // de Dropi (distribution_company.name) y puede ser "COORDINADORA
+                // MERCANTIL", "Coordinadora S.A.", etc. Con !== 'coordinadora' el
+                // gate fallaba ABIERTO (dejaba despachar sin cédula) en toda
+                // variante de nombre. Coordinadora EXIGE cédula del destinatario.
+                documentoSiCoordinadora:
+                  !(o.transportadora || '').toLowerCase().includes('coordinadora') ||
+                  Boolean(o.documentoDestinatario),
+                isAdmin,
+                overrideChecked: addressOverride,
+              }}
+              onConfirm={() => handleMark('conf')}
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <CheckCircle2 size={16} aria-hidden="true" /> Confirmó
+              </span>
+            </DespachoGateButton>
+            <button onClick={() => setShowCancelModal(true)} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 active:scale-[0.97] transition-all">
+              <XCircle size={16} aria-hidden="true" /> Canceló
+            </button>
+            <button onClick={() => handleMark('noresp')} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-card/40 border border-border text-muted-foreground font-bold text-sm hover:text-foreground hover:border-border-strong active:scale-[0.97] transition-all">
+              <PhoneOff size={16} aria-hidden="true" /> No contestó
+            </button>
+          </div>
+        ) : (
+          <div className="text-center py-3 text-sm font-semibold inline-flex items-center gap-1.5 justify-center w-full">
+            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-success" aria-hidden="true" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-danger" aria-hidden="true" /> Cancelado</> : <><PhoneOff size={16} aria-hidden="true" /> No respondió</>}
+          </div>
+        )}
+        </div>
+      </div>
+        </div>
+
+        {/* RAIL DERECHO — lo que la asesora ESCRIBE mientras habla: la
+            dirección que le está dictando y las notas del cliente. En lg+
+            queda pegado (sticky) para que no se pierda al scrollear la ficha.
+
+            max-h + overflow-y son OBLIGATORIOS junto al sticky: un elemento
+            sticky más alto que el viewport se ancla arriba y su parte de abajo
+            queda fuera de pantalla SIN forma de scrollearla. En 1366×768 la
+            card de dirección (~450px) más las notas (~300px) pasan los ~700px
+            útiles, y el campo de notas — justo lo que este layout quiere tener
+            a la vista — quedaba inalcanzable. */}
+        <aside className="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto [scrollbar-width:thin]">
+          {/* Solo se dibuja el panel si hay algo adentro: con el pedido ya
+              gestionado y sin dirección, el ternario de abajo da falsy y
+              quedaba una caja bordeada vacía de 360px. */}
+          {(!o.result || o.direccion) && (
+          <div className="bg-card/40 border border-border rounded-3xl p-5 shadow-card3d hairline-top">
         {/* Validador-direcciones v2: en modo EDIT (pedido pendiente) usamos
             AddressAutocomplete + AddressFeedbackCard. En modo VIEW (ya
             gestionado) seguimos con el badge legacy para no alterar la
@@ -1032,85 +1136,17 @@ export default function CallView({ items, alerts }: Props) {
             </div>
           )
         )}
+          </div>
+          )}
 
-        {/* Edición de orden unificada estilo Dropi: datos + dirección +
-            transportadora + producto + valor en un solo diálogo. */}
-        {!o.result && o.externalId && (
-          <div className="mb-3 grid gap-2">
-            <button
-              type="button"
-              onClick={() => setEditorState({ order: o })}
-              title="Editar orden (datos, transportadora, cantidades y valor)"
-              aria-label="Editar orden"
-              className="w-full inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-success/12 border border-success/30 text-success text-sm font-semibold hover:bg-success/20 hover:border-success/45 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
-            >
-              <UserCog size={15} aria-hidden="true" /> Editar orden
-              {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
-              {o.valor > 0 && <span className="font-mono tabular-nums opacity-70">· {formatCOP(o.valor)}</span>}
-            </button>
-          </div>
-        )}
-
-        {/* Sticky action bar en mobile: los 3 botones (Confirmó/Canceló/No
-            contestó) quedan pegados al fondo del viewport mientras la asesora
-            scrollea por la dirección/notas/sugerencias. Si el card scroll fuera
-            del viewport, sticky se va con él (esperado).
-            En sm+ vuelve a layout inline (mt-4) porque la card cabe en pantalla. */}
-        <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card sm:bg-transparent -mx-6 sm:mx-0 px-6 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
-        {!o.result ? (
-          <div className="grid grid-cols-3 gap-2.5">
-            {/* Validador-direcciones: el botón Confirmar pasa por el gate
-                (validación dirección + teléfono + documento Coordinadora +
-                override admin). Si el gate bloquea, el Button queda
-                deshabilitado y el tooltip explica la razón. */}
-            <DespachoGateButton
-              gate={{
-                // Validador-direcciones: usar visualDecision (que aplica los
-                // overrides client-side de pickup_office y stale-green ANTES
-                // de que el UPDATE+realtime corrija la fila en DB) — así el
-                // botón coincide con lo que ve la operadora en la card.
-                validation_decision: visualDecision,
-                telefonoValido: validarTelefono(o.phone, countryCode),
-                // includes, NO igualdad exacta: la transportadora viene verbatim
-                // de Dropi (distribution_company.name) y puede ser "COORDINADORA
-                // MERCANTIL", "Coordinadora S.A.", etc. Con !== 'coordinadora' el
-                // gate fallaba ABIERTO (dejaba despachar sin cédula) en toda
-                // variante de nombre. Coordinadora EXIGE cédula del destinatario.
-                documentoSiCoordinadora:
-                  !(o.transportadora || '').toLowerCase().includes('coordinadora') ||
-                  Boolean(o.documentoDestinatario),
-                isAdmin,
-                overrideChecked: addressOverride,
-              }}
-              onConfirm={() => handleMark('conf')}
-            >
-              <span className="inline-flex items-center justify-center gap-1.5">
-                <CheckCircle2 size={16} aria-hidden="true" /> Confirmó
-              </span>
-            </DespachoGateButton>
-            <button onClick={() => setShowCancelModal(true)} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 active:scale-[0.97] transition-all">
-              <XCircle size={16} aria-hidden="true" /> Canceló
-            </button>
-            <button onClick={() => handleMark('noresp')} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-card/40 border border-border text-muted-foreground font-bold text-sm hover:text-foreground hover:border-border-strong active:scale-[0.97] transition-all">
-              <PhoneOff size={16} aria-hidden="true" /> No contestó
-            </button>
-          </div>
-        ) : (
-          <div className="text-center py-3 text-sm font-semibold inline-flex items-center gap-1.5 justify-center w-full">
-            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-success" aria-hidden="true" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-danger" aria-hidden="true" /> Cancelado</> : <><PhoneOff size={16} aria-hidden="true" /> No respondió</>}
-          </div>
-        )}
-        </div>
+          {/* Notas y recordatorios del cliente — visible para toda la tienda.
+              Por phone (no solo orderId): si el mismo cliente tiene otro pedido,
+              la asesora ve la nota previa que dejó otra compañera. */}
+          {o.dbId && (
+            <NotesPanel phone={o.phone} orderId={o.dbId} variant="compact" />
+          )}
+        </aside>
       </div>
-
-      {/* Notas y recordatorios del cliente — visible para toda la tienda.
-          Por phone (no solo orderId): si el mismo cliente tiene otro pedido,
-          la asesora ve la nota previa que dejó otra compañera. */}
-      {o.dbId && (
-        <div className="mb-4">
-          <NotesPanel phone={o.phone} orderId={o.dbId} variant="compact" />
-        </div>
-      )}
 
       {showCancelModal && (
         <div

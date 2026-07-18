@@ -5,8 +5,14 @@ import { CONF_TARGET_PCT, confRateBySample } from '@/lib/confirmationRate';
 export default function CounterBar() {
   const { workQueue, counter } = useOrders();
   const total = counter.conf + counter.canc + counter.noresp;
-  const goal = workQueue.length || 1;
-  const pct = Math.min(100, Math.round(total / goal * 100));
+  // Denominador = lo gestionado HOY + lo que queda en cola. Antes era solo
+  // `workQueue.length`, que funcionaba mientras `counter` contaba únicamente
+  // la sesión actual. Desde que el contador se hidrata con lo real del día
+  // (OrderContext → today_call_stats), `total` incluye lo gestionado en
+  // sesiones anteriores y `workQueue.length` es solo lo que FALTA: la barra
+  // llegaba a mostrar "8 / 1". Sumar ambos da la carga real del día.
+  const goal = total + workQueue.length;
+  const pct = goal > 0 ? Math.min(100, Math.round(total / goal * 100)) : 0;
   // Tasa de confirmación MADURA: conf ÷ (conf+canc), SIN noresp en el denominador
   // (fuente única confirmationRate.ts). Antes se usaba conf÷(conf+canc+noresp),
   // fórmula diluida obsoleta que pintaba rojo un día con muchos N/R aunque la

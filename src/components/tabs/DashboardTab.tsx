@@ -247,12 +247,12 @@ export default function DashboardTab() {
   const tasa = confRateBySample(counter.conf, counter.canc).tasa ?? 0;
   const pendLeft = workQueue.filter(o => !o.result).length;
 
-  // Meta del día — MISMO cálculo que CounterBar (src/components/CounterBar.tsx:8-9):
-  // cobertura = gestionados / cola del día. Se replica la fórmula en vez de
-  // inventar otra para que la barra de Confirmar y la del Dashboard no puedan
-  // mostrarle números distintos a la misma operadora.
+  // Meta del día — MISMA fórmula que CounterBar (src/components/CounterBar.tsx):
+  // gestionados hoy / (gestionados hoy + lo que queda en cola). Se replica en
+  // vez de inventar otra para que la barra de Confirmar y la del Dashboard no
+  // puedan mostrarle números distintos a la misma operadora.
   const metaDia = (() => {
-    const goal = workQueue.length;
+    const goal = total + workQueue.length;
     return { goal, pct: goal > 0 ? Math.min(100, Math.round(total / goal * 100)) : 0 };
   })();
 
