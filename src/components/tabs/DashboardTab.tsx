@@ -49,6 +49,61 @@ export default function DashboardTab() {
   interface OperatorStat { name: string; operatorId: string; conf: number; canc: number; noresp: number; total: number; tasa: number; }
   const [operatorRanking, setOperatorRanking] = useState<OperatorStat[]>([]);
 
+  // ─────────────────────────────────────────────────────────────
+  // ALCANCE: equipo vs. yo
+  //
+  // Este panel nació midiendo SOLO al usuario que lo mira (today_call_stats y
+  // el historial filtran por operator_id = auth.uid()). Para una asesora está
+  // bien: es su tablero. Para el dueño o un supervisor que no atiende llamadas
+  // da 0 en todo — y un tablero en cero se lee como "la app está rota" cuando
+  // en realidad el equipo trabajó: en Ecuador había 497 gestiones en 7 días
+  // mientras el dueño veía ceros.
+  //
+  // Managers arrancan en "equipo" (es lo que necesitan) y pueden volver a "yo".
+  // A las asesoras no se les muestra el control: su panel sigue siendo el suyo.
+  // ─────────────────────────────────────────────────────────────
+  type Alcance = 'equipo' | 'yo';
+  const [alcance, setAlcance] = useState<Alcance>('yo');
+  useEffect(() => { setAlcance(isManagerOfActive ? 'equipo' : 'yo'); }, [isManagerOfActive]);
+  const verEquipo = isManagerOfActive && alcance === 'equipo';
+
+  interface DiaEquipo { fecha: string; conf: number; canc: number; noresp: number; }
+  const [equipoDiario, setEquipoDiario] = useState<DiaEquipo[]>([]);
+  // 'error' existe a propósito y NO se colapsa a lista vacía: una lista vacía
+  // pinta ceros, y un cero que en realidad significa "no pude leer la base" es
+  // una cifra inventada. Si falla, la pantalla lo dice.
+  const [equipoEstado, setEquipoEstado] = useState<'idle' | 'cargando' | 'ok' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!isManagerOfActive || !activeStoreId) { setEquipoEstado('idle'); return; }
+    let cancelado = false;
+    setEquipoEstado('cargando');
+    const hasta = new Date().toISOString().split('T')[0];
+    const desde = new Date(Date.now() - 30 * 864e5).toISOString().split('T')[0];
+    // admin_daily_reports_range agrega POR DÍA en el servidor. Leer order_results
+    // crudo acá sería un error: PostgREST corta en 1000 filas y las tasas
+    // saldrían calculadas sobre una muestra truncada sin avisar.
+    (supabase.rpc as unknown as (fn: string, p: Record<string, unknown>) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }>)
+      ('admin_daily_reports_range', { p_from: desde, p_to: hasta })
+      .then(({ data, error }) => {
+        if (cancelado) return;
+        if (error || !Array.isArray(data)) {
+          console.error('No se pudo leer el resumen diario del equipo:', error?.message);
+          setEquipoDiario([]);
+          setEquipoEstado('error');
+          return;
+        }
+        setEquipoDiario(data.map(f => ({
+          fecha: String(f.fecha ?? '').slice(0, 10),
+          conf: Number(f.confirmados) || 0,
+          canc: Number(f.cancelados) || 0,
+          noresp: Number(f.noresp) || 0,
+        })));
+        setEquipoEstado('ok');
+      });
+    return () => { cancelado = true; };
+  }, [isManagerOfActive, activeStoreId]);
+
   // Audit M3: cancellation guards — evitan setState en componente desmontado.
   useEffect(() => {
     if (!user) return;
@@ -112,11 +167,14 @@ export default function DashboardTab() {
   }, [user, activeStoreId]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !activeStoreId) return;
     let cancelled = false;
     const since = new Date(); since.setDate(since.getDate() - 30);
+    // store_id agregado: sin él, un usuario con gestiones en Colombia Y Ecuador
+    // veía las dos tiendas sumadas en el mismo gráfico, sin poder notarlo.
     supabase.from('order_results').select('result_date, result, order_id')
-      .eq('operator_id', user.id).gte('result_date', since.toISOString().split('T')[0])
+      .eq('operator_id', user.id).eq('store_id', activeStoreId)
+      .gte('result_date', since.toISOString().split('T')[0])
       .order('result_date', { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return;
@@ -124,7 +182,7 @@ export default function DashboardTab() {
         if (data) setHistoryData(data);
       });
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, activeStoreId]);
 
   // Sync health — poll the latest entry in sync_logs every 30s. Only
   // admins have SELECT permission on sync_logs, so non-admin users just
@@ -209,9 +267,16 @@ export default function DashboardTab() {
       const d = new Date(); d.setDate(d.getDate() - (period - 1 - i));
       dates.push(d.toISOString().split('T')[0]);
     }
-    const byDay = computeDailyCounterByDay(historyData, dates);
+    // Dos fuentes según el alcance, pero UN solo formato de salida para que
+    // todo lo de abajo (gráficos, sparklines, KPIs) no sepa de dónde vino.
+    const porDia: Record<string, { conf: number; canc: number; noresp: number }> = verEquipo
+      ? Object.fromEntries(dates.map(f => {
+          const r = equipoDiario.find(e => e.fecha === f);
+          return [f, { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0 }];
+        }))
+      : computeDailyCounterByDay(historyData, dates);
     return dates.map(date => {
-      const d = byDay[date];
+      const d = porDia[date];
       const t = d.conf + d.canc + d.noresp;
       return {
         date: new Date(date + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }),
@@ -221,17 +286,20 @@ export default function DashboardTab() {
         ...d, tasa: confRateBySample(d.conf, d.canc).tasa ?? 0, total: t
       };
     });
-  }, [historyData, period, hoyISO]);
+  }, [historyData, equipoDiario, verEquipo, period, hoyISO]);
 
   // Comparativo de ayer. Usa la MISMA fn que CounterBar (computeDailyCounter)
   // para que "ayer" en el dashboard nunca diverja del cierre real del día.
   const yesterdayData = useMemo(() => {
     const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
     const yd = yesterday.toISOString().split('T')[0];
-    const { conf, canc, noresp } = computeDailyCounter(historyData, yd);
+    const r = verEquipo ? equipoDiario.find(e => e.fecha === yd) : null;
+    const { conf, canc, noresp } = verEquipo
+      ? { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0 }
+      : computeDailyCounter(historyData, yd);
     const total = conf + canc + noresp;
     return { conf, canc, noresp, total, tasa: confRateBySample(conf, canc).tasa ?? 0 };
-  }, [historyData]);
+  }, [historyData, equipoDiario, verEquipo]);
 
   const sparkData = useMemo(() => {
     const last7 = chartData.slice(-7);
@@ -243,9 +311,28 @@ export default function DashboardTab() {
     };
   }, [chartData]);
 
-  const total = counter.conf + counter.canc + counter.noresp;
-  const tasa = confRateBySample(counter.conf, counter.canc).tasa ?? 0;
+  // Cifras de HOY que se MUESTRAN. Ojo: `counter` (personal) se sigue usando
+  // tal cual para el cierre de turno más abajo — ese reporte es de la operadora
+  // que lo firma y no puede cambiar según lo que esté mirando en pantalla.
+  const hoy = useMemo(() => {
+    if (!verEquipo) return counter;
+    const r = equipoDiario.find(e => e.fecha === hoyISO);
+    return { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0 };
+  }, [verEquipo, equipoDiario, hoyISO, counter]);
+
+  const total = hoy.conf + hoy.canc + hoy.noresp;
+  // `inmaduro` (resueltos < 5) ya lo calcula confRateBySample y el Dashboard lo
+  // estaba tirando. Importa: con 1 confirmado y 0 cancelados la fórmula da
+  // 100%, que es aritméticamente cierto y operativamente una mentira — nadie
+  // tiene 100% de confirmación, tiene UNA gestión. Otras 5 pantallas del CRM
+  // ya marcan este caso; acá se hacía pasar por medición concluyente.
+  const tasaInfo = confRateBySample(hoy.conf, hoy.canc);
+  const tasa = tasaInfo.tasa ?? 0;
+  const tasaSinBase = tasaInfo.tasa === null || tasaInfo.inmaduro;
   const pendLeft = workQueue.filter(o => !o.result).length;
+  // Cuando NO se pudo leer al equipo, las cifras de arriba son ceros de relleno.
+  // Se usa para no pintarlas como si fueran una medición.
+  const datosIncompletos = verEquipo && equipoEstado !== 'ok';
 
   // Meta del día — MISMA fórmula que CounterBar (src/components/CounterBar.tsx):
   // gestionados hoy / (gestionados hoy + lo que queda en cola). Se replica en
@@ -392,7 +479,15 @@ export default function DashboardTab() {
   // Píldora de tendencia. Se llamaba "badge" pero era texto suelto sin fondo ni
   // borde: en la card hero quedaba como contrapeso del rótulo "Tasa personal"
   // sin ningún peso visual. El handoff la pide como chip con tinte semántico.
-  function TrendBadge({ current, previous, suffix = '' }: { current: number; previous: number; suffix?: string }) {
+  // `previous` acepta null A PROPÓSITO: sin dato de ayer NO se dibuja nada.
+  // Antes el tipo era `number` y "Total pedidos" pasaba un 0 fijo, así que la
+  // píldora habría mostrado "+2385 vs ayer" — un número inventado presentado
+  // como medición. Hoy esa rama no se ve (esa tarjeta muestra otra cosa), pero
+  // el 0 quedaba de mina para el próximo que reordene el código. El CRM no
+  // muestra cifras que no salgan de la base: si no hay con qué comparar, no
+  // hay píldora.
+  function TrendBadge({ current, previous, suffix = '' }: { current: number; previous: number | null; suffix?: string }) {
+    if (previous === null || previous === undefined || !Number.isFinite(previous)) return null;
     const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-semibold whitespace-nowrap';
     const diff = current - previous;
     if (diff === 0) {
@@ -454,6 +549,20 @@ export default function DashboardTab() {
               {new Date().toLocaleDateString('es-CO', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
           </span>
+          {/* Alcance: solo para quien manda en la tienda. La asesora no lo ve
+              porque su tablero es el suyo y no hay nada que elegir. */}
+          {isManagerOfActive && (
+            <div className="inline-flex flex-wrap gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border" role="group" aria-label="Qué se muestra en el tablero">
+              {([{ v: 'equipo', l: 'Equipo' }, { v: 'yo', l: 'Yo' }] as Array<{ v: Alcance; l: string }>).map(a => (
+                <button key={a.v} onClick={() => setAlcance(a.v)} aria-pressed={alcance === a.v}
+                  className={`px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    alcance === a.v
+                      ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                      : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}>{a.l}</button>
+              ))}
+            </div>
+          )}
           {/* Period tabs */}
           <div className="inline-flex flex-wrap gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border">
             {[{ n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
@@ -570,11 +679,16 @@ export default function DashboardTab() {
               className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col"
             >
               <div className="flex items-center justify-between gap-3 tilt-layer-2">
+                {/* El rótulo CAMBIA con el alcance. Dejarlo fijo en "Tasa
+                    personal" mientras el aro muestra al equipo sería mentir con
+                    la etiqueta en vez de con el número. */}
                 <div
                   className="hud-label"
-                  title="Tasa personal: tus confirmados / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD. NO sobre el inflow total del día — eso lo ves en /admin → Productividad."
+                  title={verEquipo
+                    ? 'Tasa del equipo: confirmados de toda la tienda / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD.'
+                    : 'Tasa personal: tus confirmados / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD. NO sobre el inflow total del día — eso lo ves en /admin → Productividad.'}
                 >
-                  Tasa personal
+                  {verEquipo ? 'Tasa del equipo' : 'Tasa personal'}
                 </div>
                 <TrendBadge current={tasa} previous={yesterdayData.tasa} suffix="%" />
               </div>
@@ -588,24 +702,57 @@ export default function DashboardTab() {
                   dueño o supervisor que no atiende llamadas siempre da 0, y ver
                   ceros sin explicación se lee como "la pantalla está rota".
                   Se dice explícitamente y se apunta a dónde están los del equipo. */}
-              {total === 0 && isManagerOfActive && (
+              {total === 0 && isManagerOfActive && !verEquipo && (
                 <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                  Estás en <span className="text-foreground font-semibold">0</span> porque este panel
-                  mide <span className="text-foreground font-semibold">tus</span> llamadas, y hoy no
-                  registraste ninguna. Los números del equipo están en{' '}
-                  <span className="text-accent font-semibold">Admin → Productividad</span>.
+                  Estás en <span className="text-foreground font-semibold">0</span> porque estás
+                  viendo <span className="text-foreground font-semibold">tus</span> llamadas y hoy no
+                  registraste ninguna. Cambiá a{' '}
+                  <span className="text-accent font-semibold">Equipo</span> para ver a toda la tienda.
+                </div>
+              )}
+
+              {/* No se pudo leer al equipo. Es CRÍTICO decirlo: sin este aviso
+                  el aro y las tarjetas muestran ceros que parecen una medición
+                  ("hoy no se confirmó nada") cuando en realidad significan
+                  "no pude preguntarle a la base". */}
+              {verEquipo && equipoEstado === 'error' && (
+                <div className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-[11px] leading-relaxed text-danger">
+                  <span className="font-semibold">No se pudieron cargar los datos del equipo.</span>{' '}
+                  Los ceros de esta pantalla NO significan que no se trabajó: significan que no se
+                  pudo leer la base. Recargá la página; si sigue igual, avisá.
+                </div>
+              )}
+              {verEquipo && equipoEstado === 'cargando' && (
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-[11px] text-muted-foreground">
+                  Cargando los datos del equipo…
                 </div>
               )}
 
               <div className="tilt-layer-1 space-y-3">
-                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
-                  {tasa >= CONF_TARGET_PCT ? `En meta (${CONF_TARGET_PCT}%)` : tasa >= CONF_TARGET_PCT - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
-                </div>
+                {/* Con menos de 5 resueltos NO se emite veredicto: decir "en
+                    meta" con una sola gestión es darle estatus de conclusión a
+                    un dato que no concluye nada. Se dice cuántas hay y ya. */}
+                {tasaSinBase ? (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-muted/50 border border-border text-muted-foreground">
+                    Muestra insuficiente · {tasaInfo.resueltos} {tasaInfo.resueltos === 1 ? 'gestión resuelta' : 'gestiones resueltas'} hoy
+                  </div>
+                ) : (
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
+                    {tasa >= CONF_TARGET_PCT ? `En meta (${CONF_TARGET_PCT}%)` : tasa >= CONF_TARGET_PCT - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
+                  </div>
+                )}
 
                 {/* Meta del día — mismo cálculo que CounterBar (gestionados sobre
                     la cola del día), para que el Dashboard y la barra de
-                    Confirmar nunca muestren números distintos. */}
-                {metaDia.goal > 0 && (
+                    Confirmar nunca muestren números distintos.
+                    SOLO en alcance personal, y SOLO si la cola está cargada:
+                      · La meta es "lo que YO gestioné sobre MI cola". Con el
+                        numerador del equipo y la cola de quien mira, el
+                        cociente no significa nada (se veía "1 / 1").
+                      · Si workQueue está vacío no se puede distinguir "terminé"
+                        de "todavía no cargó la cola", y el cartel gritaba
+                        "¡Cola al día!" con 53 pedidos sin confirmar. */}
+                {!verEquipo && workQueue.length > 0 && metaDia.goal > 0 && (
                   <div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
                       <span>Meta del día</span>
@@ -648,10 +795,13 @@ export default function DashboardTab() {
                 ese ancho se apilan, que es como estaba antes del rediseño. */}
             <div className="md:col-span-6 grid grid-cols-1 min-[390px]:grid-cols-2 gap-4">
             {[
-              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, tone: 'success' as const, spark: sparkData.conf },
-              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, tone: 'danger' as const, spark: sparkData.canc },
-              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, tone: 'neutral' as const, spark: sparkData.noresp },
-              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
+              { icon: CheckCircle2, label: 'Confirmados', value: hoy.conf, prev: yesterdayData.conf, tone: 'success' as const, spark: sparkData.conf },
+              { icon: XCircle, label: 'Cancelados', value: hoy.canc, prev: yesterdayData.canc, tone: 'danger' as const, spark: sparkData.canc },
+              { icon: PhoneOff, label: 'No respondió', value: hoy.noresp, prev: yesterdayData.noresp, tone: 'neutral' as const, spark: sparkData.noresp },
+              // prev: null — no hay conteo de "total de pedidos de ayer" en los
+              // datos que carga esta pantalla. Antes decía 0, que no es "sin
+              // dato": es un dato FALSO que produciría un delta inventado.
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: null, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k) => (
               <StatTile
                 key={k.label}
@@ -917,9 +1067,9 @@ export default function DashboardTab() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-success', iconBg: 'bg-success/14 border-success/30 glow-success', iconColor: 'text-success' },
-                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-danger', iconBg: 'bg-danger/14 border-danger/30 glow-danger', iconColor: 'text-danger' },
-                { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconBg: 'bg-muted/60 border-border', iconColor: 'text-muted-foreground' },
+                { icon: CheckCircle2, label: 'Confirmados', value: hoy.conf, color: 'text-success', iconBg: 'bg-success/14 border-success/30 glow-success', iconColor: 'text-success' },
+                { icon: XCircle, label: 'Cancelados', value: hoy.canc, color: 'text-danger', iconBg: 'bg-danger/14 border-danger/30 glow-danger', iconColor: 'text-danger' },
+                { icon: PhoneOff, label: 'No respondió', value: hoy.noresp, color: 'text-muted-foreground', iconBg: 'bg-muted/60 border-border', iconColor: 'text-muted-foreground' },
                 { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-warning', iconBg: 'bg-warning/14 border-warning/30 glow-warning', iconColor: 'text-warning' },
               ].map(item => {
                 const Icon = item.icon;
