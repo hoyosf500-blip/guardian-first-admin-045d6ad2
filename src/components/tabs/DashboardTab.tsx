@@ -22,7 +22,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { TiltCard, StatTile, CountUp, GaugeRing, RankRow } from '@/components/ui3d';
+import { TiltCard, StatTile, CountUp, GaugeRing, RankRow, StackedDayBars } from '@/components/ui3d';
 
 interface DailyResult { result_date: string; result: string; order_id: string | null; }
 interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }
@@ -695,11 +695,39 @@ export default function DashboardTab() {
             </TiltCard>
 
             <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full">
-              <div className="flex items-center justify-between mb-4 tilt-layer-1">
+              <div className="flex items-center justify-between gap-3 flex-wrap mb-4 tilt-layer-1">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                   <Layers size={14} className="text-success" aria-hidden="true" /> Gestiones por día
                 </h3>
+                {/* A 7d la leyenda de recharts no existe: se dibuja acá con los
+                    MISMOS textos, para no perder qué significa cada color. */}
+                {period === 7 && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {[
+                      { c: 'bg-success', t: 'Confirmados' },
+                      { c: 'bg-danger', t: 'Cancelados' },
+                      { c: 'bg-muted-foreground/45', t: 'No respondió' },
+                    ].map(l => (
+                      <span key={l.t} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span className={`w-2.5 h-2.5 rounded-[3px] ${l.c}`} aria-hidden="true" />
+                        {l.t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
+              {/* A 7 días van las barras del handoff: gruesas, con el número
+                  IMPRESO adentro de cada segmento y la columna de hoy con
+                  contorno cian. La operadora lee su semana sin pasar el mouse
+                  por ningún lado.
+                  A 15 y 30 días no hay ancho para meter números adentro (se
+                  recortarían), así que cae al BarChart de recharts, que aporta
+                  ejes y tooltip. Misma serie, misma leyenda. */}
+              {period === 7 ? (
+                <div className="h-52 flex flex-col justify-end pb-1">
+                  <StackedDayBars data={chartData} height={150} />
+                </div>
+              ) : (
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
@@ -729,6 +757,7 @@ export default function DashboardTab() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              )}
             </TiltCard>
           </motion.div>
 
