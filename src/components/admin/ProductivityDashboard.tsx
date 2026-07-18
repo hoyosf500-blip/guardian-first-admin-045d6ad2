@@ -101,18 +101,15 @@ const RANGE_LABELS: Record<Range, string> = {
  *  tasa de RESOLUCIÓN (Seguimiento/Novedades) es otra métrica y pasa su propio
  *  benchmark operativo. Verde >= target; ámbar en la banda "cerca" (5 pts). */
 function RateBar({ value, target = CONF_TARGET_PCT }: { value: number; target?: number }) {
-  // El valor REAL puede pasar de 100% (ej. confirmar pedidos viejos además de los
-  // que entraron hoy) → mostramos el número honesto en el label; solo el ANCHO de
-  // la barra se topa en lleno (una barra no puede pasar de 100%). Antes el label
-  // también se clampeaba a 100 y se veía "topado", inconsistente con "Contactó del
-  // día" que sí muestra el % crudo.
-  const raw = Math.max(0, value);
-  const barPct = Math.min(100, raw);
-  const tone = raw >= target ? 'success' : raw >= target - 5 ? 'warning' : 'danger';
+  // El % del día se topa en 100%: una tasa no se muestra por encima de 100 (si
+  // confirmó pedidos viejos además de los de hoy ya está "al día" — la columna
+  // "faltan 0" de al lado lo indica). El dueño lo pidió explícito: nada de "140%".
+  const pct = Math.max(0, Math.min(100, value));
+  const tone = pct >= target ? 'success' : pct >= target - 5 ? 'warning' : 'danger';
   return (
     <div className={`data-bar tone-${tone}`}>
-      <div className="data-bar-fill" style={{ width: `${barPct}%` }} aria-hidden="true" />
-      <span className="data-bar-value">{raw.toFixed(0)}%</span>
+      <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
+      <span className="data-bar-value">{pct.toFixed(0)}%</span>
     </div>
   );
 }
@@ -777,7 +774,9 @@ export default function ProductivityDashboard() {
                         // y decidieron). Faltan por contactar = entrantes − contactados
                         // (= no contestaron + sin tocar). Misma lógica que confirmación.
                         const contactados = r.confirmados + r.cancelados;
-                        const pct = entrantes > 0 ? Math.round((contactados / entrantes) * 100) : null;
+                        // Topado en 100%: si contactó pedidos viejos además de los de hoy,
+                        // "faltan 0" ya dice que terminó lo que entró (nada de 140%).
+                        const pct = entrantes > 0 ? Math.min(100, Math.round((contactados / entrantes) * 100)) : null;
                         const faltan = Math.max(0, entrantes - contactados);
                         const sinTocar = Math.max(0, entrantes - r.total_atendidos);
                         const tip = `Contactó a ${contactados} de ${entrantes} que entraron · faltan ${faltan} por contactar (${r.noresp} no contestaron + ${sinTocar} sin tocar)`;
@@ -808,7 +807,7 @@ export default function ProductivityDashboard() {
                         // (la cola reciente pendiente es normal) → número firme vs meta.
                         if (isToday && cd.inmaduro) return (
                           <span className="font-mono tabular-nums text-xs text-muted-foreground" title={`Día en curso (${cd.pctProcesado}% trabajado) — provisional. ${tip}`}>
-                            {cd.tasaDia}% <span className="opacity-70">· en curso</span>
+                            {Math.min(100, cd.tasaDia)}% <span className="opacity-70">· en curso</span>
                           </span>
                         );
                         return <span title={tip}><RateBar value={cd.tasaDia} target={metaPorOperadora} /></span>;
@@ -868,7 +867,7 @@ export default function ProductivityDashboard() {
                     const faltan = Math.max(0, entrantes - totAt);
                     // Contactó del día del EQUIPO = contactados ÷ entrantes.
                     const totContactados = totConf + totCanc;
-                    const pctContactoTeam = entrantes > 0 ? Math.round((totContactados / entrantes) * 100) : null;
+                    const pctContactoTeam = entrantes > 0 ? Math.min(100, Math.round((totContactados / entrantes) * 100)) : null;
                     const faltanContactar = Math.max(0, entrantes - totContactados);
                     const contactoTone = faltanContactar === 0 ? 'success' : faltanContactar < entrantes / 2 ? 'warning' : 'danger';
                     // Ritmo del EQUIPO sobre horas TRABAJADAS (evidencia): clientes
@@ -923,7 +922,7 @@ export default function ProductivityDashboard() {
                                   ? `Día en curso (${cdTeam.pctProcesado}% trabajado) — provisional. Meta del día ~${CONF_DIA_TARGET_PCT}%.`
                                   : `${totConf} confirmados de ${entrantes} que entraron. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
                               >
-                                {cdTeam.tasaDia}%{teamEnCurso ? ' ·en curso' : ''}
+                                {Math.min(100, cdTeam.tasaDia)}%{teamEnCurso ? ' ·en curso' : ''}
                               </span>
                             )}
                         </td>
@@ -965,21 +964,10 @@ export default function ProductivityDashboard() {
             />
           </Section>
 
-          {/* Rescate */}
-          <Section title="Rescate" dotClass="bg-danger" note="Touchpoints marcados sobre pedidos en rescate">
-            <ResolutionTable
-              rows={rows}
-              acciones={r => r.rescate_acciones}
-              resueltos={r => r.rescate_resueltos}
-              pedidos={r => r.rescate_pedidos}
-              resueltosDist={r => r.rescate_resueltos_dist}
-              actionTone="danger"
-            />
-          </Section>
-
-          {/* Novedades */}
-          {rows.some(r => r.novedades_resueltas > 0) && (
-            <Section title="Novedades" dotClass="bg-warning" note="Novedades de transportadora resueltas">
+          {/* Novedades — ocupa el lugar de la vieja sección "Rescate" (módulo
+              eliminado del CRM). Siempre visible; si nadie resolvió, empty state. */}
+          <Section title="Novedades" dotClass="bg-warning" note="Novedades de transportadora resueltas">
+            {rows.some(r => r.novedades_resueltas > 0) ? (
               <div className="overflow-x-auto">
                 <table className="data-table">
                   <thead>
@@ -1004,8 +992,12 @@ export default function ProductivityDashboard() {
                   </tbody>
                 </table>
               </div>
-            </Section>
-          )}
+            ) : (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                Nadie resolvió novedades en {RANGE_LABELS[range].toLowerCase()}.
+              </div>
+            )}
+          </Section>
 
           </>}
         </>
