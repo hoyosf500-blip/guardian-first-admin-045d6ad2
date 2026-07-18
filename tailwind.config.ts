@@ -118,8 +118,10 @@ export default {
       },
       boxShadow: {
         /* Dirección 3D — card, glow de acento y elevación del rail */
-        card3d: "0 20px 50px -30px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.05)",
-        "card3d-lg": "0 30px 70px -30px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.08)",
+        // Definidas como tokens por tema en index.css. Eran literales rgba
+        // negras: en tema claro cada card quedaba sobre un charco de negro.
+        card3d: "var(--shadow-card3d)",
+        "card3d-lg": "var(--shadow-card3d-lg)",
         glow3d: "0 0 18px -6px hsl(var(--accent))",
       },
       keyframes: {

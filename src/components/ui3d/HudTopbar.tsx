@@ -26,7 +26,7 @@ export default function HudTopbar({ title, section, right, onMenu }: HudTopbarPr
           <button
             onClick={onMenu}
             aria-label="Abrir menú"
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-card transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <Menu size={18} aria-hidden="true" />
           </button>
@@ -44,7 +44,7 @@ export default function HudTopbar({ title, section, right, onMenu }: HudTopbarPr
           <span
             aria-hidden="true"
             className="w-1.5 h-1.5 rounded-full bg-cyan animate-gb-pulse"
-            style={{ boxShadow: '0 0 8px hsl(var(--cyan))' }}
+            style={{ boxShadow: '0 0 8px hsl(var(--cyan) / 0.5)' }}
           />
           Sistema en línea
         </span>

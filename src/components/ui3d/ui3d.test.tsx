@@ -286,7 +286,7 @@ describe('GaugeRing', () => {
 
   it('expone el valor a lectores de pantalla', () => {
     render(<GaugeRing value={86} label="confirmación" duration={0} />);
-    expect(screen.getByRole('meter')).toHaveAttribute('aria-valuenow', '86');
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '86');
   });
 });
 

@@ -745,12 +745,12 @@ export default function CallView({ items, alerts }: Props) {
       )}
       <div className="flex justify-between items-center mb-2">
         <span className="font-mono tabular-nums text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
-        <div className="flex gap-1.5">
-          <button onClick={() => navCall(-1)} disabled={callIdx <= 0} className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
-            <ChevronLeft size={14} />
+        <div className="flex gap-2">
+          <button aria-label="Pedido anterior" onClick={() => navCall(-1)} disabled={callIdx <= 0} className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
+            <ChevronLeft size={14} aria-hidden="true" />
           </button>
-          <button onClick={() => navCall(1)} disabled={callIdx >= items.length - 1} className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
-            <ChevronRight size={14} />
+          <button aria-label="Pedido siguiente" onClick={() => navCall(1)} disabled={callIdx >= items.length - 1} className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
+            <ChevronRight size={14} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -809,7 +809,7 @@ export default function CallView({ items, alerts }: Props) {
             </div>
             <button
               onClick={() => handleMark('conf')}
-              className="text-[10px] font-bold px-2.5 py-1.5 rounded-xl bg-success/16 border border-success/40 text-success hover:bg-success/25 transition-colors whitespace-nowrap"
+              className="text-xs font-bold px-3 min-h-11 inline-flex items-center justify-center rounded-xl bg-success/16 border border-success/40 text-success hover:bg-success/25 transition-colors whitespace-nowrap"
             >
               Confirmar sin llamar
             </button>
@@ -870,7 +870,7 @@ export default function CallView({ items, alerts }: Props) {
                 <button
                   type="button"
                   onClick={() => setEditorState({ order: o, suggestedTotal: oc.shopifyTotal })}
-                  className="text-[10px] font-bold px-2.5 py-1.5 rounded-xl bg-warning/16 border border-warning/40 text-warning hover:bg-warning/25 transition-colors whitespace-nowrap"
+                  className="text-xs font-bold px-3 min-h-11 inline-flex items-center justify-center rounded-xl bg-warning/16 border border-warning/40 text-warning hover:bg-warning/25 transition-colors whitespace-nowrap"
                 >
                   Corregir a {formatCOP(oc.shopifyTotal)}
                 </button>
@@ -880,7 +880,7 @@ export default function CallView({ items, alerts }: Props) {
         })()}
         {!o.result && <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>}
         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-          <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} />
+          <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} aria-hidden="true" />
           <span className={`font-mono tabular-nums text-xs font-bold ${pColor}`}>D{o.dias}</span>
           <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
         </div>
@@ -888,22 +888,22 @@ export default function CallView({ items, alerts }: Props) {
         <div className="text-2xl font-bold tracking-tight mb-1.5 text-foreground">{o.nombre}</div>
 
         <div className="text-sm text-muted-foreground mb-4 leading-relaxed space-y-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Phone size={12} /> <button onClick={copyPhone} className="font-mono tabular-nums text-cyan hover:underline">{formatPhone(o.phone)}</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Phone size={12} /> <button onClick={copyPhone} aria-label={`Copiar teléfono ${formatPhone(o.phone)}`} title="Copiar teléfono" className="min-h-11 inline-flex items-center font-mono tabular-nums text-cyan hover:underline">{formatPhone(o.phone)}</button>
             {/* Contacto de 1 click — antes el teléfono SOLO se copiaba. */}
             <a
               href={`tel:+${waPhone}`}
-              className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
+              className="ml-1 inline-flex items-center gap-1 text-xs px-3 min-h-11 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
             >
-              <Phone size={10} aria-hidden="true" /> Llamar
+              <Phone size={14} aria-hidden="true" /> Llamar
             </a>
             <button
               type="button"
               onClick={handleWhatsApp}
               title={waEnabled ? 'Abrir WhatsApp del cliente' : 'Abrir WhatsApp (canal externo)'}
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success/13 text-success border border-success/30 hover:bg-success/22 transition-colors"
+              className="inline-flex items-center gap-1 text-xs px-3 min-h-11 rounded-full bg-success/13 text-success border border-success/30 hover:bg-success/22 transition-colors"
             >
-              <MessageSquare size={10} aria-hidden="true" /> WhatsApp
+              <MessageSquare size={14} aria-hidden="true" /> WhatsApp
             </button>
             <span className="mx-2" />
             <MapPin size={12} /> {o.ciudad || '—'}

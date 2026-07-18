@@ -477,7 +477,7 @@ export default function SeguimientoTab() {
             </div>
             {/* Date range filter */}
             <div className={cn(
-              "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
+              "flex items-center gap-2 rounded-xl px-2 py-1 transition-colors",
               (dateFrom || dateTo)
                 ? "bg-accent/10 border border-accent/40 shadow-glow3d"
                 : "bg-card/40 border border-border hover:border-border-strong"
@@ -485,7 +485,7 @@ export default function SeguimientoTab() {
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className={cn(
-                    "h-7 gap-1.5 text-[11px] font-normal px-2",
+                    "h-11 gap-1.5 text-[11px] font-normal px-2",
                     !dateFrom && "text-muted-foreground"
                   )}>
                     <CalendarIcon size={12} />
@@ -506,7 +506,7 @@ export default function SeguimientoTab() {
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className={cn(
-                    "h-7 gap-1.5 text-[11px] font-normal px-2",
+                    "h-11 gap-1.5 text-[11px] font-normal px-2",
                     !dateTo && "text-muted-foreground"
                   )}>
                     <CalendarIcon size={12} />
@@ -525,13 +525,17 @@ export default function SeguimientoTab() {
               </Popover>
               {(dateFrom || dateTo) && (
                 <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
-                  <X size={13} />
+                  aria-label="Quitar filtro de fechas"
+                  className="h-11 w-11 p-0 text-muted-foreground hover:text-foreground">
+                  <X size={13} aria-hidden="true" />
                 </Button>
               )}
             </div>
 
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 shadow-card3d hover:border-border-strong transition-colors">
+            {/* flex-wrap + min-w-0: con los tres contadores ocultos a la vez el
+                ancho intrínseco pasa de 450px y forzaba scroll horizontal en
+                pantallas de 375px. Ahora envuelve en vez de desbordar. */}
+            <div className="flex flex-wrap items-center gap-2 min-w-0 rounded-xl border border-border bg-card/40 px-3 py-2 shadow-card3d hover:border-border-strong transition-colors">
               <Package size={13} className="text-muted-foreground" aria-hidden="true" />
               <span className="hud-label">Total</span>
               <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
@@ -693,7 +697,7 @@ export default function SeguimientoTab() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
                 whileTap={{ scale: 0.97 }}
-                className={`group relative bg-card/40 border rounded-2xl px-3 py-3 flex flex-col items-center gap-1.5 shadow-card3d transition-all duration-200 cursor-pointer focus-visible:outline-none text-center ${
+                className={`group relative bg-card/40 border rounded-2xl px-3 py-3 flex flex-col items-center gap-1.5 shadow-card3d transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background text-center ${
                   isActive
                     ? `${t.activeRing} ${t.activeBg}`
                     : `border-border ${t.cardHover}`

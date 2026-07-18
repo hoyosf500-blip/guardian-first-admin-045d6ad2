@@ -242,7 +242,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
           <p className="text-xs text-muted-foreground font-mono tabular-nums">Mostrando {visibleCount} de {items.length}</p>
           <button
             onClick={() => setVisibleCount(prev => prev + 50)}
-            className="text-xs px-4 py-1.5 rounded-lg bg-accent-gradient text-white font-semibold shadow-glow hover:brightness-110 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="text-xs px-4 py-1.5 rounded-lg bg-accent-gradient text-accent-foreground font-semibold shadow-glow hover:brightness-110 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             Ver más
           </button>

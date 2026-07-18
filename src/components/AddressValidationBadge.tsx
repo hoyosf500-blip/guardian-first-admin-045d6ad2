@@ -46,9 +46,9 @@ const STATUS_TONE: Record<AddressValidationStatus, {
   },
   invalid: {
     icon: XCircle,
-    bgClass: 'bg-red-500/15',
-    textClass: 'text-red-500',
-    ringClass: 'ring-red-500/30',
+    bgClass: 'bg-danger/15',
+    textClass: 'text-danger',
+    ringClass: 'ring-danger/30',
     label: 'Dirección inválida',
   },
 };

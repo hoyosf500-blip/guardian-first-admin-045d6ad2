@@ -380,7 +380,7 @@ export default function AdminTab() {
               {operators.map(op => (
                 <div key={op.user_id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-accent-gradient flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                    <div className="w-8 h-8 rounded-xl bg-accent-gradient flex items-center justify-center text-xs font-bold text-accent-foreground flex-shrink-0">
                       {op.display_name[0].toUpperCase()}
                     </div>
                     <div className="min-w-0">

@@ -22,7 +22,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { TiltCard, StatTile, CountUp, GaugeRing, RankRow, StackedDayBars } from '@/components/ui3d';
+import { TiltCard, StatTile, CountUp, GaugeRing, StackedDayBars } from '@/components/ui3d';
 
 interface DailyResult { result_date: string; result: string; order_id: string | null; }
 interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }
@@ -381,7 +381,7 @@ export default function DashboardTab() {
   const CHART_CYAN    = hsl('--cyan');
   const CHART_MUTED   = hsl('--muted-foreground');
   const CHART_GRID    = hsl('--border');
-  const COLORS = [CHART_ACCENT, CHART_INFO, CHART_SUCCESS, CHART_DANGER, CHART_AI, '#06b6d4', CHART_MUTED];
+  const COLORS = [CHART_ACCENT, CHART_INFO, CHART_SUCCESS, CHART_DANGER, CHART_AI, CHART_CYAN, CHART_MUTED];
 
   // Meta oficial del dueño = CONF_TARGET_PCT (85%), fuente única. Verde en meta;
   // ámbar en la banda "cerca" (5 pts por debajo); rojo debajo de eso.
@@ -435,7 +435,7 @@ export default function DashboardTab() {
               no un ícono genérico de gráfico. */}
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
             <span className="relative flex-shrink-0" aria-hidden="true">
-              <span className="w-11 h-11 rounded-2xl bg-accent-gradient shadow-glow flex items-center justify-center text-white text-base font-bold">
+              <span className="w-11 h-11 rounded-2xl bg-accent-gradient shadow-glow flex items-center justify-center text-accent-foreground text-base font-bold">
                 {(profile?.display_name || 'U')[0].toUpperCase()}
               </span>
               <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-success border-2 border-background glow-success" />

@@ -86,6 +86,13 @@ const CARRIER_PALETTE = [
 function carrierColorAt(index: number): string {
   return CARRIER_PALETTE[index % CARRIER_PALETTE.length];
 }
+/** `hsl(var(--x))` → `hsl(var(--x) / 0.13)` para el aro suave del dot.
+ *  El idiom `${color}22` sólo funciona con hex de 6 dígitos: sobre un
+ *  string `hsl(...)` generaba CSS inválido y el boxShadow no se pintaba
+ *  (ni en dark ni en light). */
+function carrierRing(color: string | undefined, alpha = 0.13): string | undefined {
+  return color ? color.replace(/\)$/, ` / ${alpha})`) : undefined;
+}
 
 // ── Helpers ─────────────────────────────────────────────────────
 function fmtDate(s: string): string {
@@ -590,7 +597,7 @@ function CarrierDonut({
                 <span className="flex items-center gap-2 min-w-0">
                   <span
                     className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{ background: colorMap.get(d.transportadora), boxShadow: `0 0 0 3px ${colorMap.get(d.transportadora)}22` }}
+                    style={{ background: colorMap.get(d.transportadora), boxShadow: `0 0 0 3px ${carrierRing(colorMap.get(d.transportadora))}` }}
                     aria-hidden="true"
                   />
                   <span className="font-medium text-foreground truncate">{d.transportadora}</span>

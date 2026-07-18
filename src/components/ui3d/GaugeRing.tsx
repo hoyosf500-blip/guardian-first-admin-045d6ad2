@@ -38,7 +38,7 @@ export default function GaugeRing({
 
   return (
     <div
-      role="meter"
+      role="progressbar"
       aria-valuenow={Math.round(value)}
       aria-valuemin={0}
       aria-valuemax={100}
@@ -61,7 +61,7 @@ export default function GaugeRing({
         className="absolute rounded-full opacity-50"
         style={{
           inset: -3,
-          background: 'repeating-conic-gradient(from -90deg, hsl(0 0% 100% / .30) 0deg .7deg, transparent .7deg 15deg)',
+          background: 'repeating-conic-gradient(from -90deg, hsl(var(--foreground) / .30) 0deg .7deg, transparent .7deg 15deg)',
           WebkitMask: tickMask,
           mask: tickMask,
         }}
@@ -82,7 +82,7 @@ export default function GaugeRing({
         aria-hidden="true"
         className="absolute inset-0 rounded-full opacity-50 animate-gb-spin"
         style={{
-          background: 'conic-gradient(from 0deg, transparent, hsl(0 0% 100% / .5), transparent 40%)',
+          background: 'conic-gradient(from 0deg, transparent, hsl(var(--foreground) / .35), transparent 40%)',
           WebkitMask: donutMask,
           mask: donutMask,
           animationDuration: '5s',

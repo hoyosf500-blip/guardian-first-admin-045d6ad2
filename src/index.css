@@ -27,61 +27,73 @@
     --popover-foreground: 230 30% 12%;
 
     /* Indigo→violet brand/accent (--accent2 = gradient end) */
-    --primary: 239 84% 62%;           /* #5b5ef0 */
+    --primary: 239 84% 60%;           /* #5b5ef0 */
     --primary-foreground: 0 0% 100%;
-    --accent: 239 84% 62%;            /* #5b5ef0 */
+    --accent: 239 84% 60%;            /* #5b5ef0 */
     --accent-foreground: 0 0% 100%;
     --accent2: 264 90% 70%;           /* #b07cff */
-    --accent-muted: 239 84% 62% / 0.10;
-    --accent-border: 239 84% 62% / 0.35;
+    --accent-muted: 239 84% 60% / 0.10;
+    --accent-border: 239 84% 60% / 0.35;
 
     --secondary: 220 25% 94%;
     --secondary-foreground: 230 30% 12%;
 
     --muted: 220 25% 94%;
     --muted-foreground: 220 12% 42%;  /* #5f677a */
-    --subtle: 220 10% 50%;
+    /* --subtle viste .hud-label, que es texto de 10px: no hay excepción de
+       "texto grande" que lo salve, necesita los 4.5:1 completos. Era 50% (3.94). */
+    --subtle: 220 10% 46%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 72% 42%;
     --destructive-foreground: 0 0% 100%;
 
     --border: 220 18% 88%;            /* #d8dde6 */
     --border-strong: 220 16% 78%;     /* #bac1cd */
     --input: 220 18% 88%;
-    --ring: 239 84% 62%;
+    --ring: 239 84% 60%;
     --radius: 13px;
 
     /* Semantic (flat) */
-    --brand: 239 84% 62%;
+    --brand: 239 84% 60%;
     --brand-foreground: 0 0% 100%;
-    --cta: 239 84% 62%;
+    --cta: 239 84% 60%;
     --cta-foreground: 0 0% 100%;
-    --success: 157 63% 40%;
+    /* Lightness CALCULADA para contraste, no elegida a ojo. Cada valor es el
+       más claro que aún da >=4.5:1 sobre --background (97%), que es el caso
+       más estricto — así el MISMO token sirve para las dos formas de uso que
+       tiene el CRM: texto (`text-warning`, 184 usos) y fondo sólido con texto
+       blanco (`bg-warning`). El hue y la saturación NO se tocan: es el mismo
+       color del handoff, afinado para fondo claro igual que el bloque .dark lo
+       afina para fondo oscuro. Con los valores viejos, `text-warning` sobre
+       blanco daba 2.13:1 — ilegible. Ver docs del barrido de contraste. */
+    --success: 157 63% 26%;           /* era 40% → 2.86:1 */
     --success-foreground: 0 0% 100%;
-    --warning: 42 89% 48%;
+    --warning: 42 89% 26%;            /* era 48% → 1.98:1 (el peor) */
     --warning-foreground: 0 0% 100%;
-    --danger: 0 72% 51%;
+    --danger: 0 72% 42%;              /* era 51% → 4.46:1 */
     --danger-foreground: 0 0% 100%;
-    --info: 212 90% 52%;
+    --info: 212 90% 39%;              /* era 52% → 3.70:1 */
     --info-foreground: 0 0% 100%;
-    --ai: 264 83% 58%;                /* #7c3aed — legitimate AI accent */
+    --ai: 264 83% 54%;                /* violeta IA, oscurecido por contraste */
     --ai-foreground: 0 0% 100%;
     /* Nivel intermedio entre warning (ámbar 42°) y danger (rojo 0°).
        Existe porque el CRM tiene escalas de TRES o CUATRO niveles de urgencia
        (días sin movimiento, tiers de demora) y los alias legacy --orange y
        --yellow tienen el HSL IDÉNTICO a --warning: usarlos dejaba dos niveles
        visualmente indistinguibles y una rama del ternario muerta. */
-    --attention: 22 90% 50%;
+    --attention: 22 90% 34%;          /* era 50% → 3.00:1 */
     --attention-foreground: 0 0% 100%;
 
     /* Legacy aliases (kept for backward compat during migration) */
-    --green: 157 63% 40%;
-    --red: 0 72% 51%;
-    --orange: 42 89% 48%;
-    --blue: 212 90% 52%;
-    --cyan: 180 70% 40%;
+    /* Los alias siguen a su token semántico: si divergen, la misma "urgencia"
+       se ve de dos colores distintos según qué clase usó cada componente. */
+    --green: 157 63% 26%;
+    --red: 0 72% 42%;
+    --orange: 42 89% 26%;
+    --blue: 212 90% 39%;
+    --cyan: 180 70% 25%;              /* era 40% → 2.54:1 */
     --purple: 264 90% 70%;
-    --yellow: 42 90% 50%;
+    --yellow: 42 90% 26%;
 
     /* Typography */
     --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -90,12 +102,12 @@
     /* Sidebar */
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 230 30% 12%;
-    --sidebar-primary: 239 84% 62%;
+    --sidebar-primary: 239 84% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 220 25% 94%;
     --sidebar-accent-foreground: 230 30% 12%;
     --sidebar-border: 220 18% 88%;
-    --sidebar-ring: 239 84% 62%;
+    --sidebar-ring: 239 84% 60%;
 
     /* Elevation (shadow tokens) */
     --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
@@ -103,6 +115,12 @@
     --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
     --shadow-lg: 0 12px 28px -8px rgb(15 23 42 / 0.14), 0 4px 10px -4px rgb(15 23 42 / 0.08);
     --shadow-glow: 0 0 24px -6px hsl(var(--accent) / 0.30);
+    /* Sombra de las cards del rediseño. Vivía HARDCODEADA en tailwind.config
+       como rgba(0,0,0,.8) — 139 usos de shadow-card3d que en tema claro
+       ponían un charco de negro al 80% bajo cada tarjeta: se leía como
+       suciedad, no como elevación. Ahora es un token por tema. */
+    --shadow-card3d: 0 12px 32px -20px rgb(15 23 42 / 0.16), 0 2px 6px -3px rgb(15 23 42 / 0.07);
+    --shadow-card3d-lg: 0 20px 44px -22px rgb(15 23 42 / 0.20), 0 4px 10px -4px rgb(15 23 42 / 0.08);
   }
 
   /* ─────────────────────────────────────────────────────────
@@ -122,10 +140,15 @@
     --popover-foreground: 226 35% 95%;
 
     /* Indigo→violet brand/accent — identity (--accent2 = gradient end) */
+    /* El indigo NO cambia: es la identidad del rediseño. Lo que cambia es la
+       tinta que va ENCIMA. Blanco sobre #7c82ff da 3.27:1 y el botón primario
+       es lo que más se pulsa en toda la app; con texto oscuro sube a 6.07:1.
+       Es además lo que ya hacían success/warning/info/attention acá abajo:
+       ahora los siete colores claros se comportan igual. */
     --primary: 237 100% 74%;          /* #7c82ff */
-    --primary-foreground: 0 0% 100%;
+    --primary-foreground: 230 45% 5%;
     --accent: 237 100% 74%;           /* #7c82ff */
-    --accent-foreground: 0 0% 100%;
+    --accent-foreground: 230 45% 5%;
     --accent2: 264 100% 74%;          /* #b07cff */
     --accent-muted: 237 100% 74% / 0.14;
     --accent-border: 237 100% 74% / 0.32;
@@ -138,7 +161,7 @@
     --subtle: 218 14% 54%;            /* #7c8595 */
 
     --destructive: 0 100% 71%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive-foreground: 230 45% 5%;
 
     --border: 230 15% 18%;            /* #262a33 */
     --border-strong: 230 12% 27%;     /* #3c414d */
@@ -148,19 +171,23 @@
 
     /* Semantic (dark-tuned) */
     --brand: 237 100% 74%;
-    --brand-foreground: 0 0% 100%;
+    --brand-foreground: 230 45% 5%;
     --cta: 237 100% 74%;
-    --cta-foreground: 0 0% 100%;
+    --cta-foreground: 230 45% 5%;
     --success: 157 77% 55%;           /* #34e5a0 */
     --success-foreground: 230 45% 5%;
     --warning: 42 89% 64%;            /* #f5c451 */
     --warning-foreground: 230 45% 5%;
     --danger: 0 100% 71%;             /* #ff6b6b */
-    --danger-foreground: 0 0% 100%;
+    /* Texto OSCURO sobre el rojo claro, igual que success/warning/info aquí
+       abajo. Con blanco daba 2.77:1 y esto viste los botones destructivos
+       ("Cancelar pedido"), donde leer mal tiene consecuencias. Ahora 7.16:1.
+       El color NO cambia: solo el texto que va encima. */
+    --danger-foreground: 230 45% 5%;
     --info: 212 100% 68%;             /* #5aa8ff */
     --info-foreground: 230 45% 5%;
     --ai: 264 100% 78%;               /* brighter violet on dark */
-    --ai-foreground: 0 0% 100%;
+    --ai-foreground: 230 45% 5%;      /* blanco daba 2.47:1 */
     --attention: 22 95% 66%;          /* #fb9a5c — entre warning y danger */
     --attention-foreground: 230 45% 5%;
 
@@ -177,7 +204,7 @@
     --sidebar-background: 230 30% 6%;
     --sidebar-foreground: 226 35% 95%;
     --sidebar-primary: 237 100% 74%;
-    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-primary-foreground: 230 45% 5%;
     --sidebar-accent: 230 24% 10%;
     --sidebar-accent-foreground: 226 35% 95%;
     --sidebar-border: 230 15% 18%;
@@ -189,6 +216,10 @@
     --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.50), 0 2px 4px -2px rgb(0 0 0 / 0.40);
     --shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.70), 0 6px 14px -6px rgb(0 0 0 / 0.50);
     --shadow-glow: 0 0 24px -4px hsl(var(--accent) / 0.35);
+    /* Valores IDÉNTICOS a los que estaban hardcodeados: el look oscuro
+       aprobado no cambia ni un pixel. Solo dejó de ser literal. */
+    --shadow-card3d: 0 20px 50px -30px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.05);
+    --shadow-card3d-lg: 0 30px 70px -30px rgb(0 0 0 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.08);
   }
 }
 
@@ -336,44 +367,63 @@
   }
 
   /* Botón primario — gradiente + glow (patrón del handoff) */
+  /* Los halos de abajo van a ~0.4 por defecto y suben a 0.9 solo en .dark.
+     Un halo al 90% está calculado contra un fondo casi negro: sobre blanco
+     no se lee como glow sino como un moretón de color alrededor del botón. */
   .btn-accent-3d {
     background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent2)));
-    color: #fff;
-    box-shadow: 0 12px 30px -10px hsl(var(--accent) / 0.75);
+    color: hsl(var(--accent-foreground));
+    box-shadow: 0 12px 30px -10px hsl(var(--accent) / 0.35);
     transition: box-shadow 200ms ease, transform 200ms ease, filter 200ms ease;
   }
-  .btn-accent-3d:hover { filter: brightness(1.06); box-shadow: 0 16px 38px -10px hsl(var(--accent) / 0.9); }
+  .btn-accent-3d:hover { filter: brightness(1.06); box-shadow: 0 16px 38px -10px hsl(var(--accent) / 0.45); }
   .btn-accent-3d:active { transform: translateY(1px); }
+  .dark .btn-accent-3d { box-shadow: 0 12px 30px -10px hsl(var(--accent) / 0.75); }
+  .dark .btn-accent-3d:hover { box-shadow: 0 16px 38px -10px hsl(var(--accent) / 0.9); }
 
   /* Glow utilities — halo suave alrededor de iconos/badges activos */
-  .glow-accent  { box-shadow: 0 0 18px -6px hsl(var(--accent) / 0.9); }
-  .glow-success { box-shadow: 0 0 18px -6px hsl(var(--success) / 0.9); }
-  .glow-info    { box-shadow: 0 0 18px -6px hsl(var(--info) / 0.9); }
-  .glow-warning { box-shadow: 0 0 18px -6px hsl(var(--warning) / 0.9); }
-  .glow-danger  { box-shadow: 0 0 18px -6px hsl(var(--danger) / 0.9); }
+  .glow-accent  { box-shadow: 0 0 18px -6px hsl(var(--accent) / 0.4); }
+  .glow-success { box-shadow: 0 0 18px -6px hsl(var(--success) / 0.4); }
+  .glow-info    { box-shadow: 0 0 18px -6px hsl(var(--info) / 0.4); }
+  .glow-warning { box-shadow: 0 0 18px -6px hsl(var(--warning) / 0.4); }
+  .glow-danger  { box-shadow: 0 0 18px -6px hsl(var(--danger) / 0.4); }
+  .dark .glow-accent  { box-shadow: 0 0 18px -6px hsl(var(--accent) / 0.9); }
+  .dark .glow-success { box-shadow: 0 0 18px -6px hsl(var(--success) / 0.9); }
+  .dark .glow-info    { box-shadow: 0 0 18px -6px hsl(var(--info) / 0.9); }
+  .dark .glow-warning { box-shadow: 0 0 18px -6px hsl(var(--warning) / 0.9); }
+  .dark .glow-danger  { box-shadow: 0 0 18px -6px hsl(var(--danger) / 0.9); }
 
   /* Glass panel v2 — translúcido sobre la aurora (patrón Dirección 3D).
      Más sutil que .glass; ideal para cards, rail y toolbars. */
   .glass-panel {
-    background: hsl(var(--card) / 0.55);
+    /* OPACO en claro: --card es blanco puro y --background 97%, así que un
+       55% de alpha deja ~1% de diferencia y el panel desaparece. El vidrio
+       translúcido solo funciona sobre la aurora oscura. */
+    background: hsl(var(--card));
     backdrop-filter: blur(16px) saturate(140%);
     -webkit-backdrop-filter: blur(16px) saturate(140%);
     border: 1px solid hsl(var(--border) / 0.9);
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+    box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.05);
   }
+  .dark .glass-panel { background: hsl(var(--card) / 0.55); }
   .glass-panel-hover {
     transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
   }
   .glass-panel-hover:hover {
     transform: translateY(-3px);
     border-color: hsl(var(--border-strong));
-    box-shadow: 0 18px 40px -16px #000, 0 0 24px -12px hsl(var(--accent) / 0.6);
+    box-shadow: var(--shadow-lg), 0 0 24px -12px hsl(var(--accent) / 0.6);
   }
 
-  /* Glow de texto para números-hero (KPIs grandes) — patrón Dirección 3D */
-  .num-glow-accent  { text-shadow: 0 0 22px hsl(var(--accent) / 0.55); }
-  .num-glow-success { text-shadow: 0 0 22px hsl(var(--success) / 0.5); }
-  .num-glow-danger  { text-shadow: 0 0 22px hsl(var(--danger) / 0.5); }
+  /* Glow de texto para números-hero (KPIs grandes) — patrón Dirección 3D.
+     Un halo de 22px detrás de texto OSCURO sobre blanco no brilla: emborrona.
+     Por eso en claro va casi apagado y el efecto real vive en .dark. */
+  .num-glow-accent  { text-shadow: 0 0 18px hsl(var(--accent) / 0.20); }
+  .num-glow-success { text-shadow: 0 0 18px hsl(var(--success) / 0.18); }
+  .num-glow-danger  { text-shadow: 0 0 18px hsl(var(--danger) / 0.18); }
+  .dark .num-glow-accent  { text-shadow: 0 0 22px hsl(var(--accent) / 0.55); }
+  .dark .num-glow-success { text-shadow: 0 0 22px hsl(var(--success) / 0.5); }
+  .dark .num-glow-danger  { text-shadow: 0 0 22px hsl(var(--danger) / 0.5); }
 
   /* Icono en "chip" con tinte de acento — usado en tarjetas/rail */
   .icon-chip {
@@ -422,8 +472,11 @@
      rojo) porque esta hoja va después de las utilidades de Tailwind. */
   :where(.hud-label) { color: hsl(var(--subtle)); }
 
-  /* Hairline superior de las cards (el handoff lo pide en todas). */
-  .hairline-top { box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05); }
+  /* Hairline superior de las cards (el handoff lo pide en todas).
+     Era blanco literal → invisible sobre card blanca. Con --foreground se
+     invierte solo: filo claro en oscuro, filo oscuro en claro. Lo hereda cada
+     TiltCard, así que son ~39 cards. */
+  .hairline-top { box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.06); }
 
   /* Brackets cian en las esquinas de la card hero. */
   .corner-bracket { position: absolute; width: 18px; height: 18px; opacity: 0.6; pointer-events: none; }
@@ -434,6 +487,11 @@
   .sheen {
     position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
     pointer-events: none;
+    background: linear-gradient(100deg, transparent, hsl(var(--foreground) / 0.05), transparent);
+  }
+  /* El barrido original es blanco: sobre una card blanca no existe. En claro
+     se invierte a un barrido oscuro y suave; en oscuro queda tal cual estaba. */
+  .dark .sheen {
     background: linear-gradient(100deg, transparent, hsl(0 0% 100% / 0.09), transparent);
   }
 
@@ -654,3 +712,57 @@
 }
 
 .scroll-hint { scrollbar-width: thin; }
+
+/* ─────────────────────────────────────────────────────────────
+   COMPATIBILIDAD DE TEMA CLARO — superficies traslúcidas
+   ─────────────────────────────────────────────────────────────
+   La app se escribió dark-first y usa `bg-card/40` en 291 lugares (+ un puñado
+   de variantes). En OSCURO eso funciona: --card es 9% de luminosidad y
+   --background 3%, y cerca del negro un delta chico se percibe fuerte. Es el
+   look aprobado del handoff y no se toca.
+
+   En CLARO la misma clase se rompe: --card es BLANCO PURO y --background 97%,
+   así que un 40% de alpha deja ~1% de diferencia real. Resultado: las tarjetas,
+   paneles y modales pierden su superficie y toda la app se aplana en una sola
+   hoja blanca donde solo sobrevive el borde de 1px.
+
+   Se corrige acá, en un solo lugar, en vez de editar 291 llamadas — porque
+   editarlas cambiaría TAMBIÉN el oscuro, que está bien. La regla solo opaca
+   la superficie; no toca color, borde ni sombra.
+
+   Si agregás una variante nueva de alpha sobre --card o --surface, sumala acá.
+   ───────────────────────────────────────────────────────────── */
+:root:not(.dark) .bg-card\/30,
+:root:not(.dark) .bg-card\/40,
+:root:not(.dark) .bg-card\/50,
+:root:not(.dark) .bg-card\/60,
+:root:not(.dark) .bg-card\/70,
+:root:not(.dark) .bg-card\/95,
+:root:not(.dark) .hover\:bg-card\/40:hover,
+:root:not(.dark) .hover\:bg-card\/60:hover,
+:root:not(.dark) .hover\:bg-card\/70:hover {
+  background-color: hsl(var(--card));
+}
+
+:root:not(.dark) .bg-surface\/40,
+:root:not(.dark) .bg-surface\/60,
+:root:not(.dark) .bg-surface\/70,
+:root:not(.dark) .bg-surface\/80 {
+  background-color: hsl(var(--surface));
+}
+
+/* Mismo problema, en TEXTO. Hay 72 usos de `text-muted-foreground/60|70`
+   y similares. En OSCURO aguantan (el gris parte de 65% de luminosidad y le
+   sobra margen). En CLARO parte de 42% y bajarlo al 70% de opacidad lo deja
+   en ~3.0:1 — y casi siempre viste rótulos de 10px, donde no hay excepción
+   de "texto grande" que lo salve. Se le devuelve la opacidad completa: sigue
+   siendo el gris "muted", solo que legible. La jerarquía se mantiene porque
+   --foreground (16:1) y --muted-foreground (5.3:1) siguen bien separados. */
+:root:not(.dark) .text-muted-foreground\/50,
+:root:not(.dark) .text-muted-foreground\/60,
+:root:not(.dark) .text-muted-foreground\/70,
+:root:not(.dark) .text-muted-foreground\/80 {
+  color: hsl(var(--muted-foreground));
+}
+:root:not(.dark) .text-warning\/80 { color: hsl(var(--warning)); }
+:root:not(.dark) .text-accent\/80  { color: hsl(var(--accent)); }

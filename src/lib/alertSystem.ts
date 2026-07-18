@@ -10,8 +10,6 @@ export type AlertLevel = 'ok' | 'watch' | 'alert' | 'critical' | 'lost';
 
 export interface AlertInfo {
   level: AlertLevel;
-  color: string;
-  tailwindColor: string;
   icon: string;
   label: string;
   sinEscaneo: number;
@@ -23,8 +21,6 @@ export interface AlertInfo {
 export interface FreshnessInfo {
   hoursAgo: number;
   level: 'fresh' | 'pending' | 'stale' | 'critical';
-  color: string;
-  tailwindColor: string;
   label: string;
 }
 
@@ -68,21 +64,21 @@ export function getAlertLevel(diasConf: number, dias: number, estado: string, tr
     novedadW = { remaining: rem };
   }
 
-  let level: AlertLevel, color: string, tailwindColor: string, icon: string, label: string;
+  let level: AlertLevel, icon: string, label: string;
 
   if (sinEscaneo < 1) {
-    level = 'ok'; color = 'var(--green)'; tailwindColor = 'text-green'; icon = '🟢'; label = 'Normal';
+    level = 'ok'; icon = '🟢'; label = 'Normal';
   } else if (sinEscaneo < 2) {
-    level = 'watch'; color = 'var(--yellow)'; tailwindColor = 'text-yellow-500'; icon = '🟡'; label = `${sinEscaneo}d — Monitorear`;
+    level = 'watch'; icon = '🟡'; label = `${sinEscaneo}d — Monitorear`;
   } else if (sinEscaneo < 3) {
-    level = 'alert'; color = 'var(--orange)'; tailwindColor = 'text-orange'; icon = '🟠'; label = `${sinEscaneo}d — Llamar + reclamar`;
+    level = 'alert'; icon = '🟠'; label = `${sinEscaneo}d — Llamar + reclamar`;
   } else if (sinEscaneo < 5) {
-    level = 'critical'; color = 'var(--red)'; tailwindColor = 'text-red'; icon = '🔴'; label = `${sinEscaneo}d — Posible pérdida`;
+    level = 'critical'; icon = '🔴'; label = `${sinEscaneo}d — Posible pérdida`;
   } else {
-    level = 'lost'; color = '#888'; tailwindColor = 'text-muted-foreground'; icon = '⚫'; label = `${sinEscaneo}d — Devolución casi segura`;
+    level = 'lost'; icon = '⚫'; label = `${sinEscaneo}d — Devolución casi segura`;
   }
 
-  return { level, color, tailwindColor, icon, label, sinEscaneo, lastMov: '', officeCD, novedadW };
+  return { level, icon, label, sinEscaneo, lastMov: '', officeCD, novedadW };
 }
 
 export function getFreshness(lastTouchTime: number | null, dias: number): FreshnessInfo {
@@ -94,13 +90,13 @@ export function getFreshness(lastTouchTime: number | null, dias: number): Freshn
   }
 
   if (hoursAgo < 4) {
-    return { hoursAgo, level: 'fresh', color: 'var(--green)', tailwindColor: 'text-green', label: hoursAgo < 1 ? `hace ${Math.round(hoursAgo * 60)}min` : `hace ${Math.round(hoursAgo)}h` };
+    return { hoursAgo, level: 'fresh', label: hoursAgo < 1 ? `hace ${Math.round(hoursAgo * 60)}min` : `hace ${Math.round(hoursAgo)}h` };
   } else if (hoursAgo < 24) {
-    return { hoursAgo, level: 'pending', color: 'var(--yellow)', tailwindColor: 'text-yellow-500', label: `hace ${Math.round(hoursAgo)}h` };
+    return { hoursAgo, level: 'pending', label: `hace ${Math.round(hoursAgo)}h` };
   } else if (hoursAgo < 48) {
-    return { hoursAgo, level: 'stale', color: 'var(--orange)', tailwindColor: 'text-orange', label: `hace ${Math.round(hoursAgo / 24)}d ${Math.round(hoursAgo % 24)}h` };
+    return { hoursAgo, level: 'stale', label: `hace ${Math.round(hoursAgo / 24)}d ${Math.round(hoursAgo % 24)}h` };
   } else {
-    return { hoursAgo, level: 'critical', color: 'var(--red)', tailwindColor: 'text-red', label: `hace ${Math.round(hoursAgo / 24)}d` };
+    return { hoursAgo, level: 'critical', label: `hace ${Math.round(hoursAgo / 24)}d` };
   }
 }
 
@@ -197,9 +193,9 @@ export function getPriorityLevel(score: number): PriorityLevel {
 }
 
 export const PRIORITY_CONFIG: Record<PriorityLevel, { label: string; color: string; bgClass: string }> = {
-  critical: { label: 'Urgente', color: 'text-red-500', bgClass: 'bg-red-500/10 border-red-500/30' },
-  high: { label: 'Alta', color: 'text-orange-500', bgClass: 'bg-orange-500/10 border-orange-500/30' },
-  medium: { label: 'Media', color: 'text-yellow-500', bgClass: 'bg-yellow-500/10 border-yellow-500/30' },
+  critical: { label: 'Urgente', color: 'text-danger', bgClass: 'bg-danger/10 border-danger/30' },
+  high: { label: 'Alta', color: 'text-attention', bgClass: 'bg-attention/10 border-attention/30' },
+  medium: { label: 'Media', color: 'text-warning', bgClass: 'bg-warning/10 border-warning/30' },
   low: { label: 'Normal', color: 'text-muted-foreground', bgClass: '' },
 };
 

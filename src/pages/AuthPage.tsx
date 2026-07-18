@@ -162,7 +162,7 @@ export default function AuthPage() {
         <div className="relative z-10 flex flex-col justify-between w-full max-w-md text-white">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <span className="w-12 h-12 rounded-2xl bg-accent-gradient flex items-center justify-center text-white shadow-glow">
+            <span className="w-12 h-12 rounded-2xl bg-accent-gradient flex items-center justify-center text-accent-foreground shadow-glow">
               <Package size={24} aria-hidden="true" />
             </span>
             <div>
@@ -204,7 +204,7 @@ export default function AuthPage() {
 
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center text-white shadow-glow">
+            <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center text-accent-foreground shadow-glow">
               <Package size={20} aria-hidden="true" />
             </div>
             <span className="text-lg font-bold text-foreground tracking-tight">Guardian</span>

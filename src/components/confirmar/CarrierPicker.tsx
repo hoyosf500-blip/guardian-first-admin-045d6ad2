@@ -71,13 +71,13 @@ export default function CarrierPicker({ options, loading, error, currentName, se
             onClick={() => onSelect(opt)}
             className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
               isSelected
-                ? 'border-cyan-500 bg-cyan-500/10'
+                ? 'border-cyan bg-cyan/10'
                 : 'border-border bg-card hover:bg-muted/50'
             }`}
           >
             <div className="flex items-center gap-2 min-w-0">
               {isSelected ? (
-                <CheckCircle2 size={16} className="text-cyan-500 flex-shrink-0" aria-hidden="true" />
+                <CheckCircle2 size={16} className="text-cyan flex-shrink-0" aria-hidden="true" />
               ) : (
                 <Truck size={16} className="text-muted-foreground flex-shrink-0" aria-hidden="true" />
               )}

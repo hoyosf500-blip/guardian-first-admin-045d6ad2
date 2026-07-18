@@ -55,7 +55,7 @@ export default function RankRow({
         <span
           aria-hidden="true"
           className={`w-9 h-9 rounded-xl flex items-center justify-center text-[13px] font-bold flex-shrink-0 ${
-            isMe ? 'bg-accent-gradient text-white glow-accent' : 'bg-muted/60 text-muted-foreground'
+            isMe ? 'bg-accent-gradient text-accent-foreground glow-accent' : 'bg-muted/60 text-muted-foreground'
           }`}
         >
           {initial}

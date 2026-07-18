@@ -123,11 +123,14 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           espacio con los badges. Era la causa principal del amontonamiento. */}
       <div className="flex items-center gap-1.5">
         <span className={cn('h-2 w-2 rounded-full shrink-0', fresh.cls)} title={fresh.title} aria-hidden="true" />
-        <span className="text-[10px] font-mono tabular-nums font-semibold text-muted-foreground" title="Días hábiles en este estado">
+        {/* El punto es decorativo (color solo) — el estado de frescura va en texto
+            para lector de pantalla, ya que en touch el `title` no se ve. */}
+        <span className="sr-only">{fresh.title}</span>
+        <span className="text-xs font-mono tabular-nums font-semibold text-muted-foreground" title="Días hábiles en este estado">
           D{dias}
         </span>
         {pLevel !== 'low' && (
-          <span className={cn('ml-auto text-[9px] font-semibold px-2 py-0.5 rounded-lg border shrink-0', pConfig.bgClass, pConfig.color)}>
+          <span className={cn('ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0', pConfig.bgClass, pConfig.color)}>
             {pConfig.label}
           </span>
         )}
@@ -139,13 +142,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           {o.nombre || 'Sin nombre'}
         </span>
         {o.externalId
-          ? <span className="text-[10px] text-accent font-mono tabular-nums mt-0.5 block truncate">{o.externalId}</span>
-          : <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">Sin ID</span>}
+          ? <span className="text-xs text-accent font-mono tabular-nums mt-0.5 block truncate">{o.externalId}</span>
+          : <span className="text-xs text-muted-foreground font-mono mt-0.5 block">Sin ID</span>}
       </div>
 
       {/* Producto · ciudad en UNA línea (en el mockup van juntos) */}
       {(o.producto || o.ciudad) && (
-        <div className="mt-2 flex items-center gap-1 text-[10.5px] text-muted-foreground min-w-0">
+        <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground min-w-0">
           {o.ciudad && <MapPin size={10} className="shrink-0" aria-hidden="true" />}
           <span className="truncate">
             {o.producto}
@@ -157,18 +160,22 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
 
       {/* Guía / transportadora + rastreo */}
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/50 pt-2">
-        <div className="min-w-0 text-[10.5px] text-muted-foreground truncate">
+        <div className="min-w-0 text-xs text-muted-foreground truncate">
           {o.transportadora ? <span className="font-medium text-foreground/80">{o.transportadora}</span> : 'Sin transportadora'}
           {o.guia ? <span className="font-mono tabular-nums"> · {o.guia}</span> : <span className="opacity-70"> · sin guía</span>}
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
+        {/* Tres blancos táctiles dentro de una tarjeta que YA es clickeable: sin
+            separación real y con menos de 44px, un toque impreciso disparaba la
+            acción vecina o navegaba al detalle. gap-2 + 44px mínimo cada uno. */}
+        <div className="flex items-center gap-2 shrink-0">
           {(trackUrl || carrierHome) && (
             <a
               href={trackUrl || carrierHome || '#'}
               target="_blank" rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               title={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
-              className="p-2 -m-0.5 rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
+              aria-label={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
+              className="p-2.5 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
             >
               <ExternalLink size={14} aria-hidden="true" />
             </a>
@@ -182,7 +189,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               }}
               title="Abrir chat de WhatsApp (ver el bot / escribir)"
               aria-label="Abrir chat de WhatsApp"
-              className="p-2 -m-0.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
+              className="p-2.5 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
             >
               <MessageCircle size={14} aria-hidden="true" />
             </button>
@@ -192,7 +199,8 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             onClick={(e) => { e.stopPropagation(); void refresh(activeStoreId, o.externalId); }}
             disabled={isRefreshing || !o.externalId}
             title="Refrescar estado desde Dropi"
-            className="p-2 -m-0.5 rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+            aria-label="Refrescar estado desde Dropi"
+            className="p-2.5 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>

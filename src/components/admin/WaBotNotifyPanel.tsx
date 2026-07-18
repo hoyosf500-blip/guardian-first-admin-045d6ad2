@@ -54,7 +54,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
       onClick={onClick}
       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${on ? 'bg-success' : 'bg-muted'}`}
     >
-      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      <span className={`inline-block h-5 w-5 transform rounded-full bg-card border border-border-strong shadow transition-transform ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
     </button>
   );
 }

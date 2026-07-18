@@ -97,7 +97,7 @@ export default function InactivityWarningModal({
           <button
             onClick={onAcknowledge}
             autoFocus
-            className="w-full py-3 rounded-xl bg-red text-white font-bold text-sm hover:bg-red/90 active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="w-full py-3 rounded-xl bg-red text-danger-foreground font-bold text-sm hover:bg-red/90 active:scale-[0.98] transition-all focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             Entendido
           </button>

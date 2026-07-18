@@ -6,15 +6,17 @@ interface Props {
   rows: CityReturns[];
 }
 
-/** Paleta cíclica para identificar ciudades visualmente. Usa tokens
- *  semánticos del DS para que dark/light mode adapte solo. */
+/** Paleta cíclica para identificar ciudades visualmente. Guarda el NOMBRE
+ *  del token (no el `hsl(...)` armado) para poder componer también la
+ *  variante con alpha del aro. Usa tokens semánticos del DS para que
+ *  dark/light mode adapte solo. */
 const CITY_PALETTE = [
-  'hsl(var(--info))',
-  'hsl(var(--accent))',
-  'hsl(var(--success))',
-  'hsl(var(--ai))',
-  'hsl(var(--warning))',
-  'hsl(var(--danger))',
+  '--info',
+  '--accent',
+  '--success',
+  '--ai',
+  '--warning',
+  '--danger',
 ];
 
 /** Geo distribution: panel lateral con top 6 ciudades por volumen.
@@ -32,11 +34,18 @@ export default memo(function GeoDistribution({ rows }: Props) {
     return [...rows]
       .sort((a, b) => (b.total_pedidos ?? 0) - (a.total_pedidos ?? 0))
       .slice(0, 6)
-      .map((r, idx) => ({
-        ...r,
-        pct: total > 0 ? (r.total_pedidos / total) * 100 : 0,
-        color: CITY_PALETTE[idx % CITY_PALETTE.length],
-      }));
+      .map((r, idx) => {
+        const token = CITY_PALETTE[idx % CITY_PALETTE.length];
+        return {
+          ...r,
+          pct: total > 0 ? (r.total_pedidos / total) * 100 : 0,
+          color: `hsl(var(${token}))`,
+          // Aro suave del dot. Antes era `${c.color}22` — el idiom `+22`
+          // sólo sirve con hex de 6 dígitos; sobre un `hsl(...)` producía
+          // CSS inválido y el boxShadow nunca se pintaba.
+          ring: `hsl(var(${token}) / 0.13)`,
+        };
+      });
   }, [rows, total]);
 
   const otros = useMemo(() => {
@@ -88,7 +97,7 @@ export default memo(function GeoDistribution({ rows }: Props) {
                 </span>
                 <span
                   className="h-3 w-3 rounded-full shrink-0"
-                  style={{ background: c.color, boxShadow: `0 0 0 3px ${c.color}22` }}
+                  style={{ background: c.color, boxShadow: `0 0 0 3px ${c.ring}` }}
                   aria-hidden="true"
                 />
                 <span className="font-semibold text-sm text-foreground truncate" title={c.ciudad}>
