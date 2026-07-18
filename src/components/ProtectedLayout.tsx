@@ -279,8 +279,14 @@ function ProtectedLayoutInner() {
             right={
               <>
                 {/* En escritorio el rail mide 80px y no cabe el selector de
-                    tienda: vive acá para que cambiar de tienda siga a un click. */}
-                {!isMobile && <div className="w-44"><StoreSelector /></div>}
+                    tienda: vive acá para que cambiar entre Colombia y Ecuador
+                    siga a un click. Es lo más importante de esta barra —
+                    equivocarse de tienda significa mirar los datos de otro país. */}
+                {!isMobile && (
+                  <div className="w-52 shrink-0">
+                    <StoreSelector />
+                  </div>
+                )}
                 <LiveClock />
                 <button onClick={toggleTheme}
                   aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}

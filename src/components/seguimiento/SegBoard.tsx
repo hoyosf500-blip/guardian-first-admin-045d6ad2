@@ -110,38 +110,44 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
       className={cn(
         // Sin TiltCard a propósito: son cientos de tarjetas y el tilt destruiría
         // el scroll del tablero. Solo superficie + borde que reacciona al hover.
-        'group bg-card/40 rounded-xl border p-3 cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        'group bg-card/40 rounded-xl border p-3.5 cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
         selected ? 'border-accent ring-2 ring-accent/60 shadow-card3d' : 'border-border',
       )}
     >
-      {/* Header: nombre + frescura + días */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className={cn('h-2 w-2 rounded-full shrink-0', fresh.cls)} title={fresh.title} aria-hidden="true" />
-            <span className="block text-[12.5px] font-bold text-foreground truncate">{o.nombre || 'Sin nombre'}</span>
-          </div>
-          {o.externalId
-            ? <span className="text-[10px] text-accent font-mono tabular-nums mt-0.5 block truncate">{o.externalId}</span>
-            : <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">Sin ID</span>}
-        </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className="text-[10px] font-mono tabular-nums font-semibold px-2 py-0.5 rounded-lg bg-muted/50 border border-border text-muted-foreground" title="Días hábiles en este estado">
-            {dias}d
+      {/* Fila de badges arriba (patrón del handoff: "● D3  PRIORIDAD"), para que
+          el nombre del cliente use TODO el ancho de la columna en vez de pelear
+          espacio con los badges. Era la causa principal del amontonamiento. */}
+      <div className="flex items-center gap-1.5">
+        <span className={cn('h-2 w-2 rounded-full shrink-0', fresh.cls)} title={fresh.title} aria-hidden="true" />
+        <span className="text-[10px] font-mono tabular-nums font-semibold text-muted-foreground" title="Días hábiles en este estado">
+          D{dias}
+        </span>
+        {pLevel !== 'low' && (
+          <span className={cn('ml-auto text-[9px] font-semibold px-2 py-0.5 rounded-lg border shrink-0', pConfig.bgClass, pConfig.color)}>
+            {pConfig.label}
           </span>
-          {pLevel !== 'low' && (
-            <span className={cn('text-[9px] font-semibold px-2 py-0.5 rounded-lg border', pConfig.bgClass, pConfig.color)}>
-              {pConfig.label}
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Producto + ciudad */}
-      {o.producto && <p className="mt-1.5 text-[11px] text-muted-foreground leading-snug line-clamp-2">{o.producto}</p>}
-      {o.ciudad && (
-        <div className="mt-1 flex items-center gap-1 text-[10.5px] text-muted-foreground">
-          <MapPin size={10} aria-hidden="true" /> <span className="truncate">{o.ciudad}</span>
+      {/* Nombre a todo el ancho + id */}
+      <div className="mt-1.5 min-w-0">
+        <span className="block text-[13.5px] font-bold text-foreground truncate leading-tight">
+          {o.nombre || 'Sin nombre'}
+        </span>
+        {o.externalId
+          ? <span className="text-[10px] text-accent font-mono tabular-nums mt-0.5 block truncate">{o.externalId}</span>
+          : <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">Sin ID</span>}
+      </div>
+
+      {/* Producto · ciudad en UNA línea (en el mockup van juntos) */}
+      {(o.producto || o.ciudad) && (
+        <div className="mt-2 flex items-center gap-1 text-[10.5px] text-muted-foreground min-w-0">
+          {o.ciudad && <MapPin size={10} className="shrink-0" aria-hidden="true" />}
+          <span className="truncate">
+            {o.producto}
+            {o.producto && o.ciudad ? ' · ' : ''}
+            {o.ciudad}
+          </span>
         </div>
       )}
 
@@ -444,7 +450,7 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
         return (
           <section
             key={col.key}
-            className={cn('snap-start shrink-0 w-[270px] flex flex-col rounded-2xl border border-border bg-card/40 shadow-card3d border-t-[3px]', t.headBar)}
+            className={cn('snap-start shrink-0 w-[286px] flex flex-col rounded-2xl border border-border bg-card/40 shadow-card3d border-t-[3px]', t.headBar)}
           >
             {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓). */}
             <button
