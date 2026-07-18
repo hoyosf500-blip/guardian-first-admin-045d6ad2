@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
-import { Sun, Moon, Package, Phone, BarChart3, ShieldCheck, Store as StoreIcon } from 'lucide-react';
+import { Sun, Moon, Package, Phone, BarChart3, ShieldCheck, Store as StoreIcon, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
 interface InvitePreview {
   store_name: string | null;
@@ -111,11 +111,19 @@ export default function AuthPage() {
   };
 
   const features = [
-    { icon: Phone, text: 'Confirmación inteligente de pedidos' },
-    { icon: Package, text: 'Seguimiento y rescate de envíos' },
-    { icon: BarChart3, text: 'Dashboard con analíticas en tiempo real' },
-    { icon: ShieldCheck, text: 'Sincronización directa con Dropi' },
-  ];
+    { icon: Phone, text: 'Confirmación inteligente de pedidos', tone: 'accent' },
+    { icon: Package, text: 'Seguimiento y rescate de envíos', tone: 'cyan' },
+    { icon: BarChart3, text: 'Dashboard con analíticas en tiempo real', tone: 'info' },
+    { icon: ShieldCheck, text: 'Sincronización directa con Dropi', tone: 'success' },
+  ] as const;
+
+  // Tinte por feature (chip de icono) — coherente con los semánticos del DS.
+  const toneChip: Record<string, string> = {
+    accent: 'bg-accent/16 border-accent/30 text-accent',
+    cyan: 'bg-cyan/16 border-cyan/30 text-cyan',
+    info: 'bg-info/16 border-info/30 text-info',
+    success: 'bg-success/16 border-success/30 text-success',
+  };
 
   const inviteInvalidMsg = invite && !invite.valid
     ? (invite.reason === 'usada' ? 'Este link de invitación ya fue usado.'
@@ -124,6 +132,11 @@ export default function AuthPage() {
       : invite.reason === 'sin_datos' ? 'No pudimos validar el link de invitación — pedí uno nuevo al dueño.'
       : 'Este link de invitación no es válido.')
     : null;
+
+  // Campo con icono de prefijo (patrón del handoff): input con pl-11 y el
+  // icono absoluto a la izquierda. Solo estilo — no toca value/onChange.
+  const fieldCls = 'w-full pl-11 pr-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200';
+  const fieldIconCls = 'absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none';
 
   const title = view === 'login' ? 'Bienvenido de nuevo'
     : view === 'forgot' ? 'Recuperar contraseña'
@@ -134,37 +147,47 @@ export default function AuthPage() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Left panel — brand identity */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-accent via-accent/90 to-accent/70 items-center justify-center p-12 relative overflow-hidden">
-        <div className="absolute top-20 -left-20 w-64 h-64 bg-accent-foreground/10 rounded-full blur-3xl" aria-hidden="true" />
-        <div className="absolute bottom-20 right-10 w-80 h-80 bg-accent-foreground/10 rounded-full blur-3xl" aria-hidden="true" />
-        <div className="absolute inset-0 opacity-[0.04] bg-[radial-gradient(circle_at_1px_1px,currentColor_1px,transparent_0)] [background-size:24px_24px] text-accent-foreground" aria-hidden="true" />
+      {/* Left panel — brand identity (Dirección 3D: gradiente índigo + aurora) */}
+      <div className="hidden lg:flex lg:w-1/2 items-stretch p-12 relative overflow-hidden bg-gradient-to-br from-[#171a3d] to-[#0a0b18]">
+        {/* Orbes aurora */}
+        <div className="absolute -top-28 -left-24 w-96 h-96 rounded-full blur-[60px] bg-accent/40" aria-hidden="true" />
+        <div className="absolute -bottom-28 -right-20 w-80 h-80 rounded-full blur-[60px] bg-accent2/35" aria-hidden="true" />
 
-        <div className="max-w-md text-accent-foreground relative z-10">
-          <div className="w-14 h-14 rounded-2xl bg-accent-foreground/15 backdrop-blur-sm flex items-center justify-center text-2xl font-extrabold mb-8 shadow-ds-lg ring-1 ring-accent-foreground/20">
-            P
+        <div className="relative z-10 flex flex-col justify-between w-full max-w-md text-white">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <span className="w-12 h-12 rounded-2xl bg-accent-gradient flex items-center justify-center text-white shadow-glow">
+              <Package size={24} aria-hidden="true" />
+            </span>
+            <div>
+              <div className="text-xl font-bold text-white leading-none">Guardian</div>
+              <div className="font-mono text-[10px] tracking-[0.14em] text-white/45 mt-1">PANEL COD</div>
+            </div>
           </div>
-          <h2 className="text-4xl font-extrabold mb-4 leading-[1.1] tracking-tight">
-            Panel Operadora<br />COD
-          </h2>
-          <p className="text-accent-foreground/80 text-base leading-relaxed">
-            Gestiona pedidos, confirma órdenes y rastrea envíos desde una sola plataforma.
-          </p>
-          <div className="mt-12 space-y-3">
-            {features.map(item => (
-              <div key={item.text} className="flex items-center gap-3 text-sm text-accent-foreground/85">
-                <span className="w-8 h-8 rounded-xl bg-accent-foreground/12 flex items-center justify-center flex-shrink-0">
-                  <item.icon size={14} aria-hidden="true" />
-                </span>
-                <span>{item.text}</span>
-              </div>
-            ))}
+
+          {/* Titular + features */}
+          <div>
+            <h2 className="text-[26px] font-bold mb-5 leading-[1.15] tracking-tight text-white">
+              Panel Operadora<br />COD
+            </h2>
+            <div className="space-y-3">
+              {features.map(item => (
+                <div key={item.text} className="flex items-center gap-3 text-[13px] text-white/70">
+                  <span className={`w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 border ${toneChip[item.tone]}`}>
+                    <item.icon size={15} aria-hidden="true" />
+                  </span>
+                  <span>{item.text}</span>
+                </div>
+              ))}
+            </div>
           </div>
+
+          <div className="font-mono text-[10px] text-white/35">Colombia · Ecuador</div>
         </div>
       </div>
 
       {/* Right panel — form */}
-      <div className="flex-1 flex items-center justify-center p-6 relative">
+      <div className="flex-1 flex items-center justify-center p-6 relative bg-aurora">
         <button
           onClick={toggleTheme}
           aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
@@ -175,8 +198,10 @@ export default function AuthPage() {
 
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-accent-foreground text-sm font-extrabold shadow-ds-md">P</div>
-            <span className="text-lg font-bold text-foreground tracking-tight">CRM</span>
+            <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center text-white shadow-glow">
+              <Package size={20} aria-hidden="true" />
+            </div>
+            <span className="text-lg font-bold text-foreground tracking-tight">Guardian</span>
           </div>
 
           {/* Banner de invitación válida */}
@@ -205,16 +230,19 @@ export default function AuthPage() {
             <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
                 <label htmlFor="auth-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
-                <input
-                  id="auth-email"
-                  type="email"
-                  placeholder="tu@email.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-                />
+                <div className="relative">
+                  <Mail size={15} className={fieldIconCls} aria-hidden="true" />
+                  <input
+                    id="auth-email"
+                    type="email"
+                    placeholder="tu@email.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className={fieldCls}
+                  />
+                </div>
               </div>
               <div>
                 <div className="flex items-baseline justify-between mb-1.5">
@@ -227,24 +255,27 @@ export default function AuthPage() {
                     ¿Olvidaste tu contraseña?
                   </button>
                 </div>
-                <input
-                  id="auth-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  autoComplete="current-password"
-                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-                />
+                <div className="relative">
+                  <Lock size={15} className={fieldIconCls} aria-hidden="true" />
+                  <input
+                    id="auth-password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    autoComplete="current-password"
+                    className={fieldCls}
+                  />
+                </div>
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="btn-accent-3d w-full py-3 rounded-xl font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed mt-1 cursor-pointer inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                {loading ? 'Procesando…' : 'Iniciar sesión'}
+                {loading ? 'Procesando…' : <>Iniciar sesión <ArrowRight size={16} aria-hidden="true" /></>}
               </button>
               {invite?.valid && (
                 <button
@@ -263,48 +294,57 @@ export default function AuthPage() {
             <form onSubmit={handleSignup} className="space-y-3.5">
               <div>
                 <label htmlFor="signup-name" className="block text-xs font-semibold text-foreground mb-1.5">Tu nombre</label>
-                <input
-                  id="signup-name"
-                  type="text"
-                  placeholder="Nombre y apellido"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  required
-                  autoComplete="name"
-                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-                />
+                <div className="relative">
+                  <User size={15} className={fieldIconCls} aria-hidden="true" />
+                  <input
+                    id="signup-name"
+                    type="text"
+                    placeholder="Nombre y apellido"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    required
+                    autoComplete="name"
+                    className={fieldCls}
+                  />
+                </div>
               </div>
               <div>
                 <label htmlFor="signup-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
-                <input
-                  id="signup-email"
-                  type="email"
-                  placeholder="tu@email.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-                />
+                <div className="relative">
+                  <Mail size={15} className={fieldIconCls} aria-hidden="true" />
+                  <input
+                    id="signup-email"
+                    type="email"
+                    placeholder="tu@email.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className={fieldCls}
+                  />
+                </div>
               </div>
               <div>
                 <label htmlFor="signup-password" className="block text-xs font-semibold text-foreground mb-1.5">Contraseña</label>
-                <input
-                  id="signup-password"
-                  type="password"
-                  placeholder="Mínimo 6 caracteres"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  minLength={6}
-                  autoComplete="new-password"
-                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-                />
+                <div className="relative">
+                  <Lock size={15} className={fieldIconCls} aria-hidden="true" />
+                  <input
+                    id="signup-password"
+                    type="password"
+                    placeholder="Mínimo 6 caracteres"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                    className={fieldCls}
+                  />
+                </div>
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="btn-accent-3d w-full py-3 rounded-xl font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed mt-1 cursor-pointer inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 {loading ? 'Creando cuenta…' : 'Crear cuenta y unirme'}
               </button>
@@ -323,22 +363,25 @@ export default function AuthPage() {
             <form onSubmit={handleForgot} className="space-y-3.5">
               <div>
                 <label htmlFor="forgot-email" className="block text-xs font-semibold text-foreground mb-1.5">Correo electrónico</label>
-                <input
-                  id="forgot-email"
-                  type="email"
-                  placeholder="tu@email.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  autoFocus
-                  className="w-full px-4 py-3 rounded-xl bg-card border border-border text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-colors duration-200"
-                />
+                <div className="relative">
+                  <Mail size={15} className={fieldIconCls} aria-hidden="true" />
+                  <input
+                    id="forgot-email"
+                    type="email"
+                    placeholder="tu@email.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    autoFocus
+                    className={fieldCls}
+                  />
+                </div>
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent/85 text-accent-foreground font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-glow active:scale-[0.98] transition-all duration-200 mt-1 shadow-ds-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="btn-accent-3d w-full py-3 rounded-xl font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed mt-1 cursor-pointer inline-flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 {loading ? 'Enviando…' : 'Enviar link de recuperación'}
               </button>
