@@ -547,7 +547,7 @@ export default function OrderDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Info card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          className="bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
+          className="glass-panel rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
           <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
             <User size={13} aria-hidden="true" /> Información del cliente
           </h3>
@@ -609,7 +609,7 @@ export default function OrderDetailPage() {
 
         {/* Shipping card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="bg-surface border border-border rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
+          className="glass-panel rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
           <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
             <Truck size={13} aria-hidden="true" /> Envío y seguimiento
           </h3>
@@ -687,7 +687,7 @@ export default function OrderDetailPage() {
 
         {/* Financial card */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="bg-surface border border-border rounded-xl p-5 space-y-4 md:col-span-2 hover:border-border-strong transition-colors duration-200">
+          className="glass-panel rounded-xl p-5 space-y-4 md:col-span-2 hover:border-border-strong transition-colors duration-200">
           <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
             <DollarSign size={13} aria-hidden="true" /> Financiero
           </h3>
@@ -706,7 +706,7 @@ export default function OrderDetailPage() {
       {/* Timeline + Communication log */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
+          className="glass-panel rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
           <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-4">
             <Clock size={13} aria-hidden="true" /> Historial del pedido
           </h3>

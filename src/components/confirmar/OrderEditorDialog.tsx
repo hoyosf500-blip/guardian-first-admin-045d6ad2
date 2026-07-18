@@ -627,8 +627,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center flex-shrink-0">
-              <Pencil size={18} className="text-primary" aria-hidden="true" />
+            <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center flex-shrink-0 text-white shadow-glow">
+              <Pencil size={18} aria-hidden="true" />
             </div>
             <div>
               <DialogTitle className="text-lg">Edición de orden</DialogTitle>
@@ -713,7 +713,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
             onClick={handleSubmit}
             disabled={!canSubmit}
             size="lg"
-            className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6"
+            className="btn-accent-3d text-white font-semibold px-6"
           >
             {submitting && <Loader2 size={14} className="mr-2 animate-spin" aria-hidden="true" />}
             {plan.length === 0 ? 'Sin cambios' : 'Actualizar Orden'}
