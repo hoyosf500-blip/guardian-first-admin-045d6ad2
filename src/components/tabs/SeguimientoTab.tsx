@@ -406,7 +406,13 @@ export default function SeguimientoTab() {
         transition={{ duration: 0.35 }}
         className="mb-6 space-y-4"
       >
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        {/* Título y controles en FILAS SEPARADAS, no lado a lado.
+            El cluster de controles son 6 (toggle, buscador, rango de fechas,
+            total, WhatsApp, sincronizar) y su ancho mínimo ronda los 1100px:
+            al ponerlo en la misma fila que el título, no podía encogerse por
+            debajo de ese mínimo y le dejaba al título ~100px, partiéndolo en
+            una palabra por línea. Apilarlos lo hace imposible por construcción. */}
+        <header className="flex flex-col gap-4">
           <div className="min-w-0 space-y-1.5">
             <div className="hud-label whitespace-nowrap truncate mb-1">
               CRM · Operadora
@@ -421,7 +427,7 @@ export default function SeguimientoTab() {
               Pedidos en ruta — todos los estados de Dropi sincronizados.
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Toggle de vista: Tablero (Kommo, en vivo) ↔ Lista (CrmTable) */}
             <div className="inline-flex flex-wrap gap-2">
               <button

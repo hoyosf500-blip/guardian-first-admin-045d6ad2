@@ -38,7 +38,9 @@ export default function HudTopbar({ title, section, right, onMenu }: HudTopbarPr
       </div>
 
       <div className="flex items-center gap-2.5 flex-shrink-0">
-        <span className="hidden md:inline-flex items-center gap-2 hud-label text-cyan">
+        {/* Solo en pantallas anchas: es decorativo y compite por espacio con el
+            selector de tienda, que sí es funcional. */}
+        <span className="hidden 2xl:inline-flex items-center gap-2 hud-label text-cyan">
           <span
             aria-hidden="true"
             className="w-1.5 h-1.5 rounded-full bg-cyan animate-gb-pulse"

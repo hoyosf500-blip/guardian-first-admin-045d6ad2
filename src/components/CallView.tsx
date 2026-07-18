@@ -14,7 +14,6 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare } from 'lucide-react';
-import { TiltCard } from '@/components/ui3d';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
@@ -756,11 +755,13 @@ export default function CallView({ items, alerts }: Props) {
         </div>
       </div>
 
-      <TiltCard
-        sheen
-        brackets
-        wrapperClassName="mb-4"
-        className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg"
+      {/* SIN TiltCard ni sheen a propósito: esta es la ficha del modo llamada.
+          La asesora la mira fijo mientras habla por teléfono y escribe notas —
+          una card que se inclina con el mouse y un brillo que la cruza cada 7s
+          distraen y marean en una jornada larga. El resto de la app sí los usa;
+          acá el criterio es que no se mueva nada. */}
+      <div
+        className="relative overflow-hidden mb-4 bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg hairline-top"
       >
         {/* Orbe aurora decorativo (Dirección 3D) */}
         <div className="pointer-events-none absolute -left-10 -top-24 w-72 h-72 rounded-full blur-[50px] bg-accent/15" aria-hidden="true" />
@@ -1100,7 +1101,7 @@ export default function CallView({ items, alerts }: Props) {
           </div>
         )}
         </div>
-      </TiltCard>
+      </div>
 
       {/* Notas y recordatorios del cliente — visible para toda la tienda.
           Por phone (no solo orderId): si el mismo cliente tiene otro pedido,
