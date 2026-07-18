@@ -382,15 +382,23 @@ export default function ConfirmarTab({ profile }: Props) {
   ).length;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
+    <div className="relative max-w-5xl mx-auto space-y-5">
+      {/* Aurora orbs de fondo (Dirección 3D) — decorativos, no interactivos */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute -left-[8%] -top-[6%] w-80 h-80 rounded-full blur-[60px] bg-accent/20" />
+        <div className="absolute -right-[6%] top-[28%] w-72 h-72 rounded-full blur-[60px] bg-accent2/15" />
+      </div>
+
       {/* Page header — patrón pro coherente con Logística/Rescate */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
             Cola · Operadora
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-            <Phone size={22} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+            <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
+              <Phone size={18} strokeWidth={2.25} />
+            </span>
             Confirmar
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -600,9 +608,9 @@ export default function ConfirmarTab({ profile }: Props) {
             const d7 = visibleQueue.filter(o => diasReales(o) >= 7 && !o.result).length;
             const d46 = visibleQueue.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6 && !o.result; }).length;
             return (
-              <div className="mb-4 bg-card border border-border rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2 hover:border-border-strong transition-colors">
+              <div className="glass-panel glass-panel-hover mb-4 rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-5 gap-y-2">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-3xl font-extrabold tabular-nums text-accent leading-none">{pending}</span>
+                  <span className="font-mono text-3xl font-extrabold tabular-nums text-accent leading-none num-glow-accent">{pending}</span>
                   <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">por confirmar</span>
                 </div>
                 <div className="flex items-baseline gap-x-4 gap-y-1 flex-wrap text-xs">
@@ -681,7 +689,7 @@ export default function ConfirmarTab({ profile }: Props) {
               indistinguibles del fondo) a h-9/text-xs con el ícono más visible
               — el popover trigger ya cubría todo el botón (asChild forwardea
               onClick), pero el target era demasiado chiquito. */}
-          <div className="bg-surface border border-border rounded-xl p-3 sm:p-4 mb-4 space-y-3">
+          <div className="glass-panel rounded-xl p-3 sm:p-4 mb-4 space-y-3">
             <div className="flex items-center flex-wrap gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -740,7 +748,7 @@ export default function ConfirmarTab({ profile }: Props) {
                   <button key={v.key} onClick={() => setView(v.key)}
                     aria-pressed={view === v.key}
                     className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-md text-xs font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                      view === v.key ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                      view === v.key ? 'bg-accent-gradient text-white shadow-glow' : 'text-muted-foreground hover:text-foreground'
                     }`}>
                     <v.icon size={13} aria-hidden="true" /> {v.label}
                   </button>

@@ -69,7 +69,7 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
 
   return (
     <>
-    <div className="space-y-0 rounded-xl border border-border overflow-hidden">
+    <div className="space-y-0 glass-panel rounded-xl overflow-hidden">
       {items.slice(0, visibleCount).map((o, i) => {
         const pLevel = getPriorityLevel(calcPriority(o));
         const pCfg = PRIORITY_CONFIG[pLevel];
@@ -103,9 +103,11 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
               dias >= 7 && !o.result ? 'urgent-pulse' : '',
             ].join(' ')}
           >
-            {/* Priority bar */}
-            <div className={`w-1 self-stretch flex-shrink-0 ${
-              dias >= 7 ? 'bg-red' : dias >= 4 ? 'bg-yellow' : 'bg-green/50'
+            {/* Priority bar — barra de acento con glow (Dirección 3D) */}
+            <div className={`w-[3px] self-stretch flex-shrink-0 ${
+              dias >= 7 ? 'bg-danger shadow-[0_0_12px_hsl(var(--danger))]'
+              : dias >= 4 ? 'bg-warning shadow-[0_0_12px_hsl(var(--warning))]'
+              : 'bg-success shadow-[0_0_12px_hsl(var(--success)/0.7)]'
             }`} aria-hidden="true" />
 
             {/* Two-line content */}
@@ -225,11 +227,11 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
         );
       })}
       {items.length > visibleCount && (
-        <div className="px-4 py-3 flex items-center justify-between bg-card border-t border-border">
+        <div className="px-4 py-3 flex items-center justify-between bg-card/40 border-t border-border">
           <p className="text-xs text-muted-foreground">Mostrando {visibleCount} de {items.length}</p>
           <button
             onClick={() => setVisibleCount(prev => prev + 50)}
-            className="text-xs px-4 py-1.5 rounded-lg bg-accent text-accent-foreground font-semibold hover:opacity-90 transition-opacity cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="text-xs px-4 py-1.5 rounded-lg bg-accent-gradient text-white font-semibold shadow-glow hover:brightness-110 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             Ver más
           </button>
