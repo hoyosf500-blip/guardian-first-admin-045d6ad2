@@ -40,26 +40,52 @@ export interface Divergence {
 
 const ORPHAN_THRESHOLD = 5_000_000;
 
+/** Tope de filas que traemos de Guardian por corrida. No paginamos: pedimos el
+ *  conteo EXACTO aparte para saber si nos quedamos cortos y poder DECIRLO, en
+ *  vez de rotular una muestra como si fuera el total de la tienda. */
+export const GUARDIAN_SCAN_LIMIT = 2000;
+
 /** Estados terminales en Guardian — no necesitan auditarse (no van a cambiar). */
 const TERMINAL = [
   'PENDIENTE CONFIRMACION', 'ENTREGADO', 'CANCELADO', 'DEVOLUCION',
   'DEVUELTO', 'ARCHIVADO_GHOST', 'ORDEN INDEMNIZADA', 'RECHAZADO',
 ];
 
+export interface GuardianScan {
+  /** Los pedidos que efectivamente entraron a la comparación contra Dropi. */
+  orders: GuardianOrder[];
+  /** Conteo EXACTO de no-terminales de la tienda en la DB.
+   *  `null` = el servidor no devolvió el conteo (no asumir 0). */
+  total: number | null;
+  /** true si quedaron no-terminales fuera del corte, o sea: `orders` es una
+   *  MUESTRA y no se puede afirmar paridad sobre ella. */
+  truncated: boolean;
+}
+
 export async function fetchGuardianNonTerminal(
   supabase: SupabaseClient,
   storeId: string,
-): Promise<GuardianOrder[]> {
+): Promise<GuardianScan> {
   const inList = `(${TERMINAL.map((s) => `"${s}"`).join(',')})`;
-  const { data, error } = await supabase
+  const { data, count, error } = await supabase
     .from('orders')
-    .select('id, external_id, estado, guia, transportadora, nombre')
+    .select('id, external_id, estado, guia, transportadora, nombre', { count: 'exact' })
     .eq('store_id', storeId)
     .not('estado', 'in', inList)
     .not('external_id', 'is', null)
-    .limit(2000);
+    .limit(GUARDIAN_SCAN_LIMIT);
   if (error) throw new Error(error.message);
-  return ((data || []) as GuardianOrder[]).filter((o) => o.external_id);
+  const rows = (data || []) as GuardianOrder[];
+  const orders = rows.filter((o) => o.external_id);
+  const total = typeof count === 'number' ? count : null;
+  // Comparamos contra `rows.length` (lo que devolvió la query), NO contra
+  // `orders.length` (ya filtrado) — si no, un external_id vacío se leería como
+  // truncamiento. Sin count, tocar el tope es la única señal de que hay más
+  // afuera: preferimos avisar de más antes que declarar paridad sobre una muestra.
+  const truncated = total !== null
+    ? total > rows.length
+    : rows.length >= GUARDIAN_SCAN_LIMIT;
+  return { orders, total, truncated };
 }
 
 /** Pide el snapshot Dropi al edge function `dropi-snapshot`. El proxy

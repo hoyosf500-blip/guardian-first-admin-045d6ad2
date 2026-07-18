@@ -7,7 +7,9 @@ interface FinanzasHeroProps {
   totalSalidas: number;
   ingresosBrutos: number;
   totalEntregadas: number;
-  margenPct: number;
+  /** null = margen indefinido (sin denominador). Se pinta '—' en tono neutro,
+   *  nunca 0.0% en rojo — mismo criterio que `utilidad_neta` en CfoTab. */
+  margenPct: number | null;
   /** true = el valor es el operativo por cohorte (real); false = caja del wallet
    *  por fecha de pago (mezcla meses). Cambia el subtítulo y la microcopy. */
   cohorte?: boolean;
@@ -31,9 +33,18 @@ export default function FinanzasHero({
   }
 
   const isPositive = gananciaNeta >= 0;
+  // Sin ingresos brutos no hay denominador: el margen es INDEFINIDO, no 0%.
+  // Antes llegaba como 0 y se pintaba "0.0%" en ROJO junto a "Sano: ≥30%" — un
+  // dato ausente disfrazado de mal resultado. Los umbrales NO cambian; lo único
+  // que cambia es que solo se evalúan cuando hay valor de verdad.
+  const margenValue =
+    margenPct == null || !Number.isFinite(margenPct) || ingresosBrutos <= 0
+      ? null
+      : margenPct;
   const margenTone =
-    margenPct >= 30 ? 'success' :
-    margenPct >= 15 ? 'warning' :
+    margenValue == null ? 'neutral' :
+    margenValue >= 30 ? 'success' :
+    margenValue >= 15 ? 'warning' :
     'danger';
 
   return (
@@ -104,20 +115,23 @@ export default function FinanzasHero({
 
       {/* Margen Operativo */}
       <div className={`rounded-2xl border-2 p-5 ${
+        margenTone === 'neutral' ? 'border-border bg-card/40' :
         margenTone === 'success' ? 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent' :
         margenTone === 'warning' ? 'border-warning/30 bg-gradient-to-br from-warning/8 via-warning/3 to-transparent' :
         'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent'
       }`}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
-            Margen Operativo
+            Margen Operativo (indicativo)
           </span>
           <div className={`h-9 w-9 rounded-lg flex items-center justify-center border ${
+            margenTone === 'neutral' ? 'bg-muted/30 border-border' :
             margenTone === 'success' ? 'bg-success/15 border-success/40' :
             margenTone === 'warning' ? 'bg-warning/15 border-warning/40' :
             'bg-danger/15 border-danger/40'
           }`}>
             <Target size={16} className={
+              margenTone === 'neutral' ? 'text-muted-foreground' :
               margenTone === 'success' ? 'text-success' :
               margenTone === 'warning' ? 'text-warning' :
               'text-danger'
@@ -125,14 +139,28 @@ export default function FinanzasHero({
           </div>
         </div>
         <div className={`text-3xl sm:text-4xl font-extrabold tabular-nums tracking-tight leading-none ${
+          margenTone === 'neutral' ? 'text-muted-foreground' :
           margenTone === 'success' ? 'text-success' :
           margenTone === 'warning' ? 'text-warning' :
           'text-danger'
         }`}>
-          {margenPct.toFixed(1)}%
+          {margenValue != null ? `${margenValue.toFixed(1)}%` : '—'}
         </div>
         <div className="mt-3 text-[11px] text-muted-foreground leading-snug">
-          Ganancia neta sobre ingresos brutos. <span className="text-foreground/80">Sano: ≥30%</span>
+          {margenValue != null ? (
+            <>
+              Ganancia neta sobre ingresos brutos. <span className="text-foreground/80">Sano: ≥30%</span>
+              {/* El calificador que ya llevan las otras dos cards. El numerador y el
+                  denominador NO son la misma cohorte, así que el % no es comparable
+                  mes a mes con precisión contable — se dice en vez de callarlo. */}
+              <span className="block mt-1">
+                Cruza cohortes: arriba va {cohorte ? 'por fecha de pedido' : 'por fecha de pago'} y
+                los ingresos por entregados del período.
+              </span>
+            </>
+          ) : (
+            <>Sin datos: no hay ingresos brutos en el período, así que el margen no se puede calcular.</>
+          )}
         </div>
       </div>
     </div>

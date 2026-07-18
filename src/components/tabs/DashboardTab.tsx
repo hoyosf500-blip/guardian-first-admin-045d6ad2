@@ -95,8 +95,15 @@ export default function DashboardTab() {
     // admin_daily_reports_range agrega POR DÍA en el servidor. Leer order_results
     // crudo acá sería un error: PostgREST corta en 1000 filas y las tasas
     // saldrían calculadas sobre una muestra truncada sin avisar.
-    (supabase.rpc as unknown as (fn: string, p: Record<string, unknown>) => Promise<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }>)
-      ('admin_daily_reports_range', { p_from: desde, p_to: hasta })
+    // Se nombra la fn antes de llamarla: dejar el `(` de la llamada en la línea
+    // siguiente al cast dispara no-unexpected-multiline, y con razón — es el
+    // patrón que la inserción automática de punto y coma puede romper.
+    type RpcDiario = (fn: string, p: Record<string, unknown>) => Promise<{
+      data: Array<Record<string, unknown>> | null;
+      error: { message: string } | null;
+    }>;
+    const rpcDiario = supabase.rpc as unknown as RpcDiario;
+    rpcDiario('admin_daily_reports_range', { p_from: desde, p_to: hasta })
       .then(({ data, error }) => {
         if (cancelado) return;
         if (error || !Array.isArray(data)) {

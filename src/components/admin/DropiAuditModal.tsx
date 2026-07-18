@@ -8,6 +8,7 @@ import {
   fetchDropiSnapshot,
   findDivergences,
   applyDivergences,
+  GUARDIAN_SCAN_LIMIT,
   type Divergence,
 } from '@/lib/dropiAudit';
 
@@ -19,17 +20,33 @@ interface Props {
 
 type State = 'idle' | 'scanning' | 'results' | 'applying' | 'done';
 
+// Ventana de auditoría: 14 días es el sweet-spot. Cubre la totalidad de
+// pedidos no-terminales (los que llevan > 14d sin entregar son fantasmas o
+// huérfanos de backfill viejo, no transit normal) y reduce N páginas a
+// Dropi (menos chance de throttle).
+// Vive a nivel de módulo para que la copy de pantalla interpole ESTA constante
+// y no pueda volver a desincronizarse del rango que realmente se consulta.
+const RANGE_DAYS = 14;
+
 export default function DropiAuditModal({ open, onClose, storeId }: Props) {
   const { user } = useAuth();
   const [state, setState] = useState<State>('idle');
   const [divergences, setDivergences] = useState<Divergence[]>([]);
   const [filter, setFilter] = useState<'all' | 'update' | 'cancel_orphan'>('all');
+  // guardianCount = pedidos efectivamente COMPARADOS. guardianTotal = cuántos
+  // no-terminales hay de verdad en la DB (null si el servidor no lo devolvió —
+  // null NO es 0). Si el escaneo se topó, guardianCount es una muestra y hay
+  // que decirlo: si no, el modal declara "paridad perfecta" sobre pedidos que
+  // nunca miró.
+  const [guardianTotal, setGuardianTotal] = useState<number | null>(null);
+  const [guardianTruncated, setGuardianTruncated] = useState(false);
   const [guardianCount, setGuardianCount] = useState(0);
   const [dropiCount, setDropiCount] = useState(0);
   const [applied, setApplied] = useState(0);
   const [failed, setFailed] = useState<Divergence[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [coverageMissing, setCoverageMissing] = useState<number>(0);
 
   const filtered = useMemo(
     () => filter === 'all' ? divergences : divergences.filter(d => d.action === filter),
@@ -38,17 +55,12 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 
   if (!open) return null;
 
-  // Ventana de auditoría: 14 días es el sweet-spot. Cubre la totalidad de
-  // pedidos no-terminales (los que llevan > 14d sin entregar son fantasmas o
-  // huérfanos de backfill viejo, no transit normal) y reduce N páginas a
-  // Dropi (menos chance de throttle).
-  const RANGE_DAYS = 14;
-  const [coverageMissing, setCoverageMissing] = useState<number>(0);
-
   const handleScan = async () => {
     setError(null);
     setWarning(null);
     setCoverageMissing(0);
+    setGuardianTotal(null);
+    setGuardianTruncated(false);
     setState('scanning');
     try {
       const today = new Date();
@@ -60,7 +72,9 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
         fetchGuardianNonTerminal(supabase, storeId),
         fetchDropiSnapshot(supabase, storeId, from, to),
       ]);
-      setGuardianCount(guardian.length);
+      setGuardianCount(guardian.orders.length);
+      setGuardianTotal(guardian.total);
+      setGuardianTruncated(guardian.truncated);
       setDropiCount(dropi.snapshot.size);
 
       // Coverage real: ¿cuántos no-terminales de Guardian NO aparecieron en
@@ -70,20 +84,20 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
       // — los faltantes los contamos aparte como "coverage incompleta".
       let missingCount = 0;
       if (dropi.partial) {
-        for (const g of guardian) {
+        for (const g of guardian.orders) {
           if (!dropi.snapshot.has(String(g.external_id))) missingCount++;
         }
         setCoverageMissing(missingCount);
       }
       if (dropi.partial && dropi.message) {
-        setWarning(`${dropi.message}. ${missingCount > 0 ? `${missingCount} de ${guardian.length} pedidos Guardian no se pudieron verificar.` : ''}`);
+        setWarning(`${dropi.message}. ${missingCount > 0 ? `${missingCount} de ${guardian.orders.length} pedidos Guardian no se pudieron verificar.` : ''}`);
       }
 
       // Si fue parcial, filtramos las divergencias tipo "cancel_orphan" para
       // pedidos que NO vimos en Dropi — no sabemos si son realmente huérfanos
       // o solo quedaron en una página no traída. Las "update" sí son confiables
       // (el pedido apareció en Dropi pero con estado distinto).
-      let divs = findDivergences(guardian, dropi.snapshot);
+      let divs = findDivergences(guardian.orders, dropi.snapshot);
       if (dropi.partial) {
         divs = divs.filter(d => d.action === 'update');
       }
@@ -139,6 +153,12 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
   const updates = divergences.filter(d => d.action === 'update').length;
   const orphans = divergences.filter(d => d.action === 'cancel_orphan').length;
 
+  // Aviso de muestra truncada. Sin conteo exacto no inventamos el faltante:
+  // decimos que hay más sin revisar, sin poner un número que no medimos.
+  const truncationNote = guardianTotal !== null
+    ? `Datos parciales: Guardian tiene ${guardianTotal} pedidos no-terminales y el escaneo lee hasta ${GUARDIAN_SCAN_LIMIT} por corrida. Se compararon ${guardianCount} contra Dropi — los ${guardianTotal - guardianCount} restantes no se revisaron.`
+    : `Datos parciales: se compararon ${guardianCount} pedidos no-terminales (tope del escaneo) y puede haber más sin revisar contra Dropi.`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog">
       <div className="bg-card border border-border rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
@@ -156,8 +176,8 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
           {state === 'idle' && (
             <div className="text-center py-10 space-y-4">
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Lee tus pedidos no-terminales de los últimos 30 días y los compara con Dropi en vivo.
-                Reporta divergencias de estado / guía / transportadora.
+                Lee tus pedidos no-terminales y los compara con lo que Dropi reporta en vivo de los
+                últimos {RANGE_DAYS} días. Reporta divergencias de estado / guía / transportadora.
               </p>
               {error && <p className="text-xs text-destructive">{error}</p>}
               <button onClick={handleScan}
@@ -178,7 +198,14 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
           {(state === 'results' || state === 'applying') && (
             <>
               <div className={`grid gap-3 ${coverageMissing > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
-                <Stat label="Guardian" value={guardianCount} />
+                <Stat
+                  label="Guardian"
+                  value={guardianCount}
+                  accent={guardianTruncated ? 'warning' : undefined}
+                  note={guardianTruncated
+                    ? (guardianTotal !== null ? `de ${guardianTotal} · parcial` : 'parcial · hay más')
+                    : undefined}
+                />
                 <Stat label="Dropi" value={dropiCount} />
                 <Stat label="Updates" value={updates} accent={updates > 0 ? 'warning' : undefined} />
                 <Stat label="Huérfanos" value={orphans} accent={orphans > 0 ? 'danger' : undefined} />
@@ -186,6 +213,13 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
                   <Stat label="Sin verificar" value={coverageMissing} accent="warning" />
                 )}
               </div>
+
+              {guardianTruncated && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                  <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-warning">{truncationNote}</p>
+                </div>
+              )}
 
               {warning && (
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
@@ -209,6 +243,21 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
                         Verificamos {guardianCount - coverageMissing} de {guardianCount} pedidos Guardian. Los
                         {' '}{coverageMissing} restantes podrían estar OK o ser huérfanos — esperá 1–2 min y
                         reintentá.
+                      </p>
+                    </div>
+                  </div>
+                ) : guardianTruncated ? (
+                  // Muestra truncada: cero divergencias ACÁ no es paridad. Los
+                  // pedidos que nunca leímos no pueden declararse alineados.
+                  <div className="flex items-start gap-3 p-4 rounded-lg bg-warning/10 border border-warning/30">
+                    <AlertTriangle size={20} className="text-warning flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-semibold text-warning">
+                        Sin divergencias en lo comparado — no alcanza para afirmar paridad.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Quedaron pedidos no-terminales fuera del escaneo (ver el aviso de arriba).
+                        Hasta revisarlos no se puede descartar que haya fantasmas.
                       </p>
                     </div>
                   </div>
@@ -309,12 +358,17 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: number; accent?: 'warning' | 'danger' }) {
+function Stat({ label, value, accent, note }: { label: string; value: number; accent?: 'warning' | 'danger'; note?: string }) {
   const color = accent === 'danger' ? 'text-destructive' : accent === 'warning' ? 'text-warning' : 'text-foreground';
   return (
     <div className="bg-secondary rounded-lg px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{label}</div>
       <div className={`text-lg font-bold ${color}`}>{value}</div>
+      {/* `note` califica el número (ej. "de 3400 · parcial") para que una muestra
+          nunca se lea como si fuera el total. */}
+      {note && (
+        <div className={`text-[10px] font-medium leading-tight ${accent ? color : 'text-muted-foreground'}`}>{note}</div>
+      )}
     </div>
   );
 }

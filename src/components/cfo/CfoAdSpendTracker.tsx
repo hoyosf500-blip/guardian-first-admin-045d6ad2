@@ -4,7 +4,7 @@ import {
   CalendarClock, Loader2, TrendingUp, TrendingDown,
 } from 'lucide-react';
 import {
-  useAdSpendCompare,
+  useAdSpendCompare, useMonthlyAdSpend,
   type AdPaymentMethod, type AdSpendRow, type AdPlatform,
 } from '@/hooks/useMonthlyAdSpend';
 import { formatCOP } from '@/lib/utils';
@@ -25,6 +25,10 @@ import CfoAdSpendDialog from './CfoAdSpendDialog';
 interface Props {
   yearMonth: string;
   prevYearMonth: string;
+  /** OJO — el nombre miente por historia: CfoTab pasa acá `curr.utilidad_bruta`
+   *  (utilidad bruta CONTABLE de financial_summary, por fecha de entrega), NO el
+   *  saldo del wallet (`curr.wallet_saldo`, la card "Wallet Dropi"). La alerta de
+   *  abajo lo nombra por lo que realmente es. */
   walletGenerated?: number;
 }
 
@@ -95,6 +99,12 @@ function daysUntil(d: Date, today = new Date()): number {
 
 export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGenerated }: Props) {
   const { isLoading, isError, rows, curr, prev } = useAdSpendCompare(yearMonth, prevYearMonth);
+  // monthly_ad_spend es carga MANUAL y `prev` sale de aggregateSpend([]) → todos
+  // los campos en 0 cuando el mes anterior no tiene filas. Sin este flag, "no
+  // cargué la pauta" y "no pauté" se ven idénticos ($0). Misma queryKey que usa
+  // useAdSpendCompare por dentro → React Query la deduplica, no hay request extra.
+  // (Si esta query fallara, el early-return de `isError` ya corta antes.)
+  const prevHasRows = (useMonthlyAdSpend(prevYearMonth).data?.length ?? 0) > 0;
   const [editingDialog, setEditingDialog] = useState<{ open: boolean; row: AdSpendRow | null }>({ open: false, row: null });
 
   const cutoffMC = useMemo(() => nextCutOffDates(15, 18), []);
@@ -116,7 +126,7 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
       const exceso = curr.total - walletGenerated;
       out.push({
         tone: 'warning',
-        text: `Pauta total (${formatCOP(curr.total)}) supera al wallet del mes (${formatCOP(walletGenerated)}) por ${formatCOP(exceso)} — el resto se está financiando con deuda`,
+        text: `Pauta total (${formatCOP(curr.total)}) supera a la utilidad bruta del mes (${formatCOP(walletGenerated)}) por ${formatCOP(exceso)} — es utilidad bruta contable, no el saldo del wallet; si no hay caja, ese exceso se financia con deuda`,
       });
     }
     if (curr.total === 0 && !isLoading) {
@@ -182,13 +192,14 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
 
       {/* Sección 1: KPIs por plataforma */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <KpiCard label="Meta Ads" value={curr.meta} prev={prev.meta} delta={metaDelta} />
-        <KpiCard label="TikTok Ads" value={curr.tiktok} prev={prev.tiktok} delta={tiktokDelta} />
+        <KpiCard label="Meta Ads" value={curr.meta} prev={prev.meta} delta={metaDelta} prevHasRows={prevHasRows} />
+        <KpiCard label="TikTok Ads" value={curr.tiktok} prev={prev.tiktok} delta={tiktokDelta} prevHasRows={prevHasRows} />
         <KpiCard
           label="TOTAL pauta"
           value={curr.total}
           prev={prev.total}
           delta={totalDelta}
+          prevHasRows={prevHasRows}
           bold
         />
       </div>
@@ -361,10 +372,13 @@ interface KpiCardProps {
   value: number;
   prev: number;
   delta: number | null;
+  /** false = el mes anterior no tiene NINGUNA fila cargada, así que `prev` es
+   *  relleno, no una medición. Un mes cargado que sumó 0 sí muestra $0. */
+  prevHasRows?: boolean;
   bold?: boolean;
 }
 
-function KpiCard({ label, value, prev, delta, bold }: KpiCardProps) {
+function KpiCard({ label, value, prev, delta, prevHasRows = true, bold }: KpiCardProps) {
   const goingUp = delta !== null && delta > 0;
   const tone = goingUp ? 'text-danger' : delta !== null && delta < 0 ? 'text-success' : 'text-muted-foreground';
   return (
@@ -381,7 +395,7 @@ function KpiCard({ label, value, prev, delta, bold }: KpiCardProps) {
         </div>
       ) : (
         <div className="text-[11px] text-muted-foreground">
-          mes anterior: {formatCOP(prev)}
+          mes anterior: {prevHasRows ? formatCOP(prev) : 'sin pauta cargada'}
         </div>
       )}
     </div>

@@ -18,15 +18,27 @@ export default function CounterBar() {
   // fórmula diluida obsoleta que pintaba rojo un día con muchos N/R aunque la
   // confirmación real superara la meta. Solo decide el COLOR de la barra vs meta;
   // el conteo crudo mostrado sigue siendo cobertura (total/goal).
-  const tasa = confRateBySample(counter.conf, counter.canc).tasa ?? 0;
+  // `tasa` viene null cuando NO hay resueltos (conf+canc = 0). null NO es 0%: es
+  // "todavía no hay con qué medir". Se conserva null a propósito — ver barTone.
+  const { tasa } = confRateBySample(counter.conf, counter.canc);
 
   if (workQueue.length === 0) return null;
 
   // Color de la tasa de confirmación vs la meta oficial del dueño
   // (CONF_TARGET_PCT = 85%, fuente única). Verde en meta; ámbar en la banda
   // "cerca" (5 pts por debajo); rojo debajo de eso.
+  //
+  // Sin resueltos (tasa === null) el color queda NEUTRO. Antes había un `?? 0`
+  // que convertía "no hay dato" en 0% y caía en la rama roja = "por debajo de la
+  // meta": un juicio de desempeño emitido antes de la primera llamada del día,
+  // sobre cero información. Y justo ahí se ve seguro, porque el guard de arriba
+  // (`workQueue.length === 0`) garantiza que la barra se muestra cuando HAY cola
+  // pendiente — es decir, al abrir la jornada.
+  // OJO: un 0% MEDIDO (hubo cancelaciones y ninguna confirmación) sigue en rojo.
+  // Eso es un dato real, no un hueco — cero medido y dato ausente son distintos.
   const barTone =
-    tasa >= CONF_TARGET_PCT ? 'bg-gradient-to-r from-success to-success/75'
+    tasa === null ? 'bg-muted-foreground/40'
+    : tasa >= CONF_TARGET_PCT ? 'bg-gradient-to-r from-success to-success/75'
     : tasa >= CONF_TARGET_PCT - 5 ? 'bg-gradient-to-r from-warning to-warning/75'
     : 'bg-gradient-to-r from-danger to-danger/75';
 
@@ -69,6 +81,13 @@ export default function CounterBar() {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`Progreso: ${pct}%`}
+        // El color de la barra codifica la tasa de confirmación (métrica distinta
+        // del ancho, que es cobertura). No estaba rotulada en ningún lado: se
+        // explica acá, incluido el caso "todavía no hay tasa". `aria-label` manda
+        // sobre `title` para el nombre accesible, así que no se pisa nada.
+        title={tasa === null
+          ? 'Sin confirmados ni cancelados todavía: aún no hay tasa de confirmación que medir'
+          : `Tasa de confirmación del equipo hoy: ${tasa}% (meta ${CONF_TARGET_PCT}%)`}
       >
         <div
           className={`h-full rounded-full ${barTone} transition-all duration-500 ease-out`}

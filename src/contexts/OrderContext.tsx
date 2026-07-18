@@ -60,6 +60,34 @@ interface OrderState {
    *    → identificamos por phone. Se cruza contra segData. */
   myConfirmTouchedToday: Set<string>;
   mySegTouchedToday: Set<string>;
+  /** ¿Falló la ÚLTIMA lectura de los sets de cobertura del día?
+   *
+   *  Un Set vacío es AMBIGUO: puede significar "la operadora todavía no gestionó
+   *  nada" (cero medido, real) o "la consulta falló" (no sabemos nada). Antes los
+   *  dos casos salían por el mismo `if (!data) return` y la UI pintaba el segundo
+   *  como "Has llamado a 0" / "Gestionados 0 de 47" — un cero inventado que le
+   *  decía a la operadora que no había trabajado.
+   *
+   *  Contrato para los consumidores:
+   *  - flag `false` + set vacío → CERO REAL. Mostrar 0, es un dato medido.
+   *  - flag `true`              → DATO AUSENTE. Mostrar "—" / "Sin datos" en tono
+   *    NEUTRO (text-muted-foreground). Nunca rojo: no sabemos si está mal, no
+   *    sabemos nada.
+   *
+   *  Se guardan separados POR FUENTE para que el éxito de una query no borre el
+   *  error de la otra (con un solo boolean compartido ganaba el `.then` que
+   *  resolviera último y podíamos "limpiar" un error real):
+   *  - `coverageConfirmError` → solo myConfirmTouchedToday (order_results)
+   *  - `coverageSegError`     → solo mySegTouchedToday (touchpoints)
+   *  - `coverageError`        → cualquiera de las dos, para consumidores genéricos.
+   *    Preferí el granular donde exista: el agregado apaga el chip de Confirmar
+   *    aunque lo que haya fallado sea la query de Seguimiento.
+   *
+   *  Ojo: arrancan en `false`. Durante la primera carga (~ms) el set está vacío y
+   *  el flag limpio — es un estado de "cargando", no de error. */
+  coverageError: boolean;
+  coverageConfirmError: boolean;
+  coverageSegError: boolean;
 }
 
 const OrderContext = createContext<OrderState | undefined>(undefined);
@@ -82,6 +110,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // se recalcula del backend en cada loadWorkQueue/loadSegData.
   const [myConfirmTouchedToday, setMyConfirmTouchedToday] = useState<Set<string>>(new Set());
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
+  // ¿Se pudo LEER cada set de cobertura? Ver el doc del contrato en OrderState.
+  // Booleans separados (no un objeto) a propósito: `ctxValue` está memoizado y un
+  // objeto nuevo en cada render invalidaría el memo, re-renderizando a TODOS los
+  // consumers de useOrders() — el mismo churn que smartMerge existe para evitar.
+  const [coverageConfirmError, setCoverageConfirmError] = useState(false);
+  const [coverageSegError, setCoverageSegError] = useState(false);
+  const coverageError = coverageConfirmError || coverageSegError;
 
   // Extracted hooks for data loading and novedades — ahora reciben storeId
   // para filtrar por la tienda activa (multi-tenant).
@@ -141,9 +176,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     buildWorkQueue(orders);
     setExcelLoaded(true);
     // Cobertura: cargar set de pedidos de confirmar que YO toqué HOY (Bogotá).
-    // Query barato — solo order_id, sin joins. Si falla silenciosamente, el
-    // chip de "Tu cola hoy" muestra 0 llamados (peor-caso) hasta el siguiente
-    // loadWorkQueue. La RLS ya garantiza que solo veo mis filas.
+    // Query barato — solo order_id, sin joins. La RLS ya garantiza que solo veo
+    // mis filas. Si FALLA marcamos coverageConfirmError en vez de salir mudos:
+    // antes el error y el "cargó vacío" compartían el mismo `if (!mine) return`,
+    // así que una consulta caída se veía igual que una jornada sin gestionar y el
+    // chip "Tu cola hoy" mostraba "Has llamado a 0" — un cero inventado.
     const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
     void supabase
       .from('order_results')
@@ -152,12 +189,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .eq('operator_id', user.id)
       .eq('module', 'confirmar')
       .gte('created_at', todayStartIso)
-      .then(({ data: mine }) => {
-        if (!mine) return;
+      .then(({ data: mine, error: mineErr }) => {
+        if (mineErr || !mine) { setCoverageConfirmError(true); return; }
         const ids = (mine as { order_id: string | null }[])
           .map(r => r.order_id)
           .filter((id): id is string => !!id);
         setMyConfirmTouchedToday(new Set(ids));
+        // Cargó bien → a partir de acá un set vacío SÍ significa "no gestionó nada".
+        setCoverageConfirmError(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, activeStoreId]);
@@ -304,12 +343,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .eq('operator_id', user.id)
       .eq('module', 'confirmar')
       .gte('created_at', todayStartIso)
-      .then(({ data: mine }) => {
-        if (!mine) return;
+      .then(({ data: mine, error: mineErr }) => {
+        // Mismo criterio que en loadWorkQueue: error ≠ vacío. Sin esta rama, una
+        // consulta caída dejaba el set vacío y el chip afirmaba "0 llamados".
+        if (mineErr || !mine) { setCoverageConfirmError(true); return; }
         const ids = (mine as { order_id: string | null }[])
           .map(r => r.order_id)
           .filter((id): id is string => !!id);
         setMyConfirmTouchedToday(new Set(ids));
+        setCoverageConfirmError(false);
       });
 
     // Carga inicial del set de seguimiento (touchpoints SEG:* del día).
@@ -321,9 +363,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .eq('operator_id', user.id)
       .ilike('action', 'SEG:%')
       .gte('created_at', todayStartIso)
-      .then(({ data }) => {
-        if (!data) return;
+      .then(({ data, error: segErr }) => {
+        // Igual que arriba: "no se pudo leer" se marca, no se disfraza de cero.
+        if (segErr || !data) { setCoverageSegError(true); return; }
         setMySegTouchedToday(new Set((data as { phone: string }[]).map(r => r.phone)));
+        setCoverageSegError(false);
       });
 
     // Realtime: agregamos al set en cada INSERT mío. Filtro server-side por
@@ -1027,6 +1071,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
     myConfirmTouchedToday, mySegTouchedToday,
+    coverageError, coverageConfirmError, coverageSegError,
   }), [
     allOrders, workQueue,
     dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
@@ -1036,6 +1081,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
     myConfirmTouchedToday, mySegTouchedToday,
+    coverageError, coverageConfirmError, coverageSegError,
   ]);
 
   return (
