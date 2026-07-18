@@ -59,9 +59,9 @@ interface DropiFingerprint {
 }
 
 const DROPI_RISK_COLORS: Record<string, { color: string; bgClass: string; textClass: string }> = {
-  green:  { color: '#22c55e', bgClass: 'bg-green-500/10',  textClass: 'text-green-600 dark:text-green-400' },
-  yellow: { color: '#eab308', bgClass: 'bg-yellow-500/10', textClass: 'text-yellow-600 dark:text-yellow-400' },
-  red:    { color: '#ef4444', bgClass: 'bg-red-500/10',    textClass: 'text-red-600 dark:text-red-400' },
+  green:  { color: 'hsl(var(--success))', bgClass: 'bg-success/14 border border-success/30', textClass: 'text-success' },
+  yellow: { color: 'hsl(var(--warning))', bgClass: 'bg-warning/14 border border-warning/30', textClass: 'text-warning' },
+  red:    { color: 'hsl(var(--danger))',  bgClass: 'bg-danger/14 border border-danger/30',   textClass: 'text-danger' },
 };
 
 // ── Order categorization ────────────────────────────────────────────
@@ -87,21 +87,21 @@ interface ScoreConfig {
 function getScoreConfig(score: number): ScoreConfig {
   if (score >= 80) return {
     label: 'Seguro',
-    color: '#22c55e',
-    bgClass: 'bg-green-500/10',
-    textClass: 'text-green-600 dark:text-green-400',
+    color: 'hsl(var(--success))',
+    bgClass: 'bg-success/14 border border-success/30',
+    textClass: 'text-success',
   };
   if (score >= 50) return {
     label: 'Moderado',
-    color: '#eab308',
-    bgClass: 'bg-yellow-500/10',
-    textClass: 'text-yellow-600 dark:text-yellow-400',
+    color: 'hsl(var(--warning))',
+    bgClass: 'bg-warning/14 border border-warning/30',
+    textClass: 'text-warning',
   };
   return {
     label: 'Riesgoso',
-    color: '#ef4444',
-    bgClass: 'bg-red-500/10',
-    textClass: 'text-red-600 dark:text-red-400',
+    color: 'hsl(var(--danger))',
+    bgClass: 'bg-danger/14 border border-danger/30',
+    textClass: 'text-danger',
   };
 }
 
@@ -206,14 +206,14 @@ function buildMonthlyChart(orders: HistoryOrder[]): MonthData[] {
 // ── Tabs config ─────────────────────────────────────────────────────
 
 const TABS: { key: OrderCategory; label: string; activeClass: string }[] = [
-  { key: 'todos',      label: 'Todos',       activeClass: 'bg-accent/12 text-accent border border-accent/30' },
-  { key: 'entregado',  label: 'Entregados',  activeClass: 'bg-success/12 text-success border border-success/30' },
-  { key: 'no_entrega', label: 'No Entrega',  activeClass: 'bg-danger/12 text-danger border border-danger/30' },
-  { key: 'en_camino',  label: 'En Camino',   activeClass: 'bg-info/12 text-info border border-info/30' },
+  { key: 'todos',      label: 'Todos',       activeClass: 'bg-accent/16 text-accent border border-accent/40 shadow-glow3d' },
+  { key: 'entregado',  label: 'Entregados',  activeClass: 'bg-success/16 text-success border border-success/40' },
+  { key: 'no_entrega', label: 'No Entrega',  activeClass: 'bg-danger/16 text-danger border border-danger/40' },
+  { key: 'en_camino',  label: 'En Camino',   activeClass: 'bg-info/16 text-info border border-info/40' },
 ];
 
 // Muted fill for the gauge background — works in light and dark themes
-const GAUGE_REST_COLOR = 'rgba(156, 163, 175, 0.15)';
+const GAUGE_REST_COLOR = 'hsl(var(--foreground) / 0.12)';
 
 // ═════════════════════════════════════════════════════════════════════
 
@@ -317,7 +317,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   if (loading) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-card border border-border rounded-2xl p-5">
+        className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
         <div className="flex items-center gap-2">
           <RefreshCw size={16} className="text-muted-foreground animate-spin" />
           <span className="text-sm text-muted-foreground">Cargando huella del cliente…</span>
@@ -329,10 +329,10 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   if (orders.length === 0) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-card border border-border rounded-2xl p-5">
+        className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-            <User size={18} className="text-blue-500" />
+          <div className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0">
+            <User size={18} />
           </div>
           <div>
             <h3 className="text-sm font-bold text-foreground">Huella del comprador</h3>
@@ -347,17 +347,19 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className="bg-card border border-border rounded-2xl overflow-hidden">
+      className="bg-card/40 border border-border rounded-2xl overflow-hidden shadow-card3d">
 
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Shield size={16} className="text-accent" />
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0">
+            <Shield size={15} />
+          </span>
           <h3 className="text-sm font-bold text-foreground">Huella del comprador</h3>
-          <span className="text-xs text-muted-foreground">· {total} pedido{total === 1 ? '' : 's'}</span>
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">· {total} pedido{total === 1 ? '' : 's'}</span>
         </div>
         {badge && (
-          <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${badge.className}`}>
+          <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold ${badge.className}`}>
             {badge.label}
           </span>
         )}
@@ -383,8 +385,8 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         return (
           <div className="px-5 py-5 border-b border-border">
             <div className="flex items-center gap-1.5 mb-4">
-              <Fingerprint size={13} className="text-cyan-500" />
-              <span className="text-[10px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">Datos Dropi — todas las tiendas</span>
+              <Fingerprint size={13} className="text-info" />
+              <span className="hud-label">Datos Dropi — todas las tiendas</span>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-5">
               {/* Donut: tu tienda vs otras */}
@@ -400,8 +402,8 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                   >
                     {hasShopData ? (
                       <>
-                        <Cell fill="#3b82f6" />
-                        <Cell fill="#94a3b8" />
+                        <Cell fill="hsl(var(--info))" />
+                        <Cell fill="hsl(var(--muted-foreground))" />
                       </>
                     ) : (
                       <Cell fill={GAUGE_REST_COLOR} />
@@ -410,36 +412,36 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                 </PieChart>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <span className="text-[10px] text-muted-foreground">Total</span>
-                  <span className="text-2xl font-bold text-foreground">{totals.orders}</span>
+                  <span className="text-2xl font-bold text-foreground font-mono tabular-nums">{totals.orders}</span>
                 </div>
               </div>
 
               {/* Right side: score + breakdown */}
               <div className="flex-1 min-w-0 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${riskStyle.bgClass} ${riskStyle.textClass}`}>
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${riskStyle.bgClass} ${riskStyle.textClass}`}>
                     {gp.buyer_type}
                   </span>
                 </div>
                 <div className="flex items-center justify-center sm:justify-start gap-2 mb-3">
-                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <span className="hud-label">
                     Probabilidad de entrega
                   </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${riskStyle.bgClass} ${riskStyle.textClass}`}>
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${riskStyle.bgClass} ${riskStyle.textClass}`}>
                     {gp.risk_label}
                   </span>
                 </div>
 
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center gap-2">
-                    <Store size={11} className="text-blue-500" />
+                    <Store size={11} className="text-info" />
                     <span className="text-muted-foreground">En tu tienda:</span>
-                    <span className="font-bold text-foreground">{myShop}</span>
+                    <span className="font-bold text-foreground font-mono tabular-nums">{myShop}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Globe size={11} className="text-gray-400" />
+                    <Globe size={11} className="text-muted-foreground" />
                     <span className="text-muted-foreground">En otras tiendas:</span>
-                    <span className="font-bold text-foreground">{otherShops}</span>
+                    <span className="font-bold text-foreground font-mono tabular-nums">{otherShops}</span>
                   </div>
                 </div>
 
@@ -447,17 +449,17 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Entregadas</span>
-                    <span className="font-bold text-emerald-500">{totals.delivered} ({dropiScore ?? 0}%)</span>
+                    <span className="font-bold text-success font-mono tabular-nums">{totals.delivered} ({dropiScore ?? 0}%)</span>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-muted/40 overflow-hidden">
-                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${dropiScore ?? 0}%` }} />
+                  <div className="w-full h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+                    <div className="h-full rounded-full bg-success transition-all" style={{ width: `${dropiScore ?? 0}%` }} />
                   </div>
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Devoluciones</span>
-                    <span className="font-bold text-rose-500">{totals.returned} ({dropiScore !== null ? 100 - dropiScore : 0}%)</span>
+                    <span className="font-bold text-danger font-mono tabular-nums">{totals.returned} ({dropiScore !== null ? 100 - dropiScore : 0}%)</span>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-muted/40 overflow-hidden">
-                    <div className="h-full rounded-full bg-rose-500 transition-all" style={{ width: `${dropiScore !== null ? 100 - dropiScore : 0}%` }} />
+                  <div className="w-full h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+                    <div className="h-full rounded-full bg-danger transition-all" style={{ width: `${dropiScore !== null ? 100 - dropiScore : 0}%` }} />
                   </div>
                 </div>
               </div>
@@ -467,7 +469,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
       })()}
 
       {fpLoading && (
-        <div className="px-5 py-3 border-b border-border flex items-center gap-2 text-xs text-cyan-500">
+        <div className="px-5 py-3 border-b border-border flex items-center gap-2 text-xs text-info">
           <RefreshCw size={12} className="animate-spin" />
           Consultando huella Dropi…
         </div>
@@ -497,7 +499,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           </PieChart>
           {/* Score number in center */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className={`text-3xl font-bold ${scoreConfig.textClass}`}>
+            <span className={`text-3xl font-bold font-mono tabular-nums ${scoreConfig.textClass}`}>
               {deliveryScore !== null ? gaugeScore : '—'}
             </span>
           </div>
@@ -506,12 +508,12 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         {/* Label + insights */}
         <div className="flex-1 min-w-0 text-center sm:text-left">
           <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+            <span className="hud-label">
               {fingerprint ? 'Tu tienda' : 'Probabilidad de entrega'}
             </span>
           </div>
           <div className="flex items-center justify-center sm:justify-start gap-2 mb-3">
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${scoreConfig.bgClass} ${scoreConfig.textClass}`}>
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${scoreConfig.bgClass} ${scoreConfig.textClass}`}>
               {deliveryScore !== null ? scoreConfig.label : 'Sin datos'}
             </span>
           </div>
@@ -519,7 +521,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             {insights.map((text, i) => (
               <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
                 <span className={`mt-1 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                  gaugeScore >= 80 ? 'bg-green-500' : gaugeScore >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                  gaugeScore >= 80 ? 'bg-success' : gaugeScore >= 50 ? 'bg-warning' : 'bg-danger'
                 }`} />
                 <span>{text}</span>
               </li>
@@ -531,27 +533,27 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
       {/* ── KPI grid ── */}
       <div className="grid grid-cols-4 divide-x divide-border border-b border-border">
         <div className="p-3 text-center">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total</div>
-          <div className="text-lg font-bold text-foreground flex items-center justify-center gap-1">
+          <div className="hud-label">Total</div>
+          <div className="text-lg font-bold text-foreground font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
             <Package size={14} className="text-muted-foreground" />{total}
           </div>
         </div>
         <div className="p-3 text-center">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Entregados</div>
-          <div className="text-lg font-bold text-emerald-500 flex items-center justify-center gap-1">
+          <div className="hud-label">Entregados</div>
+          <div className="text-lg font-bold text-success font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
             <CheckCircle2 size={14} />{entregados}
           </div>
         </div>
         <div className="p-3 text-center">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Devueltos</div>
-          <div className="text-lg font-bold text-rose-500 flex items-center justify-center gap-1">
+          <div className="hud-label">Devueltos</div>
+          <div className="text-lg font-bold text-danger font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
             <RotateCcw size={14} />{devoluciones}
           </div>
         </div>
         <div className="p-3 text-center">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Efectividad</div>
-          <div className={`text-lg font-bold flex items-center justify-center gap-1 ${
-            efectividad >= 80 ? 'text-green-500' : efectividad >= 50 ? 'text-yellow-500' : 'text-red-500'
+          <div className="hud-label">Efectividad</div>
+          <div className={`text-lg font-bold font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5 ${
+            efectividad >= 80 ? 'text-success' : efectividad >= 50 ? 'text-warning' : 'text-danger'
           }`}>
             {efectividad >= 80 && <Star size={14} />}
             {efectividad < 50 && <AlertTriangle size={14} />}
@@ -580,7 +582,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           <div className="px-5 py-3 border-b border-border">
             {!ai.reply && !ai.loading && (
               <button onClick={() => askAi(aiKey, 'customer_profile', buildCtx())}
-                className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-ai/10 border border-ai/25 text-ai text-xs font-semibold hover:bg-ai/15 hover:border-ai/40 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ai/40 focus-visible:outline-none">
+                className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-ai/14 border border-ai/30 text-ai text-sm font-semibold hover:bg-ai/20 hover:border-ai/50 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ai/40 focus-visible:outline-none">
                 <Sparkles size={12} aria-hidden="true" /> Perfil IA del cliente
               </button>
             )}
@@ -590,7 +592,8 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
               </div>
             )}
             {ai.reply && (
-              <div className="p-3 rounded-lg bg-ai/5 border border-ai/25 text-xs text-foreground whitespace-pre-line leading-relaxed">
+              <div className="relative p-3 pl-4 rounded-2xl bg-card/40 border border-border shadow-card3d text-xs text-foreground whitespace-pre-line leading-relaxed">
+                <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-ai" aria-hidden="true" />
                 <span className="text-ai font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} aria-hidden="true" /> Perfil IA</span>
                 <br />{ai.reply}
               </div>
@@ -602,17 +605,19 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
       {/* ── Análisis detallado (tabs) ── */}
       <div className="px-5 pt-4 pb-3 border-b border-border">
         <h4 className="text-xs font-bold text-foreground mb-3">Análisis detallado</h4>
-        <div className="flex gap-1 flex-wrap">
+        <div className="inline-flex flex-wrap gap-2">
           {TABS.map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
-                activeTab === tab.key ? tab.activeClass : 'text-muted-foreground hover:bg-muted/50'
+              className={`px-4 py-2 rounded-xl text-sm transition-colors ${
+                activeTab === tab.key
+                  ? `font-semibold ${tab.activeClass}`
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               {tab.label}{' '}
-              <span className="opacity-70">({tabCounts[tab.key]})</span>
+              <span className="opacity-70 font-mono tabular-nums">({tabCounts[tab.key]})</span>
             </button>
           ))}
         </div>
@@ -632,15 +637,15 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
               <Tooltip
                 contentStyle={{
                   fontSize: 11,
-                  borderRadius: 8,
-                  backgroundColor: 'var(--color-card, #fff)',
-                  borderColor: 'var(--color-border, #e5e7eb)',
+                  borderRadius: 12,
+                  backgroundColor: 'hsl(var(--card))',
+                  borderColor: 'hsl(var(--border))',
                 }}
                 labelStyle={{ fontWeight: 600 }}
               />
-              <Bar dataKey="entregados" stackId="a" fill="#22c55e" name="Entregados" />
-              <Bar dataKey="noEntrega"  stackId="a" fill="#ef4444"  name="No entrega" />
-              <Bar dataKey="enCamino"   stackId="a" fill="#3b82f6"  name="En camino" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="entregados" stackId="a" fill="hsl(var(--success))" name="Entregados" />
+              <Bar dataKey="noEntrega"  stackId="a" fill="hsl(var(--danger))"  name="No entrega" />
+              <Bar dataKey="enCamino"   stackId="a" fill="hsl(var(--info))"    name="En camino" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -664,9 +669,9 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-xs font-mono text-muted-foreground">#{o.external_id || 'sin ID'}</span>
+                  <span className="text-xs font-mono tabular-nums text-muted-foreground">#{o.external_id || 'sin ID'}</span>
                   <span className="text-[10px] text-muted-foreground">·</span>
-                  <span className="text-xs text-muted-foreground">{o.fecha || '—'}</span>
+                  <span className="text-xs text-muted-foreground font-mono tabular-nums">{o.fecha || '—'}</span>
                   {o.ciudad && (
                     <>
                       <span className="text-[10px] text-muted-foreground">·</span>
@@ -680,12 +685,12 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                   className="block text-xs text-foreground"
                 />
                 {o.transportadora && (
-                  <div className="text-[10px] text-muted-foreground mt-0.5">{o.transportadora}{o.guia ? ` · ${o.guia}` : ''}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5 font-mono tabular-nums">{o.transportadora}{o.guia ? ` · ${o.guia}` : ''}</div>
                 )}
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                <span className="text-xs font-bold text-foreground">{formatCOP(Number(o.valor) || 0)}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${estadoColor(o.estado)}`}>
+                <span className="text-xs font-bold text-foreground font-mono tabular-nums">{formatCOP(Number(o.valor) || 0)}</span>
+                <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold ${estadoColor(o.estado)}`}>
                   {o.estado || '—'}
                 </span>
               </div>
@@ -693,7 +698,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
           </button>
         ))}
         {filteredOrders.length > 10 && (
-          <div className="px-5 py-3 text-xs text-muted-foreground text-center bg-muted/20">
+          <div className="px-5 py-3 text-xs text-muted-foreground text-center bg-card/40 font-mono tabular-nums">
             + {filteredOrders.length - 10} pedidos más
           </div>
         )}

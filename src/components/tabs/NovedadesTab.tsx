@@ -12,6 +12,7 @@ import NovedadesPuntosMejora from '@/components/novedades/NovedadesPuntosMejora'
 import NovedadesCausaRaiz from '@/components/novedades/NovedadesCausaRaiz';
 import { useStore } from '@/contexts/StoreContext';
 import { useSessionState } from '@/hooks/useSessionState';
+import { TiltCard, StatTile } from '@/components/ui3d';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -82,40 +83,47 @@ export default function NovedadesTab() {
   return (
     <div className="max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-start justify-between mb-5 gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-warning to-warning/70 text-warning-foreground glow-warning" aria-hidden="true">
-            <AlertTriangle size={18} />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-foreground tracking-tight">Novedades</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Incidencias reportadas por transportadoras — resolución en vivo contra Dropi
-            </p>
-          </div>
+      <div className="flex flex-wrap items-end justify-between mb-5 gap-4">
+        <div className="min-w-0">
+          <div className="hud-label mb-1 truncate">GESTIÓN · OPERADORA</div>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-warning/14 border border-warning/30 text-warning glow-warning flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <AlertTriangle size={20} />
+            </span>
+            Novedades
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            Incidencias reportadas por transportadoras — resolución en vivo contra Dropi
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex flex-wrap gap-2">
             <button
               onClick={() => setView('pendientes')}
-              className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                effectiveView === 'pendientes' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              className={`px-4 py-2 rounded-xl text-sm flex items-center gap-1.5 transition-colors ${
+                effectiveView === 'pendientes'
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               <ListChecks size={13} /> Pendientes
             </button>
             <button
               onClick={() => setView('seguimiento')}
-              className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                effectiveView === 'seguimiento' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              className={`px-4 py-2 rounded-xl text-sm flex items-center gap-1.5 transition-colors ${
+                effectiveView === 'seguimiento'
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               <BarChart3 size={13} /> Seguimiento
             </button>
             <button
               onClick={() => setView('mejora')}
-              className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                effectiveView === 'mejora' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              className={`px-4 py-2 rounded-xl text-sm flex items-center gap-1.5 transition-colors ${
+                effectiveView === 'mejora'
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               <Lightbulb size={13} /> Mejora
@@ -123,8 +131,10 @@ export default function NovedadesTab() {
             {isManagerOfActive && (
               <button
                 onClick={() => setView('causa')}
-                className={`px-3 h-8 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                  effectiveView === 'causa' ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+                className={`px-4 py-2 rounded-xl text-sm flex items-center gap-1.5 transition-colors ${
+                  effectiveView === 'causa'
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
                 }`}
               >
                 <Target size={13} /> Causa raíz
@@ -135,7 +145,7 @@ export default function NovedadesTab() {
             <button
               onClick={() => { loadNovedades(true); void reloadOpen(true); }}
               disabled={novedadesLoading}
-              className="h-9 px-3 rounded-lg border border-border bg-surface text-muted-foreground text-xs font-semibold flex items-center gap-1.5 hover:text-foreground hover:border-accent/30 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium flex items-center gap-1.5 hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw size={13} className={novedadesLoading ? 'animate-spin' : ''} />
               Recargar
@@ -154,35 +164,23 @@ export default function NovedadesTab() {
        <>
       {/* KPIs — sistema unificado de tonos */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0 }} className="relative overflow-hidden bg-card rounded-xl border border-border p-4 shadow-ds-xs">
-          <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-muted-foreground/40" aria-hidden="true" />
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-            {conocido ? 'Por gestionar' : 'Pendientes'}
-          </div>
-          <div className="font-mono text-2xl font-bold text-foreground tabular-nums">{stats.total}</div>
+        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0 }}>
+          <StatTile icon={ListChecks} label={conocido ? 'Por gestionar' : 'Pendientes'} value={stats.total} tone="accent" />
         </motion.div>
-        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="relative overflow-hidden bg-card rounded-xl border border-danger/25 p-4 shadow-ds-xs">
-          <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger" aria-hidden="true" />
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">D7+ críticas</div>
-          <div className="font-mono text-2xl font-bold text-danger tabular-nums">{stats.urgentes}</div>
+        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }}>
+          <StatTile icon={AlertTriangle} label="D7+ críticas" value={stats.urgentes} tone="danger" />
         </motion.div>
-        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }} className="relative overflow-hidden bg-card rounded-xl border border-warning/25 p-4 shadow-ds-xs">
-          <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-warning" aria-hidden="true" />
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">D4-6 urgentes</div>
-          <div className="font-mono text-2xl font-bold text-warning tabular-nums">{stats.warning}</div>
+        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.1 }}>
+          <StatTile icon={Clock} label="D4-6 urgentes" value={stats.warning} tone="warning" />
         </motion.div>
-        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.15 }} className="relative overflow-hidden bg-card rounded-xl border border-info/25 p-4 shadow-ds-xs">
-          <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-info" aria-hidden="true" />
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1">
-            <Truck size={11} /> Transportadoras
-          </div>
-          <div className="font-mono text-2xl font-bold text-info tabular-nums">{stats.carriers}</div>
+        <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.15 }}>
+          <StatTile icon={Truck} label="Transportadoras" value={stats.carriers} tone="info" />
         </motion.div>
       </div>
 
       {/* Search */}
       {actionable.length > 0 && (
-        <div className="bg-card rounded-xl border border-border p-3 mb-4 shadow-ds-xs">
+        <div className="bg-card/40 rounded-2xl border border-border p-3 mb-4 shadow-card3d">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -190,11 +188,11 @@ export default function NovedadesTab() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Buscar por nombre, teléfono, ciudad, transportadora o novedad..."
-              className="w-full h-10 rounded-lg border border-border bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
+              className="w-full h-10 rounded-xl border border-border bg-background/60 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
             />
           </div>
           {search && (
-            <p className="text-xs text-muted-foreground mt-2 pl-1">
+            <p className="text-xs text-muted-foreground mt-2 pl-1 font-mono tabular-nums">
               {filtered.length} de {porGestionar.length} coincidencias
             </p>
           )}
@@ -214,9 +212,10 @@ export default function NovedadesTab() {
 
       {/* Empty state */}
       {!novedadesLoading && porGestionar.length === 0 && (
-        <motion.div {...fadeUp} className="bg-card rounded-2xl border border-border p-12 flex flex-col items-center gap-4 shadow-ds-sm">
-          <div className="w-16 h-16 rounded-2xl bg-success/10 border border-success/25 flex items-center justify-center">
-            <CheckCircle2 size={28} className="text-success" />
+        <motion.div {...fadeUp}>
+        <TiltCard sheen brackets className="bg-card/40 border border-border rounded-3xl p-12 shadow-card3d-lg flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center">
+            <CheckCircle2 size={28} />
           </div>
           <div className="text-center">
             <h3 className="text-base font-bold text-foreground">
@@ -228,6 +227,7 @@ export default function NovedadesTab() {
                 : 'Todas las incidencias de transportadora están resueltas.'}
             </p>
           </div>
+        </TiltCard>
         </motion.div>
       )}
 
@@ -249,10 +249,10 @@ export default function NovedadesTab() {
         <div className="mt-6">
           <button
             onClick={() => setShowEsperando(v => !v)}
-            className="w-full flex items-center gap-2 px-3 h-10 rounded-lg border border-border bg-surface text-left text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-accent/30 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-2 px-4 py-3 rounded-2xl border border-border bg-card/40 shadow-card3d text-left text-sm font-medium text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors cursor-pointer"
           >
-            {showEsperando ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <Clock size={13} />
+            {showEsperando ? <ChevronDown size={14} className="text-info flex-shrink-0" /> : <ChevronRight size={14} className="text-info flex-shrink-0" />}
+            <Clock size={13} className="text-info flex-shrink-0" />
             Esperando transportadora ({search ? `${esperandoFiltered.length} de ` : ''}{esperando.length})
             <span className="font-normal text-muted-foreground/80 hidden sm:inline">
               — novedad vencida o cerrada por la transportadora, sin gestión posible
@@ -260,7 +260,7 @@ export default function NovedadesTab() {
           </button>
           {showEsperando && (
             <div className="mt-3">
-              <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 mb-3 text-[11px] text-muted-foreground flex items-start gap-2">
+              <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 mb-3 text-[11px] text-muted-foreground flex items-start gap-2">
                 <AlertTriangle size={13} className="text-warning mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <span>
                   Estos pedidos siguen en estado NOVEDAD pero su incidencia <strong>ya no está

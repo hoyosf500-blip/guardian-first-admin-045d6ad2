@@ -124,10 +124,23 @@ function useInteractiveLegend() {
 // tener que renombrar todas las invocaciones en este archivo.
 const TOOLTIP_STYLE = CHART_TOOLTIP_STYLE;
 
+// Pastilla de sub-tab (patrón del handoff 3D): activa = acento + glow,
+// inactiva = superficie translúcida con borde que sube en hover.
+const TAB_PILL = [
+  'shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-colors',
+  'bg-card/40 border border-border text-muted-foreground',
+  'hover:text-foreground hover:border-border-strong',
+  'data-[state=active]:bg-accent/16 data-[state=active]:border-accent/40',
+  'data-[state=active]:text-accent data-[state=active]:font-semibold',
+  'data-[state=active]:shadow-glow3d',
+].join(' ');
+
 function ChartCard({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={`card-elevated p-5 ${className}`}>
-      <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
+    // Sin TiltCard a propósito: TiltCard aplica overflow-hidden y los tooltips
+    // de recharts se recortarían contra el borde de la card.
+    <div className={`hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors hover:border-border-strong ${className}`}>
+      <h3 className="hud-label mb-3">
         {title}
       </h3>
       {children}
@@ -275,12 +288,12 @@ export default function LogisticaTab() {
     <div className="space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
+          <div className="hud-label mb-1 whitespace-nowrap truncate">
             Análisis · Admin
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-            <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
-              <Truck size={18} strokeWidth={2.25} />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+              <Truck size={20} strokeWidth={2.25} />
             </span>
             Logística
           </h1>
@@ -291,7 +304,7 @@ export default function LogisticaTab() {
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {!isLoading && !isError && summary.data && (
-            <span className="pill pill-neutral whitespace-nowrap">
+            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold font-mono tabular-nums bg-card/40 border border-border text-muted-foreground whitespace-nowrap">
               {formatRange(filters)}
             </span>
           )}
@@ -313,10 +326,10 @@ export default function LogisticaTab() {
               }
               setCompareMode(v => !v);
             }}
-            className={`inline-flex items-center gap-1.5 h-9 rounded-lg border px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
               compareMode
-                ? 'border-accent/40 bg-accent/12 text-accent ring-1 ring-accent/30'
-                : 'border-border bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                ? 'bg-accent/16 border-accent/40 text-accent font-semibold shadow-glow3d'
+                : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
             }`}
             aria-pressed={compareMode}
             title="Comparar dos períodos lado a lado"
@@ -325,7 +338,7 @@ export default function LogisticaTab() {
             Comparar
           </button>
           {lastUpdated && (
-            <span className="text-[11px] text-muted-foreground tabular-nums hidden md:inline">
+            <span className="text-[11px] text-muted-foreground font-mono tabular-nums hidden md:inline">
               Actualizado {lastUpdated}
             </span>
           )}
@@ -333,7 +346,7 @@ export default function LogisticaTab() {
             type="button"
             onClick={refetchAll}
             disabled={isLoading}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:border-border-strong hover:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/40 text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             aria-label="Refrescar datos"
             title="Refrescar"
           >
@@ -346,7 +359,7 @@ export default function LogisticaTab() {
           (en modo comparación cada período tiene su propio picker dentro
           del ComparisonView). */}
       {!compareMode && (
-        <div className="rounded-lg border border-border bg-card p-3">
+        <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top">
           <DateRangeFilter
             value={filters}
             onChange={(next) => setFilters((f) => ({ ...next, ciudad: f.ciudad }))}
@@ -379,16 +392,16 @@ export default function LogisticaTab() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="overflow-x-auto -mx-1 px-1">
             <TabsList
-              className="inline-flex w-full justify-start gap-0.5 h-auto p-1"
+              className="inline-flex w-full flex-wrap justify-start gap-2 h-auto p-0 bg-transparent"
               aria-label="Secciones de logística"
             >
-              <TabsTrigger value="resumen" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><LayoutDashboard size={13} className="mr-1.5" /> Resumen</TabsTrigger>
-              <TabsTrigger value="carriers" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
-              <TabsTrigger value="cities" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
-              <TabsTrigger value="products" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
-              <TabsTrigger value="decisiones" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
-              <TabsTrigger value="trazabilidad" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
-              <TabsTrigger value="finanzas" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
+              <TabsTrigger value="resumen" className={TAB_PILL}><LayoutDashboard size={13} className="mr-1.5" /> Resumen</TabsTrigger>
+              <TabsTrigger value="carriers" className={TAB_PILL}><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
+              <TabsTrigger value="cities" className={TAB_PILL}><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
+              <TabsTrigger value="products" className={TAB_PILL}><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+              <TabsTrigger value="decisiones" className={TAB_PILL}><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
+              <TabsTrigger value="trazabilidad" className={TAB_PILL}><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
+              <TabsTrigger value="finanzas" className={TAB_PILL}><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
             </TabsList>
           </div>
 
@@ -417,7 +430,7 @@ export default function LogisticaTab() {
             {/* Antes un error del RPC (retry:false) hacía DESAPARECER los charts
                 en silencio — parecía "no hay datos" (auditoría 2026-07-07). */}
             {dashboardQuery.isError && (
-              <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 text-xs text-muted-foreground">
+              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-4 text-xs text-warning shadow-card3d">
                 No se pudieron cargar los gráficos de transportadoras — usá el botón Refrescar.
               </div>
             )}
@@ -458,7 +471,7 @@ export default function LogisticaTab() {
 
           <TabsContent value="trazabilidad" className="mt-4 space-y-4">
             {dashboardQuery.isError && (
-              <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 text-xs text-muted-foreground">
+              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-4 text-xs text-warning shadow-card3d">
                 No se pudieron cargar los gráficos de estados — usá el botón Refrescar.
               </div>
             )}
@@ -488,7 +501,7 @@ export default function LogisticaTab() {
             <section>
               <header className="flex items-center gap-2 mb-3">
                 <DollarSign size={14} className="text-accent" />
-                <h2 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+                <h2 className="hud-label text-foreground">
                   Resumen financiero
                 </h2>
               </header>
@@ -498,7 +511,7 @@ export default function LogisticaTab() {
             <section>
               <header className="flex items-center gap-2 mb-3">
                 <Wallet size={14} className="text-accent" />
-                <h2 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+                <h2 className="hud-label text-foreground">
                   Billetera Dropi
                 </h2>
               </header>
@@ -508,7 +521,7 @@ export default function LogisticaTab() {
             <section>
               <header className="flex items-center gap-2 mb-3">
                 <Coins size={14} className="text-accent" />
-                <h2 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+                <h2 className="hud-label text-foreground">
                   Rentabilidad por producto
                 </h2>
               </header>
@@ -562,7 +575,7 @@ function CarrierDonut({
             </ResponsiveContainer>
             {top && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="text-3xl font-extrabold text-foreground tabular-nums leading-none">
+                <div className="text-3xl font-extrabold text-foreground font-mono tabular-nums leading-none">
                   {pct(top.total, total)}
                 </div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-[0.1em] font-semibold mt-1.5 truncate max-w-[140px] text-center">
@@ -582,7 +595,7 @@ function CarrierDonut({
                   />
                   <span className="font-medium text-foreground truncate">{d.transportadora}</span>
                 </span>
-                <span className="tabular-nums shrink-0 ml-2 flex items-baseline gap-2">
+                <span className="font-mono tabular-nums shrink-0 ml-2 flex items-baseline gap-2">
                   <span className="text-muted-foreground">{d.total}</span>
                   <span className="font-bold text-foreground w-12 text-right">{pct(d.total, total)}</span>
                 </span>
@@ -701,7 +714,7 @@ function EstadoDonutAndDailyStack({
             </ResponsiveContainer>
             {top && (
               <div className="absolute inset-x-0 top-1/2 -translate-y-[60%] flex flex-col items-center pointer-events-none">
-                <div className="text-3xl font-extrabold text-foreground tabular-nums leading-none">
+                <div className="text-3xl font-extrabold text-foreground font-mono tabular-nums leading-none">
                   {pct(top.total, total)}
                 </div>
                 <div className="text-[10px] text-muted-foreground uppercase tracking-[0.1em] font-semibold mt-1.5 max-w-[140px] text-center truncate">

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
 /** Inclinación máxima en grados. El handoff pide ≤ 6°. */
@@ -30,14 +30,22 @@ export function rotationFromPointer(
 }
 
 /**
- * Decide si el tilt 3D aplica y expone los handlers.
+ * Decide si el tilt 3D aplica y expone ref + handlers.
+ *
+ * NO usa estado de React para la rotación: escribe el transform DIRECTO al nodo
+ * por ref. Si guardara la rotación en useState, cada movimiento del mouse
+ * re-renderizaría el árbol entero de la card — en CallView eso significa
+ * re-correr el pipeline de validación de dirección, AttemptHistory y los IIFE
+ * de duplicados al ritmo del puntero, en la pantalla de más tráfico de la
+ * operadora.
  *
  * Se apaga en táctil, con prefers-reduced-motion y en pantallas angostas.
- * Es el ÚNICO lugar donde vive esa decisión — las pantallas no la repiten.
+ * Es el ÚNICO lugar donde vive esa decisión.
  */
 export function useTilt(maxDeg: number = MAX_DEG) {
   const [enabled, setEnabled] = useState(false);
-  const [rotation, setRotation] = useState<Rotation>({ rx: 0, ry: 0 });
+  const ref = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<number>();
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
@@ -47,16 +55,30 @@ export function useTilt(maxDeg: number = MAX_DEG) {
     setEnabled(finePointer && !reducedMotion && wideEnough);
   }, []);
 
+  // Limpia cualquier frame pendiente al desmontar.
+  useEffect(() => () => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+  }, []);
+
+  const apply = useCallback((rx: number, ry: number) => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(() => {
+      const node = ref.current;
+      if (node) node.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+    });
+  }, []);
+
   const onPointerMove = useCallback((e: ReactPointerEvent<HTMLElement>) => {
     if (!enabled) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    setRotation(rotationFromPointer(e.clientX, e.clientY, rect, maxDeg));
-  }, [enabled, maxDeg]);
+    const { rx, ry } = rotationFromPointer(e.clientX, e.clientY, rect, maxDeg);
+    apply(rx, ry);
+  }, [enabled, maxDeg, apply]);
 
   const onPointerLeave = useCallback(() => {
     if (!enabled) return;
-    setRotation({ rx: 0, ry: 0 });
-  }, [enabled]);
+    apply(0, 0);
+  }, [enabled, apply]);
 
-  return { enabled, rotation, tiltProps: { onPointerMove, onPointerLeave } };
+  return { enabled, ref, tiltProps: { onPointerMove, onPointerLeave } };
 }

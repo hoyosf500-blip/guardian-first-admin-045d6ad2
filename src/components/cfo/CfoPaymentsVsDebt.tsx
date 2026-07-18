@@ -89,7 +89,7 @@ export default function CfoPaymentsVsDebt() {
 
   if (summaryQuery.isLoading || residualQuery.isLoading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-center gap-2 text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-6 flex items-center justify-center gap-2 text-muted-foreground">
         <Loader2 size={16} className="animate-spin" />
         <span className="text-sm">Cargando flujo de pagos…</span>
       </div>
@@ -98,17 +98,19 @@ export default function CfoPaymentsVsDebt() {
 
   if ((summaryQuery.data ?? []).length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
         Aún no hay datos. Subí los extractos de las TC en el bloque de arriba para verlo.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Receipt size={18} className="text-accent" />
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <Receipt size={15} />
+          </span>
           <h3 className="font-semibold text-sm">Pagado vs Pendiente</h3>
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -120,28 +122,28 @@ export default function CfoPaymentsVsDebt() {
             min={1000}
             max={10000}
             step={10}
-            className="w-20 bg-background border border-border rounded px-2 py-1 text-xs tabular-nums"
+            className="w-20 bg-card/40 border border-border rounded-lg px-2 py-1 text-xs font-mono tabular-nums hover:border-border-strong transition-colors"
           />
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <KpiCard
-          icon={<ArrowUpRight size={14} className="text-green" />}
+          icon={<ArrowUpRight size={14} className="text-success" />}
           label="Total pagado"
           value={formatCOP(total_pagado_cop)}
           subValue={`${formatCOP(totales.pagos_cop)} COP + USD ${totales.pagos_usd.toFixed(2)}`}
           tone="success"
         />
         <KpiCard
-          icon={<ArrowDownRight size={14} className="text-red" />}
+          icon={<ArrowDownRight size={14} className="text-danger" />}
           label="Total cargado"
           value={formatCOP(total_cargado_cop)}
           subValue={`${formatCOP(totales.compras_cop)} COP + USD ${totales.compras_usd.toFixed(2)}`}
           tone="warning"
         />
         <KpiCard
-          icon={<CreditCard size={14} className="text-orange" />}
+          icon={<CreditCard size={14} className="text-warning" />}
           label="Deuda residual actual"
           value={formatCOP(residual_total_cop)}
           subValue={residualByCard.length > 0
@@ -155,33 +157,33 @@ export default function CfoPaymentsVsDebt() {
         <table className="w-full text-xs">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="text-left font-medium px-2 py-1.5">Mes</th>
-              <th className="text-right font-medium px-2 py-1.5">
+              <th className="text-left font-medium px-2 py-2">Mes</th>
+              <th className="text-right font-medium px-2 py-2">
                 <span className="inline-flex items-center gap-1">
-                  <ArrowDownRight size={11} className="text-red" /> Cargado
+                  <ArrowDownRight size={11} className="text-danger" /> Cargado
                 </span>
               </th>
-              <th className="text-right font-medium px-2 py-1.5">
+              <th className="text-right font-medium px-2 py-2">
                 <span className="inline-flex items-center gap-1">
-                  <ArrowUpRight size={11} className="text-green" /> Pagado
+                  <ArrowUpRight size={11} className="text-success" /> Pagado
                 </span>
               </th>
-              <th className="text-right font-medium px-2 py-1.5">Δ deuda</th>
-              <th className="text-right font-medium px-2 py-1.5">Acumulado</th>
+              <th className="text-right font-medium px-2 py-2">Δ deuda</th>
+              <th className="text-right font-medium px-2 py-2">Acumulado</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(r => {
               const isAhorro = r.delta < 0;
               return (
-                <tr key={r.year_month} className="border-t border-border/50">
-                  <td className="px-2 py-1.5 capitalize">{fmtMonth(r.year_month)}</td>
-                  <td className="text-right px-2 py-1.5 tabular-nums">{formatCOP(r.compras_total_cop)}</td>
-                  <td className="text-right px-2 py-1.5 tabular-nums text-green">{formatCOP(r.pagos_total_cop)}</td>
-                  <td className={`text-right px-2 py-1.5 tabular-nums font-medium ${isAhorro ? 'text-green' : 'text-red'}`}>
+                <tr key={r.year_month} className="border-t border-border hover:bg-foreground/[0.035] transition-colors">
+                  <td className="px-2 py-2 capitalize">{fmtMonth(r.year_month)}</td>
+                  <td className="text-right px-2 py-2 font-mono tabular-nums">{formatCOP(r.compras_total_cop)}</td>
+                  <td className="text-right px-2 py-2 font-mono tabular-nums text-success">{formatCOP(r.pagos_total_cop)}</td>
+                  <td className={`text-right px-2 py-2 font-mono tabular-nums font-medium ${isAhorro ? 'text-success' : 'text-danger'}`}>
                     {isAhorro ? '' : '+'}{formatCOP(r.delta)}
                   </td>
-                  <td className="text-right px-2 py-1.5 tabular-nums font-semibold">
+                  <td className="text-right px-2 py-2 font-mono tabular-nums font-semibold">
                     {formatCOP(r.saldo_acumulado)}
                   </td>
                 </tr>
@@ -192,7 +194,7 @@ export default function CfoPaymentsVsDebt() {
       </div>
 
       {residualByCard.length > 0 && (
-        <div className="rounded border border-border/50 bg-muted/20 p-3 space-y-2">
+        <div className="rounded-xl border border-border bg-foreground/[0.03] p-3 space-y-2">
           <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
             <CreditCard size={12} /> Deuda residual actual por tarjeta
           </h4>
@@ -202,7 +204,7 @@ export default function CfoPaymentsVsDebt() {
                 <span>
                   {r.tarjeta} <span className="text-muted-foreground">· {r.marca} · {r.num_compras} compras a cuotas</span>
                 </span>
-                <span className="tabular-nums font-medium">
+                <span className="font-mono tabular-nums font-medium">
                   {r.moneda === 'USD'
                     ? `USD ${r.saldo_pendiente.toFixed(2)} ≈ ${formatCOP(r.saldo_pendiente * trm)}`
                     : formatCOP(r.saldo_pendiente)
@@ -215,10 +217,10 @@ export default function CfoPaymentsVsDebt() {
       )}
 
       <div className="flex items-start gap-2 text-xs text-muted-foreground">
-        <AlertTriangle size={12} className="mt-0.5 text-orange shrink-0" />
+        <AlertTriangle size={12} className="mt-0.5 text-warning shrink-0" />
         <span>
           <strong>Acumulado</strong> es lo que vas debiendo después de cada mes (compras − pagos sumado mes a mes).
-          <strong className="ml-1">Δ deuda en rojo</strong> = creció la deuda; <strong className="text-green">en verde</strong> = pagaste más de lo que cargaste.
+          <strong className="ml-1">Δ deuda en rojo</strong> = creció la deuda; <strong className="text-success">en verde</strong> = pagaste más de lo que cargaste.
           <strong className="ml-1">Deuda residual</strong> = lo que el banco dice que te falta hoy en cuotas diferidas.
         </span>
       </div>
@@ -236,19 +238,19 @@ interface KpiCardProps {
 
 function KpiCard({ icon, label, value, subValue, tone }: KpiCardProps) {
   const toneClass = {
-    success: 'border-green/30 bg-green/5',
-    warning: 'border-orange/30 bg-orange/5',
-    danger:  'border-red/30 bg-red/5',
-    muted:   'border-border bg-muted/20',
+    success: 'border-success/28 bg-success/[0.07]',
+    warning: 'border-warning/28 bg-warning/[0.07]',
+    danger:  'border-danger/28 bg-danger/[0.07]',
+    muted:   'border-border bg-card/40',
   }[tone];
   return (
-    <div className={`rounded-md border p-3 ${toneClass}`}>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+    <div className={`rounded-2xl border shadow-card3d p-4 ${toneClass}`}>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
         {icon}
         <span>{label}</span>
       </div>
-      <div className="text-base font-semibold tabular-nums">{value}</div>
-      <div className="text-[11px] text-muted-foreground tabular-nums truncate" title={subValue}>{subValue}</div>
+      <div className="text-xl font-semibold font-mono tabular-nums">{value}</div>
+      <div className="text-[11px] text-muted-foreground font-mono tabular-nums truncate" title={subValue}>{subValue}</div>
     </div>
   );
 }

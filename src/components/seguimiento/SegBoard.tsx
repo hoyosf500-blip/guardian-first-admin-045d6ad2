@@ -49,14 +49,16 @@ const BOARD_COLUMNS: ColumnDef[] = [
   { key: 'otros', label: 'Otros', icon: <Layers size={13} />, tone: 'muted' },
 ];
 
+// Cada tono aporta: punto con glow (acento semántico del encabezado), la barra
+// superior de la columna y el chip de conteo (color + número, nunca color solo).
 const TONE: Record<Tone, { dot: string; headBar: string; count: string }> = {
-  neutral: { dot: 'bg-muted-foreground/50', headBar: 'border-t-muted-foreground/40', count: 'bg-muted/50 text-muted-foreground' },
-  info: { dot: 'bg-info', headBar: 'border-t-info', count: 'bg-info/15 text-info' },
-  accent: { dot: 'bg-accent', headBar: 'border-t-accent', count: 'bg-accent/15 text-accent' },
-  warning: { dot: 'bg-warning', headBar: 'border-t-warning', count: 'bg-warning/15 text-warning' },
-  danger: { dot: 'bg-danger', headBar: 'border-t-danger', count: 'bg-danger/15 text-danger' },
-  success: { dot: 'bg-success', headBar: 'border-t-success', count: 'bg-success/15 text-success' },
-  muted: { dot: 'bg-muted-foreground/40', headBar: 'border-t-border-strong', count: 'bg-muted/40 text-muted-foreground' },
+  neutral: { dot: 'bg-muted-foreground/50', headBar: 'border-t-muted-foreground/40', count: 'bg-muted/50 text-muted-foreground border border-border' },
+  info: { dot: 'bg-info glow-info', headBar: 'border-t-info', count: 'bg-info/14 text-info border border-info/30' },
+  accent: { dot: 'bg-accent glow-accent', headBar: 'border-t-accent', count: 'bg-accent/14 text-accent border border-accent/30' },
+  warning: { dot: 'bg-warning glow-warning', headBar: 'border-t-warning', count: 'bg-warning/14 text-warning border border-warning/30' },
+  danger: { dot: 'bg-danger glow-danger', headBar: 'border-t-danger', count: 'bg-danger/14 text-danger border border-danger/30' },
+  success: { dot: 'bg-success glow-success', headBar: 'border-t-success', count: 'bg-success/14 text-success border border-success/30' },
+  muted: { dot: 'bg-muted-foreground/40', headBar: 'border-t-border-strong', count: 'bg-muted/40 text-muted-foreground border border-border' },
 };
 
 function statusAgeDays(o: OrderData): number {
@@ -106,8 +108,10 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
       onClick={open}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
       className={cn(
-        'group bg-card rounded-lg border p-2.5 cursor-pointer transition-all duration-150 hover:border-border-strong hover:shadow-sm focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
-        selected ? 'border-accent ring-2 ring-accent/60 shadow-md' : 'border-border/60',
+        // Sin TiltCard a propósito: son cientos de tarjetas y el tilt destruiría
+        // el scroll del tablero. Solo superficie + borde que reacciona al hover.
+        'group bg-card/40 rounded-xl border p-3 cursor-pointer transition-colors duration-150 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+        selected ? 'border-accent ring-2 ring-accent/60 shadow-card3d' : 'border-border',
       )}
     >
       {/* Header: nombre + frescura + días */}
@@ -118,15 +122,15 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
             <span className="block text-[12.5px] font-bold text-foreground truncate">{o.nombre || 'Sin nombre'}</span>
           </div>
           {o.externalId
-            ? <span className="text-[10px] text-primary font-mono mt-0.5 block truncate">{o.externalId}</span>
+            ? <span className="text-[10px] text-accent font-mono tabular-nums mt-0.5 block truncate">{o.externalId}</span>
             : <span className="text-[10px] text-muted-foreground font-mono mt-0.5 block">Sin ID</span>}
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className="text-[9px] font-mono tabular-nums px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground" title="Días hábiles en este estado">
+          <span className="text-[10px] font-mono tabular-nums font-semibold px-2 py-0.5 rounded-lg bg-muted/50 border border-border text-muted-foreground" title="Días hábiles en este estado">
             {dias}d
           </span>
           {pLevel !== 'low' && (
-            <span className={cn('text-[8px] font-bold px-1.5 py-0.5 rounded border', pConfig.bgClass, pConfig.color)}>
+            <span className={cn('text-[9px] font-semibold px-2 py-0.5 rounded-lg border', pConfig.bgClass, pConfig.color)}>
               {pConfig.label}
             </span>
           )}
@@ -145,7 +149,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/50 pt-2">
         <div className="min-w-0 text-[10.5px] text-muted-foreground truncate">
           {o.transportadora ? <span className="font-medium text-foreground/80">{o.transportadora}</span> : 'Sin transportadora'}
-          {o.guia ? <span className="font-mono"> · {o.guia}</span> : <span className="opacity-70"> · sin guía</span>}
+          {o.guia ? <span className="font-mono tabular-nums"> · {o.guia}</span> : <span className="opacity-70"> · sin guía</span>}
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
           {(trackUrl || carrierHome) && (
@@ -154,7 +158,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
               target="_blank" rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               title={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
-              className="p-2 -m-0.5 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
+              className="p-2 -m-0.5 rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
             >
               <ExternalLink size={14} aria-hidden="true" />
             </a>
@@ -168,7 +172,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
               }}
               title="Abrir chat de WhatsApp (ver el bot / escribir)"
               aria-label="Abrir chat de WhatsApp"
-              className="p-2 -m-0.5 rounded text-muted-foreground hover:text-[#25D366] hover:bg-[#25D366]/10 transition-colors"
+              className="p-2 -m-0.5 rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
             >
               <MessageCircle size={14} aria-hidden="true" />
             </button>
@@ -178,7 +182,7 @@ const SegCard = memo(function SegCard({ o, countryCode, selected, cardRef, onOpe
             onClick={(e) => { e.stopPropagation(); void refresh(activeStoreId, o.externalId); }}
             disabled={isRefreshing || !o.externalId}
             title="Refrescar estado desde Dropi"
-            className="p-2 -m-0.5 rounded text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+            className="p-2 -m-0.5 rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
@@ -259,11 +263,11 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
   return (
     <div className="space-y-3">
       {/* Barra de enfoque */}
-      <div className="flex items-center gap-3 rounded-xl border border-border bg-surface/50 px-3 py-2">
+      <div className="flex items-center gap-3 rounded-2xl border border-border bg-card/40 shadow-card3d px-4 py-3">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:border-border-strong transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
         >
           <ChevronLeft size={14} aria-hidden="true" /> Tablero
         </button>
@@ -271,10 +275,10 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
           <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', t.dot)} aria-hidden="true" />
           <span className="text-foreground/90">{col.icon}</span>
           <h3 className="text-sm font-bold text-foreground truncate">{col.label}</h3>
-          <span className={cn('text-[11px] font-mono tabular-nums font-bold px-2 py-0.5 rounded-full', t.count)}>{orders.length}</span>
+          <span className={cn('text-[11px] font-mono tabular-nums font-semibold px-2 py-0.5 rounded-lg', t.count)}>{orders.length}</span>
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
             {orders.length ? `${selIdx + 1} / ${orders.length}` : '0 / 0'}
           </span>
           <button
@@ -282,7 +286,7 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
             onClick={() => { move(-1); listRef.current?.focus(); }}
             disabled={selIdx <= 0}
             title="Anterior (↑)"
-            className="p-1.5 rounded-lg border border-border bg-card text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+            className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
           >
             <ChevronUp size={15} aria-hidden="true" />
           </button>
@@ -291,7 +295,7 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
             onClick={() => { move(1); listRef.current?.focus(); }}
             disabled={selIdx >= orders.length - 1}
             title="Siguiente (↓)"
-            className="p-1.5 rounded-lg border border-border bg-card text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+            className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
           >
             <ChevronDown size={15} aria-hidden="true" />
           </button>
@@ -440,20 +444,20 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
         return (
           <section
             key={col.key}
-            className={cn('snap-start shrink-0 w-[270px] flex flex-col rounded-xl border border-border bg-surface/40 border-t-[3px]', t.headBar)}
+            className={cn('snap-start shrink-0 w-[270px] flex flex-col rounded-2xl border border-border bg-card/40 shadow-card3d border-t-[3px]', t.headBar)}
           >
             {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓). */}
             <button
               type="button"
               onClick={() => setFocusedKey(col.key)}
               title={`Concentrarse solo en ${col.label}`}
-              className="group/h flex items-center gap-2 px-3 py-2.5 border-b border-border/60 text-left hover:bg-card/50 transition-colors"
+              className="group/h flex items-center gap-2 px-3 py-3 border-b border-border/60 text-left hover:bg-card/60 transition-colors"
             >
               <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
               <span className="text-foreground/90">{col.icon}</span>
-              <h3 className="text-[12px] font-bold text-foreground truncate flex-1">{col.label}</h3>
+              <h3 className="text-[12.5px] font-semibold text-foreground truncate flex-1">{col.label}</h3>
               <Maximize2 size={12} className="text-muted-foreground opacity-0 group-hover/h:opacity-100 transition-opacity" aria-hidden="true" />
-              <span className={cn('text-[11px] font-mono tabular-nums font-bold px-2 py-0.5 rounded-full', t.count)}>
+              <span className={cn('text-[11px] font-mono tabular-nums font-semibold px-2 py-0.5 rounded-lg', t.count)}>
                 {col.orders.length}
               </span>
             </button>

@@ -33,7 +33,7 @@ export default function HudTopbar({ title, section, right, onMenu }: HudTopbarPr
         )}
         <h1 className="text-sm font-semibold text-foreground truncate">{title}</h1>
         {section && (
-          <span className="hud-label truncate hidden sm:block">/ {section.toUpperCase()}</span>
+          <span className="hud-label text-subtle truncate hidden sm:block">/ {section.toUpperCase()}</span>
         )}
       </div>
 

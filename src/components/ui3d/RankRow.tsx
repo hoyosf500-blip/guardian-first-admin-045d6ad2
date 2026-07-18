@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 interface RankRowProps {
   position: number;
   name: string;
@@ -7,6 +9,14 @@ interface RankRowProps {
   detail?: string;
   /** Resalta la fila del usuario actual. */
   isMe?: boolean;
+  /**
+   * Clase de color del porcentaje. La decide QUIEN LLAMA, porque el umbral de
+   * "buena tasa" es de negocio (CONF_TARGET_PCT), no de presentación.
+   * Hardcodear text-success acá pintaba de verde una tasa del 20%.
+   */
+  pctClassName?: string;
+  /** Nodo a la izquierda de la posición (ej. un trofeo para el primero). */
+  badge?: ReactNode;
 }
 
 /**
@@ -16,7 +26,10 @@ interface RankRowProps {
  * La fila propia va con fondo de acento y glow — el handoff quiere que la
  * operadora se encuentre de un vistazo. Presentación pura.
  */
-export default function RankRow({ position, name, pct, detail, isMe = false }: RankRowProps) {
+export default function RankRow({
+  position, name, pct, detail, isMe = false,
+  pctClassName = 'text-foreground', badge,
+}: RankRowProps) {
   const width = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
   const initial = (name || '?')[0].toUpperCase();
 
@@ -30,12 +43,14 @@ export default function RankRow({ position, name, pct, detail, isMe = false }: R
       ].join(' ')}
     >
       <div className="flex items-center gap-3">
-        <span
-          className={`font-mono tabular-nums w-6 text-center font-bold text-[15px] ${
-            position === 1 ? 'text-warning num-glow-accent' : 'text-muted-foreground'
-          }`}
-        >
-          {position}
+        <span className="w-6 flex items-center justify-center flex-shrink-0">
+          {badge ?? (
+            <span className={`font-mono tabular-nums text-center font-bold text-[15px] ${
+              position === 1 ? 'text-warning num-glow-accent' : 'text-muted-foreground'
+            }`}>
+              {position}
+            </span>
+          )}
         </span>
         <span
           aria-hidden="true"
@@ -54,7 +69,7 @@ export default function RankRow({ position, name, pct, detail, isMe = false }: R
           )}
         </span>
         {detail && <span className="font-mono tabular-nums text-xs text-muted-foreground flex-shrink-0">{detail}</span>}
-        <span className="font-mono tabular-nums text-sm font-bold text-success flex-shrink-0">{Math.round(pct)}%</span>
+        <span className={`font-mono tabular-nums text-sm font-bold flex-shrink-0 ${pctClassName}`}>{Math.round(pct)}%</span>
       </div>
 
       <div className="h-1 rounded-full bg-foreground/10 overflow-hidden">

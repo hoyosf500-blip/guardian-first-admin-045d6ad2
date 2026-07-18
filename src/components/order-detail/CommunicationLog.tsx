@@ -25,16 +25,16 @@ export default function CommunicationLog({ events }: Props) {
       aria-label="Bitácora de comunicaciones"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-card border border-border rounded-2xl p-5"
+      className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d"
     >
       <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-4">
-        <MessageSquare size={14} /> Bitácora de comunicaciones
+        <MessageSquare size={14} className="text-accent" /> Bitácora de comunicaciones
       </h3>
 
       {commEvents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
-          <div className="w-12 h-12 rounded-xl bg-muted/40 flex items-center justify-center">
-            <MessageSquare size={20} className="text-muted-foreground" />
+          <div className="w-12 h-12 rounded-2xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <MessageSquare size={20} />
           </div>
           <p className="text-xs text-muted-foreground max-w-[240px]">
             Aún no hay comunicaciones registradas. Los botones <strong>Llamar</strong> y{' '}

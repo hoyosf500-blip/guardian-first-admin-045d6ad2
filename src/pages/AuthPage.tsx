@@ -150,8 +150,14 @@ export default function AuthPage() {
       {/* Left panel — brand identity (Dirección 3D: gradiente índigo + aurora) */}
       <div className="hidden lg:flex lg:w-1/2 items-stretch p-12 relative overflow-hidden bg-gradient-to-br from-[#171a3d] to-[#0a0b18]">
         {/* Orbes aurora */}
-        <div className="absolute -top-28 -left-24 w-96 h-96 rounded-full blur-[60px] bg-accent/40" aria-hidden="true" />
-        <div className="absolute -bottom-28 -right-20 w-80 h-80 rounded-full blur-[60px] bg-accent2/35" aria-hidden="true" />
+        <div
+          className="absolute -top-28 -left-24 w-96 h-96 rounded-full blur-[50px] bg-[radial-gradient(circle,hsl(var(--accent)/0.5),transparent_65%)]"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute -bottom-28 -right-20 w-80 h-80 rounded-full blur-[50px] bg-[radial-gradient(circle,hsl(var(--accent2)/0.4),transparent_65%)]"
+          aria-hidden="true"
+        />
 
         <div className="relative z-10 flex flex-col justify-between w-full max-w-md text-white">
           {/* Logo */}
@@ -160,20 +166,20 @@ export default function AuthPage() {
               <Package size={24} aria-hidden="true" />
             </span>
             <div>
-              <div className="text-xl font-bold text-white leading-none">Guardian</div>
-              <div className="font-mono text-[10px] tracking-[0.14em] text-white/45 mt-1">PANEL COD</div>
+              <div className="text-xl font-bold text-white leading-none tracking-tight">Guardian</div>
+              <div className="hud-label !text-white/45 mt-1.5">PANEL COD</div>
             </div>
           </div>
 
           {/* Titular + features */}
           <div>
-            <h2 className="text-[26px] font-bold mb-5 leading-[1.15] tracking-tight text-white">
+            <h2 className="text-[26px] font-bold mb-5 leading-[1.2] tracking-tight text-white">
               Panel Operadora<br />COD
             </h2>
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               {features.map(item => (
-                <div key={item.text} className="flex items-center gap-3 text-[13px] text-white/70">
-                  <span className={`w-8 h-8 rounded-[10px] flex items-center justify-center flex-shrink-0 border ${toneChip[item.tone]}`}>
+                <div key={item.text} className="flex items-center gap-3 text-[13px] leading-snug text-white/70">
+                  <span className={`w-[30px] h-[30px] rounded-[9px] flex items-center justify-center flex-shrink-0 border ${toneChip[item.tone]}`}>
                     <item.icon size={15} aria-hidden="true" />
                   </span>
                   <span>{item.text}</span>

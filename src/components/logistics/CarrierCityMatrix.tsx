@@ -70,13 +70,13 @@ export default memo(function CarrierCityMatrix({
 
   if (matrix.isLoading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 skeleton-shimmer min-h-[300px]" />
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 skeleton-shimmer min-h-[300px]" />
     );
   }
 
   if (matrix.isError) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-sm text-danger">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 text-sm text-danger">
         Error cargando matriz: {matrix.error?.message}
       </div>
     );
@@ -84,7 +84,7 @@ export default memo(function CarrierCityMatrix({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-center">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 text-center">
         <Info size={28} className="mx-auto text-muted-foreground mb-2" aria-hidden="true" />
         <p className="text-sm font-semibold text-foreground">Sin datos para el heatmap</p>
         <p className="text-xs text-muted-foreground mt-1">
@@ -95,11 +95,13 @@ export default memo(function CarrierCityMatrix({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
       <header className="px-5 py-4 border-b border-border/60">
         <div className="flex items-center gap-2">
-          <Grid3x3 size={14} className="text-info" aria-hidden="true" strokeWidth={2.25} />
-          <h2 className="text-sm font-bold text-foreground uppercase tracking-[0.08em]">
+          <span className="w-8 h-8 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center shrink-0" aria-hidden="true">
+            <Grid3x3 size={14} strokeWidth={2.25} />
+          </span>
+          <h2 className="text-sm font-bold text-foreground tracking-tight">
             Matriz de desempeño: Transportadora × Ciudad
           </h2>
         </div>
@@ -131,16 +133,16 @@ export default memo(function CarrierCityMatrix({
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border/60 bg-muted/20">
-              <th className="text-left px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground sticky left-0 bg-muted/20 z-10 min-w-[160px]">
+              <th className="text-left px-4 py-2.5 hud-label sticky left-0 bg-muted/20 z-10 min-w-[160px]">
                 Ciudad
               </th>
-              <th className="text-right px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <th className="text-right px-3 py-2.5 hud-label">
                 Vol.
               </th>
               {carriers.map(c => (
                 <th
                   key={c}
-                  className="text-center px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground min-w-[80px]"
+                  className="text-center px-3 py-2.5 hud-label min-w-[80px]"
                   title={c}
                 >
                   <span className="truncate inline-block max-w-[90px]">{c}</span>
@@ -150,7 +152,7 @@ export default memo(function CarrierCityMatrix({
           </thead>
           <tbody>
             {rows.map(row => (
-              <tr key={row.ciudad} className="border-b border-border/40">
+              <tr key={row.ciudad} className="border-b border-border/40 hover:bg-foreground/[0.03] transition-colors">
                 <td className="px-4 py-2 sticky left-0 bg-card z-10">
                   <div className="font-semibold text-foreground truncate max-w-[150px]" title={row.ciudad}>
                     {row.ciudad}

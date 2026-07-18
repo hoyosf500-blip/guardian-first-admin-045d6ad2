@@ -10,6 +10,7 @@ import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
+import { TiltCard, CountUp } from '@/components/ui3d';
 import SegBoard from '@/components/seguimiento/SegBoard';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
@@ -407,12 +408,12 @@ export default function SeguimientoTab() {
       >
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 space-y-1.5">
-            <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
+            <div className="hud-label whitespace-nowrap truncate mb-1">
               CRM · Operadora
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-              <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
-                <Truck size={18} strokeWidth={2.25} />
+            <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-3">
+              <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+                <Truck size={20} strokeWidth={2.25} />
               </span>
               Seguimiento
             </h1>
@@ -422,14 +423,16 @@ export default function SeguimientoTab() {
           </div>
           <div className="flex items-center gap-2 flex-wrap shrink-0">
             {/* Toggle de vista: Tablero (Kommo, en vivo) ↔ Lista (CrmTable) */}
-            <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+            <div className="inline-flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => setViewMode('board')}
                 aria-pressed={viewMode === 'board'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors',
-                  viewMode === 'board' ? 'bg-accent-gradient text-white shadow-glow' : 'text-muted-foreground hover:text-foreground'
+                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors',
+                  viewMode === 'board'
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
                 )}
               >
                 <LayoutGrid size={13} aria-hidden="true" /> Tablero
@@ -439,8 +442,10 @@ export default function SeguimientoTab() {
                 onClick={() => setViewMode('list')}
                 aria-pressed={viewMode === 'list'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors',
-                  viewMode === 'list' ? 'bg-accent-gradient text-white shadow-glow' : 'text-muted-foreground hover:text-foreground'
+                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors',
+                  viewMode === 'list'
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
                 )}
               >
                 <List size={13} aria-hidden="true" /> Lista
@@ -455,7 +460,7 @@ export default function SeguimientoTab() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar…"
                 aria-label="Buscar en seguimiento"
-                className="h-8 w-36 sm:w-52 rounded-lg border border-border bg-card pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="h-9 w-36 sm:w-52 rounded-xl border border-border bg-card/40 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground hover:border-border-strong transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {search && (
                 <button type="button" onClick={() => setSearch('')} aria-label="Limpiar búsqueda"
@@ -468,8 +473,8 @@ export default function SeguimientoTab() {
             <div className={cn(
               "flex items-center gap-1.5 rounded-xl px-2 py-1 transition-colors",
               (dateFrom || dateTo)
-                ? "bg-primary/10 border border-primary/30 ring-1 ring-primary/20"
-                : "bg-card border border-border"
+                ? "bg-accent/10 border border-accent/40 shadow-glow3d"
+                : "bg-card/40 border border-border hover:border-border-strong"
             )}>
               <Popover>
                 <PopoverTrigger asChild>
@@ -520,9 +525,9 @@ export default function SeguimientoTab() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 shadow-card3d hover:border-border-strong transition-colors">
               <Package size={13} className="text-muted-foreground" aria-hidden="true" />
-              <span className="text-xs text-muted-foreground">Total</span>
+              <span className="hud-label">Total</span>
               <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
               {(dateFrom || dateTo) && stats.total !== segData.length && (
                 <span className="text-[10px] text-muted-foreground/70 font-mono">/ {segData.length}</span>
@@ -559,7 +564,7 @@ export default function SeguimientoTab() {
               onClick={() => refreshNow(activeStoreId, { force: true })}
               disabled={isSyncingDropi}
               title="Trae el estado real de Dropi de los pedidos recientes ahora mismo"
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="btn-accent-3d inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />
               <span className="hidden sm:inline">{isSyncingDropi ? 'Sincronizando...' : 'Sincronizar Dropi'}</span>
@@ -567,13 +572,13 @@ export default function SeguimientoTab() {
             <button
               onClick={() => loadSegData(true)}
               disabled={segLoading}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-foreground hover:bg-card hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} aria-hidden="true" />
               <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
             {segLastUpdate && (
-              <span className="text-[11px] text-muted-foreground tabular-nums hidden md:inline">
+              <span className="text-[11px] text-muted-foreground font-mono tabular-nums hidden md:inline">
                 {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
               </span>
             )}
@@ -586,7 +591,7 @@ export default function SeguimientoTab() {
             empezar. Solo se muestran las listas con pedidos (+ las que linkean
             a otra ruta, ej. confirmación). */}
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="flex items-center gap-1.5 hud-label">
             <Filter size={12} aria-hidden="true" /> Listas de trabajo
           </div>
           {/* En mobile, las 8 listas apiladas (flex-wrap) ocupaban ~250px
@@ -599,10 +604,10 @@ export default function SeguimientoTab() {
               onClick={() => setListaSlug(null)}
               aria-pressed={!listaSlug}
               className={cn(
-                "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-3 min-h-[36px] text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[38px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                 !listaSlug
-                  ? "bg-accent text-accent-foreground border-accent shadow-sm"
-                  : "bg-card border-border text-foreground hover:border-border-strong"
+                  ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                  : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
               )}
             >
               Todas
@@ -624,21 +629,21 @@ export default function SeguimientoTab() {
                     aria-pressed={active}
                     title={l.label}
                     className={cn(
-                      "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-3 min-h-[36px] text-[12px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                      "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[38px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                       active
-                        ? "bg-accent text-accent-foreground border-accent shadow-sm"
-                        : "bg-card border-border text-foreground hover:border-border-strong"
+                        ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                        : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
                     )}
                   >
                     {l.externalRoute
                       ? <ExternalLink size={12} className={active ? '' : 'text-muted-foreground'} aria-hidden="true" />
-                      : <span className={cn("w-1.5 h-1.5 rounded-full", active ? "bg-accent-foreground" : LIST_TONE_DOT[l.tone])} aria-hidden="true" />}
+                      : <span className={cn("w-1.5 h-1.5 rounded-full", active ? "bg-accent" : LIST_TONE_DOT[l.tone])} aria-hidden="true" />}
                     <span className="truncate max-w-[15rem]">{l.label}</span>
                     {!l.externalRoute && (
                       <span className="font-mono tabular-nums text-[11px] opacity-80">{count}</span>
                     )}
                     {suggested && !active && (
-                      <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-danger/15 text-danger border border-danger/30">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
                         Sugerido
                       </span>
                     )}
@@ -657,7 +662,7 @@ export default function SeguimientoTab() {
             type="button"
             onClick={() => setShowStatusSummary(v => !v)}
             aria-expanded={showStatusSummary}
-            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-card/40 border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <ChevronDown size={13} className={cn("transition-transform", showStatusSummary && "rotate-180")} aria-hidden="true" />
             {showStatusSummary ? 'Ocultar resumen por estado' : 'Ver resumen por estado'}
@@ -682,19 +687,19 @@ export default function SeguimientoTab() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
                 whileTap={{ scale: 0.97 }}
-                className={`group relative bg-surface border rounded-xl px-3 py-2.5 flex flex-col items-center gap-1.5 transition-all duration-200 cursor-pointer focus-visible:outline-none text-center ${
+                className={`group relative bg-card/40 border rounded-2xl px-3 py-3 flex flex-col items-center gap-1.5 shadow-card3d transition-all duration-200 cursor-pointer focus-visible:outline-none text-center ${
                   isActive
                     ? `${t.activeRing} ${t.activeBg}`
                     : `border-border ${t.cardHover}`
                 }`}
               >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText}`}>
                   {card.icon}
                 </div>
                 <span className={`font-mono text-xl font-bold leading-none tabular-nums ${isActive ? t.numberColor : 'text-foreground'}`}>
                   {card.value}
                 </span>
-                <span className={`text-[9px] font-semibold text-center leading-tight uppercase tracking-wider ${
+                <span className={`hud-label text-center leading-tight ${
                   isActive ? t.numberColor : 'text-muted-foreground'
                 }`}>
                   {card.label}
@@ -714,10 +719,10 @@ export default function SeguimientoTab() {
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25 }}
-          className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-4 flex items-center justify-between gap-4"
+          className="mb-4 rounded-2xl border border-accent/30 bg-card/40 p-4 shadow-card3d flex items-center justify-between gap-4"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-md bg-accent/15 ring-1 ring-accent/30 flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0">
               <ExternalLink size={18} className="text-accent" aria-hidden="true" />
             </div>
             <div className="min-w-0">
@@ -729,7 +734,7 @@ export default function SeguimientoTab() {
           </div>
           <Link
             to={listaActiva.externalRoute}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground hover:bg-accent/90 transition-colors shrink-0"
+            className="btn-accent-3d inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold no-underline shrink-0"
           >
             Ir a {listaActiva.externalRoute}
             <ChevronRight size={14} aria-hidden="true" />
@@ -759,14 +764,14 @@ export default function SeguimientoTab() {
           ? 'success'
           : faltan >= Math.max(1, Math.ceil(total / 2)) ? 'danger' : 'warning';
         const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
-        const bgTone = tone === 'success' ? 'bg-success/5' : tone === 'warning' ? 'bg-warning/5' : 'bg-danger/5';
         const barTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
         const faltanTone = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : 'text-danger';
         return (
-          <div className={`mb-3 rounded-xl border ${borderTone} ${bgTone} px-4 py-3`}>
+          <TiltCard sheen brackets wrapperClassName="mb-3" className={`relative bg-card/40 border ${borderTone} rounded-2xl p-4 pl-5 shadow-card3d-lg`}>
+            <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${barTone}`} aria-hidden="true" />
             <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
               <div className="flex items-baseline gap-2 min-w-0">
-                <span className={`font-mono tabular-nums text-2xl font-extrabold leading-none ${faltanTone}`}>{faltan}</span>
+                <CountUp value={faltan} className={`text-3xl font-extrabold leading-none ${faltanTone}`} />
                 <span className="text-sm font-semibold text-foreground">
                   {done
                     ? '¡Todo gestionado hoy! ✓'
@@ -792,10 +797,10 @@ export default function SeguimientoTab() {
               )}
             </div>
             {/* Barra de progreso del día — se llena a medida que gestionás. */}
-            <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden" aria-hidden="true">
-              <div className={`h-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
+            <div className="mt-3 h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
+              <div className={`h-full rounded-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
             </div>
-          </div>
+          </TiltCard>
         );
       })()}
 

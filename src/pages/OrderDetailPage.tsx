@@ -16,6 +16,7 @@ import {
   MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { buildTimeline, type TimelineStatusChange } from '@/lib/timelineBuilder';
 import { sanitizeAction } from '@/lib/sanitize';
 import { bogotaToday } from '@/lib/utils';
@@ -427,20 +428,20 @@ export default function OrderDetailPage() {
   return (
     <main className="max-w-4xl mx-auto space-y-6" aria-label="Detalle del pedido">
       {/* Back + header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-4 flex-wrap">
-        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="p-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 flex-wrap">
+        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="w-11 h-11 flex-shrink-0 inline-flex items-center justify-center rounded-2xl bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong shadow-card3d transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
           <ArrowLeft size={18} />
         </button>
 
         {/* Navegación entre pedidos de la misma carpeta (↑/↓) sin volver al tablero */}
         {siblingIds.length > 1 && sibIdx >= 0 && (
-          <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-0.5" role="group" aria-label="Navegar pedidos de la carpeta">
+          <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-card/40 p-0.5" role="group" aria-label="Navegar pedidos de la carpeta">
             <button
               onClick={() => goSibling(-1)}
               disabled={sibIdx <= 0}
               title="Pedido anterior (↑)"
               aria-label="Pedido anterior"
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronUp size={16} />
             </button>
@@ -450,26 +451,27 @@ export default function OrderDetailPage() {
               disabled={sibIdx >= siblingIds.length - 1}
               title="Pedido siguiente (↓)"
               aria-label="Pedido siguiente"
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronDown size={16} />
             </button>
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-bold text-foreground truncate">{order.nombre}</h2>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-mono">ID: {order.external_id}</span>
+          <div className="hud-label mb-1 truncate">PEDIDO</div>
+          <h2 className="text-2xl font-bold tracking-tight text-foreground truncate">{order.nombre}</h2>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+            <span className="font-mono tabular-nums">ID: {order.external_id}</span>
             <button onClick={() => { void copyToClipboard(order.external_id || '', 'ID copiado'); }} aria-label="Copiar ID del pedido">
               <Copy size={10} />
             </button>
           </div>
         </div>
-        <span className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
-          estadoUpper.includes('ENTREGADO') ? 'bg-success/12 text-success border-success/30' :
-          estadoUpper.includes('DEVOL') ? 'bg-danger/12 text-danger border-danger/30' :
-          estadoUpper.includes('NOVEDAD') ? 'bg-warning/12 text-warning border-warning/30' :
-          'bg-info/12 text-info border-info/30'
+        <span className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border ${
+          estadoUpper.includes('ENTREGADO') ? 'bg-success/14 text-success border-success/30' :
+          estadoUpper.includes('DEVOL') ? 'bg-danger/14 text-danger border-danger/30' :
+          estadoUpper.includes('NOVEDAD') ? 'bg-warning/14 text-warning border-warning/30' :
+          'bg-info/14 text-info border-info/30'
         }`}>
           {order.estado}
         </span>
@@ -478,17 +480,17 @@ export default function OrderDetailPage() {
         {showConfirmShortcut && (
           <button
             onClick={() => navigate('/confirmar')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent/12 text-accent border border-accent/30 text-xs font-semibold hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent/16 text-accent border border-accent/40 text-sm font-semibold shadow-glow3d hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
           >
             <PhoneCall size={12} /> Ir a Confirmar
           </button>
         )}
         {showNovedadShortcut && !showReofferInput && (
-          <div className="inline-flex items-center gap-1.5">
+          <div className="inline-flex items-center gap-2">
             <button
               onClick={() => setShowReofferInput(true)}
               disabled={resolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-info/12 text-info border border-info/30 text-xs font-semibold hover:bg-info/20 transition-colors disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-info/14 text-info border border-info/30 text-sm font-semibold hover:bg-info/20 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RotateCcw size={12} /> Reprogramar
             </button>
@@ -499,7 +501,7 @@ export default function OrderDetailPage() {
                 }
               }}
               disabled={resolving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-danger/12 text-danger border border-danger/30 text-xs font-semibold hover:bg-danger/20 transition-colors disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-danger/14 text-danger border border-danger/30 text-sm font-semibold hover:bg-danger/20 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Undo2 size={12} /> Devolver
             </button>
@@ -510,7 +512,8 @@ export default function OrderDetailPage() {
       {/* Reoffer solution input (F3) */}
       {showReofferInput && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-          className="bg-info/5 border border-info/25 rounded-xl p-4 flex flex-col gap-2">
+          className="relative bg-card/40 border border-border rounded-2xl p-4 pl-5 shadow-card3d flex flex-col gap-2">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-info" aria-hidden="true" />
           <p className="text-xs font-semibold text-info">Solución para reprogramar entrega:</p>
           <input
             value={solutionText}
@@ -519,13 +522,13 @@ export default function OrderDetailPage() {
             placeholder="Ej: Cliente pide enviar el martes, nueva dirección Cra 45 #12-30"
             disabled={resolving}
             autoFocus
-            className="bg-card border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
+            className="bg-card/40 border border-border rounded-xl px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
           />
           <div className="flex gap-2">
             <button
               onClick={() => handleResolveNovedad('reoffer')}
               disabled={resolving || solutionText.trim().length < 3}
-              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-accent-foreground text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+              className="btn-accent-3d flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50 cursor-pointer"
             >
               {resolving ? <RefreshCw size={12} className="animate-spin" /> : <Send size={12} />}
               {resolving ? 'Enviando…' : 'Enviar a Dropi'}
@@ -533,7 +536,7 @@ export default function OrderDetailPage() {
             <button
               onClick={() => { setShowReofferInput(false); setSolutionText(''); }}
               disabled={resolving}
-              className="px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground text-xs font-semibold hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50 cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-semibold hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50 cursor-pointer"
             >
               Cancelar
             </button>
@@ -546,14 +549,13 @@ export default function OrderDetailPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Info card */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-          className="glass-panel rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
-          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-            <User size={13} aria-hidden="true" /> Información del cliente
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
+          <h3 className="hud-label flex items-center gap-2">
+            <User size={13} aria-hidden="true" className="text-accent" /> Información del cliente
           </h3>
 
           <div className="space-y-3">
-            <InfoRow icon={<Phone size={13} />} label="Teléfono" value={order.phone} copyable />
+            <InfoRow icon={<Phone size={13} />} label="Teléfono" value={order.phone} copyable mono />
             <InfoRow icon={<MapPin size={13} />} label="Ciudad" value={`${order.ciudad || ''}${order.departamento ? `, ${order.departamento}` : ''}`} />
             <InfoRow icon={<FileText size={13} />} label="Dirección" value={order.direccion || '—'} />
             <InfoRow icon={<Package size={13} />} label="Producto" value={`${order.producto || '—'} (x${order.cantidad || 1})`} />
@@ -566,7 +568,7 @@ export default function OrderDetailPage() {
                 type="button"
                 onClick={() => { void openChat({ phone: order.phone, name: order.nombre }); }}
                 aria-label="Abrir chat de WhatsApp con el cliente"
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#25D366] text-white text-xs font-bold py-3 sm:py-2.5 hover:bg-[#1ebe5b] transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#25D366] focus-visible:outline-none"
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-success/14 border border-success/30 text-success text-sm font-semibold py-3 sm:py-2.5 hover:bg-success/20 hover:border-success/50 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
               >
                 <MessageSquare size={14} aria-hidden="true" /> WhatsApp
               </button>
@@ -575,7 +577,7 @@ export default function OrderDetailPage() {
               href={'tel:+' + getWhatsAppPhone(order.phone, countryCode)}
               onClick={() => logCommunication('CALL', 'Llamada saliente')}
               aria-label="Llamar al cliente"
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-card border border-border text-foreground text-xs font-bold py-3 sm:py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-card/40 border border-border text-foreground text-sm font-semibold py-3 sm:py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               <Phone size={14} aria-hidden="true" /> Llamar
             </a>
@@ -583,21 +585,21 @@ export default function OrderDetailPage() {
 
           {/* Registrar gestión — queda en la bitácora + cuenta para productividad y
               marca el pedido como tocado hoy. Sirve aunque el WhatsApp en frío falle. */}
-          <div className="pt-2 mt-1 border-t border-border/50">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Registrar gestión</p>
-            <div className="flex flex-wrap gap-1.5">
+          <div className="pt-3 mt-1 border-t border-border/50">
+            <p className="hud-label mb-2">Registrar gestión</p>
+            <div className="inline-flex flex-wrap gap-2">
               {SEG_ACTIONS.map((a) => (
                 <button
                   key={a.action}
                   type="button"
                   onClick={() => void logSegAction(a.label, a.action)}
                   className={
-                    'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+                    'inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
                     (a.tone === 'success'
-                      ? 'border-success/30 bg-success/10 text-success hover:bg-success/15'
+                      ? 'border-success/30 bg-success/14 text-success hover:bg-success/20'
                       : a.tone === 'warn'
-                      ? 'border-warning/30 bg-warning/10 text-warning hover:bg-warning/15'
-                      : 'border-border bg-card text-muted-foreground hover:text-accent hover:border-accent/40')
+                      ? 'border-warning/30 bg-warning/14 text-warning hover:bg-warning/20'
+                      : 'border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong')
                   }
                 >
                   {a.label}
@@ -605,29 +607,29 @@ export default function OrderDetailPage() {
               ))}
             </div>
           </div>
-        </motion.div>
+        </TiltCard>
 
         {/* Shipping card */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="glass-panel rounded-xl p-5 space-y-4 hover:border-border-strong transition-colors duration-200">
-          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-            <Truck size={13} aria-hidden="true" /> Envío y seguimiento
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
+          <h3 className="hud-label flex items-center gap-2">
+            <Truck size={13} aria-hidden="true" className="text-info" /> Envío y seguimiento
           </h3>
 
           <div className="space-y-3">
             <InfoRow icon={<Truck size={13} />} label="Transportadora" value={order.transportadora || '—'} />
-            <InfoRow icon={<Tag size={13} />} label="Guía" value={order.guia || '—'} copyable={!!order.guia} />
-            <InfoRow icon={<Calendar size={13} />} label="Fecha pedido" value={order.fecha || '—'} />
-            <InfoRow icon={<Calendar size={13} />} label="Fecha confirmación" value={order.fecha_conf || '—'} />
-            <InfoRow icon={<Clock size={13} />} label="Días" value={`${order.dias || 0}d desde pedido · ${order.dias_conf || 0}d desde conf.`} />
+            <InfoRow icon={<Tag size={13} />} label="Guía" value={order.guia || '—'} copyable={!!order.guia} mono />
+            <InfoRow icon={<Calendar size={13} />} label="Fecha pedido" value={order.fecha || '—'} mono />
+            <InfoRow icon={<Calendar size={13} />} label="Fecha confirmación" value={order.fecha_conf || '—'} mono />
+            <InfoRow icon={<Clock size={13} />} label="Días" value={`${order.dias || 0}d desde pedido · ${order.dias_conf || 0}d desde conf.`} mono />
           </div>
 
           {order.novedad && (
             <div className="space-y-2">
-              <div className="flex items-start gap-2 p-3 rounded-xl bg-danger/8 border border-danger/25">
+              <div className="relative flex items-start gap-2 p-3 pl-4 rounded-2xl bg-card/40 border border-border shadow-card3d">
+                <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
                 <AlertTriangle size={13} className="text-danger mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <div>
-                  <div className="text-[10px] font-semibold text-danger uppercase tracking-wider mb-0.5">Novedad</div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-danger mb-0.5">Novedad</div>
                   <div className="text-xs text-foreground">{order.novedad}</div>
                 </div>
               </div>
@@ -650,18 +652,19 @@ export default function OrderDetailPage() {
                       <button
                         type="button"
                         onClick={() => askAi(aiKey, 'novedad_action', buildCtx())}
-                        className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-accent/10 border border-accent/30 text-accent text-[11px] font-semibold hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                        className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-accent/16 border border-accent/40 text-accent text-sm font-semibold shadow-glow3d hover:bg-accent hover:text-accent-foreground transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                       >
                         <Sparkles size={11} aria-hidden="true" /> Sugerencia IA
                       </button>
                     )}
                     {ai.loading && (
-                      <div className="flex items-center gap-1.5 py-2 px-3 rounded-lg bg-accent/5 border border-accent/20 text-[11px] text-accent">
+                      <div className="flex items-center gap-1.5 py-2 px-3 rounded-xl bg-card/40 border border-border text-[11px] text-accent">
                         <RefreshCw size={11} className="animate-spin" aria-hidden="true" /> Analizando...
                       </div>
                     )}
                     {ai.reply && (
-                      <div className="p-2.5 rounded-lg bg-accent/5 border border-accent/25 text-[11px] text-foreground whitespace-pre-line leading-relaxed">
+                      <div className="relative p-3 pl-4 rounded-2xl bg-card/40 border border-border shadow-card3d text-[11px] text-foreground whitespace-pre-line leading-relaxed">
+                        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-accent" aria-hidden="true" />
                         <span className="text-accent font-semibold inline-flex items-center gap-1 mb-1"><Sparkles size={10} aria-hidden="true" /> Sugerencia IA</span>
                         <br />{ai.reply}
                       </div>
@@ -678,26 +681,26 @@ export default function OrderDetailPage() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Rastrear envío en sitio de la transportadora"
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent/10 text-accent text-xs font-bold py-3 hover:bg-accent hover:text-accent-foreground transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent/16 text-accent text-sm font-semibold py-3 shadow-glow3d hover:bg-accent hover:text-accent-foreground transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none no-underline cursor-pointer"
             >
               <ExternalLink size={14} aria-hidden="true" /> Rastrear envío
             </a>
           )}
-        </motion.div>
+        </TiltCard>
 
         {/* Financial card */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="glass-panel rounded-xl p-5 space-y-4 md:col-span-2 hover:border-border-strong transition-colors duration-200">
-          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-            <DollarSign size={13} aria-hidden="true" /> Financiero
+        <TiltCard sheen brackets wrapperClassName="md:col-span-2"
+          className="bg-card/40 border border-border rounded-3xl p-6 space-y-4 shadow-card3d-lg">
+          <h3 className="hud-label flex items-center gap-2">
+            <DollarSign size={13} aria-hidden="true" className="text-success" /> Financiero
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={formatCOP(valor)} />
-            <InfoRow icon={<Truck size={13} />} label="Flete" value={formatCOP(flete)} />
-            <InfoRow icon={<Package size={13} />} label="Costo producto" value={formatCOP(costoProd)} />
-            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={formatCOP(valor - flete - costoProd)} highlight />
+            <InfoRow icon={<DollarSign size={13} />} label="Valor total" value={formatCOP(valor)} mono />
+            <InfoRow icon={<Truck size={13} />} label="Flete" value={formatCOP(flete)} mono />
+            <InfoRow icon={<Package size={13} />} label="Costo producto" value={formatCOP(costoProd)} mono />
+            <InfoRow icon={<DollarSign size={13} />} label="Ganancia est." value={formatCOP(valor - flete - costoProd)} highlight mono />
           </div>
-        </motion.div>
+        </TiltCard>
       </div>
 
       {/* Customer history */}
@@ -705,13 +708,12 @@ export default function OrderDetailPage() {
 
       {/* Timeline + Communication log */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass-panel rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
-          <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2 mb-4">
-            <Clock size={13} aria-hidden="true" /> Historial del pedido
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
+          <h3 className="hud-label flex items-center gap-2 mb-4">
+            <Clock size={13} aria-hidden="true" className="text-accent" /> Historial del pedido
           </h3>
           <Timeline events={timelineEvents} emptyText="Sin eventos registrados todavía" />
-        </motion.div>
+        </TiltCard>
 
         <CommunicationLog events={timelineEvents} />
       </div>
@@ -722,17 +724,17 @@ export default function OrderDetailPage() {
   );
 }
 
-function InfoRow({ icon, label, value, copyable, highlight }: { icon: React.ReactNode; label: string; value: string; copyable?: boolean; highlight?: boolean }) {
+function InfoRow({ icon, label, value, copyable, highlight, mono }: { icon: React.ReactNode; label: string; value: string; copyable?: boolean; highlight?: boolean; mono?: boolean }) {
   return (
     <div className="flex items-center gap-3">
       <div className="text-muted-foreground/60 flex-shrink-0">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="text-[10px] text-muted-foreground">{label}</div>
-        <div className={`text-xs truncate ${highlight ? 'font-bold text-success' : 'text-foreground'}`}>{value}</div>
+        <div className={`text-xs truncate mt-0.5 ${mono ? 'font-mono tabular-nums ' : ''}${highlight ? 'font-bold text-success' : 'text-foreground'}`}>{value}</div>
       </div>
       {copyable && (
         <button onClick={() => { void copyToClipboard(value, 'Copiado'); }}
-          className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors">
+          className="p-1 rounded-lg text-muted-foreground hover:text-foreground transition-colors">
           <Copy size={10} />
         </button>
       )}

@@ -118,69 +118,69 @@ const TONE_STYLES: Record<Tone, {
 }> = {
   neutral: {
     dot: 'bg-foreground/60',
-    headerBg: 'bg-surface',
+    headerBg: 'bg-card/40',
     headerBorder: 'border-border',
     headerText: 'text-foreground',
-    headerCount: 'bg-card text-foreground border border-border',
-    pillIdle: 'bg-surface border-border text-foreground hover:border-border-strong',
-    pillActive: 'bg-card border-border-strong text-foreground',
-    activeCountBg: 'bg-accent text-accent-foreground',
-    idleCountBg: 'bg-card text-muted-foreground border border-border',
+    headerCount: 'bg-muted/50 text-foreground border border-border',
+    pillIdle: 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
+    pillActive: 'bg-accent/16 border-accent/40 text-accent shadow-glow3d',
+    activeCountBg: 'bg-accent/20 text-accent',
+    idleCountBg: 'bg-muted/50 text-muted-foreground border border-border',
   },
   accent: {
-    dot: 'bg-accent',
+    dot: 'bg-accent glow-accent',
     headerBg: 'bg-accent/10',
     headerBorder: 'border-accent/30',
     headerText: 'text-accent',
-    headerCount: 'bg-accent text-accent-foreground',
-    pillIdle: 'bg-accent/5 border-accent/20 text-accent hover:bg-accent/10 hover:border-accent/40',
-    pillActive: 'bg-accent text-accent-foreground border-accent',
-    activeCountBg: 'bg-black/20 text-accent-foreground',
-    idleCountBg: 'bg-accent/15 text-accent',
+    headerCount: 'bg-accent/14 text-accent border border-accent/30',
+    pillIdle: 'bg-card/40 border-accent/25 text-accent hover:border-accent/50',
+    pillActive: 'bg-accent/16 border-accent/40 text-accent shadow-glow3d',
+    activeCountBg: 'bg-accent/20 text-accent',
+    idleCountBg: 'bg-accent/14 text-accent',
   },
   warning: {
-    dot: 'bg-orange-500',
-    headerBg: 'bg-orange-500/8',
-    headerBorder: 'border-orange-500/30',
-    headerText: 'text-orange-500',
-    headerCount: 'bg-orange-500/15 text-orange-500 border border-orange-500/30',
-    pillIdle: 'bg-orange-500/5 border-orange-500/20 text-orange-500 hover:bg-orange-500/10 hover:border-orange-500/40',
-    pillActive: 'bg-orange-500 text-white border-orange-500',
-    activeCountBg: 'bg-black/25 text-white',
-    idleCountBg: 'bg-orange-500/15 text-orange-500',
+    dot: 'bg-warning glow-warning',
+    headerBg: 'bg-warning/10',
+    headerBorder: 'border-warning/30',
+    headerText: 'text-warning',
+    headerCount: 'bg-warning/14 text-warning border border-warning/30',
+    pillIdle: 'bg-card/40 border-warning/25 text-warning hover:border-warning/50',
+    pillActive: 'bg-warning/16 border-warning/45 text-warning',
+    activeCountBg: 'bg-warning/25 text-warning',
+    idleCountBg: 'bg-warning/14 text-warning',
   },
   danger: {
-    dot: 'bg-red-500',
-    headerBg: 'bg-red-500/8',
-    headerBorder: 'border-red-500/30',
-    headerText: 'text-red-500',
-    headerCount: 'bg-red-500/15 text-red-500 border border-red-500/30',
-    pillIdle: 'bg-red-500/5 border-red-500/20 text-red-500 hover:bg-red-500/10 hover:border-red-500/40',
-    pillActive: 'bg-red-500 text-white border-red-500',
-    activeCountBg: 'bg-black/25 text-white',
-    idleCountBg: 'bg-red-500/15 text-red-500',
+    dot: 'bg-danger glow-danger',
+    headerBg: 'bg-danger/10',
+    headerBorder: 'border-danger/30',
+    headerText: 'text-danger',
+    headerCount: 'bg-danger/14 text-danger border border-danger/30',
+    pillIdle: 'bg-card/40 border-danger/25 text-danger hover:border-danger/50',
+    pillActive: 'bg-danger/16 border-danger/45 text-danger',
+    activeCountBg: 'bg-danger/25 text-danger',
+    idleCountBg: 'bg-danger/14 text-danger',
   },
   success: {
-    dot: 'bg-emerald-500',
-    headerBg: 'bg-emerald-500/8',
-    headerBorder: 'border-emerald-500/30',
-    headerText: 'text-emerald-500',
-    headerCount: 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30',
-    pillIdle: 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10 hover:border-emerald-500/40',
-    pillActive: 'bg-emerald-500 text-white border-emerald-500',
-    activeCountBg: 'bg-black/25 text-white',
-    idleCountBg: 'bg-emerald-500/15 text-emerald-500',
+    dot: 'bg-success glow-success',
+    headerBg: 'bg-success/10',
+    headerBorder: 'border-success/30',
+    headerText: 'text-success',
+    headerCount: 'bg-success/14 text-success border border-success/30',
+    pillIdle: 'bg-card/40 border-success/25 text-success hover:border-success/50',
+    pillActive: 'bg-success/16 border-success/45 text-success',
+    activeCountBg: 'bg-success/25 text-success',
+    idleCountBg: 'bg-success/14 text-success',
   },
   muted: {
     dot: 'bg-muted-foreground/60',
-    headerBg: 'bg-muted/40',
+    headerBg: 'bg-muted/30',
     headerBorder: 'border-border',
     headerText: 'text-muted-foreground',
-    headerCount: 'bg-card text-muted-foreground border border-border',
-    pillIdle: 'bg-muted/40 border-border text-muted-foreground hover:border-border-strong hover:text-foreground',
-    pillActive: 'bg-muted-foreground/20 border-border-strong text-foreground',
+    headerCount: 'bg-muted/50 text-muted-foreground border border-border',
+    pillIdle: 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
+    pillActive: 'bg-muted/40 border-border-strong text-foreground',
     activeCountBg: 'bg-foreground/15 text-foreground',
-    idleCountBg: 'bg-card text-muted-foreground border border-border',
+    idleCountBg: 'bg-muted/50 text-muted-foreground border border-border',
   },
 };
 
@@ -272,7 +272,7 @@ function ColumnBody({
       }}
       onWheel={() => { onActivity?.(); }}
       onTouchMove={() => { onActivity?.(); }}
-      className="bg-surface/60 rounded-b-xl border border-border/50 border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto"
+      className="bg-card/30 rounded-b-2xl border border-border border-t-0 flex-1 p-2 space-y-2 max-h-[70vh] overflow-y-auto"
     >
       {children}
     </div>
@@ -676,7 +676,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   if (!data.length) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">{emptyIcon}</div>
+        <div className="w-16 h-16 rounded-2xl bg-card/40 border border-border flex items-center justify-center mb-4 shadow-card3d">{emptyIcon}</div>
         <h3 className="text-base font-semibold text-foreground mb-1">{emptyTitle}</h3>
         <p className="text-sm text-muted-foreground max-w-xs">{emptyDesc}</p>
       </div>
@@ -706,7 +706,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
           <button
             type="button"
             onClick={applyPendingNow}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border-2 border-orange-500 bg-orange-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/30 hover:bg-orange-600 hover:border-orange-600 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/16 px-4 py-3 text-sm font-semibold text-warning shadow-card3d hover:border-warning/70 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none"
             aria-live="polite"
           >
             <RotateCcw size={16} aria-hidden="true" />
@@ -724,22 +724,22 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar nombre, teléfono, guía, ciudad..."
             aria-label="Buscar pedidos"
-            className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
+            className="w-full pl-10 pr-4 py-2.5 bg-card/40 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
           />
         </div>
         <button
           type="button"
           aria-pressed={onlyDelayed}
           onClick={() => setOnlyDelayed(prev => !prev)}
-          className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+          className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
             onlyDelayed
-              ? 'border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/20'
-              : 'border-border bg-surface text-foreground hover:border-orange-400/50 hover:text-orange-500'
+              ? 'border-warning/45 bg-warning/16 text-warning'
+              : 'border-border bg-card/40 text-muted-foreground hover:text-warning hover:border-warning/50'
           }`}
         >
           <Clock size={14} aria-hidden="true" />
           <span>Retrasados (2d+)</span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${onlyDelayed ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
+          <span className={`rounded-lg px-2 py-0.5 text-[11px] font-mono tabular-nums font-semibold ${onlyDelayed ? 'bg-warning/25 text-warning' : 'bg-muted/50 text-foreground'}`}>
             {delayedCount}
           </span>
         </button>
@@ -748,15 +748,15 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
             type="button"
             aria-pressed={showManaged}
             onClick={() => setShowManaged(prev => !prev)}
-            className={`inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               showManaged
-                ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                : 'border-border bg-surface text-foreground hover:border-emerald-400/50 hover:text-emerald-500'
+                ? 'border-success/45 bg-success/16 text-success'
+                : 'border-border bg-card/40 text-muted-foreground hover:text-success hover:border-success/50'
             }`}
           >
             <CheckCircle size={14} aria-hidden="true" />
             <span>Mostrar En espera</span>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${showManaged ? 'bg-white/25 text-white' : 'bg-card text-foreground'}`}>
+            <span className={`rounded-lg px-2 py-0.5 text-[11px] font-mono tabular-nums font-semibold ${showManaged ? 'bg-success/25 text-success' : 'bg-muted/50 text-foreground'}`}>
               {managedCount}
             </span>
           </button>
@@ -767,16 +767,16 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
             del día anterior reaparecen). Visible también para el dueño. */}
         {data.length > 0 && (
           <div
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/40 shadow-card3d px-3 py-2.5 text-sm hover:border-border-strong transition-colors"
             title="Pedidos del tablero que ya gestionaste hoy o cerraste, sobre el total activo. Mañana los gestionados vuelven a aparecer."
           >
-            <span className="text-xs text-muted-foreground">Al día hoy</span>
+            <span className="hud-label">Al día hoy</span>
             <span className="font-mono font-bold tabular-nums text-foreground">
               {managedCount}<span className="text-muted-foreground">/{data.length}</span>
             </span>
-            <span className="hidden sm:block h-1.5 w-16 rounded-full bg-muted overflow-hidden" aria-hidden="true">
+            <span className="hidden sm:block h-1.5 w-16 rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
               <span
-                className="block h-full bg-emerald-500 transition-all duration-300"
+                className="block h-full rounded-full bg-success transition-all duration-300"
                 style={{ width: `${Math.min(100, Math.round((managedCount / data.length) * 100))}%` }}
               />
             </span>
@@ -786,7 +786,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         {/* Filtro por gestión real (no bloquea — todas pueden gestionar todo).
             'Míos' = los que he gestionado · 'Disponibles' = los que nadie ha
             tocado todavía · 'Todas' = sin filtro. */}
-        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+        <div className="inline-flex flex-wrap items-center gap-2">
           {([
             { key: 'all', label: 'Todas' },
             { key: 'mine', label: 'Míos' },
@@ -797,10 +797,10 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
               type="button"
               onClick={() => setOwnerFilter(opt.key)}
               aria-pressed={ownerFilter === opt.key}
-              className={`inline-flex items-center px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+              className={`inline-flex items-center px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                 ownerFilter === opt.key
-                  ? 'bg-accent text-accent-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               {opt.label}
@@ -809,15 +809,15 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         </div>
 
         {/* Lista / Llamar toggle */}
-        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+        <div className="inline-flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setView('list')}
             aria-pressed={view === 'list'}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               view === 'list'
-                ? 'bg-accent text-accent-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
             }`}
           >
             <List size={13} aria-hidden="true" /> Lista
@@ -826,10 +826,10 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
             type="button"
             onClick={() => setView('call')}
             aria-pressed={view === 'call'}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
               view === 'call'
-                ? 'bg-accent text-accent-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
             }`}
           >
             <PhoneIcon size={13} aria-hidden="true" /> Llamar
@@ -851,13 +851,13 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                 type="button"
                 aria-pressed={isActive}
                 onClick={() => setActiveFilter(isActive ? null : col.key)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                   isActive ? t.pillActive : t.pillIdle
                 }`}
               >
                 {col.icon}
                 <span>{col.label}</span>
-                <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${
+                <span className={`rounded-lg px-1.5 py-0.5 text-[11px] font-mono font-semibold tabular-nums ${
                   isActive ? t.activeCountBg : t.idleCountBg
                 }`}>
                   {allCounts[col.key]}
@@ -869,18 +869,19 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       )}
 
       {onlyDelayed && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-orange-500/20 bg-orange-500/5 px-4 py-3">
+        <div className="relative flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-card/40 shadow-card3d px-4 py-4 pl-5">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
           <div className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <AlertTriangle size={14} className="text-orange-500" />
+            <AlertTriangle size={14} className="text-warning" />
             Mostrando solo pedidos con 2+ días hábiles sin movimiento
           </div>
-          <div className="text-xs text-muted-foreground">{filtered.length} de {data.length} pedidos</div>
+          <div className="text-xs text-muted-foreground"><span className="font-mono tabular-nums">{filtered.length}</span> de <span className="font-mono tabular-nums">{data.length}</span> pedidos</div>
         </div>
       )}
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-secondary text-muted-foreground">
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent">
             <Search size={20} />
           </div>
           <h3 className="text-base font-semibold text-foreground">No hay pedidos para este filtro</h3>
@@ -942,24 +943,24 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         ? `Quitar filtro — volver a ver todas las columnas`
                         : `Click para enfocarse en "${col.label}" (después podés pasar a Llamar)`
                     }
-                    className={`relative w-full rounded-t-xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-2.5 flex items-center justify-between cursor-pointer hover:brightness-110 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    className={`relative w-full rounded-t-2xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-3 flex items-center justify-between cursor-pointer hover:border-border-strong transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                       activeFilter === col.key ? 'ring-2 ring-accent' : ''
                     }`}
                   >
-                    <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-tl-xl ${t.dot}`} aria-hidden="true" />
+                    <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-tl-2xl ${t.dot}`} aria-hidden="true" />
                     <div className={`flex items-center gap-2 pl-1.5 ${t.headerText}`}>
-                      <span className="flex items-center justify-center w-6 h-6 rounded-md bg-card/60 border border-border/60">
+                      <span className="flex items-center justify-center w-7 h-7 rounded-xl bg-card/60 border border-border">
                         {col.icon}
                       </span>
                       <span className="text-[13px] font-semibold tracking-tight text-foreground">{col.label}</span>
                     </div>
                     <span className="flex items-center gap-1.5">
                       {activeFilter === col.key && (
-                        <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-accent/15 text-accent border border-accent/30">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent">
                           ✕ filtro
                         </span>
                       )}
-                      <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-md text-[11px] font-bold tabular-nums ${t.headerCount}`}>
+                      <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-lg text-[11px] font-mono font-semibold tabular-nums ${t.headerCount}`}>
                         {items.length}
                       </span>
                     </span>
@@ -1081,7 +1082,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
   return (
     <div
-      className={`group bg-card rounded-xl border border-border/50 overflow-hidden transition-all duration-200 hover:border-border hover:shadow-md ${managed ? 'opacity-40' : ''}`}
+      className={`group bg-card/40 rounded-xl border border-border overflow-hidden transition-colors duration-200 hover:border-border-strong ${managed ? 'opacity-40' : ''}`}
     >
       {/* Card body — OLD-8: keyboard-navegable. Antes era <div onClick>
           sin role/tabIndex; operadora con teclado no podía expandir. */}
@@ -1107,7 +1108,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               className="block text-[13px] font-bold text-foreground truncate"
             />
             {o.externalId && (
-              <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[10px] text-primary hover:underline font-mono mt-0.5 block truncate">
+              <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[10px] text-accent hover:underline font-mono tabular-nums mt-0.5 block truncate">
                 {o.externalId}
               </a>
             )}
@@ -1117,10 +1118,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             <TruncatedText
               text={o.estado}
               cssTruncate
-              className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-secondary text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate"
+              className="text-[9px] font-semibold px-2 py-1 rounded-lg bg-muted/50 border border-border text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate"
             />
             {pLevel !== 'low' && (
-              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${pConfig.bgClass} ${pConfig.color}`}>
+              <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-lg border ${pConfig.bgClass} ${pConfig.color}`}>
                 {pConfig.label}
               </span>
             )}
@@ -1148,7 +1149,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             })()}
             {isMine && (
               <span
-                className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-lg border bg-success/14 text-success border-success/30"
                 title="Lo has gestionado tú"
               >
                 <User size={9} aria-hidden="true" /> Mío
@@ -1156,7 +1157,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             )}
             {isOtherOwner && (
               <span
-                className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                className="inline-flex items-center gap-1 text-[9px] font-semibold px-2 py-0.5 rounded-lg border bg-warning/14 text-warning border-warning/30"
                 title={`Gestionado por ${ownerName} — puedes gestionarlo igual`}
               >
                 <User size={9} aria-hidden="true" /> {ownerName}
@@ -1167,13 +1168,13 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
         {/* Phone row */}
         <div className="flex items-center gap-1.5 mt-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-secondary/70 rounded-lg px-2.5 py-1.5 flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/40 border border-border rounded-xl px-2.5 py-1.5 flex-1 min-w-0">
             <PhoneIcon size={11} className="flex-shrink-0 text-muted-foreground/70" />
-            <span className="truncate font-mono">{o.phone}</span>
+            <span className="truncate font-mono tabular-nums">{o.phone}</span>
           </div>
           <button onClick={e => { e.stopPropagation(); void copyToClipboard(o.phone, 'Tel copiado'); }}
             aria-label="Copiar teléfono"
-            className="p-2 rounded-lg bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            className="p-2 rounded-xl bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors">
             <Copy size={11} />
           </button>
           {/* Refrescar desde Dropi (single-order). Trae el estado actual en
@@ -1183,7 +1184,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             disabled={isRefreshing || !o.externalId || !cardActiveStoreId}
             aria-label="Refrescar este pedido desde Dropi"
             title="Trae el estado actual desde la API de Dropi (estado, guía, transportadora)"
-            className="p-2 rounded-lg bg-accent/10 border border-accent/30 text-accent hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="p-2 rounded-xl bg-accent/14 border border-accent/30 text-accent hover:border-accent/60 hover:shadow-glow3d transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <RefreshCw size={11} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
@@ -1192,12 +1193,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {/* Location & carrier */}
         <div className="flex items-center gap-1.5 mt-2 flex-wrap">
           {o.ciudad && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/50 rounded-md px-2 py-1">
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 border border-border rounded-lg px-2 py-1">
               <MapPin size={9} className="text-muted-foreground/60" />{o.ciudad}
             </span>
           )}
           {o.transportadora && (
-            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary/50 rounded-md px-2 py-1">
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 border border-border rounded-lg px-2 py-1">
               <Truck size={9} className="text-muted-foreground/60" />{o.transportadora}
             </span>
           )}
@@ -1211,7 +1212,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {(() => {
           if (allTps.length === 0) {
             return (
-              <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/25">
+              <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-danger/14 text-danger border border-danger/30">
                 <PhoneIcon size={9} /> Sin contactar
               </div>
             );
@@ -1224,20 +1225,20 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
           let cls: string;
           let timeLabel: string;
           if (hoursAgo < 1) {
-            cls = 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25';
+            cls = 'bg-info/14 text-info border-info/30';
             timeLabel = `hace ${Math.max(1, Math.round(hoursAgo * 60))}min`;
           } else if (hoursAgo < 24) {
-            cls = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25';
+            cls = 'bg-success/14 text-success border-success/30';
             timeLabel = `hace ${Math.round(hoursAgo)}h`;
           } else if (hoursAgo < 72) {
-            cls = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25';
+            cls = 'bg-warning/14 text-warning border-warning/30';
             timeLabel = `hace ${Math.round(hoursAgo / 24)}d`;
           } else {
-            cls = 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25';
+            cls = 'bg-danger/14 text-danger border-danger/30';
             timeLabel = `hace ${Math.round(hoursAgo / 24)}d`;
           }
           return (
-            <div className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-md border ${cls}`}>
+            <div className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${cls}`}>
               <PhoneIcon size={9} />
               <span>{allTps.length} {allTps.length === 1 ? 'contacto' : 'contactos'}</span>
               <span className="opacity-60">·</span>
@@ -1256,7 +1257,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             puede rastrear (más útil que ocultar todo). */}
         {o.guia ? (
           <div className="mt-2.5 flex items-center gap-2">
-            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
+            <div className="flex flex-1 min-w-0 items-center gap-1.5 rounded-xl bg-muted/50 border border-border px-2.5 py-1.5 font-mono tabular-nums text-[10px] text-muted-foreground">
               <Tag size={10} className="text-muted-foreground/70 flex-shrink-0" aria-hidden="true" />
               <span className="truncate">{o.guia}</span>
               <button
@@ -1274,7 +1275,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                 rel="noopener noreferrer"
                 onClick={e => { e.stopPropagation(); void copyToClipboard(o.guia, 'Guía copiada'); }}
                 aria-label={`Rastrear guía ${o.guia} en ${o.transportadora}`}
-                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-accent border-2 border-accent px-3 h-9 text-xs font-bold text-accent-foreground shadow-sm transition-colors duration-200 hover:bg-accent/85 hover:border-accent/85 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none no-underline cursor-pointer"
+                className="btn-accent-3d inline-flex flex-shrink-0 items-center gap-1.5 rounded-xl px-4 h-9 text-xs font-semibold focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card focus-visible:outline-none no-underline cursor-pointer"
               >
                 <ExternalLink size={13} aria-hidden="true" />
                 <span>Rastrear</span>
@@ -1305,14 +1306,14 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
         {/* Delay warning — collapsed to 2 tones so it doesn't fight the column tone */}
         {isDelayed && !isExcludedFromDelay(o.estado) && (
-          <div className={`mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 border ${
+          <div className={`mt-2.5 flex items-center gap-2 rounded-xl px-3 py-2 border ${
             diasEnEstatus >= 5
-              ? 'bg-red-500/10 border-red-500/25'
-              : 'bg-orange-500/10 border-orange-500/25'
+              ? 'bg-danger/12 border-danger/30'
+              : 'bg-warning/12 border-warning/30'
           }`}>
-            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-red-500' : 'text-orange-500'} />
-            <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-red-500' : 'text-orange-500'}`}>
-              {diasEnEstatus}d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
+            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'} />
+            <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'}`}>
+              <span className="font-mono tabular-nums">{diasEnEstatus}</span>d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
           </div>
         )}
@@ -1320,10 +1321,10 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {/* Alert badge */}
         {alert && alert.level !== 'ok' && alert.level !== 'watch' && (
           <div className="mt-2">
-            <span className={`inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md border ${
+            <span className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
               alert.level === 'lost' ? 'bg-muted/60 text-muted-foreground border-border' :
-              alert.level === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/25' :
-              'bg-orange-500/10 text-orange-500 border-orange-500/25'
+              alert.level === 'critical' ? 'bg-danger/14 text-danger border-danger/30' :
+              'bg-warning/14 text-warning border-warning/30'
             }`}>
               {alert.label}
             </span>
@@ -1333,7 +1334,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {/* Managed badge */}
         {managed && (
           <div className="mt-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-500 border border-emerald-500/25">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 text-success border border-success/30">
               <CheckCircle size={10} /> {managed}
             </span>
           </div>
@@ -1346,7 +1347,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="border-t border-border/40 overflow-hidden">
-            <div className="px-3.5 py-3.5 space-y-3 bg-secondary/30">
+            <div className="px-3.5 py-3.5 space-y-3 bg-card/30">
               {/* Info grid */}
               <div className="grid grid-cols-2 gap-2">
                 {([
@@ -1355,8 +1356,8 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   { label: 'Dirección', value: o.direccion || '—', maxChars: 35 },
                   { label: 'Departamento', value: o.departamento || '—', maxChars: null },
                 ] as const).map(d => (
-                  <div key={d.label} className="bg-card rounded-lg p-2.5 border border-border/30">
-                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider font-medium">{d.label}</div>
+                  <div key={d.label} className="bg-card/40 rounded-xl p-2.5 border border-border hover:border-border-strong transition-colors">
+                    <div className="hud-label">{d.label}</div>
                     {d.maxChars ? (
                       <TruncatedText
                         text={d.value}
@@ -1364,7 +1365,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                         className="block text-[11px] font-semibold text-foreground mt-0.5"
                       />
                     ) : (
-                      <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate">{d.value}</div>
+                      <div className={`text-[11px] font-semibold text-foreground mt-0.5 truncate ${d.label === 'Valor' ? 'font-mono tabular-nums' : ''}`}>{d.value}</div>
                     )}
                   </div>
                 ))}
@@ -1372,8 +1373,8 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
               {/* Novedad */}
               {o.novedad && (
-                <div className="flex items-start gap-2 bg-orange-500/10 border border-orange-500/25 rounded-lg px-3 py-2">
-                  <AlertTriangle size={12} className="text-orange-500 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-2 bg-warning/12 border border-warning/30 rounded-xl px-3 py-2">
+                  <AlertTriangle size={12} className="text-warning mt-0.5 flex-shrink-0" />
                   <TruncatedText
                     text={o.novedad}
                     maxChars={100}
@@ -1385,14 +1386,14 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {/* History */}
               {tps.length > 0 && (
                 <div>
-                  <h4 className="text-[10px] font-semibold text-muted-foreground mb-2 inline-flex items-center gap-1 uppercase tracking-wider">
+                  <h4 className="hud-label mb-2 inline-flex items-center gap-1">
                     <MessageSquare size={10} /> Historial ({tps.length})
                   </h4>
                   <div className="space-y-1 max-h-28 overflow-y-auto">
                     {tps.slice(0, 5).map(tp => (
-                      <div key={tp.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-card border border-border/20 text-[10px]">
-                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <User size={9} className="text-primary/70" />
+                      <div key={tp.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors text-[10px]">
+                        <div className="w-5 h-5 rounded-full bg-accent/14 border border-accent/30 flex items-center justify-center flex-shrink-0">
+                          <User size={9} className="text-accent" />
                         </div>
                         <span className="font-semibold text-foreground">{getOperatorName(tp.operator_id)}</span>
                         <span className="text-muted-foreground truncate">{tp.action.replace(/^(SEG|RESCUE): ?/, '')}</span>
@@ -1408,9 +1409,9 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               {/* Aviso informativo si otra operadora ya gestionó el pedido.
                   NO bloquea — pool compartido: cualquiera puede continuarlo. */}
               {isOtherOwner && (
-                <div className="flex items-center gap-2 rounded-lg px-3 py-2 border bg-amber-500/10 border-amber-500/25">
-                  <User size={12} className="text-amber-600 dark:text-amber-400" />
-                  <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                <div className="flex items-center gap-2 rounded-xl px-3 py-2 border bg-warning/12 border-warning/30">
+                  <User size={12} className="text-warning" />
+                  <span className="text-[11px] font-semibold text-warning">
                     Gestionado por {ownerName} — puedes continuarlo
                   </span>
                 </div>
@@ -1423,12 +1424,12 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   <button
                     type="button"
                     onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                    className="flex-1 text-[11px] py-2.5 rounded-lg bg-[#25D366] text-white font-semibold hover:bg-[#1ebe5b] inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]">
+                    className="flex-1 text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success">
                     <Send size={12} /> WhatsApp
                   </button>
                 )}
                 <a href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-                  className="flex-1 text-[11px] py-2.5 rounded-lg bg-secondary text-foreground font-semibold hover:bg-secondary/80 no-underline inline-flex items-center justify-center gap-1.5 border border-border/50 transition-colors">
+                  className="flex-1 text-[11px] py-2.5 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong no-underline inline-flex items-center justify-center gap-1.5 border border-border transition-colors">
                   <PhoneIcon size={12} /> Llamar
                 </a>
               </div>

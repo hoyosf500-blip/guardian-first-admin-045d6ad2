@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { ClipboardList, Download, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
 interface ReportRow {
@@ -109,11 +110,13 @@ export default function ReportsTable() {
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-      className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2"
-    >
+      className="md:col-span-2">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ClipboardList size={16} className="text-primary" />
+          <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <ClipboardList size={15} />
+          </span>
           <div>
             <h3 className="text-sm font-semibold text-foreground">Reportes Diarios</h3>
             <p className="text-xs text-muted-foreground mt-0.5">{rows.length} registros (apertura + cierre)</p>
@@ -122,7 +125,7 @@ export default function ReportsTable() {
         <button
           onClick={exportCsv}
           disabled={rows.length === 0}
-          className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-1.5 hover:bg-secondary/80 transition-colors disabled:opacity-50"
+          className="h-8 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
         >
           <Download size={12} /> CSV
         </button>
@@ -138,7 +141,7 @@ export default function ReportsTable() {
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-muted/50 text-muted-foreground text-[10px] uppercase tracking-wider">
+              <tr className="bg-card/40 border-b border-border text-muted-foreground text-[10px] uppercase tracking-[0.2em] font-mono">
                 <th className="px-2 py-2 font-semibold">Fecha</th>
                 <th className="px-2 py-2 font-semibold">Tipo</th>
                 <th className="px-2 py-2 font-semibold">Hora</th>
@@ -197,6 +200,7 @@ export default function ReportsTable() {
           </table>
         </div>
       )}
+    </TiltCard>
     </motion.div>
   );
 }

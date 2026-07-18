@@ -9,6 +9,7 @@ import {
   type TcCard,
 } from '@/hooks/useTcDebtSnapshots';
 import { formatCOP } from '@/lib/utils';
+import { TiltCard } from '@/components/ui3d';
 
 // ─────────────────────────────────────────────────────────────────
 // /cfo → bloque "Deuda TC"
@@ -32,10 +33,10 @@ const CARD_LABELS: Record<TcCard, { label: string; sublabel: string }> = {
 interface DebtTone { border: string; bg: string; text: string; bar: string; }
 
 const TONE: Record<'success' | 'warning' | 'danger' | 'muted', DebtTone> = {
-  success: { border: 'border-green/40',  bg: 'bg-green/5',  text: 'text-green',  bar: 'bg-green' },
-  warning: { border: 'border-orange/40', bg: 'bg-orange/5', text: 'text-orange', bar: 'bg-orange' },
-  danger:  { border: 'border-red/40',    bg: 'bg-red/5',    text: 'text-red',    bar: 'bg-red' },
-  muted:   { border: 'border-border',    bg: 'bg-card',     text: 'text-muted-foreground', bar: 'bg-muted' },
+  success: { border: 'border-success/28', bg: 'bg-success/[0.07]', text: 'text-success', bar: 'bg-success' },
+  warning: { border: 'border-warning/28', bg: 'bg-warning/[0.07]', text: 'text-warning', bar: 'bg-warning' },
+  danger:  { border: 'border-danger/28',  bg: 'bg-danger/[0.07]',  text: 'text-danger',  bar: 'bg-danger' },
+  muted:   { border: 'border-border',     bg: 'bg-card/40',        text: 'text-muted-foreground', bar: 'bg-muted' },
 };
 
 function toneFor(pct: number): 'success' | 'warning' | 'danger' {
@@ -77,7 +78,7 @@ export default function CfoDebtTracker() {
 
   if (isLoading) {
     return (
-      <section className="rounded-xl border border-border bg-card p-5">
+      <section className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={14} className="animate-spin" />
           Cargando deuda TC…
@@ -88,8 +89,9 @@ export default function CfoDebtTracker() {
 
   if (isError) {
     return (
-      <section className="rounded-xl border border-red/40 bg-red/5 p-4">
-        <div className="flex items-start gap-2 text-sm text-red">
+      <section className="relative rounded-2xl border border-danger/30 bg-danger/[0.07] p-4 pl-5 shadow-card3d">
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+        <div className="flex items-start gap-2 text-sm text-danger">
           <AlertCircle size={14} className="shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold">No pude leer la deuda TC.</span>{' '}
@@ -105,8 +107,9 @@ export default function CfoDebtTracker() {
 
   if (!snaps || snaps.length === 0) {
     return (
-      <section className="rounded-xl border border-orange/30 bg-orange/5 p-4 flex items-start gap-3">
-        <AlertCircle size={16} className="text-orange shrink-0 mt-0.5" />
+      <section className="relative rounded-2xl border border-warning/30 bg-warning/[0.07] p-4 pl-5 shadow-card3d flex items-start gap-3">
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+        <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
         <div className="text-xs text-foreground/90">
           <span className="font-semibold">Sin snapshots de deuda cargados.</span>
           <span className="text-muted-foreground"> — ejecutá la migration <code>20260505260000_tc_debt_snapshots.sql</code> que ya trae los seeds históricos.</span>
@@ -117,17 +120,19 @@ export default function CfoDebtTracker() {
 
   return (
     <section className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <CreditCard size={14} className="text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">Deuda Tarjetas de Crédito</h3>
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <CreditCard size={14} />
+          </span>
+          <h3 className="text-sm font-semibold text-foreground truncate">Deuda Tarjetas de Crédito</h3>
         </div>
-        <div className="text-right">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Deuda total HOY</div>
-          <div className="text-xl font-bold tabular-nums text-red">{formatCOP(totalGlobal.total)}</div>
+        <div className="text-right shrink-0">
+          <div className="hud-label text-muted-foreground">Deuda total HOY</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-danger">{formatCOP(totalGlobal.total)}</div>
           {totalGlobal.usdTotal > 0 && (
-            <div className="text-[10px] text-muted-foreground tabular-nums">
-              de los cuales <span className="text-red font-semibold">US$ {totalGlobal.usdTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span> en USD diferida
+            <div className="text-[10px] font-mono text-muted-foreground tabular-nums">
+              de los cuales <span className="text-danger font-semibold">US$ {totalGlobal.usdTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span> en USD diferida
             </div>
           )}
         </div>
@@ -144,7 +149,7 @@ interface CardBlockProps { card: TcCard; history: TcDebtSnapshot[]; }
 function CardBlock({ card, history }: CardBlockProps) {
   if (history.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-foreground">{CARD_LABELS[card].label}</div>
@@ -178,17 +183,17 @@ function CardBlock({ card, history }: CardBlockProps) {
   const usdShare = currentCop > 0 ? Math.min(1, Math.max(0, usdCop / currentCop)) : 0;
 
   return (
-    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-4 space-y-3`}>
+    <TiltCard className={`rounded-2xl border ${tone.border} ${tone.bg} p-5 shadow-card3d space-y-3`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-foreground">{CARD_LABELS[card].label}</div>
           <div className="text-[11px] text-muted-foreground">{CARD_LABELS[card].sublabel}</div>
         </div>
         <div className="text-right shrink-0">
-          <div className={`text-xl font-bold tabular-nums ${tone.text}`}>
+          <div className={`text-2xl font-bold font-mono tabular-nums ${tone.text}`}>
             {formatCOP(currentCop)}
           </div>
-          <div className="text-[10px] text-muted-foreground">
+          <div className="text-[10px] font-mono tabular-nums text-muted-foreground">
             al {fmtFecha(current.fecha_corte)}
           </div>
         </div>
@@ -199,21 +204,21 @@ function CardBlock({ card, history }: CardBlockProps) {
         <div>
           <div className="flex items-baseline justify-between mb-1">
             <span className="text-[11px] text-muted-foreground">Cupo usado</span>
-            <span className={`text-xs font-bold tabular-nums ${tone.text}`}>
+            <span className={`text-xs font-bold font-mono tabular-nums ${tone.text}`}>
               {fmtPct01(cupoPct)}
               <span className="text-muted-foreground font-normal ml-1.5">
                 de {formatCOP(current.cupo_cop)}
               </span>
             </span>
           </div>
-          <div className="h-2.5 rounded-full bg-muted/30 overflow-hidden relative">
+          <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden relative">
             <div
-              className={`absolute inset-y-0 left-0 ${tone.bar}`}
+              className={`absolute inset-y-0 left-0 rounded-full ${tone.bar}`}
               style={{ width: `${cupoPct * 100}%` }}
             />
             {usdShare > 0 && (
               <div
-                className="absolute inset-y-0 left-0 bg-red/60"
+                className="absolute inset-y-0 left-0 rounded-full bg-danger/60"
                 style={{ width: `${cupoPct * usdShare * 100}%` }}
                 title="Porción en USD diferida"
               />
@@ -234,13 +239,13 @@ function CardBlock({ card, history }: CardBlockProps) {
 
       {/* Métricas: COP vs USD diferida */}
       <div className="grid grid-cols-2 gap-2 pt-1">
-        <div className="rounded-lg border border-border bg-card/50 p-2">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo COP</div>
-          <div className="text-sm font-bold tabular-nums text-foreground">{formatCOP(current.saldo_cop)}</div>
+        <div className="rounded-xl border border-border bg-card/40 p-2.5 hover:border-border-strong transition-colors">
+          <div className="hud-label text-muted-foreground">Saldo COP</div>
+          <div className="text-sm font-bold font-mono tabular-nums text-foreground mt-1">{formatCOP(current.saldo_cop)}</div>
         </div>
-        <div className="rounded-lg border border-border bg-card/50 p-2">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Saldo USD diferido</div>
-          <div className={`text-sm font-bold tabular-nums ${current.saldo_usd > 0 ? 'text-red' : 'text-foreground'}`}>
+        <div className="rounded-xl border border-border bg-card/40 p-2.5 hover:border-border-strong transition-colors">
+          <div className="hud-label text-muted-foreground">Saldo USD diferido</div>
+          <div className={`text-sm font-bold font-mono tabular-nums mt-1 ${current.saldo_usd > 0 ? 'text-danger' : 'text-foreground'}`}>
             {current.saldo_usd > 0
               ? `US$ ${current.saldo_usd.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
               : '—'}
@@ -283,9 +288,9 @@ function CardBlock({ card, history }: CardBlockProps) {
             })}
           </div>
           {deltaPct !== null && (
-            <div className={`mt-2 text-[11px] inline-flex items-center gap-1 ${subio ? 'text-red' : 'text-green'}`}>
+            <div className={`mt-2 text-[11px] inline-flex items-center gap-1 ${subio ? 'text-danger' : 'text-success'}`}>
               <TrendingDown size={11} className={subio ? 'rotate-180' : ''} />
-              <span className="font-mono">{subio ? '+' : ''}{deltaPct}%</span>
+              <span className="font-mono tabular-nums">{subio ? '+' : ''}{deltaPct}%</span>
               <span className="text-muted-foreground">
                 desde {fmtFecha(earliest.fecha_corte)} ({formatCOP(earliestCop)} → {formatCOP(currentCop)})
               </span>
@@ -294,7 +299,7 @@ function CardBlock({ card, history }: CardBlockProps) {
           {previous && (
             <div className="text-[10px] text-muted-foreground mt-1">
               Vs corte anterior ({fmtFecha(previous.fecha_corte)}, {formatCOP(previousCop)}):{' '}
-              <span className={currentCop > previousCop ? 'text-red font-semibold' : 'text-green font-semibold'}>
+              <span className={currentCop > previousCop ? 'text-danger font-semibold font-mono tabular-nums' : 'text-success font-semibold font-mono tabular-nums'}>
                 {currentCop > previousCop ? '+' : ''}{formatCOP(currentCop - previousCop)}
               </span>
             </div>
@@ -311,6 +316,6 @@ function CardBlock({ card, history }: CardBlockProps) {
           <div className="text-[11px] text-foreground/80 leading-relaxed">{current.notas}</div>
         </div>
       )}
-    </div>
+    </TiltCard>
   );
 }

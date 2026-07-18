@@ -60,10 +60,10 @@ function Cell({ ind }: { ind: Indicator }) {
           {veredictoLabel(ind.color)}
         </span>
       </div>
-      <div className={`text-2xl font-bold tabular-nums leading-none ${VALUE_CLASS[ind.color]}`}>
+      <div className={`text-2xl font-bold font-mono tabular-nums leading-none ${VALUE_CLASS[ind.color]}`}>
         {ind.display}
       </div>
-      <div className="text-[11px] text-muted-foreground">{ind.ref}</div>
+      <div className="text-[11px] text-muted-foreground font-mono tabular-nums">{ind.ref}</div>
       <div className="text-[11px] text-muted-foreground leading-snug">{ind.hint}</div>
     </div>
   );
@@ -192,10 +192,12 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
   }, [finQuery.data, pautaTotal]);
 
   return (
-    <div className="card-elevated p-5">
+    <div className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d hairline-top">
       <header className="flex items-center gap-2 mb-1">
-        <Activity size={15} className="text-accent" aria-hidden="true" />
-        <h3 className="text-sm font-bold tracking-tight uppercase tracking-[0.06em]">
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0" aria-hidden="true">
+          <Activity size={15} />
+        </span>
+        <h3 className="text-sm font-bold tracking-tight text-foreground">
           Semáforo de salud financiera
         </h3>
       </header>
@@ -204,6 +206,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
       </p>
 
       {finQuery.isLoading ? (
+        // Skeleton con rounded-lg = el MISMO radio que la celda real (línea 54).
+        // Con rounded-2xl las 6 cajas cambiaban de forma al terminar de cargar:
+        // un salto visual, justo lo que la regla de arriba pide evitar.
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
@@ -214,6 +219,8 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           ))}
         </div>
       ) : finQuery.isError || !indicators ? (
+        // bg-muted/20, no bg-card/40: el contenedor padre (línea 195) ya es
+        // bg-card/40 y el mensaje quedaba sin contraste contra su fondo.
         <div className="rounded-lg border border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
           Sin datos financieros en este período.
         </div>

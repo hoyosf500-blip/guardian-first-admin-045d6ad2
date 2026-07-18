@@ -204,7 +204,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const estadoDetalleTotal = estadoDetalle.reduce((a, r) => a + r.pedidos, 0);
 
   return (
-    <section className="rounded-2xl border border-accent/30 bg-gradient-to-b from-accent/[0.08] to-card overflow-hidden shadow-glow">
+    <section className="relative rounded-3xl border border-border bg-card/40 overflow-hidden shadow-card3d-lg hairline-top">
+      {/* Sin corner-brackets: se posicionan a 14px del borde y aquí caerían
+          justo encima del ícono y del botón Sincronizar del header. */}
+      <span className="sheen animate-gb-sheen" aria-hidden="true" />
       {/* Header */}
       <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
@@ -215,7 +218,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[11px] text-muted-foreground">
-            {resumen.generadoTotal.toLocaleString('es-CO')} pedidos generados
+            <span className="font-mono tabular-nums">{resumen.generadoTotal.toLocaleString('es-CO')}</span> pedidos generados
           </span>
           <OrdersSyncBadge size="sm" />
           <NightlyCheckBadge size="sm" />
@@ -234,15 +237,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
       </header>
 
       {/* ── Pedidos en la calle (lo que falta cerrar) — lo primero que mira el dueño ── */}
-      <div className="px-5 py-4 border-b border-border bg-accent/5 flex items-center gap-2.5">
-        <ArrowRight size={18} className="text-accent shrink-0" />
+      <div className="px-5 py-5 border-b border-border bg-accent/5 flex items-center gap-3">
+        <span className="w-10 h-10 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+          <ArrowRight size={18} />
+        </span>
         <div className="min-w-0">
-          <div className="text-2xl font-bold tabular-nums text-accent leading-tight num-glow-accent">
+          <div className="text-[38px] font-bold font-mono tabular-nums text-accent leading-none num-glow-accent">
+            {/* Sin <CountUp/>: formatea con toFixed y perdería el separador de
+                miles es-CO ("1.284" → "1284"). */}
             {enLaCalleCount.toLocaleString('es-CO')}
-            <span className="text-sm font-medium text-muted-foreground ml-1.5">pedidos en la calle</span>
+            <span className="text-sm font-sans font-medium text-muted-foreground ml-2">pedidos en la calle</span>
           </div>
-          <div className="text-[11px] text-muted-foreground">
-            {formatCOP(enLaCalleValor)} por definir · falta cerrar (sin contar entregados / devueltos / cancelados)
+          <div className="text-[11px] text-muted-foreground mt-2">
+            <span className="font-mono tabular-nums">{formatCOP(enLaCalleValor)}</span> por definir · falta cerrar (sin contar entregados / devueltos / cancelados)
           </div>
         </div>
       </div>
@@ -311,7 +318,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-border">
         {/* ── Bloque A — Embudo por estado ─────────────────────────── */}
         <div className="p-5 space-y-3">
-          <h4 className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+          <h4 className="hud-label">
             Embudo del mes · por estado
           </h4>
           <div className="space-y-2.5">
@@ -324,7 +331,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
                       <span className="text-[10px] text-muted-foreground ml-2">{b.sublabel}</span>
                     )}
                   </div>
-                  <div className="flex items-baseline gap-2 shrink-0 tabular-nums">
+                  <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
                     <span className="text-sm font-bold text-foreground">{b.count}</span>
                     <span className="text-[10px] text-muted-foreground w-9 text-right">
                       {b.pct.toFixed(0)}%
@@ -334,7 +341,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
                     </span>
                   </div>
                 </div>
-                <div className="h-2 rounded-full bg-muted/30 overflow-hidden">
+                <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                   <div
                     className="h-full rounded-full"
                     style={{
@@ -350,12 +357,12 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
         {/* ── Bloque B — Conciliación de plata ──────────────────────── */}
         <div className="p-5 space-y-4">
-          <h4 className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+          <h4 className="hud-label">
             Conciliación · de lo generado a lo real
           </h4>
 
           {/* Cascada: valor generado − fugas = realizado */}
-          <div className="rounded-lg border border-border bg-muted/10 divide-y divide-border text-sm">
+          <div className="rounded-2xl border border-border bg-card/40 shadow-card3d divide-y divide-border text-sm overflow-hidden">
             <WaterfallRow label="Valor generado (con cancelados)" value={resumen.valorGenerado} tone="base" />
             {valorPreparacion > 0 && (
               <WaterfallRow label="En preparación" value={-valorPreparacion} tone="muted" />
@@ -375,11 +382,11 @@ export default function MesActualResumen({ summary, filters }: Props) {
           </div>
 
           {/* Wallet REAL */}
-          <div className={`rounded-lg border p-3.5 space-y-2.5 ${walletStale ? 'border-warning/40 bg-warning/5' : 'border-border bg-card'}`}>
+          <div className={`rounded-2xl border p-4 space-y-2.5 shadow-card3d ${walletStale ? 'border-warning/40 bg-warning/8' : 'border-border bg-card/40'}`}>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Wallet size={13} className="text-accent" />
-                <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                <span className="hud-label">
                   Wallet REAL
                 </span>
               </div>
@@ -404,13 +411,13 @@ export default function MesActualResumen({ summary, filters }: Props) {
                       Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · por fecha de pago (mezcla meses)
                     </span>
                   </span>
-                  <span className={`text-base font-bold tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
+                  <span className={`text-base font-bold font-mono tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
                     {formatCOP(gananciaNeta)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5 mt-2.5">
                   <span className="text-xs text-foreground font-medium">Saldo disponible hoy</span>
-                  <span className="text-base font-bold tabular-nums text-foreground shrink-0">
+                  <span className="text-base font-bold font-mono tabular-nums text-foreground shrink-0">
                     {saldoActual != null ? formatCOP(saldoActual) : '—'}
                   </span>
                 </div>
@@ -460,19 +467,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
         <div className="border-t border-border px-5 py-5">
           <details className="group">
             <summary className="flex items-center gap-2 cursor-pointer list-none select-none">
-              <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+              <span className="hud-label">
                 Detalle por estado · tabla dinámica
               </span>
               <span className="text-[10px] text-muted-foreground group-open:hidden">▸ ver todos</span>
               <span className="text-[10px] text-muted-foreground hidden group-open:inline">▾ ocultar</span>
-              <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+              <span className="ml-auto text-[10px] text-muted-foreground font-mono tabular-nums">
                 {estadoDetalle.length} estados · {estadoDetalleTotal.toLocaleString('es-CO')} pedidos
               </span>
             </summary>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full text-xs tabular-nums">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground border-b border-border">
+                  <tr className="hud-label border-b border-border">
                     <th className="text-left font-semibold py-1.5">Estado</th>
                     <th className="text-right font-semibold py-1.5">Pedidos</th>
                     <th className="text-right font-semibold py-1.5 w-16">%</th>
@@ -481,10 +488,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
                 </thead>
                 <tbody>
                   {estadoDetalle.map((r) => (
-                    <tr key={r.estado} className="border-b border-border/40">
+                    <tr key={r.estado} className="border-b border-border/40 hover:bg-foreground/[0.03] transition-colors">
                       <td className="text-left py-1.5 text-foreground/90">{r.estado}</td>
-                      <td className="text-right py-1.5 font-semibold text-foreground">{r.pedidos.toLocaleString('es-CO')}</td>
-                      <td className="text-right py-1.5 text-muted-foreground">
+                      <td className="text-right py-1.5 font-mono font-semibold text-foreground">{r.pedidos.toLocaleString('es-CO')}</td>
+                      <td className="text-right py-1.5 font-mono text-muted-foreground">
                         {estadoDetalleTotal > 0 ? ((r.pedidos / estadoDetalleTotal) * 100).toFixed(1) : '0.0'}%
                       </td>
                       <td className="text-right py-1.5 font-mono text-muted-foreground">{formatCOP(r.valor)}</td>
@@ -494,8 +501,8 @@ export default function MesActualResumen({ summary, filters }: Props) {
                 <tfoot>
                   <tr className="border-t border-border font-semibold text-foreground">
                     <td className="text-left py-1.5">Total</td>
-                    <td className="text-right py-1.5">{estadoDetalleTotal.toLocaleString('es-CO')}</td>
-                    <td className="text-right py-1.5">100%</td>
+                    <td className="text-right py-1.5 font-mono">{estadoDetalleTotal.toLocaleString('es-CO')}</td>
+                    <td className="text-right py-1.5 font-mono">100%</td>
                     <td className="text-right py-1.5 font-mono">{formatCOP(resumen.valorGenerado)}</td>
                   </tr>
                 </tfoot>

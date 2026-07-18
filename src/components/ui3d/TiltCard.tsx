@@ -29,14 +29,14 @@ export default function TiltCard({
   children, className = '', perspective = 900, wrapperClassName = '',
   sheen = false, brackets = false,
 }: TiltCardProps) {
-  const { enabled, rotation, tiltProps } = useTilt();
+  const { enabled, ref, tiltProps } = useTilt();
 
   return (
     <div className={wrapperClassName} style={{ perspective: `${perspective}px` }}>
       <div
-        {...tiltProps}
+        ref={ref}
+        {...(enabled ? tiltProps : {})}
         className={`tilt-3d hairline-top relative overflow-hidden ${className}`}
-        style={enabled ? { transform: `rotateX(${rotation.rx}deg) rotateY(${rotation.ry}deg)` } : undefined}
       >
         {brackets && (
           <>

@@ -3,6 +3,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { useWaQuickReplies } from '@/hooks/useWaQuickReplies';
 import { Zap, Plus, Save, Trash2, X, Loader2, Pencil } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
@@ -55,9 +56,12 @@ export default function WaQuickRepliesPanel() {
   }
 
   return (
-    <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden">
+    <motion.div {...fadeUp} className="">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <Zap size={16} className="text-accent" />
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Zap size={15} />
+        </span>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Respuestas rápidas · {activeStore?.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -77,7 +81,7 @@ export default function WaQuickRepliesPanel() {
             </div>
           ) : (
             items.map((q) => (
-              <div key={q.id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-background px-4 py-2.5">
+              <div key={q.id} className="flex items-start justify-between gap-3 rounded-xl border border-border bg-card/40 px-4 py-2.5">
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-foreground truncate">{q.label}</div>
                   <div className="text-[11px] text-muted-foreground line-clamp-2 whitespace-pre-wrap">{q.body}</div>
@@ -104,19 +108,19 @@ export default function WaQuickRepliesPanel() {
         </div>
 
         {/* Form alta/edición */}
-        <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+        <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
           <div className="text-sm font-medium text-foreground flex items-center gap-1.5">
             {editingId ? <><Pencil size={13} /> Editar respuesta</> : <><Plus size={13} /> Nueva respuesta</>}
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Etiqueta (título corto)</label>
+            <label className="hud-label">Etiqueta (título corto)</label>
             <input
               type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="Ej: Pedido en camino"
               className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Mensaje</label>
+            <label className="hud-label">Mensaje</label>
             <textarea
               value={body} onChange={e => setBody(e.target.value)} rows={3}
               placeholder="Ej: ¡Hola! Tu pedido ya va en camino 🚚. Apenas llegue a tu ciudad te lo entregan. ¿Te paso el link para rastrearlo?"
@@ -142,6 +146,7 @@ export default function WaQuickRepliesPanel() {
           </div>
         </div>
       </div>
+    </TiltCard>
     </motion.div>
   );
 }

@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, CheckCircle2, ExternalLink, Store as StoreIcon, Image as ImageIcon, ShoppingBag } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { TiltCard } from '@/components/ui3d';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -394,13 +395,16 @@ export default function StoreCredentialsPanel() {
   return (
     <>
       {/* Credenciales Dropi (POR TIENDA) */}
-      <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <Key size={16} className="text-primary" />
-          <div className="flex-1">
+      <motion.div {...fadeUp} className="md:col-span-2">
+      <TiltCard sheen brackets className="bg-card/40 border border-border rounded-3xl shadow-card3d-lg">
+        <div className="px-6 py-5 border-b border-border flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-xl bg-info/14 border border-info/30 text-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <Key size={15} />
+          </span>
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-foreground">Credenciales Dropi · {activeStore.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              País: <span className="font-medium text-foreground">{activeStore.country_code}</span> — cada tienda guarda sus propias credenciales.
+              País: <span className="font-medium text-foreground font-mono tabular-nums">{activeStore.country_code}</span> — cada tienda guarda sus propias credenciales.
             </p>
           </div>
         </div>
@@ -408,7 +412,7 @@ export default function StoreCredentialsPanel() {
         <div className="px-5 py-4 space-y-4">
           {/* API Key */}
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">API Key de Dropi (Bearer permanente)</label>
+            <label className="hud-label">API Key de Dropi (Bearer permanente)</label>
             <div className="mt-1 flex gap-2">
               <div className="relative flex-1">
                 <input
@@ -416,7 +420,7 @@ export default function StoreCredentialsPanel() {
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
                   placeholder="eyJ0eXAi..."
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowApi(!showApi)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showApi ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -426,7 +430,7 @@ export default function StoreCredentialsPanel() {
           </div>
           {/* Session token */}
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Token de sesión (JWT — para wallet & huella)</label>
+            <label className="hud-label">Token de sesión (JWT — para wallet & huella)</label>
             <div className="mt-1 flex gap-2">
               <div className="relative flex-1">
                 <input
@@ -434,7 +438,7 @@ export default function StoreCredentialsPanel() {
                   value={sessionToken}
                   onChange={e => setSessionToken(e.target.value)}
                   placeholder="eyJhbGci... (vence ~12-24h)"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowSession(!showSession)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showSession ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -476,7 +480,7 @@ export default function StoreCredentialsPanel() {
 
           {/* Login automático: renueva el session token solo cuando vence */}
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <label className="hud-label">
               Login automático (renueva el token solo)
             </label>
             <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -486,7 +490,7 @@ export default function StoreCredentialsPanel() {
                 onChange={e => setLoginEmail(e.target.value)}
                 placeholder="email de app.dropi…"
                 autoComplete="off"
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
               />
               <div className="relative">
                 <input
@@ -495,7 +499,7 @@ export default function StoreCredentialsPanel() {
                   onChange={e => setLoginPassword(e.target.value)}
                   placeholder={hasLoginPassword ? '•••••• (guardada — escribí para cambiarla)' : 'contraseña de Dropi'}
                   autoComplete="new-password"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showLoginPass ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -523,7 +527,7 @@ export default function StoreCredentialsPanel() {
               <button
                 onClick={saveLogin}
                 disabled={savingLogin || loginColsMissing || (loginEmail.trim() === savedLoginEmail && !loginPassword)}
-                className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="h-8 px-3 btn-accent-3d rounded-xl text-xs font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {savingLogin ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                 Guardar login
@@ -532,13 +536,13 @@ export default function StoreCredentialsPanel() {
           </div>
           {/* Store URL */}
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">URL de integración Dropi</label>
+            <label className="hud-label">URL de integración Dropi</label>
             <input
               type="url"
               value={storeUrl}
               onChange={e => setStoreUrl(e.target.value)}
               placeholder="https://rushmira.com/"
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
 
@@ -549,13 +553,13 @@ export default function StoreCredentialsPanel() {
             <div className="flex gap-2">
               {savedApiKey && (
                 <button onClick={testConnection} disabled={testing}
-                  className="h-9 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50">
+                  className="h-9 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50">
                   {testing ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-success" /> : testResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Wifi size={12} />}
                   {testing ? 'Probando…' : testResult === 'ok' ? 'Conexión OK' : testResult === 'fail' ? 'Falló' : 'Probar conexión'}
                 </button>
               )}
               <button onClick={saveCreds} disabled={savingCreds || !credsDirty}
-                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                className="h-9 px-4 btn-accent-3d rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingCreds ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Guardar credenciales
               </button>
@@ -567,44 +571,49 @@ export default function StoreCredentialsPanel() {
             </div>
           )}
           {testResult === 'fail' && testDetail && (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive flex items-start gap-2">
+            <div className="relative rounded-2xl border border-border bg-card/40 px-3 py-2 pl-4 text-xs text-danger flex items-start gap-2 shadow-card3d">
+              <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-danger" aria-hidden="true" />
               <WifiOff size={13} className="mt-0.5 flex-shrink-0" />
               <span className="break-words">Dropi rechazó la conexión: {testDetail}</span>
             </div>
           )}
         </div>
+      </TiltCard>
       </motion.div>
 
       {/* Shopify (POR TIENDA) — reconciliación anti-fuga */}
-      <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <ShoppingBag size={16} className="text-primary" />
-          <div className="flex-1">
+      <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="md:col-span-2">
+      <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+        <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-xl bg-success/14 border border-success/30 text-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <ShoppingBag size={15} />
+          </span>
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-foreground">Shopify · {activeStore.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               Conectá Shopify para detectar pedidos que NO pasaron a Dropi. En el <strong>Dev Dashboard</strong> de Shopify creá una app con permiso <code className="bg-muted px-1 rounded">read_orders</code> e instalala en la tienda; después pegá el <strong>Client ID</strong> y el <strong>Client Secret</strong> (<code className="bg-muted px-1 rounded">shpss_…</code>). El token se renueva solo.
             </p>
           </div>
-          {shopConfigured && <span className="text-xs text-success flex items-center gap-1"><CheckCircle2 size={12} /> Conectado</span>}
+          {shopConfigured && <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success"><CheckCircle2 size={11} /> Conectado</span>}
         </div>
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Dominio de la tienda</label>
+            <label className="hud-label">Dominio de la tienda</label>
             <input type="text" value={shopDomain} onChange={e => setShopDomain(e.target.value)} placeholder="mitienda.myshopify.com"
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Client ID</label>
+            <label className="hud-label">Client ID</label>
             <input type="text" value={shopClientId} onChange={e => setShopClientId(e.target.value)}
               placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : '367fca75556ab8cb…'}
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Client Secret (shpss_…)</label>
+            <label className="hud-label">Client Secret (shpss_…)</label>
             <div className="mt-1 relative">
               <input type={showShopSecret ? 'text' : 'password'} value={shopClientSecret} onChange={e => setShopClientSecret(e.target.value)}
                 placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : 'shpss_...'}
-                className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
               <button type="button" onClick={() => setShowShopSecret(!showShopSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 {showShopSecret ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
@@ -618,12 +627,12 @@ export default function StoreCredentialsPanel() {
             <div className="flex gap-2">
               {shopConfigured && (
                 <button onClick={testShopify} disabled={testingShop}
-                  className="h-9 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 disabled:opacity-50">
+                  className="h-9 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50">
                   {testingShop ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Probar
                 </button>
               )}
               <button onClick={saveShopify} disabled={savingShop || !shopDomain.trim() || !shopClientId.trim() || !shopClientSecret.trim()}
-                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
+                className="h-9 px-4 btn-accent-3d rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingShop ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Guardar Shopify
               </button>
             </div>
@@ -650,45 +659,50 @@ export default function StoreCredentialsPanel() {
             </div>
           )}
         </div>
+      </TiltCard>
       </motion.div>
 
       {/* Branding (POR TIENDA) */}
-      <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <StoreIcon size={16} className="text-primary" />
-          <div>
+      <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="md:col-span-2">
+      <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+        <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <StoreIcon size={15} />
+          </span>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground">Branding de la tienda</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Nombre y logo que aparecen en el sidebar.</p>
           </div>
         </div>
         <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Nombre</label>
+            <label className="hud-label">Nombre</label>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1"><ImageIcon size={10} /> URL del logo</label>
+            <label className="hud-label flex items-center gap-1"><ImageIcon size={10} /> URL del logo</label>
             <input
               type="url"
               value={logoUrl}
               onChange={e => setLogoUrl(e.target.value)}
               placeholder="https://..."
-              className="mt-1 w-full h-10 rounded-lg border border-border bg-background px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
           <div className="sm:col-span-2 flex justify-end">
             <button onClick={saveBrand} disabled={savingBrand || !brandDirty}
-              className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              className="h-9 px-4 btn-accent-3d rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
               {savingBrand ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
               Guardar branding
             </button>
           </div>
         </div>
+      </TiltCard>
       </motion.div>
     </>
   );

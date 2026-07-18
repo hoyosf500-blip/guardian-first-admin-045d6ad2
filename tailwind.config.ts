@@ -93,6 +93,12 @@ export default {
           DEFAULT: "hsl(var(--ai))",
           foreground: "hsl(var(--ai-foreground))",
         },
+        // Nivel intermedio warning→danger. NO usar `orange`/`yellow` para esto:
+        // son alias legacy con el mismo HSL que `warning`.
+        attention: {
+          DEFAULT: "hsl(var(--attention))",
+          foreground: "hsl(var(--attention-foreground))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

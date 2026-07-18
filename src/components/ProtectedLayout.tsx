@@ -218,7 +218,7 @@ function ProtectedLayoutInner() {
                     <>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-bold text-foreground leading-tight truncate">{brandName}</div>
-                        <div className="hud-label leading-tight">Panel COD</div>
+                        <div className="hud-label text-subtle leading-tight">Panel COD</div>
                       </div>
                       <button
                         onClick={() => setSidebarOpen(false)}

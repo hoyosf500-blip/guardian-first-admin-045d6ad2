@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { useStore } from '@/contexts/StoreContext';
 import { Package, Save, Loader2, Trash2, Plus, X, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 import DropiProductSearch from '@/components/DropiProductSearch';
 import type { DropiProductHit } from '@/hooks/usePushToDropi';
@@ -111,10 +112,13 @@ export default function ProductKnowledgePanel() {
   }
 
   return (
-    <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden">
+    <motion.div {...fadeUp} className="">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <BookOpen size={16} className="text-accent" />
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <BookOpen size={15} />
+        </span>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Conocimiento de productos (bot) · {activeStore?.name}</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -200,6 +204,7 @@ export default function ProductKnowledgePanel() {
           💡 <strong className="text-foreground">Cómo se combinan:</strong> la <strong className="text-foreground">personalidad y reglas generales</strong> viven en la pestaña <strong className="text-foreground">Bot WhatsApp</strong> (valen para todo); <strong className="text-foreground">acá</strong> va lo específico de cada producto. El bot junta las dos cosas y usa la ficha SOLO del producto que el cliente compró (lo cruza por el <strong>nombre</strong> de "coincide con"). Las reglas de seguridad (no inventar guía/estado) siguen activas siempre.
         </div>
       </div>
+    </TiltCard>
     </motion.div>
   );
 }
@@ -268,7 +273,7 @@ function ProductEditor({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+    <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
       <datalist id={dlistId}>
         {productNames.map((n) => <option key={n} value={n} />)}
       </datalist>
@@ -296,7 +301,7 @@ function ProductEditor({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Nombre del producto *</label>
+          <label className="hud-label">Nombre del producto *</label>
           <input
             type="text"
             value={label}
@@ -306,7 +311,7 @@ function ProductEditor({
           />
         </div>
         <div>
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Coincide con (nombre en los pedidos)</label>
+          <label className="hud-label">Coincide con (nombre en los pedidos)</label>
           <input
             type="text"
             list={dlistId}
@@ -320,7 +325,7 @@ function ProductEditor({
       </div>
 
       <div>
-        <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">¿Qué sabe el bot de este producto? — su mini-prompt *</label>
+        <label className="hud-label">¿Qué sabe el bot de este producto? — su mini-prompt *</label>
         <textarea
           value={knowledge}
           onChange={(e) => setKnowledge(e.target.value)}
@@ -337,7 +342,7 @@ function ProductEditor({
         <summary className="cursor-pointer text-muted-foreground select-none">Opciones avanzadas (ID de Dropi, imagen, activo)</summary>
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">ID de producto en Dropi (opcional)</label>
+            <label className="hud-label">ID de producto en Dropi (opcional)</label>
             <input
               inputMode="numeric"
               value={dropiId}
@@ -348,7 +353,7 @@ function ProductEditor({
             <p className="mt-1 text-[11px] text-muted-foreground">Para match exacto a futuro. Hoy se usa el nombre.</p>
           </div>
           <div>
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">URL de imagen (opcional)</label>
+            <label className="hud-label">URL de imagen (opcional)</label>
             <input
               type="text"
               value={imageUrl}

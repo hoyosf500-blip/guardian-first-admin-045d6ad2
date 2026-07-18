@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff } from 'lucide-react';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff, Users } from 'lucide-react';
+import { TiltCard } from '@/components/ui3d';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
@@ -189,13 +190,13 @@ export default function AdminTab() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Page header — patrón pro coherente con Logística/Rescate */}
-      <header className="space-y-1.5">
-        <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
+      <header className="space-y-1.5 min-w-0">
+        <div className="hud-label text-accent truncate">
           Panel · Admin
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-          <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
-            <Key size={18} strokeWidth={2.25} />
+        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+          <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <Key size={20} strokeWidth={2.25} />
           </span>
           Administración
         </h1>
@@ -205,7 +206,7 @@ export default function AdminTab() {
       </header>
 
       <Tabs defaultValue="config" className="w-full">
-        <TabsList className="mb-5">
+        <TabsList className="mb-5 inline-flex flex-wrap gap-2 h-auto bg-transparent p-0 justify-start rounded-none [&>*]:px-4 [&>*]:py-2 [&>*]:rounded-xl [&>*]:text-sm [&>*]:font-medium [&>*]:bg-card/40 [&>*]:border [&>*]:border-border [&>*]:text-muted-foreground [&>*:hover]:text-foreground [&>*:hover]:border-border-strong [&>*]:transition-colors [&>*[data-state=active]]:bg-accent/16 [&>*[data-state=active]]:border-accent/40 [&>*[data-state=active]]:text-accent [&>*[data-state=active]]:font-semibold [&>*[data-state=active]]:shadow-glow3d">
           <TabsTrigger value="config">Configuración</TabsTrigger>
           <TabsTrigger value="canales">Canales WhatsApp</TabsTrigger>
           <TabsTrigger value="bot">Bot WhatsApp</TabsTrigger>
@@ -241,23 +242,26 @@ export default function AdminTab() {
           <div>
 
       {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
-        <motion.div {...fadeUp} className="mb-5 rounded-xl border border-destructive/40 bg-destructive/10 p-4">
+        <motion.div {...fadeUp} className="relative mb-5 rounded-2xl border border-border bg-card/40 p-4 pl-5 shadow-card3d">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
           <div className="flex items-start gap-3">
-            <AlertTriangle size={18} className="text-destructive mt-0.5 flex-shrink-0" />
+            <span className="w-8 h-8 rounded-xl bg-danger/14 border border-danger/30 text-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <AlertTriangle size={15} />
+            </span>
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-semibold text-destructive">Sincronización fallida</h4>
-              <p className="text-xs text-destructive/80 mt-0.5 mb-2">
+              <h4 className="text-sm font-semibold text-danger">Sincronización fallida</h4>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-2">
                 {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length} error(es)/aviso(s) en las últimas 24 horas
               </p>
               <div className="space-y-1.5">
                 {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).map(sync => (
-                  <div key={sync.id} className="flex items-center justify-between gap-2 text-xs bg-destructive/5 rounded-lg px-3 py-2">
+                  <div key={sync.id} className="flex items-center justify-between gap-2 text-xs bg-card/40 rounded-xl px-3 py-2 border border-border hover:border-border-strong transition-colors">
                     <div className="min-w-0">
-                      <span className="text-muted-foreground">
+                      <span className="text-muted-foreground font-mono tabular-nums">
                         {format(new Date(sync.created_at), "d MMM, HH:mm", { locale: es })}
                       </span>
                       {sync.error_message && (
-                        <span className="ml-2 text-destructive truncate">{sync.error_message}</span>
+                        <span className="ml-2 text-danger truncate">{sync.error_message}</span>
                       )}
                     </div>
                     <button
@@ -276,7 +280,7 @@ export default function AdminTab() {
 
       {loading ? (
         <div className="space-y-3">
-          {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-xl skeleton-shimmer" />)}
+          {[1, 2, 3].map(i => <div key={i} className="h-16 rounded-2xl skeleton-shimmer" />)}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -298,13 +302,21 @@ export default function AdminTab() {
 
           {/* AI API Key — config GLOBAL (app_settings), solo admin de plataforma */}
           {isAdmin && (
-          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-              <Sparkles size={16} className="text-ai" />
-              <div>
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="md:col-span-2">
+          <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Sparkles size={15} />
+              </span>
+              <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-foreground">Clave API de IA (DashScope)</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Habilita guiones de llamada, sugerencias y perfiles de cliente con IA</p>
               </div>
+              {aiKeySaved && (
+                <span className="ml-auto flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
+                  CONFIGURADA
+                </span>
+              )}
             </div>
             <div className="px-5 py-4 flex gap-3 items-center">
               <div className="relative flex-1">
@@ -313,7 +325,7 @@ export default function AdminTab() {
                   value={aiKey}
                   onChange={e => setAiKey(e.target.value)}
                   placeholder="Pega aquí tu clave de DashScope (sk-...)"
-                  className="w-full h-10 rounded-lg border border-border bg-background px-3 pr-10 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                  className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowAiKey(!showAiKey)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
@@ -321,7 +333,7 @@ export default function AdminTab() {
                 </button>
               </div>
               <button onClick={saveAiKey} disabled={savingAiKey || aiKey === aiKeySaved}
-                className="h-10 px-4 rounded-lg bg-ai text-ai-foreground text-sm font-medium flex items-center gap-2 hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                className="btn-accent-3d h-10 px-4 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingAiKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Guardar
               </button>
@@ -332,12 +344,13 @@ export default function AdminTab() {
                   <CheckCircle2 size={12} /> Clave IA configurada
                 </span>
                 <button onClick={testAiConnection} disabled={testingAi}
-                  className="h-8 px-3 rounded-lg border border-border bg-secondary text-secondary-foreground text-xs font-medium flex items-center gap-2 hover:bg-secondary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="h-8 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                   {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-ai" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Sparkles size={12} />}
                   {testingAi ? 'Probando…' : aiTestResult === 'ok' ? 'IA OK' : aiTestResult === 'fail' ? 'Falló' : 'Probar IA'}
                 </button>
               </div>
             )}
+          </TiltCard>
           </motion.div>
           )}
 
@@ -352,31 +365,45 @@ export default function AdminTab() {
 
           <SyncHistory key={syncKey} />
 
-          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden">
-            <div className="px-5 py-4 border-b border-border">
-              <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">{operators.length} usuarios</p>
+          <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }}>
+          <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Users size={15} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
+                <p className="text-xs text-muted-foreground mt-0.5"><span className="font-mono tabular-nums">{operators.length}</span> usuarios</p>
+              </div>
             </div>
-            <div className="divide-y divide-border">
+            <div className="p-3 space-y-2">
               {operators.map(op => (
-                <div key={op.user_id} className="flex items-center justify-between px-5 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-foreground">
+                <div key={op.user_id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-accent-gradient flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
                       {op.display_name[0].toUpperCase()}
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{op.display_name}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">{op.user_id.slice(0, 8)}…</div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground truncate">{op.display_name}</div>
+                      <div className="text-[10px] text-muted-foreground font-mono tabular-nums">{op.user_id.slice(0, 8)}…</div>
                     </div>
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-shrink-0">
                     {op.roles.map(r => (
-                      <span key={r} className={`pill ${r === 'admin' || r === 'owner' ? 'pill-warning' : 'pill-info'}`}>{r}</span>
+                      <span
+                        key={r}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
+                          r === 'admin' || r === 'owner'
+                            ? 'bg-warning/14 border border-warning/30 text-warning'
+                            : 'bg-info/14 border border-info/30 text-info'
+                        }`}
+                      >{r}</span>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
+          </TiltCard>
           </motion.div>
 
           <ReportsTable />

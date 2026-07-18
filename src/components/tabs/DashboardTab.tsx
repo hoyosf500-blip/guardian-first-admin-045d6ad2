@@ -22,6 +22,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
+import { TiltCard, StatTile, CountUp, GaugeRing, RankRow } from '@/components/ui3d';
 
 interface DailyResult { result_date: string; result: string; order_id: string | null; }
 interface SyncLog { status: string; created_at: string; synced_count: number; error_message: string | null; source: string; }
@@ -31,18 +32,6 @@ const fadeUp = (delay = 0) => ({
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.35, delay, ease: 'easeOut' as const },
 });
-
-function MiniSparkline({ data, color }: { data: number[]; color: string }) {
-  if (data.length < 2) return null;
-  const max = Math.max(...data, 1);
-  const w = 64, h = 24;
-  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * h}`).join(' ');
-  return (
-    <svg width={w} height={h} className="opacity-60">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 export default function DashboardTab() {
   const { allOrders, counter, workQueue } = useOrders();
@@ -351,6 +340,7 @@ export default function DashboardTab() {
   const CHART_WARNING = hsl('--warning');
   const CHART_INFO    = hsl('--info');
   const CHART_AI      = hsl('--ai');
+  const CHART_CYAN    = hsl('--cyan');
   const CHART_MUTED   = hsl('--muted-foreground');
   const CHART_GRID    = hsl('--border');
   const COLORS = [CHART_ACCENT, CHART_INFO, CHART_SUCCESS, CHART_DANGER, CHART_AI, '#06b6d4', CHART_MUTED];
@@ -387,12 +377,12 @@ export default function DashboardTab() {
       {/* Page header — patrón pro coherente con Logística/Rescate */}
       <motion.header {...fadeUp(0)} className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-6">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-accent">
+          <div className="hud-label mb-1 truncate">
             Resumen · Operadora
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2.5">
-            <span className="inline-flex w-9 h-9 rounded-xl bg-accent-gradient items-center justify-center text-white shadow-glow" aria-hidden="true">
-              <BarChart3 size={18} strokeWidth={2.25} />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <BarChart3 size={20} strokeWidth={2.25} />
             </span>
             {greeting}
           </h1>
@@ -402,34 +392,36 @@ export default function DashboardTab() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Period tabs */}
-          <div className="inline-flex bg-card border border-border rounded-lg p-0.5">
+          <div className="inline-flex flex-wrap gap-2">
             {[{ n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
               <button key={p.n} onClick={() => setPeriod(p.n)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                  period === p.n ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                className={`px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                  period === p.n
+                    ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
                 }`}>{p.l}</button>
             ))}
           </div>
           <div className="h-5 w-px bg-border hidden sm:block" />
           {/* Action buttons */}
-          <button onClick={exportarResultadosHoy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-muted-foreground text-xs font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-            <Download size={12} aria-hidden="true" /> CSV
+          <button onClick={exportarResultadosHoy} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+            <Download size={13} aria-hidden="true" /> CSV
           </button>
-          <button onClick={handleCierre} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-accent-foreground text-xs font-semibold hover:opacity-90 transition-opacity cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-            <Send size={12} aria-hidden="true" /> Enviar cierre
+          <button onClick={handleCierre} className="btn-accent-3d inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+            <Send size={13} aria-hidden="true" /> Enviar cierre
           </button>
           {/* More actions dropdown */}
           <div className="relative">
             <button onClick={() => setActionsOpen(!actionsOpen)}
               aria-expanded={actionsOpen}
               aria-label="Más acciones"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-card border border-border text-muted-foreground text-xs font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-              <ChevronDown size={12} className={`transition-transform duration-200 ${actionsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+              <ChevronDown size={13} className={`transition-transform duration-200 ${actionsOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
             {actionsOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setActionsOpen(false)} aria-hidden="true" />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-xl py-1 min-w-[168px]">
+                <div className="absolute right-0 top-full mt-2 z-50 bg-card border border-border rounded-2xl shadow-card3d-lg py-1 min-w-[168px]">
                   <button onClick={() => { exportarHistorico(); setActionsOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-foreground hover:bg-surface transition-colors duration-200 cursor-pointer">
                     <Download size={13} aria-hidden="true" /> Exportar histórico
                   </button>
@@ -450,15 +442,18 @@ export default function DashboardTab() {
           (i.e. the user is admin and the table is readable). Turns red if
           the cron hasn't produced a fresh entry in over an hour. */}
       {syncStatus && (
-        <motion.div {...fadeUp(0.03)} className={`mb-5 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border px-4 py-3 ${
+        <motion.div {...fadeUp(0.03)} className={`relative mb-5 flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border px-4 pl-5 py-3 shadow-card3d ${
           syncStatus.broken
             ? 'border-danger/30 bg-danger/10'
             : syncStatus.warning
               ? 'border-warning/30 bg-warning/10'
               : 'border-success/30 bg-success/10'
         }`}>
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-            syncStatus.broken ? 'bg-danger/20' : syncStatus.warning ? 'bg-warning/20' : 'bg-success/20'
+          <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${
+            syncStatus.broken ? 'bg-danger' : syncStatus.warning ? 'bg-warning' : 'bg-success'
+          }`} aria-hidden="true" />
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+            syncStatus.broken ? 'bg-danger/20 glow-danger' : syncStatus.warning ? 'bg-warning/20 glow-warning' : 'bg-success/20 glow-success'
           }`}>
             {syncStatus.broken ? <CloudOff size={18} className="text-danger" aria-hidden="true" />
               : syncStatus.warning ? <Clock size={18} className="text-warning" aria-hidden="true" />
@@ -474,14 +469,14 @@ export default function DashboardTab() {
                   ? `Sincronizado hace ${syncStatus.ageLabel} (lento)`
                   : `Dropi sincronizado hace ${syncStatus.ageLabel}`}
             </div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">
+            <div className="text-[10px] text-muted-foreground mt-0.5 font-mono tabular-nums">
               Fuente: {lastSync?.source} · {lastSync?.synced_count ?? 0} pedidos · {lastSync ? new Date(lastSync.created_at).toLocaleString('es-CO') : ''}
             </div>
           </div>
           <button
             onClick={resyncNow}
             disabled={resyncing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs font-medium text-foreground hover:bg-muted/60 hover:border-accent/40 transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card/40 border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           >
             <RefreshCw size={12} className={resyncing ? 'animate-spin' : ''} />
             {resyncing ? 'Sincronizando...' : 'Forzar sync'}
@@ -492,7 +487,7 @@ export default function DashboardTab() {
       {!hasData ? (
         /* Empty state */
         <motion.div {...fadeUp(0.05)} className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-xl bg-card border border-border flex items-center justify-center mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-card/40 border border-border shadow-card3d flex items-center justify-center mb-4">
             <BarChart3 size={28} className="text-muted-foreground" aria-hidden="true" />
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">Sin datos todavía</h3>
@@ -505,73 +500,60 @@ export default function DashboardTab() {
           {/* Hero KPI + Compact KPIs */}
           <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-5">
             {/* Hero: Tasa de confirmación */}
-            <div className="md:col-span-4 bg-surface border border-border rounded-xl p-5 flex items-center gap-5 hover:border-border-strong transition-colors duration-200">
-              <div className="relative w-20 h-20 flex-shrink-0">
-                <svg viewBox="0 0 120 120" className="-rotate-90 w-full h-full">
-                  <circle cx="60" cy="60" r="50" fill="none" strokeWidth="10" stroke="#27272a" />
-                  <circle cx="60" cy="60" r="50" fill="none" strokeWidth="10" stroke={tasaStroke} strokeLinecap="round"
-                    strokeDasharray={314} strokeDashoffset={314 * (1 - tasa / 100)} className="transition-all duration-700" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className={`font-mono text-xl font-bold ${tasaColor}`}>{tasa}%</span>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
+            <TiltCard
+              sheen
+              brackets
+              wrapperClassName="md:col-span-5"
+              className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col"
+            >
+              <div className="flex items-center justify-between gap-3 tilt-layer-2">
                 <div
-                  className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-1"
+                  className="hud-label"
                   title="Tasa personal: tus confirmados / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD. NO sobre el inflow total del día — eso lo ves en /admin → Productividad."
                 >
                   Tasa personal
                 </div>
-                <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold ${tasaBg} ${tasaColor}`}>
+                <TrendBadge current={tasa} previous={yesterdayData.tasa} suffix="%" />
+              </div>
+
+              <div className="flex justify-center py-4 tilt-layer-3">
+                <GaugeRing value={tasa} label="confirmación" size={190} />
+              </div>
+
+              <div className="tilt-layer-1">
+                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
                   {tasa >= CONF_TARGET_PCT ? `En meta (${CONF_TARGET_PCT}%)` : tasa >= CONF_TARGET_PCT - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
                 </div>
-                <div className="mt-1.5">
-                  <TrendBadge current={tasa} previous={yesterdayData.tasa} suffix="%" />
-                </div>
               </div>
-            </div>
+            </TiltCard>
 
             {/* Compact KPIs */}
+            <div className="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
-              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, color: 'text-success', iconBg: 'bg-success/12 border-success/25', iconColor: 'text-success', spark: sparkData.conf, sparkColor: CHART_SUCCESS },
-              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, color: 'text-danger', iconBg: 'bg-danger/12 border-danger/25', iconColor: 'text-danger', spark: sparkData.canc, sparkColor: CHART_DANGER },
-              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, color: 'text-foreground', iconBg: 'bg-muted/60 border-border', iconColor: 'text-muted-foreground', spark: [], sparkColor: '' },
-              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, color: 'text-foreground', iconBg: 'bg-accent/12 border-accent/25', iconColor: 'text-accent', spark: sparkData.total, sparkColor: CHART_ACCENT, extra: `${statusBreakdown.pendientes} pendientes` },
-            ].map((k) => {
-              const Icon = k.icon;
-              const isZero = k.value === 0;
-              return (
-                <div
-                  key={k.label}
-                  className={`md:col-span-2 bg-surface border rounded-xl p-4 flex flex-col justify-between hover:border-border-strong transition-colors duration-200 ${isZero ? 'border-border/50 opacity-75' : 'border-border'}`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${k.iconBg}`}>
-                      <Icon size={15} className={k.iconColor} aria-hidden="true" />
-                    </div>
-                    {k.spark.length > 1 && <MiniSparkline data={k.spark} color={k.sparkColor} />}
-                  </div>
-                  <div>
-                    <div className={`font-mono text-3xl font-semibold ${isZero ? 'text-muted-foreground' : k.color} leading-none tabular-nums`}>{k.value}</div>
-                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mt-2">{k.label}</div>
-                  </div>
-                  <div className="mt-2">
-                    {k.extra ? (
-                      <span className="text-[11px] font-medium text-accent">{k.extra}</span>
-                    ) : (
-                      <TrendBadge current={k.value} previous={k.prev} />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+              { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, tone: 'success' as const, spark: sparkData.conf },
+              { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, tone: 'danger' as const, spark: sparkData.canc },
+              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, tone: 'neutral' as const, spark: [] as number[] },
+              { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
+            ].map((k) => (
+              <StatTile
+                key={k.label}
+                icon={k.icon}
+                label={k.label}
+                value={k.value}
+                tone={k.tone}
+                spark={k.spark}
+                extra={k.extra
+                  ? <span className="text-[11px] font-medium text-accent">{k.extra}</span>
+                  : <TrendBadge current={k.value} previous={k.prev} />}
+              />
+            ))}
+            </div>
           </motion.div>
 
           {/* Charts */}
           <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-            <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
-              <div className="flex items-center justify-between mb-4">
+            <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full">
+              <div className="flex items-center justify-between mb-4 tilt-layer-1">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                   <Activity size={14} className="text-accent" aria-hidden="true" /> Tasa de confirmación
                 </h3>
@@ -581,22 +563,26 @@ export default function DashboardTab() {
                   <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                     <defs>
                       <linearGradient id="tGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.25} />
+                        <stop offset="0%" stopColor={CHART_ACCENT} stopOpacity={0.45} />
                         <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="tGradLine" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor={CHART_ACCENT} />
+                        <stop offset="100%" stopColor={CHART_CYAN} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
                     <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
                     <YAxis domain={[0, 100]} tick={tickStyle} axisLine={false} tickLine={false} unit="%" />
                     <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v}%`, 'Tasa']} />
-                    <Area type="monotone" dataKey="tasa" stroke={CHART_ACCENT} strokeWidth={2} fill="url(#tGrad)" dot={{ r: 2, fill: CHART_ACCENT, strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: hsl('--background') }} />
+                    <Area type="monotone" dataKey="tasa" stroke="url(#tGradLine)" strokeWidth={3} strokeLinecap="round" fill="url(#tGrad)" style={{ filter: `drop-shadow(0 0 8px ${CHART_ACCENT})` }} dot={{ r: 2, fill: CHART_ACCENT, strokeWidth: 0 }} activeDot={{ r: 4, strokeWidth: 2, stroke: hsl('--background') }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </TiltCard>
 
-            <div className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
-              <div className="flex items-center justify-between mb-4">
+            <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full">
+              <div className="flex items-center justify-between mb-4 tilt-layer-1">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                   <Layers size={14} className="text-success" aria-hidden="true" /> Gestiones por día
                 </h3>
@@ -609,34 +595,44 @@ export default function DashboardTab() {
                     <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '6px' }} formatter={(v: string) => v === 'conf' ? 'Confirmados' : v === 'canc' ? 'Cancelados' : 'No respondió'} />
-                    <Bar dataKey="conf" stackId="a" fill={CHART_SUCCESS} name="conf" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="conf" stackId="a" fill={CHART_SUCCESS} name="conf" radius={[0, 0, 0, 0]} style={{ filter: `drop-shadow(0 0 6px ${CHART_SUCCESS})` }} />
                     <Bar dataKey="canc" stackId="a" fill={CHART_DANGER} name="canc" />
-                    <Bar dataKey="noresp" stackId="a" fill={CHART_MUTED} radius={[3, 3, 0, 0]} name="noresp" />
+                    <Bar dataKey="noresp" stackId="a" fill={CHART_MUTED} radius={[6, 6, 0, 0]} name="noresp" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
+            </TiltCard>
           </motion.div>
 
           {/* F5: Operator ranking */}
           {operatorRanking.length > 1 && (
-            <motion.div {...fadeUp(0.15)} className="bg-surface border border-border rounded-xl overflow-hidden mb-5 hover:border-border-strong transition-colors duration-200">
-              <div className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+            <motion.div {...fadeUp(0.15)} className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d mb-5">
+              <div className="flex items-center gap-2 mb-4">
                 <Users size={14} className="text-accent" aria-hidden="true" />
-                <h3 className="text-sm font-semibold text-foreground">Ranking del equipo hoy</h3>
+                <h3
+                  className="text-sm font-semibold text-foreground"
+                  title="Tasa personal de cada operadora: confirmados / lo gestionado (conf+canc+noresp). NO sobre el inflow total del día."
+                >
+                  Ranking del equipo hoy
+                </h3>
               </div>
+              {/* Tabla REAL, no divs con role="table": las cifras tienen que
+                  quedar asociadas a su encabezado para un lector de pantalla,
+                  y con columnas de verdad los rótulos se alinean solos.
+                  RankRow no sirve acá — es una fila de ranking de 3 datos, no
+                  una tabla de 7 columnas. */}
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border bg-card/50">
-                      <th className="px-5 py-2.5 text-left font-medium">#</th>
-                      <th className="px-3 py-2.5 text-left font-medium">Operador(a)</th>
-                      <th className="px-3 py-2.5 text-center font-medium">Conf.</th>
-                      <th className="px-3 py-2.5 text-center font-medium">Canc.</th>
-                      <th className="px-3 py-2.5 text-center font-medium">N/R</th>
-                      <th className="px-3 py-2.5 text-center font-medium">Total</th>
+                    <tr className="border-b border-border">
+                      <th className="px-5 py-2.5 text-left hud-label font-normal">#</th>
+                      <th className="px-3 py-2.5 text-left hud-label font-normal">Operador(a)</th>
+                      <th className="px-3 py-2.5 text-center hud-label font-normal">Conf.</th>
+                      <th className="px-3 py-2.5 text-center hud-label font-normal">Canc.</th>
+                      <th className="px-3 py-2.5 text-center hud-label font-normal">N/R</th>
+                      <th className="px-3 py-2.5 text-center hud-label font-normal">Total</th>
                       <th
-                        className="px-3 py-2.5 text-center font-medium"
+                        className="px-3 py-2.5 text-center hud-label font-normal"
                         title="Tasa personal de cada operadora: confirmados / lo gestionado (conf+canc+noresp). NO sobre el inflow total del día."
                       >
                         Tasa pers.
@@ -646,20 +642,31 @@ export default function DashboardTab() {
                   <tbody>
                     {operatorRanking.map((op, idx) => {
                       const isMe = op.operatorId === user?.id;
+                      // El umbral es de negocio (CONF_TARGET_PCT), no de
+                      // presentación: verde en meta, ámbar en la banda "cerca",
+                      // rojo debajo. Sin esto una tasa de 20% se ve igual que 90%.
                       const tasaC = op.tasa >= CONF_TARGET_PCT ? 'text-success' : op.tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
                       return (
-                        <tr key={op.operatorId} className={`border-b border-border last:border-0 transition-colors duration-200 ${isMe ? 'bg-accent/8' : 'hover:bg-card'}`}>
-                          <td className="px-5 py-2.5 font-mono font-bold">
-                            {idx === 0 ? <Trophy size={14} className="text-accent inline" aria-label="1er lugar" /> : idx + 1}
+                        <tr
+                          key={op.operatorId}
+                          className={`border-b border-border last:border-0 transition-colors duration-200 ${
+                            isMe ? 'bg-accent/8' : 'hover:bg-card/60'
+                          }`}
+                        >
+                          <td className="px-5 py-2.5 font-mono tabular-nums text-muted-foreground">
+                            {idx === 0
+                              ? <Trophy size={14} className="text-accent" aria-label="1er lugar" />
+                              : idx + 1}
                           </td>
-                          <td className="px-3 py-2.5 font-medium">
-                            {op.name}{isMe && <span className="ml-1.5 text-[10px] text-accent font-semibold">(tú)</span>}
+                          <td className="px-3 py-2.5 font-medium text-foreground">
+                            {op.name}
+                            {isMe && <span className="ml-1.5 text-[10px] text-accent font-semibold">(tú)</span>}
                           </td>
-                          <td className="px-3 py-2.5 text-center font-mono text-success">{op.conf}</td>
-                          <td className="px-3 py-2.5 text-center font-mono text-danger">{op.canc}</td>
-                          <td className="px-3 py-2.5 text-center font-mono text-muted-foreground">{op.noresp}</td>
-                          <td className="px-3 py-2.5 text-center font-mono font-bold">{op.total}</td>
-                          <td className={`px-3 py-2.5 text-center font-mono font-bold ${tasaC}`}>{op.tasa}%</td>
+                          <td className="px-3 py-2.5 text-center font-mono tabular-nums text-success">{op.conf}</td>
+                          <td className="px-3 py-2.5 text-center font-mono tabular-nums text-danger">{op.canc}</td>
+                          <td className="px-3 py-2.5 text-center font-mono tabular-nums text-muted-foreground">{op.noresp}</td>
+                          <td className="px-3 py-2.5 text-center font-mono tabular-nums text-foreground">{op.total}</td>
+                          <td className={`px-3 py-2.5 text-center font-mono tabular-nums font-bold ${tasaC}`}>{op.tasa}%</td>
                         </tr>
                       );
                     })}
@@ -672,8 +679,8 @@ export default function DashboardTab() {
           {/* Products */}
           {prods.length > 0 && (
             <motion.div {...fadeUp(0.18)} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-5">
-              <div className="md:col-span-2 bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
-                <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-4">Distribución por producto</h3>
+              <TiltCard wrapperClassName="md:col-span-2" className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full">
+                <h3 className="hud-label mb-4">Distribución por producto</h3>
                 <div className="h-52">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -690,16 +697,16 @@ export default function DashboardTab() {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
+              </TiltCard>
 
-              <div className="md:col-span-3 bg-surface border border-border rounded-xl overflow-hidden hover:border-border-strong transition-colors duration-200">
-                <div className="px-5 py-3.5 border-b border-border bg-card/30">
-                  <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Detalle por producto</h3>
+              <div className="md:col-span-3 bg-card/40 border border-border rounded-2xl overflow-hidden shadow-card3d hover:border-border-strong transition-colors duration-200">
+                <div className="px-5 py-3.5 border-b border-border">
+                  <h3 className="hud-label">Detalle por producto</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border bg-card/50">
+                      <tr className="text-muted-foreground text-[10px] uppercase tracking-wider border-b border-border bg-card/30">
                         <th className="text-left px-5 py-2.5 font-medium">Producto</th>
                         <th className="px-3 py-2.5 font-medium">Total</th>
                         <th className="px-3 py-2.5 font-medium">Entreg.</th>
@@ -717,11 +724,11 @@ export default function DashboardTab() {
                             <td className="px-5 py-2.5 font-medium max-w-[160px]">
                               <TruncatedText text={name} maxChars={22} className="block" />
                             </td>
-                            <td className="px-3 py-2.5 text-center font-mono">{d.total}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-success">{d.entreg}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-danger">{d.canc}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-warning">{d.nov}</td>
-                            <td className={`px-3 py-2.5 text-center font-mono font-bold ${ec}`}>{efect}%</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums">{d.total}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums text-success">{d.entreg}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums text-danger">{d.canc}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums text-warning">{d.nov}</td>
+                            <td className={`px-3 py-2.5 text-center font-mono tabular-nums font-bold ${ec}`}>{efect}%</td>
                           </tr>
                         );
                       })}
@@ -733,29 +740,31 @@ export default function DashboardTab() {
           )}
 
           {/* Cierre summary */}
-          <motion.div {...fadeUp(0.24)} className="bg-surface border border-border rounded-xl p-5 hover:border-border-strong transition-colors duration-200">
+          <motion.div {...fadeUp(0.24)} className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Resumen del día</h3>
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5">{formatDateES(new Date().toISOString().split('T')[0])}</p>
+                <h3 className="hud-label">Resumen del día</h3>
+                <p className="text-[10px] text-muted-foreground/70 mt-1 font-mono tabular-nums">{formatDateES(new Date().toISOString().split('T')[0])}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-success', iconBg: 'bg-success/12 border-success/25', iconColor: 'text-success' },
-                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-danger', iconBg: 'bg-danger/12 border-danger/25', iconColor: 'text-danger' },
+                { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, color: 'text-success', iconBg: 'bg-success/14 border-success/30 glow-success', iconColor: 'text-success' },
+                { icon: XCircle, label: 'Cancelados', value: counter.canc, color: 'text-danger', iconBg: 'bg-danger/14 border-danger/30 glow-danger', iconColor: 'text-danger' },
                 { icon: PhoneOff, label: 'No respondió', value: counter.noresp, color: 'text-muted-foreground', iconBg: 'bg-muted/60 border-border', iconColor: 'text-muted-foreground' },
-                { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-warning', iconBg: 'bg-warning/12 border-warning/25', iconColor: 'text-warning' },
+                { icon: Clock, label: 'Pendientes', value: pendLeft, color: 'text-warning', iconBg: 'bg-warning/14 border-warning/30 glow-warning', iconColor: 'text-warning' },
               ].map(item => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.label} className="flex items-center gap-3 p-3.5 rounded-lg bg-card border border-border">
-                    <div className={`w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0 ${item.iconBg}`}>
+                  <div key={item.label} className="flex items-center gap-3 p-3.5 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+                    <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${item.iconBg}`}>
                       <Icon size={16} className={item.iconColor} aria-hidden="true" />
                     </div>
                     <div>
-                      <div className={`font-mono text-2xl font-semibold tabular-nums ${item.color}`}>{item.value}</div>
-                      <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">{item.label}</div>
+                      <div className={`text-2xl font-bold leading-none ${item.color}`}>
+                        <CountUp value={item.value} />
+                      </div>
+                      <div className="hud-label mt-1.5">{item.label}</div>
                     </div>
                   </div>
                 );

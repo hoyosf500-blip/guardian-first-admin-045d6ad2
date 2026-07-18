@@ -42,8 +42,8 @@ function DimensionTable({
   title: string; icon: React.ReactNode; rows: DimensionRow[]; fallbackLabel: string;
 }) {
   return (
-    <section className="bg-card rounded-xl border border-border shadow-ds-xs overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+    <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
         {icon}
         <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">{title}</h3>
         <span className="text-[10px] text-muted-foreground">(mín. 3 pedidos · orden por % devolución)</span>
@@ -55,9 +55,9 @@ function DimensionTable({
           {rows.slice(0, 8).map((r) => {
             const danger = r.tasaDevolucion != null && r.tasaDevolucion >= 0.3;
             return (
-              <div key={r.label} className="px-4 py-2 flex items-center gap-3 text-xs">
+              <div key={r.label} className="px-4 py-2.5 flex items-center gap-3 text-xs hover:bg-foreground/[0.03] transition-colors">
                 <span className="flex-1 min-w-0 truncate text-foreground">{r.label}</span>
-                <span className="text-muted-foreground tabular-nums" title="Pedidos con novedad">{r.total}</span>
+                <span className="text-muted-foreground font-mono tabular-nums" title="Pedidos con novedad">{r.total}</span>
                 <span className={`w-12 text-right font-mono font-bold tabular-nums ${danger ? 'text-danger' : 'text-foreground'}`} title="% devolución (de las terminadas)">
                   {pct(r.tasaDevolucion)}
                 </span>
@@ -90,13 +90,15 @@ export default function NovedadesPuntosMejora() {
     <div className="space-y-5">
       {/* Range selector + refresh */}
       <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+        <div className="inline-flex flex-wrap gap-2">
           {RANGES.map((r) => (
             <button
               key={r.key}
               onClick={() => s.setRange(r.key)}
-              className={`px-3 h-8 rounded-md text-xs font-semibold transition-colors ${
-                s.range === r.key ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              className={`px-4 py-2 rounded-xl text-sm transition-colors ${
+                s.range === r.key
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               {r.label}
@@ -106,7 +108,7 @@ export default function NovedadesPuntosMejora() {
         <button
           onClick={s.refresh}
           disabled={s.loading}
-          className="h-8 px-3 rounded-lg border border-border bg-surface text-muted-foreground text-xs font-semibold flex items-center gap-1.5 hover:text-foreground hover:border-accent/30 transition-colors disabled:opacity-50"
+          className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium flex items-center gap-1.5 hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50"
         >
           <RefreshCw size={12} className={s.loading ? 'animate-spin' : ''} />
           Recargar
@@ -128,7 +130,7 @@ export default function NovedadesPuntosMejora() {
 
       {/* Empty state */}
       {totalNov === 0 && !s.loading && (
-        <div className="bg-card rounded-xl border border-border p-10 text-center text-sm text-muted-foreground shadow-ds-xs">
+        <div className="bg-card/40 rounded-2xl border border-border p-10 text-center text-sm text-muted-foreground shadow-card3d">
           No hay novedades en el período para analizar.
         </div>
       )}
@@ -136,8 +138,8 @@ export default function NovedadesPuntosMejora() {
       {totalNov > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Donut de culpa */}
-          <section className="bg-card rounded-xl border border-border shadow-ds-xs overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+          <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
+            <div className="px-4 py-3 border-b border-border flex items-center gap-2">
               <Lightbulb size={13} className="text-warning" />
               <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">¿De quién es la culpa?</h3>
             </div>
@@ -160,8 +162,8 @@ export default function NovedadesPuntosMejora() {
           </section>
 
           {/* Top categorías */}
-          <section className="bg-card rounded-xl border border-border shadow-ds-xs overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+          <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
+            <div className="px-4 py-3 border-b border-border flex items-center gap-2">
               <AlertTriangle size={13} className="text-muted-foreground" />
               <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">Motivos más frecuentes</h3>
             </div>
@@ -181,7 +183,7 @@ export default function NovedadesPuntosMejora() {
                         )}
                       </span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                       <div className="h-full rounded-full" style={{ width: `${(r.count / maxCat) * 100}%`, background: CULPA_COLOR[r.culpa] }} />
                     </div>
                   </div>

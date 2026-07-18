@@ -29,14 +29,14 @@ const CATEGORY_META: Record<
   TimelineCategory,
   { icon: LucideIcon; dot: string; text: string }
 > = {
-  dropi:    { icon: Cloud,         dot: 'bg-cyan-500',    text: 'text-cyan-500' },
-  call:     { icon: Phone,         dot: 'bg-blue-500',    text: 'text-blue-500' },
-  whatsapp: { icon: MessageSquare, dot: 'bg-emerald-500', text: 'text-emerald-500' },
-  sms:      { icon: Mail,          dot: 'bg-violet-500',  text: 'text-violet-500' },
-  note:     { icon: FileText,      dot: 'bg-amber-500',   text: 'text-amber-500' },
-  status:   { icon: CheckCircle2,  dot: 'bg-gray-500',    text: 'text-gray-500' },
+  dropi:    { icon: Cloud,         dot: 'bg-cyan',    text: 'text-cyan' },
+  call:     { icon: Phone,         dot: 'bg-info',    text: 'text-info' },
+  whatsapp: { icon: MessageSquare, dot: 'bg-success', text: 'text-success' },
+  sms:      { icon: Mail,          dot: 'bg-accent',  text: 'text-accent' },
+  note:     { icon: FileText,      dot: 'bg-warning', text: 'text-warning' },
+  status:   { icon: CheckCircle2,  dot: 'bg-muted-foreground', text: 'text-muted-foreground' },
   system:   { icon: Zap,           dot: 'bg-muted-foreground', text: 'text-muted-foreground' },
-  novedad:  { icon: AlertTriangle, dot: 'bg-orange-500',  text: 'text-orange-500' },
+  novedad:  { icon: AlertTriangle, dot: 'bg-warning', text: 'text-warning' },
 };
 
 function dayLabel(date: Date): string {
@@ -78,7 +78,7 @@ export default function Timeline({ events, allowedCategories, compact = false, e
       {groups.map((group, gi) => (
         <div key={gi}>
           {!compact && group.day && (
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2 pl-1">
+            <div className="hud-label mb-2 pl-1">
               {group.day}
             </div>
           )}
@@ -111,7 +111,7 @@ export default function Timeline({ events, allowedCategories, compact = false, e
                         </div>
                       )}
                       <div className="flex items-center gap-1.5 mt-1 text-[10px] text-muted-foreground/80">
-                        <span>{formatDistanceToNow(ev.timestamp, { addSuffix: true, locale: es })}</span>
+                        <span className="font-mono tabular-nums">{formatDistanceToNow(ev.timestamp, { addSuffix: true, locale: es })}</span>
                         {ev.actor && (
                           <>
                             <span>·</span>

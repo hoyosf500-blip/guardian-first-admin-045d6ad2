@@ -37,11 +37,17 @@ const CATEGORIA_TONE: Record<Categoria, 'danger' | 'warning' | 'success' | 'mute
 };
 
 const TONE_TEXT: Record<string, string> = {
-  danger:  'text-red',
-  warning: 'text-orange',
-  success: 'text-green',
+  danger:  'text-danger',
+  warning: 'text-warning',
+  success: 'text-success',
   muted:   'text-foreground',
 };
+
+// Toggle de vista estilo pill (presentación). El estado sigue siendo `view`.
+const PILL_ON =
+  'h-auto px-4 py-2 rounded-xl text-sm font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d hover:bg-accent/20';
+const PILL_OFF =
+  'h-auto px-4 py-2 rounded-xl text-sm font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors';
 
 function fmtMonth(ym: string): string {
   const [y, m] = ym.split('-').map(Number);
@@ -51,12 +57,12 @@ function fmtMonth(ym: string): string {
 
 function deltaIcon(curr: number, prev: number) {
   if (prev === 0 && curr === 0) return { Icon: Minus, tone: 'text-muted-foreground' };
-  if (prev === 0) return { Icon: TrendingUp, tone: 'text-orange' };
+  if (prev === 0) return { Icon: TrendingUp, tone: 'text-warning' };
   const delta = ((curr - prev) / Math.abs(prev)) * 100;
   if (Math.abs(delta) < 1) return { Icon: Minus, tone: 'text-muted-foreground' };
   return delta > 0
-    ? { Icon: TrendingUp, tone: 'text-red' }
-    : { Icon: TrendingDown, tone: 'text-green' };
+    ? { Icon: TrendingUp, tone: 'text-danger' }
+    : { Icon: TrendingDown, tone: 'text-success' };
 }
 
 type ViewMode = 'matrix' | 'split' | 'topitems';
@@ -104,7 +110,7 @@ export default function CfoPersonalSpendingTracker() {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-border bg-card p-6 flex items-center justify-center gap-2 text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-6 flex items-center justify-center gap-2 text-muted-foreground">
         <Loader2 size={16} className="animate-spin" />
         <span className="text-sm">Cargando movimientos…</span>
       </div>
@@ -113,7 +119,7 @@ export default function CfoPersonalSpendingTracker() {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-dashed border-border bg-card/40 p-8 text-center text-sm text-muted-foreground">
         Aún no hay movimientos importados. Subí extractos PDF arriba para empezar.
       </div>
     );
@@ -122,18 +128,20 @@ export default function CfoPersonalSpendingTracker() {
   const monthForTopItems = selectedMonth || months[0] || '';
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Wallet size={18} className="text-accent" />
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5">
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
+            <Wallet size={15} />
+          </span>
           <h3 className="font-semibold text-sm">Análisis tarjetas (gasto personal)</h3>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="inline-flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             variant={view === 'matrix' ? 'default' : 'outline'}
             onClick={() => setView('matrix')}
-            className="h-7 text-xs"
+            className={view === 'matrix' ? PILL_ON : PILL_OFF}
           >
             Por categoría
           </Button>
@@ -141,7 +149,7 @@ export default function CfoPersonalSpendingTracker() {
             size="sm"
             variant={view === 'split' ? 'default' : 'outline'}
             onClick={() => setView('split')}
-            className="h-7 text-xs"
+            className={view === 'split' ? PILL_ON : PILL_OFF}
           >
             Negocio vs personal
           </Button>
@@ -149,7 +157,7 @@ export default function CfoPersonalSpendingTracker() {
             size="sm"
             variant={view === 'topitems' ? 'default' : 'outline'}
             onClick={() => setView('topitems')}
-            className="h-7 text-xs"
+            className={view === 'topitems' ? PILL_ON : PILL_OFF}
           >
             Top items
           </Button>

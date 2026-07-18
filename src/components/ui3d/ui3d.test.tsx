@@ -92,16 +92,59 @@ describe('useTilt', () => {
     expect(result.current.enabled).toBe(false);
   });
 
-  it('no acumula rotación si está deshabilitado', () => {
+  it('no escribe transform en el nodo si está deshabilitado', () => {
     stubMatchMedia({ '(pointer: fine)': false });
     const { result } = renderHook(() => useTilt());
+    const node = document.createElement('div');
+    (result.current.ref as { current: HTMLDivElement | null }).current = node;
+
     act(() => {
       result.current.tiltProps.onPointerMove({
         clientX: 0, clientY: 0,
         currentTarget: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 100 }) },
       } as never);
     });
-    expect(result.current.rotation).toEqual({ rx: 0, ry: 0 });
+
+    expect(node.style.transform).toBe('');
+  });
+
+  it('NO expone la rotación como estado de React (evita re-render por movimiento)', () => {
+    stubMatchMedia({ '(pointer: fine)': true });
+    const { result } = renderHook(() => useTilt());
+    // Si volviera a existir `rotation`, cada onPointerMove re-renderizaría el
+    // árbol de la card — en CallView eso re-corre el pipeline de validación
+    // de dirección al ritmo del mouse.
+    expect((result.current as Record<string, unknown>).rotation).toBeUndefined();
+    expect(result.current.ref).toBeDefined();
+  });
+});
+
+describe('useCountUp', () => {
+  beforeEach(() => stubMatchMedia({}));
+
+  it('anima desde el valor ANTERIOR, no desde 0, cuando el valor cambia', async () => {
+    // Regresión real: con realtime, "por confirmar" reiniciaba desde 0 en cada
+    // update y mostraba un número falso ~1.1s.
+    const { rerender } = render(<CountUp value={40} duration={0} />);
+    expect(screen.getByText('40')).toBeInTheDocument();
+
+    const originalRaf = globalThis.requestAnimationFrame;
+    const frames: FrameRequestCallback[] = [];
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    }) as typeof globalThis.requestAnimationFrame;
+
+    try {
+      rerender(<CountUp value={41} duration={1000} />);
+      // Primer frame apenas arrancada la animación: debe estar cerca de 40,
+      // nunca en 0.
+      if (frames.length) act(() => { frames[0](performance.now() + 1); });
+      const texto = screen.getByText(/^4[01]$/);
+      expect(texto).toBeInTheDocument();
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+    }
   });
 });
 

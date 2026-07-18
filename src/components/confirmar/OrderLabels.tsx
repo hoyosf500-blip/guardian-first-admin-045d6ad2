@@ -4,12 +4,12 @@ import {
   deriveAutoLabels, LABELS, MANUAL_LABELS, type LabelKey, type LabelDef,
 } from '@/lib/orderLabels';
 
-// Colores estándar de Tailwind (opacidad garantizada) por tono.
+// Tonos semánticos del sistema (color + texto, nunca color solo).
 const TONE_CHIP: Record<LabelDef['tone'], string> = {
-  yellow: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
-  red:    'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30',
-  orange: 'bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30',
-  green:  'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+  yellow: 'bg-warning/14 text-warning border-warning/30',
+  red:    'bg-danger/14 text-danger border-danger/30',
+  orange: 'bg-attention/14 text-attention border-attention/30',
+  green:  'bg-success/14 text-success border-success/30',
 };
 
 interface Props {
@@ -42,7 +42,7 @@ export default function OrderLabels({ orderId, phone, validationDecision, missin
       {autoKeys.map((k) => {
         const def = LABELS[k];
         return (
-          <span key={k} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${TONE_CHIP[def.tone]}`}>
+          <span key={k} className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${TONE_CHIP[def.tone]}`}>
             {def.text}
             <span className="opacity-60 text-[9px] uppercase">auto</span>
           </span>
@@ -56,7 +56,7 @@ export default function OrderLabels({ orderId, phone, validationDecision, missin
             key={k}
             onClick={() => toggleLabel(k)}
             title="Quitar etiqueta"
-            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${TONE_CHIP[def.tone]} hover:opacity-80`}
+            className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${TONE_CHIP[def.tone]} hover:opacity-80`}
           >
             {def.text}
             <X size={10} />
@@ -69,7 +69,7 @@ export default function OrderLabels({ orderId, phone, validationDecision, missin
           key={def.key}
           onClick={() => toggleLabel(def.key)}
           title={`Etiquetar como ${def.text}`}
-          className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-foreground/30"
+          className="inline-flex items-center gap-0.5 rounded-lg border border-dashed border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
         >
           <Plus size={10} />
           {def.text}

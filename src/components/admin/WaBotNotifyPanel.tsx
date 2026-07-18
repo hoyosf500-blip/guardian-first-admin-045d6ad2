@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { useStore } from '@/contexts/StoreContext';
 import { Bell, Save, Loader2, Power } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 
 // wa_bot_config.notify aún no está en los tipos generados → cast sin `any`.
@@ -126,9 +127,12 @@ export default function WaBotNotifyPanel() {
   const dirty = JSON.stringify(st) !== savedJson;
 
   return (
-    <motion.div {...fadeUp} className="bg-card rounded-xl border border-border overflow-hidden">
+    <motion.div {...fadeUp} className="">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <Bell size={16} className="text-accent" />
+        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Bell size={15} />
+        </span>
         <div className="flex-1">
           <h3 className="text-sm font-semibold text-foreground">Avisos automáticos al cliente</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -139,7 +143,7 @@ export default function WaBotNotifyPanel() {
 
       <div className="px-5 py-4 space-y-4">
         {/* Master switch */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card/40 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <Power size={15} className={st.enabled ? 'text-success' : 'text-muted-foreground'} />
             <div>
@@ -170,7 +174,7 @@ export default function WaBotNotifyPanel() {
                     onChange={e => setSt(s => ({ ...s, templates: { ...s.templates, [b.key]: e.target.value } }))}
                     placeholder={DEFAULT_TEMPLATES[b.key]}
                     rows={3}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
+                    className="w-full rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-foreground leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">Vacío = usa el mensaje por defecto que ves en gris.</p>
                 </div>
@@ -205,6 +209,7 @@ export default function WaBotNotifyPanel() {
           </button>
         </div>
       </div>
+    </TiltCard>
     </motion.div>
   );
 }

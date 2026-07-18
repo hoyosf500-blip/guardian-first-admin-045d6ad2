@@ -42,8 +42,8 @@ function catLabel(categoria: string): string {
 /** Carteles de estado no-OK (permiso, migración pendiente, error). */
 function StatusCard({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className="bg-card rounded-xl border border-border p-10 flex flex-col items-center gap-3 text-center shadow-ds-xs">
-      <div className="w-12 h-12 rounded-xl bg-muted/40 flex items-center justify-center text-muted-foreground">{icon}</div>
+    <div className="bg-card/40 rounded-2xl border border-border p-10 flex flex-col items-center gap-3 text-center shadow-card3d">
+      <div className="w-12 h-12 rounded-2xl bg-muted/60 border border-border flex items-center justify-center text-muted-foreground">{icon}</div>
       <h3 className="text-sm font-bold text-foreground">{title}</h3>
       <p className="text-xs text-muted-foreground max-w-md">{body}</p>
     </div>
@@ -61,13 +61,15 @@ export default function NovedadesCausaRaiz() {
     <div className="space-y-5">
       {/* Range selector + refresh */}
       <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex rounded-lg border border-border bg-surface p-0.5">
+        <div className="inline-flex flex-wrap gap-2">
           {RANGES.map((r) => (
             <button
               key={r.key}
               onClick={() => s.setRange(r.key)}
-              className={`px-3 h-8 rounded-md text-xs font-semibold transition-colors ${
-                s.range === r.key ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:text-foreground'
+              className={`px-4 py-2 rounded-xl text-sm transition-colors ${
+                s.range === r.key
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
               }`}
             >
               {r.label}
@@ -77,7 +79,7 @@ export default function NovedadesCausaRaiz() {
         <button
           onClick={s.refresh}
           disabled={s.loading}
-          className="h-8 px-3 rounded-lg border border-border bg-surface text-muted-foreground text-xs font-semibold flex items-center gap-1.5 hover:text-foreground hover:border-accent/30 transition-colors disabled:opacity-50"
+          className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium flex items-center gap-1.5 hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50"
         >
           <RefreshCw size={12} className={s.loading ? 'animate-spin' : ''} />
           Recargar
@@ -117,7 +119,7 @@ export default function NovedadesCausaRaiz() {
           </div>
 
           {summary.totalDevoluciones === 0 && !s.loading && (
-            <div className="bg-card rounded-xl border border-border p-10 text-center text-sm text-muted-foreground shadow-ds-xs">
+            <div className="bg-card/40 rounded-2xl border border-border p-10 text-center text-sm text-muted-foreground shadow-card3d">
               No hay devoluciones en el período para analizar.
             </div>
           )}
@@ -125,8 +127,8 @@ export default function NovedadesCausaRaiz() {
           {summary.totalDevoluciones > 0 && (
             <>
               {/* Motivos por los que era evitable */}
-              <section className="bg-card rounded-xl border border-border shadow-ds-xs overflow-hidden">
-                <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+              <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex items-center gap-2">
                   <Target size={13} className="text-danger" />
                   <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">¿Por qué era evitable?</h3>
                   <span className="text-[10px] text-muted-foreground">(una devolución puede tener varios motivos)</span>
@@ -143,7 +145,7 @@ export default function NovedadesCausaRaiz() {
                             <span className="text-xs text-foreground truncate pr-2">{meta.label}</span>
                             <span className="text-xs font-mono font-bold text-muted-foreground tabular-nums">{count}</span>
                           </div>
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${(count / maxReason) * 100}%`, background: meta.color }} />
                           </div>
                         </div>
@@ -155,12 +157,12 @@ export default function NovedadesCausaRaiz() {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Ranking de operadoras confirmadoras */}
-                <section className="bg-card rounded-xl border border-border shadow-ds-xs overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+                <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border flex items-center gap-2">
                     <Users size={13} className="text-info" />
                     <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">Quién confirmó las devoluciones</h3>
                   </div>
-                  <div className="px-4 py-1.5 flex items-center gap-3 text-[10px] uppercase tracking-wide text-muted-foreground border-b border-border/50">
+                  <div className="px-4 py-2 flex items-center gap-3 hud-label border-b border-border/50">
                     <span className="flex-1">Operadora</span>
                     <span className="w-10 text-right">Devol.</span>
                     <span className="w-12 text-right">Evit.</span>
@@ -170,9 +172,9 @@ export default function NovedadesCausaRaiz() {
                     {summary.porOperadora.slice(0, 10).map((o) => {
                       const danger = o.pctEvitable != null && o.pctEvitable >= 0.5 && o.devoluciones >= 2;
                       return (
-                        <div key={o.operatorId ?? '__none__'} className="px-4 py-2 flex items-center gap-3 text-xs">
+                        <div key={o.operatorId ?? '__none__'} className="px-4 py-2.5 flex items-center gap-3 text-xs hover:bg-foreground/[0.03] transition-colors">
                           <span className={`flex-1 min-w-0 truncate ${o.operatorId ? 'text-foreground' : 'text-muted-foreground italic'}`}>{o.name}</span>
-                          <span className="w-10 text-right text-muted-foreground tabular-nums">{o.devoluciones}</span>
+                          <span className="w-10 text-right text-muted-foreground font-mono tabular-nums">{o.devoluciones}</span>
                           <span className="w-12 text-right font-mono tabular-nums text-foreground">{o.evitables}</span>
                           <span className={`w-12 text-right font-mono font-bold tabular-nums ${danger ? 'text-danger' : 'text-muted-foreground'}`}>{pct(o.pctEvitable)}</span>
                         </div>
@@ -182,8 +184,8 @@ export default function NovedadesCausaRaiz() {
                 </section>
 
                 {/* Categorías de novedad que terminan en devolución */}
-                <section className="bg-card rounded-xl border border-border shadow-ds-xs overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+                <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
+                  <div className="px-4 py-3 border-b border-border flex items-center gap-2">
                     <TriangleAlert size={13} className="text-muted-foreground" />
                     <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">Novedades que más se devuelven</h3>
                   </div>
@@ -199,7 +201,7 @@ export default function NovedadesCausaRaiz() {
                               {c.evitables > 0 && <span className="ml-1.5 text-danger">· {c.evitables} evit</span>}
                             </span>
                           </div>
-                          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                             <div className="h-full rounded-full" style={{ width: `${(c.devoluciones / maxCat) * 100}%`, background: CULPA_COLOR[c.culpa] }} />
                           </div>
                         </div>

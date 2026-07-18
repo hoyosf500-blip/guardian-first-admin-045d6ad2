@@ -29,15 +29,29 @@ export function useCountUp(value: number, duration = 1100, decimals = 0): number
 
   const [shown, setShown] = useState(() => (skip ? value : 0));
   const frameRef = useRef<number>();
+  // Desde dónde arranca la próxima animación. Al montar es 0 (la cifra "sube"),
+  // pero después es el valor que ya se está mostrando.
+  const fromRef = useRef(skip ? value : 0);
 
   useEffect(() => {
-    if (skip) { setShown(value); return; }
+    if (skip) { setShown(value); fromRef.current = value; return; }
+
+    // CRÍTICO: animar desde el valor ANTERIOR, no desde 0. Estas cifras se
+    // actualizan por realtime (ej. "por confirmar" en ConfirmarTab): si cada
+    // update reiniciara desde 0, la operadora vería un número FALSO durante
+    // ~1.1s cada vez que entra o se cierra un pedido.
+    const from = fromRef.current;
+    const delta = value - from;
+    if (delta === 0) { setShown(value); return; }
 
     const start = performance.now();
     const tick = (now: number) => {
       const progress = (now - start) / duration;
-      if (progress >= 1) { setShown(value); return; }
-      setShown(valueAtProgress(value, progress, decimals));
+      if (progress >= 1) { setShown(value); fromRef.current = value; return; }
+      const factor = Math.pow(10, decimals);
+      const next = from + delta * easeOutCubic(progress);
+      setShown(Math.round(next * factor) / factor);
+      fromRef.current = next;
       frameRef.current = requestAnimationFrame(tick);
     };
     frameRef.current = requestAnimationFrame(tick);

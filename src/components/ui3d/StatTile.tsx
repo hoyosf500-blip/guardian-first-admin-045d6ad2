@@ -72,7 +72,7 @@ export default function StatTile({
           <CountUp value={value} duration={duration} />
         </div>
 
-        <div className="hud-label mt-2 tilt-layer-1">{label}</div>
+        <div className="hud-label text-subtle mt-2 tilt-layer-1">{label}</div>
 
         {extra && <div className="mt-2 tilt-layer-1">{extra}</div>}
       </div>

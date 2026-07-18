@@ -5,6 +5,7 @@ import { RefreshCw, Loader2, Calendar, ArrowDownToLine } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
+import { TiltCard } from '@/components/ui3d';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -46,47 +47,55 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
   }
 
   return (
-    <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="bg-card rounded-xl border border-border overflow-hidden md:col-span-2">
-      <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <ArrowDownToLine size={16} className="text-primary" />
-        <div className="flex-1">
+    <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="md:col-span-2">
+    <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
+      <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+        <span className="w-8 h-8 rounded-xl bg-info/14 border border-info/30 text-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <ArrowDownToLine size={15} />
+        </span>
+        <div className="flex-1 min-w-0">
           <h3 className="text-sm font-semibold text-foreground">Sincronizar pedidos de Dropi</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Tienda activa: <span className="font-medium text-foreground">{activeStore?.name ?? '—'}</span>
             {activeStore?.country_code ? ` (${activeStore.country_code})` : ''}
           </p>
         </div>
+        {syncing && (
+          <span className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-info/14 border border-info/30 text-info">
+            EN PROCESO
+          </span>
+        )}
       </div>
 
       <div className="px-5 py-4 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Desde</label>
+          <label className="hud-label">Desde</label>
           <div className="relative">
             <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <input
               type="date"
               value={fromDate}
               onChange={e => setFromDate(e.target.value)}
-              className="h-9 rounded-lg border border-border bg-background pl-7 pr-3 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="h-9 rounded-xl border border-border bg-card/40 pl-7 pr-3 text-xs font-mono tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Hasta</label>
+          <label className="hud-label">Hasta</label>
           <div className="relative">
             <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <input
               type="date"
               value={toDate}
               onChange={e => setToDate(e.target.value)}
-              className="h-9 rounded-lg border border-border bg-background pl-7 pr-3 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="h-9 rounded-xl border border-border bg-card/40 pl-7 pr-3 text-xs font-mono tabular-nums text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
         </div>
         <button
           onClick={handleSync}
           disabled={syncing || !activeStoreId}
-          className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="btn-accent-3d h-9 px-4 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
           {syncing ? 'Sincronizando…' : 'Sincronizar'}
@@ -102,13 +111,14 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
 
       {lastResult && (
         <div className="px-5 pb-4 flex gap-4 text-xs">
-          <span className="text-green-500 font-medium">{lastResult.synced} sincronizados</span>
-          <span className="text-muted-foreground">{lastResult.total} total Dropi</span>
+          <span className="text-success font-semibold font-mono tabular-nums">{lastResult.synced} sincronizados</span>
+          <span className="text-muted-foreground font-mono tabular-nums">{lastResult.total} total Dropi</span>
           {lastResult.chunks && lastResult.chunks > 1 && (
-            <span className="text-muted-foreground">{lastResult.chunks} chunks</span>
+            <span className="text-muted-foreground font-mono tabular-nums">{lastResult.chunks} chunks</span>
           )}
         </div>
       )}
+    </TiltCard>
     </motion.div>
   );
 }
