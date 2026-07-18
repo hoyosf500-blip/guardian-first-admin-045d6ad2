@@ -45,3 +45,22 @@ export function formatTimeBogota(ts: string | null | undefined): string {
     timeZone: 'America/Bogota',
   }).format(d);
 }
+
+/**
+ * Igual que formatTimeBogota pero anteponiendo el día ("12 jul, 08:34 a. m.").
+ *
+ * Existe para los rangos de varios días: ahí una hora suelta no dice nada
+ * ("¿entró a las 8 de qué día?"). En la vista de HOY se sigue usando la hora
+ * sola, que es lo que la administradora necesita leer de un vistazo.
+ */
+export function formatDateTimeBogota(ts: string | null | undefined): string {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '—';
+  const dia = new Intl.DateTimeFormat('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    timeZone: 'America/Bogota',
+  }).format(d);
+  return `${dia}, ${formatTimeBogota(ts)}`;
+}

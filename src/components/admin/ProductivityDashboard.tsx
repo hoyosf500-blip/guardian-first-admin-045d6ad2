@@ -6,7 +6,7 @@ import { confRateBySample, confRateByCohort, isBelowDailyTarget, CONF_TARGET_PCT
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import { useShopifyPending } from '@/hooks/useShopifyPending';
 import { ShoppingBag } from 'lucide-react';
-import { formatTimeBogota, formatDurationHM } from '@/lib/timeFormat';
+import { formatTimeBogota, formatDateTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorarioCompliance, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import { scheduleFromMinutes, DEFAULT_SCHEDULE } from '@/lib/inactivityWindow';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
@@ -351,7 +351,7 @@ export default function ProductivityDashboard() {
               dotClass="bg-info"
               note={isToday
                 ? '¿Cumplió el horario? Hora de ENTRADA y SALIDA (primera y última señal del día) y cuánto del horario cubrió. NO se descuenta el estar quieta — puede estar en una llamada.'
-                : 'Horas trabajadas de todos los días del rango. El detalle de entrada/salida solo aplica en Hoy.'}
+                : 'Horas trabajadas del rango, tiempo conectada al CRM, y la primera y última señal de cada operadora en el período.'}
             >
               <div className="overflow-x-auto">
                 <table className="data-table">
@@ -359,9 +359,28 @@ export default function ProductivityDashboard() {
                     <tr>
                       <th className="w-10">#</th>
                       <th>Operadora</th>
-                      <th className="text-right" title="¿Cuánto del horario pactado cubrió? = desde que entró hasta que salió, dentro del horario de la tienda, menos el almuerzo. NO se descuenta el estar quieta (una llamada no mueve el mouse). En 7d/30d muestra las horas trabajadas del rango.">Cumplió horario</th>
-                      <th className="text-right" title="Hora de la PRIMERA señal del día (cuándo se conectó), zona Bogotá. 'puntual' si llegó a tiempo; rojo si llegó tarde respecto al horario.">Entró</th>
-                      <th className="text-right" title="Hora de la ÚLTIMA señal del día, zona Bogotá. 'en línea' = sigue activa ahora; rojo si se fue antes del fin del horario.">Salió</th>
+                      {/* El encabezado CAMBIA con el rango: en un período de
+                          varios días esta columna no muestra "cumplimiento"
+                          sino horas trabajadas, y llamarla igual que en Hoy
+                          hacía leer una cosa por otra. */}
+                      <th className="text-right" title={isToday
+                        ? '¿Cuánto del horario pactado cubrió? = desde que entró hasta que salió, dentro del horario de la tienda, menos el almuerzo. NO se descuenta el estar quieta (una llamada no mueve el mouse).'
+                        : 'Suma de las horas con evidencia de trabajo (pedidos marcados) en todos los días del rango. NO es lo mismo que el tiempo conectada: eso está en la columna de al lado.'}>
+                        {isToday ? 'Cumplió horario' : 'Horas trabajadas'}
+                      </th>
+                      {/* Tiempo conectada / fuera. El dato venía del servidor
+                          desde siempre (active_seconds / idle_seconds), estaba
+                          declarado en el tipo y NO SE DIBUJABA en ningún lado:
+                          llegaba a la pantalla y se tiraba. */}
+                      <th className="text-right" title="Tiempo con el CRM abierto y en uso (mouse/teclado) vs. tiempo sin señal. Estar quieta NO es estar ausente: en una llamada no se mueve el mouse. Sirve para ver de un vistazo cuánto estuvo fuera del CRM, no para castigar.">
+                        En el CRM
+                      </th>
+                      <th className="text-right" title={isToday
+                        ? "Hora de la PRIMERA señal del día (cuándo se conectó), zona Bogotá. 'puntual' si llegó a tiempo; rojo si llegó tarde respecto al horario."
+                        : 'Primera señal de la operadora en todo el rango, con su fecha. Zona Bogotá.'}>Entró</th>
+                      <th className="text-right" title={isToday
+                        ? "Hora de la ÚLTIMA señal del día, zona Bogotá. 'en línea' = sigue activa ahora; rojo si se fue antes del fin del horario."
+                        : 'Última señal de la operadora en todo el rango, con su fecha. Zona Bogotá.'}>Salió</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -448,6 +467,29 @@ export default function ProductivityDashboard() {
                               </span>
                             )}
                           </td>
+                          {/* EN EL CRM — conectada vs. sin señal. */}
+                          <td className="text-right">
+                            {a == null || (!a.active_seconds && !a.idle_seconds) ? (
+                              <span className="font-mono text-muted-foreground text-xs" title="Sin registro de conexión en este rango.">—</span>
+                            ) : (
+                              <div className="inline-flex flex-col items-end gap-0.5">
+                                <span
+                                  className="font-mono tabular-nums text-xs font-bold text-foreground"
+                                  title="Tiempo con el CRM abierto y con actividad de mouse o teclado."
+                                >
+                                  {formatDurationHM(a.active_seconds)}
+                                </span>
+                                {a.idle_seconds > 0 && (
+                                  <span
+                                    className="text-[10px] text-muted-foreground tabular-nums"
+                                    title="Tiempo con el CRM abierto pero sin mouse ni teclado. OJO: en una llamada no se mueve el mouse, así que esto NO es tiempo perdido por sí solo."
+                                  >
+                                    {formatDurationHM(a.idle_seconds)} sin señal
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
                           {/* ENTRÓ — hora + puntual / tarde. */}
                           <td className="text-right">
                             {isToday && turnoStart ? (
@@ -467,8 +509,19 @@ export default function ProductivityDashboard() {
                                   <span className="text-[10px] text-success font-semibold">puntual</span>
                                 )}
                               </span>
+                            ) : turnoStart ? (
+                              // En rangos de varios días SÍ hay dato: es la primera
+                              // señal del período. Antes se bloqueaba a Hoy y la
+                              // columna quedaba muerta en 7d/30d aunque el servidor
+                              // mandara el valor. Va con fecha, porque una hora
+                              // suelta en un rango no dice de qué día es. No se
+                              // emite juicio de puntualidad: eso necesita el horario
+                              // de UN día concreto.
+                              <span className="font-mono tabular-nums text-xs text-foreground whitespace-nowrap">
+                                {formatDateTimeBogota(turnoStart)}
+                              </span>
                             ) : (
-                              <span className="font-mono text-muted-foreground text-xs">—</span>
+                              <span className="font-mono text-muted-foreground text-xs" title="Sin ninguna señal en este rango.">—</span>
                             )}
                           </td>
                           {/* SALIÓ — hora + en línea / salió antes. */}
@@ -495,8 +548,15 @@ export default function ProductivityDashboard() {
                                   </span>
                                 ) : null}
                               </span>
+                            ) : turnoEnd ? (
+                              // Última señal del período, con fecha. Sin juicio de
+                              // "se fue antes": comparar contra el horario solo
+                              // tiene sentido dentro de un día.
+                              <span className="font-mono tabular-nums text-xs text-foreground whitespace-nowrap">
+                                {formatDateTimeBogota(turnoEnd)}
+                              </span>
                             ) : (
-                              <span className="font-mono text-muted-foreground text-xs">—</span>
+                              <span className="font-mono text-muted-foreground text-xs" title="Sin ninguna señal en este rango.">—</span>
                             )}
                           </td>
                         </tr>
