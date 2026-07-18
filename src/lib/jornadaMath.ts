@@ -25,7 +25,7 @@
 // El caller (ProductivityDashboard) gatea con range==='today' y cae al
 // cálculo viejo activo ÷ (activo + inactivo) en rangos multi-día.
 
-import { workingSecondsLost, type WorkSchedule } from './inactivityWindow';
+import { workingSecondsLost, bogotaSecondsOfDay, type WorkSchedule } from './inactivityWindow';
 
 /** Minutos de hueco (CRM cerrado) a partir de los cuales se muestra el chip ámbar. */
 export const UMBRAL_HUECO_MIN = 10;
@@ -214,51 +214,85 @@ export function shouldAlertSinConfirmar(input: SinConfirmarInput): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// "EN SU PUESTO" — horas que la operadora estuvo trabajando (decisión del dueño
-// 2026-07-17). Reemplaza a "Trabajó" como número TITULAR de la Jornada: "Trabajó"
-// solo contaba los ratos MARCANDO pedidos (order_results + touchpoints) y
-// subcontaba grave el trabajo telefónico ("obvio trabajó más" — reporte del dueño).
+// "CUMPLIÓ EL HORARIO" — asistencia vs el horario pactado (decisión del dueño
+// 2026-07-18). El dueño DESCUENTA sueldo sobre esto, así que la pregunta no es
+// "¿cuántos minutos productivos?" sino "¿me cumplió el horario? ¿entró a tiempo y
+// se quedó hasta la salida?".
 //
-// Definición: la ventana de su turno (primera → última señal del día, sea acción
-// de trabajo o mouse) intersectada con el HORARIO de la tienda y EXCLUYENDO el
-// almuerzo (vía workingSecondsLost), menos el tiempo de INACTIVIDAD confirmada
-// (las advertencias). Es "estuvo de X a Y en su puesto, menos lo que estuvo sin
-// hacer nada". PISO = worked_seconds (evidencia): nunca muestra menos de lo que
-// demostrablemente trabajó (cubre también horas fuera del horario configurado).
+// REGLA CLAVE (pedido explícito): NO penalizar "estar quieta". Si está en una
+// llamada con un cliente no mueve el mouse, y eso NO puede restarle. Por eso el %
+// se mide sobre la VENTANA entró→salió (dentro del horario, menos almuerzo), sin
+// descontar los ratos sin movimiento. Los dos datos duros y confiables son la
+// hora de ENTRADA (primera señal) y la de SALIDA (última señal) — de ahí salen
+// "llegó tarde" y "se fue temprano".
 //
-// Ventaja operativa: se calcula 100% en el cliente desde datos que YA se guardan
-// (eventos de trabajo + advertencias de inactividad + horario), así que da un
-// número realista aunque el heartbeat "En el CRM" esté caído.
+// Punto ciego conocido (aceptado por el dueño a cambio de no castigar el trabajo
+// telefónico): si abre el CRM, se va con la pestaña cerrada y vuelve al final, la
+// ventana entró→salió la cuenta como presente. La tabla de Confirmar (Intentos/h,
+// marcando) es el contrapeso: presencia 100% con 0 marcado = saltó a la vista.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface EnSuPuestoInput {
+export interface HorarioComplianceInput {
   /** Primera señal del día (ISO): la más temprana entre acción de trabajo y mouse. */
   turnoStart: string | null | undefined;
   /** Última señal del día (ISO): la más reciente entre acción de trabajo y mouse. */
   turnoEnd: string | null | undefined;
-  /** Segundos de inactividad LABORAL confirmada (SUM lost_seconds de las advertencias). */
-  inactivityLostSec: number | null | undefined;
-  /** worked_seconds del RPC (evidencia de marcado) — piso, nunca se muestra menos. */
-  workedSec: number | null | undefined;
   /** Horario de la tienda (segundos-del-día) — excluye almuerzo. */
   schedule: WorkSchedule;
 }
 
+export interface HorarioCompliance {
+  /** ms de la entrada (primera señal). null si falta. */
+  entradaMs: number | null;
+  /** ms de la salida (última señal). null si falta. */
+  salidaMs: number | null;
+  /** Segundos del horario que cubrió (ventana entró→salió ∩ horario − almuerzo). */
+  cubiertoSec: number | null;
+  /** Segundos netos del horario pactado (jornada − almuerzo). */
+  horarioNetoSec: number;
+  /** cubierto ÷ horarioNeto, 0-100. null si no hay ventana. */
+  cumplimientoPct: number | null;
+  /** Minutos que llegó TARDE respecto al inicio del horario (0 si puntual/antes). */
+  tardeMin: number | null;
+  /** Minutos que salió ANTES del fin del horario (0 si cumplió/se quedó). */
+  tempranoMin: number | null;
+}
+
+/** Segundos netos del horario pactado (jornada − almuerzo, solo el solapamiento). */
+export function horarioNetoSeconds(s: WorkSchedule): number {
+  const shift = Math.max(0, s.workEndSec - s.workStartSec);
+  const lunch = Math.max(0, Math.min(s.lunchEndSec, s.workEndSec) - Math.max(s.lunchStartSec, s.workStartSec));
+  return Math.max(0, shift - lunch);
+}
+
 /**
- * Segundos "en su puesto". null solo si no hay NI ventana válida NI evidencia de
- * trabajo. Para rangos multi-día (turnoStart y turnoEnd en fechas Bogotá
- * distintas) `workingSecondsLost` devuelve 0 → cae al piso worked_seconds (la
- * suma del rango), que es el comportamiento correcto para 7d/30d.
+ * Cumplimiento del horario a partir de la ventana entró→salió. NO usa el heartbeat
+ * de mouse ni resta inactividad (una operadora en llamada no mueve el mouse y eso
+ * no puede castigarla). Solo válido para UN día (range='today'): en multi-día la
+ * ventana MIN→MAX cruza fechas y `workingSecondsLost` devuelve 0 — el caller cae a
+ * las horas trabajadas del rango.
  */
-export function computeEnSuPuestoSec(input: EnSuPuestoInput): number | null {
-  const worked = Math.max(0, input.workedSec ?? 0);
-  const startMs = parseTsMs(input.turnoStart);
-  const endMs = parseTsMs(input.turnoEnd);
-  if (startMs == null || endMs == null || endMs <= startMs) {
-    return worked > 0 ? worked : null;
-  }
-  const presencia = workingSecondsLost(new Date(startMs), new Date(endMs), input.schedule);
-  const inact = Math.max(0, input.inactivityLostSec ?? 0);
-  const neto = Math.max(0, presencia - inact);
-  return Math.max(neto, worked);
+export function computeHorarioCompliance(input: HorarioComplianceInput): HorarioCompliance {
+  const horarioNetoSec = horarioNetoSeconds(input.schedule);
+  const entradaMs = parseTsMs(input.turnoStart);
+  const salidaMs = parseTsMs(input.turnoEnd);
+  const base: HorarioCompliance = {
+    entradaMs, salidaMs, cubiertoSec: null, horarioNetoSec,
+    cumplimientoPct: null, tardeMin: null, tempranoMin: null,
+  };
+  if (entradaMs == null || salidaMs == null || salidaMs <= entradaMs) return base;
+
+  // Ventana entró→salió ∩ horario − almuerzo. NO se descuenta inactividad.
+  const cubiertoSec = workingSecondsLost(new Date(entradaMs), new Date(salidaMs), input.schedule);
+  const cumplimientoPct = horarioNetoSec > 0
+    ? Math.min(100, Math.round((cubiertoSec / horarioNetoSec) * 100))
+    : null;
+
+  // Tarde / temprano por segundo-del-día Bogotá vs el horario pactado.
+  const entradaSod = bogotaSecondsOfDay(new Date(entradaMs));
+  const salidaSod = bogotaSecondsOfDay(new Date(salidaMs));
+  const tardeMin = Math.max(0, Math.round((entradaSod - input.schedule.workStartSec) / 60));
+  const tempranoMin = Math.max(0, Math.round((input.schedule.workEndSec - salidaSod) / 60));
+
+  return { entradaMs, salidaMs, cubiertoSec, horarioNetoSec, cumplimientoPct, tardeMin, tempranoMin };
 }

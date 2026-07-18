@@ -5,7 +5,8 @@ import {
   asWorkedBlocks,
   sumWorkedSeconds,
   blockRangeLabel,
-  computeEnSuPuestoSec,
+  computeHorarioCompliance,
+  horarioNetoSeconds,
   UMBRAL_HUECO_MIN,
   UMBRAL_DESCONECTADA_MIN,
   UMBRAL_SIN_CONF_MIN,
@@ -259,95 +260,88 @@ describe('constantes de umbral', () => {
   });
 });
 
-describe('computeEnSuPuestoSec', () => {
-  // Bogotá = UTC-5. 9:15 a. m. Bogotá = 14:15Z; 4:02 p. m. Bogotá = 21:02Z.
-  const T0915 = '2026-07-17T14:15:00Z';
-  const T1602 = '2026-07-17T21:02:00Z';
+describe('horarioNetoSeconds', () => {
+  it('DEFAULT 9–17 con almuerzo 12:30–13:30 = 7h netas', () => {
+    expect(horarioNetoSeconds(DEFAULT_SCHEDULE)).toBe(7 * 3600);
+  });
+});
 
-  it('caso Mayra: turno 9:15→16:02, almuerzo excluido, −59m inactividad = 4h48m', () => {
-    // presencia laboral = (9:15→16:02 dentro de 9–17) − almuerzo 12:30–13:30
-    //   = 6h47m − 1h = 5h47m = 20820 s; menos 59m (3540 s) = 17280 s = 4h48m.
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: T0915,
-        turnoEnd: T1602,
-        inactivityLostSec: 3540,
-        workedSec: 6780, // 1h53m marcando — queda por debajo, no es el piso
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBe(17280);
+describe('computeHorarioCompliance', () => {
+  it('puntual y completo: 9:00→17:00 = 100%, 0 tarde, 0 temprano', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:00:00Z', // 9:00
+      turnoEnd: '2026-07-17T22:00:00Z',   // 17:00
+      schedule: DEFAULT_SCHEDULE,
+    });
+    expect(c.cubiertoSec).toBe(7 * 3600);
+    expect(c.cumplimientoPct).toBe(100);
+    expect(c.tardeMin).toBe(0);
+    expect(c.tempranoMin).toBe(0);
   });
 
-  it('resta la inactividad de la presencia laboral', () => {
-    // Turno 9:00→17:00 completo = 8h − 1h almuerzo = 7h (25200 s); −1h inactividad.
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: '2026-07-17T14:00:00Z', // 9:00
-        turnoEnd: '2026-07-17T22:00:00Z',   // 17:00
-        inactivityLostSec: 3600,
-        workedSec: 0,
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBe(21600);
+  it('caso Mayra: entró 9:15 (15m tarde), salió 16:02 (58m antes) → 83%', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:15:00Z', // 9:15
+      turnoEnd: '2026-07-17T21:02:00Z',   // 16:02
+      schedule: DEFAULT_SCHEDULE,
+    });
+    // 9:15→16:02 dentro de 9–17 − almuerzo = 5h47m = 20820 s; 20820/25200 = 83%.
+    expect(c.cubiertoSec).toBe(20820);
+    expect(c.cumplimientoPct).toBe(83);
+    expect(c.tardeMin).toBe(15);
+    expect(c.tempranoMin).toBe(58);
   });
 
-  it('piso = worked_seconds: trabajo fuera del horario (noche) no cae por debajo de la evidencia', () => {
-    // 18:00→20:00 Bogotá: fuera del horario 9–17 → presencia laboral 0, pero marcó
-    // 1h → devuelve la evidencia (3600), nunca menos.
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: '2026-07-17T23:00:00Z', // 18:00 Bogotá
-        turnoEnd: '2026-07-18T01:00:00Z',   // 20:00 Bogotá (mismo día Bogotá)
-        inactivityLostSec: 0,
-        workedSec: 3600,
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBe(3600);
+  it('NO penaliza estar quieta: la ventana entró→salió NO depende del mouse', () => {
+    // Sin datos de mouse en absoluto, mismo 100% que el caso puntual (el mouse ni
+    // entra en la fórmula → una operadora en llamada todo el día no se castiga).
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:00:00Z',
+      turnoEnd: '2026-07-17T22:00:00Z',
+      schedule: DEFAULT_SCHEDULE,
+    });
+    expect(c.cumplimientoPct).toBe(100);
   });
 
-  it('rango multi-día (turno en fechas Bogotá distintas) → cae al piso worked (suma del rango)', () => {
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: '2026-07-10T14:00:00Z',
-        turnoEnd: '2026-07-17T21:00:00Z',
-        inactivityLostSec: 0,
-        workedSec: 36000, // 10h sumadas en el rango
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBe(36000);
+  it('llegó ANTES del horario → tarde 0 (no negativo); se quedó DESPUÉS → temprano 0', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T13:30:00Z', // 8:30 (media hora antes)
+      turnoEnd: '2026-07-17T22:30:00Z',   // 17:30 (media hora después)
+      schedule: DEFAULT_SCHEDULE,
+    });
+    expect(c.tardeMin).toBe(0);
+    expect(c.tempranoMin).toBe(0);
+    expect(c.cumplimientoPct).toBe(100); // cubre todo el horario (topado a 100)
   });
 
-  it('inactividad mayor que la presencia → 0 (clamp), nunca negativo', () => {
-    // 9:15→9:30 = 900 s de presencia; −1h inactividad → clamp a 0 (sin evidencia).
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: '2026-07-17T14:15:00Z',
-        turnoEnd: '2026-07-17T14:30:00Z',
-        inactivityLostSec: 3600,
-        workedSec: 0,
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBe(0);
+  it('horario nocturno configurable: 14:00→22:00 se mide contra ESE horario', () => {
+    const noche = { workStartSec: 14 * 3600, workEndSec: 22 * 3600, lunchStartSec: 18 * 3600, lunchEndSec: 19 * 3600 };
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T19:00:00Z', // 14:00 Bogotá
+      turnoEnd: '2026-07-18T03:00:00Z',   // 22:00 Bogotá
+      schedule: noche,
+    });
+    expect(c.cumplimientoPct).toBe(100);
+    expect(c.tardeMin).toBe(0);
+    expect(c.tempranoMin).toBe(0);
   });
 
-  it('sin ventana válida y sin evidencia → null; con evidencia → devuelve la evidencia', () => {
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: null,
-        turnoEnd: null,
-        inactivityLostSec: 0,
-        workedSec: 0,
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBeNull();
-    expect(
-      computeEnSuPuestoSec({
-        turnoStart: null,
-        turnoEnd: null,
-        inactivityLostSec: 0,
-        workedSec: 6780,
-        schedule: DEFAULT_SCHEDULE,
-      }),
-    ).toBe(6780);
+  it('sin ventana válida → todo null (menos el neto del horario)', () => {
+    const c = computeHorarioCompliance({ turnoStart: null, turnoEnd: null, schedule: DEFAULT_SCHEDULE });
+    expect(c.entradaMs).toBeNull();
+    expect(c.cubiertoSec).toBeNull();
+    expect(c.cumplimientoPct).toBeNull();
+    expect(c.tardeMin).toBeNull();
+    expect(c.horarioNetoSec).toBe(7 * 3600);
+  });
+
+  it('multi-día (fechas Bogotá distintas) → cubierto 0 (el caller cae a horas del rango)', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-10T14:00:00Z',
+      turnoEnd: '2026-07-17T21:00:00Z',
+      schedule: DEFAULT_SCHEDULE,
+    });
+    expect(c.cubiertoSec).toBe(0);
+    expect(c.cumplimientoPct).toBe(0);
   });
 });
