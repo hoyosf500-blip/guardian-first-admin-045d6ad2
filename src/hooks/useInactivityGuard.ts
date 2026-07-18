@@ -17,7 +17,7 @@ import { useStoreSchedule } from '@/hooks/useStoreSchedule';
  * Alertas de inactividad (presión psicológica de no perder tiempo).
  *
  * Mecánica (decisiones del dueño 2026-06-26):
- *  - "Inactiva" = sin interacción (mouse/teclado/click/scroll) por 5+ min de
+ *  - "Inactiva" = sin interacción (mouse/teclado/click/scroll) por 6+ min de
  *    tiempo LABORAL (9–17 Bogotá, excluye almuerzo 12:30–13:30).
  *  - SOLO penaliza si HAY TRABAJO PENDIENTE (Confirmar / Novedades / Seguimiento).
  *    Si terminó todo y no hay nada que hacer, NO la molesta. Mientras no hay
@@ -131,7 +131,7 @@ export function useInactivityGuard({ hasPendingWork }: { hasPendingWork: boolean
       if (!isWithinAlertWindow(nowDate, scheduleRef.current)) return; // fuera de horario / almuerzo
       const lost = workingSecondsLost(new Date(last), nowDate, scheduleRef.current);
       if (lost < IDLE_THRESHOLD_SECONDS) return;
-      // Volvió tras >=5 min de inactividad laboral CON trabajo pendiente.
+      // Volvió tras >=6 min de inactividad laboral CON trabajo pendiente.
       pendingRef.current = true;
       const number = warningsTodayRef.current + 1;
       const lockedUntil = number >= 3 ? now + LOCK_DURATION_MS : undefined;

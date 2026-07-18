@@ -4,14 +4,14 @@
 //
 // Funciones PURAS (reciben Date, no leen el reloj) para poder testearlas con
 // fechas fijas. Trabajan con SEGUNDOS-del-día (no minutos) para que el umbral
-// de 5 min sea exacto y no varíe ±1 min según la fracción de segundo.
+// de 6 min sea exacto y no varíe ±1 min según la fracción de segundo.
 
 export const BOGOTA_TZ = 'America/Bogota';
 export const WORK_START_SEC = 9 * 3600;             // 09:00:00
 export const WORK_END_SEC = 17 * 3600;              // 17:00:00
 export const LUNCH_START_SEC = (12 * 60 + 30) * 60; // 12:30:00
 export const LUNCH_END_SEC = (13 * 60 + 30) * 60;   // 13:30:00
-export const IDLE_THRESHOLD_SECONDS = 5 * 60;       // 5 minutos sin actividad
+export const IDLE_THRESHOLD_SECONDS = 6 * 60;       // 6 minutos sin actividad (dueño 2026-07-18: era 5, +1 min de gracia)
 
 /**
  * Horario laboral (en SEGUNDOS-del-día Bogotá) contra el que se miden las
