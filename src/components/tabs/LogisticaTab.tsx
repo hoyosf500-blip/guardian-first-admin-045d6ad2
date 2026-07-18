@@ -382,13 +382,13 @@ export default function LogisticaTab() {
               className="inline-flex w-full justify-start gap-0.5 h-auto p-1"
               aria-label="Secciones de logística"
             >
-              <TabsTrigger value="resumen" className="shrink-0"><LayoutDashboard size={13} className="mr-1.5" /> Resumen</TabsTrigger>
-              <TabsTrigger value="carriers" className="shrink-0"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
-              <TabsTrigger value="cities" className="shrink-0"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
-              <TabsTrigger value="products" className="shrink-0"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
-              <TabsTrigger value="decisiones" className="shrink-0"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
-              <TabsTrigger value="trazabilidad" className="shrink-0"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
-              <TabsTrigger value="finanzas" className="shrink-0"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
+              <TabsTrigger value="resumen" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><LayoutDashboard size={13} className="mr-1.5" /> Resumen</TabsTrigger>
+              <TabsTrigger value="carriers" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Truck size={13} className="mr-1.5" /> Transportadoras</TabsTrigger>
+              <TabsTrigger value="cities" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><MapPin size={13} className="mr-1.5" /> Ciudades</TabsTrigger>
+              <TabsTrigger value="products" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
+              <TabsTrigger value="decisiones" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
+              <TabsTrigger value="trazabilidad" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
+              <TabsTrigger value="finanzas" className="shrink-0 rounded-lg data-[state=active]:bg-accent/15 data-[state=active]:text-accent data-[state=active]:shadow-none data-[state=active]:border data-[state=active]:border-accent/34"><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
             </TabsList>
           </div>
 

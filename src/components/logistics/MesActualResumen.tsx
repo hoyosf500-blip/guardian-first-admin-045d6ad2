@@ -204,7 +204,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const estadoDetalleTotal = estadoDetalle.reduce((a, r) => a + r.pedidos, 0);
 
   return (
-    <section className="rounded-xl border border-accent/30 bg-card overflow-hidden">
+    <section className="rounded-2xl border border-accent/30 bg-gradient-to-b from-accent/[0.08] to-card overflow-hidden shadow-glow">
       {/* Header */}
       <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
@@ -237,7 +237,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
       <div className="px-5 py-4 border-b border-border bg-accent/5 flex items-center gap-2.5">
         <ArrowRight size={18} className="text-accent shrink-0" />
         <div className="min-w-0">
-          <div className="text-2xl font-bold tabular-nums text-foreground leading-tight">
+          <div className="text-2xl font-bold tabular-nums text-accent leading-tight num-glow-accent">
             {enLaCalleCount.toLocaleString('es-CO')}
             <span className="text-sm font-medium text-muted-foreground ml-1.5">pedidos en la calle</span>
           </div>
