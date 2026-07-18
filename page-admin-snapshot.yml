@@ -1,0 +1,761 @@
+- generic [active] [ref=e12]:
+  - generic [ref=e13]:
+    - region "Notifications alt+T"
+    - generic [ref=e14]:
+      - complementary "Navegación principal" [ref=e15]:
+        - generic [ref=e17]:
+          - img [ref=e19]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Rushmira Ecuador
+            - generic [ref=e25]: Panel COD
+        - button "Cambiar tienda" [ref=e27] [cursor=pointer]:
+          - img [ref=e28]
+          - generic [ref=e33]:
+            - generic [ref=e34]: Rushmira Ecuador
+            - generic [ref=e35]: EC · Dueño
+          - img [ref=e36]
+        - navigation "Secciones del CRM" [ref=e39]:
+          - button "Dashboard" [ref=e40] [cursor=pointer]:
+            - img [ref=e41]
+            - generic [ref=e43]: Dashboard
+          - button "Confirmar" [ref=e44] [cursor=pointer]:
+            - img [ref=e45]
+            - generic [ref=e47]: Confirmar
+          - button "Seguimiento" [ref=e48] [cursor=pointer]:
+            - img [ref=e49]
+            - generic [ref=e53]: Seguimiento
+          - button "Novedades" [ref=e54] [cursor=pointer]:
+            - img [ref=e55]
+            - generic [ref=e57]: Novedades
+          - button "Admin" [ref=e58] [cursor=pointer]:
+            - img [ref=e59]
+            - generic [ref=e62]: Admin
+          - button "Logística" [ref=e63] [cursor=pointer]:
+            - img [ref=e64]
+            - generic [ref=e69]: Logística
+        - generic [ref=e71]:
+          - generic [ref=e72]: F
+          - generic [ref=e73]:
+            - generic [ref=e74]: Fabian
+            - generic [ref=e75]: Administrador
+          - button "Cerrar sesión" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+      - generic [ref=e80]:
+        - banner [ref=e81]:
+          - heading "Admin" [level=1] [ref=e83]
+          - generic [ref=e84]:
+            - generic [ref=e85]: 02:13 p. m.
+            - button "Cambiar a modo claro" [ref=e86] [cursor=pointer]:
+              - img [ref=e87]
+            - 'generic "Usuario: Fabian" [ref=e93]': F
+        - main [ref=e94]:
+          - generic "Última sync hace 1 min · 17 cambios" [ref=e96]:
+            - generic [ref=e98]: Sync OK
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]: Panel · Admin
+              - heading "Administración" [level=1] [ref=e102]:
+                - img [ref=e103]
+                - text: Administración
+              - paragraph [ref=e107]: Configuración de integraciones (Dropi, IA, huella), gestión de operadoras y reportes.
+            - generic [ref=e108]:
+              - tablist [ref=e109]:
+                - tab "Configuración" [selected] [ref=e110] [cursor=pointer]
+                - tab "Productividad" [ref=e111] [cursor=pointer]
+                - tab "Reportes diarios" [ref=e112] [cursor=pointer]
+              - tabpanel "Configuración" [ref=e113]:
+                - generic [ref=e115]:
+                  - generic [ref=e116]:
+                    - generic [ref=e117]:
+                      - generic [ref=e118]:
+                        - img [ref=e119]
+                        - generic [ref=e123]:
+                          - heading "Credenciales Dropi · Rushmira Ecuador" [level=3] [ref=e124]
+                          - paragraph [ref=e125]: "País: EC — cada tienda guarda sus propias credenciales."
+                      - generic [ref=e126]:
+                        - generic [ref=e127]:
+                          - text: API Key de Dropi (Bearer permanente)
+                          - generic [ref=e129]:
+                            - textbox "eyJ0eXAi..." [ref=e130]: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOlwvXC9hcHAuZHJvcGkuZWM6ODAiLCJpYXQiOjE3NzkzNDkxMjMsImV4cCI6NDkzNTAyMjcyMywibmJmIjoxNzc5MzQ5MTIzLCJqdGkiOiJvUndIcEd0cXU2UTJvZ0JvIiwic3ViIjo5MTA5NCwicHJ2IjoiODdlMGFmMWVmOWZkMTU4MTJmZGVjOTcxNTNhMTRlMGIwNDc1NDZhYSIsImF1ZCI6IlJVU0hNSVJBIiwidG9rZW5fdHlwZSI6IklOVEVHUkFUSU9OUyIsIndiX2lkIjoxLCJpbnRlZ3JhdGlvbl90eXBlIjoiUlVTSE1JUkEiLCJpbnRlZ3JhdGlvbl90eXBlX2lkIjozMDUsImlwX3VybCI6W3sidXJsIjpudWxsLCJpcCI6IjE1My45Mi4yMTIuMTg3In0seyJ1cmwiOm51bGwsImlwIjoiMTg1LjE1OC4xMzMuMSJ9LHsidXJsIjoiaHR0cHM6XC9cL3J1c2htaXJhLmNvbVwvIiwiaXAiOm51bGx9XSwiaW50ZWdyYXRpb25fdXJsIjoiIn0._8dDKmuz_HlLnE6TYfpPsN1qeA_pmANa4y4g8UmP_C8
+                            - button [ref=e131] [cursor=pointer]:
+                              - img [ref=e132]
+                        - generic [ref=e135]:
+                          - text: Token de sesión (JWT — para wallet & huella)
+                          - generic [ref=e137]:
+                            - textbox "eyJhbGci... (vence ~12-24h)" [ref=e138]: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOlwvXC9hcHAuZHJvcGkuZWM6ODAiLCJpYXQiOjE3Nzk5MDA5MTUsImV4cCI6MTc3OTkxNTMxNSwibmJmIjoxNzc5OTAwOTE1LCJqdGkiOiI1Z0hxUElnZ0ZLMTEybW9nIiwic3ViIjo5MTA5NCwicHJ2IjoiODdlMGFmMWVmOWZkMTU4MTJmZGVjOTcxNTNhMTRlMGIwNDc1NDZhYSIsImF1ZCI6IkRST1BJIiwidG9rZW5fdHlwZSI6IkRST1BJIiwid2JfaWQiOjF9.3kdh6W5RDEWnjOAK4nDazbfD4lFh1MvzvqUreMKomio
+                            - button [ref=e139] [cursor=pointer]:
+                              - img [ref=e140]
+                          - paragraph [ref=e143]: Token VENCIDO — refrescalo con los pasos de abajo.
+                          - group [ref=e144]:
+                            - generic "Cómo obtener el token de la huella" [ref=e145] [cursor=pointer]
+                        - generic [ref=e146]:
+                          - text: URL de integración Dropi
+                          - textbox "https://rushmira.com/" [ref=e147]
+                        - generic [ref=e148]:
+                          - link "Ir a Dropi" [ref=e149] [cursor=pointer]:
+                            - /url: https://app.dropi.co
+                            - text: Ir a Dropi
+                            - img [ref=e150]
+                          - generic [ref=e154]:
+                            - button "Probar conexión" [ref=e155] [cursor=pointer]:
+                              - img [ref=e156]
+                              - text: Probar conexión
+                            - button "Guardar credenciales" [disabled] [ref=e160]:
+                              - img [ref=e161]
+                              - text: Guardar credenciales
+                        - generic [ref=e165]:
+                          - img [ref=e166]
+                          - text: Credenciales cargadas
+                    - generic [ref=e169]:
+                      - generic [ref=e170]:
+                        - img [ref=e171]
+                        - generic [ref=e174]:
+                          - heading "Shopify · Rushmira Ecuador" [level=3] [ref=e175]
+                          - paragraph [ref=e176]:
+                            - text: Conectá Shopify para detectar pedidos que NO pasaron a Dropi. En el
+                            - strong [ref=e177]: Dev Dashboard
+                            - text: de Shopify creá una app con permiso
+                            - code [ref=e178]: read_orders
+                            - text: e instalala en la tienda; después pegá el
+                            - strong [ref=e179]: Client ID
+                            - text: y el
+                            - strong [ref=e180]: Client Secret
+                            - text: (
+                            - code [ref=e181]: shpss_…
+                            - text: ). El token se renueva solo.
+                        - generic [ref=e182]:
+                          - img [ref=e183]
+                          - text: Conectado
+                      - generic [ref=e186]:
+                        - generic [ref=e187]:
+                          - text: Dominio de la tienda
+                          - textbox "mitienda.myshopify.com" [ref=e188]: n1tpqk-w2.myshopify.com
+                        - generic [ref=e189]:
+                          - text: Client ID
+                          - textbox "•••••• (pegá uno nuevo para cambiarlo)" [ref=e190]
+                        - generic [ref=e191]:
+                          - text: Client Secret (shpss_…)
+                          - generic [ref=e192]:
+                            - textbox "•••••• (pegá uno nuevo para cambiarlo)" [ref=e193]
+                            - button [ref=e194] [cursor=pointer]:
+                              - img [ref=e195]
+                        - generic [ref=e199]:
+                          - button "Probar" [ref=e200] [cursor=pointer]:
+                            - img [ref=e201]
+                            - text: Probar
+                          - button "Guardar Shopify" [disabled] [ref=e205]:
+                            - img [ref=e206]
+                            - text: Guardar Shopify
+                    - generic [ref=e210]:
+                      - generic [ref=e211]:
+                        - img [ref=e212]
+                        - generic [ref=e217]:
+                          - heading "Branding de la tienda" [level=3] [ref=e218]
+                          - paragraph [ref=e219]: Nombre y logo que aparecen en el sidebar.
+                      - generic [ref=e220]:
+                        - generic [ref=e221]:
+                          - text: Nombre
+                          - textbox [ref=e222]: Rushmira Ecuador
+                        - generic [ref=e223]:
+                          - generic [ref=e224]:
+                            - img [ref=e225]
+                            - text: URL del logo
+                          - textbox "https://..." [ref=e229]
+                        - button "Guardar branding" [disabled] [ref=e231]:
+                          - img [ref=e232]
+                          - text: Guardar branding
+                  - generic [ref=e236]:
+                    - generic [ref=e237]:
+                      - generic [ref=e238]:
+                        - img [ref=e239]
+                        - generic [ref=e241]:
+                          - heading "Paridad con Dropi" [level=3] [ref=e242]
+                          - paragraph [ref=e243]: Compara Guardian vs Dropi y reconcilia divergencias. Backstop manual del cron.
+                      - generic [ref=e244]:
+                        - img [ref=e245]
+                        - generic [ref=e247]: Saludable
+                        - generic [ref=e248]: · 28 may 14:07
+                    - button "Auditar paridad ahora" [ref=e251] [cursor=pointer]:
+                      - img [ref=e252]
+                      - text: Auditar paridad ahora
+                  - generic [ref=e256]:
+                    - generic [ref=e257]:
+                      - img [ref=e258]
+                      - generic [ref=e261]:
+                        - heading "Vínculos de productos Shopify → Dropi · Rushmira Ecuador" [level=3] [ref=e262]
+                        - paragraph [ref=e263]:
+                          - text: Vinculá cada producto con su id de Dropi una sola vez. Aplica a todos los pedidos (no se vuelve a pedir).
+                          - generic [ref=e264]: 1/35
+                          - text: vinculados.
+                      - button "Actualizar" [ref=e265] [cursor=pointer]:
+                        - img [ref=e266]
+                    - generic [ref=e271]:
+                      - generic [ref=e272]:
+                        - generic [ref=e274]:
+                          - generic [ref=e275]:
+                            - generic [ref=e276]: Almohadilla de Arena para Gatos con Filtro de Seguridad
+                            - generic [ref=e277]: "Shopify #9454943633633"
+                          - generic [ref=e278]:
+                            - img [ref=e279]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e281] [cursor=pointer]
+                        - generic [ref=e283]:
+                          - generic [ref=e284]:
+                            - generic [ref=e285]: Botella Hydra Aesthetic con Recordatorios Inteligentes
+                            - generic [ref=e286]: "Shopify #9454943600865"
+                          - generic [ref=e287]:
+                            - img [ref=e288]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e290] [cursor=pointer]
+                        - generic [ref=e292]:
+                          - generic [ref=e293]:
+                            - generic [ref=e294]: Cepillo de Baño Masajeador 2 en 1 para Mascotas
+                            - generic [ref=e295]: "Shopify #9454943568097"
+                          - generic [ref=e296]:
+                            - img [ref=e297]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e299] [cursor=pointer]
+                        - generic [ref=e301]:
+                          - generic [ref=e302]:
+                            - generic [ref=e303]: Cepillo Indoloro FOAM Anti-Caspa
+                            - generic [ref=e304]: "Shopify #9454943535329"
+                          - generic [ref=e305]:
+                            - img [ref=e306]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e308] [cursor=pointer]
+                        - generic [ref=e310]:
+                          - generic [ref=e311]:
+                            - generic [ref=e312]: Cepillo para Mascotas con Mecanismo Inteligente
+                            - generic [ref=e313]: "Shopify #9454943502561"
+                          - generic [ref=e314]:
+                            - img [ref=e315]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e317] [cursor=pointer]
+                        - generic [ref=e319]:
+                          - generic [ref=e320]:
+                            - generic [ref=e321]: CINTURON ANTICOLICOS
+                            - generic [ref=e322]: "Shopify #9481503342817"
+                          - generic [ref=e323]:
+                            - img [ref=e324]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e326] [cursor=pointer]
+                        - generic [ref=e328]:
+                          - generic [ref=e329]:
+                            - generic [ref=e330]: COOL BASE PRO
+                            - generic [ref=e331]: "Shopify #9457992433889"
+                          - generic [ref=e332]:
+                            - img [ref=e333]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e335] [cursor=pointer]
+                        - generic [ref=e337]:
+                          - generic [ref=e338]:
+                            - generic [ref=e339]: Cortador de Verduras Multiusos 12 Tipos de Corte en 1
+                            - generic [ref=e340]: "Shopify #9454943469793"
+                          - generic [ref=e341]:
+                            - img [ref=e342]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e344] [cursor=pointer]
+                        - generic [ref=e346]:
+                          - generic [ref=e347]:
+                            - generic [ref=e348]: Fregadero Telescópico para Cocina
+                            - generic [ref=e349]: "Shopify #9454943437025"
+                          - generic [ref=e350]:
+                            - img [ref=e351]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e353] [cursor=pointer]
+                        - generic [ref=e355]:
+                          - generic [ref=e356]:
+                            - generic [ref=e357]: FrescoMax™ Pro 2026— Climatizador 2 en 1 que Enfría 50 m² en 15 Minutos
+                            - generic [ref=e358]: "Shopify #9483772952801"
+                          - generic [ref=e359]:
+                            - img [ref=e360]
+                            - text: "Dropi #115864"
+                          - button "Cambiar" [ref=e363] [cursor=pointer]
+                          - button "Borrar vínculo" [ref=e364] [cursor=pointer]:
+                            - img [ref=e365]
+                        - generic [ref=e369]:
+                          - generic [ref=e370]:
+                            - generic [ref=e371]: H20 Humidifier
+                            - generic [ref=e372]: "Shopify #9454943371489"
+                          - generic [ref=e373]:
+                            - img [ref=e374]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e376] [cursor=pointer]
+                        - generic [ref=e378]:
+                          - generic [ref=e379]:
+                            - generic [ref=e380]: Humidificador en Forma de Volcán [Nubes Circulares]
+                            - generic [ref=e381]: "Shopify #9454943338721"
+                          - generic [ref=e382]:
+                            - img [ref=e383]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e385] [cursor=pointer]
+                        - generic [ref=e387]:
+                          - generic [ref=e388]:
+                            - generic [ref=e389]: Juguete de Funda de iPhone con Lanza-Dardos de Goma Incorporado
+                            - generic [ref=e390]: "Shopify #9454943305953"
+                          - generic [ref=e391]:
+                            - img [ref=e392]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e394] [cursor=pointer]
+                        - generic [ref=e396]:
+                          - generic [ref=e397]:
+                            - generic [ref=e398]: Leggins Mágicos. Térmicos por dentro, efecto Piel por fuera.
+                            - generic [ref=e399]: "Shopify #9454943273185"
+                          - generic [ref=e400]:
+                            - img [ref=e401]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e403] [cursor=pointer]
+                        - generic [ref=e405]:
+                          - generic [ref=e406]:
+                            - generic [ref=e407]: Limpiador para Perros Inteligente (Almacen de Shampoo)
+                            - generic [ref=e408]: "Shopify #9454943240417"
+                          - generic [ref=e409]:
+                            - img [ref=e410]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e412] [cursor=pointer]
+                        - generic [ref=e414]:
+                          - generic [ref=e415]:
+                            - generic [ref=e416]: Limpiador Portatil Multiusos 3 en 1
+                            - generic [ref=e417]: "Shopify #9454943207649"
+                          - generic [ref=e418]:
+                            - img [ref=e419]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e421] [cursor=pointer]
+                        - generic [ref=e423]:
+                          - generic [ref=e424]:
+                            - generic [ref=e425]: Nueva Chaqueta Eléctrica de Calor Inducido para Invierno
+                            - generic [ref=e426]: "Shopify #9454943174881"
+                          - generic [ref=e427]:
+                            - img [ref=e428]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e430] [cursor=pointer]
+                        - generic [ref=e432]:
+                          - generic [ref=e433]:
+                            - generic [ref=e434]: Plataforma 360º de Seguimiento Inteligente para Mobil
+                            - generic [ref=e435]: "Shopify #9454943142113"
+                          - generic [ref=e436]:
+                            - img [ref=e437]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e439] [cursor=pointer]
+                        - generic [ref=e441]:
+                          - generic [ref=e442]:
+                            - generic [ref=e443]: POWERCUT 2.0 AHORRADOR DE ENERGIA
+                            - generic [ref=e444]: "Shopify #9454989213921"
+                          - generic [ref=e445]:
+                            - img [ref=e446]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e448] [cursor=pointer]
+                        - generic [ref=e450]:
+                          - generic [ref=e451]:
+                            - generic [ref=e452]: Protector de Sofá Transparente para Arañazos de Gatos
+                            - generic [ref=e453]: "Shopify #9454943109345"
+                          - generic [ref=e454]:
+                            - img [ref=e455]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e457] [cursor=pointer]
+                        - generic [ref=e459]:
+                          - generic [ref=e460]:
+                            - generic [ref=e461]: Pulpo Limpiador de Vajillas para tu Cocina
+                            - generic [ref=e462]: "Shopify #9454943076577"
+                          - generic [ref=e463]:
+                            - img [ref=e464]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e466] [cursor=pointer]
+                        - generic [ref=e468]:
+                          - generic [ref=e469]:
+                            - generic [ref=e470]: RADIO 4 en 1 Pack de Supervivencia[RADIO+LAMPARA+CARGA SOLAR+BATERÍA EXTERNA]
+                            - generic [ref=e471]: "Shopify #9454943043809"
+                          - generic [ref=e472]:
+                            - img [ref=e473]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e475] [cursor=pointer]
+                        - generic [ref=e477]:
+                          - generic [ref=e478]:
+                            - generic [ref=e479]: Rejilla para fregadero de cocina plegable de acero inoxidable
+                            - generic [ref=e480]: "Shopify #9454943011041"
+                          - generic [ref=e481]:
+                            - img [ref=e482]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e484] [cursor=pointer]
+                        - generic [ref=e486]:
+                          - generic [ref=e487]:
+                            - generic [ref=e488]: Set de Limpieza para Gatos
+                            - generic [ref=e489]: "Shopify #9454942978273"
+                          - generic [ref=e490]:
+                            - img [ref=e491]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e493] [cursor=pointer]
+                        - generic [ref=e495]:
+                          - generic [ref=e496]:
+                            - generic [ref=e497]: SET para Portar Cables 3 en 1 Magnético
+                            - generic [ref=e498]: "Shopify #9454942945505"
+                          - generic [ref=e499]:
+                            - img [ref=e500]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e502] [cursor=pointer]
+                        - generic [ref=e504]:
+                          - generic [ref=e505]:
+                            - generic [ref=e506]: Shark Slippers [Zapatillas de Tiburón]
+                            - generic [ref=e507]: "Shopify #9454942912737"
+                          - generic [ref=e508]:
+                            - img [ref=e509]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e511] [cursor=pointer]
+                        - generic [ref=e513]:
+                          - generic [ref=e514]:
+                            - generic [ref=e515]: Slippers en Tendencia Acolchadas para invierno
+                            - generic [ref=e516]: "Shopify #9454942879969"
+                          - generic [ref=e517]:
+                            - img [ref=e518]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e520] [cursor=pointer]
+                        - generic [ref=e522]:
+                          - generic [ref=e523]:
+                            - generic [ref=e524]: Vegetable Cutting Artifact Kitchen Diced Fruit Multi-Function Shredded Potatoes
+                            - generic [ref=e525]: "Shopify #9454942847201"
+                          - generic [ref=e526]:
+                            - img [ref=e527]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e529] [cursor=pointer]
+                        - generic [ref=e531]:
+                          - generic [ref=e532]:
+                            - generic [ref=e533]: Zapatillas Masajeadoras de Burbujas FOAM
+                            - generic [ref=e534]: "Shopify #9454942814433"
+                          - generic [ref=e535]:
+                            - img [ref=e536]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e538] [cursor=pointer]
+                        - generic [ref=e540]:
+                          - generic [ref=e541]:
+                            - generic [ref=e542]: ¡Cortador Multiuso de Frutas y Verduras con Almacenaje!
+                            - generic [ref=e543]: "Shopify #9454942748897"
+                          - generic [ref=e544]:
+                            - img [ref=e545]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e547] [cursor=pointer]
+                        - generic [ref=e549]:
+                          - generic [ref=e550]:
+                            - generic [ref=e551]: ¡Masajeador Inteligente de Espalda sin Cables!
+                            - generic [ref=e552]: "Shopify #9454942716129"
+                          - generic [ref=e553]:
+                            - img [ref=e554]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e556] [cursor=pointer]
+                        - generic [ref=e558]:
+                          - generic [ref=e559]:
+                            - generic [ref=e560]: 🐱 Almohada Gatito Achuchable
+                            - generic [ref=e561]: "Shopify #9454942683361"
+                          - generic [ref=e562]:
+                            - img [ref=e563]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e565] [cursor=pointer]
+                        - generic [ref=e567]:
+                          - generic [ref=e568]:
+                            - generic [ref=e569]: 🥊 Pelota de Reflejos de Boxeo
+                            - generic [ref=e570]: "Shopify #9454942650593"
+                          - generic [ref=e571]:
+                            - img [ref=e572]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e574] [cursor=pointer]
+                        - generic [ref=e576]:
+                          - generic [ref=e577]:
+                            - generic [ref=e578]: 👣 Plantillas de Crecimiento
+                            - generic [ref=e579]: "Shopify #9454942617825"
+                          - generic [ref=e580]:
+                            - img [ref=e581]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e583] [cursor=pointer]
+                        - generic [ref=e585]:
+                          - generic [ref=e586]:
+                            - generic [ref=e587]: 👂Limpiador de Oídos con Cámara
+                            - generic [ref=e588]: "Shopify #9454942585057"
+                          - generic [ref=e589]:
+                            - img [ref=e590]
+                            - text: falta vincular
+                          - button "Vincular" [ref=e592] [cursor=pointer]
+                      - group [ref=e593]:
+                        - generic "Agregar un vínculo a mano (por id)" [ref=e594] [cursor=pointer]
+                  - generic [ref=e595]:
+                    - generic [ref=e596]:
+                      - img [ref=e597]
+                      - generic [ref=e600]:
+                        - heading "Invitar a tu equipo · Rushmira Ecuador" [level=3] [ref=e601]
+                        - paragraph [ref=e602]:
+                          - text: Elegí el rol, generá el link y mandáselo. Al registrarse queda
+                          - generic [ref=e603]: solo en Rushmira Ecuador
+                          - text: con ese rol — no ve otras tiendas. El link vence en 7 días y sirve una sola vez.
+                    - generic [ref=e604]:
+                      - generic [ref=e605]:
+                        - text: Rol de la invitación
+                        - combobox [ref=e606]:
+                          - option "Operadora — solo Confirmar / Seguimiento / Novedades" [selected]
+                          - option "Supervisor — además Admin y Logística (no CFO)"
+                      - button "Generar link de invitación" [ref=e607] [cursor=pointer]:
+                        - img [ref=e608]
+                        - text: Generar link de invitación
+                  - generic [ref=e611]:
+                    - generic [ref=e612]:
+                      - img [ref=e613]
+                      - generic [ref=e615]:
+                        - heading "Clave API de IA (DashScope)" [level=3] [ref=e616]
+                        - paragraph [ref=e617]: Habilita guiones de llamada, sugerencias y perfiles de cliente con IA
+                    - generic [ref=e618]:
+                      - generic [ref=e619]:
+                        - textbox "Pega aquí tu clave de DashScope (sk-...)" [ref=e620]: sk-ab3033f199eb4bcd93ea82f4c76cd117
+                        - button [ref=e621] [cursor=pointer]:
+                          - img [ref=e622]
+                      - button "Guardar" [disabled] [ref=e625]:
+                        - img [ref=e626]
+                        - text: Guardar
+                    - generic [ref=e630]:
+                      - generic [ref=e631]:
+                        - img [ref=e632]
+                        - text: Clave IA configurada
+                      - button "Probar IA" [ref=e635] [cursor=pointer]:
+                        - img [ref=e636]
+                        - text: Probar IA
+                  - generic [ref=e638]:
+                    - generic [ref=e639]:
+                      - img [ref=e640]
+                      - generic [ref=e642]:
+                        - heading "Sincronizar pedidos de Dropi" [level=3] [ref=e643]
+                        - paragraph [ref=e644]: "Tienda activa: Rushmira Ecuador (EC)"
+                    - generic [ref=e645]:
+                      - generic [ref=e646]:
+                        - generic [ref=e647]: Desde
+                        - generic [ref=e648]:
+                          - img
+                          - textbox [ref=e649]: 2026-05-28
+                      - generic [ref=e650]:
+                        - generic [ref=e651]: Hasta
+                        - generic [ref=e652]:
+                          - img
+                          - textbox [ref=e653]: 2026-05-28
+                      - button "Sincronizar" [ref=e654] [cursor=pointer]:
+                        - img [ref=e655]
+                        - text: Sincronizar
+                  - generic [ref=e660]:
+                    - generic [ref=e661]:
+                      - generic [ref=e662]:
+                        - img [ref=e663]
+                        - generic [ref=e667]:
+                          - heading "Historial de sincronizaciones" [level=3] [ref=e668]
+                          - paragraph [ref=e669]: 20 registros
+                      - button [ref=e670] [cursor=pointer]:
+                        - img [ref=e671]
+                    - generic [ref=e676]:
+                      - generic [ref=e677]:
+                        - generic [ref=e678]:
+                          - img [ref=e680]
+                          - generic [ref=e683]:
+                            - generic [ref=e684]: 17 sincronizados
+                            - generic [ref=e685]: 28 may 2026, 14:12
+                        - generic [ref=e686]:
+                          - generic [ref=e687]: 3100 total
+                          - generic [ref=e688]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e689]:
+                        - generic [ref=e690]:
+                          - img [ref=e692]
+                          - generic [ref=e695]:
+                            - generic [ref=e696]: 7 sincronizados
+                            - generic [ref=e697]: 28 may 2026, 14:07
+                        - generic [ref=e698]:
+                          - generic [ref=e699]: 2900 total
+                          - generic [ref=e700]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e701]:
+                        - generic [ref=e702]:
+                          - img [ref=e704]
+                          - generic [ref=e707]:
+                            - generic [ref=e708]: 14 sincronizados
+                            - generic [ref=e709]: 28 may 2026, 14:02
+                        - generic [ref=e710]:
+                          - generic [ref=e711]: 2700 total
+                          - generic [ref=e712]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e713]:
+                        - generic [ref=e714]:
+                          - img [ref=e716]
+                          - generic [ref=e719]:
+                            - generic [ref=e720]: 12 sincronizados
+                            - generic [ref=e721]: 28 may 2026, 13:57
+                        - generic [ref=e722]:
+                          - generic [ref=e723]: 2800 total
+                          - generic [ref=e724]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e725]:
+                        - generic [ref=e726]:
+                          - img [ref=e728]
+                          - generic [ref=e731]:
+                            - generic [ref=e732]: 14 sincronizados
+                            - generic [ref=e733]: 28 may 2026, 13:52
+                        - generic [ref=e734]:
+                          - generic [ref=e735]: 2900 total
+                          - generic [ref=e736]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e737]:
+                        - generic [ref=e738]:
+                          - img [ref=e740]
+                          - generic [ref=e743]:
+                            - generic [ref=e744]: 15 sincronizados
+                            - generic [ref=e745]: 28 may 2026, 13:47
+                        - generic [ref=e746]:
+                          - generic [ref=e747]: 2800 total
+                          - generic [ref=e748]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e749]:
+                        - generic [ref=e750]:
+                          - img [ref=e752]
+                          - generic [ref=e755]:
+                            - generic [ref=e756]: 8 sincronizados
+                            - generic [ref=e757]: 28 may 2026, 13:42
+                        - generic [ref=e758]:
+                          - generic [ref=e759]: 2600 total
+                          - generic [ref=e760]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e761]:
+                        - generic [ref=e762]:
+                          - img [ref=e764]
+                          - generic [ref=e767]:
+                            - generic [ref=e768]: 9 sincronizados
+                            - generic [ref=e769]: 28 may 2026, 13:37
+                        - generic [ref=e770]:
+                          - generic [ref=e771]: 2900 total
+                          - generic [ref=e772]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e773]:
+                        - generic [ref=e774]:
+                          - img [ref=e776]
+                          - generic [ref=e779]:
+                            - generic [ref=e780]: 9 sincronizados
+                            - generic [ref=e781]: 28 may 2026, 13:32
+                        - generic [ref=e782]:
+                          - generic [ref=e783]: 2700 total
+                          - generic [ref=e784]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e785]:
+                        - generic [ref=e786]:
+                          - img [ref=e788]
+                          - generic [ref=e791]:
+                            - generic [ref=e792]: 10 sincronizados
+                            - generic [ref=e793]: 28 may 2026, 13:27
+                        - generic [ref=e794]:
+                          - generic [ref=e795]: 2800 total
+                          - generic [ref=e796]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e797]:
+                        - generic [ref=e798]:
+                          - img [ref=e800]
+                          - generic [ref=e803]:
+                            - generic [ref=e804]: 14 sincronizados
+                            - generic [ref=e805]: 28 may 2026, 13:22
+                        - generic [ref=e806]:
+                          - generic [ref=e807]: 3100 total
+                          - generic [ref=e808]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e809]:
+                        - generic [ref=e810]:
+                          - img [ref=e812]
+                          - generic [ref=e815]:
+                            - generic [ref=e816]: 10 sincronizados
+                            - generic [ref=e817]: 28 may 2026, 13:17
+                        - generic [ref=e818]:
+                          - generic [ref=e819]: 3000 total
+                          - generic [ref=e820]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e821]:
+                        - generic [ref=e822]:
+                          - img [ref=e824]
+                          - generic [ref=e827]:
+                            - generic [ref=e828]: 6 sincronizados
+                            - generic [ref=e829]: 28 may 2026, 13:12
+                        - generic [ref=e830]:
+                          - generic [ref=e831]: 3000 total
+                          - generic [ref=e832]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e833]:
+                        - generic [ref=e834]:
+                          - img [ref=e836]
+                          - generic [ref=e839]:
+                            - generic [ref=e840]: 21 sincronizados
+                            - generic [ref=e841]: 28 may 2026, 13:07
+                        - generic [ref=e842]:
+                          - generic [ref=e843]: 3000 total
+                          - generic [ref=e844]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e845]:
+                        - generic [ref=e846]:
+                          - img [ref=e848]
+                          - generic [ref=e851]:
+                            - generic [ref=e852]: 0 sincronizados
+                            - generic [ref=e853]: 28 may 2026, 13:01
+                        - generic [ref=e854]:
+                          - generic [ref=e855]: 0 total
+                          - generic [ref=e856]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e857]:
+                        - generic [ref=e858]:
+                          - img [ref=e860]
+                          - generic [ref=e863]:
+                            - generic [ref=e864]: 0 sincronizados
+                            - generic [ref=e865]: 28 may 2026, 13:00
+                        - generic [ref=e867]: 16 total
+                      - generic [ref=e868]:
+                        - generic [ref=e869]:
+                          - img [ref=e871]
+                          - generic [ref=e874]:
+                            - generic [ref=e875]: 115 sincronizados
+                            - generic [ref=e876]: 28 may 2026, 12:57
+                        - generic [ref=e877]:
+                          - generic [ref=e878]: 3200 total
+                          - generic [ref=e879]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e880]:
+                        - generic [ref=e881]:
+                          - img [ref=e883]
+                          - generic [ref=e886]:
+                            - generic [ref=e887]: 15 sincronizados
+                            - generic [ref=e888]: 28 may 2026, 12:52
+                        - generic [ref=e889]:
+                          - generic [ref=e890]: 2600 total
+                          - generic [ref=e891]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e892]:
+                        - generic [ref=e893]:
+                          - img [ref=e895]
+                          - generic [ref=e898]:
+                            - generic [ref=e899]: 11 sincronizados
+                            - generic [ref=e900]: 28 may 2026, 12:47
+                        - generic [ref=e901]:
+                          - generic [ref=e902]: 2800 total
+                          - generic [ref=e903]: Dropi throttle (429) — sincronización parcial
+                      - generic [ref=e904]:
+                        - generic [ref=e905]:
+                          - img [ref=e907]
+                          - generic [ref=e910]:
+                            - generic [ref=e911]: 57 sincronizados
+                            - generic [ref=e912]: 28 may 2026, 12:42
+                        - generic [ref=e913]:
+                          - generic [ref=e914]: 3100 total
+                          - generic [ref=e915]: Dropi throttle (429) — sincronización parcial
+                  - generic [ref=e916]:
+                    - generic [ref=e917]:
+                      - heading "Operadoras registradas" [level=3] [ref=e918]
+                      - paragraph [ref=e919]: 2 usuarios
+                    - generic [ref=e920]:
+                      - generic [ref=e921]:
+                        - generic [ref=e922]:
+                          - generic [ref=e923]: M
+                          - generic [ref=e924]:
+                            - generic [ref=e925]: María José Valenzuela
+                            - generic [ref=e926]: f5c1eb55…
+                        - generic [ref=e928]: operator
+                      - generic [ref=e929]:
+                        - generic [ref=e930]:
+                          - generic [ref=e931]: F
+                          - generic [ref=e932]:
+                            - generic [ref=e933]: Fabian
+                            - generic [ref=e934]: de9dde5a…
+                        - generic [ref=e936]: owner
+                  - generic [ref=e937]:
+                    - generic [ref=e938]:
+                      - generic [ref=e939]:
+                        - img [ref=e940]
+                        - generic [ref=e943]:
+                          - heading "Reportes Diarios" [level=3] [ref=e944]
+                          - paragraph [ref=e945]: 0 registros (apertura + cierre)
+                      - button "CSV" [disabled] [ref=e946]:
+                        - img [ref=e947]
+                        - text: CSV
+                    - generic [ref=e950]: No hay reportes aún
+  - complementary "Edit with Lovable" [ref=e1]:
+    - link "Edit with Lovable" [ref=e2] [cursor=pointer]:
+      - /url: https://lovable.dev/projects/a6f5ee0b-c8a7-494d-9ea3-ac5c6c414faa?utm_source=lovable-badge
+      - generic [ref=e3]: Edit with
+      - img [ref=e4]
+    - button "Dismiss" [ref=e9] [cursor=pointer]:
+      - img [ref=e10]

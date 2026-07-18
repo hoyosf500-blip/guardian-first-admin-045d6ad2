@@ -1,0 +1,357 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - banner [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - button [ref=e749] [cursor=pointer]:
+            - generic [ref=e9]: 
+          - text: 
+        - generic [ref=e10]:
+          - generic [ref=e11]:
+            - button [ref=e750] [cursor=pointer]:
+              - generic [ref=e13]: 󰍉
+            - text: 󰍉
+          - button [ref=e751] [cursor=pointer]:
+            - img [ref=e752]
+            - text: English
+          - text:  
+          - button [ref=e17] [cursor=pointer]:
+            - img [ref=e18]
+            - text: 
+    - text:     󰅀  󰅀  󰅀       M I 󰅀   󰅀  󰅀   󰅀 
+    - generic [ref=e19]:
+      - generic [ref=e22]:
+        - heading [level=4] [ref=e753]: Mis Pedidos
+        - generic [ref=e31]:
+          - generic [ref=e32]:
+            - generic [ref=e34]:
+              - generic [ref=e35] [cursor=pointer]:
+                - text: Acciones
+                - generic [ref=e36]: 󰅀
+              - text:     
+            - button [ref=e754] [cursor=pointer]:
+              - generic [ref=e39]: 
+            - iframe [ref=e81]:
+              - main [ref=f12e2]:
+                - button "Crear nueva orden" [ref=f12e3] [cursor=pointer]
+          - generic [ref=e40]:
+            - generic [ref=e84]:
+              - text: Mostrar
+              - combobox [ref=e755]
+            - generic [ref=e45]:
+              - textbox [ref=e756]:
+                - /placeholder: Buscar...
+                - text: "983975354"
+              - button [ref=e757] [cursor=pointer]:
+                - generic: 󰍉
+          - table [ref=e666]:
+            - rowgroup [ref=e667]:
+              - row [ref=e758]:
+                - columnheader [ref=e759]
+                - columnheader [ref=e760] [cursor=pointer]: "# ▼"
+                - columnheader [ref=e761]: Nombre del producto
+                - columnheader [ref=e762]: Fecha de la orden
+                - columnheader [ref=e763]: Cliente
+                - columnheader [ref=e764]: Estatus de la Orden
+                - columnheader [ref=e765]: Transportadora
+                - columnheader [ref=e766]: Bodega
+                - columnheader [ref=e767]: Tipo de Envío
+                - columnheader [ref=e768]: Etiqueta
+                - columnheader [ref=e769]: Detalles
+            - rowgroup [ref=e684]:
+              - row [ref=e770]:
+                - cell [ref=e686]
+                - cell [ref=e771]: "5569313"
+                - rowheader [ref=e772]:
+                  - generic [ref=e693]: AIRE ACONDICIONADO GR PR
+                - cell [ref=e773]: 26/05/2026 9:02 p. m.
+                - cell [ref=e774]:
+                  - text: David Eduardo naula calderon La victoria - C. C & E15 - Entregar en taller naul... , ESMERALDAS-ESMERALDAS
+                  - generic [ref=e697]: "Tel: 983975354"
+                - cell [ref=e775]:
+                  - generic [ref=e699]: PENDIENTE
+                - cell [ref=e776]: GINTRACOM
+                - rowheader [ref=e777]:
+                  - generic [ref=e702]: IMPORSHOP BILOXI
+                - cell [ref=e778]:
+                  - text: CON RECAUDO
+                  - generic [ref=e704]: LUCIDBOT-4783411
+                  - generic [ref=e705]: "Orden ID: lucid-00026"
+                - cell [ref=e706]
+                - cell [ref=e779]:
+                  - list [ref=e708]:
+                    - listitem [ref=e709]:
+                      - link [ref=e780] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=e711]: 
+                    - listitem [ref=e712]:
+                      - link [ref=e781] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=e714]: 
+                    - listitem [ref=e715]:
+                      - link [ref=e782] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=e717]: 
+                    - listitem [ref=e718]:
+                      - link [ref=e783] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=e720]: 
+                    - listitem [ref=e721]:
+                      - link [ref=e784] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=e723]: 
+                    - listitem [ref=e724]:
+                      - generic [ref=e725]:
+                        - button [ref=e785] [cursor=pointer]:
+                          - generic [ref=e727]: 
+                          - generic [ref=e728]: "1"
+                        - text:  
+                    - listitem [ref=e729]:
+                      - button [ref=e732] [cursor=pointer]:
+                        - img [ref=e733]
+                    - listitem [ref=e737]:
+                      - link [ref=e786] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=e740]: 
+          - generic [ref=e741]:
+            - generic [ref=e745]:
+              - text: Mostrar
+              - combobox [ref=e787]
+            - generic [ref=e747]:
+              - generic [ref=e748]: Página 1
+              - button [disabled]:
+                - text: Siguiente
+                - generic: 
+      - contentinfo [ref=e52]:
+        - img [ref=e55] [cursor=pointer]
+        - img [ref=e59] [cursor=pointer]
+        - generic [ref=e67]:
+          - generic [ref=e68]: 2026 © Dropi
+          - generic [ref=e70]:
+            - text: Creado con
+            - generic [ref=e71]: 󰋑
+  - iframe [ref=e76]:
+    
+  - button [ref=e788] [cursor=pointer]:
+    - img [ref=e79]
+  - iframe [ref=e662]:
+    - generic [active]:
+      - main:
+        - button "Open Resource Center" [ref=f11e2] [cursor=pointer]:
+          - generic [ref=f11e5]: ¡Capacítate!
+        - generic [ref=f11e9]:
+          - generic [ref=f11e10] [cursor=pointer]:
+            - img [ref=f11e13]
+            - generic [ref=f11e14]:
+              - generic [ref=f11e15]: Búsqueda de productos
+              - generic [ref=f11e16]: Conoce nuestro panel de productos, donde podrás encontrar productos de mas de 25 categorías para tu e-commerce. 🧡
+          - generic [ref=f11e17] [cursor=pointer]:
+            - img [ref=f11e20]
+            - generic [ref=f11e21]:
+              - generic [ref=f11e22]: Mis pedidos
+              - generic [ref=f11e23]: En nuestro panel mis pedidos encontraras todas las ordenes que haz montado a nuestra plataforma. 🧡
+          - generic [ref=f11e24] [cursor=pointer]:
+            - img [ref=f11e27]
+            - generic [ref=f11e28]:
+              - generic [ref=f11e29]: Clientes
+              - generic [ref=f11e30]: Conoce nuestro panel clientes, donde podras ver un listado con todos los clientes que han comprado en tu tienda. 🧡
+          - generic [ref=f11e31] [cursor=pointer]:
+            - img [ref=f11e34]
+            - generic [ref=f11e35]:
+              - generic [ref=f11e36]: Mis Integraciones
+              - generic [ref=f11e37]: En nuestro panel de Integraciones encontraras todas las integraciones que has hecho con nuestra plataforma y tu tienda Shopify o WooCommerce. 🧡
+          - generic [ref=f11e38] [cursor=pointer]:
+            - img [ref=f11e41]
+            - generic [ref=f11e42]:
+              - generic [ref=f11e43]: Historial Cartera
+              - generic [ref=f11e44]: Conoce nuestro panel de historial de cartera, para que puedas revisar la entrada y salida de tu wallet. 🧡
+          - generic [ref=f11e45] [cursor=pointer]:
+            - img [ref=f11e48]
+            - generic [ref=f11e49]:
+              - generic [ref=f11e50]: Configuraciones
+              - generic [ref=f11e51]: Conoce nuestro panel de configuraciones, para que puedas editar toda tu información y datos bancarios de tu cuenta. 🧡
+          - generic [ref=f11e52] [cursor=pointer]:
+            - img [ref=f11e55]
+            - generic [ref=f11e56]:
+              - generic [ref=f11e57]: Calendario
+              - generic [ref=f11e58]: Conoce nuestro panel calendario, para que puedas llevar todo el control de tu operación. 🧡
+          - generic [ref=f11e59] [cursor=pointer]:
+            - img [ref=f11e62]
+            - generic [ref=f11e63]:
+              - generic [ref=f11e64]: Marketing
+              - generic [ref=f11e65]: Conoce nuestro panel de marketing para que puedas crear tus campañas y automatizar tus procesos. 🧡
+          - generic [ref=f11e66] [cursor=pointer]:
+            - img [ref=f11e69]
+            - generic [ref=f11e70]:
+              - generic [ref=f11e71]: Reportes
+              - generic [ref=f11e72]: Conoce nuestro panel de reportes para que puedas descargar de forma fácil y rápida toda tu operación. 🧡
+          - generic [ref=f11e73] [cursor=pointer]:
+            - img [ref=f11e76]
+            - generic [ref=f11e77]:
+              - generic [ref=f11e78]: Transportadora
+              - generic [ref=f11e79]: Conoce nuestro panel de transportadora para que puedas seleccionar y hacer el despacho de tus envíos por la transporta de tu preferencia. 🧡
+  - dialog [ref=e790]:
+    - document:
+      - generic [ref=e794]:
+        - main [ref=e797]:
+          - generic [ref=e798]:
+            - generic [ref=e799]:
+              - generic [ref=e800]: "ORDEN PARA:"
+              - heading "David Eduardo naula calderon" [level=2] [ref=e801]
+              - generic [ref=e802]: La victoria - C. C & E15 - Entregar en taller naula, ESMERALDAS - ESMERALDAS
+              - generic [ref=e803]: "Telf.: 983975354"
+              - generic [ref=e804]:
+                - text: "Tipo de orden:"
+                - strong [ref=e805]: FINAL_ORDER
+              - generic [ref=e806]:
+                - text: "Tienda:"
+                - strong [ref=e807]: LUCIDBOT-4783411
+            - generic [ref=e808]:
+              - 'heading "Orden #5569313" [level=1] [ref=e809]'
+              - generic [ref=e810]: "Fecha de la Orden: 26/05/2026"
+              - generic [ref=e811]:
+                - text: "Estatus:"
+                - strong [ref=e812]: PENDIENTE
+              - generic [ref=e813]:
+                - text: "Compañia de envío:"
+                - strong [ref=e814]: GINTRACOM
+              - generic [ref=e815]:
+                - text: "Tipo de Envío:"
+                - strong [ref=e816]: CON RECAUDO
+          - table [ref=e818]:
+            - rowgroup [ref=e819]:
+              - row "ID Descripción Precio' Precio proveedor Cant Total" [ref=e820]:
+                - columnheader "ID" [ref=e821]
+                - columnheader "Descripción" [ref=e822]
+                - columnheader "Precio'" [ref=e823]
+                - columnheader "Precio proveedor" [ref=e824]
+                - columnheader "Cant" [ref=e825]
+                - columnheader "Total" [ref=e826]
+            - rowgroup [ref=e827]:
+              - row "115864 - IMP-008-AIRGRA AIRE ACONDICIONADO GR PR $ 35,00 $ 15,50 2 $ 70,00" [ref=e828]:
+                - cell "115864 - IMP-008-AIRGRA" [ref=e829]
+                - cell "AIRE ACONDICIONADO GR PR" [ref=e830]:
+                  - heading "AIRE ACONDICIONADO GR PR" [level=3] [ref=e831]
+                - cell "$ 35,00" [ref=e832]
+                - cell "$ 15,50" [ref=e833]
+                - cell "2" [ref=e834]
+                - cell "$ 70,00" [ref=e835]
+            - rowgroup [ref=e836]:
+              - row "Subtotal $ 62,24" [ref=e837]:
+                - columnheader "Subtotal" [ref=e838]
+                - columnheader "$ 62,24" [ref=e839]:
+                  - generic [ref=e840]: $ 62,24
+              - row "Costo del Envio $ 7,76" [ref=e841]:
+                - columnheader "Costo del Envio" [ref=e842]
+                - columnheader "$ 7,76" [ref=e843]:
+                  - generic [ref=e844]: $ 7,76
+              - row "Comisión de la plataforma $ 0,00" [ref=e845]:
+                - columnheader "Comisión de la plataforma" [ref=e846]
+                - columnheader "$ 0,00" [ref=e847]:
+                  - generic [ref=e848]: $ 0,00
+              - row "Monto a ganar cuando esté entregado $ 31,24" [ref=e849]:
+                - columnheader "Monto a ganar cuando esté entregado" [ref=e850]
+                - columnheader "$ 31,24" [ref=e851]:
+                  - generic [ref=e852]: $ 31,24
+              - row "Total Orden $ 70,00" [ref=e853]:
+                - columnheader "Total Orden" [ref=e854]
+                - columnheader "$ 70,00" [ref=e855]:
+                  - generic [ref=e856]: $ 70,00
+          - table [ref=e858]:
+            - rowgroup [ref=e859]:
+              - row "Notas" [ref=e860]:
+                - columnheader "Notas" [ref=e861]
+            - rowgroup [ref=e862]:
+              - row [ref=e863]:
+                - cell [ref=e864]
+        - heading "Historial de estados:" [level=3] [ref=e865]
+        - table [ref=e867]:
+          - rowgroup [ref=e868]:
+            - row "# Fecha Estatus Estatus de la Orden Usuario Comentario" [ref=e869]:
+              - columnheader "#" [ref=e870]
+              - columnheader "Fecha Estatus" [ref=e871]
+              - columnheader "Estatus de la Orden" [ref=e872]
+              - columnheader "Usuario" [ref=e873]
+              - columnheader "Comentario" [ref=e874]
+          - rowgroup [ref=e875]:
+            - row "41525441 27/05/2026 11:37 a. m. PENDIENTE CONFIRMACION 91094-Daniel Bonilla Esta orden reemplaza a la orden 5563193 que fue editada por el usuario." [ref=e876]:
+              - cell "41525441" [ref=e877]
+              - cell "27/05/2026 11:37 a. m." [ref=e878]
+              - cell "PENDIENTE CONFIRMACION" [ref=e879]:
+                - generic [ref=e880]: PENDIENTE CONFIRMACION
+              - cell "91094-Daniel Bonilla" [ref=e881]:
+                - generic [ref=e882]: 91094-Daniel Bonilla
+              - cell "Esta orden reemplaza a la orden 5563193 que fue editada por el usuario." [ref=e883]:
+                - generic [ref=e884]: Esta orden reemplaza a la orden 5563193 que fue editada por el usuario.
+            - row "41525483 27/05/2026 11:38 a. m. PENDIENTE 91094-Daniel Bonilla" [ref=e885]:
+              - cell "41525483" [ref=e886]
+              - cell "27/05/2026 11:38 a. m." [ref=e887]
+              - cell "PENDIENTE" [ref=e888]:
+                - generic [ref=e889]: PENDIENTE
+              - cell "91094-Daniel Bonilla" [ref=e890]:
+                - generic [ref=e891]: 91094-Daniel Bonilla
+              - cell [ref=e892]
+        - heading "Historial de Cartera" [level=3] [ref=e893]
+        - table [ref=e895]:
+          - rowgroup [ref=e896]:
+            - row "# Fecha Tipo Monto Monto Previo Descripción Usuario" [ref=e897]:
+              - columnheader "#" [ref=e898]
+              - columnheader "Fecha" [ref=e899]
+              - columnheader "Tipo" [ref=e900]
+              - columnheader "Monto" [ref=e901]
+              - columnheader "Monto Previo" [ref=e902]
+              - columnheader "Descripción" [ref=e903]
+              - columnheader "Usuario" [ref=e904]
+          - rowgroup
+        - heading "Historial de novedades:" [level=3] [ref=e905]
+        - table [ref=e907]:
+          - rowgroup [ref=e908]:
+            - row "Fecha Novedad Solución Observación Fecha de Solución Solucionado Por Aclaración de la transportadora Comentario de la transportadora" [ref=e909]:
+              - columnheader "Fecha" [ref=e910]
+              - columnheader "Novedad" [ref=e911]
+              - columnheader "Solución" [ref=e912]
+              - columnheader "Observación" [ref=e913]
+              - columnheader "Fecha de Solución" [ref=e914]
+              - columnheader "Solucionado Por" [ref=e915]
+              - columnheader "Aclaración de la transportadora" [ref=e916]
+              - columnheader "Comentario de la transportadora" [ref=e917]
+          - rowgroup
+        - heading "Historial de validación de direcciones:" [level=3] [ref=e918]
+        - table [ref=e920]:
+          - rowgroup [ref=e921]:
+            - row "Fecha Dirección que se validó Dirección confirmada Tipo de validación Respuesta de validación" [ref=e922]:
+              - columnheader "Fecha" [ref=e923]
+              - columnheader "Dirección que se validó" [ref=e924]
+              - columnheader "Dirección confirmada" [ref=e925]
+              - columnheader "Tipo de validación" [ref=e926]
+              - columnheader "Respuesta de validación" [ref=e927]
+          - rowgroup
+        - heading "Historial de Movimientos:" [level=3] [ref=e928]
+        - table [ref=e930]:
+          - rowgroup [ref=e931]:
+            - row "Fecha Movimiento Comentario Evidencia" [ref=e932]:
+              - columnheader "Fecha" [ref=e933]
+              - columnheader "Movimiento" [ref=e934]
+              - columnheader "Comentario" [ref=e935]
+              - columnheader "Evidencia" [ref=e936]
+          - rowgroup
+        - heading "Historial de whatsapp:" [level=3] [ref=e937]
+        - table [ref=e939]:
+          - rowgroup [ref=e940]:
+            - row "Message Fecha Estado Response" [ref=e941]:
+              - columnheader "Message" [ref=e942]
+              - columnheader "Fecha" [ref=e943]
+              - columnheader "Estado" [ref=e944]
+              - columnheader "Response" [ref=e945]
+          - rowgroup
+        - heading "Historial de garantias:" [level=3] [ref=e946]
+        - table [ref=e948]:
+          - rowgroup [ref=e949]:
+            - row "# Fecha de creación Estado Producto Guía de regreso" [ref=e950]:
+              - columnheader "#" [ref=e951]
+              - columnheader "Fecha de creación" [ref=e952]
+              - columnheader "Estado" [ref=e953]
+              - columnheader "Producto" [ref=e954]
+              - columnheader "Guía de regreso" [ref=e955]
+          - rowgroup
+        - button "Cerrar" [active] [ref=e958] [cursor=pointer]

@@ -1,0 +1,364 @@
+- generic [active] [ref=f11e1]:
+  - generic [ref=f11e4]:
+    - banner [ref=f11e5]:
+      - generic [ref=f11e6]:
+        - generic:  
+        - generic [ref=f11e7]:
+          - text: 󰍉 󰍉
+          - button "Header LanguageEnglish" [ref=f11e9] [cursor=pointer]:
+            - img "Header Language" [ref=f11e10]
+            - text: English
+          - generic: 
+          - button " $ 5.477,90" [ref=f11e12] [cursor=pointer]:
+            - generic [ref=f11e13]: 
+            - text: $ 5.477,90
+          - button "Fabian " [ref=f11e14] [cursor=pointer]:
+            - img [ref=f11e15]
+            - generic [ref=f11e16]: Fabian
+            - generic [ref=f11e17]: 
+    - generic [ref=f11e18]:
+      - link [ref=f11e20] [cursor=pointer]:
+        - /url: /
+      - button "" [ref=f11e22] [cursor=pointer]:
+        - generic [ref=f11e23]: 
+      - list [ref=f11e26]:
+        - listitem [ref=f11e27]:
+          - link " Inicio" [ref=f11e28] [cursor=pointer]:
+            - /url: /dashboard/home
+            - generic [ref=f11e29]: 
+            - text: Inicio
+        - listitem [ref=f11e30]:
+          - link " Dashboard" [ref=f11e31] [cursor=pointer]:
+            - /url: /dashboard/resume
+            - generic [ref=f11e32]: 
+            - text: Dashboard
+        - listitem [ref=f11e33]:
+          - link " Productos 󰅀" [ref=f11e34] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e35]: 
+            - text: Productos 󰅀
+        - listitem [ref=f11e36]:
+          - link " Mis Pedidos 󰅀" [ref=f11e37] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e38]: 
+            - text: Mis Pedidos 󰅀
+          - list [ref=f11e39]:
+            - listitem [ref=f11e40]:
+              - link "Mis Pedidos" [ref=f11e41] [cursor=pointer]:
+                - /url: /dashboard/orders
+            - listitem [ref=f11e42]:
+              - link "Novedades" [ref=f11e43] [cursor=pointer]:
+                - /url: /dashboard/novelties
+            - listitem [ref=f11e44]:
+              - link "Configuración de pedidos" [ref=f11e45] [cursor=pointer]:
+                - /url: /dashboard/orders/orders-setting
+        - listitem [ref=f11e46]:
+          - link " Mis Garantias 󰅀" [ref=f11e47] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e48]: 
+            - text: Mis Garantias 󰅀
+        - listitem [ref=f11e49]:
+          - link " Mis Integraciones" [ref=f11e50] [cursor=pointer]:
+            - /url: /dashboard/shop
+            - generic [ref=f11e51]: 
+            - text: Mis Integraciones
+        - listitem [ref=f11e52]:
+          - link " Configuraciones 󰅀" [ref=f11e53] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e54]: 
+            - text: Configuraciones 󰅀
+        - listitem [ref=f11e55]:
+          - link " Historial de Cartera" [ref=f11e56] [cursor=pointer]:
+            - /url: /dashboard/historywallet
+            - generic [ref=f11e57]: 
+            - text: Historial de Cartera
+        - listitem [ref=f11e58]:
+          - link " Mis Integraciones" [ref=f11e59] [cursor=pointer]:
+            - /url: /dashboard/shop
+            - generic [ref=f11e60]: 
+            - text: Mis Integraciones
+        - listitem [ref=f11e61]:
+          - link " Configuraciones" [ref=f11e62] [cursor=pointer]:
+            - /url: /dashboard/settingsplan
+            - generic [ref=f11e63]: 
+            - text: Configuraciones
+        - listitem [ref=f11e64]:
+          - link " Historial de Cartera" [ref=f11e65] [cursor=pointer]:
+            - /url: /dashboard/historywallet
+            - generic [ref=f11e66]: 
+            - text: Historial de Cartera
+        - listitem [ref=f11e67]:
+          - link "M Calendario" [ref=f11e68] [cursor=pointer]:
+            - /url: /dashboard/calendar
+            - generic [ref=f11e69]: M
+            - text: Calendario
+        - listitem [ref=f11e70]:
+          - link "I Marketing 󰅀" [ref=f11e71] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e72]: I
+            - text: Marketing 󰅀
+        - listitem [ref=f11e73]:
+          - link " Reportes 󰅀" [ref=f11e74] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e75]: 
+            - text: Reportes 󰅀
+        - listitem [ref=f11e76]:
+          - link " Clientes" [ref=f11e77] [cursor=pointer]:
+            - /url: /dashboard/customers
+            - generic [ref=f11e78]: 
+            - text: Clientes
+        - listitem [ref=f11e79]:
+          - link " Soporte" [ref=f11e80] [cursor=pointer]:
+            - /url: /dashboard/support
+            - generic [ref=f11e81]: 
+            - text: Soporte
+        - listitem [ref=f11e82]:
+          - link " Transportadora 󰅀" [ref=f11e83] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e84]: 
+            - text: Transportadora 󰅀
+        - listitem [ref=f11e85]:
+          - link " CAS 󰅀" [ref=f11e86] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f11e87]: 
+            - text: CAS 󰅀
+    - generic [ref=f11e88]:
+      - generic [ref=f11e91]:
+        - generic [ref=f11e95]:
+          - heading "Novedades" [level=4] [ref=f11e96]
+          - generic:
+            - list
+        - generic [ref=f11e100]:
+          - generic [ref=f11e101]:
+            - button "" [ref=f11e105] [cursor=pointer]:
+              - generic [ref=f11e106]: 
+            - generic [ref=f11e109]:
+              - generic [ref=f11e112] [cursor=pointer]:
+                - radio "GUIA" [ref=f11e113]
+                - text: GUIA
+              - generic [ref=f11e116] [cursor=pointer]:
+                - radio "ORDEN ID" [ref=f11e117]
+                - text: ORDEN ID
+              - generic [ref=f11e120] [cursor=pointer]:
+                - radio "CELULAR" [ref=f11e121]
+                - text: CELULAR
+          - generic [ref=f11e122]:
+            - generic [ref=f11e124]:
+              - generic [ref=f11e125] [cursor=pointer]:
+                - text: Acciones
+                - generic [ref=f11e126]: 󰅀
+              - text: 
+            - button " Ir al Historial de Novedades" [ref=f11e128] [cursor=pointer]:
+              - generic [ref=f11e129]: 
+              - text: Ir al Historial de Novedades
+            - textbox "Search" [ref=f11e134]:
+              - /placeholder: Buscar...
+          - generic [ref=f11e138]:
+            - table [ref=f11e140]:
+              - rowgroup [ref=f11e141]:
+                - row "# Fecha de Novedad Datos Acciones" [ref=f11e142]:
+                  - columnheader "#" [ref=f11e143]
+                  - columnheader "Fecha de Novedad" [ref=f11e144]
+                  - columnheader "Datos" [ref=f11e145]
+                  - columnheader "Acciones" [ref=f11e146]
+              - rowgroup [ref=f11e147]:
+                - 'row "5915245 04/07/2026 6:41 p. m. Cruz Mariana Almeida Almeida Cedeño Teléfono: 987812383 Guía: 185571800 Novedad: SOLICITAR CITA PREVIA Transportadora: SERVIENTREGA  Solucionar  " [ref=f11e148]':
+                  - cell "5915245" [ref=f11e149]
+                  - cell "04/07/2026 6:41 p. m." [ref=f11e150]
+                  - 'cell "Cruz Mariana Almeida Almeida Cedeño Teléfono: 987812383 Guía: 185571800 Novedad: SOLICITAR CITA PREVIA Transportadora: SERVIENTREGA" [ref=f11e151]':
+                    - text: Cruz Mariana Almeida Almeida Cedeño
+                    - text: "Teléfono: 987812383"
+                    - text: "Guía: 185571800"
+                    - text: "Novedad: SOLICITAR CITA PREVIA"
+                    - text: "Transportadora: SERVIENTREGA"
+                  - cell " Solucionar  " [ref=f11e152]:
+                    - button " Solucionar" [ref=f11e153] [cursor=pointer]:
+                      - generic [ref=f11e154]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e155] [cursor=pointer]:
+                      - generic [ref=f11e157]: 
+                    - listitem [ref=f11e159]:
+                      - link "" [ref=f11e160] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e162]: 
+                - 'row "5940035 06/07/2026 11:15 a. m. Galo Cedeño Teléfono: 991588119 Guía: D001755819 Novedad: DESTINATARIO INDICA QUE NO ES EL PRODUCTO QUE SOLICITÓ Transportadora: GINTRACOM  Solucionar  " [ref=f11e163]':
+                  - cell "5940035" [ref=f11e164]
+                  - cell "06/07/2026 11:15 a. m." [ref=f11e165]
+                  - 'cell "Galo Cedeño Teléfono: 991588119 Guía: D001755819 Novedad: DESTINATARIO INDICA QUE NO ES EL PRODUCTO QUE SOLICITÓ Transportadora: GINTRACOM" [ref=f11e166]':
+                    - text: Galo Cedeño
+                    - text: "Teléfono: 991588119"
+                    - text: "Guía: D001755819"
+                    - text: "Novedad: DESTINATARIO INDICA QUE NO ES EL PRODUCTO QUE SOLICITÓ"
+                    - text: "Transportadora: GINTRACOM"
+                  - cell " Solucionar  " [ref=f11e167]:
+                    - button " Solucionar" [ref=f11e168] [cursor=pointer]:
+                      - generic [ref=f11e169]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e170] [cursor=pointer]:
+                      - generic [ref=f11e172]: 
+                    - listitem [ref=f11e174]:
+                      - link "" [ref=f11e175] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e177]: 
+                - 'row "5882655 06/07/2026 11:42 a. m. Jandry Moran Teléfono: 979294302 Guía: 185547755 Novedad: DEVUELTO DE Transportadora: SERVIENTREGA  Solucionar  " [ref=f11e178]':
+                  - cell "5882655" [ref=f11e179]
+                  - cell "06/07/2026 11:42 a. m." [ref=f11e180]
+                  - 'cell "Jandry Moran Teléfono: 979294302 Guía: 185547755 Novedad: DEVUELTO DE Transportadora: SERVIENTREGA" [ref=f11e181]':
+                    - text: Jandry Moran
+                    - text: "Teléfono: 979294302"
+                    - text: "Guía: 185547755"
+                    - text: "Novedad: DEVUELTO DE"
+                    - text: "Transportadora: SERVIENTREGA"
+                  - cell " Solucionar  " [ref=f11e182]:
+                    - button " Solucionar" [ref=f11e183] [cursor=pointer]:
+                      - generic [ref=f11e184]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e185] [cursor=pointer]:
+                      - generic [ref=f11e187]: 
+                    - listitem [ref=f11e189]:
+                      - link "" [ref=f11e190] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e192]: 
+                - 'row "5957871 06/07/2026 10:28 a. m. María Pila Teléfono: 987696720 Guía: V4002801135 Novedad: Pedido cancelado por el cliente Transportadora: VELOCES  Solucionar  " [ref=f11e193]':
+                  - cell "5957871" [ref=f11e194]
+                  - cell "06/07/2026 10:28 a. m." [ref=f11e195]
+                  - 'cell "María Pila Teléfono: 987696720 Guía: V4002801135 Novedad: Pedido cancelado por el cliente Transportadora: VELOCES" [ref=f11e196]':
+                    - text: María Pila
+                    - text: "Teléfono: 987696720"
+                    - text: "Guía: V4002801135"
+                    - text: "Novedad: Pedido cancelado por el cliente"
+                    - text: "Transportadora: VELOCES"
+                  - cell " Solucionar  " [ref=f11e197]:
+                    - button " Solucionar" [ref=f11e198] [cursor=pointer]:
+                      - generic [ref=f11e199]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e200] [cursor=pointer]:
+                      - generic [ref=f11e202]: 
+                    - listitem [ref=f11e204]:
+                      - link "" [ref=f11e205] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e207]: 
+                - 'row "5914162 06/07/2026 10:30 a. m. Zoila Velasco Teléfono: 997390481 Guía: V4002783549 Novedad: El cliente no estaba en su domicilio Transportadora: VELOCES  Solucionar  " [ref=f11e208]':
+                  - cell "5914162" [ref=f11e209]
+                  - cell "06/07/2026 10:30 a. m." [ref=f11e210]
+                  - 'cell "Zoila Velasco Teléfono: 997390481 Guía: V4002783549 Novedad: El cliente no estaba en su domicilio Transportadora: VELOCES" [ref=f11e211]':
+                    - text: Zoila Velasco
+                    - text: "Teléfono: 997390481"
+                    - text: "Guía: V4002783549"
+                    - text: "Novedad: El cliente no estaba en su domicilio"
+                    - text: "Transportadora: VELOCES"
+                  - cell " Solucionar  " [ref=f11e212]:
+                    - button " Solucionar" [ref=f11e213] [cursor=pointer]:
+                      - generic [ref=f11e214]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e215] [cursor=pointer]:
+                      - generic [ref=f11e217]: 
+                    - listitem [ref=f11e219]:
+                      - link "" [ref=f11e220] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e222]: 
+                - 'row "5905965 06/07/2026 6:01 p. m. Ramiro Simbaña Teléfono: 997626591 Guía: D001745117 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM  Solucionar  " [ref=f11e223]':
+                  - cell "5905965" [ref=f11e224]
+                  - cell "06/07/2026 6:01 p. m." [ref=f11e225]
+                  - 'cell "Ramiro Simbaña Teléfono: 997626591 Guía: D001745117 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM" [ref=f11e226]':
+                    - text: Ramiro Simbaña
+                    - text: "Teléfono: 997626591"
+                    - text: "Guía: D001745117"
+                    - text: "Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP"
+                    - text: "Transportadora: GINTRACOM"
+                  - cell " Solucionar  " [ref=f11e227]:
+                    - button " Solucionar" [ref=f11e228] [cursor=pointer]:
+                      - generic [ref=f11e229]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e230] [cursor=pointer]:
+                      - generic [ref=f11e232]: 
+                    - listitem [ref=f11e234]:
+                      - link "" [ref=f11e235] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e237]: 
+                - 'row "5890757 06/07/2026 6:09 p. m. NELY Obregón Teléfono: 991364581 Guía: D001745161 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM  Solucionar  " [ref=f11e238]':
+                  - cell "5890757" [ref=f11e239]
+                  - cell "06/07/2026 6:09 p. m." [ref=f11e240]
+                  - 'cell "NELY Obregón Teléfono: 991364581 Guía: D001745161 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM" [ref=f11e241]':
+                    - text: NELY Obregón
+                    - text: "Teléfono: 991364581"
+                    - text: "Guía: D001745161"
+                    - text: "Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP"
+                    - text: "Transportadora: GINTRACOM"
+                  - cell " Solucionar  " [ref=f11e242]:
+                    - button " Solucionar" [ref=f11e243] [cursor=pointer]:
+                      - generic [ref=f11e244]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e245] [cursor=pointer]:
+                      - generic [ref=f11e247]: 
+                    - listitem [ref=f11e249]:
+                      - link "" [ref=f11e250] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e252]: 
+                - 'row "5917989 06/07/2026 6:12 p. m. Andrés cruZ Teléfono: 984467039 Guía: D001754841 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM  Solucionar  " [ref=f11e253]':
+                  - cell "5917989" [ref=f11e254]
+                  - cell "06/07/2026 6:12 p. m." [ref=f11e255]
+                  - 'cell "Andrés cruZ Teléfono: 984467039 Guía: D001754841 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM" [ref=f11e256]':
+                    - text: Andrés cruZ
+                    - text: "Teléfono: 984467039"
+                    - text: "Guía: D001754841"
+                    - text: "Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP"
+                    - text: "Transportadora: GINTRACOM"
+                  - cell " Solucionar  " [ref=f11e257]:
+                    - button " Solucionar" [ref=f11e258] [cursor=pointer]:
+                      - generic [ref=f11e259]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e260] [cursor=pointer]:
+                      - generic [ref=f11e262]: 
+                    - listitem [ref=f11e264]:
+                      - link "" [ref=f11e265] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e267]: 
+                - 'row "5897727 06/07/2026 6:12 p. m. Soledad Coronel Teléfono: 996822754 Guía: D001754895 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM  Solucionar  " [ref=f11e268]':
+                  - cell "5897727" [ref=f11e269]
+                  - cell "06/07/2026 6:12 p. m." [ref=f11e270]
+                  - 'cell "Soledad Coronel Teléfono: 996822754 Guía: D001754895 Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP Transportadora: GINTRACOM" [ref=f11e271]':
+                    - text: Soledad Coronel
+                    - text: "Teléfono: 996822754"
+                    - text: "Guía: D001754895"
+                    - text: "Novedad: DESTINATARIO NO CONTESTA LLAMADAS NI WHATSAPP"
+                    - text: "Transportadora: GINTRACOM"
+                  - cell " Solucionar  " [ref=f11e272]:
+                    - button " Solucionar" [ref=f11e273] [cursor=pointer]:
+                      - generic [ref=f11e274]: 
+                      - text: Solucionar
+                    - button "" [ref=f11e275] [cursor=pointer]:
+                      - generic [ref=f11e277]: 
+                    - listitem [ref=f11e279]:
+                      - link "" [ref=f11e280] [cursor=pointer]:
+                        - /url: javascript:void(0);
+                        - generic [ref=f11e282]: 
+            - generic [ref=f11e283]:
+              - generic [ref=f11e287]:
+                - text: Mostrar
+                - combobox "Mostrar" [ref=f11e288]:
+                  - option "10"
+                  - option "50" [selected]
+                  - option "100"
+                  - option "200"
+                  - option "500"
+                  - option "1000"
+              - generic [ref=f11e289]:
+                - generic [ref=f11e290]: Página 1
+                - button "Siguiente " [disabled]:
+                  - text: Siguiente
+                  - generic: 
+      - contentinfo [ref=f11e292]:
+        - img [ref=f11e295] [cursor=pointer]
+        - img [ref=f11e299] [cursor=pointer]
+        - generic [ref=f11e307]:
+          - generic [ref=f11e308]: 2026 © Dropi
+          - generic [ref=f11e310]:
+            - text: Creado con
+            - generic [ref=f11e311]: 󰋑
+  - iframe [ref=f11e312]:
+    
+  - button "Open Intercom Messenger" [ref=f11e313] [cursor=pointer]:
+    - img [ref=f11e315]
+    - generic:
+      - img

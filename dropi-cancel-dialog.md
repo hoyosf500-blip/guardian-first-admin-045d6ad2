@@ -1,0 +1,358 @@
+- generic [ref=f8e1]:
+  - generic [ref=f8e4]:
+    - banner [ref=f8e5]:
+      - generic [ref=f8e6]:
+        - generic:  
+        - generic [ref=f8e7]:
+          - text: 󰍉 󰍉
+          - button "Header LanguageEnglish" [ref=f8e2613] [cursor=pointer]:
+            - img "Header Language" [ref=f8e2614]
+            - text: English
+          - generic: 
+          - button " $ 5.477,90" [ref=f8e2615] [cursor=pointer]:
+            - generic [ref=f8e13]: 
+            - text: $ 5.477,90
+          - button "Fabian " [ref=f8e2616] [cursor=pointer]:
+            - img [ref=f8e15]
+            - generic [ref=f8e16]: Fabian
+            - generic [ref=f8e17]: 
+    - generic [ref=f8e18]:
+      - link [ref=f8e20] [cursor=pointer]:
+        - /url: /
+      - button "" [ref=f8e2617] [cursor=pointer]:
+        - generic [ref=f8e23]: 
+      - list [ref=f8e26]:
+        - listitem [ref=f8e27]:
+          - link " Inicio" [ref=f8e2618] [cursor=pointer]:
+            - /url: /dashboard/home
+            - generic [ref=f8e29]: 
+            - text: Inicio
+        - listitem [ref=f8e30]:
+          - link " Dashboard" [ref=f8e2619] [cursor=pointer]:
+            - /url: /dashboard/resume
+            - generic [ref=f8e32]: 
+            - text: Dashboard
+        - listitem [ref=f8e33]:
+          - link " Productos 󰅀" [ref=f8e2620] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e35]: 
+            - text: Productos 󰅀
+        - listitem [ref=f8e36]:
+          - link " Mis Pedidos 󰅀" [ref=f8e2621] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e38]: 
+            - text: Mis Pedidos 󰅀
+          - list [ref=f8e39]:
+            - listitem [ref=f8e40]:
+              - link "Mis Pedidos" [ref=f8e2622] [cursor=pointer]:
+                - /url: /dashboard/orders
+            - listitem [ref=f8e42]:
+              - link "Novedades" [ref=f8e2623] [cursor=pointer]:
+                - /url: /dashboard/novelties
+            - listitem [ref=f8e44]:
+              - link "Configuración de pedidos" [ref=f8e2624] [cursor=pointer]:
+                - /url: /dashboard/orders/orders-setting
+        - listitem [ref=f8e46]:
+          - link " Mis Garantias 󰅀" [ref=f8e2625] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e48]: 
+            - text: Mis Garantias 󰅀
+        - listitem [ref=f8e49]:
+          - link " Mis Integraciones" [ref=f8e2626] [cursor=pointer]:
+            - /url: /dashboard/shop
+            - generic [ref=f8e51]: 
+            - text: Mis Integraciones
+        - listitem [ref=f8e52]:
+          - link " Configuraciones 󰅀" [ref=f8e2627] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e54]: 
+            - text: Configuraciones 󰅀
+        - listitem [ref=f8e55]:
+          - link " Historial de Cartera" [ref=f8e2628] [cursor=pointer]:
+            - /url: /dashboard/historywallet
+            - generic [ref=f8e57]: 
+            - text: Historial de Cartera
+        - listitem [ref=f8e58]:
+          - link " Mis Integraciones" [ref=f8e2629] [cursor=pointer]:
+            - /url: /dashboard/shop
+            - generic [ref=f8e60]: 
+            - text: Mis Integraciones
+        - listitem [ref=f8e61]:
+          - link " Configuraciones" [ref=f8e2630] [cursor=pointer]:
+            - /url: /dashboard/settingsplan
+            - generic [ref=f8e63]: 
+            - text: Configuraciones
+        - listitem [ref=f8e64]:
+          - link " Historial de Cartera" [ref=f8e2631] [cursor=pointer]:
+            - /url: /dashboard/historywallet
+            - generic [ref=f8e66]: 
+            - text: Historial de Cartera
+        - listitem [ref=f8e67]:
+          - link "M Calendario" [ref=f8e2632] [cursor=pointer]:
+            - /url: /dashboard/calendar
+            - generic [ref=f8e69]: M
+            - text: Calendario
+        - listitem [ref=f8e70]:
+          - link "I Marketing 󰅀" [ref=f8e2633] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e72]: I
+            - text: Marketing 󰅀
+        - listitem [ref=f8e73]:
+          - link " Reportes 󰅀" [ref=f8e2634] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e75]: 
+            - text: Reportes 󰅀
+        - listitem [ref=f8e76]:
+          - link " Clientes" [ref=f8e2635] [cursor=pointer]:
+            - /url: /dashboard/customers
+            - generic [ref=f8e78]: 
+            - text: Clientes
+        - listitem [ref=f8e79]:
+          - link " Soporte" [ref=f8e2636] [cursor=pointer]:
+            - /url: /dashboard/support
+            - generic [ref=f8e81]: 
+            - text: Soporte
+        - listitem [ref=f8e82]:
+          - link " Transportadora 󰅀" [ref=f8e2637] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e84]: 
+            - text: Transportadora 󰅀
+        - listitem [ref=f8e85]:
+          - link " CAS 󰅀" [ref=f8e2638] [cursor=pointer]:
+            - /url: javascript:void(0);
+            - generic [ref=f8e87]: 
+            - text: CAS 󰅀
+    - generic [ref=f8e88]:
+      - generic [ref=f8e90]:
+        - generic [ref=f8e91]:
+          - generic [ref=f8e95]:
+            - heading "Mis Pedidos" [level=4] [ref=f8e2639]
+            - generic:
+              - list
+          - generic [ref=f8e100]:
+            - generic [ref=f8e101]:
+              - generic [ref=f8e103]:
+                - generic [ref=f8e104] [cursor=pointer]:
+                  - text: Acciones
+                  - generic [ref=f8e105]: 󰅀
+                - text:     
+              - button "" [ref=f8e2640] [cursor=pointer]:
+                - generic [ref=f8e108]: 
+            - generic [ref=f8e109]:
+              - generic [ref=f8e153]:
+                - text: Mostrar
+                - combobox "Mostrar" [ref=f8e2641]:
+                  - option "10" [selected]
+                  - option "50"
+                  - option "100"
+                  - option "200"
+                  - option "500"
+                  - option "1000"
+              - generic [ref=f8e114]:
+                - textbox "Search" [ref=f8e2642]:
+                  - /placeholder: Buscar...
+                  - text: "998044367"
+                - button "󰍉" [ref=f8e2643] [cursor=pointer]:
+                  - generic: 󰍉
+            - table [ref=f8e2645]:
+              - rowgroup [ref=f8e2646]:
+                - row "# ▼ Nombre del producto Fecha de la orden Cliente Estatus de la Orden Transportadora Bodega Tipo de Envío Etiqueta Detalles" [ref=f8e2647]:
+                  - columnheader "seleccionar Todos" [ref=f8e2648]
+                  - columnheader "# ▼" [ref=f8e2653] [cursor=pointer]
+                  - columnheader "Nombre del producto" [ref=f8e2654]
+                  - columnheader "Fecha de la orden" [ref=f8e2655]
+                  - columnheader "Cliente" [ref=f8e2656]
+                  - columnheader "Estatus de la Orden" [ref=f8e2657]
+                  - columnheader "Transportadora" [ref=f8e2658]
+                  - columnheader "Bodega" [ref=f8e2659]
+                  - columnheader "Tipo de Envío" [ref=f8e2660]
+                  - columnheader "Etiqueta" [ref=f8e2661]
+                  - columnheader "Detalles" [ref=f8e2662]
+              - rowgroup [ref=f8e2663]:
+                - 'row "6021647 Reparador Esmalte Dental 02/07/2026 10:44 a. m. Lady salgado Linea férrea y pasaje s38b, Casa color azul con co... , QUITO-PICHINCHA Tel: 998044367 PENDIENTE CONFIRMACION LAARCOURIER ALMAFIT CON RECAUDO        1 " [ref=f8e2664]':
+                  - cell [ref=f8e2665]
+                  - cell "6021647" [ref=f8e2670]
+                  - rowheader "Reparador Esmalte Dental" [ref=f8e2671]:
+                    - generic [ref=f8e2672]: Reparador Esmalte Dental
+                  - cell "02/07/2026 10:44 a. m." [ref=f8e2673]
+                  - 'cell "Lady salgado Linea férrea y pasaje s38b, Casa color azul con co... , QUITO-PICHINCHA Tel: 998044367" [ref=f8e2674]':
+                    - text: Lady salgado
+                    - text: Linea férrea y pasaje s38b, Casa color azul con co... , QUITO-PICHINCHA
+                    - generic [ref=f8e2676]: "Tel: 998044367"
+                  - cell "PENDIENTE CONFIRMACION" [ref=f8e2677]:
+                    - generic [ref=f8e2678]: PENDIENTE CONFIRMACION
+                  - cell "LAARCOURIER" [ref=f8e2679]
+                  - rowheader "ALMAFIT" [ref=f8e2680]:
+                    - generic [ref=f8e2681]: ALMAFIT
+                  - cell "CON RECAUDO" [ref=f8e2682]
+                  - cell [ref=f8e2683]
+                  - cell "       1 " [ref=f8e2684]:
+                    - list [ref=f8e2685]:
+                      - listitem [ref=f8e2686]:
+                        - link "" [ref=f8e2687] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2688]: 
+                      - listitem [ref=f8e2689]:
+                        - link "" [ref=f8e2690] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2691]: 
+                      - listitem [ref=f8e2692]:
+                        - link "" [ref=f8e2693] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2694]: 
+                      - listitem [ref=f8e2695]:
+                        - link "" [ref=f8e2696] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2697]: 
+                      - listitem [ref=f8e2698]:
+                        - link "" [ref=f8e2699] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2700]: 
+                      - listitem [ref=f8e2701]:
+                        - link "" [ref=f8e2702] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2703]: 
+                      - listitem [ref=f8e2704]:
+                        - generic [ref=f8e2705]:
+                          - button " 1" [ref=f8e2706] [cursor=pointer]:
+                            - generic [ref=f8e2707]: 
+                            - generic [ref=f8e2708]: "1"
+                          - text:   
+                      - listitem [ref=f8e2709]:
+                        - button [ref=f8e2712] [cursor=pointer]:
+                          - img [ref=f8e2713]
+                      - listitem [ref=f8e2717]:
+                        - link "" [ref=f8e2718] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2720]: 
+                - 'row "6024036 Reparador Esmalte Dental 02/07/2026 10:44 a. m. Lady salgado Linea férrea y pasaje s38b, Casa color azul con co... , QUITO-PICHINCHA Tel: 998044367 PENDIENTE CONFIRMACION GINTRACOM ALMAFIT CON RECAUDO        1 " [ref=f8e2721]':
+                  - cell [ref=f8e2722]
+                  - cell "6024036" [ref=f8e2727]
+                  - rowheader "Reparador Esmalte Dental" [ref=f8e2728]:
+                    - generic [ref=f8e2729]: Reparador Esmalte Dental
+                  - cell "02/07/2026 10:44 a. m." [ref=f8e2730]
+                  - 'cell "Lady salgado Linea férrea y pasaje s38b, Casa color azul con co... , QUITO-PICHINCHA Tel: 998044367" [ref=f8e2731]':
+                    - text: Lady salgado
+                    - text: Linea férrea y pasaje s38b, Casa color azul con co... , QUITO-PICHINCHA
+                    - generic [ref=f8e2733]: "Tel: 998044367"
+                  - cell "PENDIENTE CONFIRMACION" [ref=f8e2734]:
+                    - generic [ref=f8e2735]: PENDIENTE CONFIRMACION
+                  - cell "GINTRACOM" [ref=f8e2736]
+                  - rowheader "ALMAFIT" [ref=f8e2737]:
+                    - generic [ref=f8e2738]: ALMAFIT
+                  - cell "CON RECAUDO" [ref=f8e2739]
+                  - cell [ref=f8e2740]
+                  - cell "       1 " [ref=f8e2741]:
+                    - list [ref=f8e2742]:
+                      - listitem [ref=f8e2743]:
+                        - link "" [ref=f8e2744] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2745]: 
+                      - listitem [ref=f8e2746]:
+                        - link "" [ref=f8e2747] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2748]: 
+                      - listitem [ref=f8e2749]:
+                        - link "" [ref=f8e2750] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2751]: 
+                      - listitem [ref=f8e2752]:
+                        - link "" [ref=f8e2753] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2754]: 
+                      - listitem [ref=f8e2755]:
+                        - link "" [ref=f8e2756] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2757]: 
+                      - listitem [ref=f8e2758]:
+                        - link "" [ref=f8e2759] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2760]: 
+                      - listitem [ref=f8e2761]:
+                        - generic [ref=f8e2762]:
+                          - button " 1" [ref=f8e2763] [cursor=pointer]:
+                            - generic [ref=f8e2764]: 
+                            - generic [ref=f8e2765]: "1"
+                          - text:   
+                      - listitem [ref=f8e2766]:
+                        - button [ref=f8e2769] [cursor=pointer]:
+                          - img [ref=f8e2770]
+                      - listitem [ref=f8e2774]:
+                        - link "" [ref=f8e2775] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                          - generic [ref=f8e2777]: 
+            - generic [ref=f8e2778]:
+              - generic [ref=f8e2782]:
+                - text: Mostrar
+                - combobox "Mostrar" [ref=f8e2783]:
+                  - option "10" [selected]
+                  - option "50"
+                  - option "100"
+                  - option "200"
+                  - option "500"
+                  - option "1000"
+              - generic [ref=f8e2784]:
+                - generic [ref=f8e2785]: Página 1
+                - button "Siguiente " [disabled]:
+                  - text: Siguiente
+                  - generic: 
+        - dialog "Cancelar órdenes" [ref=f8e2788]:
+          - generic [ref=f8e2791]:
+            - generic [ref=f8e2792]: Cancelar órdenes
+            - button [ref=f8e2794] [cursor=pointer]:
+              - img [ref=f8e2796]
+          - generic [ref=f8e2799]:
+            - generic [ref=f8e2802]:
+              - img [ref=f8e2805]
+              - paragraph [ref=f8e2807]: Al cancelar órdenes, no podrás recuperarlas ni revertir la acción
+            - paragraph [ref=f8e2808]:
+              - text: Estás a punto de cancelar
+              - strong [ref=f8e2809]: (1) orden pendiente.
+              - text: "Por favor completa los siguientes campos:"
+            - generic [ref=f8e2813]:
+              - paragraph [ref=f8e2819] [cursor=pointer]: Datos incompletos
+              - paragraph [ref=f8e2825] [cursor=pointer]: Excede valor a recaudar
+              - paragraph [ref=f8e2831] [cursor=pointer]: Cambio de transportadora
+              - paragraph [ref=f8e2837] [cursor=pointer]: Cliente final cancela
+              - paragraph [ref=f8e2843] [cursor=pointer]: Pedido duplicado
+              - paragraph [ref=f8e2849] [cursor=pointer]: Cambio de tipo de recaudo
+              - paragraph [ref=f8e2855] [cursor=pointer]: Otros
+            - generic [ref=f8e2858]:
+              - generic [ref=f8e2859]: Explica el motivo
+              - generic [ref=f8e2860]:
+                - textbox "Explica el motivo" [ref=f8e2861]:
+                  - /placeholder: Explica el motivo de cancelación
+                  - text: Duplicado de la orden 6024036 (quedó al editar transportadora). Se conserva la 6024036.
+                - generic [ref=f8e2862]: 87/200
+          - generic [ref=f8e2864]:
+            - button "Mantener órdenes" [ref=f8e2866] [cursor=pointer]:
+              - generic [ref=f8e2867]: Mantener órdenes
+            - button "Cancelar órdenes" [active] [ref=f8e2871] [cursor=pointer]:
+              - generic [ref=f8e2872]: Cancelar órdenes
+      - contentinfo [ref=f8e121]:
+        - img [ref=f8e124] [cursor=pointer]
+        - img [ref=f8e128] [cursor=pointer]
+        - generic [ref=f8e136]:
+          - generic [ref=f8e137]: 2026 © Dropi
+          - generic [ref=f8e139]:
+            - text: Creado con
+            - generic [ref=f8e140]: 󰋑
+  - iframe [ref=f8e145]:
+    
+  - button "Open Intercom Messenger" [ref=f8e2786] [cursor=pointer]:
+    - img [ref=f8e148]
+    - generic:
+      - img
+  - dialog [ref=f8e2875]:
+    - button "Cerrar" [ref=f8e2877] [cursor=pointer]: ×
+    - generic [ref=f8e2879]:
+      - img "lottie-animation-container" [ref=f8e2883]:
+        - img [ref=f8e2885]
+      - generic [ref=f8e2920]:
+        - heading "¿Estás seguro de que quieres cancelar las órdenes?" [level=2] [ref=f8e2921]
+        - paragraph [ref=f8e2922]: Recuerda que no podrás deshacer esta acción
+      - generic [ref=f8e2923]:
+        - button "Mantener órdenes" [ref=f8e2925] [cursor=pointer]:
+          - generic [ref=f8e2926]: Mantener órdenes
+        - button "Si, Cancelar" [ref=f8e2928] [cursor=pointer]:
+          - generic [ref=f8e2929]: Si, Cancelar

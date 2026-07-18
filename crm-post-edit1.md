@@ -1,0 +1,373 @@
+- generic [active] [ref=f13e1]:
+  - generic [ref=f13e2]:
+    - region "Notifications alt+T"
+    - generic [ref=f13e22]:
+      - complementary "Navegación principal" [ref=f13e23]:
+        - generic [ref=f13e25]:
+          - img [ref=f13e27]
+          - generic [ref=f13e31]:
+            - generic [ref=f13e32]: Rushmira Ecuador
+            - generic [ref=f13e33]: Panel COD
+        - button "Cambiar tienda" [ref=f13e35] [cursor=pointer]:
+          - img [ref=f13e36]
+          - generic [ref=f13e41]:
+            - generic [ref=f13e42]: Rushmira Ecuador
+            - generic [ref=f13e43]: EC · Dueño
+          - img [ref=f13e44]
+        - navigation "Secciones del CRM" [ref=f13e47]:
+          - button "Dashboard" [ref=f13e48] [cursor=pointer]:
+            - img [ref=f13e49]
+            - generic [ref=f13e51]: Dashboard
+          - button "Confirmar" [ref=f13e52] [cursor=pointer]:
+            - img [ref=f13e53]
+            - generic [ref=f13e55]: Confirmar
+          - button "Seguimiento" [ref=f13e56] [cursor=pointer]:
+            - img [ref=f13e57]
+            - generic [ref=f13e61]: Seguimiento
+          - button "Novedades" [ref=f13e62] [cursor=pointer]:
+            - img [ref=f13e63]
+            - generic [ref=f13e65]: Novedades
+          - button "Admin" [ref=f13e66] [cursor=pointer]:
+            - img [ref=f13e67]
+            - generic [ref=f13e70]: Admin
+          - button "Logística" [ref=f13e71] [cursor=pointer]:
+            - img [ref=f13e72]
+            - generic [ref=f13e77]: Logística
+        - generic [ref=f13e79]:
+          - generic [ref=f13e80]: F
+          - generic [ref=f13e81]:
+            - generic [ref=f13e82]: Fabian
+            - generic [ref=f13e83]: Administrador
+          - button "Cerrar sesión" [ref=f13e84] [cursor=pointer]:
+            - img [ref=f13e85]
+      - generic [ref=f13e88]:
+        - banner [ref=f13e89]:
+          - heading "Confirmar" [level=1] [ref=f13e91]
+          - generic [ref=f13e92]:
+            - generic [ref=f13e93]: 10:12 p. m.
+            - button "Cambiar a modo claro" [ref=f13e94] [cursor=pointer]:
+              - img [ref=f13e95]
+            - 'generic "Usuario: Fabian" [ref=f13e101]': F
+        - main [ref=f13e102]:
+          - generic "Última sync hace 4 min · 7 cambios" [ref=f13e683]:
+            - generic [ref=f13e106]: Sync OK
+          - generic [ref=f13e107]:
+            - generic [ref=f13e108]:
+              - 'generic "Confirmados: 9" [ref=f13e109]':
+                - img [ref=f13e111]
+                - generic [ref=f13e114]: "9"
+              - 'generic "Cancelados: 1" [ref=f13e115]':
+                - img [ref=f13e117]
+                - generic [ref=f13e121]: "1"
+              - 'generic "No respondió: 7" [ref=f13e122]':
+                - img [ref=f13e124]
+                - generic [ref=f13e127]: "7"
+            - 'progressbar "Progreso: 17%" [ref=f13e684]'
+            - generic [ref=f13e130]:
+              - generic [ref=f13e131]: "17"
+              - generic [ref=f13e132]: /103
+              - generic [ref=f13e133]: 17%
+          - generic [ref=f13e134]:
+            - generic [ref=f13e135]:
+              - generic [ref=f13e136]:
+                - generic [ref=f13e137]: Cola · Operadora
+                - heading "Confirmar" [level=1] [ref=f13e138]:
+                  - img [ref=f13e139]
+                  - text: Confirmar
+                - paragraph [ref=f13e141]: lunes, 6 de julio · Cola de pedidos pendientes de confirmación.
+              - generic [ref=f13e142]:
+                - button "Cerrar turno" [ref=f13e143] [cursor=pointer]:
+                  - img
+                  - text: Cerrar turno
+                - button "Cambiar archivo" [ref=f13e144] [cursor=pointer]
+            - generic [ref=f13e145]:
+              - generic [ref=f13e146]:
+                - img [ref=f13e147]
+                - generic [ref=f13e151]:
+                  - generic [ref=f13e152]:
+                    - text: "Hoy:"
+                    - strong [ref=f13e153]: "0"
+                    - text: conf ·
+                    - strong [ref=f13e154]: "0"
+                    - text: canc ·
+                    - strong [ref=f13e155]: "0"
+                    - text: noresp
+                  - generic [ref=f13e156]: "|"
+                  - 'generic "Tasa personal MADURA: 0 confirmados ÷ 0 resueltos (confirmados + cancelados). Los no-contesta NO cuentan acá." [ref=f13e157]': 0%
+                  - generic [ref=f13e158]: tasa personal · meta 85%
+              - generic [ref=f13e159]: Calentando — aún no hay datos suficientes
+            - generic [ref=f13e160]:
+              - img [ref=f13e162]
+              - generic [ref=f13e164]:
+                - generic [ref=f13e165]:
+                  - generic [ref=f13e166]: "19"
+                  - generic [ref=f13e167]: venta(s) de +7 días sin pasar a Dropi
+                - paragraph [ref=f13e168]: Están fuera de la ventana de la cola (últimos 7d) — revisalas en el admin de Shopify antes de que se pierda la confirmación.
+            - generic [ref=f13e170]:
+              - img [ref=f13e172]
+              - generic [ref=f13e174]:
+                - generic [ref=f13e175]:
+                  - generic [ref=f13e176]: "7"
+                  - generic [ref=f13e177]: con valor distinto a Shopify
+                - paragraph [ref=f13e178]: Dropi va a cobrar más de lo que el cliente aceptó. Cada pedido afectado muestra el aviso en su ficha con un botón «Corregir a $X» que lo arregla desde acá (sin ir al panel de Dropi).
+              - button "Ver lista" [ref=f13e179] [cursor=pointer]:
+                - text: Ver lista
+                - img [ref=f13e180]
+            - generic [ref=f13e183]:
+              - img [ref=f13e185]
+              - generic [ref=f13e188]:
+                - generic [ref=f13e189]:
+                  - generic [ref=f13e190]: "1"
+                  - generic [ref=f13e191]: sin pasar a Dropi
+                - generic [ref=f13e192]:
+                  - generic [ref=f13e193]:
+                    - text: "Hoy: 5 en Shopify · 4 en Dropi ·"
+                    - generic [ref=f13e194]: 1 sin pasar
+                  - generic [ref=f13e195]: "|"
+                  - generic [ref=f13e196]:
+                    - generic [ref=f13e197]: "Últimos 7d:"
+                    - text: 206 en Shopify · 205 en Dropi ·
+                    - generic [ref=f13e198]: 1 sin pasar
+              - button "Ver historial de lo que metí" [ref=f13e199] [cursor=pointer]:
+                - img [ref=f13e200]
+                - generic [ref=f13e204]: Historial
+              - button "Actualizar Shopify" [ref=f13e205] [cursor=pointer]:
+                - img [ref=f13e206]
+              - generic [ref=f13e211]:
+                - button "Subir todos los pendientes a Dropi" [ref=f13e212] [cursor=pointer]:
+                  - img [ref=f13e213]
+                  - text: Subir todos
+                - button "Ver lista de pendientes" [ref=f13e218] [cursor=pointer]:
+                  - text: Ver lista
+                  - img [ref=f13e219]
+            - generic [ref=f13e221]:
+              - generic [ref=f13e223]: Tu cola hoy
+              - generic [ref=f13e224]:
+                - generic [ref=f13e225]:
+                  - text: Has llamado a
+                  - strong [ref=f13e226]: "0"
+                - generic [ref=f13e227]: ·
+                - generic [ref=f13e228]:
+                  - text: Te faltan
+                  - strong [ref=f13e229]: "94"
+                  - text: sin tocar
+              - generic [ref=f13e230] [cursor=pointer]:
+                - checkbox "Solo sin tocar" [ref=f13e231]
+                - text: Solo sin tocar
+            - generic [ref=f13e232]:
+              - generic [ref=f13e233]:
+                - generic [ref=f13e234]: "94"
+                - generic [ref=f13e235]: por confirmar
+              - generic [ref=f13e236]:
+                - generic [ref=f13e237]:
+                  - strong [ref=f13e238]: "9"
+                  - generic [ref=f13e239]: conf
+                - generic [ref=f13e240]:
+                  - strong [ref=f13e241]: "1"
+                  - generic [ref=f13e242]: canc
+                - generic [ref=f13e243]:
+                  - strong [ref=f13e244]: "7"
+                  - generic [ref=f13e245]: noresp
+                - generic [ref=f13e246]:
+                  - strong [ref=f13e247]: "17"
+                  - generic [ref=f13e248]: gestionados
+              - generic [ref=f13e249]:
+                - generic [ref=f13e250]: 6 cancelar (D7+)
+                - generic [ref=f13e252]: 51 urgente (D4-6)
+            - button "6 pedidos para reintentarNo contestaron antes — volver a llamar Ver estos →" [ref=f13e254] [cursor=pointer]:
+              - img [ref=f13e255]
+              - generic [ref=f13e258]:
+                - generic [ref=f13e259]: 6 pedidos para reintentar
+                - text: No contestaron antes — volver a llamar
+              - generic [ref=f13e260]: Ver estos →
+            - generic [ref=f13e261]:
+              - generic [ref=f13e262]:
+                - button "Desde" [ref=f13e263] [cursor=pointer]:
+                  - img
+                  - text: Desde
+                - generic [ref=f13e264]: —
+                - button "Hasta" [ref=f13e265] [cursor=pointer]:
+                  - img
+                  - text: Hasta
+                - generic [ref=f13e266]:
+                  - button "Lista" [ref=f13e267] [cursor=pointer]:
+                    - img [ref=f13e268]
+                    - text: Lista
+                  - button "Llamar" [pressed] [ref=f13e269] [cursor=pointer]:
+                    - img [ref=f13e270]
+                    - text: Llamar
+              - generic [ref=f13e272]:
+                - generic [ref=f13e273]:
+                  - button "Pendientes 94" [pressed] [ref=f13e685] [cursor=pointer]:
+                    - img [ref=f13e275]
+                    - generic [ref=f13e278]: Pendientes
+                    - generic [ref=f13e279]: "94"
+                  - button "Recordatorios 5" [ref=f13e280] [cursor=pointer]:
+                    - img [ref=f13e281]
+                    - generic [ref=f13e284]: Recordatorios
+                    - generic [ref=f13e285]: "5"
+                  - button "Todos 94" [ref=f13e686] [cursor=pointer]:
+                    - img [ref=f13e287]
+                    - generic [ref=f13e292]: Todos
+                    - generic [ref=f13e293]: "94"
+                  - button "AIRE ACONDICIO 5" [ref=f13e294] [cursor=pointer]:
+                    - img [ref=f13e295]
+                    - generic [ref=f13e300]: AIRE ACONDICIO
+                    - generic [ref=f13e301]: "5"
+                  - button "FUMAREX 9" [ref=f13e302] [cursor=pointer]:
+                    - img [ref=f13e303]
+                    - generic [ref=f13e308]: FUMAREX
+                    - generic [ref=f13e309]: "9"
+                  - button "Joint Health 1 3" [ref=f13e310] [cursor=pointer]:
+                    - img [ref=f13e311]
+                    - generic [ref=f13e316]: Joint Health 1
+                    - generic [ref=f13e317]: "3"
+                  - button "Migrastil Neur 2" [ref=f13e318] [cursor=pointer]:
+                    - img [ref=f13e319]
+                    - generic [ref=f13e324]: Migrastil Neur
+                    - generic [ref=f13e325]: "2"
+                  - button "Reparador Esma 75" [ref=f13e687] [cursor=pointer]:
+                    - img [ref=f13e327]
+                    - generic [ref=f13e332]: Reparador Esma
+                    - generic [ref=f13e333]: "75"
+                - generic [ref=f13e334]:
+                  - img
+                  - generic [ref=f13e335]: Buscar nombre, teléfono o ciudad
+                  - searchbox "Buscar nombre, teléfono o ciudad" [ref=f13e336]: "998044367"
+            - button "9 pedidos ocultos por duplicado — ya hay un pedido más nuevo del mismo cliente Ver" [ref=f13e338] [cursor=pointer]:
+              - img [ref=f13e339]
+              - generic [ref=f13e341]: 9 pedidos ocultos por duplicado
+              - generic [ref=f13e342]: — ya hay un pedido más nuevo del mismo cliente
+              - generic [ref=f13e343]: Ver
+            - generic [ref=f13e344]:
+              - img [ref=f13e345]
+              - text: "Atendiendo: Lady salgado · 998044367"
+            - generic [ref=f13e347]:
+              - generic [ref=f13e348]: 1 / 1
+              - generic [ref=f13e349]:
+                - button [disabled] [ref=f13e350]:
+                  - img [ref=f13e351]
+                - button [disabled] [ref=f13e353]:
+                  - img [ref=f13e354]
+            - generic [ref=f13e356]:
+              - generic [ref=f13e458]:
+                - generic [ref=f13e470]:
+                  - generic [ref=f13e471]:
+                    - img [ref=f13e484]
+                    - generic [ref=f13e493]: Huella Dropi
+                  - 'generic "Riesgo: Crítica" [ref=f13e494]':
+                    - img [ref=f13e495]
+                    - generic [ref=f13e497]: Crítica
+                - generic [ref=f13e498]:
+                  - generic [ref=f13e499]:
+                    - generic [ref=f13e500]:
+                      - img [ref=f13e501]
+                      - generic [ref=f13e505]: Pedidos
+                    - generic [ref=f13e506]: "20"
+                  - generic [ref=f13e507]:
+                    - generic [ref=f13e508]:
+                      - img [ref=f13e509]
+                      - generic [ref=f13e512]: Entregados
+                    - generic [ref=f13e513]: "2"
+                  - generic [ref=f13e514]:
+                    - generic [ref=f13e515]:
+                      - img [ref=f13e516]
+                      - generic [ref=f13e519]: Devueltos
+                    - generic [ref=f13e520]: "18"
+                - generic [ref=f13e521]:
+                  - generic [ref=f13e522]:
+                    - generic [ref=f13e523]:
+                      - generic [ref=f13e524]: Tasa de entrega
+                      - generic [ref=f13e525]: 10%
+                    - progressbar "Tasa de entrega 10%" [ref=f13e526]
+                  - generic [ref=f13e528]:
+                    - generic [ref=f13e529]:
+                      - generic [ref=f13e530]: Tasa de devolución
+                      - generic [ref=f13e531]: 90%
+                    - progressbar "Tasa de devolución 90%" [ref=f13e532]
+                - generic [ref=f13e534]:
+                  - generic [ref=f13e535]:
+                    - img [ref=f13e536]
+                    - generic [ref=f13e539]: "Tipo:"
+                    - generic [ref=f13e540]: Frecuente
+                  - generic [ref=f13e541]: Datos globales Dropi
+              - generic [ref=f13e357]:
+                - generic [ref=f13e359]: D4
+                - generic [ref=f13e360]: PENDIENTE CONFIRMACION
+              - generic [ref=f13e361]: Lady salgado
+              - generic [ref=f13e362]:
+                - generic [ref=f13e363]:
+                  - img [ref=f13e364]
+                  - button "998044367" [ref=f13e478] [cursor=pointer]
+                  - link "Llamar" [ref=f13e367] [cursor=pointer]:
+                    - /url: tel:+593998044367
+                    - img [ref=f13e368]
+                    - text: Llamar
+                  - button "WhatsApp" [ref=f13e370] [cursor=pointer]:
+                    - img [ref=f13e371]
+                    - text: WhatsApp
+                  - img [ref=f13e373]
+                  - text: QUITO
+                - generic [ref=f13e376]:
+                  - img [ref=f13e377]
+                  - text: Reparador Esmalte Dental
+                  - img [ref=f13e381]
+                  - text: $48,75
+              - generic [ref=f13e383]:
+                - generic [ref=f13e384]:
+                  - img [ref=f13e385]
+                  - text: Dirección
+                - generic [ref=f13e389]:
+                  - 'textbox "Calle 8 #5-67, Bogotá" [ref=f13e390]': Linea férrea y pasaje s38b, Casa color azul con concheeo de vino
+                  - img [ref=f13e392]
+                - generic [ref=f13e394]:
+                  - img [ref=f13e479]
+                  - generic [ref=f13e481]: Dirección verificada
+              - button "Editar orden" [ref=f13e403] [cursor=pointer]:
+                - img [ref=f13e404]
+                - text: Editar orden
+                - generic [ref=f13e416]: · GINTRACOM
+                - generic [ref=f13e417]: · $48,75
+              - generic [ref=f13e419]:
+                - button "Confirmó" [ref=f13e420] [cursor=pointer]:
+                  - generic [ref=f13e421]:
+                    - img
+                    - text: Confirmó
+                - button "Marcar como cancelado" [ref=f13e422] [cursor=pointer]:
+                  - img [ref=f13e423]
+                  - text: Canceló
+                - button "Marcar como no contestó" [ref=f13e427] [cursor=pointer]:
+                  - img [ref=f13e428]
+                  - text: No contestó
+            - region "Notas y recordatorios del pedido" [ref=f13e432]:
+              - heading "Notas y recordatorios" [level=3] [ref=f13e433]:
+                - img [ref=f13e434]
+                - text: Notas y recordatorios
+              - generic [ref=f13e436]:
+                - textbox "Escribir una nota sobre el pedido" [ref=f13e437]:
+                  - /placeholder: "Ej: el cliente recoge el viernes 3pm; llamar mañana temprano…"
+                - generic [ref=f13e438]:
+                  - generic [ref=f13e439]:
+                    - generic [ref=f13e440]:
+                      - img [ref=f13e441]
+                      - text: Recordatorio
+                    - 'button "Programar recordatorio: En 1 h" [ref=f13e444] [cursor=pointer]': En 1 h
+                    - 'button "Programar recordatorio: En 3 h" [ref=f13e445] [cursor=pointer]': En 3 h
+                    - 'button "Programar recordatorio: Mañana 9 am" [ref=f13e446] [cursor=pointer]': Mañana 9 am
+                    - 'button "Programar recordatorio: Mañana 3 pm" [ref=f13e447] [cursor=pointer]': Mañana 3 pm
+                    - 'button "Programar recordatorio: En 2 días" [ref=f13e448] [cursor=pointer]': En 2 días
+                  - generic [ref=f13e449]:
+                    - button "Elegir fecha y hora del recordatorio" [ref=f13e450] [cursor=pointer]:
+                      - img
+                      - text: Elegir fecha y hora…
+                    - button "Guardar nota" [disabled] [ref=f13e451]:
+                      - img [ref=f13e452]
+                      - text: Agregar
+              - paragraph [ref=f13e542]: Sin notas todavía
+  - complementary "Edit with Lovable" [ref=f13e11]:
+    - link "Edit with Lovable" [ref=f13e12] [cursor=pointer]:
+      - /url: https://lovable.dev/projects/a6f5ee0b-c8a7-494d-9ea3-ac5c6c414faa?utm_source=lovable-badge
+      - generic [ref=f13e13]: Edit with
+      - img [ref=f13e14]
+    - button "Dismiss" [ref=f13e19] [cursor=pointer]:
+      - img [ref=f13e20]

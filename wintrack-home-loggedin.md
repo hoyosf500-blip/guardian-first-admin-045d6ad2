@@ -1,0 +1,190 @@
+- generic [active] [ref=f221e1]:
+  - generic [ref=f221e2]:
+    - generic [ref=f221e5]:
+      - complementary [ref=f221e7]:
+        - generic [ref=f221e8]:
+          - generic [ref=f221e9]:
+            - img "Logo" [ref=f221e11]
+            - generic [ref=f221e12]:
+              - generic [ref=f221e13]: WinTrack
+              - generic [ref=f221e14]:
+                - generic [ref=f221e15]: Plan
+                - generic [ref=f221e16]: Emprendedor
+          - button [ref=f221e17] [cursor=pointer]
+        - navigation [ref=f221e20]:
+          - generic [ref=f221e21]:
+            - generic [ref=f221e22]: Principal
+            - button "Inicio" [ref=f221e354] [cursor=pointer]
+            - button "Dashboard" [ref=f221e360] [cursor=pointer]
+            - button "Ranking" [ref=f221e368] [cursor=pointer]
+          - generic [ref=f221e50]:
+            - generic [ref=f221e51]: ecommerce
+            - generic [ref=f221e52]:
+              - button "E-commerce" [ref=f221e378] [cursor=pointer]
+              - generic [ref=f221e62]:
+                - button "Productos" [ref=f221e387] [cursor=pointer]
+                - button "Contabilidad Business" [ref=f221e390] [cursor=pointer]:
+                  - generic [ref=f221e392]: Contabilidad
+                  - generic [ref=f221e393]: Business
+                - button "Novedad" [ref=f221e396] [cursor=pointer]
+                - button "Calculadora" [ref=f221e399] [cursor=pointer]
+                - button "WinAI Business" [ref=f221e402] [cursor=pointer]:
+                  - generic [ref=f221e404]: WinAI
+                  - generic [ref=f221e405]: Business
+                - button "Mapa Logístico" [ref=f221e408] [cursor=pointer]
+                - button "Guía de Estados" [ref=f221e411] [cursor=pointer]
+          - generic [ref=f221e90]:
+            - generic [ref=f221e91]: Finanzas
+            - generic [ref=f221e92]:
+              - button "Finanzas" [ref=f221e414] [cursor=pointer]
+              - generic [ref=f221e102]:
+                - button "Patrimonio" [ref=f221e423] [cursor=pointer]
+                - button "Transacciones" [ref=f221e426] [cursor=pointer]
+                - button "Metas" [ref=f221e429] [cursor=pointer]
+                - button "Reportes" [ref=f221e432] [cursor=pointer]
+          - generic [ref=f221e115]:
+            - generic [ref=f221e116]: Herramientas
+            - button "Notificaciones 9" [ref=f221e435] [cursor=pointer]:
+              - generic [ref=f221e441]: Notificaciones
+              - generic [ref=f221e442]: "9"
+            - button "Integraciones" [ref=f221e443] [cursor=pointer]
+          - generic [ref=f221e134]:
+            - generic [ref=f221e135]: Sistema
+            - button "Facturación" [ref=f221e450] [cursor=pointer]
+        - generic [ref=f221e144]:
+          - generic [ref=f221e145]:
+            - button [ref=f221e146] [cursor=pointer]
+            - button [ref=f221e150] [cursor=pointer]
+          - button "fabian 🏪 Tu tienda" [ref=f221e156] [cursor=pointer]:
+            - generic [ref=f221e165]:
+              - generic [ref=f221e166]: fabian
+              - generic [ref=f221e168]: 🏪 Tu tienda
+      - generic [ref=f221e176]:
+        - generic [ref=f221e177]:
+          - generic [ref=f221e181]:
+            - img "WinTrack" [ref=f221e182]
+            - paragraph [ref=f221e184]: Hola, Fabian Hoyos. Buenas tardes.
+          - generic [ref=f221e191]:
+            - paragraph [ref=f221e192]: WhatsNew
+            - paragraph [ref=f221e193]: Novedades destacadas
+            - paragraph [ref=f221e194]: Señales importantes y contenido destacado para esta semana.
+        - generic [ref=f221e195]:
+          - generic [ref=f221e197]:
+            - link [ref=f221e199] [cursor=pointer]:
+              - /url: https://www.wintrack.co/integrations
+              - img "Imagen destacada 3 de WhatsNew" [ref=f221e200]
+            - link [ref=f221e202] [cursor=pointer]:
+              - /url: https://app.dropi.co/goldengroup
+              - img "Imagen destacada 2 de WhatsNew" [ref=f221e203]
+            - link [ref=f221e205] [cursor=pointer]:
+              - /url: https://www.wintrack.co/ecommerce/returns-map
+              - img "Imagen destacada 1 de WhatsNew" [ref=f221e206]
+            - generic [ref=f221e207]:
+              - button [ref=f221e208] [cursor=pointer]
+              - button [ref=f221e211] [cursor=pointer]
+              - generic [ref=f221e214]:
+                - button [ref=f221e215] [cursor=pointer]
+                - button [ref=f221e216] [cursor=pointer]
+                - button [ref=f221e217] [cursor=pointer]
+          - generic [ref=f221e218]:
+            - generic [ref=f221e219]:
+              - generic [ref=f221e220]:
+                - generic [ref=f221e222]:
+                  - paragraph [ref=f221e223]: Novedades
+                  - heading "Qué hay de nuevo" [level=3] [ref=f221e224]
+                - generic [ref=f221e225]:
+                  - generic [ref=f221e226]:
+                    - generic [ref=f221e227]: "01"
+                    - paragraph [ref=f221e228]: "Estrenamos un soporte más completo: si activaste la verificación en dos pasos y pierdes el acceso a tu app autenticadora Y a tus códigos de respaldo, ahora nuestro equipo puede ayudarte a recuperar el acceso a tu cuenta."
+                  - generic [ref=f221e229]:
+                    - generic [ref=f221e230]: "02"
+                    - paragraph [ref=f221e231]: Detrás de escena montamos un equipo de soporte con permisos acotados y verificación en dos pasos obligatoria, para atenderte de forma más rápida y segura.
+                  - generic [ref=f221e232]:
+                    - generic [ref=f221e233]: "03"
+                    - paragraph [ref=f221e234]: "Además corregimos un detalle: el aviso de \"invitado por un aliado\" ya no aparece en cuentas que se crearon sin un enlace de referido."
+                  - generic [ref=f221e235]:
+                    - generic [ref=f221e236]: "04"
+                    - paragraph [ref=f221e237]: "Corregimos un problema al entrar con Google: si tienes la verificación en dos pasos activada, ahora WinTrack te pide el código correctamente en vez de devolverte a la pantalla de inicio de sesión."
+                - button "Ver todos los cambios" [ref=f221e239] [cursor=pointer]
+              - generic [ref=f221e242]:
+                - generic [ref=f221e244]:
+                  - paragraph [ref=f221e245]: Transportadoras
+                  - heading "Estado actual" [level=3] [ref=f221e246]
+                - generic [ref=f221e247]:
+                  - generic [ref=f221e248]: Operando con normalidad
+                  - generic [ref=f221e250]: Con retrasos o alertas
+                - generic [ref=f221e252]:
+                  - button "Interrapidísimo Interrapidísimo" [ref=f221e253] [cursor=pointer]:
+                    - img "Interrapidísimo" [ref=f221e255]
+                    - generic [ref=f221e256]: Interrapidísimo
+                  - button "Envía Envía" [ref=f221e260] [cursor=pointer]:
+                    - img "Envía" [ref=f221e262]
+                    - generic [ref=f221e263]: Envía
+                  - button "Coordinadora Coordinadora" [ref=f221e267] [cursor=pointer]:
+                    - img "Coordinadora" [ref=f221e269]
+                    - generic [ref=f221e270]: Coordinadora
+                  - button "Servientrega Servientrega" [ref=f221e274] [cursor=pointer]:
+                    - img "Servientrega" [ref=f221e276]
+                    - generic [ref=f221e277]: Servientrega
+                  - button "TCC TCC" [ref=f221e281] [cursor=pointer]:
+                    - img "TCC" [ref=f221e283]
+                    - generic [ref=f221e284]: TCC
+                  - button "Domina Domina" [ref=f221e288] [cursor=pointer]:
+                    - img "Domina" [ref=f221e290]
+                    - generic [ref=f221e291]: Domina
+                - button "Ver novedades de transportadoras" [ref=f221e294] [cursor=pointer]
+            - generic [ref=f221e297]:
+              - generic [ref=f221e298]:
+                - generic [ref=f221e300]:
+                  - paragraph [ref=f221e301]: Próximos festivos
+                  - heading "Colombia" [level=3] [ref=f221e302]
+                - generic [ref=f221e303]:
+                  - generic [ref=f221e304]:
+                    - generic [ref=f221e305]:
+                      - generic [ref=f221e306]: "20"
+                      - generic [ref=f221e307]: lun
+                    - generic [ref=f221e308]:
+                      - paragraph [ref=f221e309]: Día de la Independencia
+                      - paragraph [ref=f221e310]: 20 de jul · en 7 días
+                  - generic [ref=f221e311]:
+                    - generic [ref=f221e312]:
+                      - generic [ref=f221e313]: "7"
+                      - generic [ref=f221e314]: vie
+                    - generic [ref=f221e315]:
+                      - paragraph [ref=f221e316]: Batalla de Boyacá
+                      - paragraph [ref=f221e317]: 7 de ago · en 25 días
+                  - generic [ref=f221e318]:
+                    - generic [ref=f221e319]:
+                      - generic [ref=f221e320]: "17"
+                      - generic [ref=f221e321]: lun
+                    - generic [ref=f221e322]:
+                      - paragraph [ref=f221e323]: Asunción de la Virgen
+                      - paragraph [ref=f221e324]: 17 de ago · en 35 días
+                  - generic [ref=f221e325]:
+                    - generic [ref=f221e326]:
+                      - generic [ref=f221e327]: "12"
+                      - generic [ref=f221e328]: lun
+                    - generic [ref=f221e329]:
+                      - paragraph [ref=f221e330]: Día de la Raza
+                      - paragraph [ref=f221e331]: 12 de oct · en 91 días
+                  - generic [ref=f221e332]:
+                    - generic [ref=f221e333]:
+                      - generic [ref=f221e334]: "2"
+                      - generic [ref=f221e335]: lun
+                    - generic [ref=f221e336]:
+                      - paragraph [ref=f221e337]: Todos los Santos
+                      - paragraph [ref=f221e338]: 2 de nov · en 112 días
+                  - generic [ref=f221e339]:
+                    - generic [ref=f221e340]:
+                      - generic [ref=f221e341]: "16"
+                      - generic [ref=f221e342]: lun
+                    - generic [ref=f221e343]:
+                      - paragraph [ref=f221e344]: Independencia de Cartagena
+                      - paragraph [ref=f221e345]: 16 de nov · en 126 días
+              - img "Banner del Inicio" [ref=f221e347]
+      - button "Abrir chat" [ref=f221e349] [cursor=pointer]
+    - region "Notifications alt+T"
+    - status [ref=f221e351]
+    - alert [ref=f221e352]
+  - iframe [ref=f221e353]:
+    

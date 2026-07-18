@@ -1,0 +1,453 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - region "Notifications alt+T":
+      - list:
+        - listitem [ref=e22]:
+          - img [ref=e24]
+          - generic [ref=e26]:
+            - generic [ref=e27]: 9 pedidos sin respuesta disponibles para reintentar
+            - generic [ref=e28]: No contestaron antes — intenta llamar de nuevo
+        - listitem [ref=e29]:
+          - img [ref=e31]
+          - generic [ref=e33]:
+            - generic [ref=e34]: 9 pedidos sin respuesta disponibles para reintentar
+            - generic [ref=e35]: No contestaron antes — intenta llamar de nuevo
+    - generic [ref=e36]:
+      - complementary "Navegación principal" [ref=e37]:
+        - generic [ref=e39]:
+          - img [ref=e41]
+          - generic [ref=e45]:
+            - generic [ref=e46]: Rushmira Ecuador
+            - generic [ref=e47]: Panel COD
+        - button "Cambiar tienda" [ref=e49] [cursor=pointer]:
+          - img [ref=e50]
+          - generic [ref=e55]:
+            - generic [ref=e56]: Rushmira Ecuador
+            - generic [ref=e57]: EC · Dueño
+          - img [ref=e58]
+        - navigation "Secciones del CRM" [ref=e61]:
+          - button "Dashboard" [ref=e62] [cursor=pointer]:
+            - img [ref=e63]
+            - generic [ref=e65]: Dashboard
+          - button "Confirmar" [ref=e66] [cursor=pointer]:
+            - img [ref=e67]
+            - generic [ref=e69]: Confirmar
+          - button "Seguimiento" [ref=e70] [cursor=pointer]:
+            - img [ref=e71]
+            - generic [ref=e75]: Seguimiento
+          - button "Novedades" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+            - generic [ref=e79]: Novedades
+          - button "Admin" [ref=e80] [cursor=pointer]:
+            - img [ref=e81]
+            - generic [ref=e84]: Admin
+          - button "Logística" [ref=e85] [cursor=pointer]:
+            - img [ref=e86]
+            - generic [ref=e91]: Logística
+        - generic [ref=e93]:
+          - generic [ref=e94]: F
+          - generic [ref=e95]:
+            - generic [ref=e96]: Fabian
+            - generic [ref=e97]: Administrador
+          - button "Cerrar sesión" [ref=e98] [cursor=pointer]:
+            - img [ref=e99]
+      - generic [ref=e102]:
+        - banner [ref=e103]:
+          - heading "Confirmar" [level=1] [ref=e105]
+          - generic [ref=e106]:
+            - generic [ref=e107]: 01:02 p. m.
+            - button "Cambiar a modo claro" [ref=e108] [cursor=pointer]:
+              - img [ref=e109]
+            - 'generic "Usuario: Fabian" [ref=e115]': F
+        - main [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - 'generic "Confirmados: 5" [ref=e119]':
+                - img [ref=e121]
+                - generic [ref=e124]: "5"
+              - 'generic "Cancelados: 3" [ref=e125]':
+                - img [ref=e127]
+                - generic [ref=e131]: "3"
+              - 'generic "No respondió: 12" [ref=e132]':
+                - img [ref=e134]
+                - generic [ref=e137]: "12"
+            - 'progressbar "Progreso: 91%" [ref=e138]'
+            - generic [ref=e140]:
+              - generic [ref=e141]: "20"
+              - generic [ref=e142]: /22
+              - generic [ref=e143]: 91%
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - generic [ref=e146]:
+                - generic [ref=e147]: Cola · Operadora
+                - heading "Confirmar" [level=1] [ref=e148]:
+                  - img [ref=e149]
+                  - text: Confirmar
+                - paragraph [ref=e151]: miércoles, 27 de mayo · Cola de pedidos pendientes de confirmación.
+              - generic [ref=e152]:
+                - button "Cerrar turno" [ref=e153] [cursor=pointer]:
+                  - img
+                  - text: Cerrar turno
+                - button "Cambiar archivo" [ref=e154] [cursor=pointer]
+            - generic [ref=e155]:
+              - generic [ref=e156]:
+                - img [ref=e157]
+                - generic [ref=e161]:
+                  - generic [ref=e162]:
+                    - text: "Hoy:"
+                    - strong [ref=e163]: "0"
+                    - text: conf ·
+                    - strong [ref=e164]: "0"
+                    - text: canc ·
+                    - strong [ref=e165]: "0"
+                    - text: noresp
+                  - generic [ref=e166]: "|"
+                  - 'generic "Tasa personal MADURA: 0 confirmados ÷ 0 resueltos (confirmados + cancelados). Los no-contesta NO cuentan acá." [ref=e167]': 0%
+                  - generic [ref=e168]: tasa personal · meta 70%
+              - generic [ref=e169]: Calentando — aún no hay datos suficientes
+            - generic [ref=e171]:
+              - img [ref=e173]
+              - generic [ref=e176]:
+                - generic [ref=e177]:
+                  - generic [ref=e178]: "17"
+                  - generic [ref=e179]: sin pasar a Dropi
+                - generic [ref=e180]:
+                  - generic [ref=e181]:
+                    - text: "Hoy: 5 en Shopify · 4 en Dropi ·"
+                    - generic [ref=e182]: 1 sin pasar
+                  - generic [ref=e183]: "|"
+                  - generic [ref=e184]:
+                    - generic [ref=e185]: "Últimos 3d:"
+                    - text: 47 en Shopify · 30 en Dropi ·
+                    - generic [ref=e186]: 17 sin pasar
+              - button "Actualizar" [ref=e187] [cursor=pointer]:
+                - img [ref=e188]
+              - button "Subir todos" [ref=e193] [cursor=pointer]:
+                - img [ref=e194]
+                - text: Subir todos
+              - button "Ver lista" [ref=e199] [cursor=pointer]:
+                - text: Ver lista
+                - img [ref=e200]
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - generic [ref=e204]: Por confirmar
+                - generic [ref=e205]: "14"
+              - generic [ref=e206]:
+                - generic [ref=e207]: Confirmados
+                - generic [ref=e208]: "5"
+              - generic [ref=e209]:
+                - generic [ref=e210]: Cancelados
+                - generic [ref=e211]: "3"
+              - generic [ref=e212]:
+                - generic [ref=e213]: Gestionados
+                - generic [ref=e214]: "20"
+            - generic [ref=e216]: 5 urgente (D4-6)
+            - generic [ref=e218]:
+              - img [ref=e219]
+              - generic [ref=e222]:
+                - generic [ref=e223]: 9 pedidos para reintentar
+                - text: No contestaron antes — volver a llamar
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - generic [ref=e226]:
+                  - button "Desde" [ref=e227] [cursor=pointer]:
+                    - img
+                    - text: Desde
+                  - generic [ref=e228]: —
+                  - button "Hasta" [ref=e229] [cursor=pointer]:
+                    - img
+                    - text: Hasta
+                - generic [ref=e230]:
+                  - button "Lista" [pressed] [ref=e231] [cursor=pointer]:
+                    - img [ref=e232]
+                    - text: Lista
+                  - button "Llamar" [ref=e233] [cursor=pointer]:
+                    - img [ref=e234]
+                    - text: Llamar
+              - generic [ref=e236]:
+                - generic [ref=e237]:
+                  - button "Pendientes 14" [ref=e238] [cursor=pointer]:
+                    - img [ref=e239]
+                    - generic [ref=e242]: Pendientes
+                    - generic [ref=e243]: "14"
+                  - button "Cancelados 5" [ref=e244] [cursor=pointer]:
+                    - img [ref=e245]
+                    - generic [ref=e249]: Cancelados
+                    - generic [ref=e250]: "5"
+                  - button "No respondió 3" [ref=e251] [cursor=pointer]:
+                    - img [ref=e252]
+                    - generic [ref=e255]: No respondió
+                    - generic [ref=e256]: "3"
+                  - button "Todos 22" [ref=e257] [cursor=pointer]:
+                    - img [ref=e258]
+                    - generic [ref=e263]: Todos
+                    - generic [ref=e264]: "22"
+                  - button "AIRE ACONDICIO 14" [ref=e265] [cursor=pointer]:
+                    - img [ref=e266]
+                    - generic [ref=e271]: AIRE ACONDICIO
+                    - generic [ref=e272]: "14"
+                - generic [ref=e273]:
+                  - img [ref=e274]
+                  - textbox "Buscar nombre, teléfono o ciudad..." [ref=e277]
+            - generic [ref=e278]:
+              - button "Gestionar pedido de Fernando Macias Macías Medranda" [ref=e279] [cursor=pointer]:
+                - generic [ref=e281]:
+                  - generic [ref=e282]:
+                    - generic [ref=e283]: Fernando Macias Macías Medranda
+                    - generic [ref=e284]: "969769297"
+                  - generic [ref=e285]:
+                    - generic [ref=e286]: AIRE ACONDICIONADO G…
+                    - generic [ref=e287]: ·
+                    - generic [ref=e288]: ESMERALDAS
+                    - generic [ref=e289]: ·
+                    - generic [ref=e290]: hace 4d
+                - generic [ref=e291]:
+                  - generic [ref=e292]: $ 45
+                  - button "Editar datos del pedido de Fernando Macias Macías Medranda" [ref=e293]:
+                    - img [ref=e294]
+                  - generic "Reintento 1 de 3" [ref=e306]:
+                    - img [ref=e307]
+                    - text: 1/3
+                  - generic [ref=e310]: Pendiente
+              - button "Gestionar pedido de Jose Macias" [ref=e311] [cursor=pointer]:
+                - generic [ref=e313]:
+                  - generic [ref=e314]:
+                    - generic [ref=e315]: Jose Macias
+                    - generic [ref=e316]: "969499110"
+                  - generic [ref=e317]:
+                    - generic [ref=e318]: AIRE ACONDICIONADO G…
+                    - generic [ref=e319]: ·
+                    - generic [ref=e320]: GUAYAQUIL
+                    - generic [ref=e321]: ·
+                    - generic [ref=e322]: hace 4d
+                - generic [ref=e323]:
+                  - generic [ref=e324]: $ 45
+                  - button "Editar datos del pedido de Jose Macias" [ref=e325]:
+                    - img [ref=e326]
+                  - generic "Pedido en atención por María José Valenzuela" [ref=e338]:
+                    - img [ref=e339]
+                    - generic [ref=e342]: María José Valenzuela
+                  - generic "Reintento 1 de 3" [ref=e343]:
+                    - img [ref=e344]
+                    - text: 1/3
+                  - generic [ref=e347]: Pendiente
+              - button "Gestionar pedido de Gregorio Nieto" [ref=e348] [cursor=pointer]:
+                - generic [ref=e350]:
+                  - generic [ref=e351]:
+                    - generic [ref=e352]: Gregorio Nieto
+                    - generic [ref=e353]: "998698458"
+                  - generic [ref=e354]:
+                    - generic [ref=e355]: AIRE ACONDICIONADO G…
+                    - generic [ref=e356]: ·
+                    - generic [ref=e357]: GUAYAQUIL
+                    - generic [ref=e358]: ·
+                    - generic [ref=e359]: hace 4d
+                - generic [ref=e360]:
+                  - generic [ref=e361]: $ 45
+                  - button "Editar datos del pedido de Gregorio Nieto" [ref=e362]:
+                    - img [ref=e363]
+                  - generic "Reintento 1 de 3" [ref=e375]:
+                    - img [ref=e376]
+                    - text: 1/3
+                  - generic [ref=e379]: Pendiente
+              - button "Gestionar pedido de Vicente Sanchez" [ref=e380] [cursor=pointer]:
+                - generic [ref=e382]:
+                  - generic [ref=e383]:
+                    - generic [ref=e384]: Vicente Sanchez
+                    - generic [ref=e385]: "985608996"
+                  - generic [ref=e386]:
+                    - generic [ref=e387]: AIRE ACONDICIONADO G…
+                    - generic [ref=e388]: ·
+                    - generic [ref=e389]: GUAYAQUIL
+                    - generic [ref=e390]: ·
+                    - generic [ref=e391]: hace 4d
+                - generic [ref=e392]:
+                  - generic [ref=e393]: $ 45
+                  - button "Editar datos del pedido de Vicente Sanchez" [ref=e394]:
+                    - img [ref=e395]
+                  - generic "Reintento 1 de 3" [ref=e407]:
+                    - img [ref=e408]
+                    - text: 1/3
+                  - generic [ref=e411]: Pendiente
+              - button "Gestionar pedido de Shirley Contreras" [ref=e412] [cursor=pointer]:
+                - generic [ref=e414]:
+                  - generic [ref=e415]:
+                    - generic [ref=e416]: Shirley Contreras
+                    - generic [ref=e417]: "988615349"
+                  - generic [ref=e418]:
+                    - generic [ref=e419]: AIRE ACONDICIONADO G…
+                    - generic [ref=e420]: ·
+                    - generic [ref=e421]: DAULE
+                    - generic [ref=e422]: ·
+                    - generic [ref=e423]: hace 4d
+                - generic [ref=e424]:
+                  - generic [ref=e425]: $ 90
+                  - button "Editar datos del pedido de Shirley Contreras" [ref=e426]:
+                    - img [ref=e427]
+                  - generic "Reintento 1 de 3" [ref=e439]:
+                    - img [ref=e440]
+                    - text: 1/3
+                  - generic [ref=e443]: Pendiente
+              - button "Gestionar pedido de Geovanny Geovanny Pérez" [ref=e444] [cursor=pointer]:
+                - generic [ref=e446]:
+                  - generic [ref=e447]:
+                    - generic [ref=e448]: Geovanny Geovanny Pérez
+                    - generic [ref=e449]: "997222781"
+                  - generic [ref=e450]:
+                    - generic [ref=e451]: AIRE ACONDICIONADO G…
+                    - generic [ref=e452]: ·
+                    - generic [ref=e453]: CUENCA
+                    - generic [ref=e454]: ·
+                    - generic [ref=e455]: hace 2d
+                - generic [ref=e456]:
+                  - generic [ref=e457]: $ 90
+                  - button "Editar datos del pedido de Geovanny Geovanny Pérez" [ref=e458]:
+                    - img [ref=e459]
+                  - generic "Reintento 1 de 3" [ref=e471]:
+                    - img [ref=e472]
+                    - text: 1/3
+                  - generic [ref=e475]: Pendiente
+              - button "Gestionar pedido de Ramón García" [ref=e476] [cursor=pointer]:
+                - generic [ref=e478]:
+                  - generic [ref=e479]:
+                    - generic [ref=e480]: Ramón García
+                    - generic [ref=e481]: "969853017"
+                  - generic [ref=e482]:
+                    - generic [ref=e483]: AIRE ACONDICIONADO G…
+                    - generic [ref=e484]: ·
+                    - generic [ref=e485]: PORTOVIEJO
+                    - generic [ref=e486]: ·
+                    - generic [ref=e487]: hace 2d
+                - generic [ref=e488]:
+                  - generic [ref=e489]: $ 45
+                  - button "Editar datos del pedido de Ramón García" [ref=e490]:
+                    - img [ref=e491]
+                  - generic "Reintento 1 de 3" [ref=e503]:
+                    - img [ref=e504]
+                    - text: 1/3
+                  - generic [ref=e507]: Pendiente
+              - button "Gestionar pedido de Raul Chuchuca ullaguari" [ref=e508] [cursor=pointer]:
+                - generic [ref=e510]:
+                  - generic [ref=e511]:
+                    - generic [ref=e512]: Raul Chuchuca ullaguari
+                    - generic [ref=e513]: "994539065"
+                  - generic [ref=e514]:
+                    - generic [ref=e515]: AIRE ACONDICIONADO G…
+                    - generic [ref=e516]: ·
+                    - generic [ref=e517]: PASAJE
+                    - generic [ref=e518]: ·
+                    - generic [ref=e519]: hoy
+                - generic [ref=e520]:
+                  - generic [ref=e521]: $ 90
+                  - button "Editar datos del pedido de Raul Chuchuca ullaguari" [ref=e522]:
+                    - img [ref=e523]
+                  - generic "Reintento 1 de 3" [ref=e535]:
+                    - img [ref=e536]
+                    - text: 1/3
+                  - generic [ref=e539]: Pendiente
+              - button "Gestionar pedido de Jorge Mita" [ref=e540] [cursor=pointer]:
+                - generic [ref=e542]:
+                  - generic [ref=e543]:
+                    - generic [ref=e544]: Jorge Mita
+                    - generic [ref=e545]: "958639170"
+                  - generic [ref=e546]:
+                    - generic [ref=e547]: AIRE ACONDICIONADO G…
+                    - generic [ref=e548]: ·
+                    - generic [ref=e549]: CUENCA
+                    - generic [ref=e550]: ·
+                    - generic [ref=e551]: hace 1 día
+                - generic [ref=e552]:
+                  - generic [ref=e553]: $ 45
+                  - button "Editar datos del pedido de Jorge Mita" [ref=e554]:
+                    - img [ref=e555]
+                  - generic [ref=e567]: Pendiente
+              - button "Gestionar pedido de Walter Bautista Muñoz Ponce" [ref=e568] [cursor=pointer]:
+                - generic [ref=e570]:
+                  - generic [ref=e571]:
+                    - generic [ref=e572]: Walter Bautista Muñoz Ponce
+                    - generic [ref=e573]: "987596697"
+                  - generic [ref=e574]:
+                    - generic [ref=e575]: AIRE ACONDICIONADO G…
+                    - generic [ref=e576]: ·
+                    - generic [ref=e577]: MANTA
+                    - generic [ref=e578]: ·
+                    - generic [ref=e579]: hoy
+                - generic [ref=e580]:
+                  - generic [ref=e581]: $ 45
+                  - button "Editar datos del pedido de Walter Bautista Muñoz Ponce" [ref=e582]:
+                    - img [ref=e583]
+                  - generic [ref=e595]: Pendiente
+              - button "Gestionar pedido de Raul Chuchuca ullaguari" [ref=e596] [cursor=pointer]:
+                - generic [ref=e598]:
+                  - generic [ref=e599]:
+                    - generic [ref=e600]: Raul Chuchuca ullaguari
+                    - generic [ref=e601]: "994539065"
+                  - generic [ref=e602]:
+                    - generic [ref=e603]: AIRE ACONDICIONADO G…
+                    - generic [ref=e604]: ·
+                    - generic [ref=e605]: PASAJE
+                    - generic [ref=e606]: ·
+                    - generic [ref=e607]: hoy
+                - generic [ref=e608]:
+                  - generic [ref=e609]: $ 70
+                  - button "Editar datos del pedido de Raul Chuchuca ullaguari" [ref=e610]:
+                    - img [ref=e611]
+                  - generic "Reintento 1 de 3" [ref=e623]:
+                    - img [ref=e624]
+                    - text: 1/3
+                  - generic [ref=e627]: Pendiente
+              - button "Gestionar pedido de VIVIANA CARVAJAL CRUZ" [ref=e628] [cursor=pointer]:
+                - generic [ref=e630]:
+                  - generic [ref=e631]:
+                    - generic [ref=e632]: VIVIANA CARVAJAL CRUZ
+                    - generic [ref=e633]: "981564156"
+                  - generic [ref=e634]:
+                    - generic [ref=e635]: AIRE ACONDICIONADO G…
+                    - generic [ref=e636]: ·
+                    - generic [ref=e637]: PLAYAS
+                    - generic [ref=e638]: ·
+                    - generic [ref=e639]: hoy
+                - generic [ref=e640]:
+                  - generic [ref=e641]: $ 45
+                  - button "Editar datos del pedido de VIVIANA CARVAJAL CRUZ" [ref=e642]:
+                    - img [ref=e643]
+                  - generic [ref=e655]: Pendiente
+              - button "Gestionar pedido de Medardo Flores" [ref=e656] [cursor=pointer]:
+                - generic [ref=e658]:
+                  - generic [ref=e659]:
+                    - generic [ref=e660]: Medardo Flores
+                    - generic [ref=e661]: "959077311"
+                  - generic [ref=e662]:
+                    - generic [ref=e663]: AIRE ACONDICIONADO G…
+                    - generic [ref=e664]: ·
+                    - generic [ref=e665]: ROBERTO ASTUDILLO
+                    - generic [ref=e666]: ·
+                    - generic [ref=e667]: hace 1 día
+                - generic [ref=e668]:
+                  - generic [ref=e669]: $ 45
+                  - button "Editar datos del pedido de Medardo Flores" [ref=e670]:
+                    - img [ref=e671]
+                  - generic [ref=e683]: Pendiente
+              - button "Gestionar pedido de antonio azanza" [ref=e684] [cursor=pointer]:
+                - generic [ref=e686]:
+                  - generic [ref=e687]:
+                    - generic [ref=e688]: antonio azanza
+                    - generic [ref=e689]: "959081073"
+                  - generic [ref=e690]:
+                    - generic [ref=e691]: AIRE ACONDICIONADO G…
+                    - generic [ref=e692]: ·
+                    - generic [ref=e693]: SANTA ROSA
+                    - generic [ref=e694]: ·
+                    - generic [ref=e695]: hace 1 día
+                - generic [ref=e696]:
+                  - generic [ref=e697]: $ 45
+                  - button "Editar datos del pedido de antonio azanza" [ref=e698]:
+                    - img [ref=e699]
+                  - generic [ref=e711]: Pendiente
+  - complementary "Edit with Lovable" [ref=e11]:
+    - link "Edit with Lovable" [ref=e12] [cursor=pointer]:
+      - /url: https://lovable.dev/projects/a6f5ee0b-c8a7-494d-9ea3-ac5c6c414faa?utm_source=lovable-badge
+      - generic [ref=e13]: Edit with
+      - img [ref=e14]
+    - button "Dismiss" [ref=e19] [cursor=pointer]:
+      - img [ref=e20]

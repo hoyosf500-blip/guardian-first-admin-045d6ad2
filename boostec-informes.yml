@@ -1,0 +1,191 @@
+- generic [active] [ref=e1]:
+  - complementary [ref=e2]:
+    - generic [ref=e4]:
+      - link "Boostec" [ref=e6] [cursor=pointer]:
+        - /url: /panel
+        - img "Boostec" [ref=e8]
+      - button "Colapsar menú" [ref=e9] [cursor=pointer]:
+        - img [ref=e10]
+    - generic [ref=e14]:
+      - generic [ref=e15]: Tienda
+      - button "Tienda" [ref=e16] [cursor=pointer]:
+        - generic [ref=e17]:
+          - img "Daxy" [ref=e19]
+          - generic [ref=e20]: Daxy (CO)
+        - img [ref=e21]
+    - generic [ref=e40]:
+      - link "Inicio" [ref=e41] [cursor=pointer]:
+        - /url: /panel
+        - generic [ref=e42]:
+          - img [ref=e44]
+          - generic [ref=e49]: Inicio
+      - link "Informes rendimiento" [ref=e50] [cursor=pointer]:
+        - /url: /informe/rendimiento
+        - generic [ref=e51]:
+          - img [ref=e53]
+          - generic [ref=e55]: Informes rendimiento
+      - link "Monitoreo campañas" [ref=e56] [cursor=pointer]:
+        - /url: /monitoreo
+        - generic [ref=e57]:
+          - img [ref=e59]
+          - generic [ref=e61]: Monitoreo campañas
+      - link "Novedades" [ref=e62] [cursor=pointer]:
+        - /url: /novedades/listas/lista_novedades
+        - generic [ref=e63]:
+          - img [ref=e65]
+          - generic [ref=e70]: Novedades
+      - link "Seguimiento" [ref=e71] [cursor=pointer]:
+        - /url: /seguimiento/pendientes_de_confirmacion_2_dias
+        - generic [ref=e72]:
+          - img [ref=e74]
+          - generic [ref=e80]: Seguimiento
+      - link "Tareas programadas" [ref=e81] [cursor=pointer]:
+        - /url: /tareas-programadas
+        - generic [ref=e82]:
+          - img [ref=e84]
+          - generic [ref=e88]: Tareas programadas
+      - link "Suscripciones" [ref=e90] [cursor=pointer]:
+        - /url: /suscripcion
+        - generic [ref=e91]:
+          - img [ref=e93]
+          - generic [ref=e96]: Suscripciones
+      - link "Fuentes de pago" [ref=e97] [cursor=pointer]:
+        - /url: /fuentes-de-pago
+        - generic [ref=e98]:
+          - img [ref=e100]
+          - generic [ref=e102]: Fuentes de pago
+      - link "Configuraciones" [ref=e103] [cursor=pointer]:
+        - /url: /configuraciones
+        - generic [ref=e104]:
+          - img [ref=e106]
+          - generic [ref=e117]: Configuraciones
+    - button "Cerrar sesión" [ref=e121] [cursor=pointer]:
+      - generic [ref=e124]: Cerrar sesión
+  - main [ref=e125]:
+    - generic [ref=e135]:
+      - generic [ref=e136]:
+        - heading "INFORMES DE RENDIMIENTO" [level=1] [ref=e137]:
+          - button [ref=e138] [cursor=pointer]:
+            - img [ref=e139]
+          - text: INFORMES DE RENDIMIENTO
+        - generic [ref=e142]:
+          - link "Comparar informes" [ref=e143] [cursor=pointer]:
+            - /url: /informe/rendimiento/comparar
+            - text: Comparar informes
+          - link "Crear informe" [ref=e146] [cursor=pointer]:
+            - /url: /informe/rendimiento/crear
+            - text: Crear informe
+      - generic [ref=e149]:
+        - generic [ref=e152]:
+          - generic: Etiquetas
+          - generic [ref=e153]:
+            - combobox "Etiquetas" [ref=e154]
+            - group:
+              - generic: Etiquetas
+        - generic [ref=e232]:
+          - generic [ref=e233]: Mostrando 1 - 1 de 1 resultados
+          - generic [ref=e237]:
+            - generic [ref=e238]:
+              - generic [ref=e239]:
+                - generic [ref=e240]: prueba este mes
+                - paragraph [ref=e241]: Privado
+              - button [ref=e244] [cursor=pointer]
+            - generic [ref=e246]:
+              - paragraph [ref=e249]: 1/4/2026 - 30/4/2026
+              - paragraph [ref=e252]: 30/4/2026, 11:20:35 p. m.
+              - generic [ref=e253]:
+                - paragraph [ref=e254]: 24 ordenes
+                - paragraph [ref=e255]: 22 (91.67%) Confirmación
+                - generic [ref=e256]:
+                  - generic "Entregas realizadas" [ref=e257]:
+                    - text: "7"
+                    - text: (31.82%)
+                  - separator [ref=e258]
+                  - generic "Devoluciones" [ref=e259]:
+                    - text: "1"
+                    - text: (4.55%)
+                  - separator [ref=e260]
+                  - generic "Pendientes de estado final" [ref=e261]:
+                    - text: "13"
+                    - text: (59.09%)
+                  - separator [ref=e262]
+                  - generic "Pendientes de guía" [ref=e263]:
+                    - text: "1"
+                    - text: (4.55%)
+              - paragraph [ref=e266]: Habilitado para sincronizar
+            - generic [ref=e267]:
+              - button "Sincronizar" [ref=e268] [cursor=pointer]: Sincronizar
+              - link "Detalle" [ref=e271] [cursor=pointer]:
+                - /url: /informe/rendimiento/69f429fff2d29064040d9e65/financial
+                - text: Detalle
+  - contentinfo [ref=e155]:
+    - contentinfo [ref=e157]:
+      - generic [ref=e159]:
+        - generic [ref=e160]:
+          - generic [ref=e162]:
+            - link "Boostec Logo Boostec" [ref=e164] [cursor=pointer]:
+              - /url: /
+              - generic [ref=e165]:
+                - img "Boostec Logo" [ref=e167]
+                - generic [ref=e168]: Boostec
+            - paragraph [ref=e169]: Herramienta integral de análisis y gestión para e-commerce. Optimiza tu negocio con datos inteligentes y toma decisiones basadas en métricas reales.
+            - generic [ref=e170]:
+              - link [ref=e171] [cursor=pointer]:
+                - /url: https://www.instagram.com/boostec_oficial/
+              - link [ref=e173] [cursor=pointer]:
+                - /url: https://www.youtube.com/@Boostec_Oficial
+              - link [ref=e175] [cursor=pointer]:
+                - /url: https://wa.me/573108270812?text=Hola,%20me%20interesa%20conocer%20más%20sobre%20Boostec
+          - generic [ref=e178]:
+            - heading "Sitio" [level=3] [ref=e179]
+            - list [ref=e180]:
+              - listitem [ref=e181]:
+                - link "Inicio" [ref=e182] [cursor=pointer]:
+                  - /url: /#inicio
+                  - text: Inicio
+              - listitem [ref=e184]:
+                - link "Características" [ref=e185] [cursor=pointer]:
+                  - /url: /#caracteristicas
+                  - text: Características
+              - listitem [ref=e187]:
+                - link "Precios" [ref=e188] [cursor=pointer]:
+                  - /url: /#precios
+                  - text: Precios
+              - listitem [ref=e190]:
+                - link "Contacto" [ref=e191] [cursor=pointer]:
+                  - /url: /#contacto
+                  - text: Contacto
+              - listitem [ref=e193]:
+                - link "Ingreso" [ref=e194] [cursor=pointer]:
+                  - /url: /ingreso
+                  - text: Ingreso
+              - listitem [ref=e196]:
+                - link "Registro" [ref=e197] [cursor=pointer]:
+                  - /url: /registro
+                  - text: Registro
+          - generic [ref=e200]:
+            - heading "Legal" [level=3] [ref=e201]
+            - list [ref=e202]:
+              - listitem [ref=e203]:
+                - link "Privacidad" [ref=e204] [cursor=pointer]:
+                  - /url: /politica-de-privacidad
+                  - text: Privacidad
+              - listitem [ref=e206]:
+                - link "Términos y condiciones" [ref=e207] [cursor=pointer]:
+                  - /url: /terminos-y-condiciones
+                  - text: Términos y condiciones
+          - generic [ref=e210]:
+            - heading "Contacto" [level=3] [ref=e211]
+            - generic [ref=e212]:
+              - paragraph [ref=e213]: ¿Tienes preguntas? Estamos aquí para ayudarte.
+              - link "Escríbenos" [ref=e214] [cursor=pointer]:
+                - /url: https://wa.me/573108270812?text=Hola,%20me%20interesa%20conocer%20más%20sobre%20Boostec
+                - generic [ref=e217]: Escríbenos
+        - generic [ref=e221]:
+          - paragraph [ref=e223]: © 2026 Boostec S.A.S. Todos los derechos reservados.
+          - generic [ref=e224]:
+            - generic [ref=e225]: Powered by
+            - link "Jose Luis Capote Mosquera" [ref=e226] [cursor=pointer]:
+              - /url: https://github.com/Jose-1805
+              - generic [ref=e230]: Jose Luis Capote Mosquera
+  - alert [ref=e231]

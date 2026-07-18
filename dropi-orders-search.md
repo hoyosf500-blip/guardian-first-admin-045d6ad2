@@ -1,0 +1,592 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e4]:
+      - banner [ref=e5]:
+        - generic [ref=e6]:
+          - generic [ref=e7]:
+            - button "" [ref=e8] [cursor=pointer]:
+              - generic [ref=e9]: 
+            - text: 
+          - generic [ref=e10]:
+            - generic [ref=e11]:
+              - button "󰍉" [ref=e12] [cursor=pointer]:
+                - generic [ref=e13]: 󰍉
+              - text: 󰍉
+            - button "Header LanguageEnglish" [ref=e15] [cursor=pointer]:
+              - img "Header Language" [ref=e16]
+              - text: English
+            - text:  
+            - button [ref=e17] [cursor=pointer]:
+              - img [ref=e18]
+              - text: 
+      - generic:     󰅀  󰅀  󰅀       M I 󰅀   󰅀  󰅀   󰅀 
+      - generic [ref=e19]:
+        - generic [ref=e22]:
+          - generic [ref=e26]:
+            - heading "Mis Pedidos" [level=4] [ref=e27]
+            - generic:
+              - list
+          - generic [ref=e31]:
+            - generic [ref=e32]:
+              - generic [ref=e34]:
+                - generic [ref=e35] [cursor=pointer]:
+                  - text: Acciones
+                  - generic [ref=e36]: 󰅀
+                - text:     
+              - button "" [ref=e38] [cursor=pointer]:
+                - generic [ref=e39]: 
+              - iframe [ref=e81]:
+                - main [ref=f16e2]:
+                  - button "Crear nueva orden" [ref=f16e3] [cursor=pointer]
+            - generic [ref=e40]:
+              - generic [ref=e84]:
+                - text: Mostrar
+                - combobox "Mostrar" [ref=e85]:
+                  - option "10" [selected]
+                  - option "50"
+                  - option "100"
+                  - option "200"
+                  - option "500"
+                  - option "1000"
+              - textbox "Search" [ref=e46]:
+                - /placeholder: Buscar...
+            - table [ref=e87]:
+              - rowgroup [ref=e88]:
+                - row "# ▼ Nombre del producto Fecha de la orden Cliente Estatus de la Orden Transportadora Bodega Tipo de Envío Etiqueta Detalles" [ref=e89]:
+                  - columnheader "seleccionar Todos" [ref=e90]
+                  - columnheader "# ▼" [ref=e95] [cursor=pointer]
+                  - columnheader "Nombre del producto" [ref=e96]
+                  - columnheader "Fecha de la orden" [ref=e97]
+                  - columnheader "Cliente" [ref=e98]
+                  - columnheader "Estatus de la Orden" [ref=e99]
+                  - columnheader "Transportadora" [ref=e100]
+                  - columnheader "Bodega" [ref=e101]
+                  - columnheader "Tipo de Envío" [ref=e102]
+                  - columnheader "Etiqueta" [ref=e103]
+                  - columnheader "Detalles" [ref=e104]
+              - rowgroup [ref=e105]:
+                - 'row "5570356 AIRE ACONDICIONADO GR PR 27/05/2026 12:44 p. m. VIVIANA CARVAJAL CRUZ Av. Sixto Chang y Zenón Macias alado comedor Juan ... , PLAYAS-GUAYAS Tel: 981564156 PENDIENTE CONFIRMACION SERVIENTREGA IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00037        1 " [ref=e106]':
+                  - cell [ref=e107]
+                  - cell "5570356" [ref=e112]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e113]:
+                    - generic [ref=e114]: AIRE ACONDICIONADO GR PR
+                  - cell "27/05/2026 12:44 p. m." [ref=e115]
+                  - 'cell "VIVIANA CARVAJAL CRUZ Av. Sixto Chang y Zenón Macias alado comedor Juan ... , PLAYAS-GUAYAS Tel: 981564156" [ref=e116]':
+                    - text: VIVIANA CARVAJAL CRUZ
+                    - text: Av. Sixto Chang y Zenón Macias alado comedor Juan ... , PLAYAS-GUAYAS
+                    - generic [ref=e118]: "Tel: 981564156"
+                  - cell "PENDIENTE CONFIRMACION" [ref=e119]:
+                    - generic [ref=e120]: PENDIENTE CONFIRMACION
+                  - cell "SERVIENTREGA" [ref=e121]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e122]:
+                    - generic [ref=e123]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00037" [ref=e124]':
+                    - text: CON RECAUDO
+                    - generic [ref=e125]: LUCIDBOT-4783411
+                    - generic [ref=e126]: "Orden ID: lucid-00037"
+                  - cell [ref=e127]
+                  - cell "       1 " [ref=e128]:
+                    - list [ref=e129]:
+                      - listitem [ref=e130]:
+                        - link "" [ref=e131] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e133]:
+                        - link "" [ref=e134] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e136]:
+                        - link "" [ref=e137] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e139]:
+                        - link "" [ref=e140] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e142]:
+                        - link "" [ref=e143] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e145]:
+                        - link "" [ref=e146] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e148]:
+                        - generic [ref=e149]
+                      - listitem [ref=e153]:
+                        - button [ref=e156] [cursor=pointer]
+                      - listitem [ref=e161]:
+                        - link "" [ref=e162] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5570098 AIRE ACONDICIONADO GR PR 27/05/2026 12:29 p. m. Raul Chuchuca ullaguari Bolivar y Juan montalvo, , PASAJE-EL ORO Tel: 994539065 PENDIENTE CONFIRMACION GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00036        1 " [ref=e165]':
+                  - cell [ref=e166]
+                  - cell "5570098" [ref=e171]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e172]:
+                    - generic [ref=e173]: AIRE ACONDICIONADO GR PR
+                  - cell "27/05/2026 12:29 p. m." [ref=e174]
+                  - 'cell "Raul Chuchuca ullaguari Bolivar y Juan montalvo, , PASAJE-EL ORO Tel: 994539065" [ref=e175]':
+                    - text: Raul Chuchuca ullaguari
+                    - text: Bolivar y Juan montalvo, , PASAJE-EL ORO
+                    - generic [ref=e177]: "Tel: 994539065"
+                  - cell "PENDIENTE CONFIRMACION" [ref=e178]:
+                    - generic [ref=e179]: PENDIENTE CONFIRMACION
+                  - cell "GINTRACOM" [ref=e180]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e181]:
+                    - generic [ref=e182]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00036" [ref=e183]':
+                    - text: CON RECAUDO
+                    - generic [ref=e184]: LUCIDBOT-4783411
+                    - generic [ref=e185]: "Orden ID: lucid-00036"
+                  - cell [ref=e186]
+                  - cell "       1 " [ref=e187]:
+                    - list [ref=e188]:
+                      - listitem [ref=e189]:
+                        - link "" [ref=e190] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e192]:
+                        - link "" [ref=e193] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e195]:
+                        - link "" [ref=e196] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e198]:
+                        - link "" [ref=e199] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e201]:
+                        - link "" [ref=e202] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e204]:
+                        - link "" [ref=e205] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e207]:
+                        - generic [ref=e208]
+                      - listitem [ref=e212]:
+                        - button [ref=e215] [cursor=pointer]
+                      - listitem [ref=e220]:
+                        - link "" [ref=e221] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5569524 AIRE ACONDICIONADO GR PR 27/05/2026 11:52 a. m. Walter Bautista Muñoz Ponce Av 307a y calle 110 a diagonal a las salas de vela... , MANTA-MANABI Tel: 987596697 PENDIENTE CONFIRMACION GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00035       " [ref=e224]':
+                  - cell [ref=e225]
+                  - cell "5569524" [ref=e230]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e231]:
+                    - generic [ref=e232]: AIRE ACONDICIONADO GR PR
+                  - cell "27/05/2026 11:52 a. m." [ref=e233]
+                  - 'cell "Walter Bautista Muñoz Ponce Av 307a y calle 110 a diagonal a las salas de vela... , MANTA-MANABI Tel: 987596697" [ref=e234]':
+                    - text: Walter Bautista Muñoz Ponce
+                    - text: Av 307a y calle 110 a diagonal a las salas de vela... , MANTA-MANABI
+                    - generic [ref=e236]: "Tel: 987596697"
+                  - cell "PENDIENTE CONFIRMACION" [ref=e237]:
+                    - generic [ref=e238]: PENDIENTE CONFIRMACION
+                  - cell "GINTRACOM" [ref=e239]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e240]:
+                    - generic [ref=e241]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00035" [ref=e242]':
+                    - text: CON RECAUDO
+                    - generic [ref=e243]: LUCIDBOT-4783411
+                    - generic [ref=e244]: "Orden ID: lucid-00035"
+                  - cell [ref=e245]
+                  - cell "      " [ref=e246]:
+                    - list [ref=e247]:
+                      - listitem [ref=e248]:
+                        - link "" [ref=e249] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e251]:
+                        - link "" [ref=e252] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e254]:
+                        - link "" [ref=e255] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e257]:
+                        - link "" [ref=e258] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e260]:
+                        - link "" [ref=e261] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e263]:
+                        - link "" [ref=e264] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e266]:
+                        - button [ref=e269] [cursor=pointer]
+                      - listitem [ref=e274]:
+                        - link "" [ref=e275] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5567093 AIRE ACONDICIONADO GR PR 27/05/2026 8:42 a. m. Xavier Vera Coello Miguel Santiago 115 y Venezuel,cooperativa Víctor ... , SANTO DOMINGO-SANTO DOMINGO DE LOS TSACHILAS Tel: 998534466 CANCELADO GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00034    " [ref=e278]':
+                  - cell [ref=e279]
+                  - cell "5567093" [ref=e284]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e285]:
+                    - generic [ref=e286]: AIRE ACONDICIONADO GR PR
+                  - cell "27/05/2026 8:42 a. m." [ref=e287]
+                  - 'cell "Xavier Vera Coello Miguel Santiago 115 y Venezuel,cooperativa Víctor ... , SANTO DOMINGO-SANTO DOMINGO DE LOS TSACHILAS Tel: 998534466" [ref=e288]':
+                    - text: Xavier Vera Coello
+                    - text: Miguel Santiago 115 y Venezuel,cooperativa Víctor ... , SANTO DOMINGO-SANTO DOMINGO DE LOS TSACHILAS
+                    - generic [ref=e290]: "Tel: 998534466"
+                  - cell "CANCELADO" [ref=e291]:
+                    - generic [ref=e292]: CANCELADO
+                  - cell "GINTRACOM" [ref=e293]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e294]:
+                    - generic [ref=e295]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00034" [ref=e296]':
+                    - text: CON RECAUDO
+                    - generic [ref=e297]: LUCIDBOT-4783411
+                    - generic [ref=e298]: "Orden ID: lucid-00034"
+                  - cell [ref=e299]
+                  - cell "   " [ref=e300]:
+                    - list [ref=e301]:
+                      - listitem [ref=e302]:
+                        - link "" [ref=e303] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e305]:
+                        - link "" [ref=e306] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e308]:
+                        - link "" [ref=e309] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e311]:
+                        - button [ref=e314] [cursor=pointer]
+                      - listitem [ref=e319]:
+                        - link "" [ref=e320] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5567090 AIRE ACONDICIONADO GR PR 27/05/2026 8:42 a. m. Xavier Vera Coello Miguel Santiago 115 y Venezuel,cooperativa Víctor ... , SANTO DOMINGO-SANTO DOMINGO DE LOS TSACHILAS Tel: 998534466 CANCELADO GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00033    " [ref=e323]':
+                  - cell [ref=e324]
+                  - cell "5567090" [ref=e329]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e330]:
+                    - generic [ref=e331]: AIRE ACONDICIONADO GR PR
+                  - cell "27/05/2026 8:42 a. m." [ref=e332]
+                  - 'cell "Xavier Vera Coello Miguel Santiago 115 y Venezuel,cooperativa Víctor ... , SANTO DOMINGO-SANTO DOMINGO DE LOS TSACHILAS Tel: 998534466" [ref=e333]':
+                    - text: Xavier Vera Coello
+                    - text: Miguel Santiago 115 y Venezuel,cooperativa Víctor ... , SANTO DOMINGO-SANTO DOMINGO DE LOS TSACHILAS
+                    - generic [ref=e335]: "Tel: 998534466"
+                  - cell "CANCELADO" [ref=e336]:
+                    - generic [ref=e337]: CANCELADO
+                  - cell "GINTRACOM" [ref=e338]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e339]:
+                    - generic [ref=e340]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00033" [ref=e341]':
+                    - text: CON RECAUDO
+                    - generic [ref=e342]: LUCIDBOT-4783411
+                    - generic [ref=e343]: "Orden ID: lucid-00033"
+                  - cell [ref=e344]
+                  - cell "   " [ref=e345]:
+                    - list [ref=e346]:
+                      - listitem [ref=e347]:
+                        - link "" [ref=e348] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e350]:
+                        - link "" [ref=e351] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e353]:
+                        - link "" [ref=e354] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e356]:
+                        - button [ref=e359] [cursor=pointer]
+                      - listitem [ref=e364]:
+                        - link "" [ref=e365] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5565577 AIRE ACONDICIONADO GR PR 27/05/2026 3:17 a. m. Raul Chuchuca ullaguari Bolivar y Juan montalvo, , PASAJE-EL ORO Tel: 994539065 PENDIENTE CONFIRMACION GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00032        1 " [ref=e368]':
+                  - cell [ref=e369]
+                  - cell "5565577" [ref=e374]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e375]:
+                    - generic [ref=e376]: AIRE ACONDICIONADO GR PR
+                  - cell "27/05/2026 3:17 a. m." [ref=e377]
+                  - 'cell "Raul Chuchuca ullaguari Bolivar y Juan montalvo, , PASAJE-EL ORO Tel: 994539065" [ref=e378]':
+                    - text: Raul Chuchuca ullaguari
+                    - text: Bolivar y Juan montalvo, , PASAJE-EL ORO
+                    - generic [ref=e380]: "Tel: 994539065"
+                  - cell "PENDIENTE CONFIRMACION" [ref=e381]:
+                    - generic [ref=e382]: PENDIENTE CONFIRMACION
+                  - cell "GINTRACOM" [ref=e383]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e384]:
+                    - generic [ref=e385]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00032" [ref=e386]':
+                    - text: CON RECAUDO
+                    - generic [ref=e387]: LUCIDBOT-4783411
+                    - generic [ref=e388]: "Orden ID: lucid-00032"
+                  - cell [ref=e389]
+                  - cell "       1 " [ref=e390]:
+                    - list [ref=e391]:
+                      - listitem [ref=e392]:
+                        - link "" [ref=e393] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e395]:
+                        - link "" [ref=e396] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e398]:
+                        - link "" [ref=e399] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e401]:
+                        - link "" [ref=e402] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e404]:
+                        - link "" [ref=e405] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e407]:
+                        - link "" [ref=e408] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e410]:
+                        - generic [ref=e411]
+                      - listitem [ref=e415]:
+                        - button [ref=e418] [cursor=pointer]
+                      - listitem [ref=e423]:
+                        - link "" [ref=e424] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5564926 AIRE ACONDICIONADO GR PR 26/05/2026 11:30 p. m. Maria Jose Espinosa Simón bolivar y sucre - DIRECCION ZONAL 2 DE EDUCA... , TENA-NAPO Tel: 990063955 PENDIENTE GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00031       1 " [ref=e427]':
+                  - cell [ref=e428]
+                  - cell "5564926" [ref=e433]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e434]:
+                    - generic [ref=e435]: AIRE ACONDICIONADO GR PR
+                  - cell "26/05/2026 11:30 p. m." [ref=e436]
+                  - 'cell "Maria Jose Espinosa Simón bolivar y sucre - DIRECCION ZONAL 2 DE EDUCA... , TENA-NAPO Tel: 990063955" [ref=e437]':
+                    - text: Maria Jose Espinosa
+                    - text: Simón bolivar y sucre - DIRECCION ZONAL 2 DE EDUCA... , TENA-NAPO
+                    - generic [ref=e439]: "Tel: 990063955"
+                  - cell "PENDIENTE" [ref=e440]:
+                    - generic [ref=e441]: PENDIENTE
+                  - cell "GINTRACOM" [ref=e442]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e443]:
+                    - generic [ref=e444]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00031" [ref=e445]':
+                    - text: CON RECAUDO
+                    - generic [ref=e446]: LUCIDBOT-4783411
+                    - generic [ref=e447]: "Orden ID: lucid-00031"
+                  - cell [ref=e448]
+                  - cell "      1 " [ref=e449]:
+                    - list [ref=e450]:
+                      - listitem [ref=e451]:
+                        - link "" [ref=e452] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e454]:
+                        - link "" [ref=e455] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e457]:
+                        - link "" [ref=e458] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e460]:
+                        - link "" [ref=e461] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e463]:
+                        - link "" [ref=e464] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e466]:
+                        - generic [ref=e467]
+                      - listitem [ref=e471]:
+                        - button [ref=e474] [cursor=pointer]
+                      - listitem [ref=e479]:
+                        - link "" [ref=e480] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5563975 AIRE ACONDICIONADO GR PR 26/05/2026 10:00 p. m. antonio azanza Avda Quito y Los Petalos. Barrio mi Rosita.... Fam... , SANTA ROSA-EL ORO Tel: 959081073 PENDIENTE CONFIRMACION GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00030        1 " [ref=e483]':
+                  - cell [ref=e484]
+                  - cell "5563975" [ref=e489]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e490]:
+                    - generic [ref=e491]: AIRE ACONDICIONADO GR PR
+                  - cell "26/05/2026 10:00 p. m." [ref=e492]
+                  - 'cell "antonio azanza Avda Quito y Los Petalos. Barrio mi Rosita.... Fam... , SANTA ROSA-EL ORO Tel: 959081073" [ref=e493]':
+                    - text: antonio azanza
+                    - text: Avda Quito y Los Petalos. Barrio mi Rosita.... Fam... , SANTA ROSA-EL ORO
+                    - generic [ref=e495]: "Tel: 959081073"
+                  - cell "PENDIENTE CONFIRMACION" [ref=e496]:
+                    - generic [ref=e497]: PENDIENTE CONFIRMACION
+                  - cell "GINTRACOM" [ref=e498]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e499]:
+                    - generic [ref=e500]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00030" [ref=e501]':
+                    - text: CON RECAUDO
+                    - generic [ref=e502]: LUCIDBOT-4783411
+                    - generic [ref=e503]: "Orden ID: lucid-00030"
+                  - cell [ref=e504]
+                  - cell "       1 " [ref=e505]:
+                    - list [ref=e506]:
+                      - listitem [ref=e507]:
+                        - link "" [ref=e508] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e510]:
+                        - link "" [ref=e511] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e513]:
+                        - link "" [ref=e514] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e516]:
+                        - link "" [ref=e517] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e519]:
+                        - link "" [ref=e520] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e522]:
+                        - link "" [ref=e523] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e525]:
+                        - generic [ref=e526]
+                      - listitem [ref=e530]:
+                        - button [ref=e533] [cursor=pointer]
+                      - listitem [ref=e538]:
+                        - link "" [ref=e539] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5563415 AIRE ACONDICIONADO GR PR 26/05/2026 9:20 p. m. Kalinka Alday Juan león mera y Joaquín gallegos esquina san Juan... , QUITO-PICHINCHA Tel: 998217246 PENDIENTE VELOCES IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00029      " [ref=e542]':
+                  - cell [ref=e543]
+                  - cell "5563415" [ref=e548]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e549]:
+                    - generic [ref=e550]: AIRE ACONDICIONADO GR PR
+                  - cell "26/05/2026 9:20 p. m." [ref=e551]
+                  - 'cell "Kalinka Alday Juan león mera y Joaquín gallegos esquina san Juan... , QUITO-PICHINCHA Tel: 998217246" [ref=e552]':
+                    - text: Kalinka Alday
+                    - text: Juan león mera y Joaquín gallegos esquina san Juan... , QUITO-PICHINCHA
+                    - generic [ref=e554]: "Tel: 998217246"
+                  - cell "PENDIENTE" [ref=e555]:
+                    - generic [ref=e556]: PENDIENTE
+                  - cell "VELOCES" [ref=e557]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e558]:
+                    - generic [ref=e559]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00029" [ref=e560]':
+                    - text: CON RECAUDO
+                    - generic [ref=e561]: LUCIDBOT-4783411
+                    - generic [ref=e562]: "Orden ID: lucid-00029"
+                  - cell [ref=e563]
+                  - cell "     " [ref=e564]:
+                    - list [ref=e565]:
+                      - listitem [ref=e566]:
+                        - link "" [ref=e567] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e569]:
+                        - link "" [ref=e570] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e572]:
+                        - link "" [ref=e573] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e575]:
+                        - link "" [ref=e576] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e578]:
+                        - link "" [ref=e579] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e581]:
+                        - button [ref=e584] [cursor=pointer]
+                      - listitem [ref=e589]:
+                        - link "" [ref=e590] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                - 'row "5563383 AIRE ACONDICIONADO GR PR 26/05/2026 9:18 p. m. Medardo Flores Los Ríos y Velasco ibarra, , ROBERTO ASTUDILLO-GUAYAS Tel: 959077311 PENDIENTE CONFIRMACION GINTRACOM IMPORSHOP BILOXI CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00028        1 " [ref=e593]':
+                  - cell [ref=e594]
+                  - cell "5563383" [ref=e599]
+                  - rowheader "AIRE ACONDICIONADO GR PR" [ref=e600]:
+                    - generic [ref=e601]: AIRE ACONDICIONADO GR PR
+                  - cell "26/05/2026 9:18 p. m." [ref=e602]
+                  - 'cell "Medardo Flores Los Ríos y Velasco ibarra, , ROBERTO ASTUDILLO-GUAYAS Tel: 959077311" [ref=e603]':
+                    - text: Medardo Flores
+                    - text: Los Ríos y Velasco ibarra, , ROBERTO ASTUDILLO-GUAYAS
+                    - generic [ref=e605]: "Tel: 959077311"
+                  - cell "PENDIENTE CONFIRMACION" [ref=e606]:
+                    - generic [ref=e607]: PENDIENTE CONFIRMACION
+                  - cell "GINTRACOM" [ref=e608]
+                  - rowheader "IMPORSHOP BILOXI" [ref=e609]:
+                    - generic [ref=e610]: IMPORSHOP BILOXI
+                  - 'cell "CON RECAUDO LUCIDBOT-4783411 Orden ID: lucid-00028" [ref=e611]':
+                    - text: CON RECAUDO
+                    - generic [ref=e612]: LUCIDBOT-4783411
+                    - generic [ref=e613]: "Orden ID: lucid-00028"
+                  - cell [ref=e614]
+                  - cell "       1 " [ref=e615]:
+                    - list [ref=e616]:
+                      - listitem [ref=e617]:
+                        - link "" [ref=e618] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e620]:
+                        - link "" [ref=e621] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e623]:
+                        - link "" [ref=e624] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e626]:
+                        - link "" [ref=e627] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e629]:
+                        - link "" [ref=e630] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e632]:
+                        - link "" [ref=e633] [cursor=pointer]:
+                          - /url: javascript:void(0);
+                      - listitem [ref=e635]:
+                        - generic [ref=e636]
+                      - listitem [ref=e640]:
+                        - button [ref=e643] [cursor=pointer]
+                      - listitem [ref=e648]:
+                        - link "" [ref=e649] [cursor=pointer]:
+                          - /url: javascript:void(0);
+            - generic [ref=e652]:
+              - generic [ref=e656]:
+                - text: Mostrar
+                - combobox "Mostrar" [ref=e657]:
+                  - option "10" [selected]
+                  - option "50"
+                  - option "100"
+                  - option "200"
+                  - option "500"
+                  - option "1000"
+              - generic [ref=e658]:
+                - generic [ref=e659]: Página 1
+                - button "Siguiente " [ref=e660] [cursor=pointer]:
+                  - text: Siguiente
+                  - generic [ref=e661]: 
+        - contentinfo [ref=e52]:
+          - img [ref=e55] [cursor=pointer]
+          - img [ref=e59] [cursor=pointer]
+          - generic [ref=e67]:
+            - generic [ref=e68]: 2026 © Dropi
+            - generic [ref=e70]:
+              - text: Creado con
+              - generic [ref=e71]: 󰋑
+    - alert [ref=e73]:
+      - generic [ref=e75]: Hola! Por defecto, mostramos las órdenes de los últimos 7 dias
+  - iframe [ref=e76]:
+    
+  - button "Open Intercom Messenger" [ref=e77] [cursor=pointer]:
+    - img [ref=e79]
+    - generic:
+      - img
+  - iframe [ref=e662]:
+    - generic [active]:
+      - main:
+        - button "Open Resource Center" [ref=f15e2] [cursor=pointer]:
+          - generic [ref=f15e5]: ¡Capacítate!
+        - generic [ref=f15e9]:
+          - generic [ref=f15e10] [cursor=pointer]:
+            - img [ref=f15e13]
+            - generic [ref=f15e14]:
+              - generic [ref=f15e15]: Búsqueda de productos
+              - generic [ref=f15e16]: Conoce nuestro panel de productos, donde podrás encontrar productos de mas de 25 categorías para tu e-commerce. 🧡
+          - generic [ref=f15e17] [cursor=pointer]:
+            - img [ref=f15e20]
+            - generic [ref=f15e21]:
+              - generic [ref=f15e22]: Mis pedidos
+              - generic [ref=f15e23]: En nuestro panel mis pedidos encontraras todas las ordenes que haz montado a nuestra plataforma. 🧡
+          - generic [ref=f15e24] [cursor=pointer]:
+            - img [ref=f15e27]
+            - generic [ref=f15e28]:
+              - generic [ref=f15e29]: Clientes
+              - generic [ref=f15e30]: Conoce nuestro panel clientes, donde podras ver un listado con todos los clientes que han comprado en tu tienda. 🧡
+          - generic [ref=f15e31] [cursor=pointer]:
+            - img [ref=f15e34]
+            - generic [ref=f15e35]:
+              - generic [ref=f15e36]: Mis Integraciones
+              - generic [ref=f15e37]: En nuestro panel de Integraciones encontraras todas las integraciones que has hecho con nuestra plataforma y tu tienda Shopify o WooCommerce. 🧡
+          - generic [ref=f15e38] [cursor=pointer]:
+            - img [ref=f15e41]
+            - generic [ref=f15e42]:
+              - generic [ref=f15e43]: Historial Cartera
+              - generic [ref=f15e44]: Conoce nuestro panel de historial de cartera, para que puedas revisar la entrada y salida de tu wallet. 🧡
+          - generic [ref=f15e45] [cursor=pointer]:
+            - img [ref=f15e48]
+            - generic [ref=f15e49]:
+              - generic [ref=f15e50]: Configuraciones
+              - generic [ref=f15e51]: Conoce nuestro panel de configuraciones, para que puedas editar toda tu información y datos bancarios de tu cuenta. 🧡
+          - generic [ref=f15e52] [cursor=pointer]:
+            - img [ref=f15e55]
+            - generic [ref=f15e56]:
+              - generic [ref=f15e57]: Calendario
+              - generic [ref=f15e58]: Conoce nuestro panel calendario, para que puedas llevar todo el control de tu operación. 🧡
+          - generic [ref=f15e59] [cursor=pointer]:
+            - img [ref=f15e62]
+            - generic [ref=f15e63]:
+              - generic [ref=f15e64]: Marketing
+              - generic [ref=f15e65]: Conoce nuestro panel de marketing para que puedas crear tus campañas y automatizar tus procesos. 🧡
+          - generic [ref=f15e66] [cursor=pointer]:
+            - img [ref=f15e69]
+            - generic [ref=f15e70]:
+              - generic [ref=f15e71]: Reportes
+              - generic [ref=f15e72]: Conoce nuestro panel de reportes para que puedas descargar de forma fácil y rápida toda tu operación. 🧡
+          - generic [ref=f15e73] [cursor=pointer]:
+            - img [ref=f15e76]
+            - generic [ref=f15e77]:
+              - generic [ref=f15e78]: Transportadora
+              - generic [ref=f15e79]: Conoce nuestro panel de transportadora para que puedas seleccionar y hacer el despacho de tus envíos por la transporta de tu preferencia. 🧡

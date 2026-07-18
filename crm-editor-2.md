@@ -1,0 +1,501 @@
+- generic:
+  - generic:
+    - region "Notifications alt+T"
+    - generic:
+      - complementary:
+        - generic:
+          - generic:
+            - generic:
+              - img
+            - generic:
+              - generic: Rushmira Ecuador
+              - generic: Panel COD
+        - generic:
+          - button:
+            - img
+            - generic:
+              - generic: Rushmira Ecuador
+              - generic: EC · Dueño
+            - img
+        - navigation:
+          - button:
+            - img
+            - generic: Dashboard
+          - button:
+            - img
+            - generic: Confirmar
+          - button:
+            - img
+            - generic: Seguimiento
+          - button:
+            - img
+            - generic: Novedades
+          - button:
+            - img
+            - generic: Admin
+          - button:
+            - img
+            - generic: Logística
+        - generic:
+          - generic:
+            - generic: F
+            - generic:
+              - generic: Fabian
+              - generic: Administrador
+            - button:
+              - img
+      - generic:
+        - banner:
+          - generic:
+            - heading [level=1]: Confirmar
+          - generic:
+            - generic: 10:12 p. m.
+            - button:
+              - img
+            - generic: F
+        - main:
+          - generic:
+            - generic:
+              - generic: Sync OK
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                - generic: "9"
+              - generic:
+                - generic:
+                  - img
+                - generic: "1"
+              - generic:
+                - generic:
+                  - img
+                - generic: "7"
+            - progressbar
+            - generic:
+              - generic: "17"
+              - generic: /103
+              - generic: 17%
+          - generic:
+            - generic:
+              - generic:
+                - generic: Cola · Operadora
+                - heading [level=1]:
+                  - img
+                  - text: Confirmar
+                - paragraph: lunes, 6 de julio · Cola de pedidos pendientes de confirmación.
+              - generic:
+                - button:
+                  - img
+                  - text: Cerrar turno
+                - button: Cambiar archivo
+            - generic:
+              - generic:
+                - img
+                - generic:
+                  - generic:
+                    - text: "Hoy:"
+                    - strong: "0"
+                    - text: conf ·
+                    - strong: "0"
+                    - text: canc ·
+                    - strong: "0"
+                    - text: noresp
+                  - generic: "|"
+                  - generic: 0%
+                  - generic: tasa personal · meta 85%
+              - generic: Calentando — aún no hay datos suficientes
+            - generic:
+              - generic:
+                - img
+              - generic:
+                - generic:
+                  - generic: "19"
+                  - generic: venta(s) de +7 días sin pasar a Dropi
+                - paragraph: Están fuera de la ventana de la cola (últimos 7d) — revisalas en el admin de Shopify antes de que se pierda la confirmación.
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                - generic:
+                  - generic:
+                    - generic: "7"
+                    - generic: con valor distinto a Shopify
+                  - paragraph: Dropi va a cobrar más de lo que el cliente aceptó. Cada pedido afectado muestra el aviso en su ficha con un botón «Corregir a $X» que lo arregla desde acá (sin ir al panel de Dropi).
+                - button:
+                  - text: Ver lista
+                  - img
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                - generic:
+                  - generic:
+                    - generic: "0"
+                    - generic: sin pasar a Dropi — todo al día ✓
+                  - generic:
+                    - generic:
+                      - text: "Hoy: 5 en Shopify · 5 en Dropi ·"
+                      - generic: 0 sin pasar
+                    - generic: "|"
+                    - generic:
+                      - generic: "Últimos 7d:"
+                      - text: 206 en Shopify · 206 en Dropi ·
+                      - generic: 0 sin pasar
+                - button:
+                  - img
+                  - generic: Historial
+                - button:
+                  - img
+            - generic:
+              - generic: Tu cola hoy
+              - generic:
+                - generic:
+                  - text: Has llamado a
+                  - strong: "0"
+                - generic: ·
+                - generic:
+                  - text: Te faltan
+                  - strong: "94"
+                  - text: sin tocar
+              - generic:
+                - checkbox
+                - text: Solo sin tocar
+            - generic:
+              - generic:
+                - generic: "94"
+                - generic: por confirmar
+              - generic:
+                - generic:
+                  - strong: "9"
+                  - generic: conf
+                - generic:
+                  - strong: "1"
+                  - generic: canc
+                - generic:
+                  - strong: "7"
+                  - generic: noresp
+                - generic:
+                  - strong: "17"
+                  - generic: gestionados
+              - generic:
+                - generic: 6 cancelar (D7+)
+                - generic: 51 urgente (D4-6)
+            - button:
+              - img
+              - generic:
+                - generic: 6 pedidos para reintentar
+                - text: No contestaron antes — volver a llamar
+              - generic: Ver estos →
+            - generic:
+              - generic:
+                - button:
+                  - img
+                  - text: Desde
+                - generic: —
+                - button:
+                  - img
+                  - text: Hasta
+                - generic:
+                  - button:
+                    - img
+                    - text: Lista
+                  - button [pressed]:
+                    - img
+                    - text: Llamar
+              - generic:
+                - generic:
+                  - button [pressed]:
+                    - img
+                    - generic: Pendientes
+                    - generic: "94"
+                  - button:
+                    - img
+                    - generic: Recordatorios
+                    - generic: "5"
+                  - button:
+                    - img
+                    - generic: Todos
+                    - generic: "94"
+                  - button:
+                    - img
+                    - generic: AIRE ACONDICIO
+                    - generic: "5"
+                  - button:
+                    - img
+                    - generic: FUMAREX
+                    - generic: "9"
+                  - button:
+                    - img
+                    - generic: Joint Health 1
+                    - generic: "3"
+                  - button:
+                    - img
+                    - generic: Migrastil Neur
+                    - generic: "2"
+                  - button:
+                    - img
+                    - generic: Reparador Esma
+                    - generic: "75"
+                - generic:
+                  - img
+                  - generic: Buscar nombre, teléfono o ciudad
+                  - searchbox: "998044367"
+            - generic:
+              - button:
+                - img
+                - generic: 9 pedidos ocultos por duplicado
+                - generic: — ya hay un pedido más nuevo del mismo cliente
+                - generic: Ver
+            - generic:
+              - img
+              - text: "Atendiendo: Lady salgado · 998044367"
+            - generic:
+              - generic: 1 / 1
+              - generic:
+                - button [disabled]:
+                  - img
+                - button [disabled]:
+                  - img
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - img
+                      - generic: Huella Dropi
+                    - generic:
+                      - img
+                      - generic: Crítica
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - generic: Pedidos
+                      - generic: "20"
+                    - generic:
+                      - generic:
+                        - img
+                        - generic: Entregados
+                      - generic: "2"
+                    - generic:
+                      - generic:
+                        - img
+                        - generic: Devueltos
+                      - generic: "18"
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: Tasa de entrega
+                        - generic: 10%
+                      - progressbar
+                    - generic:
+                      - generic:
+                        - generic: Tasa de devolución
+                        - generic: 90%
+                      - progressbar
+                  - generic:
+                    - generic:
+                      - img
+                      - generic: "Tipo:"
+                      - generic: Frecuente
+                    - generic: Datos globales Dropi
+              - generic:
+                - generic: D4
+                - generic: PENDIENTE CONFIRMACION
+              - generic: Lady salgado
+              - generic:
+                - generic:
+                  - img
+                  - button: "998044367"
+                  - link:
+                    - /url: tel:+593998044367
+                    - img
+                    - text: Llamar
+                  - button:
+                    - img
+                    - text: WhatsApp
+                  - img
+                  - text: QUITO
+                - generic:
+                  - img
+                  - text: Reparador Esmalte Dental
+                  - img
+                  - text: $48,75
+              - generic:
+                - generic:
+                  - img
+                  - text: Dirección
+                - generic:
+                  - generic:
+                    - textbox:
+                      - /placeholder: "Calle 8 #5-67, Bogotá"
+                      - text: Linea férrea y pasaje s38b, Casa color azul con concheeo de vino
+                    - generic:
+                      - img
+                - generic:
+                  - img
+                  - generic: Dirección verificada
+              - generic:
+                - button:
+                  - img
+                  - text: Editar orden
+                  - generic: · GINTRACOM
+                  - generic: · $48,75
+              - generic:
+                - generic:
+                  - button:
+                    - generic:
+                      - img
+                      - text: Confirmó
+                  - button:
+                    - img
+                    - text: Canceló
+                  - button:
+                    - img
+                    - text: No contestó
+            - generic:
+              - region:
+                - heading [level=3]:
+                  - img
+                  - text: Notas y recordatorios
+                - generic:
+                  - textbox:
+                    - /placeholder: "Ej: el cliente recoge el viernes 3pm; llamar mañana temprano…"
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                        - text: Recordatorio
+                      - button: En 1 h
+                      - button: En 3 h
+                      - button: Mañana 9 am
+                      - button: Mañana 3 pm
+                      - button: En 2 días
+                    - generic:
+                      - button:
+                        - img
+                        - text: Elegir fecha y hora…
+                      - button [disabled]:
+                        - img
+                        - text: Agregar
+                - generic:
+                  - paragraph: Sin notas todavía
+  - complementary:
+    - link:
+      - /url: https://lovable.dev/projects/a6f5ee0b-c8a7-494d-9ea3-ac5c6c414faa?utm_source=lovable-badge
+      - generic: Edit with
+      - img
+    - button:
+      - img
+  - dialog "Edición de orden" [ref=f13e689]:
+    - generic [ref=f13e691]:
+      - img [ref=f13e693]
+      - generic [ref=f13e696]:
+        - heading "Edición de orden" [level=2] [ref=f13e697]
+        - paragraph [ref=f13e698]: "#6025107 · los cambios se sincronizan con Dropi"
+    - generic [ref=f13e699]:
+      - generic [ref=f13e700]:
+        - generic [ref=f13e701]:
+          - generic [ref=f13e702]:
+            - img [ref=f13e703]
+            - heading "Información del cliente" [level=3] [ref=f13e706]
+          - generic [ref=f13e707]:
+            - generic [ref=f13e708]:
+              - text: Nombre *
+              - textbox "Nombre *" [active] [ref=f13e709]: Lady
+            - generic [ref=f13e710]:
+              - text: Apellido
+              - textbox "Apellido" [ref=f13e711]: salgado
+            - generic [ref=f13e712]:
+              - text: Teléfono (solo dígitos)
+              - textbox "Teléfono (solo dígitos)" [ref=f13e713]:
+                - /placeholder: "3001234567"
+                - text: "998044367"
+            - generic [ref=f13e714]:
+              - text: Email (opcional)
+              - textbox "Email (opcional)" [ref=f13e715]:
+                - /placeholder: cliente@ejemplo.com
+        - generic [ref=f13e716]:
+          - generic [ref=f13e717]:
+            - img [ref=f13e718]
+            - heading "Dirección de entrega" [level=3] [ref=f13e721]
+          - generic [ref=f13e722]:
+            - generic [ref=f13e723]:
+              - text: Departamento *
+              - combobox [ref=f13e724] [cursor=pointer]:
+                - generic: PICHINCHA
+                - img [ref=f13e725]
+            - generic [ref=f13e727]:
+              - text: Ciudad *
+              - combobox [ref=f13e728] [cursor=pointer]:
+                - generic: QUITO
+                - img [ref=f13e729]
+            - generic [ref=f13e731]:
+              - text: Dirección *
+              - generic [ref=f13e733]:
+                - 'textbox "Calle 8 #5-67, Bogotá" [ref=f13e734]': Linea férrea y pasaje s38b, Casa color azul con concheeo de vino
+                - img [ref=f13e736]
+              - generic [ref=f13e738]:
+                - img [ref=f13e739]
+                - generic [ref=f13e741]: Dirección verificada
+      - generic [ref=f13e742]:
+        - generic [ref=f13e743]:
+          - generic [ref=f13e744]:
+            - img [ref=f13e745]
+            - heading "Transportadora" [level=3] [ref=f13e750]
+          - generic [ref=f13e751]:
+            - button "VELOCES $5,26" [ref=f13e752] [cursor=pointer]:
+              - generic [ref=f13e753]:
+                - img [ref=f13e754]
+                - generic [ref=f13e759]: VELOCES
+              - generic [ref=f13e760]: $5,26
+            - button "GINTRACOM actual $5,29" [ref=f13e761] [cursor=pointer]:
+              - generic [ref=f13e762]:
+                - img [ref=f13e763]
+                - generic [ref=f13e766]: GINTRACOM
+                - generic [ref=f13e767]: actual
+              - generic [ref=f13e768]: $5,29
+            - button "SERVIENTREGA $5,71" [ref=f13e769] [cursor=pointer]:
+              - generic [ref=f13e770]:
+                - img [ref=f13e771]
+                - generic [ref=f13e776]: SERVIENTREGA
+              - generic [ref=f13e777]: $5,71
+            - button "LAARCOURIER $6,48" [ref=f13e778] [cursor=pointer]:
+              - generic [ref=f13e779]:
+                - img [ref=f13e780]
+                - generic [ref=f13e785]: LAARCOURIER
+              - generic [ref=f13e786]: $6,48
+            - paragraph [ref=f13e787]: El precio es el flete que cotiza Dropi para esta ruta.
+        - generic [ref=f13e788]:
+          - generic [ref=f13e789]:
+            - img [ref=f13e790]
+            - heading "Producto y valor" [level=3] [ref=f13e794]
+          - generic [ref=f13e795]:
+            - generic [ref=f13e796]:
+              - generic [ref=f13e797]: Reparador Esmalte Dental
+              - generic [ref=f13e798]: ID 155190
+            - generic [ref=f13e799]:
+              - generic [ref=f13e800]:
+                - text: Precio de venta
+                - textbox "Precio de venta" [ref=f13e801]: "16.25"
+              - generic [ref=f13e802]:
+                - text: Cantidad
+                - spinbutton "Cantidad" [ref=f13e803]: "3"
+            - generic [ref=f13e804]:
+              - generic [ref=f13e805]: Subtotal
+              - generic [ref=f13e806]: $48,75
+          - generic [ref=f13e807]:
+            - generic [ref=f13e808]:
+              - generic [ref=f13e809]: Total a recaudar
+              - generic [ref=f13e810]: $48,75
+            - generic [ref=f13e811]:
+              - text: Ajustar total a mano (opcional — manda sobre la suma de líneas)
+              - textbox "Ajustar total a mano (opcional — manda sobre la suma de líneas)" [ref=f13e812]:
+                - /placeholder: "Ej: 59.900 o 26,99"
+    - generic [ref=f13e813]:
+      - button "Cancelar" [ref=f13e814] [cursor=pointer]
+      - button "Sin cambios" [disabled]
+    - button "Close" [ref=f13e815] [cursor=pointer]:
+      - img [ref=f13e816]
+      - generic [ref=f13e819]: Close

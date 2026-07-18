@@ -1,0 +1,246 @@
+- generic [ref=f6e2]:
+  - generic [ref=f6e3]:
+    - navigation [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - generic [ref=f6e6]:
+          - button [ref=f6e7] [cursor=pointer]
+          - generic [ref=f6e10] [cursor=pointer]:
+            - img "Wintrack" [ref=f6e11]
+            - generic [ref=f6e12]: Wintrack
+        - button [ref=f6e13] [cursor=pointer]
+    - generic [ref=f6e19]:
+      - generic [ref=f6e24]:
+        - heading "Selecciona tu pais de operacion" [level=2] [ref=f6e25]
+        - paragraph [ref=f6e26]: Debes elegirlo para usar la calculadora
+      - button "Seleccionar pais" [ref=f6e28] [cursor=pointer]
+    - generic [ref=f6e33]:
+      - generic [ref=f6e34]:
+        - generic [ref=f6e35]:
+          - generic [ref=f6e40]:
+            - heading "Simulador de Rentabilidad Real" [level=1] [ref=f6e41]
+            - paragraph [ref=f6e42]: Descubre los costos ocultos de tu operación de E-commerce.
+          - generic [ref=f6e43]:
+            - generic [ref=f6e44]:
+              - paragraph [ref=f6e45]: "Moneda en que vendes:"
+              - button "COP — Peso Colombiano" [ref=f6e47] [cursor=pointer]
+            - generic [ref=f6e53]:
+              - paragraph [ref=f6e54]: "País de operación:"
+              - button "Seleccionar pais" [ref=f6e56] [cursor=pointer]
+        - generic [ref=f6e61]:
+          - generic [ref=f6e62]: 🇨🇴Vendiendo en Pesos Colombianos
+          - generic [ref=f6e63]: Tasas en tiempo real
+      - generic [ref=f6e69]:
+        - generic [ref=f6e72]:
+          - generic [ref=f6e73]:
+            - generic [ref=f6e78]:
+              - heading "1. ¿Qué vendes y a cómo?" [level=3] [ref=f6e79]
+              - paragraph [ref=f6e80]: Define el precio y cuánta gente esperas que te compre.
+            - generic [ref=f6e81]:
+              - generic [ref=f6e82]:
+                - generic [ref=f6e83]: Precio de Venta (PVP)
+                - generic [ref=f6e88]:
+                  - generic: $
+                  - 'textbox "Ej: 100000" [ref=f6e89]'
+              - generic [ref=f6e90]:
+                - generic [ref=f6e91]: Ventas Diarias
+                - generic [ref=f6e96]:
+                  - generic: "#"
+                  - 'textbox "Ej: 15" [ref=f6e97]'
+          - generic [ref=f6e98]:
+            - generic [ref=f6e105]:
+              - heading "2. ¿Cuánto te cuesta?" [level=3] [ref=f6e106]
+              - paragraph [ref=f6e107]: Costos directos por cada unidad vendida.
+            - generic [ref=f6e108]:
+              - generic [ref=f6e109]:
+                - generic [ref=f6e110]: Costo del Producto
+                - generic [ref=f6e115]:
+                  - generic: $
+                  - 'textbox "Ej: 12000" [ref=f6e116]'
+              - generic [ref=f6e117]:
+                - generic [ref=f6e118]: Costo de Envío
+                - generic [ref=f6e123]:
+                  - generic: $
+                  - 'textbox "Ej: 19000" [ref=f6e124]'
+          - generic [ref=f6e125]:
+            - generic [ref=f6e130]:
+              - heading "3. Realidad Operativa" [level=3] [ref=f6e131]
+              - paragraph [ref=f6e132]: No todo lo que se envía se cobra.
+            - generic [ref=f6e133]:
+              - generic [ref=f6e134]:
+                - generic [ref=f6e135]: "% Cancelación"
+                - generic [ref=f6e140]:
+                  - generic: "%"
+                  - 'textbox "Ej: 5" [ref=f6e141]'
+              - generic [ref=f6e142]:
+                - generic [ref=f6e143]: "% Devolución"
+                - generic [ref=f6e148]:
+                  - generic: "%"
+                  - 'textbox "Ej: 25" [ref=f6e149]'
+          - generic [ref=f6e150]:
+            - generic [ref=f6e151]:
+              - generic [ref=f6e156]:
+                - heading "4. Inversión en Publicidad" [level=3] [ref=f6e157]
+                - paragraph [ref=f6e158]: Gasolina para tu negocio.
+              - generic [ref=f6e159]:
+                - generic [ref=f6e160]: Gasto Variable
+                - button [ref=f6e161] [cursor=pointer]
+            - generic [ref=f6e164]:
+              - generic [ref=f6e165]: Presupuesto Diario (Ads)
+              - generic [ref=f6e170]:
+                - generic: $
+                - 'textbox "Ej: 60000" [ref=f6e171]'
+        - generic [ref=f6e172]:
+          - generic [ref=f6e174]:
+            - heading "¿Cuánto te queda libre al mes?" [level=3] [ref=f6e175]
+            - paragraph [ref=f6e176]: $ 0
+            - generic [ref=f6e177]:
+              - generic [ref=f6e178]: "Margen Neto: 0.0%"
+              - button "COP — Peso Colombiano" [ref=f6e184] [cursor=pointer]
+          - generic [ref=f6e190]:
+            - heading "Semáforo de Salud Financiera" [level=3] [ref=f6e191]
+            - generic [ref=f6e194]:
+              - generic [ref=f6e386]:
+                - generic [ref=f6e387]: Costo / Precio
+                - generic [ref=f6e390]: 0%
+                - generic [ref=f6e391]: "Referencia Low ticket: <= 38%"
+              - generic [ref=f6e392]:
+                - generic [ref=f6e393]: Costo Fletes
+                - generic [ref=f6e396]: 0%
+                - generic [ref=f6e397]: "Máximo referencia: 20%"
+              - generic [ref=f6e398]:
+                - generic [ref=f6e399]: Impacto Devoluciones
+                - generic [ref=f6e402]: 0%
+                - generic [ref=f6e403]: "Máximo referencia: 3%"
+              - generic [ref=f6e404]:
+                - generic [ref=f6e405]: Gasto Ads vs Margen
+                - generic [ref=f6e408]: 0%
+                - generic [ref=f6e409]: "Máximo referencia: 45%"
+              - generic [ref=f6e410]:
+                - generic [ref=f6e411]: Margen Bruto
+                - generic [ref=f6e414]: 0%
+                - generic [ref=f6e415]: "Mínimo referencia: 45%"
+              - generic [ref=f6e416]:
+                - generic [ref=f6e417]: Retorno Inversión Ads
+                - generic [ref=f6e420]: 0%
+                - generic [ref=f6e421]: "Mínimo referencia: 80%"
+          - generic [ref=f6e231]:
+            - generic [ref=f6e232]:
+              - generic [ref=f6e233]: Markup
+              - generic [ref=f6e234]: 0.0%
+              - paragraph [ref=f6e235]: Ganancia sobre costo, no sobre precio.
+            - generic [ref=f6e236]:
+              - generic [ref=f6e237]: Margen de Contribución
+              - generic [ref=f6e238]: 0.0%
+              - paragraph [ref=f6e239]: Incluye fletes, devoluciones y ads.
+            - generic [ref=f6e240]:
+              - generic [ref=f6e241]: Ticket Analizado
+              - generic [ref=f6e242]: Low ticket
+              - paragraph [ref=f6e243]: Se ajustan referencias según tipo de ticket.
+          - generic [ref=f6e244]:
+            - heading "Proyección Mensual (30 Días)" [level=3] [ref=f6e245]
+            - generic [ref=f6e248]:
+              - generic [ref=f6e249]:
+                - generic [ref=f6e250]:
+                  - generic [ref=f6e251]: Ventas Totales
+                  - text: Lo que marca la tienda antes de cancelaciones.
+                - generic [ref=f6e252]: $ 0
+              - generic [ref=f6e253]:
+                - generic [ref=f6e254]:
+                  - generic [ref=f6e255]: Dinero Recaudado (Real)
+                  - text: Lo que realmente entra al banco (Entregados).
+                - generic [ref=f6e256]: $ 0
+              - generic [ref=f6e257]:
+                - generic [ref=f6e258]:
+                  - generic [ref=f6e259]: Costos Operativos
+                  - text: Producto + Fletes + Devoluciones.
+                - generic [ref=f6e260]: "- $ 0"
+              - generic [ref=f6e261]:
+                - generic [ref=f6e262]:
+                  - generic [ref=f6e263]: Inversión Publicidad
+                  - text: Lo que le pagas a Meta/TikTok.
+                - generic [ref=f6e264]: "- $ 0"
+              - generic [ref=f6e265]:
+                - generic [ref=f6e266]:
+                  - generic [ref=f6e267]: Utilidad Operacional
+                  - text: Tu ganancia para pagar sueldos y fijos.
+                - generic [ref=f6e268]: $ 0
+          - generic [ref=f6e269]:
+            - heading "Análisis de Marketing" [level=3] [ref=f6e270]
+            - generic [ref=f6e273]:
+              - generic [ref=f6e280]:
+                - generic [ref=f6e281]: Diagnóstico Inteligente
+                - paragraph [ref=f6e282]: Margen crítico (<8%). Estás trabajando para la transportadora.
+              - generic [ref=f6e283]:
+                - generic [ref=f6e284]:
+                  - generic [ref=f6e285]: Tu CPA (Costo por Venta)
+                  - generic [ref=f6e286]: $ 0
+                - generic [ref=f6e287]:
+                  - generic [ref=f6e288]: Retorno Ads (ROAS)
+                  - generic [ref=f6e289]: 0.00x
+                - generic [ref=f6e290]:
+                  - generic [ref=f6e291]: CPA Break-even Máximo
+                  - generic [ref=f6e292]: $ 0
+                - generic [ref=f6e293]:
+                  - generic [ref=f6e294]: Tasa de Cierre
+                  - generic [ref=f6e295]: 0.0%
+            - generic [ref=f6e296]:
+              - heading "Escenarios de CPA Objetivo (Por Venta)" [level=3] [ref=f6e297]
+              - generic [ref=f6e302]:
+                - generic [ref=f6e303]:
+                  - generic [ref=f6e308]: Escenario Ideal (35%)
+                  - generic [ref=f6e309]: $ 0
+                  - paragraph [ref=f6e310]: "Tu costo meta por venta para Low ticket. Utilidad diaria proyectada: $ 0."
+                - generic [ref=f6e311]:
+                  - generic [ref=f6e315]: Escenario Máximo (45%)
+                  - generic [ref=f6e316]: $ 0
+                  - paragraph [ref=f6e317]: "El límite. Utilidad diaria proyectada: $ 0."
+                - generic [ref=f6e318]:
+                  - generic [ref=f6e324]: Zona de Peligro (60%)
+                  - generic [ref=f6e325]: $ 0
+                  - paragraph [ref=f6e326]: "Riesgo alto. Si tu CPA real supera este rango, tu utilidad se comprime rápido. Utilidad diaria proyectada: $ 0."
+              - generic [ref=f6e327]:
+                - generic [ref=f6e328]:
+                  - generic [ref=f6e329]: Umbrales accionables
+                  - generic [ref=f6e330]:
+                    - text: "ROAS break-even:"
+                    - generic [ref=f6e331]: 0.00x
+                - paragraph [ref=f6e332]: Un costo/venta alto no implica perdida automaticamente. Lo critico es que tu CPA real se mantenga por debajo de $ 0.
+      - generic [ref=f6e334]:
+        - heading "¿Quieres decisiones inteligentes basadas en datos reales?" [level=2] [ref=f6e341]
+        - paragraph [ref=f6e342]: Analiza ROAS, CPA, conversión y devoluciones por producto. Te dice si escalar, optimizar o pausar con razones específicas. Detecta fatiga de campaña, audiencia saturada o producto quemado. Integra con Dropi para alertas de stock y entregas.
+        - generic [ref=f6e343]:
+          - generic [ref=f6e344]: Winners vs Losers automático
+          - generic [ref=f6e347]: Detecta fatiga y saturación
+          - generic [ref=f6e350]: Integración Dropi
+          - generic [ref=f6e353]: Unit Economics por producto
+        - generic [ref=f6e356]:
+          - button "Comenzar Prueba Gratis" [ref=f6e357] [cursor=pointer]
+          - button "Volver al Inicio" [ref=f6e360] [cursor=pointer]
+    - contentinfo [ref=f6e361]:
+      - generic [ref=f6e362]:
+        - generic [ref=f6e363]:
+          - img "Wintrack" [ref=f6e364]
+          - generic [ref=f6e365]: © 2026 Wintrack. Todos los derechos reservados.
+        - generic [ref=f6e366]:
+          - link "Privacidad" [ref=f6e367] [cursor=pointer]:
+            - /url: /privacy_policy.html
+          - link "Términos" [ref=f6e368] [cursor=pointer]:
+            - /url: /terms.html
+          - link "Cookies" [ref=f6e369] [cursor=pointer]:
+            - /url: /cookies.html
+    - link "Únete a la comunidad Wintrack en WhatsApp" [ref=f6e370] [cursor=pointer]:
+      - /url: https://chat.whatsapp.com/KpZiMyrltHMCtrqulxdiP1?mode=gi_t
+  - region "Notifications alt+T"
+  - status [ref=f6e373]
+  - alert [ref=f6e374]
+  - generic [ref=f6e376]:
+    - paragraph [ref=f6e377]: Cookies y privacidad
+    - generic [ref=f6e378]:
+      - paragraph [ref=f6e379]:
+        - text: Usamos cookies esenciales y analitica anonima para mejorar Wintrack.
+        - link "Politica de privacidad" [ref=f6e380] [cursor=pointer]:
+          - /url: /privacy_policy.html
+        - text: .
+      - generic [ref=f6e381]:
+        - button "Rechazar" [ref=f6e382] [cursor=pointer]
+        - button "Aceptar" [ref=f6e383] [cursor=pointer]

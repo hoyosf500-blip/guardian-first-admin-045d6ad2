@@ -1,0 +1,203 @@
+- generic [ref=f230e4]:
+  - generic [ref=f230e7]:
+    - complementary [ref=f230e9]:
+      - generic [ref=f230e10]:
+        - generic [ref=f230e11]:
+          - img "Logo" [ref=f230e13]
+          - generic [ref=f230e14]:
+            - generic [ref=f230e15]: WinTrack
+            - generic [ref=f230e16]:
+              - generic [ref=f230e17]: Plan
+              - generic [ref=f230e18]: Emprendedor
+        - button [ref=f230e19] [cursor=pointer]
+      - navigation [ref=f230e22]:
+        - generic [ref=f230e23]:
+          - generic [ref=f230e24]: Principal
+          - button "Inicio" [ref=f230e26] [cursor=pointer]
+          - button "Dashboard" [ref=f230e33] [cursor=pointer]
+          - button "Ranking" [ref=f230e42] [cursor=pointer]
+        - generic [ref=f230e52]:
+          - generic [ref=f230e53]: ecommerce
+          - generic [ref=f230e54]:
+            - button "E-commerce" [ref=f230e55] [cursor=pointer]
+            - generic [ref=f230e64]:
+              - button "Productos" [ref=f230e65] [cursor=pointer]
+              - button "Contabilidad Business" [ref=f230e68] [cursor=pointer]:
+                - generic [ref=f230e70]: Contabilidad
+                - generic [ref=f230e71]: Business
+              - button "Novedad" [ref=f230e74] [cursor=pointer]
+              - button "Calculadora" [ref=f230e77] [cursor=pointer]
+              - button "WinAI Business" [ref=f230e80] [cursor=pointer]:
+                - generic [ref=f230e82]: WinAI
+                - generic [ref=f230e83]: Business
+              - button "Mapa Logístico" [ref=f230e86] [cursor=pointer]
+              - button "Guía de Estados" [ref=f230e89] [cursor=pointer]
+        - generic [ref=f230e92]:
+          - generic [ref=f230e93]: Finanzas
+          - generic [ref=f230e94]:
+            - button "Finanzas" [ref=f230e95] [cursor=pointer]
+            - generic [ref=f230e104]:
+              - button "Patrimonio" [ref=f230e105] [cursor=pointer]
+              - button "Transacciones" [ref=f230e108] [cursor=pointer]
+              - button "Metas" [ref=f230e111] [cursor=pointer]
+              - button "Reportes" [ref=f230e114] [cursor=pointer]
+        - generic [ref=f230e117]:
+          - generic [ref=f230e118]: Herramientas
+          - button "Notificaciones 9" [ref=f230e120] [cursor=pointer]:
+            - generic [ref=f230e126]: Notificaciones
+            - generic [ref=f230e127]: "9"
+          - button "Integraciones" [ref=f230e129] [cursor=pointer]
+        - generic [ref=f230e136]:
+          - generic [ref=f230e137]: Sistema
+          - button "Facturación" [ref=f230e139] [cursor=pointer]
+      - generic [ref=f230e146]:
+        - generic [ref=f230e147]:
+          - button [ref=f230e148] [cursor=pointer]
+          - button [ref=f230e152] [cursor=pointer]
+        - button "fabian 🏪 Tu tienda" [ref=f230e158] [cursor=pointer]:
+          - generic [ref=f230e167]:
+            - generic [ref=f230e168]: fabian
+            - generic [ref=f230e170]: 🏪 Tu tienda
+    - generic [ref=f230e177]:
+      - generic [ref=f230e179]:
+        - heading "Integraciones" [level=1] [ref=f230e180]
+        - paragraph [ref=f230e181]: Conecta tus cuentas externas para sincronizar datos automáticamente.
+      - generic [ref=f230e182]:
+        - generic [ref=f230e183]:
+          - generic [ref=f230e184]:
+            - generic [ref=f230e185]:
+              - heading "Dropi" [level=4] [ref=f230e186]
+              - generic [ref=f230e187]:
+                - generic [ref=f230e188]: Dropshipping
+                - generic [ref=f230e189]: Multi-cuenta
+            - img "Dropi" [ref=f230e194]
+          - paragraph [ref=f230e195]: Sincroniza tus pedidos, inventario y catálogo de productos automáticamente desde Dropi.
+          - generic [ref=f230e196]:
+            - button "Administrar" [ref=f230e197] [cursor=pointer]
+            - link [ref=f230e201] [cursor=pointer]:
+              - /url: https://dropi.co
+        - generic [ref=f230e206]:
+          - generic [ref=f230e207]:
+            - generic [ref=f230e208]:
+              - heading "Meta Ads" [level=4] [ref=f230e209]
+              - generic [ref=f230e210]:
+                - generic [ref=f230e211]: Marketing
+                - generic [ref=f230e212]: Multi-cuenta
+            - img "Meta" [ref=f230e217]
+          - paragraph [ref=f230e233]: Importa costos de publicidad y métricas de rendimiento de tus campañas de Meta Ads.
+          - generic [ref=f230e234]:
+            - button "Administrar" [ref=f230e235] [cursor=pointer]
+            - link [ref=f230e239] [cursor=pointer]:
+              - /url: https://business.facebook.com
+        - generic [ref=f230e244]:
+          - generic [ref=f230e245]:
+            - generic [ref=f230e246]:
+              - heading "ChateaPRO" [level=4] [ref=f230e247]
+              - generic [ref=f230e248]:
+                - generic [ref=f230e249]: WhatsApp · Ventas
+                - generic [ref=f230e250]: Multi-cuenta
+            - img "ChateaPRO" [ref=f230e254]
+          - paragraph [ref=f230e255]: Sincroniza compras confirmadas desde ChateaPRO a WinTrack con atribución por anuncio.
+          - generic [ref=f230e256]:
+            - button "Administrar" [ref=f230e257] [cursor=pointer]
+            - link [ref=f230e261] [cursor=pointer]:
+              - /url: https://chateapro.app/
+        - generic [ref=f230e266]:
+          - generic [ref=f230e267]:
+            - generic [ref=f230e268]:
+              - heading "Shopify" [level=4] [ref=f230e269]
+              - generic [ref=f230e270]:
+                - generic [ref=f230e271]: E-commerce · Landing
+                - generic [ref=f230e272]: Multi-cuenta
+            - img "Shopify" [ref=f230e277]
+          - paragraph [ref=f230e278]: Trae las sesiones, la conversión y las ventas de tu landing en Shopify para decidir con datos.
+          - generic [ref=f230e279]:
+            - button "Administrar" [ref=f230e280] [cursor=pointer]
+            - link [ref=f230e284] [cursor=pointer]:
+              - /url: https://www.shopify.com
+        - generic [ref=f230e289]:
+          - generic [ref=f230e290]:
+            - generic [ref=f230e291]:
+              - heading "Fenix Ventures" [level=4] [ref=f230e292]
+              - text: Fee operativo
+            - img "Fenix Ventures" [ref=f230e294]
+          - paragraph [ref=f230e295]: Activa el fee de Fenix Ventures para descontar el costo por orden subida en tus productos.
+          - generic [ref=f230e296]:
+            - button "Administrar" [ref=f230e297] [cursor=pointer]
+            - generic [ref=f230e301]: Inactivo
+        - generic [ref=f230e308]:
+          - heading "Potencia tu Marketing con IA" [level=4] [ref=f230e309]
+          - paragraph [ref=f230e310]: Genera contenido de alto impacto con las mejores IAs del mercado. Sin límites, sin suscripciones.
+        - generic [ref=f230e311]:
+          - generic [ref=f230e312]:
+            - generic [ref=f230e313]:
+              - heading "Gemini" [level=4] [ref=f230e314]
+              - text: WinAI
+            - img "Gemini" [ref=f230e316]
+          - paragraph [ref=f230e321]: Ideal para crear descripciones de productos, guiones de videos y respuestas automáticas para WhatsApp.
+          - generic [ref=f230e322]:
+            - button "Configurar API Key" [ref=f230e323] [cursor=pointer]
+            - link [ref=f230e327] [cursor=pointer]:
+              - /url: https://aistudio.google.com/app/apikey
+        - generic [ref=f230e332]:
+          - generic [ref=f230e333]:
+            - generic [ref=f230e334]:
+              - heading "OpenAI" [level=4] [ref=f230e335]
+              - text: WinAI
+            - img "OpenAI" [ref=f230e337]
+          - paragraph [ref=f230e339]: Perfecto para anuncios de Facebook/Instagram, textos persuasivos y estrategias de marketing avanzadas.
+          - generic [ref=f230e340]:
+            - button "Configurar API Key" [ref=f230e341] [cursor=pointer]
+            - link [ref=f230e345] [cursor=pointer]:
+              - /url: https://platform.openai.com/api-keys
+        - generic [ref=f230e350]:
+          - generic [ref=f230e351]:
+            - generic [ref=f230e352]:
+              - heading "DeepSeek" [level=4] [ref=f230e353]
+              - text: WinAI
+            - img "DeepSeek" [ref=f230e355]
+          - paragraph [ref=f230e357]: "Excelente para crear contenido en volumen: descripciones, títulos SEO y variaciones de anuncios."
+          - generic [ref=f230e358]:
+            - button "Configurar API Key" [ref=f230e359] [cursor=pointer]
+            - link [ref=f230e363] [cursor=pointer]:
+              - /url: https://platform.deepseek.com/api_keys
+        - generic [ref=f230e368]:
+          - generic [ref=f230e369]:
+            - generic [ref=f230e370]:
+              - heading "Grok" [level=4] [ref=f230e371]
+              - text: WinAI
+            - img "Grok" [ref=f230e373]
+          - paragraph [ref=f230e375]: El modelo de xAI entrenado con datos en tiempo real. Ideal para análisis de tendencias y contenido actualizado.
+          - generic [ref=f230e376]:
+            - button "Configurar API Key" [ref=f230e377] [cursor=pointer]
+            - link [ref=f230e381] [cursor=pointer]:
+              - /url: https://console.x.ai/
+        - generic [ref=f230e386]:
+          - generic [ref=f230e387]:
+            - generic [ref=f230e388]:
+              - heading "Claude" [level=4] [ref=f230e389]
+              - text: WinAI
+            - img "Claude" [ref=f230e391]
+          - paragraph [ref=f230e393]: Sobresale en textos largos, análisis de documentos y redacción persuasiva con contexto extendido.
+          - generic [ref=f230e394]:
+            - button "Configurar API Key" [ref=f230e395] [cursor=pointer]
+            - link [ref=f230e399] [cursor=pointer]:
+              - /url: https://console.anthropic.com/settings/keys
+        - generic [ref=f230e409]:
+          - heading "Automatización y Atajos" [level=4] [ref=f230e410]
+          - paragraph [ref=f230e411]: Registra transacciones desde tu celular sin abrir la app.
+        - generic [ref=f230e412]:
+          - generic [ref=f230e413]:
+            - generic [ref=f230e414]:
+              - heading "iPhone Shortcuts" [level=4] [ref=f230e415]
+              - text: Automatización
+            - img "Apple" [ref=f230e417]
+          - paragraph [ref=f230e419]: Registra gastos e ingresos directamente desde Siri o la app Atajos de tu iPhone.
+          - generic [ref=f230e420]:
+            - button "Configurar" [ref=f230e421] [cursor=pointer]
+            - link [ref=f230e425] [cursor=pointer]:
+              - /url: https://support.apple.com/es-co/guide/shortcuts/welcome/ios
+    - button "Abrir chat" [ref=f230e431] [cursor=pointer]
+  - region "Notifications alt+T"
+  - status [ref=f230e1]
+  - alert [ref=f230e2]
