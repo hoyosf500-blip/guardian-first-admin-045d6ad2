@@ -174,6 +174,17 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
                   <DollarSign size={9} aria-hidden="true" /> DE MÁS
                 </span>
               )}
+              {/* Badge D7+ — la MISMA regla de días que alimenta el KPI
+                  "N cancelar (D7+)" del header. Va aparte del badge de
+                  prioridad porque ese sale de calcPriority (un score
+                  compuesto): un pedido podía contar en el KPI "cancelar" y
+                  mostrar "Alta" en la fila, y la asesora no encontraba cuáles
+                  eran los que el contador le estaba señalando. */}
+              {dias >= 7 && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 bg-danger/15 text-danger border-danger/30">
+                  CANCELAR
+                </span>
+              )}
               {/* Priority badge (high/critical only) */}
               {pLevel !== 'low' && (
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${pCfg.bgClass} ${pCfg.color}`}>

@@ -35,7 +35,7 @@ const fadeUp = (delay = 0) => ({
 
 export default function DashboardTab() {
   const { allOrders, counter, workQueue } = useOrders();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { activeStoreId } = useStore();
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
@@ -197,6 +197,8 @@ export default function DashboardTab() {
     return { ageMin, ageLabel, isError, healthy, warning, broken };
   }, [lastSync, nowTick]);
 
+  const hoyISO = new Date().toISOString().split('T')[0];
+
   const chartData = useMemo(() => {
     // Generamos las N fechas (incluyendo hoy) y delegamos la dedup al
     // helper compartido — misma fuente de verdad que CounterBar y el RPC
@@ -213,10 +215,13 @@ export default function DashboardTab() {
       const t = d.conf + d.canc + d.noresp;
       return {
         date: new Date(date + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }),
+        // Marca el día de hoy para poder resaltarlo en el gráfico. Con 30 días
+        // seleccionados, sin esto la operadora no sabe cuál barra es la suya.
+        esHoy: date === hoyISO,
         ...d, tasa: confRateBySample(d.conf, d.canc).tasa ?? 0, total: t
       };
     });
-  }, [historyData, period]);
+  }, [historyData, period, hoyISO]);
 
   // Comparativo de ayer. Usa la MISMA fn que CounterBar (computeDailyCounter)
   // para que "ayer" en el dashboard nunca diverja del cierre real del día.
@@ -233,6 +238,7 @@ export default function DashboardTab() {
     return {
       conf: last7.map(d => d.conf),
       canc: last7.map(d => d.canc),
+      noresp: last7.map(d => d.noresp),
       total: last7.map(d => d.total),
     };
   }, [chartData]);
@@ -240,6 +246,15 @@ export default function DashboardTab() {
   const total = counter.conf + counter.canc + counter.noresp;
   const tasa = confRateBySample(counter.conf, counter.canc).tasa ?? 0;
   const pendLeft = workQueue.filter(o => !o.result).length;
+
+  // Meta del día — MISMO cálculo que CounterBar (src/components/CounterBar.tsx:8-9):
+  // cobertura = gestionados / cola del día. Se replica la fórmula en vez de
+  // inventar otra para que la barra de Confirmar y la del Dashboard no puedan
+  // mostrarle números distintos a la misma operadora.
+  const metaDia = (() => {
+    const goal = workQueue.length;
+    return { goal, pct: goal > 0 ? Math.min(100, Math.round(total / goal * 100)) : 0 };
+  })();
 
   // Memoized so downstream useMemo (statusBreakdown, prods) gets a stable reference.
   // Without this, every render creates a new array → defeats all memoization.
@@ -326,6 +341,29 @@ export default function DashboardTab() {
   // Chart theming uses HSL CSS vars so dark/light modes adapt automatically.
   const hsl = (v: string) => `hsl(var(${v}))`;
   const tickStyle = { fontSize: 10, fill: hsl('--muted-foreground') };
+
+  /**
+   * Tick del eje X que escribe "HOY" en cian sobre la columna del día actual,
+   * en vez de la fecha. Con 30 días en pantalla es la única forma de que la
+   * operadora encuentre su jornada de un vistazo.
+   */
+  const hoyTick = (props: { x?: number; y?: number; index?: number; payload?: { value?: string } }) => {
+    const { x = 0, y = 0, index = 0, payload } = props;
+    const esHoy = chartData[index]?.esHoy;
+    return (
+      <text
+        x={x}
+        y={y + 10}
+        textAnchor="middle"
+        fontSize={esHoy ? 9 : 10}
+        fontWeight={esHoy ? 700 : 400}
+        letterSpacing={esHoy ? '0.1em' : undefined}
+        fill={esHoy ? hsl('--cyan') : hsl('--muted-foreground')}
+      >
+        {esHoy ? 'HOY' : payload?.value}
+      </text>
+    );
+  };
   const tooltipStyle = {
     backgroundColor: hsl('--card'),
     border: `1px solid ${hsl('--border')}`,
@@ -365,9 +403,11 @@ export default function DashboardTab() {
 
   const greeting = (() => {
     const h = new Date().getHours();
-    if (h < 12) return 'Buenos días';
-    if (h < 18) return 'Buenas tardes';
-    return 'Buenas noches';
+    const franja = h < 12 ? 'Buenos días' : h < 18 ? 'Buenas tardes' : 'Buenas noches';
+    // Solo el primer nombre: "Buenos días, María Fernanda Ríos" no entra en el
+    // header y el apellido no aporta nada acá.
+    const nombre = (profile?.display_name || '').trim().split(/\s+/)[0];
+    return nombre ? `${franja}, ${nombre}` : franja;
   })();
 
   const hasData = total > 0 || totalOrders > 0;
@@ -520,10 +560,46 @@ export default function DashboardTab() {
                 <GaugeRing value={tasa} label="confirmación" size={190} />
               </div>
 
-              <div className="tilt-layer-1">
+              <div className="tilt-layer-1 space-y-3">
                 <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
                   {tasa >= CONF_TARGET_PCT ? `En meta (${CONF_TARGET_PCT}%)` : tasa >= CONF_TARGET_PCT - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
                 </div>
+
+                {/* Meta del día — mismo cálculo que CounterBar (gestionados sobre
+                    la cola del día), para que el Dashboard y la barra de
+                    Confirmar nunca muestren números distintos. */}
+                {metaDia.goal > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                      <span>Meta del día</span>
+                      <span className="font-mono tabular-nums text-foreground">
+                        <b>{total}</b> / {metaDia.goal}
+                      </span>
+                    </div>
+                    <div
+                      role="progressbar"
+                      aria-valuenow={metaDia.pct}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label="Avance de la meta del día"
+                      className="h-2 rounded-full bg-foreground/10 overflow-hidden"
+                    >
+                      <div
+                        className="h-full rounded-full bg-accent-gradient transition-[width] duration-700"
+                        style={{ width: `${metaDia.pct}%` }}
+                      />
+                    </div>
+                    <div className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[13px] font-semibold border ${
+                      pendLeft === 0
+                        ? 'bg-success/10 border-success/28 text-success'
+                        : 'bg-accent/10 border-accent/28 text-accent'
+                    }`}>
+                      {pendLeft === 0
+                        ? '✓ ¡Cola al día! No te queda nada pendiente'
+                        : <>Te faltan <span className="font-mono tabular-nums">{pendLeft}</span></>}
+                    </div>
+                  </div>
+                )}
               </div>
             </TiltCard>
 
@@ -532,7 +608,7 @@ export default function DashboardTab() {
             {[
               { icon: CheckCircle2, label: 'Confirmados', value: counter.conf, prev: yesterdayData.conf, tone: 'success' as const, spark: sparkData.conf },
               { icon: XCircle, label: 'Cancelados', value: counter.canc, prev: yesterdayData.canc, tone: 'danger' as const, spark: sparkData.canc },
-              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, tone: 'neutral' as const, spark: [] as number[] },
+              { icon: PhoneOff, label: 'No respondió', value: counter.noresp, prev: yesterdayData.noresp, tone: 'neutral' as const, spark: sparkData.noresp },
               { icon: Package, label: 'Total pedidos', value: totalOrders, prev: 0, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k) => (
               <StatTile
@@ -591,13 +667,28 @@ export default function DashboardTab() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} vertical={false} />
-                    <XAxis dataKey="date" tick={tickStyle} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="date" tick={hoyTick} axisLine={false} tickLine={false} />
                     <YAxis tick={tickStyle} axisLine={false} tickLine={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '6px' }} formatter={(v: string) => v === 'conf' ? 'Confirmados' : v === 'canc' ? 'Cancelados' : 'No respondió'} />
-                    <Bar dataKey="conf" stackId="a" fill={CHART_SUCCESS} name="conf" radius={[0, 0, 0, 0]} style={{ filter: `drop-shadow(0 0 6px ${CHART_SUCCESS})` }} />
-                    <Bar dataKey="canc" stackId="a" fill={CHART_DANGER} name="canc" />
-                    <Bar dataKey="noresp" stackId="a" fill={CHART_MUTED} radius={[6, 6, 0, 0]} name="noresp" />
+                    {/* Las barras de HOY van con contorno cian: con 30 días
+                        seleccionados, sin esta marca la operadora no distingue
+                        cuál columna es la de su jornada. */}
+                    <Bar dataKey="conf" stackId="a" fill={CHART_SUCCESS} name="conf" radius={[0, 0, 0, 0]} style={{ filter: `drop-shadow(0 0 6px ${CHART_SUCCESS})` }}>
+                      {chartData.map((d, i) => (
+                        <Cell key={`c-${i}`} stroke={d.esHoy ? CHART_CYAN : 'transparent'} strokeWidth={d.esHoy ? 1.5 : 0} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="canc" stackId="a" fill={CHART_DANGER} name="canc">
+                      {chartData.map((d, i) => (
+                        <Cell key={`x-${i}`} stroke={d.esHoy ? CHART_CYAN : 'transparent'} strokeWidth={d.esHoy ? 1.5 : 0} />
+                      ))}
+                    </Bar>
+                    <Bar dataKey="noresp" stackId="a" fill={CHART_MUTED} radius={[6, 6, 0, 0]} name="noresp">
+                      {chartData.map((d, i) => (
+                        <Cell key={`n-${i}`} stroke={d.esHoy ? CHART_CYAN : 'transparent'} strokeWidth={d.esHoy ? 1.5 : 0} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>

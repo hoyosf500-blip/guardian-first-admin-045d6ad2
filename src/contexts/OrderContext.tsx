@@ -88,6 +88,37 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const dataLoader = useDataLoader(user, activeStoreId);
   const novedades = useNovedades(user, activeStoreId);
 
+  // Hidratar el contador del día desde la DB al montar.
+  //
+  // Antes `counter` arrancaba en {0,0,0} y SOLO subía con las acciones de la
+  // sesión actual del navegador: la asesora confirmaba 20 pedidos, refrescaba
+  // la página y el Dashboard y la CounterBar volvían a marcar 0. El número del
+  // cierre del día (que sí consulta este RPC) no cuadraba con lo que ella veía
+  // toda la jornada.
+  //
+  // today_call_stats() devuelve lo de HOY para el operador autenticado, así que
+  // sembrarlo acá deja ambas vistas contando lo mismo. Se re-consulta al cambiar
+  // de tienda porque el RPC está scopeado por la tienda activa.
+  useEffect(() => {
+    if (!user || !activeStoreId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await (supabase.rpc as unknown as (
+        fn: string,
+      ) => Promise<{ data: Array<{ confirmados: number; cancelados: number; noresp: number }> | null; error: unknown }>)(
+        'today_call_stats',
+      );
+      if (cancelled || error || !data?.[0]) return;
+      const s = data[0];
+      setCounter({
+        conf: Number(s.confirmados) || 0,
+        canc: Number(s.cancelados) || 0,
+        noresp: Number(s.noresp) || 0,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [user, activeStoreId]);
+
   const loadWorkQueue = useCallback(async () => {
     if (!user || !activeStoreId) return;
     // Pool compartido: TODAS las operadoras ven TODOS los pendientes de la
