@@ -35,12 +35,19 @@ const ERROR_COOLDOWN_MS = 2 * 60 * 60 * 1000; // reintento de 'error' no antes d
 const PER_STORE_CAP = 20;              // tope por corrida por tienda
 const PUSH_DELAY_MS = 1200;            // pausa entre pushes (gentil con Dropi)
 const SHOPIFY_LOOKBACK_DAYS = 3;       // ventana de pedidos Shopify a revisar
-const DROPI_LOOKBACK_DAYS = 14;        // ventana de `orders` para el cruce (basta para detectar el "mismo pedido" reciente; órdenes viejas ausentes = recompra → sube)
-// Ventana "mismo pedido" para el cruce con Dropi: una orden Dropi del mismo
-// teléfono creada en [shopifyMs - MATCH_BACK, shopifyMs + MATCH_FWD] es EL MISMO
-// pedido (ya en Dropi) → no subir. Una orden Dropi anterior = recompra → sube.
-const MATCH_BACK_MS = 1 * 24 * 60 * 60 * 1000;   // 1 día
-const MATCH_FWD_MS = 45 * 24 * 60 * 60 * 1000;   // 45 días (catch-up de subidas tardías)
+const DROPI_LOOKBACK_DAYS = 60;        // ventana de `orders` para detectar una orden ACTIVA del mismo teléfono (cubre entregas lentas; más viejas = ghost)
+
+/** Una orden Dropi está ACTIVA (en curso) si NO está ENTREGADA ni muerta
+ *  (cancelada/rechazada/anulada/reemplazada). Regla del dueño 2026-07-18: solo
+ *  una orden ACTIVA bloquea una nueva subida (= duplicado); si su única orden ya
+ *  está ENTREGADA, el cliente está RECOMPRANDO → sí se sube. */
+function isActiveDropiEstado(estado: string | null): boolean {
+  const e = String(estado || "").toUpperCase();
+  if (!e) return true;                       // sin estado → conservador (bloquea)
+  if (/ENTREGAD/.test(e)) return false;      // entregada → recompra ok, se sube
+  if (/CANCEL/.test(e)) return false;        // cancelada → muerta (ya se ignoraba)
+  return true;                               // cualquier otro estatus → en curso = duplicado
+}
 
 /** Últimos 9 dígitos — mismo criterio que shopify-reconcile / find_duplicate_phones. */
 function last9(p: unknown): string {
@@ -118,26 +125,22 @@ async function processStore(
   const shopify = (await fetchShopifyOrders(cfg.shopDomain, token, sinceShopify))
     .filter((o) => !o.cancelled_at && !o.test);
 
-  // 2. Órdenes ya en Dropi (`orders`) para el cruce por FECHA+teléfono (paginado).
-  // Guardamos las fechas de creación por teléfono para distinguir el "mismo
-  // pedido" (fecha cercana → ya en Dropi) de una RECOMPRA (orden vieja → sube).
+  // 2. Teléfonos con una orden ACTIVA en Dropi (`orders`), para NO duplicar. Un
+  // teléfono cuya única orden está ENTREGADA/cancelada NO entra acá → recompra →
+  // se sube (regla del dueño 2026-07-18).
   const sinceDropi = new Date(Date.now() - DROPI_LOOKBACK_DAYS * 86400000).toISOString();
-  const dropiOrdersByPhone = new Map<string, number[]>();
+  const dropiActivePhones = new Set<string>();
   const PAGE = 1000;
   for (let from = 0; from < 20000; from += PAGE) {
     const { data, error } = await sb
-      .from("orders").select("phone, created_at")
+      .from("orders").select("phone, estado")
       .eq("store_id", storeId).gte("created_at", sinceDropi)
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`orders read: ${error.message}`);
-    const rows = (data || []) as { phone: string | null; created_at: string }[];
+    const rows = (data || []) as { phone: string | null; estado: string | null }[];
     for (const r of rows) {
       const k = last9(r.phone);
-      if (k.length < 7) continue;
-      const t = new Date(r.created_at).getTime();
-      if (!Number.isFinite(t)) continue;
-      const arr = dropiOrdersByPhone.get(k);
-      if (arr) arr.push(t); else dropiOrdersByPhone.set(k, [t]);
+      if (k.length >= 7 && isActiveDropiEstado(r.estado)) dropiActivePhones.add(k);
     }
     if (rows.length < PAGE) break;
   }
@@ -163,10 +166,9 @@ async function processStore(
     createdAtMs: new Date(o.created_at).getTime() || 0,
   }));
   const nameById = new Map(shopify.map((o) => [String(o.id), o.name]));
-  const picked = selectAutoPushCandidates(candidatesInput, dropiOrdersByPhone, pushedByOrderId, {
+  const picked = selectAutoPushCandidates(candidatesInput, dropiActivePhones, pushedByOrderId, {
     nowMs: Date.now(), minAgeMs: MIN_AGE_MS, maxAgeMs: MAX_AGE_MS,
     errorCooldownMs: ERROR_COOLDOWN_MS, cap: PER_STORE_CAP,
-    matchBackMs: MATCH_BACK_MS, matchFwdMs: MATCH_FWD_MS,
   });
 
   if (dryRun) {

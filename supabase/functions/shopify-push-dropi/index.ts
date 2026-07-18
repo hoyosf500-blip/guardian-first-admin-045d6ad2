@@ -589,30 +589,35 @@ async function createOrderViaWeb(
   return String(orderId);
 }
 
-/** Anti-duplicado con SERVICE ROLE (camino de cron): frena solo el "MISMO
- *  pedido" — una orden Dropi NO cancelada del mismo teléfono creada en el ÚLTIMO
- *  DÍA (lo acaba de crear Dropify justo ahora = misma venta). Es la última red
- *  contra la carrera con Dropify; el selector (autoPushSelect) ya excluyó el
- *  mismo-pedido por fecha, esto cubre lo que aparezca en los segundos entre la
- *  selección y el push. Ventana de 1 día A PROPÓSITO: una RECOMPRA (compra vieja
- *  del mismo cliente) NO se bloquea — debe subir (pedido del dueño 2026-07-18).
- *  La RPC find_duplicate_phones no sirve acá (usa is_store_member(auth.uid()) y
- *  el cron no tiene usuario). */
+/** Anti-duplicado con SERVICE ROLE (camino de cron): frena una nueva subida solo
+ *  si el teléfono YA tiene una orden ACTIVA en Dropi (NO entregada, NO cancelada/
+ *  muerta). Regla del dueño 2026-07-18: ENTREGADO = recompra (se sube), cualquier
+ *  otro estatus = duplicado (se frena). Es la última red contra la carrera con
+ *  Dropify (el selector ya excluyó estos; esto cubre lo que aparezca entre la
+ *  selección y el push). La RPC find_duplicate_phones no sirve acá (usa
+ *  is_store_member(auth.uid()) y el cron no tiene usuario). */
 async function findDuplicatesServiceRole(
   // deno-lint-ignore no-explicit-any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, storeId: string, phoneNorm: string,
 ): Promise<Array<{ external_id?: string; estado?: string }>> {
-  const since = new Date(Date.now() - 1 * 86400000).toISOString();
+  const since = new Date(Date.now() - 60 * 86400000).toISOString();
   const { data } = await sb.from("orders")
     .select("external_id, estado, phone")
     .eq("store_id", storeId)
     .ilike("phone", `%${phoneNorm}`)
     .gte("created_at", since)
     .limit(50);
+  // ACTIVA = ni entregada ni cancelada (misma regla que shopify-auto-push).
+  const isActive = (estado: string): boolean => {
+    const e = String(estado || "").toUpperCase();
+    if (!e) return true;
+    if (/ENTREGAD/.test(e)) return false;   // entregada → recompra
+    if (/CANCEL/.test(e)) return false;     // cancelada → muerta
+    return true;                            // cualquier otro estatus → en curso = duplicado
+  };
   return ((data || []) as Array<{ external_id: string; estado: string; phone: string }>)
-    .filter((o) => String(o.phone || "").replace(/\D/g, "").slice(-9) === phoneNorm
-      && !String(o.estado || "").toUpperCase().includes("CANCEL"))
+    .filter((o) => String(o.phone || "").replace(/\D/g, "").slice(-9) === phoneNorm && isActive(o.estado))
     .map((o) => ({ external_id: o.external_id, estado: o.estado }));
 }
 
