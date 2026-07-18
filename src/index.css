@@ -14,66 +14,67 @@
      LIGHT MODE — Fallback (operators use dark in production)
      ───────────────────────────────────────────────────────── */
   :root {
-    /* Base surfaces */
-    --background: 210 20% 98%;        /* #f7fafc */
-    --foreground: 222 25% 11%;        /* #141824 */
+    /* Base surfaces — Dirección 3D (light fallback) */
+    --background: 220 30% 97%;        /* #f4f6fb */
+    --foreground: 230 30% 12%;        /* #15182a */
 
     --surface: 0 0% 100%;             /* #ffffff */
     --card: 0 0% 100%;                /* #ffffff */
-    --card2: 210 20% 96%;             /* #f1f5f9 */
-    --card-foreground: 222 25% 11%;
+    --card2: 220 25% 96%;             /* #f1f3f9 */
+    --card-foreground: 230 30% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 25% 11%;
+    --popover-foreground: 230 30% 12%;
 
-    /* Amber brand/accent */
-    --primary: 38 92% 50%;            /* #eab308 */
+    /* Indigo→violet brand/accent (--accent2 = gradient end) */
+    --primary: 239 84% 62%;           /* #5b5ef0 */
     --primary-foreground: 0 0% 100%;
-    --accent: 38 92% 50%;             /* #eab308 */
+    --accent: 239 84% 62%;            /* #5b5ef0 */
     --accent-foreground: 0 0% 100%;
-    --accent-muted: 38 92% 50% / 0.10;
-    --accent-border: 38 92% 50% / 0.35;
+    --accent2: 264 90% 70%;           /* #b07cff */
+    --accent-muted: 239 84% 62% / 0.10;
+    --accent-border: 239 84% 62% / 0.35;
 
-    --secondary: 210 20% 94%;
-    --secondary-foreground: 222 25% 11%;
+    --secondary: 220 25% 94%;
+    --secondary-foreground: 230 30% 12%;
 
-    --muted: 210 20% 94%;
-    --muted-foreground: 220 9% 40%;   /* #5a6475 */
-    --subtle: 220 9% 50%;
+    --muted: 220 25% 94%;
+    --muted-foreground: 220 12% 42%;  /* #5f677a */
+    --subtle: 220 10% 50%;
 
-    --destructive: 0 72% 50%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 88%;            /* #d8dde3 */
-    --border-strong: 220 13% 78%;     /* #b9c0c9 */
-    --input: 220 13% 88%;
-    --ring: 38 92% 50%;
-    --radius: 10px;
+    --border: 220 18% 88%;            /* #d8dde6 */
+    --border-strong: 220 16% 78%;     /* #bac1cd */
+    --input: 220 18% 88%;
+    --ring: 239 84% 62%;
+    --radius: 13px;
 
     /* Semantic (flat) */
-    --brand: 222 83% 50%;
+    --brand: 239 84% 62%;
     --brand-foreground: 0 0% 100%;
-    --cta: 38 92% 50%;
-    --cta-foreground: 0 0% 0%;
-    --success: 142 72% 38%;
+    --cta: 239 84% 62%;
+    --cta-foreground: 0 0% 100%;
+    --success: 157 63% 40%;
     --success-foreground: 0 0% 100%;
-    --warning: 32 95% 48%;
+    --warning: 42 89% 48%;
     --warning-foreground: 0 0% 100%;
-    --danger: 0 72% 50%;
+    --danger: 0 72% 51%;
     --danger-foreground: 0 0% 100%;
-    --info: 217 91% 55%;
+    --info: 212 90% 52%;
     --info-foreground: 0 0% 100%;
-    --ai: 262 83% 58%;                /* #7c3aed — legitimate AI accent */
+    --ai: 264 83% 58%;                /* #7c3aed — legitimate AI accent */
     --ai-foreground: 0 0% 100%;
 
     /* Legacy aliases (kept for backward compat during migration) */
-    --green: 142 72% 38%;
-    --red: 0 72% 50%;
-    --orange: 32 95% 48%;
-    --blue: 217 91% 55%;
-    --cyan: 199 89% 45%;
-    --purple: 262 83% 58%;
-    --yellow: 38 92% 50%;
+    --green: 157 63% 40%;
+    --red: 0 72% 51%;
+    --orange: 42 89% 48%;
+    --blue: 212 90% 52%;
+    --cyan: 180 70% 40%;
+    --purple: 264 90% 70%;
+    --yellow: 42 90% 50%;
 
     /* Typography */
     --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -81,98 +82,99 @@
 
     /* Sidebar */
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 222 25% 11%;
-    --sidebar-primary: 38 92% 50%;
+    --sidebar-foreground: 230 30% 12%;
+    --sidebar-primary: 239 84% 62%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 20% 94%;
-    --sidebar-accent-foreground: 222 25% 11%;
-    --sidebar-border: 220 13% 88%;
-    --sidebar-ring: 38 92% 50%;
+    --sidebar-accent: 220 25% 94%;
+    --sidebar-accent-foreground: 230 30% 12%;
+    --sidebar-border: 220 18% 88%;
+    --sidebar-ring: 239 84% 62%;
 
     /* Elevation (shadow tokens) */
     --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
     --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
     --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
     --shadow-lg: 0 12px 28px -8px rgb(15 23 42 / 0.14), 0 4px 10px -4px rgb(15 23 42 / 0.08);
-    --shadow-glow: 0 0 0 0 transparent;
+    --shadow-glow: 0 0 24px -6px hsl(var(--accent) / 0.30);
   }
 
   /* ─────────────────────────────────────────────────────────
      DARK MODE — PRIMARY (production default)
      ───────────────────────────────────────────────────────── */
   .dark {
-    /* Base surfaces — near-OLED */
-    --background: 240 8% 4%;          /* #0a0a0b */
-    --foreground: 0 0% 98%;           /* #fafafa */
+    /* Base surfaces — Dirección 3D (deep indigo-black, aurora shell) */
+    --background: 230 45% 3%;         /* #05060c */
+    --foreground: 226 35% 95%;        /* #eef0f7 */
 
-    --surface: 240 7% 7%;             /* #101012 */
-    --card: 240 6% 10%;               /* #19191c */
-    --card2: 240 5% 13%;              /* #1f1f23 */
-    --card-foreground: 0 0% 98%;
+    --surface: 230 30% 7%;            /* #0d0f18 */
+    --card: 230 24% 9%;               /* #12141f */
+    --card2: 230 20% 13%;             /* #1a1c28 */
+    --card-foreground: 226 35% 95%;
 
-    --popover: 240 6% 10%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 230 26% 9%;
+    --popover-foreground: 226 35% 95%;
 
-    /* Amber brand/accent — identity */
-    --primary: 45 96% 56%;            /* #fbbf24 */
-    --primary-foreground: 240 8% 4%;
-    --accent: 45 96% 56%;             /* #fbbf24 */
-    --accent-foreground: 240 8% 4%;
-    --accent-muted: 45 96% 56% / 0.12;
-    --accent-border: 45 96% 56% / 0.32;
+    /* Indigo→violet brand/accent — identity (--accent2 = gradient end) */
+    --primary: 237 100% 74%;          /* #7c82ff */
+    --primary-foreground: 0 0% 100%;
+    --accent: 237 100% 74%;           /* #7c82ff */
+    --accent-foreground: 0 0% 100%;
+    --accent2: 264 100% 74%;          /* #b07cff */
+    --accent-muted: 237 100% 74% / 0.14;
+    --accent-border: 237 100% 74% / 0.32;
 
-    --secondary: 240 5% 12%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 230 20% 13%;
+    --secondary-foreground: 226 35% 95%;
 
-    --muted: 240 5% 12%;
-    --muted-foreground: 240 4% 68%;   /* #a8a8b0 — bumped for AA compliance */
-    --subtle: 240 4% 50%;
+    --muted: 230 18% 14%;
+    --muted-foreground: 223 16% 65%;  /* #98a0b4 */
+    --subtle: 218 14% 54%;            /* #7c8595 */
 
-    --destructive: 0 84% 62%;
+    --destructive: 0 100% 71%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 240 5% 18%;             /* #2b2b30 */
-    --border-strong: 240 4% 28%;      /* #47474f */
-    --input: 240 5% 18%;
-    --ring: 45 96% 56%;
-    --radius: 10px;
+    --border: 230 15% 18%;            /* #262a33 */
+    --border-strong: 230 12% 27%;     /* #3c414d */
+    --input: 230 15% 18%;
+    --ring: 237 100% 74%;
+    --radius: 13px;
 
     /* Semantic (dark-tuned) */
-    --brand: 217 91% 60%;
-    --brand-foreground: 240 8% 4%;
-    --cta: 45 96% 56%;
-    --cta-foreground: 240 8% 4%;
-    --success: 142 71% 48%;           /* brighter for dark bg */
-    --success-foreground: 240 8% 4%;
-    --warning: 32 95% 56%;            /* brighter orange */
-    --warning-foreground: 240 8% 4%;
-    --danger: 0 84% 62%;
+    --brand: 237 100% 74%;
+    --brand-foreground: 0 0% 100%;
+    --cta: 237 100% 74%;
+    --cta-foreground: 0 0% 100%;
+    --success: 157 77% 55%;           /* #34e5a0 */
+    --success-foreground: 230 45% 5%;
+    --warning: 42 89% 64%;            /* #f5c451 */
+    --warning-foreground: 230 45% 5%;
+    --danger: 0 100% 71%;             /* #ff6b6b */
     --danger-foreground: 0 0% 100%;
-    --info: 217 91% 62%;
-    --info-foreground: 240 8% 4%;
-    --ai: 262 83% 68%;                /* brighter violet on dark */
-    --ai-foreground: 240 8% 4%;
+    --info: 212 100% 68%;             /* #5aa8ff */
+    --info-foreground: 230 45% 5%;
+    --ai: 264 100% 78%;               /* brighter violet on dark */
+    --ai-foreground: 0 0% 100%;
 
     /* Legacy aliases */
-    --green: 142 71% 48%;
-    --red: 0 84% 62%;
-    --orange: 32 95% 56%;
-    --blue: 217 91% 62%;
-    --cyan: 199 89% 58%;
-    --purple: 262 83% 68%;
-    --yellow: 45 96% 56%;
+    --green: 157 77% 55%;
+    --red: 0 100% 71%;
+    --orange: 42 89% 64%;
+    --blue: 212 100% 68%;
+    --cyan: 180 74% 56%;              /* #3fe0e0 */
+    --purple: 264 100% 74%;
+    --yellow: 42 89% 64%;
 
     /* Sidebar */
-    --sidebar-background: 240 7% 7%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 45 96% 56%;
-    --sidebar-primary-foreground: 240 8% 4%;
-    --sidebar-accent: 240 6% 10%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 240 5% 18%;
-    --sidebar-ring: 45 96% 56%;
+    --sidebar-background: 230 30% 6%;
+    --sidebar-foreground: 226 35% 95%;
+    --sidebar-primary: 237 100% 74%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 230 24% 10%;
+    --sidebar-accent-foreground: 226 35% 95%;
+    --sidebar-border: 230 15% 18%;
+    --sidebar-ring: 237 100% 74%;
 
-    /* Elevation — dark needs stronger shadows */
+    /* Elevation — dark needs stronger shadows + accent glow */
     --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.35);
     --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.40), 0 1px 2px -1px rgb(0 0 0 / 0.30);
     --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.50), 0 2px 4px -2px rgb(0 0 0 / 0.40);
@@ -286,6 +288,88 @@
     background: linear-gradient(135deg, hsl(var(--accent) / 0.08), hsl(var(--accent) / 0.02));
     border: 1px solid hsl(var(--accent) / 0.25);
     border-radius: var(--radius);
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     DIRECCIÓN 3D — Aurora · Gradiente de acento · Glow · Glass
+     Capa visual futurista. Todo por tokens (dark/light coherentes).
+     ───────────────────────────────────────────────────────── */
+
+  /* Aurora — fondo del shell/login: radial índigo que se desvanece
+     hacia el negro-azul base. Sin imágenes, 100% GPU. */
+  .bg-aurora {
+    background:
+      radial-gradient(120% 80% at 50% -10%, hsl(var(--accent) / 0.16), transparent 55%),
+      hsl(var(--background));
+  }
+  .bg-aurora-strong {
+    background:
+      radial-gradient(90% 70% at 15% -5%, hsl(var(--accent) / 0.22), transparent 55%),
+      radial-gradient(90% 70% at 100% 110%, hsl(var(--accent2) / 0.18), transparent 55%),
+      hsl(var(--background));
+  }
+
+  /* Gradiente índigo→violeta — el acento de marca en superficies/textos */
+  .bg-accent-gradient {
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent2)));
+  }
+  .text-accent-gradient {
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent2)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .border-gradient-accent {
+    border: 1px solid transparent;
+    background:
+      linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+      linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent2))) border-box;
+  }
+
+  /* Botón primario — gradiente + glow (patrón del handoff) */
+  .btn-accent-3d {
+    background: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent2)));
+    color: #fff;
+    box-shadow: 0 12px 30px -10px hsl(var(--accent) / 0.75);
+    transition: box-shadow 200ms ease, transform 200ms ease, filter 200ms ease;
+  }
+  .btn-accent-3d:hover { filter: brightness(1.06); box-shadow: 0 16px 38px -10px hsl(var(--accent) / 0.9); }
+  .btn-accent-3d:active { transform: translateY(1px); }
+
+  /* Glow utilities — halo suave alrededor de iconos/badges activos */
+  .glow-accent  { box-shadow: 0 0 18px -6px hsl(var(--accent) / 0.9); }
+  .glow-success { box-shadow: 0 0 18px -6px hsl(var(--success) / 0.9); }
+  .glow-info    { box-shadow: 0 0 18px -6px hsl(var(--info) / 0.9); }
+  .glow-warning { box-shadow: 0 0 18px -6px hsl(var(--warning) / 0.9); }
+  .glow-danger  { box-shadow: 0 0 18px -6px hsl(var(--danger) / 0.9); }
+
+  /* Glass panel v2 — translúcido sobre la aurora (patrón Dirección 3D).
+     Más sutil que .glass; ideal para cards, rail y toolbars. */
+  .glass-panel {
+    background: hsl(var(--card) / 0.55);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid hsl(var(--border) / 0.9);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.04);
+  }
+  .glass-panel-hover {
+    transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  }
+  .glass-panel-hover:hover {
+    transform: translateY(-3px);
+    border-color: hsl(var(--border-strong));
+    box-shadow: 0 18px 40px -16px #000, 0 0 24px -12px hsl(var(--accent) / 0.6);
+  }
+
+  /* Icono en "chip" con tinte de acento — usado en tarjetas/rail */
+  .icon-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 11px;
+    background: hsl(var(--accent) / 0.14);
+    border: 1px solid hsl(var(--accent) / 0.30);
+    color: hsl(var(--accent));
   }
 
   /* ─────────────────────────────────────────────────────────
