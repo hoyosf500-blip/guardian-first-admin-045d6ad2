@@ -185,7 +185,7 @@ function ProtectedLayoutInner() {
           aria-label="Navegación principal"
           className={[
             'flex flex-col flex-shrink-0 z-50',
-            'bg-surface border-r border-border',
+            'bg-surface/70 backdrop-blur-xl border-r border-border',
             isMobile
               ? 'fixed inset-y-0 left-0 w-64 transition-transform duration-300 ease-out'
               : 'relative w-56',
@@ -194,10 +194,10 @@ function ProtectedLayoutInner() {
         >
           <div className="h-14 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/25 flex-shrink-0 overflow-hidden">
+              <div className="w-8 h-8 rounded-lg bg-accent-gradient flex items-center justify-center shadow-glow flex-shrink-0 overflow-hidden">
                 {brandLogoUrl
                   ? <img src={brandLogoUrl} alt="" className="w-full h-full object-cover" />
-                  : <Package size={16} className="text-accent-foreground" aria-hidden="true" />}
+                  : <Package size={16} className="text-white" aria-hidden="true" />}
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-bold text-foreground leading-tight truncate">{brandName}</div>
@@ -233,7 +233,7 @@ function ProtectedLayoutInner() {
                     'transition-colors duration-200 cursor-pointer',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
                     isActive
-                      ? 'bg-accent text-accent-foreground shadow-sm shadow-accent/20'
+                      ? 'bg-accent-gradient text-white shadow-glow'
                       : 'text-muted-foreground hover:text-foreground hover:bg-card',
                   ].join(' ')}
                 >
@@ -293,7 +293,7 @@ function ProtectedLayoutInner() {
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-aurora">
             <OpeningReportGate>
               <div className="mb-3"><SyncFreshness /></div>
               {isConfirmar && <CounterBar />}
