@@ -1670,6 +1670,7 @@ export type Database = {
         Row: {
           active: boolean
           admin_token: string | null
+          auto_push_enabled: boolean
           client_id: string | null
           client_secret: string | null
           shop_domain: string
@@ -1679,6 +1680,7 @@ export type Database = {
         Insert: {
           active?: boolean
           admin_token?: string | null
+          auto_push_enabled?: boolean
           client_id?: string | null
           client_secret?: string | null
           shop_domain: string
@@ -1688,6 +1690,7 @@ export type Database = {
         Update: {
           active?: boolean
           admin_token?: string | null
+          auto_push_enabled?: boolean
           client_id?: string | null
           client_secret?: string | null
           shop_domain?: string
@@ -2753,6 +2756,10 @@ export type Database = {
           valid: boolean
         }[]
       }
+      get_store_shopify_auto_push: {
+        Args: { p_store_id: string }
+        Returns: boolean
+      }
       get_store_shopify_status: {
         Args: { p_store_id: string }
         Returns: {
@@ -3202,6 +3209,10 @@ export type Database = {
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       set_active_store: { Args: { p_store_id: string }; Returns: undefined }
+      set_store_shopify_auto_push: {
+        Args: { p_enabled: boolean; p_store_id: string }
+        Returns: undefined
+      }
       snapshot_cfo_diagnostico: {
         Args: { p_year_month: string }
         Returns: {
