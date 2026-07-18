@@ -378,6 +378,77 @@
   }
 
   /* ─────────────────────────────────────────────────────────
+     MOVIMIENTO 3D — clases sin estado del handoff.
+     Los @keyframes viven en tailwind.config.ts (animate-gb-*).
+     Todo anima solo transform/opacity. Sin backdrop-filter.
+     ───────────────────────────────────────────────────────── */
+
+  /* Card inclinable. useTilt inyecta el transform por style inline. */
+  .tilt-3d {
+    transition: transform 150ms ease, box-shadow 350ms ease, border-color 150ms ease;
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+  .tilt-3d:hover { border-color: hsl(var(--border-strong)); }
+
+  /* Capas internas de la card, a distinta profundidad. Requiere .tilt-3d padre. */
+  .tilt-layer-1 { transform: translateZ(16px); }
+  .tilt-layer-2 { transform: translateZ(24px); }
+  .tilt-layer-3 { transform: translateZ(34px); }
+
+  /* Rótulo HUD — mono, espaciado, mayúsculas. */
+  .hud-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: hsl(var(--subtle));
+  }
+
+  /* Hairline superior de las cards (el handoff lo pide en todas). */
+  .hairline-top { box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05); }
+
+  /* Brackets cian en las esquinas de la card hero. */
+  .corner-bracket { position: absolute; width: 18px; height: 18px; opacity: 0.6; pointer-events: none; }
+  .corner-bracket-tl { top: 14px; left: 14px;  border-top: 2px solid hsl(var(--cyan)); border-left: 2px solid hsl(var(--cyan)); }
+  .corner-bracket-tr { top: 14px; right: 14px; border-top: 2px solid hsl(var(--cyan)); border-right: 2px solid hsl(var(--cyan)); }
+
+  /* Barrido holográfico. El contenedor necesita relative + overflow-hidden. */
+  .sheen {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
+    pointer-events: none;
+    background: linear-gradient(100deg, transparent, hsl(0 0% 100% / 0.09), transparent);
+  }
+
+  /* Retícula en perspectiva del fondo aurora. */
+  .perspective-floor {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 260px;
+    pointer-events: none;
+    background-image:
+      linear-gradient(hsl(var(--accent) / 0.16) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--accent) / 0.16) 1px, transparent 1px);
+    background-size: 44px 44px;
+    transform: perspective(420px) rotateX(62deg);
+    transform-origin: bottom;
+    -webkit-mask: linear-gradient(to top, #000, transparent);
+    mask: linear-gradient(to top, #000, transparent);
+    opacity: 0.5;
+  }
+
+  /* Blob difuminado del fondo aurora. */
+  .aurora-blob { position: absolute; border-radius: 50%; filter: blur(20px); pointer-events: none; }
+
+  /* Trazo SVG que se dibuja al montar. */
+  .spark-draw { stroke-dasharray: 300; stroke-dashoffset: 300; }
+
+  /* Accesibilidad — apagar TODO el movimiento de esta capa. */
+  @media (prefers-reduced-motion: reduce) {
+    .tilt-3d { transition: none !important; transform: none !important; }
+    .sheen, .aurora-blob, .spark-draw { animation: none !important; }
+    .spark-draw { stroke-dashoffset: 0 !important; }
+  }
+
+  /* ─────────────────────────────────────────────────────────
      DATA VIZ utilities — usadas por la sección Logística y
      cualquier dashboard analítico. Siguen tokens semánticos
      (success/danger/warning/info) para que dark/light mode
