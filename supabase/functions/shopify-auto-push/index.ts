@@ -35,7 +35,12 @@ const ERROR_COOLDOWN_MS = 2 * 60 * 60 * 1000; // reintento de 'error' no antes d
 const PER_STORE_CAP = 20;              // tope por corrida por tienda
 const PUSH_DELAY_MS = 1200;            // pausa entre pushes (gentil con Dropi)
 const SHOPIFY_LOOKBACK_DAYS = 3;       // ventana de pedidos Shopify a revisar
-const DROPI_LOOKBACK_DAYS = 48;        // ventana de `orders` para el cruce por teléfono
+const DROPI_LOOKBACK_DAYS = 14;        // ventana de `orders` para el cruce (basta para detectar el "mismo pedido" reciente; órdenes viejas ausentes = recompra → sube)
+// Ventana "mismo pedido" para el cruce con Dropi: una orden Dropi del mismo
+// teléfono creada en [shopifyMs - MATCH_BACK, shopifyMs + MATCH_FWD] es EL MISMO
+// pedido (ya en Dropi) → no subir. Una orden Dropi anterior = recompra → sube.
+const MATCH_BACK_MS = 1 * 24 * 60 * 60 * 1000;   // 1 día
+const MATCH_FWD_MS = 45 * 24 * 60 * 60 * 1000;   // 45 días (catch-up de subidas tardías)
 
 /** Últimos 9 dígitos — mismo criterio que shopify-reconcile / find_duplicate_phones. */
 function last9(p: unknown): string {
@@ -113,18 +118,27 @@ async function processStore(
   const shopify = (await fetchShopifyOrders(cfg.shopDomain, token, sinceShopify))
     .filter((o) => !o.cancelled_at && !o.test);
 
-  // 2. Teléfonos ya en Dropi (`orders`) para el cruce (paginado).
+  // 2. Órdenes ya en Dropi (`orders`) para el cruce por FECHA+teléfono (paginado).
+  // Guardamos las fechas de creación por teléfono para distinguir el "mismo
+  // pedido" (fecha cercana → ya en Dropi) de una RECOMPRA (orden vieja → sube).
   const sinceDropi = new Date(Date.now() - DROPI_LOOKBACK_DAYS * 86400000).toISOString();
-  const dropiPhones = new Set<string>();
+  const dropiOrdersByPhone = new Map<string, number[]>();
   const PAGE = 1000;
   for (let from = 0; from < 20000; from += PAGE) {
     const { data, error } = await sb
-      .from("orders").select("phone")
+      .from("orders").select("phone, created_at")
       .eq("store_id", storeId).gte("created_at", sinceDropi)
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`orders read: ${error.message}`);
-    const rows = (data || []) as { phone: string | null }[];
-    for (const r of rows) { const k = last9(r.phone); if (k.length >= 7) dropiPhones.add(k); }
+    const rows = (data || []) as { phone: string | null; created_at: string }[];
+    for (const r of rows) {
+      const k = last9(r.phone);
+      if (k.length < 7) continue;
+      const t = new Date(r.created_at).getTime();
+      if (!Number.isFinite(t)) continue;
+      const arr = dropiOrdersByPhone.get(k);
+      if (arr) arr.push(t); else dropiOrdersByPhone.set(k, [t]);
+    }
     if (rows.length < PAGE) break;
   }
 
@@ -149,9 +163,10 @@ async function processStore(
     createdAtMs: new Date(o.created_at).getTime() || 0,
   }));
   const nameById = new Map(shopify.map((o) => [String(o.id), o.name]));
-  const picked = selectAutoPushCandidates(candidatesInput, dropiPhones, pushedByOrderId, {
+  const picked = selectAutoPushCandidates(candidatesInput, dropiOrdersByPhone, pushedByOrderId, {
     nowMs: Date.now(), minAgeMs: MIN_AGE_MS, maxAgeMs: MAX_AGE_MS,
     errorCooldownMs: ERROR_COOLDOWN_MS, cap: PER_STORE_CAP,
+    matchBackMs: MATCH_BACK_MS, matchFwdMs: MATCH_FWD_MS,
   });
 
   if (dryRun) {

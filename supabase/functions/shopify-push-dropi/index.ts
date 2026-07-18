@@ -589,17 +589,21 @@ async function createOrderViaWeb(
   return String(orderId);
 }
 
-/** Anti-duplicado con SERVICE ROLE (camino de cron): mismos criterios que la RPC
- *  find_duplicate_phones — un pedido NO cancelado en la misma tienda con el mismo
- *  teléfono normalizado (últimos 9 dígitos). La RPC no sirve acá porque se apoya
- *  en is_store_member(auth.uid()) y el cron no tiene usuario. Ventana acotada a
- *  60 días: el duplicado a evitar es reciente (lo acaba de crear Dropify). */
+/** Anti-duplicado con SERVICE ROLE (camino de cron): frena solo el "MISMO
+ *  pedido" — una orden Dropi NO cancelada del mismo teléfono creada en el ÚLTIMO
+ *  DÍA (lo acaba de crear Dropify justo ahora = misma venta). Es la última red
+ *  contra la carrera con Dropify; el selector (autoPushSelect) ya excluyó el
+ *  mismo-pedido por fecha, esto cubre lo que aparezca en los segundos entre la
+ *  selección y el push. Ventana de 1 día A PROPÓSITO: una RECOMPRA (compra vieja
+ *  del mismo cliente) NO se bloquea — debe subir (pedido del dueño 2026-07-18).
+ *  La RPC find_duplicate_phones no sirve acá (usa is_store_member(auth.uid()) y
+ *  el cron no tiene usuario). */
 async function findDuplicatesServiceRole(
   // deno-lint-ignore no-explicit-any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, storeId: string, phoneNorm: string,
 ): Promise<Array<{ external_id?: string; estado?: string }>> {
-  const since = new Date(Date.now() - 60 * 86400000).toISOString();
+  const since = new Date(Date.now() - 1 * 86400000).toISOString();
   const { data } = await sb.from("orders")
     .select("external_id, estado, phone")
     .eq("store_id", storeId)
