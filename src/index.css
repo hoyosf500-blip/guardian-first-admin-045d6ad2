@@ -132,11 +132,17 @@
     --foreground: 226 35% 95%;        /* #eef0f7 */
 
     --surface: 230 30% 7%;            /* #0d0f18 */
-    --card: 230 24% 9%;               /* #12141f */
-    --card2: 230 20% 13%;             /* #1a1c28 */
+    /* PRESENCIA DE SUPERFICIE (2026-07-19). El dueño dijo que se veía "opaco".
+       Medido en vivo: fondo con brillo 5/255 y tarjeta 19/255 — catorce puntos
+       de separación, así que toda la pantalla se leía como UNA masa plana y los
+       colores (que son vivísimos: danger e info al 100% de saturación) solo
+       asomaban en chips diminutos. No era falta de color, era falta de relieve.
+       Card sube 9%→14% de luminosidad y gana un poco de tinte. */
+    --card: 230 26% 14%;              /* era 230 24% 9% */
+    --card2: 230 22% 18%;             /* era 230 20% 13% — sigue por encima de card */
     --card-foreground: 226 35% 95%;
 
-    --popover: 230 26% 9%;
+    --popover: 230 26% 14%;           /* alineado con --card */
     --popover-foreground: 226 35% 95%;
 
     /* Indigo→violet brand/accent — identity (--accent2 = gradient end) */
@@ -145,25 +151,30 @@
        es lo que más se pulsa en toda la app; con texto oscuro sube a 6.07:1.
        Es además lo que ya hacían success/warning/info/attention acá abajo:
        ahora los siete colores claros se comportan igual. */
-    --primary: 237 100% 74%;          /* #7c82ff */
+    /* 74%→78%: CALCULADO, no elegido a ojo. Al subir --card a 14% de
+       luminosidad, `text-accent` sobre su propio chip tintado (alfa .16) cayó a
+       4.03:1 y los tests de contraste lo cazaron. El mínimo que vuelve a pasar
+       AA es 77%; se usa 78% por margen. Efecto lateral bienvenido: el índigo
+       queda más brillante, que es exactamente lo que el dueño pidió. */
+    --primary: 237 100% 78%;          /* era 74% (#7c82ff) */
     --primary-foreground: 230 45% 5%;
-    --accent: 237 100% 74%;           /* #7c82ff */
+    --accent: 237 100% 78%;           /* era 74% — ver nota en --primary */
     --accent-foreground: 230 45% 5%;
-    --accent2: 264 100% 74%;          /* #b07cff */
-    --accent-muted: 237 100% 74% / 0.14;
-    --accent-border: 237 100% 74% / 0.32;
+    --accent2: 264 100% 78%;          /* sigue a --accent para que el degradado no se parta */
+    --accent-muted: 237 100% 78% / 0.14;
+    --accent-border: 237 100% 78% / 0.32;
 
-    --secondary: 230 20% 13%;
+    --secondary: 230 22% 18%;         /* alineado con --card2 */
     --secondary-foreground: 226 35% 95%;
 
-    --muted: 230 18% 14%;
+    --muted: 230 20% 19%;              /* era 14% — ver PRESENCIA DE SUPERFICIE */
     --muted-foreground: 223 16% 65%;  /* #98a0b4 */
     --subtle: 218 14% 54%;            /* #7c8595 */
 
     --destructive: 0 100% 71%;
     --destructive-foreground: 230 45% 5%;
 
-    --border: 230 15% 18%;            /* #262a33 */
+    --border: 230 17% 26%;            /* era 18% — el borde es la mitad del relieve */
     --border-strong: 230 12% 27%;     /* #3c414d */
     --input: 230 15% 18%;
     --ring: 237 100% 74%;
@@ -795,3 +806,30 @@
 }
 :root:not(.dark) .text-warning\/80 { color: hsl(var(--warning)); }
 :root:not(.dark) .text-accent\/80  { color: hsl(var(--accent)); }
+
+/* ─────────────────────────────────────────────────────────────
+   PRESENCIA DE SUPERFICIE EN OSCURO (2026-07-19)
+
+   El dueño insistió dos veces en que la interfaz se veía "opaca". Medido en
+   vivo, la causa no era el color: `--danger` e `--info` están al 100% de
+   saturación y `--accent` al 78% de luminosidad. Era el RELIEVE.
+
+   422 tarjetas usan `bg-card/40`. Al 40% sobre un fondo de 3% de luminosidad,
+   una card de 14% se diluye a ~15/255 contra un fondo de 5/255: diez puntos de
+   separación sobre 255. El ojo lee eso como UNA superficie continua, y los
+   colores vivos quedan flotando en una masa plana.
+
+   Se sube el alfa efectivo acá, en UN lugar, en vez de editar 422 sitios. No se
+   toca el token `--card`: hay 581 usos SÓLIDOS que ya están bien y que subirlos
+   más aclararía cajas que no lo necesitan.
+
+   El alfa NO va a 1: las cards tienen que seguir dejando pasar la aurora del
+   fondo — ese velo de índigo/violeta que las cruza es la mitad del carácter del
+   rediseño. 0.62 es el punto donde la tarjeta se lee como objeto y la aurora
+   todavía se ve por debajo.
+
+   Solo en `.dark` a propósito: el tema claro tiene su propio bloque arriba, que
+   resuelve el problema OPUESTO (allá el 40% desaparecía sobre blanco).
+   ───────────────────────────────────────────────────────────── */
+.dark .bg-card\/40 { background-color: hsl(var(--card) / 0.62); }
+.dark .bg-card\/30 { background-color: hsl(var(--card) / 0.50); }

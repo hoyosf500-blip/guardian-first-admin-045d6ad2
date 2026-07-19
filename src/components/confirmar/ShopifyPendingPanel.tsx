@@ -616,7 +616,19 @@ export default function ShopifyPendingPanel() {
   return (
     <>
     {outOfWindowBanner}
-    {mismatchBanner}
+    {/* `mismatchBanner` YA NO SE RENDERIZA acá (pedido del dueño, 2026-07-19):
+        "en vez que aparezcan esas alertas de los pedidos que están en un valor
+        diferente, que aparezca cuando el asesor lo toque o que en el mismo
+        cliente se señale".
+        Y ya está señalado en los dos lugares donde importa, ambos con datos que
+        NO salen de este panel (vienen de ConfirmarTab, así que quitar el banner
+        no los rompe):
+          · WorkList.tsx:168 — chip «DE MÁS» en la fila del cliente, en la cola.
+          · CallView.tsx:960 — aviso en la ficha, con botón «Corregir a $X» que
+            lo arregla de verdad; el banner solo informaba.
+        Un tercer aviso arriba de la cola era ruido que empujaba el trabajo real
+        hacia abajo. La definición se conserva por si se quiere en una vista de
+        dueño; no está borrada, está desconectada. */}
     {dupBanner}
     {/* No `initial` animation: el panel se re-monta cada refetch (cuando
         `data` flipa momentáneamente, o cuando el guard `!data || configured`
