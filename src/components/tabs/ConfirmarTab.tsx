@@ -14,7 +14,6 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { isLockedByOther } from '@/lib/callQueueNav';
 import { toast } from 'sonner';
 import ExcelUploader from '@/components/ExcelUploader';
-import AperturaWizard from '@/components/AperturaWizard';
 import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
@@ -90,7 +89,6 @@ export default function ConfirmarTab({ profile }: Props) {
   // pedidos donde la operadora aún NO ha registrado un order_results hoy.
   // Persiste en sessionStorage para sobrevivir a tab discard de mobile.
   const [onlyUntouched, setOnlyUntouched] = useSessionState<boolean>('confirmar:onlyUntouched', false);
-  const [aperturaCompleted, setAperturaCompleted] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
@@ -474,9 +472,11 @@ export default function ConfirmarTab({ profile }: Props) {
         </div>
       )}
 
-      {!autoLoading && !excelLoaded && !aperturaCompleted && (
-        <AperturaWizard onComplete={() => setAperturaCompleted(true)} />
-      )}
+      {/* SEGUNDO formulario de apertura, quitado junto con el del layout
+          (2026-07-19). Cuando no había Excel cargado, la asesora se topaba con
+          OTRO cuestionario antes de ver su cola — el mismo trámite, dos veces.
+          `AperturaWizard` no se borra: queda en el repo por si el dueño quiere
+          recuperar la carga manual de esos números, solo que ya no se monta. */}
 
       {!autoLoading && !excelLoaded && (
         <div className="space-y-3">

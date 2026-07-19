@@ -5,6 +5,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { supabase } from '@/integrations/supabase/client';
 import { truncate, formatDateES } from '@/lib/orderUtils';
 import { bogotaToday } from '@/lib/utils';
+import { greetingFor } from '@/lib/greeting';
 import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
 import { deriveDeliveryMaturity, isRatePreliminary } from '@/lib/logisticsRates';
 import { confRateBySample, CONF_TARGET_PCT, MATURITY_MIN_RESUELTOS } from '@/lib/confirmationRate';
@@ -686,14 +687,10 @@ export default function DashboardTab() {
     );
   }
 
-  const greeting = (() => {
-    const h = new Date().getHours();
-    const franja = h < 12 ? 'Buenos días' : h < 18 ? 'Buenas tardes' : 'Buenas noches';
-    // Solo el primer nombre: "Buenos días, María Fernanda Ríos" no entra en el
-    // header y el apellido no aporta nada acá.
-    const nombre = (profile?.display_name || '').trim().split(/\s+/)[0];
-    return nombre ? `${franja}, ${nombre}` : franja;
-  })();
+  // Compartido con la pantalla de bienvenida (`lib/greeting.ts`): dos saludos
+  // con reglas propias diciendo "Buenos días" y "Buenas tardes" con minutos de
+  // diferencia se lee como un error, no como dos pantallas.
+  const greeting = greetingFor(profile?.display_name);
 
   const hasData = total > 0 || totalOrders > 0;
 

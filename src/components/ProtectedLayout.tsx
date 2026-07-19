@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
-import OpeningReportGate from '@/components/OpeningReportGate';
+import WelcomeGate from '@/components/WelcomeGate';
 import SetupWizard from '@/components/SetupWizard';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
@@ -301,13 +301,17 @@ function ProtectedLayoutInner() {
           <main className="relative flex-1 overflow-y-auto p-4 md:p-6 bg-aurora">
             <AuroraBackdrop />
             <div className="relative">
-              <OpeningReportGate>
+              {/* Era `OpeningReportGate`: un formulario de 4 pasos que BLOQUEABA
+                  la app hasta enviarlo. Ahora es una bienvenida que se va sola
+                  (decisión del dueño; el costo — 3 columnas de Reportes diarios
+                  que dejan de llenarse — está documentado en WelcomeGate). */}
+              <WelcomeGate>
                 <div className="mb-3"><SyncFreshness /></div>
                 {isConfirmar && <CounterBar />}
                 <Suspense fallback={<InlineRouteLoader />}>
                   <Outlet />
                 </Suspense>
-              </OpeningReportGate>
+              </WelcomeGate>
             </div>
           </main>
         </div>
