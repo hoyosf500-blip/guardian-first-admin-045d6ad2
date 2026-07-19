@@ -48,6 +48,21 @@ function loadMismatchFixed(storeId: string): Set<string> {
 const localDay = (iso: string) => new Intl.DateTimeFormat('en-CA', { timeZone: BOGOTA }).format(new Date(iso));
 const localTime = (iso: string) => new Intl.DateTimeFormat('es-CO', { timeZone: BOGOTA, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
+/**
+ * Días cumplidos desde una venta de Shopify, en días de CALENDARIO de Bogotá.
+ *
+ * Se apoya en `localDay` (mismo huso que todo el panel) y en el truco de mediodía
+ * UTC que ya usa `dayLabel` abajo: restar timestamps crudos daría 0 días para algo
+ * de ayer a las 11pm, y correría un día entero en los cambios de horario. Comparar
+ * dos fechas ancladas a las 12:00Z no tiene ese borde.
+ */
+const diasDesde = (iso: string): number => {
+  const desde = new Date(`${localDay(iso)}T12:00:00Z`).getTime();
+  const hoy = new Date(`${bogotaToday()}T12:00:00Z`).getTime();
+  if (!Number.isFinite(desde) || !Number.isFinite(hoy)) return 0;
+  return Math.max(0, Math.round((hoy - desde) / 86_400_000));
+};
+
 function dayLabel(date: string, today?: string): string {
   if (today) {
     if (date === today) return 'Hoy';
@@ -75,6 +90,7 @@ export default function ShopifyPendingPanel() {
   const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [showMismatches, setShowMismatches] = useState(false);
+  const [showOutOfWindow, setShowOutOfWindow] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => activeStoreId ? loadDone(activeStoreId) : new Set());
   // "No es duplicado" por id de pedido (escape para recompra legítima).
@@ -367,6 +383,40 @@ export default function ShopifyPendingPanel() {
       .slice(0, 6);
   }, [visible]);
 
+  // Fuera de ventana: ventas de +N días que SIGUEN sin pasar a Dropi. Salen del
+  // reconcile de 30d (vmData, staleTime 10 min — ya cargado para los
+  // value-mismatches) restando los pendientes de la ventana corta (data). No
+  // hace llamadas de red extra: es un aviso para que no se pierdan
+  // confirmaciones en silencio cuando una venta se cae de la ventana.
+  //
+  // ANTES ERA UNA RESTA DE CONTEOS (`vmData.pendingCount - data.pendingCount`),
+  // y por eso el banner no podía decir QUIÉNES eran: el número existía pero las
+  // identidades se tiraban. El dueño lo pidió — "muestra en la cola quiénes son".
+  // Ahora se diferencian las LISTAS por id, así que:
+  //   1. hay a quién señalar (nombre, ciudad, monto, link al admin de Shopify), y
+  //   2. el número ES el largo de la lista. Con la resta podían no coincidir: si
+  //      las dos consultas veían universos distintos (una excluye algo que la
+  //      otra no, o llegan desfasadas), el banner mostraba un fantasma que no
+  //      correspondía a ningún pedido concreto. Ahora eso no puede pasar.
+  //
+  // ⚠️ POR ESO EL NÚMERO PUEDE CAMBIAR respecto de lo que se veía antes. No es
+  // una regresión: es la diferencia entre contar y saber.
+  //
+  // VIVE ARRIBA DE LOS GUARDS a propósito: es un hook, y los `return null` de
+  // acá abajo lo saltearían. React exige el mismo número de hooks en cada render
+  // — declararlo después reventaba la pantalla apenas la tienda no estaba lista.
+  // De ahí el `data?.pending`: acá arriba `data` todavía puede no existir.
+  const outOfWindowItems = useMemo(() => {
+    if (!Array.isArray(vmData?.pending)) return null;
+    // La ventana corta se identifica por id de orden de Shopify; lo que está en
+    // los 30d y NO en la ventana es, por definición, lo que se cayó de la cola.
+    const enVentana = new Set((data?.pending ?? []).map(p => p.id));
+    return vmData.pending
+      .filter(p => !enVentana.has(p.id))
+      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')); // más viejo primero: es el que más urge
+  }, [vmData?.pending, data?.pending]);
+  const outOfWindowCount = outOfWindowItems ? outOfWindowItems.length : null;
+
   // Guards: no estorbar la cola si no hay tienda / no cargó / no configurado.
   if (!activeStoreId) return null;
   if (isLoading && !data) return null;
@@ -400,16 +450,8 @@ export default function ShopifyPendingPanel() {
 
   const accent = allClear ? 'success' : 'warning';
 
-  // Fuera de ventana: ventas de +7 días que SIGUEN sin pasar a Dropi. Se deriva
-  // del reconcile de 30d (vmData, staleTime 10 min — ya cargado para los
-  // value-mismatches) menos los pendientes de la ventana de 7d (data). No hace
-  // llamadas de red extra ni duplica la cola: es solo un aviso para que no se
-  // pierdan confirmaciones en silencio cuando una venta se cae de la ventana.
-  // Si vmData todavía no cargó, no calculamos (mostramos "…" en el banner).
-  const vmPendingLoaded = typeof vmData?.pendingCount === 'number';
-  const outOfWindowCount = vmPendingLoaded
-    ? Math.max(0, (vmData!.pendingCount ?? 0) - (data.pendingCount ?? 0))
-    : null;
+  // (`outOfWindowItems` / `outOfWindowCount` se calculan ARRIBA de los guards:
+  //  son un hook y los `return null` de arriba lo saltearían. Ver la nota allá.)
 
   // Aviso de pedidos YA en Dropi con valor distinto al de Shopify (cobro de más).
   // Independiente de la cola de pendientes; le ahorra al operador revisar a mano.
@@ -500,28 +542,74 @@ export default function ShopifyPendingPanel() {
   ) : null;
 
   // Banner "fuera de ventana": ventas de +7 días que siguen sin pasar a Dropi y
-  // ya NO aparecen en la cola (la cola solo muestra la ventana de 7d). Es un aviso
-  // — no duplica la data en la lista — para que el operador las revise a mano en
-  // el admin de Shopify antes de que se pierda la confirmación por completo.
-  // Mientras vmData no cargó (outOfWindowCount === null) mostramos "…".
+  // ya NO aparecen en la cola (la cola solo muestra la ventana de 7d), para que
+  // el operador las revise antes de que se pierda la confirmación por completo.
+  //
+  // Ahora despliega QUIÉNES son (pedido del dueño). La lista sale de la misma
+  // diferencia que produce el número, así que no pueden discrepar. Mientras
+  // vmData no cargó (outOfWindowCount === null) mostramos "…", nunca 0.
   const outOfWindowBanner = (outOfWindowCount === null || outOfWindowCount > 0) ? (
-    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-3 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-destructive/30 to-destructive/12 border border-destructive/30 glow-danger flex items-center justify-center flex-shrink-0">
-        <AlertTriangle size={18} className="text-destructive" aria-hidden="true" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          {/* El '…' de "todavía no sé" NO se aplasta a 0 ni se anima como si
-              fuera una medición: sin dato, no hay cifra. */}
-          <span className="text-3xl font-extrabold font-mono tabular-nums leading-none text-destructive num-glow-danger">
-            {outOfWindowCount === null ? '…' : outOfWindowCount}
-          </span>
-          <span className="text-sm font-semibold text-foreground">venta(s) de +{days} días sin pasar a Dropi</span>
+    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
+      <div className="px-4 py-3 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-destructive/30 to-destructive/12 border border-destructive/30 glow-danger flex items-center justify-center flex-shrink-0">
+          <AlertTriangle size={18} className="text-destructive" aria-hidden="true" />
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          Están fuera de la ventana de la cola (últimos {days}d) — revisalas en el admin de Shopify antes de que se pierda la confirmación.
-        </p>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            {/* El '…' de "todavía no sé" NO se aplasta a 0 ni se anima como si
+                fuera una medición: sin dato, no hay cifra. */}
+            <span className="text-3xl font-extrabold font-mono tabular-nums leading-none text-destructive num-glow-danger">
+              {outOfWindowCount === null ? '…' : outOfWindowCount}
+            </span>
+            <span className="text-sm font-semibold text-foreground">venta(s) de +{days} días sin pasar a Dropi</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Están fuera de la ventana de la cola (últimos {days}d) — revisalas en el admin de Shopify antes de que se pierda la confirmación.
+          </p>
+        </div>
+        {/* El botón solo aparece cuando HAY lista que abrir: mientras carga
+            (outOfWindowItems === null) un "Ver lista" abriría un cajón vacío. */}
+        {outOfWindowItems && outOfWindowItems.length > 0 && (
+          <button onClick={() => setShowOutOfWindow(s => !s)}
+            aria-expanded={showOutOfWindow}
+            aria-label={showOutOfWindow ? 'Ocultar lista de ventas fuera de ventana' : 'Ver lista de ventas fuera de ventana'}
+            className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-medium text-foreground flex items-center gap-1 flex-shrink-0">
+            {showOutOfWindow ? 'Ocultar' : 'Ver lista'}
+            {showOutOfWindow ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+        )}
       </div>
+      <AnimatePresence>
+        {showOutOfWindow && outOfWindowItems && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+            className="border-t border-destructive/30 max-h-[24rem] overflow-y-auto bg-card/50 divide-y divide-border">
+            {outOfWindowItems.map(p => (
+              <div key={p.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground truncate">{p.customer}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">{p.name}</span>
+                    {p.sin_telefono && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning">sin teléfono</span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 text-xs mt-0.5 text-muted-foreground">
+                    {/* Los días son el dato que decide a cuál llamar primero: por eso
+                        van primero y en el color del banner, no como metadato gris. */}
+                    <span className="font-semibold text-destructive tabular-nums">{diasDesde(p.created_at)} días</span>
+                    {p.city && <span>· {p.city}</span>}
+                    <span>· <span className="tabular-nums text-foreground">{formatCOP(p.total)}</span></span>
+                  </div>
+                </div>
+                <a href={p.admin_url} target="_blank" rel="noreferrer" title="Abrir en Shopify"
+                  className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0">
+                  <ExternalLink size={12} />
+                </a>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   ) : null;
 

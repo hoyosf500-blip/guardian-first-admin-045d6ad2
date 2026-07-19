@@ -26,9 +26,12 @@ interface Props {
 export default function CarrierPicker({ options, loading, error, currentName, selected, onSelect, onRetry }: Props) {
   const currentNorm = (currentName || '').trim().toUpperCase();
 
+  // Caja punteada de alto fijo en los tres estados sin lista: reserva el hueco
+  // que van a ocupar las tarjetas, así la columna no pega un salto cuando llega
+  // la cotización y la asesora no pierde de vista dónde estaba mirando.
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/20 py-8 text-sm text-muted-foreground">
         <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Cotizando con Dropi…
       </div>
     );
@@ -36,12 +39,15 @@ export default function CarrierPicker({ options, loading, error, currentName, se
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-attention/30 bg-attention/10 p-3 text-sm text-attention dark:text-attention space-y-2 shadow-card3d">
-        <div className="flex items-start gap-2">
-          <AlertTriangle size={15} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-          <span>{error}</span>
+      <div className="relative overflow-hidden rounded-2xl border border-attention/30 bg-attention/10 p-3 pl-4 text-sm text-attention dark:text-attention space-y-2.5 shadow-card3d hairline-top">
+        <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-attention" aria-hidden="true" />
+        <div className="flex items-start gap-2.5">
+          <span className="w-6 h-6 rounded-lg bg-attention/14 border border-attention/30 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <AlertTriangle size={13} />
+          </span>
+          <span className="pt-0.5 leading-relaxed">{error}</span>
         </div>
-        <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
+        <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 rounded-lg">
           <RefreshCw size={13} aria-hidden="true" /> Reintentar
         </Button>
       </div>
@@ -50,7 +56,7 @@ export default function CarrierPicker({ options, loading, error, currentName, se
 
   if (!options || options.length === 0) {
     return (
-      <div className="py-6 text-center text-sm text-muted-foreground">
+      <div className="rounded-xl border border-dashed border-border bg-muted/20 py-6 px-3 text-center text-sm text-muted-foreground">
         Dropi no devolvió transportadoras para este pedido.
       </div>
     );
@@ -77,7 +83,7 @@ export default function CarrierPicker({ options, loading, error, currentName, se
             key={`${opt.id}-${opt.name}`}
             type="button"
             onClick={() => onSelect(opt)}
-            className={`w-full flex flex-col gap-2 px-3 py-2.5 rounded-xl border text-left transition-[color,background-color,border-color,box-shadow] ${
+            className={`w-full flex flex-col gap-2.5 px-3 py-2.5 rounded-xl border text-left hairline-top transition-[color,background-color,border-color,box-shadow] ${
               isSelected
                 ? 'border-cyan bg-cyan/10 shadow-[0_0_18px_-6px_hsl(var(--cyan)/0.4)] dark:shadow-[0_0_18px_-6px_hsl(var(--cyan)/0.9)]'
                 : 'border-border bg-card hover:bg-muted/50 hover:border-border-strong'
@@ -85,7 +91,7 @@ export default function CarrierPicker({ options, loading, error, currentName, se
           >
             <div className="w-full flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <span className={`w-8 h-8 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+                <span className={`w-8 h-8 rounded-xl border flex items-center justify-center flex-shrink-0 transition-colors ${
                   isSelected ? 'bg-cyan/16 border-cyan/40 text-cyan' : 'bg-muted/60 border-border text-muted-foreground'
                 }`} aria-hidden="true">
                   {isSelected ? <CheckCircle2 size={15} /> : <Truck size={15} />}
@@ -94,7 +100,10 @@ export default function CarrierPicker({ options, loading, error, currentName, se
                     lo mayusculizaría, o sea reescribiría el dato. */}
                 <span className="font-semibold text-sm truncate">{opt.name}</span>
                 {isCurrent && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium flex-shrink-0">
+                  /* .hud-label-cased y NO .hud-label: es un rótulo nuestro, pero
+                     la versión que mayusculiza convertiría "actual" en "ACTUAL"
+                     y acá el chip tiene que susurrar, no gritar. */
+                  <span className="hud-label-cased px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border flex-shrink-0">
                     actual
                   </span>
                 )}
@@ -104,9 +113,17 @@ export default function CarrierPicker({ options, loading, error, currentName, se
               </span>
             </div>
             {showBars && (
-              <div className="h-1 rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
+              /* La barra plana no se leía como dato, se leía como separador.
+                 Ahora es un degradado (pleno → apagado) con el mismo halo que
+                 usan las barras de Logística. Sin `overflow-hidden` en el
+                 riel: recortaba el glow del relleno contra el borde. */
+              <div className="w-full h-1.5 rounded-full bg-foreground/[0.07]" aria-hidden="true">
                 <div
-                  className={`h-full rounded-full transition-[width] duration-700 ${isSelected ? 'bg-cyan' : 'bg-muted-foreground/40'}`}
+                  className={`h-full rounded-full transition-[width] duration-700 bg-gradient-to-r ${
+                    isSelected
+                      ? 'from-cyan to-cyan/40 shadow-[0_0_10px_-2px_hsl(var(--cyan)/0.5)] dark:shadow-[0_0_10px_-2px_hsl(var(--cyan)/0.95)]'
+                      : 'from-muted-foreground/55 to-muted-foreground/20'
+                  }`}
                   style={{ width: `${((Number(opt.shippingAmount) || 0) / maxFlete) * 100}%` }}
                 />
               </div>

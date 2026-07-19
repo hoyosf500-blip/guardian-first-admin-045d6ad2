@@ -85,6 +85,17 @@ interface Props {
   isAdmin: boolean;
 }
 
+/**
+ * Rótulo de campo — uno solo para las dos columnas del editor (acá y en
+ * ProductLinesEditor, que iba en 10px sin mayúsculas y rompía la simetría).
+ * Va en `muted-foreground` a propósito: el dato manda, el rótulo acompaña.
+ * Esta es la pantalla donde la asesora le LEE la dirección al cliente por
+ * teléfono, así que el valor tiene que ganarle al rótulo, no al revés.
+ * NO se usa `.hud-label` acá: bajaría los rótulos a 10px y estos se leen a
+ * diario desde el celular.
+ */
+const LABEL_CLS = 'text-xs uppercase tracking-wider text-muted-foreground';
+
 export default function CustomerForm({ value: form, onChange, isAdmin }: Props) {
   // País de la tienda activa → el catálogo de geografía es country-aware.
   // Colombia usa el catálogo DANE (dropdown depto + ciudad); Ecuador usa las 24
@@ -142,14 +153,14 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
       {/* ---- Información del cliente ---- */}
       <section className="space-y-3">
         <header className="flex items-center gap-2 pb-2 border-b border-border">
-          <User size={14} className="text-muted-foreground" aria-hidden="true" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <User size={14} className="text-accent" aria-hidden="true" />
+          <h3 className="hud-label text-foreground">
             Información del cliente
           </h3>
         </header>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label htmlFor="edit-nombre" className="text-xs uppercase tracking-wider">Nombre *</Label>
+            <Label htmlFor="edit-nombre" className={LABEL_CLS}>Nombre *</Label>
             <Input
               id="edit-nombre"
               value={form.nombre}
@@ -157,7 +168,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="edit-apellido" className="text-xs uppercase tracking-wider">Apellido</Label>
+            <Label htmlFor="edit-apellido" className={LABEL_CLS}>Apellido</Label>
             <Input
               id="edit-apellido"
               value={form.apellido}
@@ -165,17 +176,20 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="edit-phone" className="text-xs uppercase tracking-wider">Teléfono (solo dígitos)</Label>
+            <Label htmlFor="edit-phone" className={LABEL_CLS}>Teléfono (solo dígitos)</Label>
             <Input
               id="edit-phone"
               inputMode="numeric"
               value={form.phone}
+              // tabular-nums: el teléfono se dicta dígito a dígito al cliente;
+              // con cifras de ancho fijo no se salta ninguna al leerlo.
+              className="font-mono tabular-nums"
               onChange={e => onChange(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 15) }))}
               placeholder="3001234567"
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="edit-email" className="text-xs uppercase tracking-wider">Email (opcional)</Label>
+            <Label htmlFor="edit-email" className={LABEL_CLS}>Email (opcional)</Label>
             <Input
               id="edit-email"
               type="email"
@@ -190,14 +204,14 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
       {/* ---- Dirección de entrega ---- */}
       <section className="space-y-3">
         <header className="flex items-center gap-2 pb-2 border-b border-border">
-          <MapPin size={14} className="text-muted-foreground" aria-hidden="true" />
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <MapPin size={14} className="text-accent" aria-hidden="true" />
+          <h3 className="hud-label text-foreground">
             Dirección de entrega
           </h3>
         </header>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider">{isEC ? 'Provincia *' : 'Departamento *'}</Label>
+            <Label className={LABEL_CLS}>{isEC ? 'Provincia *' : 'Departamento *'}</Label>
             {isEC ? (
               <>
                 <Input
@@ -226,7 +240,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider">Ciudad *</Label>
+            <Label className={LABEL_CLS}>Ciudad *</Label>
             {isEC ? (
               <Input
                 value={form.ciudad}
@@ -252,7 +266,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
           </div>
 
           <div className="md:col-span-2 space-y-2">
-            <Label htmlFor="edit-direccion" className="text-xs uppercase tracking-wider">Dirección *</Label>
+            <Label htmlFor="edit-direccion" className={LABEL_CLS}>Dirección *</Label>
             <AddressAutocomplete
               value={form.direccion}
               ciudad={form.ciudad}

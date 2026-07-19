@@ -533,7 +533,10 @@
   }
 
   /* Blob difuminado del fondo aurora. */
-  .aurora-blob { position: absolute; border-radius: 50%; filter: blur(20px); pointer-events: none; }
+  /* blur(44px), no 20px: los blobs crecieron ~1.5× (ver AuroraBackdrop) y con el
+     blur viejo se leían como CÍRCULOS dibujados en vez de luz ambiente — más
+     grande y más nítido es peor que chico y opaco. */
+  .aurora-blob { position: absolute; border-radius: 50%; filter: blur(44px); pointer-events: none; }
 
   /* Trazo SVG que se dibuja al montar. */
   .spark-draw { stroke-dasharray: 300; stroke-dashoffset: 300; }

@@ -13,7 +13,7 @@ import CustomerForm, { buildCustomerInitial, customerDirty, type CustomerFormSta
 import CarrierPicker, { type CarrierOption } from '@/components/confirmar/CarrierPicker';
 import ProductLinesEditor, { draftToLine, type LineDraft } from '@/components/confirmar/ProductLinesEditor';
 import { toast } from 'sonner';
-import { Loader2, Pencil, Truck, Lock } from 'lucide-react';
+import { Loader2, Pencil, Truck, Lock, Info } from 'lucide-react';
 
 // "Edición de orden" unificada estilo panel Dropi: datos del cliente +
 // dirección | transportadora cotizada en vivo | producto (cantidad/precio) +
@@ -625,15 +625,44 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       }}
     >
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0 gap-0 flex flex-col rounded-[20px] sm:rounded-[20px] shadow-[0_40px_90px_-30px_rgba(0,0,0,0.35)] dark:shadow-[0_40px_90px_-30px_rgba(0,0,0,0.75),0_0_60px_-30px_hsl(var(--accent)/0.55)]">
-        <DialogHeader className="px-[22px] py-[18px] border-b border-border bg-muted/30 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center flex-shrink-0 text-accent-foreground shadow-glow">
+        {/* Cabecera-hero con la firma de la app (aurora + hairline + chip de
+            acento con glow), igual que los headers de Dashboard/Logística.
+            Tres decisiones deliberadas, distintas a las del <AuroraBackdrop/>:
+             · sin `perspective-floor`: esa retícula mide 260px de alto y en un
+               header de ~80px no sería un piso, sería el fondo entero;
+             · blobs ESTÁTICOS: el flotado constante distrae a la asesora que
+               está leyendo la dirección en voz alta al cliente;
+             · alfas por DEBAJO del techo de intensidad del AuroraBackdrop
+               (.38/.32) y centros corridos a los bordes — el título y el id del
+               pedido van sobre fondo limpio, no sobre la parte brillante. */}
+        <DialogHeader className="relative overflow-hidden space-y-0 px-[22px] py-[18px] border-b border-border bg-muted/30 hairline-top shrink-0">
+          <span
+            aria-hidden="true"
+            className="aurora-blob"
+            style={{
+              left: '-14%', top: '-150%', width: 300, height: 300,
+              background: 'radial-gradient(circle, hsl(var(--accent) / .22), transparent 70%)',
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="aurora-blob"
+            style={{
+              right: '2%', top: '-110%', width: 220, height: 220,
+              background: 'radial-gradient(circle, hsl(var(--accent2) / .16), transparent 70%)',
+            }}
+          />
+          <div className="relative flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-accent-gradient flex items-center justify-center flex-shrink-0 text-accent-foreground shadow-glow">
               <Pencil size={18} aria-hidden="true" />
             </div>
-            <div>
-              <DialogTitle className="text-lg">Edición de orden</DialogTitle>
-              <DialogDescription className="text-xs">
-                #{order.externalId} · los cambios se sincronizan con Dropi
+            <div className="min-w-0">
+              <DialogTitle className="text-lg font-bold tracking-tight">Edición de orden</DialogTitle>
+              {/* El id de Dropi es un código: mono + tabular-nums para que la
+                  asesora lo pueda cotejar dígito a dígito contra el panel. */}
+              <DialogDescription className="text-xs mt-1">
+                <span className="font-mono tabular-nums text-foreground/70">#{order.externalId}</span>
+                {' · los cambios se sincronizan con Dropi'}
               </DialogDescription>
             </div>
           </div>
@@ -644,12 +673,21 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           {/* ---- Columna izquierda: cliente + dirección ---- */}
           <CustomerForm value={form} onChange={setForm} isAdmin={isAdmin} />
 
-          {/* ---- Columna derecha: transportadora + producto + total ---- */}
-          <div className="space-y-5">
+          {/* ---- Columna derecha: transportadora + producto + total ----
+               Separador vertical en pantallas anchas: son dos mitades con
+               trabajos distintos (lo que dicta el cliente | lo que se le va a
+               cobrar) y hasta ahora solo las separaba el aire del grid. */}
+          <div className="space-y-6 md:border-l md:border-border md:pl-6">
             {!rightEnabled ? (
-              <div className="rounded-2xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2 shadow-card3d">
-                <Lock size={13} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
-                <span>
+              /* Rail lateral + chip de ícono: el mismo lenguaje "aviso guiado"
+                 del banner de sync del Dashboard. Es una restricción, no un
+                 error, así que el rail va en tono neutro. */
+              <div className="relative overflow-hidden rounded-2xl border border-border bg-muted/30 p-3 pl-4 text-xs text-muted-foreground flex items-start gap-2.5 shadow-card3d hairline-top">
+                <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-muted-foreground/40" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-lg bg-muted border border-border flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                  <Lock size={12} />
+                </span>
+                <span className="leading-relaxed pt-0.5">
                   {order.guia
                     ? 'Este pedido ya tiene guía generada: la transportadora, las cantidades y el valor quedaron fijos. Solo se pueden editar los datos del cliente.'
                     : 'Este pedido ya fue gestionado: solo se pueden editar los datos del cliente.'}
@@ -659,8 +697,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
               <>
                 <section className="space-y-3">
                   <header className="flex items-center gap-2 pb-2 border-b border-border">
-                    <Truck size={14} className="text-muted-foreground" aria-hidden="true" />
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Truck size={14} className="text-accent" aria-hidden="true" />
+                    <h3 className="hud-label text-foreground">
                       Transportadora
                     </h3>
                   </header>
@@ -695,11 +733,21 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
                 />
 
                 {plan.includes('apply_edit') && (
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Igual que el panel de Dropi: el pedido se recrea con un <strong>ID nuevo</strong> y
-                    la orden vieja queda <strong>REEMPLAZADA</strong> al instante — sin duplicados ni en
-                    Dropi ni en el CRM (la ficha se actualiza sola).
-                  </p>
+                  /* Antes era un párrafo suelto de 11px que se leía como letra
+                     chica legal. Explica QUÉ va a pasar al confirmar (el pedido
+                     cambia de ID), así que se presenta como nota informativa
+                     con su rail — el mismo patrón que el resto de los avisos. */
+                  <div className="relative overflow-hidden rounded-xl border border-info/25 bg-info/[0.06] p-3 pl-4 flex items-start gap-2.5">
+                    <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-info" aria-hidden="true" />
+                    <span className="w-6 h-6 rounded-lg bg-info/12 border border-info/25 text-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                      <Info size={12} />
+                    </span>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed [&_strong]:text-foreground [&_strong]:font-semibold">
+                      Igual que el panel de Dropi: el pedido se recrea con un <strong>ID nuevo</strong> y
+                      la orden vieja queda <strong>REEMPLAZADA</strong> al instante — sin duplicados ni en
+                      Dropi ni en el CRM (la ficha se actualiza sola).
+                    </p>
+                  </div>
                 )}
               </>
             )}
@@ -707,19 +755,48 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         </div>
         </div>
 
-        <DialogFooter className="gap-2 px-[22px] py-4 border-t border-border bg-muted/30 shrink-0">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            size="lg"
-            className="btn-accent-3d text-white font-semibold px-6"
+        {/* El botón primario decía "Sin cambios" cuando no había nada que
+            mandar: un CTA rotulado con un ESTADO y pintado apagado deja a la
+            asesora sin saber si al apretarlo pasa algo. Ahora el botón nombra
+            SIEMPRE su acción ("Actualizar Orden") y el estado se lee al lado,
+            en el pie. La habilitación no cambió: sigue siendo `canSubmit`. */}
+        <DialogFooter className="gap-2 px-[22px] py-4 border-t border-border bg-muted/30 shrink-0 sm:justify-between sm:items-center sm:space-x-0">
+          <span
+            id="order-editor-estado"
+            className="flex items-center gap-2 text-xs text-muted-foreground min-h-[20px]"
           >
-            {submitting && <Loader2 size={14} className="mr-2 animate-spin" aria-hidden="true" />}
-            {plan.length === 0 ? 'Sin cambios' : 'Actualizar Orden'}
-          </Button>
+            {plan.length === 0 && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 flex-shrink-0" aria-hidden="true" />
+                Sin cambios
+              </>
+            )}
+          </span>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+              size="lg"
+              // Tres estados legibles a simple vista:
+              //  · nada que mandar → gris sólido (inerte a propósito, NO un CTA
+              //    de acento a media luz que parece roto);
+              //  · hay cambios pero algún número es inválido → acento atenuado
+              //    por el disabled:opacity-50 del Button (corregí y sigo);
+              //  · listo → acento pleno con la elevación de la app.
+              className={`rounded-xl px-6 font-semibold ${
+                plan.length === 0
+                  ? 'bg-muted text-muted-foreground border border-border disabled:opacity-100'
+                  : 'btn-accent-3d text-white'
+              }`}
+              {...(plan.length === 0 ? { 'aria-describedby': 'order-editor-estado' } : {})}
+            >
+              {submitting && <Loader2 size={14} className="mr-2 animate-spin" aria-hidden="true" />}
+              Actualizar Orden
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

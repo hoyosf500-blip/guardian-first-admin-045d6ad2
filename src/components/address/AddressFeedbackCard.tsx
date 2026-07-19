@@ -114,12 +114,24 @@ export function AddressFeedbackCard({
     );
   }
 
+  // ── Cómo se leen las tarjetas amarilla y roja ──────────────────────────
+  // NO son errores del sistema: son el guion de lo que la asesora tiene que
+  // preguntarle al cliente que tiene al teléfono. Antes eran un bloque macizo
+  // de color (fondo al 10%, borde al 40%) donde los chips —que son el dato
+  // accionable— desaparecían dentro del mismo tono que la caja.
+  // Ahora el color fuerte vive en un rail de 4px y en el chip del ícono (el
+  // patrón de avisos del Dashboard), el fondo se retira y los chips quedan
+  // como figura sobre fondo. Mismos tokens semánticos, misma jerarquía del
+  // semáforo, mismo texto: cambia el reparto del color, no el mensaje.
   if (decision === 'yellow') {
     return (
-      <div className="rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm space-y-3">
+      <div className="relative overflow-hidden rounded-xl border border-warning/25 bg-warning/[0.07] p-3 pl-4 text-sm space-y-3">
+        <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-warning" aria-hidden="true" />
         <div>
-          <div className="mb-1 flex items-center gap-2 text-warning font-medium">
-            <AlertTriangle size={14} />
+          <div className="mb-2 flex items-center gap-2 text-warning font-semibold">
+            <span className="w-6 h-6 rounded-lg bg-warning/14 border border-warning/30 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <AlertTriangle size={13} />
+            </span>
             <span>Confirmar con cliente:</span>
           </div>
           {/* Chips en vez de viñetas (handoff). Tokens por tema, nunca los rgba
@@ -130,7 +142,9 @@ export function AddressFeedbackCard({
               faltan. Con display:flex el navegador descarta la semántica de
               lista, por eso el role explícito. Preflight ya quita marcador,
               margen y padding, así que se ve idéntico a un <div>. */}
-          <ul role="list" className="flex flex-wrap gap-1.5">
+          {/* pl-8 = ancho del chip del ícono + gap: los chips cuelgan del
+              rótulo como una lista guiada, no flotan sueltos en la caja. */}
+          <ul role="list" className="flex flex-wrap gap-1.5 pl-8">
             {missingFields.length > 0
               ? missingFields.map((f) => (
                   <li role="listitem" key={f} className="text-xs font-semibold px-2 py-1 rounded-lg bg-warning/14 text-warning border border-warning/30">{FIELD_LABEL_ES[f] ?? f}</li>
@@ -146,13 +160,16 @@ export function AddressFeedbackCard({
   }
 
   return (
-    <div className="rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm space-y-3">
+    <div className="relative overflow-hidden rounded-xl border border-danger/25 bg-danger/[0.07] p-3 pl-4 text-sm space-y-3">
+      <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-danger" aria-hidden="true" />
       <div>
-        <div className="mb-1 flex items-center gap-2 text-danger font-medium">
-          <AlertCircle size={14} />
+        <div className="mb-2 flex items-center gap-2 text-danger font-semibold">
+          <span className="w-6 h-6 rounded-lg bg-danger/14 border border-danger/30 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <AlertCircle size={13} />
+          </span>
           <span>Falta:</span>
         </div>
-        <ul role="list" className="flex flex-wrap gap-1.5">
+        <ul role="list" className="flex flex-wrap gap-1.5 pl-8">
           {missingFields.map((f) => (
             <li role="listitem" key={f} className="text-xs font-semibold px-2 py-1 rounded-lg bg-danger/14 text-danger border border-danger/30">{FIELD_LABEL_ES[f] ?? f}</li>
           ))}
