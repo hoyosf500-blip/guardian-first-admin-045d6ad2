@@ -71,6 +71,48 @@ export function useOperatorHeartbeat() {
     window.addEventListener('click', onActivity);
     window.addEventListener('wheel', onActivity, { passive: true });
 
+    // ── MARCA DE ENTRADA (2026-07-19) ────────────────────────────────────
+    // Pedido del dueño: "cuando la operadora lo abre, ahí empieza su turno y me
+    // marca la hora de entrada".
+    //
+    // `first_action_at` — la columna que /admin → Productividad muestra como
+    // ENTRÓ — se sella en el PRIMER INSERT del día de `operator_activity_daily`
+    // y después el ON CONFLICT ya no la toca. Hasta ahora ese primer INSERT
+    // llegaba con el primer flush, o sea HASTA 5 MINUTOS TARDE (PING_INTERVAL
+    // subió de 60s a 5min en julio por costo). Peor: si abría y no tocaba nada,
+    // la hora de entrada terminaba siendo la de su primer movimiento, no la de
+    // su llegada.
+    //
+    // Este ping inmediato sella la hora al abrir. Es 1 SEGUNDO de actividad —
+    // abrir el CRM ES una acción, y un segundo es ruido frente a una jornada.
+    // Tiene que ser > 0: el server descarta el ping si active e idle son ambos
+    // cero (`IF p_active_seconds = 0 AND p_idle_seconds = 0 THEN RETURN`), así
+    // que un ping "vacío" no crearía la fila y no habría hora que marcar.
+    //
+    // Es IDEMPOTENTE por diseño: si ya hay fila del día, el ON CONFLICT suma el
+    // segundo y CONSERVA el `first_action_at` original. Recargar la página o
+    // volver de otra pestaña no reescribe la hora de llegada.
+    let cancelado = false;
+    void (async () => {
+      try {
+        await (
+          supabase.rpc as unknown as (
+            fn: 'record_operator_heartbeat',
+            args: { p_store_id: string; p_active_seconds: number; p_idle_seconds: number },
+          ) => Promise<{ error: { message?: string } | null }>
+        )('record_operator_heartbeat', {
+          p_store_id: activeStoreId,
+          p_active_seconds: 1,
+          p_idle_seconds: 0,
+        });
+      } catch (err) {
+        if (!cancelado && process.env.NODE_ENV !== 'production') {
+          // eslint-disable-next-line no-console
+          console.warn('[heartbeat] marca de entrada falló', err);
+        }
+      }
+    })();
+
     // Tick cada segundo: decide bucket basado en última actividad.
     const tickId = window.setInterval(() => {
       const now = Date.now();
@@ -124,6 +166,7 @@ export function useOperatorHeartbeat() {
 
     // Cleanup en unmount / cambio de store / logout
     return () => {
+      cancelado = true;
       window.clearInterval(tickId);
       window.clearInterval(pingId);
       window.removeEventListener('mousemove', onMousemove);

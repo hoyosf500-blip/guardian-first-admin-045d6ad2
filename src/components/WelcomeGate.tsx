@@ -1,8 +1,10 @@
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Clock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AuroraBackdrop } from '@/components/ui3d';
 import { greetingFor } from '@/lib/greeting';
+import { formatTimeBogota } from '@/lib/timeFormat';
 import { bogotaToday } from '@/lib/utils';
 
 interface Props { children: ReactNode }
@@ -50,13 +52,18 @@ function marcarSaludado(userId: string): void {
 }
 
 export default function WelcomeGate({ children }: Props) {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const [visible, setVisible] = useState(false);
+  // Hora congelada al ABRIR, no `new Date()` en cada render: la bienvenida vive
+  // 2.8s y re-renderiza varias veces; leer el reloj cada vez haría saltar el
+  // minuto en pantalla justo cuando la asesora lo está leyendo.
+  const [horaEntrada, setHoraEntrada] = useState('');
 
   useEffect(() => {
     if (!user) return;
     if (yaSaludadoHoy(user.id)) return;
     marcarSaludado(user.id);
+    setHoraEntrada(formatTimeBogota(new Date().toISOString()));
     setVisible(true);
   }, [user]);
 
@@ -132,6 +139,27 @@ export default function WelcomeGate({ children }: Props) {
               >
                 {fecha}
               </motion.p>
+
+              {/* MARCA DE ENTRADA VISIBLE. El dueño pidió que abrir el CRM inicie
+                  el turno y quede la hora. La hora la sella el servidor (primer
+                  latido del día, ver useOperatorHeartbeat); acá se MUESTRA para
+                  que la asesora sepa que quedó registrada y a qué hora — si no
+                  se ve, la marca existe pero nadie confía en ella.
+                  Solo para quien realmente ficha: al admin no se le trackea
+                  jornada, así que anunciarle un turno sería mentirle. */}
+              {!isAdmin && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.94 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.5, ease: 'easeOut', delay: 0.8 }}
+                  className="relative mt-5 inline-flex items-center gap-2 rounded-xl border border-success/30 bg-success/12 px-3.5 py-2 glow-success"
+                >
+                  <Clock size={14} className="text-success" aria-hidden="true" />
+                  <span className="text-[13px] font-semibold text-success">
+                    Turno iniciado · {horaEntrada}
+                  </span>
+                </motion.div>
+              )}
 
               {/* Barra de progreso = cuánto falta para que se vaya sola. Sin
                   esto la pantalla se siente colgada durante casi 3 segundos. */}
