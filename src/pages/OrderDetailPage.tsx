@@ -16,7 +16,7 @@ import {
   MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { TiltCard } from '@/components/ui3d';
+import { AuroraBackdrop, TiltCard } from '@/components/ui3d';
 import { buildTimeline, type TimelineStatusChange } from '@/lib/timelineBuilder';
 import { sanitizeAction } from '@/lib/sanitize';
 import { bogotaToday } from '@/lib/utils';
@@ -107,6 +107,20 @@ const SEG_ACTIONS: { label: string; action: string; tone: 'neutral' | 'success' 
   { label: 'Devolución', action: 'SEG: Devolución', tone: 'warn' },
 ];
 
+/**
+ * Segmentos de la barra de composición del valor del pedido. Los rótulos son
+ * LOS MISMOS de las filas del estado de resultados de abajo — no hay métrica
+ * nueva: es el reparto de `valor` que esas filas ya declaran.
+ */
+const COMPOSICION_VALOR: { key: 'flete' | 'costo' | 'ganancia'; label: string; color: string }[] = [
+  { key: 'flete',    label: 'Flete',           color: 'hsl(var(--info))' },
+  { key: 'costo',    label: 'Costo producto',  color: 'hsl(var(--warning))' },
+  { key: 'ganancia', label: 'Ganancia est.',   color: 'hsl(var(--success))' },
+];
+
+/** `hsl(var(--x))` → `hsl(var(--x) / a)`. El idiom `${color}22` solo sirve con hex. */
+const tint = (color: string, alpha: number) => color.replace(/\)$/, ` / ${alpha})`);
+
 export default function OrderDetailPage() {
   const { externalId } = useParams<{ externalId: string }>();
   const navigate = useNavigate();
@@ -129,7 +143,10 @@ export default function OrderDetailPage() {
     if (sibIdx < 0) return;
     const next = sibIdx + delta;
     if (next < 0 || next >= siblingIds.length) return;
-    navigate(`/pedido/${siblingIds[next]}`, { state: { siblingIds } });
+    // `replace: true` a propósito: recorrer 20 hermanos con ↑/↓ apilaba 20
+    // entradas en el historial y entonces "← Volver" (navigate(-1)) retrocedía
+    // de a UN pedido en vez de devolver al tablero del que se vino.
+    navigate(`/pedido/${siblingIds[next]}`, { state: { siblingIds }, replace: true });
   };
 
   const [order, setOrder] = useState<OrderRow | null>(null);
@@ -409,7 +426,9 @@ export default function OrderDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
-        <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
+        <span className="w-14 h-14 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center" aria-hidden="true">
+          <RefreshCw size={24} className="animate-spin" />
+        </span>
         <p className="text-sm font-semibold text-foreground">Cargando pedido...</p>
       </div>
     );
@@ -418,7 +437,9 @@ export default function OrderDetailPage() {
   if (!order || !orderData) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-4" role="alert">
-        <Package size={32} className="text-muted-foreground" />
+        <span className="w-14 h-14 rounded-2xl border border-border bg-muted/60 text-muted-foreground flex items-center justify-center" aria-hidden="true">
+          <Package size={24} />
+        </span>
         {loadError ? (
           <>
             <p className="text-sm font-semibold text-foreground">No se pudo consultar el pedido</p>
@@ -464,16 +485,24 @@ export default function OrderDetailPage() {
   const showNovedadShortcut = isNovedad(estadoUpper) && !order.novedad_sol;
 
   return (
-    <main className="max-w-4xl mx-auto space-y-6" aria-label="Detalle del pedido">
-      {/* Back + header */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 flex-wrap">
-        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="w-11 h-11 flex-shrink-0 inline-flex items-center justify-center rounded-2xl bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong shadow-card3d transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
+    // <section> y no <main>: ProtectedLayout ya abre el <main> de la app y dos
+    // landmarks `main` anidados rompen la navegación por landmarks.
+    <section className="max-w-4xl mx-auto space-y-6" aria-label="Detalle del pedido">
+      {/* Header-hero: aurora de fondo, chip del cliente y estado con glow. */}
+      <motion.header
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="relative overflow-hidden rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top flex items-center gap-3 flex-wrap"
+      >
+        <AuroraBackdrop />
+        <button onClick={() => navigate(-1)} aria-label="Volver atrás" className="relative w-11 h-11 flex-shrink-0 inline-flex items-center justify-center rounded-2xl bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong shadow-card3d transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
           <ArrowLeft size={18} />
         </button>
 
         {/* Navegación entre pedidos de la misma carpeta (↑/↓) sin volver al tablero */}
         {siblingIds.length > 1 && sibIdx >= 0 && (
-          <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-card/40 p-0.5" role="group" aria-label="Navegar pedidos de la carpeta">
+          <div className="relative inline-flex items-center gap-1 rounded-xl border border-border bg-card/40 p-0.5" role="group" aria-label="Navegar pedidos de la carpeta">
             <button
               onClick={() => goSibling(-1)}
               disabled={sibIdx <= 0}
@@ -495,17 +524,22 @@ export default function OrderDetailPage() {
             </button>
           </div>
         )}
-        <div className="flex-1 min-w-0">
+        <div className="relative flex-1 min-w-0">
           <div className="hud-label mb-1 truncate">PEDIDO</div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground truncate">{order.nombre}</h2>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+          <h2 className="text-2xl font-bold tracking-tight text-foreground truncate flex items-center gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+              <User size={20} strokeWidth={2.25} />
+            </span>
+            <span className="truncate">{order.nombre}</span>
+          </h2>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
             <span className="font-mono tabular-nums">ID: {order.external_id}</span>
             <button onClick={() => { void copyToClipboard(order.external_id || '', 'ID copiado'); }} aria-label="Copiar ID del pedido">
               <Copy size={10} />
             </button>
           </div>
         </div>
-        <span className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border ${
+        <span className={`relative inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border ${
           estadoUpper.includes('ENTREGADO') ? 'bg-success/14 text-success border-success/30 glow-success' :
           estadoUpper.includes('DEVOL') ? 'bg-danger/14 text-danger border-danger/30 glow-danger' :
           estadoUpper.includes('NOVEDAD') ? 'bg-warning/14 text-warning border-warning/30 glow-warning' :
@@ -518,13 +552,13 @@ export default function OrderDetailPage() {
         {showConfirmShortcut && (
           <button
             onClick={() => navigate('/confirmar')}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent/16 text-accent border border-accent/40 text-sm font-semibold shadow-glow3d hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
+            className="relative inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent/16 text-accent border border-accent/40 text-sm font-semibold shadow-glow3d hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
           >
             <PhoneCall size={12} /> Ir a Confirmar
           </button>
         )}
         {showNovedadShortcut && !showReofferInput && (
-          <div className="inline-flex items-center gap-2">
+          <div className="relative inline-flex items-center gap-2">
             <button
               onClick={() => setShowReofferInput(true)}
               disabled={resolving}
@@ -545,7 +579,7 @@ export default function OrderDetailPage() {
             </button>
           </div>
         )}
-      </motion.div>
+      </motion.header>
 
       {/* Reoffer solution input (F3) */}
       {showReofferInput && (
@@ -585,14 +619,17 @@ export default function OrderDetailPage() {
       {/* SLA Alert Card */}
       <SlaAlertCard order={orderData} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Info card */}
-        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
-          <h3 className="hud-label flex items-center gap-2">
-            <User size={13} aria-hidden="true" className="text-accent" /> Información del cliente
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d h-full">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 tilt-layer-2">
+            <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+              <User size={17} />
+            </span>
+            Información del cliente
           </h3>
 
-          <div className="space-y-3">
+          <div className="space-y-3 tilt-layer-1">
             <InfoRow icon={<Phone size={13} />} label="Teléfono" value={order.phone} copyable mono />
             <InfoRow icon={<MapPin size={13} />} label="Ciudad" value={`${order.ciudad || ''}${order.departamento ? `, ${order.departamento}` : ''}`} />
             <InfoRow icon={<FileText size={13} />} label="Dirección" value={order.direccion || '—'} />
@@ -648,12 +685,15 @@ export default function OrderDetailPage() {
         </TiltCard>
 
         {/* Shipping card */}
-        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
-          <h3 className="hud-label flex items-center gap-2">
-            <Truck size={13} aria-hidden="true" className="text-info" /> Envío y seguimiento
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d h-full">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 tilt-layer-2">
+            <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center shrink-0" aria-hidden="true">
+              <Truck size={17} />
+            </span>
+            Envío y seguimiento
           </h3>
 
-          <div className="space-y-3">
+          <div className="space-y-3 tilt-layer-1">
             <InfoRow icon={<Truck size={13} />} label="Transportadora" value={order.transportadora || '—'} />
             <InfoRow icon={<Tag size={13} />} label="Guía" value={order.guia || '—'} copyable={!!order.guia} mono />
             <InfoRow icon={<Calendar size={13} />} label="Fecha pedido" value={order.fecha || '—'} mono />
@@ -726,17 +766,65 @@ export default function OrderDetailPage() {
           )}
         </TiltCard>
 
-        {/* Financial card */}
+        {/* Financial card — la card hero de la ficha (única con sheen+brackets) */}
         <TiltCard sheen brackets
-          className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d">
-          <h3 className="hud-label flex items-center gap-2">
-            <DollarSign size={13} aria-hidden="true" className="text-success" /> Financiero
+          className="bg-card/40 border border-border rounded-2xl p-5 space-y-4 shadow-card3d-lg h-full">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 tilt-layer-2">
+            <span className="w-9 h-9 rounded-xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center shrink-0" aria-hidden="true">
+              <DollarSign size={17} />
+            </span>
+            Financiero
           </h3>
-          <div className="flex flex-col gap-[11px]">
+
+          {/* Cómo se reparte el valor del pedido. Es la MISMA aritmética de las
+              filas de abajo (valor = flete + costo producto + ganancia), dibujada
+              en proporción. Solo se pinta con los tres datos presentes y con
+              ganancia ≥ 0: si falta uno, o la ganancia es negativa, la barra
+              mentiría sobre la composición — ahí no se dibuja nada. */}
+          {/* El guard cubre TODOS los sumandos, no sólo la ganancia. Con un
+              flete o un costo de producto negativo (dato raro pero posible),
+              ese segmento se descartaba por `width <= 0` y los dos restantes
+              sumaban más de 100%: flex los aplastaba proporcionalmente y el
+              reparto dibujado dejaba de coincidir con las filas de abajo, en
+              silencio. Si algún término no es sano, no se dibuja la barra —
+              las filas con las cifras exactas siguen ahí. */}
+          {gananciaEst !== null && valor !== null && valor > 0 && gananciaEst >= 0
+            && flete !== null && flete >= 0 && costoProd !== null && costoProd >= 0 && (
+            <div className="tilt-layer-3 space-y-2">
+              <div className="flex h-2.5 rounded-full overflow-hidden bg-foreground/10" aria-hidden="true">
+                {COMPOSICION_VALOR.map(seg => {
+                  const monto = seg.key === 'flete' ? flete! : seg.key === 'costo' ? costoProd! : gananciaEst;
+                  const width = (monto / valor) * 100;
+                  if (width <= 0) return null;
+                  return (
+                    <div
+                      key={seg.key}
+                      className="h-full transition-[width] duration-700"
+                      style={{
+                        width: `${width}%`,
+                        background: `linear-gradient(180deg, ${seg.color}, ${tint(seg.color, 0.55)})`,
+                        boxShadow: `0 0 10px ${tint(seg.color, 0.55)}`,
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                {COMPOSICION_VALOR.map(seg => (
+                  <span key={seg.key} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: seg.color }} aria-hidden="true" />
+                    {seg.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-[11px] tilt-layer-1">
             <StatementRow label="Valor total" value={valor !== null ? formatCOP(valor) : 'Sin dato'} missing={valor === null} />
             <StatementRow label="Flete" value={flete !== null ? formatCOP(flete) : 'Sin dato'} muted missing={flete === null} />
             <StatementRow label="Costo producto" value={costoProd !== null ? formatCOP(costoProd) : 'Sin dato'} muted missing={costoProd === null} />
-            <div className="h-px bg-border" aria-hidden="true" />
+            <div className="h-px" aria-hidden="true" style={{ background: 'linear-gradient(90deg, hsl(var(--border-strong)), transparent)' }} />
             <StatementRow
               label="Ganancia est."
               value={gananciaEst !== null ? formatCOP(gananciaEst) : '—'}
@@ -757,19 +845,27 @@ export default function OrderDetailPage() {
 
       {/* Timeline + Communication log */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
-          <h3 className="hud-label flex items-center gap-2 mb-4">
-            <Clock size={13} aria-hidden="true" className="text-accent" /> Historial del pedido
+        {/* Sin TiltCard: la línea de tiempo lleva halos que se salen del nodo y
+            el overflow-hidden de TiltCard se los comería. */}
+        <div className="hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong h-full flex flex-col">
+          {/* Mismo chip de 36px con glow que las tres cards de la fila de
+              arriba (Cliente / Envío / Financiero). Con el ícono pelado de 14px
+              las dos filas de la página no se leían del mismo sistema. */}
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4">
+            <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <Clock size={17} />
+            </span>
+            Historial del pedido
           </h3>
           <Timeline events={timelineEvents} emptyText="Sin eventos registrados todavía" />
-        </TiltCard>
+        </div>
 
         <CommunicationLog events={timelineEvents} />
       </div>
 
       {/* Notas y recordatorios — componente compartido (también usado en CallView). */}
       <NotesPanel phone={order.phone} orderId={order.id} variant="full" />
-    </main>
+    </section>
   );
 }
 
@@ -780,19 +876,29 @@ export default function OrderDetailPage() {
  */
 function StatementRow({ label, value, muted, total, missing }: { label: string; value: string; muted?: boolean; total?: boolean; missing?: boolean }) {
   return (
-    <div className={`flex items-center justify-between gap-3 ${total ? 'text-[13px] font-bold' : 'text-xs'}`}>
+    <div className={`flex items-center justify-between gap-3 ${total ? 'text-[15px] font-bold' : 'text-xs'}`}>
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono tabular-nums ${missing ? 'text-muted-foreground' : total ? 'text-success' : muted ? 'text-muted-foreground' : 'text-foreground font-semibold'}`}>{value}</span>
+      {/* El glow del total solo cuando hay dato: un "—" luminoso se leería como
+          una cifra medida. */}
+      <span className={`font-mono tabular-nums ${missing ? 'text-muted-foreground' : total ? 'text-success num-glow-success' : muted ? 'text-muted-foreground' : 'text-foreground font-semibold'}`}>{value}</span>
     </div>
   );
 }
 
+/**
+ * Fila de dato del pedido. El ícono va en un chip como en el resto del DS;
+ * el rótulo usa `hud-label` (es copia nuestra, fija) y el VALOR nunca se
+ * mayusculiza: son datos del cliente y de Dropi (direcciones, ciudades,
+ * transportadoras) donde el casing ES el dato.
+ */
 function InfoRow({ icon, label, value, copyable, highlight, mono }: { icon: React.ReactNode; label: string; value: string; copyable?: boolean; highlight?: boolean; mono?: boolean }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="text-muted-foreground/60 flex-shrink-0">{icon}</div>
+    <div className="flex items-center gap-3 rounded-xl border border-transparent px-2 py-1.5 -mx-2 transition-colors duration-200 hover:bg-card/60 hover:border-border">
+      <div className="w-7 h-7 rounded-lg bg-muted/60 border border-border text-muted-foreground flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        {icon}
+      </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] text-muted-foreground">{label}</div>
+        <div className="hud-label">{label}</div>
         <div className={`text-xs truncate mt-0.5 ${mono ? 'font-mono tabular-nums ' : ''}${highlight ? 'font-bold text-success' : 'text-foreground'}`}>{value}</div>
       </div>
       {copyable && (

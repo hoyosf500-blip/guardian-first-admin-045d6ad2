@@ -155,11 +155,11 @@ export default function CfoPersonalCardUploader() {
   }, [processFiles]);
 
   return (
-    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top p-5">
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2.5">
-          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
-            <FileText size={15} />
+          <span className="w-9 h-9 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+            <FileText size={17} aria-hidden="true" />
           </span>
           <h3 className="font-semibold text-sm">Importar extractos de tarjeta</h3>
         </div>
@@ -171,7 +171,7 @@ export default function CfoPersonalCardUploader() {
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         className={[
-          'rounded-2xl border-2 border-dashed p-6 text-center transition-colors cursor-pointer',
+          'rounded-2xl border-2 border-dashed p-8 text-center transition-colors duration-200 cursor-pointer',
           isDragging ? 'border-accent bg-accent/[0.08]' : 'border-border hover:border-border-strong hover:bg-foreground/[0.03]',
           processing ? 'opacity-60 pointer-events-none' : '',
         ].join(' ')}
@@ -215,11 +215,11 @@ export default function CfoPersonalCardUploader() {
                 {r.metadata?.tarjeta && <span className="text-muted-foreground shrink-0">{r.metadata.tarjeta}</span>}
               </div>
               {r.ok ? (
-                <span className="text-muted-foreground shrink-0">
+                <span className="text-muted-foreground shrink-0 font-mono tabular-nums">
                   {r.movements_count} mov · {r.inserted ?? 0} nuevos · {r.updated ?? 0} actualizados
                 </span>
               ) : (
-                <span className="text-red shrink-0 truncate max-w-[50%]" title={r.error}>{r.error}</span>
+                <span className="text-danger shrink-0 truncate max-w-[50%]" title={r.error}>{r.error}</span>
               )}
             </div>
           ))}

@@ -124,7 +124,7 @@ export default function WaBotConfigPanel() {
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <Bot size={15} />
         </span>
         <div className="flex-1">
@@ -161,8 +161,9 @@ export default function WaBotConfigPanel() {
         {/* Nombre del asesor + modelo */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="hud-label">Nombre del asesor</label>
+            <label className="hud-label" htmlFor="wabot-agent-name">Nombre del asesor</label>
             <input
+              id="wabot-agent-name"
               type="text"
               value={agentName}
               onChange={e => setAgentName(e.target.value)}
@@ -172,8 +173,9 @@ export default function WaBotConfigPanel() {
             <p className="mt-1 text-[11px] text-muted-foreground">Con el que el bot se presenta. Vacío = "Sara".</p>
           </div>
           <div>
-            <label className="hud-label flex items-center gap-1"><Sparkles size={10} /> Modelo de IA</label>
+            <label className="hud-label flex items-center gap-1" htmlFor="wabot-model"><Sparkles size={10} aria-hidden="true" /> Modelo de IA</label>
             <select
+              id="wabot-model"
               value={model}
               onChange={e => setModel(e.target.value)}
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
@@ -186,8 +188,9 @@ export default function WaBotConfigPanel() {
 
         {/* Prompt / personalidad */}
         <div>
-          <label className="hud-label">Personalidad e instrucciones GENERALES (prompt)</label>
+          <label className="hud-label" htmlFor="wabot-system-prompt">Personalidad e instrucciones GENERALES (prompt)</label>
           <textarea
+            id="wabot-system-prompt"
             value={systemPrompt}
             onChange={e => setSystemPrompt(e.target.value)}
             placeholder={PROMPT_PLACEHOLDER}
@@ -205,8 +208,9 @@ export default function WaBotConfigPanel() {
 
         {/* Saludo */}
         <div>
-          <label className="hud-label flex items-center gap-1"><MessageSquare size={10} /> Saludo (opcional)</label>
+          <label className="hud-label flex items-center gap-1" htmlFor="wabot-greeting"><MessageSquare size={10} aria-hidden="true" /> Saludo (opcional)</label>
           <textarea
+            id="wabot-greeting"
             value={greeting}
             onChange={e => setGreeting(e.target.value)}
             placeholder="¡Hola! Soy Sara de Mi Tienda 💛 ¿En qué te ayudo con tu pedido?"

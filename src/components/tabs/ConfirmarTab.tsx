@@ -23,8 +23,9 @@ import ShopifyPendingPanel from '@/components/confirmar/ShopifyPendingPanel';
 import DropiSyncFailuresPanel from '@/components/confirmar/DropiSyncFailuresPanel';
 import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
 import ClosingReportDialog from '@/components/ClosingReportDialog';
-import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon } from 'lucide-react';
-import { TiltCard, CountUp } from '@/components/ui3d';
+import { AlertTriangle, List, Phone, RefreshCw, CloudDownload, CalendarIcon, X, RotateCcw, Moon, CheckCircle2, XCircle, PhoneOff, ClipboardCheck } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { TiltCard, CountUp, StatTile, AuroraBackdrop } from '@/components/ui3d';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { cn, bogotaToday, formatCOP } from '@/lib/utils';
@@ -53,6 +54,13 @@ interface Props {
 // El campo `o.dias` se congela en la última sincronización: con el sync atrasado/
 // throttleado (caso Ecuador) un pedido viejo mostraba días de menos → los pills
 // d7/d46 contradecían el color de las filas. Fallback a `o.dias` si la fecha no parsea.
+/** Entrada escalonada: la pantalla se arma de arriba abajo, igual que Logística. */
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
 function diasReales(o: OrderData): number {
   try {
     const d = parseDate(o.fecha);
@@ -384,15 +392,17 @@ export default function ConfirmarTab({ profile }: Props) {
 
   return (
     <div className="relative max-w-5xl mx-auto space-y-5">
-      {/* Aurora orbs de fondo (Dirección 3D) — decorativos, no interactivos */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute -left-[8%] -top-[6%] w-80 h-80 rounded-full blur-[60px] bg-accent/20" />
-        <div className="absolute -right-[6%] top-[28%] w-72 h-72 rounded-full blur-[60px] bg-accent2/15" />
-      </div>
-
-      {/* Page header — patrón pro coherente con Logística/Rescate */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-1.5">
+      {/* Header-hero (MOLDE 1): los dos orbes hechos a mano que vivían sueltos
+          detrás de toda la página los reemplaza <AuroraBackdrop/>, el componente
+          del DS, contenido DENTRO del header — el mismo tratamiento que el hero
+          de Logística. Exige `relative overflow-hidden` acá y `relative` en cada
+          hijo hermano para que el contenido quede por encima. */}
+      <motion.header
+        {...fadeUp(0)}
+        className="relative overflow-hidden rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
+      >
+        <AuroraBackdrop />
+        <div className="relative min-w-0 space-y-1.5">
           <div className="hud-label truncate text-accent">
             Cola · Operadora
           </div>
@@ -407,7 +417,7 @@ export default function ConfirmarTab({ profile }: Props) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="relative flex items-center gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={() => setClosing(true)} className="gap-1.5 h-9 rounded-xl bg-card/40 border-border hover:border-border-strong">
             <Moon size={14} /> Cerrar turno
           </Button>
@@ -432,7 +442,7 @@ export default function ConfirmarTab({ profile }: Props) {
             </button>
           )}
         </div>
-      </header>
+      </motion.header>
 
       {/* Aviso al equipo: cambio en cómo se cuenta noresp (dedup por
           order_id, espeja RPC v20260505184140). Dismissible y persiste
@@ -503,12 +513,15 @@ export default function ConfirmarTab({ profile }: Props) {
               }
             }}
             disabled={syncing}
-            className="w-full flex items-center justify-center gap-3 py-4 px-5 rounded-2xl bg-card/40 border border-border shadow-card3d hover:border-accent/40 hover:bg-accent/5 transition-colors duration-200 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            className="relative overflow-hidden w-full flex items-center justify-center gap-3 py-5 px-5 rounded-2xl bg-card/40 border border-border shadow-card3d hairline-top hover:border-accent/40 transition-colors duration-200 cursor-pointer group focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-not-allowed"
           >
-            <div className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center group-hover:bg-accent/25 transition-colors duration-200">
+            {/* Halo de acento detrás del CTA: es la única acción de la pantalla
+                vacía, tiene que verse como tal y no como una fila más. */}
+            <span className="pointer-events-none absolute -left-8 -top-16 w-56 h-56 rounded-full blur-[50px] bg-accent/20" aria-hidden="true" />
+            <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-accent/30 to-accent/10 border border-accent/30 text-accent glow-accent flex items-center justify-center group-hover:from-accent/45 group-hover:to-accent/20 transition-colors duration-200">
               {syncing ? <RefreshCw size={20} className="text-accent animate-spin" aria-hidden="true" /> : <CloudDownload size={20} className="text-accent" aria-hidden="true" />}
             </div>
-            <div className="text-left">
+            <div className="relative text-left">
               <div className="text-sm font-semibold text-foreground">
                 {syncing ? 'Sincronizando...' : 'Sincronizar desde Dropi'}
               </div>
@@ -530,17 +543,18 @@ export default function ConfirmarTab({ profile }: Props) {
       )}
 
       {excelLoaded && workQueue.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
-          <div className="w-14 h-14 rounded-2xl bg-card/40 border border-border shadow-card3d flex items-center justify-center mb-4">
-            <Phone size={24} className="text-muted-foreground" aria-hidden="true" />
+        <div className="relative overflow-hidden flex flex-col items-center justify-center py-16 text-center rounded-3xl border border-border bg-card/40 shadow-card3d hairline-top" role="status" aria-live="polite">
+          <AuroraBackdrop />
+          <div className="relative w-14 h-14 rounded-2xl bg-success/14 border border-success/30 text-success glow-success shadow-card3d flex items-center justify-center mb-4">
+            <Phone size={24} aria-hidden="true" />
           </div>
-          <h3 className="text-base font-semibold text-foreground mb-1">No hay pedidos disponibles para confirmar</h3>
-          <p className="text-sm text-muted-foreground max-w-md">
+          <h3 className="relative text-base font-semibold text-foreground mb-1">No hay pedidos disponibles para confirmar</h3>
+          <p className="relative text-sm text-muted-foreground max-w-md">
             Espera al próximo sync con Dropi o sube un Excel manualmente.
           </p>
           <button
             onClick={() => { resetOrders(); setExcelLoaded(false); }}
-            className="mt-4 text-sm px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors"
+            className="relative mt-4 text-sm px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground font-medium hover:text-foreground hover:border-border-strong transition-colors"
           >
             Volver al inicio
           </button>
@@ -568,23 +582,31 @@ export default function ConfirmarTab({ profile }: Props) {
               : sinTocarEnCola >= Math.max(1, Math.ceil(filteredItems.length / 2))
                 ? 'danger'
                 : 'warning';
-            const dotTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
-            const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
-            const bgTone = tone === 'success' ? 'bg-success/5' : tone === 'warning' ? 'bg-warning/5' : 'bg-danger/5';
+            // Clases LITERALES por tono. La versión anterior armaba
+            // `text-${tone}` en runtime: Tailwind escanea el texto del archivo,
+            // así que esa clase nunca se generaba y la cifra clave del banner
+            // —cuántos te faltan— salía del color del texto normal.
+            const skin = tone === 'success'
+              ? { bar: 'bg-success', box: 'border-success/30 bg-success/10', chip: 'bg-success/20 text-success glow-success', num: 'text-success' }
+              : tone === 'warning'
+                ? { bar: 'bg-warning', box: 'border-warning/30 bg-warning/10', chip: 'bg-warning/20 text-warning glow-warning', num: 'text-warning' }
+                : { bar: 'bg-danger', box: 'border-danger/30 bg-danger/10', chip: 'bg-danger/20 text-danger glow-danger', num: 'text-danger' };
             return (
-              <div className={`relative mb-3 rounded-2xl border ${borderTone} ${bgTone} px-4 py-3 pl-5 shadow-card3d flex items-center flex-wrap gap-x-4 gap-y-2`}>
-                <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${dotTone}`} aria-hidden="true" />
-                <span className={`h-2 w-2 rounded-full shrink-0 ${dotTone}`} aria-hidden="true" />
+              <div className={`relative mb-3 rounded-2xl border ${skin.box} px-4 py-3 pl-5 shadow-card3d flex items-center flex-wrap gap-x-4 gap-y-2`}>
+                <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${skin.bar}`} aria-hidden="true" />
+                <span className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${skin.chip}`} aria-hidden="true">
+                  <ClipboardCheck size={17} />
+                </span>
                 <div className="text-sm font-semibold text-foreground">
                   Tu cola hoy
                 </div>
                 <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <span>
-                    Has llamado a <strong className="font-mono tabular-nums text-foreground">{tocadosHoy}</strong>
+                    Has llamado a <CountUp value={tocadosHoy} className="text-base font-bold text-foreground" />
                   </span>
                   <span className="opacity-50">·</span>
                   <span>
-                    Te faltan <strong className={`font-mono tabular-nums text-${tone}`}>{sinTocarEnCola}</strong> sin tocar
+                    Te faltan <CountUp value={sinTocarEnCola} className={`text-base font-bold ${skin.num}`} /> sin tocar
                     {sinTocarEnCola === 0 && <span className="text-success ml-1">✓</span>}
                   </span>
                 </div>
@@ -610,55 +632,74 @@ export default function ConfirmarTab({ profile }: Props) {
             const d7 = visibleQueue.filter(o => diasReales(o) >= 7 && !o.result).length;
             const d46 = visibleQueue.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6 && !o.result; }).length;
             return (
-              <TiltCard
-                sheen
-                brackets
-                wrapperClassName="mb-4"
-                className="bg-card/40 border border-border rounded-3xl px-5 py-4 shadow-card3d-lg flex flex-wrap items-baseline gap-x-5 gap-y-2"
-              >
-                <div className="flex items-baseline gap-2">
-                  <CountUp value={pending} className="text-4xl font-extrabold text-accent leading-none num-glow-accent" />
-                  <span className="hud-label">por confirmar</span>
-                </div>
-                <div className="flex items-baseline gap-x-4 gap-y-1 flex-wrap text-xs">
-                  <span className="inline-flex items-baseline gap-1">
-                    <strong className="font-mono text-base font-bold tabular-nums text-success leading-none">{counter.conf}</strong>
-                    <span className="text-muted-foreground">conf</span>
-                  </span>
-                  <span className="inline-flex items-baseline gap-1">
-                    <strong className="font-mono text-base font-bold tabular-nums text-danger leading-none">{counter.canc}</strong>
-                    <span className="text-muted-foreground">canc</span>
-                  </span>
-                  <span className="inline-flex items-baseline gap-1">
-                    <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{counter.noresp}</strong>
-                    <span className="text-muted-foreground">noresp</span>
-                  </span>
-                  <span className="inline-flex items-baseline gap-1 border-l border-border/60 pl-4">
-                    <strong className="font-mono text-base font-bold tabular-nums text-foreground leading-none">{total}</strong>
-                    <span className="text-muted-foreground">gestionados</span>
-                  </span>
+              /* La tira plana de números en línea pasa a ser el bloque hero de
+                 la pantalla: a la izquierda la cifra que manda —cuántos faltan
+                 por confirmar— y a la derecha los tres resultados del día como
+                 StatTile del DS (chip de ícono con glow, cifra contando, tono
+                 propio). Los conteos y sus rótulos son EXACTAMENTE los mismos;
+                 lo que cambia es que ahora se leen de un vistazo por color y
+                 tamaño en vez de escanear una fila de texto. */
+              <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4">
+                <TiltCard
+                  sheen
+                  brackets
+                  wrapperClassName="md:col-span-5"
+                  className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between gap-4"
+                >
+                  <div className="tilt-layer-2 flex items-start justify-between gap-3">
+                    <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                      <Phone size={17} />
+                    </span>
+                    {(d7 > 0 || d46 > 0) && (
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {d7 > 0 && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
+                            <span className="w-1.5 h-1.5 rounded-full bg-danger glow-danger" aria-hidden="true" /> <span className="font-mono tabular-nums">{d7}</span> cancelar (D7+)
+                          </span>
+                        )}
+                        {d46 > 0 && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-warning/14 border border-warning/30 text-warning">
+                            <span className="w-1.5 h-1.5 rounded-full bg-warning glow-warning" aria-hidden="true" /> <span className="font-mono tabular-nums">{d46}</span> urgente (D4-6)
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="tilt-layer-3">
+                    <CountUp value={pending} className="text-[52px] font-extrabold text-accent leading-none num-glow-accent" />
+                    <div className="hud-label mt-2">por confirmar</div>
+                  </div>
+
+                  {/* Los MISMOS conf/canc/noresp dibujados como partes de su
+                      suma —`total`, que ya se muestra rotulada "gestionados"—.
+                      No imprime ninguna cifra nueva: es la misma medición vista
+                      como proporción. Con total = 0 no se dibuja nada: una
+                      barra vacía se leería como "medí y dio cero". */}
+                  {total > 0 && (
+                    <div className="tilt-layer-1 h-2 rounded-full bg-foreground/10 overflow-hidden flex" aria-hidden="true">
+                      <div className="h-full bg-gradient-to-r from-success to-success/60 transition-[width] duration-700" style={{ width: `${(counter.conf / total) * 100}%` }} />
+                      <div className="h-full bg-gradient-to-r from-danger to-danger/60 transition-[width] duration-700" style={{ width: `${(counter.canc / total) * 100}%` }} />
+                      <div className="h-full bg-muted-foreground/45 transition-[width] duration-700" style={{ width: `${(counter.noresp / total) * 100}%` }} />
+                    </div>
+                  )}
+                </TiltCard>
+
+                <div className="md:col-span-7 flex flex-col gap-2">
                   {/* Estos conteos son de TODA la tienda (todas las operadoras),
                       no personales. Se etiqueta para no confundir con "Tu cola hoy"
                       y con el banner personal de arriba. */}
                   <span className="hud-label text-muted-foreground/70">
                     equipo · toda la tienda
                   </span>
-                </div>
-                {(d7 > 0 || d46 > 0) && (
-                  <div className="flex items-center gap-2 flex-wrap sm:ml-auto sm:border-l sm:border-border/60 sm:pl-5">
-                    {d7 > 0 && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
-                        <span className="w-1.5 h-1.5 rounded-full bg-danger glow-danger" aria-hidden="true" /> <span className="font-mono tabular-nums">{d7}</span> cancelar (D7+)
-                      </span>
-                    )}
-                    {d46 > 0 && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-warning/14 border border-warning/30 text-warning">
-                        <span className="w-1.5 h-1.5 rounded-full bg-warning glow-warning" aria-hidden="true" /> <span className="font-mono tabular-nums">{d46}</span> urgente (D4-6)
-                      </span>
-                    )}
+                  <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-3 flex-1">
+                    <StatTile icon={CheckCircle2} label="conf" value={counter.conf} tone="success" />
+                    <StatTile icon={XCircle} label="canc" value={counter.canc} tone="danger" />
+                    <StatTile icon={PhoneOff} label="noresp" value={counter.noresp} tone="neutral" />
+                    <StatTile icon={ClipboardCheck} label="gestionados" value={total} tone="accent" />
                   </div>
-                )}
-              </TiltCard>
+                </div>
+              </motion.div>
             );
           })()}
 
@@ -674,7 +715,9 @@ export default function ConfirmarTab({ profile }: Props) {
                   active ? 'bg-warning/20 border-warning/50' : 'bg-warning/10 border-warning/25 hover:bg-warning/15 hover:border-warning/40'
                 }`}>
                 <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
-                <RotateCcw size={16} className="text-warning shrink-0" aria-hidden="true" strokeWidth={2.25} />
+                <span className="w-9 h-9 rounded-xl bg-warning/20 glow-warning flex items-center justify-center flex-shrink-0 text-warning" aria-hidden="true">
+                  <RotateCcw size={17} strokeWidth={2.25} />
+                </span>
                 <div className="min-w-0 flex-1">
                   <span className="text-xs font-bold text-warning">
                     <span className="font-mono tabular-nums">{retryOrders.length}</span> pedido{retryOrders.length > 1 ? 's' : ''} para reintentar
@@ -697,7 +740,7 @@ export default function ConfirmarTab({ profile }: Props) {
               indistinguibles del fondo) a h-9/text-xs con el ícono más visible
               — el popover trigger ya cubría todo el botón (asChild forwardea
               onClick), pero el target era demasiado chiquito. */}
-          <div className="bg-card/40 border border-border rounded-2xl shadow-card3d p-3 sm:p-4 mb-4 space-y-3">
+          <motion.div {...fadeUp(0.18)} className="bg-card/40 border border-border rounded-2xl shadow-card3d hairline-top p-3 sm:p-4 mb-4 space-y-3">
             <div className="flex items-center flex-wrap gap-2">
               <Popover>
                 <PopoverTrigger asChild>
@@ -767,7 +810,7 @@ export default function ConfirmarTab({ profile }: Props) {
             </div>
 
             <WorkFilters workQueue={visibleQueue} filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} notesIndex={notesIndex} />
-          </div>
+          </motion.div>
 
           {/* ⚠ DUPLICADOS VIVOS (incidente 2026-07-13, #6107398): el pedido viejo
               del par duplicado sigue ACTIVO en Dropi (no está cancelado ni
@@ -778,8 +821,10 @@ export default function ConfirmarTab({ profile }: Props) {
           {liveDups.length > 0 && (
             <div className="relative mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
               <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
-              <div className="px-4 py-2.5 pl-5 flex items-center gap-2 text-xs">
-                <AlertTriangle size={14} className="text-destructive shrink-0" aria-hidden="true" />
+              <div className="px-4 py-3 pl-5 flex items-center gap-3 text-xs flex-wrap">
+                <span className="w-9 h-9 rounded-xl bg-danger/20 glow-danger flex items-center justify-center flex-shrink-0 text-destructive" aria-hidden="true">
+                  <AlertTriangle size={17} />
+                </span>
                 <span className="font-semibold text-foreground">
                   ⚠ {liveDups.length} DUPLICADO{liveDups.length > 1 ? 'S' : ''} VIVO{liveDups.length > 1 ? 'S' : ''} en Dropi
                 </span>
@@ -886,8 +931,10 @@ export default function ConfirmarTab({ profile }: Props) {
           {resentOldInQueue.length > 0 && (
             <div className="relative mb-4 rounded-2xl border border-warning/40 bg-warning/10 shadow-card3d overflow-hidden">
               <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
-              <div className="px-4 pl-5 py-2.5 flex items-center gap-2 text-xs">
-                <AlertTriangle size={14} className="text-warning shrink-0" aria-hidden="true" />
+              <div className="px-4 pl-5 py-3 flex items-center gap-3 text-xs flex-wrap">
+                <span className="w-9 h-9 rounded-xl bg-warning/20 glow-warning flex items-center justify-center flex-shrink-0 text-warning" aria-hidden="true">
+                  <AlertTriangle size={17} />
+                </span>
                 <span className="font-semibold text-foreground">
                   {resentOldInQueue.length} pedido{resentOldInQueue.length > 1 ? 's' : ''} viejo{resentOldInQueue.length > 1 ? 's' : ''} con reenvío activo
                 </span>

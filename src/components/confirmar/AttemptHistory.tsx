@@ -4,10 +4,13 @@ import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, type AttemptRow } from '@/lib/attemptFormat';
 import { bogotaToday } from '@/lib/utils';
 
+/** Nodo del timeline: relleno + halo del mismo tono. El halo (`glow-*`) es lo
+ *  que hace legible la secuencia de un vistazo — antes eran cuatro puntitos
+ *  planos de 6px del mismo peso visual, indistinguibles sin leer el texto. */
 const TONE_DOT: Record<string, string> = {
-  green: 'bg-success',
-  red: 'bg-danger',
-  yellow: 'bg-warning',
+  green: 'bg-success glow-success',
+  red: 'bg-danger glow-danger',
+  yellow: 'bg-warning glow-warning',
   muted: 'bg-muted-foreground',
 };
 
@@ -29,18 +32,32 @@ export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] })
   const hidden = attempts.length - shown.length;
 
   return (
-    <div className="mb-3 rounded-2xl border border-border bg-card/40 px-3 py-2.5 shadow-card3d hairline-top">
-      <div className="hud-label flex items-center gap-1.5 mb-1.5 text-muted-foreground">
-        <History size={12} />
+    <div className="mb-3 rounded-2xl border border-border bg-card/40 px-3.5 py-3 shadow-card3d hairline-top">
+      <div className="hud-label flex items-center gap-2 mb-2.5 text-muted-foreground">
+        <span className="w-7 h-7 rounded-xl bg-muted/60 border border-border flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <History size={13} />
+        </span>
         Intentos previos ({attempts.length})
       </div>
-      <ul className="space-y-1">
+      {/* La lista de intentos ES una secuencia en el tiempo, así que se dibuja
+          como tal: un riel vertical con un nodo por intento, coloreado por su
+          resultado. Los datos (quién, qué, cuándo) son exactamente los mismos;
+          lo que cambia es que ahora se ve la CADENA — "la llamaron tres veces
+          y las tres no contestó" se lee sin leer. */}
+      <ul className="relative space-y-2 pl-5">
+        <span
+          className="absolute left-[5px] top-1.5 bottom-1.5 w-px bg-gradient-to-b from-border via-border to-transparent"
+          aria-hidden="true"
+        />
         {shown.map((a, i) => {
           const clock = attemptClock(a);
           const day = attemptDaySuffix(a, today);
           return (
-            <li key={a.id || i} className="flex items-center gap-2 text-xs">
-              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${TONE_DOT[attemptTone(a.result)]}`} />
+            <li key={a.id || i} className="relative flex items-center gap-2 text-xs">
+              <span
+                className={`absolute -left-5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full ring-2 ring-card shrink-0 ${TONE_DOT[attemptTone(a.result)]}`}
+                aria-hidden="true"
+              />
               <span className="font-medium text-foreground truncate max-w-[120px]">{nameOf(a.operator_id)}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{attemptLabel(a.result)}</span>
@@ -57,7 +74,7 @@ export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] })
       {hidden > 0 && (
         <button
           onClick={() => setExpanded(true)}
-          className="mt-1 text-[11px] text-primary hover:underline"
+          className="mt-2 ml-5 text-[11px] font-semibold text-primary hover:underline"
         >
           Ver {hidden} más
         </button>

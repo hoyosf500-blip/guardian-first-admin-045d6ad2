@@ -8,6 +8,16 @@ import { TiltCard } from '@/components/ui3d';
 import { toast } from 'sonner';
 import DropiProductSearch from '@/components/DropiProductSearch';
 import type { DropiProductHit } from '@/hooks/usePushToDropi';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // product_knowledge es nueva y aún no está en los tipos generados → cast sin `any`
 // (mismo patrón que WaBotConfigPanel / useWaConversations).
@@ -59,6 +69,12 @@ export default function ProductKnowledgePanel() {
   const [rows, setRows] = useState<PkRow[]>([]);
   const [productNames, setProductNames] = useState<string[]>([]); // distinct orders.producto (datalist)
   const [edit, setEdit] = useState<EditState>(null);
+  // Borrar la ficha de un producto es DESTRUCTIVO e irreversible: el bot deja de
+  // saber de qué habla ese producto. Antes se disparaba directo desde el ícono,
+  // sin confirmar, sin spinner y sin bloquear el botón — un doble click borraba.
+  // Mismo molde que NotesPanel (AlertDialog del DS, no window.confirm).
+  const [toDelete, setToDelete] = useState<PkRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
@@ -96,10 +112,13 @@ export default function ProductKnowledgePanel() {
 
   async function remove(id: string) {
     if (!activeStoreId) return;
+    setDeleting(true);
     const { error } = await rpc('delete_product_knowledge', { p_store_id: activeStoreId, p_id: id });
+    setDeleting(false);
     if (error) { toast.error('No se pudo borrar', { description: error.message }); return; }
     toast.success('Producto eliminado');
     if (edit && edit.mode === 'edit' && edit.row.id === id) setEdit(null);
+    setToDelete(null);
     await load();
   }
 
@@ -123,7 +142,7 @@ export default function ProductKnowledgePanel() {
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <BookOpen size={15} />
         </span>
         <div className="flex-1">
@@ -184,11 +203,16 @@ export default function ProductKnowledgePanel() {
                     Configurar
                   </button>
                   <button
-                    onClick={() => remove(r.id)}
+                    type="button"
+                    onClick={() => setToDelete(r)}
+                    disabled={deleting}
                     title="Eliminar producto"
-                    className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 shrink-0"
+                    aria-label={`Eliminar ${r.label}`}
+                    className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground transition-colors hover:text-destructive hover:border-destructive/40 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-destructive focus-visible:outline-none shrink-0"
                   >
-                    <Trash2 size={12} />
+                    {deleting && toDelete?.id === r.id
+                      ? <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                      : <Trash2 size={12} aria-hidden="true" />}
                   </button>
                 </div>
                 {edit?.mode === 'edit' && edit.row.id === r.id && (
@@ -211,6 +235,48 @@ export default function ProductKnowledgePanel() {
           💡 <strong className="text-foreground">Cómo se combinan:</strong> la <strong className="text-foreground">personalidad y reglas generales</strong> viven en la pestaña <strong className="text-foreground">Bot WhatsApp</strong> (valen para todo); <strong className="text-foreground">acá</strong> va lo específico de cada producto. El bot junta las dos cosas y usa la ficha SOLO del producto que el cliente compró (lo cruza por el <strong>nombre</strong> de "coincide con"). Las reglas de seguridad (no inventar guía/estado) siguen activas siempre.
         </div>
       </div>
+
+      {/* Confirmación de borrado — mismo molde que NotesPanel. Muestra QUÉ se
+          pierde (la ficha que el bot usa) antes de tocar nada. */}
+      <AlertDialog open={!!toDelete} onOpenChange={(open) => { if (!open && !deleting) setToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este producto del conocimiento del bot?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Esta acción no se puede deshacer. El bot deja de saber qué es este producto y
+                  responderá sin su ficha (qué es, cómo se usa, objeciones).
+                </p>
+                {toDelete && (
+                  <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2">
+                    <div className="text-xs font-semibold text-foreground">{toDelete.label}</div>
+                    <blockquote className="mt-1 max-h-32 overflow-y-auto text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                      {toDelete.knowledge}
+                    </blockquote>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                // preventDefault: el diálogo no se cierra solo — lo cerramos
+                // recién cuando la RPC terminó (así el spinner se ve).
+                e.preventDefault();
+                if (toDelete) void remove(toDelete.id);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 size={14} className="animate-spin mr-1.5" aria-hidden="true" />}
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </TiltCard>
     </motion.div>
   );
@@ -239,6 +305,10 @@ function ProductEditor({
   const [saving, setSaving] = useState(false);
 
   const dlistId = `pk-products-${row?.id ?? 'new'}`;
+  // Un id por campo, con el mismo sufijo del datalist: así los <label> pueden
+  // apuntar al control (click en la etiqueta = foco en el campo) sin chocar si
+  // se monta más de un editor.
+  const fid = (k: string) => `pk-${k}-${row?.id ?? 'new'}`;
 
   async function save() {
     if (!label.trim()) { toast.error('Ponle un nombre al producto.'); return; }
@@ -308,8 +378,9 @@ function ProductEditor({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="hud-label">Nombre del producto *</label>
+          <label className="hud-label" htmlFor={fid('label')}>Nombre del producto *</label>
           <input
+            id={fid('label')}
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -318,8 +389,9 @@ function ProductEditor({
           />
         </div>
         <div>
-          <label className="hud-label">Coincide con (nombre en los pedidos)</label>
+          <label className="hud-label" htmlFor={fid('match')}>Coincide con (nombre en los pedidos)</label>
           <input
+            id={fid('match')}
             type="text"
             list={dlistId}
             value={matchText}
@@ -332,8 +404,9 @@ function ProductEditor({
       </div>
 
       <div>
-        <label className="hud-label">¿Qué sabe el bot de este producto? — su mini-prompt *</label>
+        <label className="hud-label" htmlFor={fid('knowledge')}>¿Qué sabe el bot de este producto? — su mini-prompt *</label>
         <textarea
+          id={fid('knowledge')}
           value={knowledge}
           onChange={(e) => setKnowledge(e.target.value)}
           placeholder={KNOWLEDGE_PLACEHOLDER}
@@ -349,8 +422,9 @@ function ProductEditor({
         <summary className="cursor-pointer text-muted-foreground select-none">Opciones avanzadas (ID de Dropi, imagen, activo)</summary>
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="hud-label">ID de producto en Dropi (opcional)</label>
+            <label className="hud-label" htmlFor={fid('dropiid')}>ID de producto en Dropi (opcional)</label>
             <input
+              id={fid('dropiid')}
               inputMode="numeric"
               value={dropiId}
               onChange={(e) => setDropiId(e.target.value)}
@@ -360,8 +434,9 @@ function ProductEditor({
             <p className="mt-1 text-[11px] text-muted-foreground">Para match exacto a futuro. Hoy se usa el nombre.</p>
           </div>
           <div>
-            <label className="hud-label">URL de imagen (opcional)</label>
+            <label className="hud-label" htmlFor={fid('image')}>URL de imagen (opcional)</label>
             <input
+              id={fid('image')}
               type="text"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}

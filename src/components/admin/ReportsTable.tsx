@@ -5,6 +5,14 @@ import { motion } from 'framer-motion';
 import { TiltCard } from '@/components/ui3d';
 import { CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
+/** Clases por tono ESCRITAS COMPLETAS: Tailwind escanea texto plano, un
+ *  `text-${tone}` armado en runtime se purga del CSS. */
+const TONE_TEXT = {
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+} as const;
+
 interface ReportRow {
   fecha: string;
   tipo: string;
@@ -114,7 +122,7 @@ export default function ReportsTable() {
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
             <ClipboardList size={15} />
           </span>
           <div>
@@ -163,13 +171,15 @@ export default function ReportsTable() {
                 <tr key={i} className={`hover:bg-muted/30 transition-colors ${r.tipo === 'cierre' ? 'bg-muted/10' : ''}`}>
                   <td className={cellBase}>{r.fecha}</td>
                   <td className={cellBase}>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                      r.tipo === 'apertura' ? 'bg-blue/10 text-blue' : 'bg-purple/10 text-purple'
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-lg border text-[10px] font-semibold ${
+                      r.tipo === 'apertura'
+                        ? 'bg-info/14 border-info/30 text-info'
+                        : 'bg-ai/14 border-ai/30 text-ai'
                     }`}>{r.tipo}</span>
                   </td>
                   <td className={cellBase}>{r.hora}</td>
                   <td className={`${cellBase} font-sans`}>{r.operadora}</td>
-                  <td className={`${cellBase} text-center ${r.pedidos_nuevos != null ? 'text-orange font-bold' : 'text-muted-foreground'}`}>
+                  <td className={`${cellBase} text-center ${r.pedidos_nuevos != null ? 'text-warning font-bold' : 'text-muted-foreground'}`}>
                     {r.pedidos_nuevos ?? ''}
                   </td>
                   <td className={`${cellBase} text-center`}>{r.guias_apertura ?? ''}</td>
@@ -181,15 +191,34 @@ export default function ReportsTable() {
                   {/* Color de la tasa de confirmación vs la meta oficial del
                       dueño (CONF_TARGET_PCT = 85%, fuente única). Verde en meta;
                       ámbar en la banda "cerca" (5 pts); rojo debajo. */}
-                  <td className={`${cellBase} text-center font-bold ${
-                    r.tasa_confirmacion != null
-                      ? r.tasa_confirmacion >= CONF_TARGET_PCT ? 'text-green' : r.tasa_confirmacion >= CONF_TARGET_PCT - 5 ? 'text-orange' : 'text-red'
-                      : ''
-                  }`}>
-                    {r.tasa_confirmacion != null ? `${r.tasa_confirmacion}%` : ''}
+                  <td className={`${cellBase} text-center`}>
+                    {r.tasa_confirmacion == null ? '' : (() => {
+                      const tone: keyof typeof TONE_TEXT = r.tasa_confirmacion >= CONF_TARGET_PCT
+                        ? 'success'
+                        : r.tasa_confirmacion >= CONF_TARGET_PCT - 5 ? 'warning' : 'danger';
+                      return (
+                        <span className="inline-flex flex-col items-center gap-1 min-w-[54px]">
+                          <span className={`font-mono tabular-nums text-[11px] font-bold ${TONE_TEXT[tone]}`}>
+                            {r.tasa_confirmacion}%
+                          </span>
+                          {/* Barra proporcional: la altura del cumplimiento se ve
+                              sin tener que leer el número. */}
+                          <span className="h-1 w-full rounded-full bg-foreground/10 overflow-hidden block">
+                            <span
+                              className="h-full rounded-full block transition-[width] duration-700"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, r.tasa_confirmacion))}%`,
+                                background: `hsl(var(--${tone}))`,
+                                boxShadow: `0 0 6px hsl(var(--${tone}) / 0.5)`,
+                              }}
+                            />
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className={`${cellBase} text-center ${
-                    r.tasa_cancelados != null && r.tasa_cancelados > 0 ? 'text-red' : ''
+                    r.tasa_cancelados != null && r.tasa_cancelados > 0 ? 'text-danger font-semibold' : ''
                   }`}>
                     {r.tasa_cancelados != null ? `${r.tasa_cancelados}%` : ''}
                   </td>

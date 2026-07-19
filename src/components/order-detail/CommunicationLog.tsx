@@ -25,16 +25,20 @@ export default function CommunicationLog({ events }: Props) {
       aria-label="Bitácora de comunicaciones"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d"
+      className="hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong h-full flex flex-col"
     >
-      <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-4">
-        <MessageSquare size={14} className="text-accent" /> Bitácora de comunicaciones
+      {/* Chip canónico de 36px, igual que las cards hermanas de la ficha. */}
+      <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <MessageSquare size={17} />
+        </span>
+        Bitácora de comunicaciones
       </h3>
 
       {commEvents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
-            <MessageSquare size={20} />
+        <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+            <MessageSquare size={20} aria-hidden="true" />
           </div>
           <p className="text-xs text-muted-foreground max-w-[240px]">
             Aún no hay comunicaciones registradas. Los botones <strong>Llamar</strong> y{' '}

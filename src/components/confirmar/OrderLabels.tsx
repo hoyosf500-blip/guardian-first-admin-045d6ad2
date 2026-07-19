@@ -5,11 +5,14 @@ import {
 } from '@/lib/orderLabels';
 
 // Tonos semánticos del sistema (color + texto, nunca color solo).
+// El degradado + el halo son los de la receta del DS: la etiqueta deja de ser
+// un rectángulo pintado y pasa a tener la misma materia que los chips del
+// Dashboard. Mismo tono, mismo texto, misma semántica.
 const TONE_CHIP: Record<LabelDef['tone'], string> = {
-  yellow: 'bg-warning/14 text-warning border-warning/30',
-  red:    'bg-danger/14 text-danger border-danger/30',
-  orange: 'bg-attention/14 text-attention border-attention/30',
-  green:  'bg-success/14 text-success border-success/30',
+  yellow: 'bg-gradient-to-br from-warning/22 to-warning/8 text-warning border-warning/30 glow-warning',
+  red:    'bg-gradient-to-br from-danger/22 to-danger/8 text-danger border-danger/30 glow-danger',
+  orange: 'bg-gradient-to-br from-attention/22 to-attention/8 text-attention border-attention/30',
+  green:  'bg-gradient-to-br from-success/22 to-success/8 text-success border-success/30 glow-success',
 };
 
 interface Props {
@@ -36,8 +39,10 @@ export default function OrderLabels({ orderId, phone, validationDecision, missin
   const addable = MANUAL_LABELS.filter((l) => !active.has(l.key));
 
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-1.5">
-      <Tag size={12} className="text-muted-foreground shrink-0" />
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <span className="w-7 h-7 rounded-xl bg-muted/60 border border-border text-muted-foreground flex items-center justify-center shrink-0" aria-hidden="true">
+        <Tag size={13} />
+      </span>
 
       {autoKeys.map((k) => {
         const def = LABELS[k];

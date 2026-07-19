@@ -59,7 +59,7 @@ export default function WaQuickRepliesPanel() {
     <motion.div {...fadeUp} className="">
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <Zap size={15} />
         </span>
         <div className="flex-1">
@@ -113,15 +113,17 @@ export default function WaQuickRepliesPanel() {
             {editingId ? <><Pencil size={13} /> Editar respuesta</> : <><Plus size={13} /> Nueva respuesta</>}
           </div>
           <div>
-            <label className="hud-label">Etiqueta (título corto)</label>
+            <label className="hud-label" htmlFor="wqr-label">Etiqueta (título corto)</label>
             <input
+              id="wqr-label"
               type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="Ej: Pedido en camino"
               className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
           <div>
-            <label className="hud-label">Mensaje</label>
+            <label className="hud-label" htmlFor="wqr-body">Mensaje</label>
             <textarea
+              id="wqr-body"
               value={body} onChange={e => setBody(e.target.value)} rows={3}
               placeholder="Ej: ¡Hola! Tu pedido ya va en camino 🚚. Apenas llegue a tu ciudad te lo entregan. ¿Te paso el link para rastrearlo?"
               className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-accent/30"

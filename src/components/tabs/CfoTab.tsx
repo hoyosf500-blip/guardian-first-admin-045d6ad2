@@ -3,9 +3,13 @@ import {
   TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle,
   CheckCircle2, DollarSign, Wallet, Target, Zap, Pencil, Loader2,
   Package as PackageIcon,
-  Gauge, Megaphone, CreditCard, BookOpen,
+  Gauge, Megaphone, CreditCard, BookOpen, Trophy, ListChecks, Bell,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import {
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid,
+  Tooltip as RTooltip, ResponsiveContainer, ReferenceLine,
+} from 'recharts';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import { useWalletMovements } from '@/hooks/useWalletMovements';
@@ -27,7 +31,16 @@ import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
-import { TiltCard } from '@/components/ui3d';
+import { TiltCard, GaugeRing, Sparkline, RankRow, AuroraBackdrop } from '@/components/ui3d';
+import {
+  CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR, fmtCompact,
+} from '@/components/logistics/charts/chartTokens';
+import {
+  MoneyFigure, GradientBar, EmptyChart,
+} from '@/components/cfo/cfoVisuals';
+import {
+  fadeUp, barGlow, CHART_ACCENT, CHART_CYAN, CHART_SUCCESS, CHART_DANGER, CHART_WARNING, CHART_MUTED,
+} from '@/components/cfo/cfoChartTokens';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -292,12 +305,47 @@ function walletTone(saldo: number | null, costosFijos: number | null): 'success'
   return 'danger';
 }
 
-const TONE_CLASSES: Record<string, { border: string; bg: string; text: string; glow: string }> = {
-  success: { border: 'border-success/28', bg: 'bg-success/[0.07]', text: 'text-success', glow: 'shadow-[0_0_30px_-18px_hsl(var(--success))]' },
-  warning: { border: 'border-warning/28', bg: 'bg-warning/[0.07]', text: 'text-warning', glow: 'shadow-[0_0_30px_-18px_hsl(var(--warning))]' },
-  danger:  { border: 'border-danger/28',  bg: 'bg-danger/[0.07]',  text: 'text-danger',  glow: 'shadow-[0_0_30px_-18px_hsl(var(--danger))]' },
-  muted:   { border: 'border-border',     bg: 'bg-card/40',        text: 'text-foreground', glow: 'shadow-card3d' },
+type CfoTone = 'success' | 'warning' | 'danger' | 'muted';
+
+interface ToneSkin {
+  border: string;
+  bg: string;
+  text: string;
+  /** Halo del chip de ícono. `glow-*` sube a 0.9 de alpha en dark. */
+  chip: string;
+  /** Glow del NÚMERO. index.css no define num-glow-warning: va sin glow. */
+  num: string;
+  /** Color del trazo/relleno para sparkline y barras (token, nunca hex). */
+  stroke: string;
+}
+
+const TONE_CLASSES: Record<CfoTone, ToneSkin> = {
+  success: {
+    border: 'border-success/28', bg: 'bg-success/[0.07]', text: 'text-success',
+    chip: 'bg-success/14 border-success/30 text-success glow-success',
+    num: 'num-glow-success', stroke: CHART_SUCCESS,
+  },
+  warning: {
+    border: 'border-warning/28', bg: 'bg-warning/[0.07]', text: 'text-warning',
+    chip: 'bg-warning/14 border-warning/30 text-warning glow-warning',
+    num: '', stroke: CHART_WARNING,
+  },
+  danger: {
+    border: 'border-danger/28', bg: 'bg-danger/[0.07]', text: 'text-danger',
+    chip: 'bg-danger/14 border-danger/30 text-danger glow-danger',
+    num: 'num-glow-danger', stroke: CHART_DANGER,
+  },
+  muted: {
+    border: 'border-border', bg: 'bg-card/40', text: 'text-foreground',
+    chip: 'bg-muted/60 border-border text-muted-foreground',
+    num: '', stroke: CHART_MUTED,
+  },
 };
+
+/** El aro no tiene rampa "muted": sin veredicto va con la rampa de marca. */
+function gaugeToneFor(t: CfoTone): 'brand' | 'success' | 'warning' | 'danger' {
+  return t === 'muted' ? 'brand' : t;
+}
 
 // Pills de sub-tab (patrón 3D). Se pasan por className a los TabsTrigger de
 // shadcn — solo presentación, el estado sigue siendo el de <Tabs>.
@@ -312,21 +360,8 @@ const TAB_PILL_CLS = [
   'data-[state=active]:shadow-glow3d',
 ].join(' ');
 
-/**
- * Parte una cifra ya formateada ("$ 18.400.000") en símbolo + número para
- * poder pintar el símbolo más chico, como en el diseño. Presentación pura:
- * NO reformatea ni recalcula nada, solo separa el prefijo no numérico.
- */
-function splitCurrency(formatted: string): { symbol: string; rest: string } {
-  const m = /^([^0-9-]*)(.*)$/.exec(formatted);
-  if (!m) return { symbol: '', rest: formatted };
-  const symbol = m[1].trim();
-  const rest = m[2].trim();
-  // Sin símbolo, sin resto, o resto sin dígitos (ej. "—", "63%") → se pinta
-  // la cadena tal cual. Nunca se pierde ni un carácter del valor original.
-  if (!symbol || !/\d/.test(rest)) return { symbol: '', rest: formatted };
-  return { symbol, rest };
-}
+// splitCurrency vive ahora en cfoVisuals.tsx (lo usa <MoneyFigure/>), porque
+// todas las pantallas del módulo pintan plata con el mismo símbolo chico.
 
 export default function CfoTab() {
   const [yearMonth, setYearMonth] = useState<string>(() => toYearMonth(new Date()));
@@ -448,8 +483,12 @@ export default function CfoTab() {
 
   return (
     <div className="space-y-5">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-1">
+      <motion.header
+        {...fadeUp(0)}
+        className="relative overflow-hidden rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
+      >
+        <AuroraBackdrop />
+        <div className="relative min-w-0 space-y-1">
           <div className="hud-label text-accent truncate whitespace-nowrap">
             CFO · Cómo voy
           </div>
@@ -464,7 +503,7 @@ export default function CfoTab() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="relative flex items-center gap-2 shrink-0 flex-wrap">
           <WalletSyncBadge size="sm" />
           <WalletSyncButton size="sm" variant="outline" label="Sync wallet" />
           <Select value={yearMonth} onValueChange={setYearMonth}>
@@ -480,15 +519,17 @@ export default function CfoTab() {
             </SelectContent>
           </Select>
         </div>
-      </header>
+      </motion.header>
 
       {/* Los inputs manuales que se RESTAN de la utilidad no se pudieron leer.
           Sin este aviso el término desaparecía en silencio y la utilidad neta
           salía inflada hacia arriba sin que nada lo indicara. */}
       {curr.hasInputsError && !curr.loading && (
-        <div className="relative rounded-2xl border border-danger/40 bg-danger/5 px-4 py-3 pl-5 shadow-card3d flex items-start gap-3">
+        <div className="relative rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 pl-5 shadow-card3d flex items-center gap-3">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
-          <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" />
+          <div className="w-9 h-9 rounded-xl bg-danger/20 glow-danger flex items-center justify-center flex-shrink-0 text-danger">
+            <AlertTriangle size={17} aria-hidden="true" />
+          </div>
           <div className="text-xs text-foreground/90">
             <span className="font-semibold">No pudimos leer los costos fijos / inputs del mes</span>
             <span className="text-muted-foreground">
@@ -501,9 +542,11 @@ export default function CfoTab() {
       {/* "Sin inputs cargados" solo es un diagnóstico válido si las consultas
           RESPONDIERON. Con una consulta caída, has_inputs también sería false. */}
       {!curr.has_inputs && !curr.loading && !curr.hasInputsError && !curr.hasFinError && (
-        <div className="relative rounded-2xl border border-warning/30 bg-warning/5 px-4 py-3 pl-5 shadow-card3d flex items-start gap-3">
+        <div className="relative rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 pl-5 shadow-card3d flex items-center gap-3">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
-          <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
+          <div className="w-9 h-9 rounded-xl bg-warning/20 glow-warning flex items-center justify-center flex-shrink-0 text-warning">
+            <AlertCircle size={17} aria-hidden="true" />
+          </div>
           <div className="text-xs text-foreground/90">
             <span className="font-semibold">Sin inputs cargados</span>
             <span className="text-muted-foreground"> — edita para ver utilidad neta real (incluye pauta y tarjeta).</span>
@@ -511,6 +554,7 @@ export default function CfoTab() {
         </div>
       )}
 
+      <motion.div {...fadeUp(0.1)}>
       <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
         <div className="overflow-x-auto -mx-1 px-1">
           <TabsList
@@ -551,12 +595,20 @@ export default function CfoTab() {
             </div>
           ) : (
           <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard
+          <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            {/* HERO de la pantalla: la única card con sheen + brackets. */}
+            <HeroUtilidadCard
               label="Utilidad neta real"
               value={curr.utilidad_neta != null ? formatCOP(curr.utilidad_neta) : '—'}
               tone={utilTone}
-              icon={<DollarSign size={14} />}
+              /* La "serie" son los dos meses MEDIDOS (anterior → actual). Si
+                 falta cualquiera de los dos no se dibuja línea: una tendencia
+                 de un solo punto sería un trazo inventado. */
+              spark={
+                curr.utilidad_neta != null && prev.utilidad_neta != null
+                  ? [prev.utilidad_neta, curr.utilidad_neta]
+                  : []
+              }
               delta={
                 curr.utilidad_neta != null && prev.utilidad_neta != null
                   ? deltaArrow(curr.utilidad_neta, prev.utilidad_neta, { higherIsBetter: true })
@@ -564,13 +616,14 @@ export default function CfoTab() {
               }
               loading={curr.loading}
               subtitle={curr.utilidad_neta == null ? 'No se pudo calcular' : undefined}
-              hero
             />
-            <KpiCard
+
+            {/* Proporción → aro. Es el mismo número que antes iba en texto. */}
+            <GaugeKpiCard
               label="Tasa de efectividad"
-              value={curr.tasa_entrega != null ? fmtPct(curr.tasa_entrega) : '—'}
+              pct={curr.tasa_entrega}
+              display={curr.tasa_entrega != null ? fmtPct(curr.tasa_entrega) : '—'}
               tone={efTone}
-              icon={<Target size={14} />}
               delta={
                 curr.tasa_entrega != null && prev.tasa_entrega != null
                   ? deltaArrow(curr.tasa_entrega, prev.tasa_entrega, { higherIsBetter: true })
@@ -579,61 +632,69 @@ export default function CfoTab() {
               loading={curr.loading}
               subtitle={curr.tasa_entrega == null ? 'Sin datos del período' : undefined}
             />
-            <KpiCard
-              label="ROAS bruto"
-              value={curr.roas != null ? `${curr.roas.toFixed(2)}x` : '—'}
-              tone={rTone}
-              icon={<Zap size={14} />}
-              delta={
-                curr.roas != null && prev.roas != null
-                  ? deltaArrow(curr.roas, prev.roas, { higherIsBetter: true })
-                  : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
-              }
-              loading={curr.loading}
-            />
-            <KpiCard
-              label="Wallet Dropi"
-              value={curr.wallet_saldo != null ? formatCOP(curr.wallet_saldo) : '—'}
-              tone={wTone}
-              icon={<Wallet size={14} />}
-              delta={null}
-              loading={curr.loading}
-              subtitle={
-                /* PROYECCIÓN, no medición: asume ingreso futuro CERO y una
-                   quema igual a los costos fijos (que no incluyen pauta, el
-                   gasto más grande del negocio). El rótulo lo dice explícito
-                   para que no se lea como un dato medido. */
-                curr.wallet_saldo != null && curr.costos_fijos != null && curr.costos_fijos > 0
-                  ? `≈${(curr.wallet_saldo / curr.costos_fijos).toFixed(1)} meses estimados si no entrara nada más (no cuenta pauta)`
-                  : undefined
-              }
-            />
-          </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
-            <TopProductsBlock
-              products={topProducts}
-              loading={logForProducts.products.isLoading}
-              isError={logForProducts.products.isError}
-            />
+            <div className="md:col-span-4 grid grid-cols-1 min-[390px]:grid-cols-2 md:grid-cols-1 gap-4">
+              <KpiCard
+                label="ROAS bruto"
+                value={curr.roas != null ? `${curr.roas.toFixed(2)}x` : '—'}
+                tone={rTone}
+                icon={<Zap size={17} />}
+                delta={
+                  curr.roas != null && prev.roas != null
+                    ? deltaArrow(curr.roas, prev.roas, { higherIsBetter: true })
+                    : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
+                }
+                loading={curr.loading}
+              />
+              <KpiCard
+                label="Wallet Dropi"
+                value={curr.wallet_saldo != null ? formatCOP(curr.wallet_saldo) : '—'}
+                tone={wTone}
+                icon={<Wallet size={17} />}
+                delta={null}
+                loading={curr.loading}
+                subtitle={
+                  /* PROYECCIÓN, no medición: asume ingreso futuro CERO y una
+                     quema igual a los costos fijos (que no incluyen pauta, el
+                     gasto más grande del negocio). El rótulo lo dice explícito
+                     para que no se lea como un dato medido. */
+                  curr.wallet_saldo != null && curr.costos_fijos != null && curr.costos_fijos > 0
+                    ? `≈${(curr.wallet_saldo / curr.costos_fijos).toFixed(1)} meses estimados si no entrara nada más (no cuenta pauta)`
+                    : undefined
+                }
+              />
+            </div>
+          </motion.div>
+
+          <motion.div {...fadeUp(0.15)} className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="xl:col-span-2">
+              <PnlTable snap={curr} onEdit={() => setEditOpen(true)} />
+            </div>
             <Funnel
               generados={curr.total_ordenes}
               entregados={curr.total_entregadas}
               devueltos={curr.total_devueltas}
               loading={curr.loading}
             />
-          </div>
+          </motion.div>
 
-          {/* "Todo en orden" es un VEREDICTO: solo vale si los dos números que
-              disparan las alertas de plata y de efectividad existen. Sin ellos
-              la lista queda vacía porque no se pudo evaluar nada, no porque
-              esté todo bien. */}
-          <AlertsBlock
-            alerts={alerts}
-            loading={curr.loading}
-            evaluable={curr.utilidad_neta != null && curr.tasa_entrega != null}
-          />
+          <motion.div {...fadeUp(0.18)} className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <TopProductsBlock
+              products={topProducts}
+              loading={logForProducts.products.isLoading}
+              isError={logForProducts.products.isError}
+            />
+
+            {/* "Todo en orden" es un VEREDICTO: solo vale si los dos números que
+                disparan las alertas de plata y de efectividad existen. Sin ellos
+                la lista queda vacía porque no se pudo evaluar nada, no porque
+                esté todo bien. */}
+            <AlertsBlock
+              alerts={alerts}
+              loading={curr.loading}
+              evaluable={curr.utilidad_neta != null && curr.tasa_entrega != null}
+            />
+          </motion.div>
           </>
           )}
         </TabsContent>
@@ -662,8 +723,9 @@ export default function CfoTab() {
           <CfoPagosHistorico walletDisponible={curr.wallet_saldo} />
           <CfoPaymentsVsDebt />
           <section className="space-y-3">
-            <header className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">
+            <header className="flex items-center justify-between gap-2 flex-wrap">
+              <h3 className="hud-label text-foreground flex items-center gap-2">
+                <CreditCard size={14} className="text-accent" aria-hidden="true" />
                 Análisis tarjetas (gasto personal)
               </h3>
               <span className="text-xs text-muted-foreground">
@@ -680,6 +742,7 @@ export default function CfoTab() {
           <CfoMonthlyRetrospective defaultYearMonth={yearMonth} />
         </TabsContent>
       </Tabs>
+      </motion.div>
 
       <CfoInputsDialog
         open={editOpen}
@@ -691,56 +754,183 @@ export default function CfoTab() {
   );
 }
 
+type DeltaInfo = { Icon: typeof TrendingUp; tone: string; label: string };
+
+/**
+ * Píldora de tendencia. `deltaArrow` ya decidió el ícono, el tono y la
+ * etiqueta — acá sólo se le da la forma de badge del DS (bordes teñidos,
+ * mono tabular). No se recalcula ni se reinterpreta el delta.
+ */
+function DeltaPill({ delta }: { delta: DeltaInfo }) {
+  const neutral = delta.tone === 'text-muted-foreground';
+  const good = delta.tone === 'text-green';
+  const skin = neutral
+    ? 'bg-muted/50 border-border text-muted-foreground'
+    : good
+      ? 'bg-success/14 border-success/30 text-success'
+      : 'bg-danger/14 border-danger/30 text-danger';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-semibold whitespace-nowrap ${skin}`}>
+      <delta.Icon size={10} aria-hidden="true" />
+      <span className="font-mono tabular-nums">{delta.label}</span>
+      <span className="opacity-70">vs mes anterior</span>
+    </span>
+  );
+}
+
 interface KpiCardProps {
   label: string;
   value: string;
-  tone: 'success' | 'warning' | 'danger' | 'muted';
+  tone: CfoTone;
   icon: React.ReactNode;
-  delta: { Icon: typeof TrendingUp; tone: string; label: string } | null;
+  delta: DeltaInfo | null;
   loading: boolean;
   subtitle?: string;
-  /** Card héroe de la pantalla (sheen + brackets + radio/sombra mayor). */
-  hero?: boolean;
 }
 
-function KpiCard({ label, value, tone, icon, delta, loading, subtitle, hero }: KpiCardProps) {
+/**
+ * KPI chico. Anatomía canónica del DS: chip de ícono con glow + delta a la
+ * derecha, cifra grande abajo, rótulo HUD al pie.
+ */
+function KpiCard({ label, value, tone, icon, delta, loading, subtitle }: KpiCardProps) {
   const cls = TONE_CLASSES[tone];
-  const money = splitCurrency(value);
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}
+    <TiltCard
+      perspective={1200}
+      wrapperClassName="h-full"
+      className={`h-full rounded-2xl border p-4 shadow-card3d flex flex-col justify-between ${cls.border} ${cls.bg}`}
     >
-      <TiltCard
-        sheen={hero}
-        brackets={hero}
-        className={`${hero ? 'rounded-3xl p-5 shadow-card3d-lg' : 'rounded-2xl p-5 shadow-card3d'} border ${cls.border} ${cls.bg} ${cls.glow} space-y-2 min-h-[130px]`}
-      >
-        <div className="tilt-layer-1 flex items-center gap-1.5 hud-label text-muted-foreground">
-          <span className={cls.text}>{icon}</span>
-          {label}
+      <div className="flex items-start justify-between gap-2 tilt-layer-2">
+        <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${cls.chip}`}>
+          {icon}
+        </span>
+        {delta && !loading && <DeltaPill delta={delta} />}
+      </div>
+
+      {loading ? (
+        <div className="h-9 w-28 rounded bg-muted/40 animate-pulse mt-3" />
+      ) : (
+        <MoneyFigure
+          text={value}
+          className={`text-[28px] font-bold leading-none mt-3 tilt-layer-3 ${cls.text} ${cls.num}`}
+        />
+      )}
+
+      <div className="hud-label text-subtle mt-2 tilt-layer-1">{label}</div>
+
+      {subtitle && !loading && (
+        <div className="text-[11px] text-muted-foreground mt-1.5 tilt-layer-1">{subtitle}</div>
+      )}
+    </TiltCard>
+  );
+}
+
+/**
+ * Card héroe: la utilidad neta del mes. Única de la pantalla con sheen +
+ * brackets + radio/sombra mayor, y la única que dibuja la línea de los dos
+ * meses medidos.
+ */
+function HeroUtilidadCard({
+  label, value, tone, delta, loading, subtitle, spark,
+}: {
+  label: string;
+  value: string;
+  tone: CfoTone;
+  delta: DeltaInfo | null;
+  loading: boolean;
+  subtitle?: string;
+  spark: number[];
+}) {
+  const cls = TONE_CLASSES[tone];
+  return (
+    <TiltCard
+      sheen
+      brackets
+      wrapperClassName="md:col-span-5"
+      className={`h-full rounded-3xl border p-6 shadow-card3d-lg flex flex-col justify-between ${cls.border} ${cls.bg}`}
+    >
+      <div className="flex items-start justify-between gap-3 tilt-layer-2">
+        <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${cls.chip}`}>
+          <DollarSign size={17} aria-hidden="true" />
+        </span>
+        {delta && !loading && <DeltaPill delta={delta} />}
+      </div>
+
+      {loading ? (
+        <div className="h-12 w-48 rounded bg-muted/40 animate-pulse mt-4" />
+      ) : (
+        <MoneyFigure
+          text={value}
+          className={`text-[38px] sm:text-[42px] font-bold leading-none mt-4 tilt-layer-3 ${cls.text} ${cls.num}`}
+        />
+      )}
+
+      <div className="hud-label text-subtle mt-3 tilt-layer-1">{label}</div>
+
+      {subtitle && !loading && (
+        <div className="text-[11px] text-muted-foreground mt-1.5 tilt-layer-1">{subtitle}</div>
+      )}
+
+      {spark.length > 1 && !loading && (
+        <div className="mt-3 tilt-layer-1">
+          <Sparkline data={spark} color={cls.stroke} height={34} />
         </div>
+      )}
+    </TiltCard>
+  );
+}
+
+/**
+ * KPI de proporción dibujado como aro. `pct` es el MISMO número que antes se
+ * imprimía en texto; `display` es su formato exacto para el caso sin dato.
+ * Sin dato NO se dibuja aro: un aro en 0% se lee como "medimos 0%".
+ */
+function GaugeKpiCard({
+  label, pct, display, tone, delta, loading, subtitle,
+}: {
+  label: string;
+  pct: number | null;
+  display: string;
+  tone: CfoTone;
+  delta: DeltaInfo | null;
+  loading: boolean;
+  subtitle?: string;
+}) {
+  const cls = TONE_CLASSES[tone];
+  return (
+    <TiltCard
+      wrapperClassName="md:col-span-3"
+      className={`h-full rounded-2xl border p-5 shadow-card3d flex flex-col items-center justify-between text-center ${cls.border} ${cls.bg}`}
+    >
+      <div className="w-full flex items-center justify-between gap-2 tilt-layer-2">
+        <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${cls.chip}`}>
+          <Target size={17} aria-hidden="true" />
+        </span>
+        {delta && !loading && <DeltaPill delta={delta} />}
+      </div>
+
+      <div className="py-3 tilt-layer-3">
         {loading ? (
-          <div className="h-9 w-28 rounded bg-muted/40 animate-pulse" />
+          <div className="h-[150px] w-[150px] rounded-full bg-muted/40 animate-pulse" />
+        ) : pct != null ? (
+          <GaugeRing value={pct} size={150} thickness={15} tone={gaugeToneFor(tone)} />
         ) : (
-          <div className={`tilt-layer-2 font-mono tabular-nums font-bold leading-none ${hero ? 'text-3xl' : 'text-[28px]'} ${cls.text}`}>
-            {money.symbol && (
-              <span className="text-[0.6em] font-semibold mr-1.5 align-baseline opacity-80">{money.symbol}</span>
-            )}
-            {money.rest}
+          <div
+            className="h-[150px] w-[150px] rounded-full border border-dashed border-border flex items-center justify-center text-3xl font-mono tabular-nums text-muted-foreground"
+            aria-label={label}
+          >
+            {display}
           </div>
         )}
+      </div>
+
+      <div className="w-full tilt-layer-1">
+        <div className="hud-label text-subtle">{label}</div>
         {subtitle && !loading && (
-          <div className="text-[11px] font-mono tabular-nums text-muted-foreground">{subtitle}</div>
+          <div className="text-[11px] font-mono tabular-nums text-muted-foreground mt-1.5">{subtitle}</div>
         )}
-        {delta && !loading && (
-          <div className={`text-[11px] inline-flex items-center gap-1 ${delta.tone}`}>
-            <delta.Icon size={11} />
-            <span className="font-mono tabular-nums">{delta.label}</span>
-            <span className="text-muted-foreground">vs mes anterior</span>
-          </div>
-        )}
-      </TiltCard>
-    </motion.div>
+      </div>
+    </TiltCard>
   );
 }
 
@@ -768,12 +958,12 @@ function Funnel({
       >
         <section className="space-y-3">
           <header className="flex items-center gap-2 mb-1">
-            <span className="w-7 h-7 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0">
-              <PackageIcon size={14} />
+            <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0">
+              <PackageIcon size={17} aria-hidden="true" />
             </span>
             <h3 className="text-sm font-semibold text-foreground">Embudo del mes</h3>
           </header>
-          <p className="text-sm text-muted-foreground">Sin datos en este mes</p>
+          <EmptyChart msg="Sin datos en este mes" height={180} />
         </section>
       </TiltCard>
     );
@@ -788,27 +978,31 @@ function Funnel({
       wrapperClassName="h-full"
       className="h-full bg-card/40 border border-border rounded-2xl p-5 shadow-card3d"
     >
-      <section className="space-y-3">
-        <header className="flex items-center gap-2 mb-1">
-          <span className="w-7 h-7 rounded-lg bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0">
-            <PackageIcon size={14} />
+      <section className="space-y-4">
+        <header className="flex items-center gap-2 mb-1 tilt-layer-1">
+          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0">
+            <PackageIcon size={17} aria-hidden="true" />
           </span>
           <h3 className="text-sm font-semibold text-foreground">Embudo del mes</h3>
         </header>
-        <div className="space-y-3">
-          <FunnelBar label="Generados" value={generados} pct={100} tone="bg-accent-gradient" />
+        {/* Cada peldaño ocupa el ancho de SU proporción — eso ya era así antes
+            (el FunnelBar viejo ya calculaba el width y ya imprimía el %). Lo que
+            cambió es la LEGIBILIDAD de esa proporción: la barra pasó de 1.5px a
+            8px y de color plano a degradado + glow. */}
+        <div className="space-y-3.5 tilt-layer-2">
+          <FunnelBar label="Generados" value={generados} pct={100} color={CHART_ACCENT} />
           <FunnelBar
             label="Entregados"
             value={entregados}
             pct={pctEnt}
-            tone="bg-success"
+            color={CHART_SUCCESS}
             extra={`${fmtPct(pctEnt)}`}
           />
           <FunnelBar
             label="Netos cobrados"
             value={netos}
             pct={pctNetos}
-            tone="bg-success"
+            color={CHART_CYAN}
             extra={`${fmtPct(pctNetos)} · entregados − devueltos`}
           />
         </div>
@@ -818,23 +1012,158 @@ function Funnel({
 }
 
 function FunnelBar({
-  label, value, pct, tone, extra,
-}: { label: string; value: number; pct: number; tone: string; extra?: string }) {
+  label, value, pct, color, extra,
+}: { label: string; value: number; pct: number; color: string; extra?: string }) {
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1.5 gap-3">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="text-sm font-bold font-mono tabular-nums text-foreground">
+        <span className="text-lg font-bold font-mono tabular-nums text-foreground leading-none">
           {value}
           {extra && <span className="text-[10px] text-muted-foreground ml-2 font-normal">{extra}</span>}
         </span>
       </div>
-      <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-        <div
-          className={`h-full rounded-full ${tone}`}
-          style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
-        />
+      <GradientBar pct={pct} color={color} height={8} />
+    </div>
+  );
+}
+
+/** Un peldaño de la cascada. `base` es el tramo invisible que "flota" la barra. */
+interface CascadeStep {
+  label: string;
+  base: number;
+  span: number;
+  amount: number;
+  positivo: boolean;
+}
+
+/**
+ * Arma la cascada del P&L con los MISMOS términos y el MISMO orden que la
+ * tabla — no recalcula nada: bruta, los cuatro descuentos y la neta que ya
+ * vienen del snapshot.
+ *
+ * Devuelve null si CUALQUIER término está sin medir. Dibujar la cascada con un
+ * término faltante en 0 mostraría una caída (o una ausencia de caída) que nadie
+ * midió, que es exactamente lo que la tabla evita con sus "—".
+ */
+function buildCascade(snap: CfoSnapshot): CascadeStep[] | null {
+  const bruta = snap.utilidad_bruta;
+  const neta = snap.utilidad_neta;
+  if (bruta == null || neta == null) return null;
+  if (snap.costos_fijos == null || snap.ads_error || snap.tarjeta_error) return null;
+
+  const descuentos: Array<{ label: string; amount: number }> = [
+    { label: 'Inversión Meta Ads',   amount: snap.ads_meta },
+    { label: 'Inversión TikTok Ads', amount: snap.ads_tiktok },
+    { label: 'Costos fijos',         amount: snap.costos_fijos },
+    { label: 'Intereses tarjeta',    amount: snap.tarjeta_interes },
+  ];
+
+  const steps: CascadeStep[] = [{
+    label: 'Utilidad bruta Dropi',
+    base: Math.min(0, bruta),
+    span: Math.abs(bruta),
+    amount: bruta,
+    positivo: bruta >= 0,
+  }];
+
+  let running = bruta;
+  for (const d of descuentos) {
+    const after = running - d.amount;
+    steps.push({
+      label: d.label,
+      base: Math.min(running, after),
+      span: Math.abs(d.amount),
+      amount: d.amount,
+      positivo: false,
+    });
+    running = after;
+  }
+
+  steps.push({
+    label: 'UTILIDAD NETA REAL',
+    base: Math.min(0, neta),
+    span: Math.abs(neta),
+    amount: neta,
+    positivo: neta >= 0,
+  });
+
+  return steps;
+}
+
+function CascadeTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ payload?: CascadeStep }>;
+}) {
+  const step = active ? payload?.[0]?.payload : undefined;
+  if (!step) return null;
+  return (
+    <div style={CHART_TOOLTIP_STYLE}>
+      <div className="font-semibold">{step.label}</div>
+      <div className={`font-mono tabular-nums ${step.positivo ? 'text-success' : 'text-danger'}`}>
+        {step.positivo ? '' : '-'}{formatCOP(Math.abs(step.amount))}
       </div>
+    </div>
+  );
+}
+
+/** Cascada horizontal: cada peldaño arranca donde terminó el anterior. */
+function PnlCascade({ steps }: { steps: CascadeStep[] }) {
+  return (
+    <div style={{ height: Math.max(220, steps.length * 42) }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={steps}
+          layout="vertical"
+          margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
+          barCategoryGap="26%"
+        >
+          <defs>
+            {/* Horizontal (x1→x2): en barras acostadas el degradado tiene que
+                correr en el sentido en que crece la barra. */}
+            <linearGradient id="cfoPnl-pos" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"   stopColor={CHART_SUCCESS} stopOpacity={0.5} />
+              <stop offset="100%" stopColor={CHART_SUCCESS} stopOpacity={0.95} />
+            </linearGradient>
+            <linearGradient id="cfoPnl-neg" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"   stopColor={CHART_DANGER} stopOpacity={0.5} />
+              <stop offset="100%" stopColor={CHART_DANGER} stopOpacity={0.95} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid {...CHART_GRID_PROPS} horizontal={false} vertical />
+          <XAxis
+            type="number"
+            stroke="hsl(var(--muted-foreground))"
+            fontSize={10}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(v: number) => fmtCompact(v)}
+          />
+          <YAxis
+            type="category"
+            dataKey="label"
+            stroke="hsl(var(--foreground))"
+            fontSize={11}
+            tickLine={false}
+            axisLine={false}
+            width={132}
+          />
+          <RTooltip content={<CascadeTooltip />} cursor={CHART_BAR_CURSOR} />
+          <ReferenceLine x={0} stroke="hsl(var(--border-strong))" />
+          {/* Tramo invisible que levanta cada peldaño hasta donde quedó el
+              anterior. Es el idiom estándar de waterfall en recharts. */}
+          <Bar dataKey="base" stackId="pnl" fill="transparent" isAnimationActive={false} />
+          <Bar dataKey="span" stackId="pnl" radius={[6, 6, 6, 6]}>
+            {steps.map((s) => (
+              <Cell
+                key={s.label}
+                fill={s.positivo ? 'url(#cfoPnl-pos)' : 'url(#cfoPnl-neg)'}
+                style={barGlow(s.positivo ? CHART_SUCCESS : CHART_DANGER)}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -842,16 +1171,28 @@ function FunnelBar({
 function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
   const neta = snap.utilidad_neta;
   const isNegative = neta != null && neta < 0;
+  const cascade = useMemo(() => buildCascade(snap), [snap]);
 
   return (
-    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+    <section className="h-full rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
       <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-foreground">P&L del mes</h3>
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <ListChecks size={14} className="text-accent" aria-hidden="true" />
+          P&L del mes
+        </h3>
         <Button size="sm" variant="outline" onClick={onEdit} className="h-8 rounded-xl">
           <Pencil size={12} className="mr-1.5" />
           Editar inputs manuales
         </Button>
       </header>
+
+      {/* La cascada dibuja los mismos números que la tabla de abajo: de dónde
+          arranca la plata y cuánto se lleva cada línea hasta la neta. */}
+      {!snap.loading && cascade && (
+        <div className="px-3 pt-4 pb-1 border-b border-border">
+          <PnlCascade steps={cascade} />
+        </div>
+      )}
       {snap.loading ? (
         <div className="p-8"><div className="h-32 animate-pulse bg-muted/30 rounded" /></div>
       ) : (
@@ -859,9 +1200,9 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
           <table className="w-full text-sm">
             <thead className="bg-foreground/[0.03] text-muted-foreground">
               <tr>
-                <th className="px-5 py-2.5 text-left font-semibold">Concepto</th>
-                <th className="px-5 py-2.5 text-right font-semibold">Valor</th>
-                <th className="px-5 py-2.5 text-left font-semibold">Origen</th>
+                <th className="px-5 py-3 text-left hud-label">Concepto</th>
+                <th className="px-5 py-3 text-right hud-label">Valor</th>
+                <th className="px-5 py-3 text-left hud-label">Origen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -874,19 +1215,21 @@ function PnlTable({ snap, onEdit }: { snap: CfoSnapshot; onEdit: () => void }) {
               <tr
                 className={
                   neta == null
-                    ? 'bg-foreground/[0.04]'
-                    : isNegative ? 'bg-danger/[0.09]' : 'bg-success/[0.09]'
+                    ? 'bg-foreground/[0.04] border-t-2 border-border'
+                    : isNegative
+                      ? 'bg-danger/[0.09] border-t-2 border-danger/30'
+                      : 'bg-success/[0.09] border-t-2 border-success/30'
                 }
               >
-                <td className="px-5 py-3.5 font-bold text-foreground whitespace-nowrap">UTILIDAD NETA REAL</td>
-                <td className={`px-5 py-3.5 text-right font-bold font-mono tabular-nums whitespace-nowrap ${
+                <td className="px-5 py-4 font-bold text-foreground whitespace-nowrap">UTILIDAD NETA REAL</td>
+                <td className={`px-5 py-4 text-right font-bold text-lg font-mono tabular-nums whitespace-nowrap ${
                   neta == null
                     ? 'text-muted-foreground'
-                    : isNegative ? 'text-danger' : 'text-success'
+                    : isNegative ? 'text-danger num-glow-danger' : 'text-success num-glow-success'
                 }`}>
                   {neta != null ? `= ${formatCOP(neta)}` : '—'}
                 </td>
-                <td className="px-5 py-3.5 text-xs text-muted-foreground">
+                <td className="px-5 py-4 text-xs text-muted-foreground">
                   {neta != null ? 'calculado' : 'sin datos suficientes'}
                 </td>
               </tr>
@@ -942,9 +1285,12 @@ function TopProductsBlock({
   products, loading, isError,
 }: { products: ProductRow[]; loading: boolean; isError?: boolean }) {
   return (
-    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+    <section className="h-full rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden flex flex-col">
       <header className="px-5 py-3.5 border-b border-border">
-        <h3 className="text-sm font-semibold text-foreground">Top 5 productos por entregados</h3>
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Trophy size={14} className="text-warning" aria-hidden="true" />
+          Top 5 productos por entregados
+        </h3>
       </header>
       {loading ? (
         <div className="p-5"><div className="h-32 animate-pulse bg-muted/30 rounded" /></div>
@@ -956,27 +1302,28 @@ function TopProductsBlock({
       ) : products.length === 0 ? (
         <div className="p-5 text-sm text-muted-foreground text-center">Sin datos en este mes</div>
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="p-3 space-y-2">
           {products.map((p, i) => (
-            <li
-              key={p.producto}
-              className="px-5 py-3 flex items-center justify-between gap-3 hover:bg-foreground/[0.035] transition-colors"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
-                  {String(i + 1).padStart(2, '0')}
-                </span>
-                <span className="text-xs text-foreground truncate" title={p.producto}>
-                  {p.producto}
-                </span>
-              </div>
-              <div className="flex items-center gap-3 text-xs shrink-0 font-mono tabular-nums">
-                <span className="text-foreground font-semibold">{p.entregados}</span>
-                <span className="text-muted-foreground">{fmtPct(p.tasa_entrega)}</span>
-                <span className={p.valor_entregado != null ? 'text-success text-[10px]' : 'text-muted-foreground text-[10px]'}>
-                  {p.valor_entregado != null ? formatCOP(p.valor_entregado) : '—'}
-                </span>
-              </div>
+            <li key={p.producto}>
+              <RankRow
+                position={i + 1}
+                name={p.producto}
+                /* MISMOS tres números que la lista vieja: entregados, tasa de
+                   entrega y valor. RankRow imprime `Math.round(pct)%`, que es
+                   exactamente lo que hacía `fmtPct` — la barra sólo le agrega
+                   la lectura visual de esa tasa. */
+                pct={p.tasa_entrega}
+                detail={`${p.entregados} · ${p.valor_entregado != null ? formatCOP(p.valor_entregado) : '—'}`}
+                /* Sin umbral de color: el negocio no definió cuándo la tasa de
+                   UN producto es "buena", y pintarla de verde sería un veredicto
+                   inventado. */
+                pctClassName="text-foreground"
+                badge={i === 0 ? <Trophy size={14} className="text-warning" aria-hidden="true" /> : undefined}
+                /* El avatar con la inicial es para PERSONAS (ranking de
+                   operadoras). Sobre un producto es un círculo con la primera
+                   letra del nombre, que no dice nada. */
+                showAvatar={false}
+              />
             </li>
           ))}
         </ul>
@@ -994,9 +1341,17 @@ function AlertsBlock({
   evaluable?: boolean;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
-      <header className="px-5 py-3.5 border-b border-border">
-        <h3 className="text-sm font-semibold text-foreground">Alertas</h3>
+    <section className="h-full rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
+      <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Bell size={14} className="text-accent" aria-hidden="true" />
+          Alertas
+        </h3>
+        {!loading && alerts.length > 0 && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-lg border border-border bg-card/40 text-[10px] font-semibold font-mono tabular-nums text-muted-foreground">
+            {alerts.length}
+          </span>
+        )}
       </header>
       {loading ? (
         <div className="p-5"><Loader2 size={16} className="animate-spin text-muted-foreground" /></div>
@@ -1020,24 +1375,30 @@ function AlertsBlock({
           {alerts.map((a, i) => (
             <li
               key={i}
-              className={`relative px-5 py-3 pl-6 flex items-start gap-2.5 text-xs transition-colors ${
+              className={`relative px-5 py-3.5 pl-6 flex items-start gap-3 text-xs transition-colors duration-200 ${
                 a.tone === 'danger'
                   ? 'bg-danger/[0.06] hover:bg-danger/[0.1]'
                   : 'bg-warning/[0.06] hover:bg-warning/[0.1]'
               }`}
             >
               <span
-                className={`absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full ${
+                className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${
                   a.tone === 'danger' ? 'bg-danger' : 'bg-warning'
                 }`}
                 aria-hidden="true"
               />
-              {a.tone === 'danger' ? (
-                <AlertCircle size={14} className="text-danger shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
-              )}
-              <span className="text-foreground">{a.text}</span>
+              <span
+                className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                  a.tone === 'danger'
+                    ? 'bg-danger/20 glow-danger text-danger'
+                    : 'bg-warning/20 glow-warning text-warning'
+                }`}
+              >
+                {a.tone === 'danger'
+                  ? <AlertCircle size={15} aria-hidden="true" />
+                  : <AlertTriangle size={15} aria-hidden="true" />}
+              </span>
+              <span className="text-foreground pt-1.5">{a.text}</span>
             </li>
           ))}
         </ul>

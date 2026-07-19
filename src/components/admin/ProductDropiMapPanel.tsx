@@ -137,7 +137,7 @@ export default function ProductDropiMapPanel() {
     <motion.div {...fadeUp} className="md:col-span-2">
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <Link2 size={15} />
         </span>
         <div className="flex-1">
@@ -238,18 +238,18 @@ export default function ProductDropiMapPanel() {
               <summary className="cursor-pointer text-muted-foreground select-none">Agregar un vínculo a mano (por id)</summary>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-[1fr,1fr,7rem,auto] gap-2 items-end">
                 <div>
-                  <label className="hud-label">Id Shopify</label>
-                  <input inputMode="numeric" value={mShopifyId} onChange={e => setMShopifyId(e.target.value)} placeholder="9483772952801"
+                  <label className="hud-label" htmlFor="pdm-shopify-id">Id Shopify</label>
+                  <input id="pdm-shopify-id" inputMode="numeric" value={mShopifyId} onChange={e => setMShopifyId(e.target.value)} placeholder="9483772952801"
                     className="mt-1 w-full h-9 rounded-xl border border-border bg-card/40 px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </div>
                 <div>
-                  <label className="hud-label">Id Dropi</label>
-                  <input inputMode="numeric" value={mDropiId} onChange={e => setMDropiId(e.target.value)} placeholder="2034257"
+                  <label className="hud-label" htmlFor="pdm-dropi-id">Id Dropi</label>
+                  <input id="pdm-dropi-id" inputMode="numeric" value={mDropiId} onChange={e => setMDropiId(e.target.value)} placeholder="2034257"
                     className="mt-1 w-full h-9 rounded-xl border border-border bg-card/40 px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </div>
                 <div>
-                  <label className="hud-label">Variación</label>
-                  <input inputMode="numeric" value={mVariationId} onChange={e => setMVariationId(e.target.value)} placeholder="—"
+                  <label className="hud-label" htmlFor="pdm-variacion">Variación</label>
+                  <input id="pdm-variacion" inputMode="numeric" value={mVariationId} onChange={e => setMVariationId(e.target.value)} placeholder="—"
                     className="mt-1 w-full h-9 rounded-xl border border-border bg-card/40 px-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </div>
                 <button onClick={saveManual} disabled={savingManual || !mShopifyId.trim() || !mDropiId.trim()}

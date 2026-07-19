@@ -589,8 +589,16 @@ export default function CrmCallView({
     void copyToClipboard(o.guia, 'Guía copiada');
   };
 
-  const pColor = diasEnEstatus >= 5 ? 'text-danger' : diasEnEstatus >= 3 ? 'text-warning' : diasEnEstatus >= 2 ? 'text-attention' : 'text-success';
-  const pDot = diasEnEstatus >= 5 ? 'bg-danger' : diasEnEstatus >= 3 ? 'bg-warning' : diasEnEstatus >= 2 ? 'bg-attention' : 'bg-success';
+  // Mismos cortes de siempre (5 / 3 / 2 días sin movimiento). Ahora el tono
+  // viste una pastilla entera con halo en vez de un punto de 10px.
+  const pDot = diasEnEstatus >= 5 ? 'bg-danger glow-danger' : diasEnEstatus >= 3 ? 'bg-warning glow-warning' : diasEnEstatus >= 2 ? 'bg-attention' : 'bg-success glow-success';
+  const pChip = diasEnEstatus >= 5
+    ? 'bg-danger/14 border-danger/30 text-danger'
+    : diasEnEstatus >= 3
+      ? 'bg-warning/14 border-warning/30 text-warning'
+      : diasEnEstatus >= 2
+        ? 'bg-attention/14 border-attention/30 text-attention'
+        : 'bg-success/14 border-success/30 text-success';
 
   // Validador-direcciones: pickup + stale-green override visual inmediato.
   // Mientras el effect de override hace el UPDATE + realtime refresca,
@@ -662,17 +670,23 @@ export default function CrmCallView({
           className="bg-card/40 border border-border rounded-3xl p-6 mb-4 shadow-card3d-lg hover:border-border-strong transition-colors duration-200"
         >
           {/* Header: badges */}
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} />
-            <span className={`text-xs font-bold ${pColor}`}>
+          <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+            {/* El dato que manda de esta pantalla —cuántos días lleva sin
+                moverse— pasa de "punto + texto" a pastilla completa del tono,
+                que es como se rotula la urgencia en el resto de la app. */}
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border ${pChip}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${pDot}`} aria-hidden="true" />
               <span className="font-mono tabular-nums">{diasEnEstatus}d</span> sin movimiento
             </span>
-            <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">
+            {/* .hud-label-cased y NO .hud-label: el estado y la transportadora
+                vienen verbatim de Dropi — mayusculizarlos sería reescribir el
+                dato. */}
+            <span className="hud-label-cased px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">
               {o.estado}
             </span>
             {o.transportadora && (
-              <span className="text-[11px] px-2.5 py-1 rounded-lg bg-info/14 text-info border border-info/30 font-semibold inline-flex items-center gap-1.5">
-                <Truck size={11} />
+              <span className="text-[11px] px-2.5 py-1 rounded-lg bg-gradient-to-br from-info/22 to-info/8 text-info border border-info/30 glow-info font-semibold inline-flex items-center gap-1.5">
+                <Truck size={11} aria-hidden="true" />
                 {o.transportadora}
               </span>
             )}
@@ -691,7 +705,10 @@ export default function CrmCallView({
           <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>
 
           {/* Customer name + external ID */}
-          <div className="text-2xl font-bold tracking-tight mb-1 text-foreground">{o.nombre}</div>
+          {/* Identidad del cliente: es lo que se lee EN VOZ ALTA por teléfono,
+              así que sube de tamaño y de contraste. Ningún dato del cliente
+              lleva .hud-label — mayusculizaría nombres, ciudades y productos. */}
+          <div className="text-[28px] leading-tight font-bold tracking-tight mb-1 text-foreground">{o.nombre}</div>
           {o.externalId && (
             <a
               href={`/pedido/${o.externalId}`}
@@ -702,52 +719,67 @@ export default function CrmCallView({
           )}
 
           {/* Contact row */}
-          <div className="text-sm text-muted-foreground mb-3 leading-relaxed space-y-1.5">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <PhoneIcon size={12} />
-              <button onClick={copyPhone} className="text-cyan hover:underline font-mono tabular-nums">
+          <div className="text-sm text-muted-foreground mb-3 leading-relaxed space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="w-9 h-9 rounded-xl bg-cyan/14 border border-cyan/30 text-cyan flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <PhoneIcon size={17} />
+              </span>
+              <button onClick={copyPhone} className="text-cyan hover:underline font-mono tabular-nums text-lg font-semibold">
                 {formatPhone(o.phone)}
               </button>
               <button
                 onClick={copyPhone}
-                className="p-1 rounded text-muted-foreground/70 hover:text-foreground"
+                className="p-1.5 rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 transition-colors"
                 title="Copiar teléfono"
               >
-                <Copy size={10} />
+                <Copy size={12} />
               </button>
               <a
                 href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-                className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
+                className="ml-1 inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
               >
-                <PhoneIcon size={10} aria-hidden="true" /> Llamar
+                <PhoneIcon size={12} aria-hidden="true" /> Llamar
               </a>
               {waEnabled && (
                 <button
                   type="button"
                   onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-success/13 text-success border border-success/30 hover:bg-success/22 transition-colors"
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
                 >
-                  <MessageSquare size={10} /> WhatsApp
+                  <MessageSquare size={12} aria-hidden="true" /> WhatsApp
                 </button>
               )}
             </div>
 
-            {(o.ciudad || o.departamento) && (
-              <div className="flex items-center gap-1.5">
-                <MapPin size={12} />
-                <span>{o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}</span>
-              </div>
-            )}
+            {/* Ciudad · producto · valor salen de la línea corrida de texto gris
+                y pasan a placas con chip de tono: ubicables por color, sin
+                releer. Los valores y sus guiones de "sin dato" son los mismos. */}
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(o.ciudad || o.departamento) && (
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+                  <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <MapPin size={16} />
+                  </span>
+                  <span className="text-sm font-medium text-foreground min-w-0 break-words">{o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}</span>
+                </div>
+              )}
 
-            <div className="flex items-start gap-1.5">
-              <Package size={12} className="mt-0.5" />
-              <span className="flex-1">
-                {o.producto || '—'}{o.cantidad > 1 ? ` × ${o.cantidad}` : ''}
-              </span>
-              {o.valor > 0 && (
-                <span className="inline-flex items-center gap-1 text-foreground font-semibold font-mono tabular-nums">
-                  <DollarSign size={12} />{formatCOP(o.valor)}
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+                <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                  <Package size={16} />
                 </span>
+                <span className="text-sm font-medium text-foreground min-w-0 break-words">
+                  {o.producto || '—'}{o.cantidad > 1 ? ` × ${o.cantidad}` : ''}
+                </span>
+              </div>
+
+              {o.valor > 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200 sm:col-span-2">
+                  <span className="w-9 h-9 rounded-xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <DollarSign size={16} />
+                  </span>
+                  <span className="font-mono tabular-nums text-xl font-bold text-success num-glow-success">{formatCOP(o.valor)}</span>
+                </div>
               )}
             </div>
 

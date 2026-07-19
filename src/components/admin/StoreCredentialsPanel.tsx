@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -70,6 +70,16 @@ export default function StoreCredentialsPanel() {
   const [savedName, setSavedName] = useState('');
   const [savedLogo, setSavedLogo] = useState('');
 
+  // ¿El usuario tiene ediciones sin guardar en este panel? Mismo patrón que
+  // WorkSchedulePanel: el efecto de carga tiene `activeStore` en deps y
+  // `saveBrand()`/`saveCreds()` hacen `await refresh()`, lo que reconstruye el
+  // objeto de tienda y re-dispara el efecto. Sin este guard, pegabas el token de
+  // Dropi, tocabas "Guardar branding" y el efecto pisaba lo tipeado con el valor
+  // viejo de la DB — sin ningún aviso. Se limpia al guardar con éxito (ahí sí
+  // queremos que el form refleje lo persistido).
+  const credsDirtyRef = useRef(false);
+  const brandDirtyRef = useRef(false);
+
   const [showApi, setShowApi] = useState(false);
   const [showSession, setShowSession] = useState(false);
   const [savingCreds, setSavingCreds] = useState(false);
@@ -94,6 +104,14 @@ export default function StoreCredentialsPanel() {
   const [shopAutoPush, setShopAutoPush] = useState(false);
   const [shopAutoPushBusy, setShopAutoPushBusy] = useState(false);
 
+  // Cambiar de tienda descarta lo tipeado: pertenece a la tienda anterior y
+  // guardarlo acá sería escribirlo en la equivocada. Va ANTES del efecto de
+  // carga para que ese corra ya con los flags limpios.
+  useEffect(() => {
+    credsDirtyRef.current = false;
+    brandDirtyRef.current = false;
+  }, [activeStoreId]);
+
   useEffect(() => {
     if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
     let cancelled = false;
@@ -108,13 +126,19 @@ export default function StoreCredentialsPanel() {
       const ak = data?.dropi_api_key ?? '';
       const st = data?.dropi_session_token ?? '';
       const su = data?.dropi_store_url ?? '';
-      setApiKey(ak); setSavedApiKey(ak);
-      setSessionToken(st); setSavedSession(st);
-      setStoreUrl(su); setSavedUrl(su);
+      // Los snapshots "saved" SIEMPRE se refrescan (son la verdad del server y
+      // alimentan el cálculo de dirty); los campos editables solo se pisan si el
+      // usuario no está tipeando.
+      setSavedApiKey(ak); setSavedSession(st); setSavedUrl(su);
+      if (!credsDirtyRef.current) {
+        setApiKey(ak); setSessionToken(st); setStoreUrl(su);
+      }
       const nm = activeStore?.name ?? '';
       const lg = activeStore?.brand_logo_url ?? '';
-      setName(nm); setSavedName(nm);
-      setLogoUrl(lg); setSavedLogo(lg);
+      setSavedName(nm); setSavedLogo(lg);
+      if (!brandDirtyRef.current) {
+        setName(nm); setLogoUrl(lg);
+      }
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -201,6 +225,10 @@ export default function StoreCredentialsPanel() {
     setSavedApiKey(apiKey.trim());
     setSavedSession(sessionToken.trim());
     setSavedUrl(storeUrl.trim());
+    // Guardado OK: soltamos el "dirty" para que el refresh de abajo (que
+    // re-dispara el efecto de carga) refleje lo persistido sin considerarse
+    // un pisón sobre lo que el usuario estaba tipeando.
+    credsDirtyRef.current = false;
     toast.success('Credenciales Dropi guardadas');
     await refresh();
   }
@@ -240,6 +268,7 @@ export default function StoreCredentialsPanel() {
     if (error) { toast.error('No se pudo guardar', { description: error.message }); return; }
     setSavedName(name.trim());
     setSavedLogo(logoUrl.trim());
+    brandDirtyRef.current = false;
     toast.success('Branding actualizado');
     await refresh();
   }
@@ -398,7 +427,7 @@ export default function StoreCredentialsPanel() {
       <motion.div {...fadeUp} className="md:col-span-2">
       <TiltCard sheen brackets className="bg-card/40 border border-border rounded-3xl shadow-card3d-lg">
         <div className="px-6 py-5 border-b border-border flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-xl bg-info/14 border border-info/30 text-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
             <Key size={15} />
           </span>
           <div className="flex-1 min-w-0">
@@ -412,13 +441,14 @@ export default function StoreCredentialsPanel() {
         <div className="px-5 py-4 space-y-4">
           {/* API Key */}
           <div>
-            <label className="hud-label">API Key de Dropi (Bearer permanente)</label>
+            <label className="hud-label" htmlFor="cred-dropi-api-key">API Key de Dropi (Bearer permanente)</label>
             <div className="mt-1 flex gap-2">
               <div className="relative flex-1">
                 <input
+                  id="cred-dropi-api-key"
                   type={showApi ? 'text' : 'password'}
                   value={apiKey}
-                  onChange={e => setApiKey(e.target.value)}
+                  onChange={e => { credsDirtyRef.current = true; setApiKey(e.target.value); }}
                   placeholder="eyJ0eXAi..."
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
@@ -430,13 +460,14 @@ export default function StoreCredentialsPanel() {
           </div>
           {/* Session token */}
           <div>
-            <label className="hud-label">Token de sesión (JWT — para wallet & huella)</label>
+            <label className="hud-label" htmlFor="cred-dropi-session">Token de sesión (JWT — para wallet & huella)</label>
             <div className="mt-1 flex gap-2">
               <div className="relative flex-1">
                 <input
+                  id="cred-dropi-session"
                   type={showSession ? 'text' : 'password'}
                   value={sessionToken}
-                  onChange={e => setSessionToken(e.target.value)}
+                  onChange={e => { credsDirtyRef.current = true; setSessionToken(e.target.value); }}
                   placeholder="eyJhbGci... (vence ~12-24h)"
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
@@ -480,11 +511,12 @@ export default function StoreCredentialsPanel() {
 
           {/* Login automático: renueva el session token solo cuando vence */}
           <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top">
-            <label className="hud-label">
+            <label className="hud-label" htmlFor="cred-dropi-login-email">
               Login automático (renueva el token solo)
             </label>
             <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
+                id="cred-dropi-login-email"
                 type="email"
                 value={loginEmail}
                 onChange={e => setLoginEmail(e.target.value)}
@@ -494,6 +526,8 @@ export default function StoreCredentialsPanel() {
               />
               <div className="relative">
                 <input
+                  id="cred-dropi-login-password"
+                  aria-label="Contraseña de Dropi para el login automático"
                   type={showLoginPass ? 'text' : 'password'}
                   value={loginPassword}
                   onChange={e => setLoginPassword(e.target.value)}
@@ -536,11 +570,12 @@ export default function StoreCredentialsPanel() {
           </div>
           {/* Store URL */}
           <div>
-            <label className="hud-label">URL de integración Dropi</label>
+            <label className="hud-label" htmlFor="cred-dropi-store-url">URL de integración Dropi</label>
             <input
+              id="cred-dropi-store-url"
               type="url"
               value={storeUrl}
-              onChange={e => setStoreUrl(e.target.value)}
+              onChange={e => { credsDirtyRef.current = true; setStoreUrl(e.target.value); }}
               placeholder="https://rushmira.com/"
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
@@ -585,7 +620,7 @@ export default function StoreCredentialsPanel() {
       <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="md:col-span-2">
       <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
         <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-xl bg-success/14 border border-success/30 text-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <span className="w-9 h-9 rounded-xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
             <ShoppingBag size={15} />
           </span>
           <div className="flex-1 min-w-0">
@@ -598,20 +633,20 @@ export default function StoreCredentialsPanel() {
         </div>
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="hud-label">Dominio de la tienda</label>
-            <input type="text" value={shopDomain} onChange={e => setShopDomain(e.target.value)} placeholder="mitienda.myshopify.com"
+            <label className="hud-label" htmlFor="cred-shopify-domain">Dominio de la tienda</label>
+            <input id="cred-shopify-domain" type="text" value={shopDomain} onChange={e => setShopDomain(e.target.value)} placeholder="mitienda.myshopify.com"
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
           </div>
           <div>
-            <label className="hud-label">Client ID</label>
-            <input type="text" value={shopClientId} onChange={e => setShopClientId(e.target.value)}
+            <label className="hud-label" htmlFor="cred-shopify-client-id">Client ID</label>
+            <input id="cred-shopify-client-id" type="text" value={shopClientId} onChange={e => setShopClientId(e.target.value)}
               placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : '367fca75556ab8cb…'}
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
           </div>
           <div>
-            <label className="hud-label">Client Secret (shpss_…)</label>
+            <label className="hud-label" htmlFor="cred-shopify-client-secret">Client Secret (shpss_…)</label>
             <div className="mt-1 relative">
-              <input type={showShopSecret ? 'text' : 'password'} value={shopClientSecret} onChange={e => setShopClientSecret(e.target.value)}
+              <input id="cred-shopify-client-secret" type={showShopSecret ? 'text' : 'password'} value={shopClientSecret} onChange={e => setShopClientSecret(e.target.value)}
                 placeholder={shopConfigured ? '•••••• (pegá uno nuevo para cambiarlo)' : 'shpss_...'}
                 className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30" />
               <button type="button" onClick={() => setShowShopSecret(!showShopSecret)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -666,7 +701,7 @@ export default function StoreCredentialsPanel() {
       <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="md:col-span-2">
       <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
         <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
             <StoreIcon size={15} />
           </span>
           <div className="min-w-0">
@@ -676,20 +711,22 @@ export default function StoreCredentialsPanel() {
         </div>
         <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="hud-label">Nombre</label>
+            <label className="hud-label" htmlFor="brand-store-name">Nombre</label>
             <input
+              id="brand-store-name"
               type="text"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => { brandDirtyRef.current = true; setName(e.target.value); }}
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
           <div>
-            <label className="hud-label flex items-center gap-1"><ImageIcon size={10} /> URL del logo</label>
+            <label className="hud-label flex items-center gap-1" htmlFor="brand-logo-url"><ImageIcon size={10} aria-hidden="true" /> URL del logo</label>
             <input
+              id="brand-logo-url"
               type="url"
               value={logoUrl}
-              onChange={e => setLogoUrl(e.target.value)}
+              onChange={e => { brandDirtyRef.current = true; setLogoUrl(e.target.value); }}
               placeholder="https://..."
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />

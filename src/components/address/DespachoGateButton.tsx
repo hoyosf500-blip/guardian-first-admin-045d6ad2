@@ -13,13 +13,19 @@ interface Props {
    *  y bloqueada) para que el CTA pueda igualar la caja de sus hermanos de fila.
    *  No afecta el gate ni el tooltip. */
   className?: string;
+  /** Bloqueo TRANSITORIO ajeno al gate: hay un marcado en vuelo.
+   *  La rama bloqueada por el gate ya nacía `disabled`; la habilitada era un
+   *  <Button> pelado sin forma de apagarse, así que un segundo click durante
+   *  el await de markResult caía sobre el pedido SIGUIENTE (el avance ocurre
+   *  antes del await) y lo despachaba sin que nadie lo llamara. */
+  disabled?: boolean;
 }
 
-export function DespachoGateButton({ gate, onConfirm, children, variant = 'default', size = 'default', className }: Props) {
+export function DespachoGateButton({ gate, onConfirm, children, variant = 'default', size = 'default', className, disabled = false }: Props) {
   const result = canConfirmOrder(gate);
 
   if (result.canConfirm) {
-    return <Button variant={variant} size={size} className={className} onClick={onConfirm}>{children}</Button>;
+    return <Button variant={variant} size={size} className={className} disabled={disabled} onClick={onConfirm}>{children}</Button>;
   }
 
   return (

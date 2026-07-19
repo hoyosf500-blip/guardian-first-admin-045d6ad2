@@ -128,7 +128,7 @@ export default function WaChannelsPanel() {
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <Smartphone size={15} />
         </span>
         <div className="flex-1">
@@ -199,8 +199,9 @@ export default function WaChannelsPanel() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="hud-label">Proveedor</label>
+                <label className="hud-label" htmlFor="wac-provider">Proveedor</label>
                 <select
+                  id="wac-provider"
                   value={provider}
                   onChange={e => setProvider(e.target.value as 'evolution' | 'whapi' | 'waha')}
                   className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
@@ -211,8 +212,9 @@ export default function WaChannelsPanel() {
                 </select>
               </div>
               <div>
-                <label className="hud-label">Número (con código país)</label>
+                <label className="hud-label" htmlFor="wac-phone">Número (con código país)</label>
                 <input
+                  id="wac-phone"
                   type="text" value={phone} onChange={e => setPhone(e.target.value)} placeholder="573164291009"
                   className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
@@ -222,20 +224,22 @@ export default function WaChannelsPanel() {
             {isServer && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="hud-label">
+                  <label className="hud-label" htmlFor="wac-base">
                     {provider === 'waha' ? 'URL del server WAHA' : 'URL del server Evolution'}
                   </label>
                   <input
+                    id="wac-base"
                     type="text" value={base} onChange={e => setBase(e.target.value)}
                     placeholder={provider === 'waha' ? 'https://tu-server/waha' : 'https://bot.tudominio.com'}
                     className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                   />
                 </div>
                 <div>
-                  <label className="hud-label">
+                  <label className="hud-label" htmlFor="wac-instance">
                     {provider === 'waha' ? 'Sesión (session name)' : 'Instancia (instance name)'}
                   </label>
                   <input
+                    id="wac-instance"
                     type="text" value={instance} onChange={e => setInstance(e.target.value)}
                     placeholder={provider === 'waha' ? 'default' : 'rushmira-co'}
                     className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
@@ -245,10 +249,11 @@ export default function WaChannelsPanel() {
             )}
 
             <div>
-              <label className="hud-label">
+              <label className="hud-label" htmlFor="wac-token">
                 {provider === 'evolution' ? 'API key de Evolution (apikey)' : provider === 'waha' ? 'API key de WAHA (X-Api-Key)' : 'Token de Whapi (Bearer)'}
               </label>
               <input
+                id="wac-token"
                 type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="••••••••••••••••"
                 autoComplete="off"
                 className="mt-1 w-full h-10 rounded-lg border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"

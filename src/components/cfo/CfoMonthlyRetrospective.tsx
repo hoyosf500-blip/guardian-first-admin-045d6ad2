@@ -38,9 +38,11 @@ const STATUS_LABEL: Record<DecisionStatus, string> = {
   abandonado: 'Abandonado',
 };
 
+// Tokens semánticos del DS (warning/success) en vez de los legacy
+// orange/green: mismo color, pero el tema claro ya está compensado para ellos.
 const STATUS_TONE: Record<DecisionStatus, string> = {
-  pendiente:  'text-orange border-orange/40 bg-orange/5',
-  hecho:      'text-green border-green/40 bg-green/5',
+  pendiente:  'text-warning border-warning/30 bg-warning/10',
+  hecho:      'text-success border-success/30 bg-success/10',
   abandonado: 'text-muted-foreground border-border bg-muted/20',
 };
 
@@ -86,8 +88,8 @@ export default function CfoMonthlyRetrospective({ defaultYearMonth }: Props) {
     <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-5 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
-          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
-            <BookOpenCheck size={15} />
+          <span className="w-9 h-9 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+            <BookOpenCheck size={17} aria-hidden="true" />
           </span>
           <h3 className="font-semibold text-sm">Bitácora mensual</h3>
           <span className="text-xs text-muted-foreground">
@@ -311,7 +313,7 @@ function RetroCard({
 
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1.5">
-              <AlertTriangle size={11} className="text-red" />
+              <AlertTriangle size={11} className="text-danger" />
               Fugas (qué quemó plata este mes)
             </Label>
             <ChipList
@@ -335,7 +337,7 @@ function RetroCard({
 
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1.5">
-              <CheckCircle2 size={11} className="text-green" />
+              <CheckCircle2 size={11} className="text-success" />
               Aciertos (qué funcionó)
             </Label>
             <ChipList
@@ -359,7 +361,7 @@ function RetroCard({
 
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1.5">
-              <Clock size={11} className="text-orange" />
+              <Clock size={11} className="text-warning" />
               Decisiones (acción + deadline + status)
             </Label>
             <div className="space-y-1.5">
@@ -388,7 +390,7 @@ function RetroCard({
                   </Select>
                   <button
                     onClick={() => setDecisiones(decisiones.filter((_, idx) => idx !== i))}
-                    className="text-muted-foreground hover:text-red"
+                    className="text-muted-foreground hover:text-danger transition-colors duration-200"
                   >
                     <Trash2 size={11} />
                   </button>
@@ -464,14 +466,14 @@ function ChipList({ items, onRemove, tone }: {
     <p className="text-[11px] text-muted-foreground italic">— sin items —</p>
   );
   const toneClass = tone === 'success'
-    ? 'bg-green/10 text-green border-green/30'
-    : 'bg-red/10 text-red border-red/30';
+    ? 'bg-success/14 text-success border-success/30'
+    : 'bg-danger/14 text-danger border-danger/30';
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5">
       {items.map((item, i) => (
         <span
           key={`${i}-${item}`}
-          className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border ${toneClass}`}
+          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${toneClass}`}
         >
           {item}
           <button
@@ -492,9 +494,10 @@ function DiagItem({ label, value, kind, tone }: {
   kind: 'cop' | 'usd' | 'int' | 'pct';
   tone?: 'success' | 'danger' | 'warn';
 }) {
-  const toneCls = tone === 'success' ? 'text-green'
-    : tone === 'danger' ? 'text-red'
-    : tone === 'warn' ? 'text-orange'
+  const toneCls = tone === 'success' ? 'text-success num-glow-success'
+    : tone === 'danger' ? 'text-danger num-glow-danger'
+    // index.css no define num-glow-warning: el ámbar va sin glow.
+    : tone === 'warn' ? 'text-warning'
     : 'text-foreground';
   let display = '—';
   if (value !== null && value !== undefined && Number.isFinite(value)) {
@@ -504,9 +507,9 @@ function DiagItem({ label, value, kind, tone }: {
     else                     display = String(Math.round(Number(value)));
   }
   return (
-    <div className="rounded-2xl bg-card/40 border border-border px-2.5 py-2 shadow-card3d hairline-top hover:border-border-strong transition-colors">
-      <div className="text-[10px] text-muted-foreground">{label}</div>
-      <div className={`text-xs font-semibold font-mono tabular-nums mt-0.5 ${toneCls}`}>{display}</div>
+    <div className="rounded-2xl bg-card/40 border border-border px-3 py-2.5 shadow-card3d hairline-top hover:border-border-strong transition-colors duration-200">
+      <div className="hud-label text-subtle">{label}</div>
+      <div className={`text-sm font-bold font-mono tabular-nums mt-1.5 ${toneCls}`}>{display}</div>
     </div>
   );
 }

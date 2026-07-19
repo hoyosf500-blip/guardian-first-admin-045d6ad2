@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff, Users } from 'lucide-react';
-import { TiltCard } from '@/components/ui3d';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff, Users, SlidersHorizontal, MessageSquare, Bot, Package, TrendingUp, ClipboardList } from 'lucide-react';
+import { TiltCard, AuroraBackdrop } from '@/components/ui3d';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
@@ -26,6 +26,23 @@ import WaChannelsPanel from '@/components/admin/WaChannelsPanel';
 import WaQuickRepliesPanel from '@/components/admin/WaQuickRepliesPanel';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
+
+/** Entrada escalonada — misma escala de delays que Dashboard/Logística. */
+const rise = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
+/** Pastilla de sub-tab (misma firma que LogisticaTab). */
+const TAB_PILL = [
+  'shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200',
+  'bg-card/40 border border-border text-muted-foreground',
+  'hover:text-foreground hover:border-border-strong',
+  'data-[state=active]:bg-accent/16 data-[state=active]:border-accent/40',
+  'data-[state=active]:text-accent data-[state=active]:font-semibold',
+  'data-[state=active]:shadow-glow3d',
+].join(' ');
 
 interface Profile { user_id: string; display_name: string; roles: string[]; }
 interface DayReport { operator_name: string; report_date: string; data: Record<string, number>; }
@@ -189,64 +206,72 @@ export default function AdminTab() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
-      {/* Page header — patrón pro coherente con Logística/Rescate */}
-      <header className="space-y-1.5 min-w-0">
-        <div className="hud-label text-accent truncate">
-          Panel · Admin
+      {/* Page header — hero con aurora, mismo lenguaje que Logística */}
+      <motion.header
+        {...rise(0)}
+        className="relative overflow-hidden rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
+      >
+        <AuroraBackdrop />
+        <div className="relative min-w-0 space-y-1.5">
+          <div className="hud-label mb-1 truncate">
+            Panel · Admin
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <Key size={20} strokeWidth={2.25} />
+            </span>
+            Administración
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Configuración de integraciones (Dropi, IA, huella), gestión de operadoras y reportes.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-3">
-          <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
-            <Key size={20} strokeWidth={2.25} />
-          </span>
-          Administración
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Configuración de integraciones (Dropi, IA, huella), gestión de operadoras y reportes.
-        </p>
-      </header>
+      </motion.header>
 
       <Tabs defaultValue="config" className="w-full">
-        <TabsList className="mb-5 inline-flex flex-wrap gap-2 h-auto bg-transparent p-0 justify-start rounded-none [&>*]:px-4 [&>*]:py-2 [&>*]:rounded-xl [&>*]:text-sm [&>*]:font-medium [&>*]:bg-card/40 [&>*]:border [&>*]:border-border [&>*]:text-muted-foreground [&>*:hover]:text-foreground [&>*:hover]:border-border-strong [&>*]:transition-colors [&>*[data-state=active]]:bg-accent/16 [&>*[data-state=active]]:border-accent/40 [&>*[data-state=active]]:text-accent [&>*[data-state=active]]:font-semibold [&>*[data-state=active]]:shadow-glow3d">
-          <TabsTrigger value="config">Configuración</TabsTrigger>
-          <TabsTrigger value="canales">Canales WhatsApp</TabsTrigger>
-          <TabsTrigger value="bot">Bot WhatsApp</TabsTrigger>
-          <TabsTrigger value="productos">Productos (bot)</TabsTrigger>
-          <TabsTrigger value="productividad">Productividad</TabsTrigger>
-          <TabsTrigger value="reportes">Reportes diarios</TabsTrigger>
-        </TabsList>
+        <motion.div {...rise(0.05)} className="overflow-x-auto -mx-1 px-1">
+          <TabsList className="mb-5 inline-flex w-full flex-wrap gap-2 h-auto bg-transparent p-0 justify-start rounded-none" aria-label="Secciones de administración">
+            <TabsTrigger value="config" className={TAB_PILL}><SlidersHorizontal size={13} aria-hidden="true" /> Configuración</TabsTrigger>
+            <TabsTrigger value="canales" className={TAB_PILL}><MessageSquare size={13} aria-hidden="true" /> Canales WhatsApp</TabsTrigger>
+            <TabsTrigger value="bot" className={TAB_PILL}><Bot size={13} aria-hidden="true" /> Bot WhatsApp</TabsTrigger>
+            <TabsTrigger value="productos" className={TAB_PILL}><Package size={13} aria-hidden="true" /> Productos (bot)</TabsTrigger>
+            <TabsTrigger value="productividad" className={TAB_PILL}><TrendingUp size={13} aria-hidden="true" /> Productividad</TabsTrigger>
+            <TabsTrigger value="reportes" className={TAB_PILL}><ClipboardList size={13} aria-hidden="true" /> Reportes diarios</TabsTrigger>
+          </TabsList>
+        </motion.div>
 
-        <TabsContent value="productividad" className="mt-0 space-y-4">
-          <WorkSchedulePanel />
-          <ProductivityDashboard />
+        <TabsContent value="productividad" className="mt-0 space-y-5">
+          <motion.div {...rise(0.12)}><WorkSchedulePanel /></motion.div>
+          <motion.div {...rise(0.18)}><ProductivityDashboard /></motion.div>
         </TabsContent>
 
         <TabsContent value="reportes" className="mt-0">
-          <DailyReportsView />
+          <motion.div {...rise(0.12)}><DailyReportsView /></motion.div>
         </TabsContent>
 
         <TabsContent value="canales" className="mt-0">
-          <WaChannelsPanel />
+          <motion.div {...rise(0.12)}><WaChannelsPanel /></motion.div>
         </TabsContent>
 
-        <TabsContent value="bot" className="mt-0 space-y-4">
-          <WaBotConfigPanel />
-          <WaBotNotifyPanel />
-          <WaQuickRepliesPanel />
+        <TabsContent value="bot" className="mt-0 space-y-5">
+          <motion.div {...rise(0.12)}><WaBotConfigPanel /></motion.div>
+          <motion.div {...rise(0.18)}><WaBotNotifyPanel /></motion.div>
+          <motion.div {...rise(0.24)}><WaQuickRepliesPanel /></motion.div>
         </TabsContent>
 
         <TabsContent value="productos" className="mt-0">
-          <ProductKnowledgePanel />
+          <motion.div {...rise(0.12)}><ProductKnowledgePanel /></motion.div>
         </TabsContent>
 
         <TabsContent value="config" className="mt-0 space-y-0">
           <div>
 
       {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
-        <motion.div {...fadeUp} className="relative mb-5 rounded-2xl border border-border bg-card/40 p-4 pl-5 shadow-card3d hairline-top">
+        <motion.div {...fadeUp} className="relative mb-5 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
           <div className="flex items-start gap-3">
-            <span className="w-8 h-8 rounded-xl bg-danger/14 border border-danger/30 text-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
-              <AlertTriangle size={15} />
+            <span className="w-9 h-9 rounded-xl bg-danger/20 glow-danger text-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <AlertTriangle size={17} />
             </span>
             <div className="flex-1 min-w-0">
               <h4 className="text-sm font-semibold text-danger">Sincronización fallida</h4>
@@ -307,7 +332,7 @@ export default function AdminTab() {
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="md:col-span-2">
           <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
                 <Sparkles size={15} />
               </span>
               <div className="min-w-0">
@@ -370,7 +395,7 @@ export default function AdminTab() {
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }}>
           <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
                 <Users size={15} />
               </span>
               <div className="min-w-0">

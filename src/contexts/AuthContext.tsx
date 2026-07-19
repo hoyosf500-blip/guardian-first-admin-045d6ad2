@@ -17,6 +17,57 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+/**
+ * Supabase devuelve sus errores de auth SIEMPRE en inglés ("Invalid login
+ * credentials"). La asesora veía ese texto crudo en el toast. Este mapa los
+ * traduce; lo que no esté mapeado se muestra tal cual (mejor un mensaje raro
+ * que uno inventado que mienta sobre lo que pasó).
+ */
+const SUPABASE_AUTH_ERRORS_ES: Record<string, string> = {
+  'Invalid login credentials': 'Correo o contraseña incorrectos.',
+  'Email not confirmed': 'Todavía no confirmaste tu correo. Revisá tu email (y spam) y hacé click en el link.',
+  'User already registered': 'Ya existe una cuenta con ese correo.',
+  'A user with this email address has already been registered': 'Ya existe una cuenta con ese correo.',
+  'User not found': 'No encontramos una cuenta con ese correo.',
+  'Unable to validate email address: invalid format': 'El correo no tiene un formato válido.',
+  'Email address is invalid': 'El correo no tiene un formato válido.',
+  'Signup requires a valid password': 'Tenés que ingresar una contraseña.',
+  'New password should be different from the old password.': 'La contraseña nueva tiene que ser distinta de la anterior.',
+  'Auth session missing!': 'La sesión expiró. Volvé a entrar.',
+  'Email rate limit exceeded': 'Se enviaron demasiados correos. Esperá unos minutos e intentá de nuevo.',
+  'Signups not allowed for this instance': 'El registro está deshabilitado. Pedile al dueño un link de invitación.',
+  'Email link is invalid or has expired': 'El link del correo ya venció o fue usado. Pedí uno nuevo.',
+  'Token has expired or is invalid': 'El link del correo ya venció o fue usado. Pedí uno nuevo.',
+  'Invalid Refresh Token: Refresh Token Not Found': 'La sesión expiró. Volvé a entrar.',
+  'Database error saving new user': 'No pudimos crear la cuenta (error del servidor). Intentá de nuevo o avisale al dueño.',
+  'Network request failed': 'No hay conexión con el servidor. Revisá tu internet e intentá de nuevo.',
+  'Failed to fetch': 'No hay conexión con el servidor. Revisá tu internet e intentá de nuevo.',
+};
+
+/** Mensajes con parte variable (número de caracteres, segundos de espera). */
+const SUPABASE_AUTH_ERROR_PREFIXES_ES: [string, string][] = [
+  ['Password should be at least', 'La contraseña es muy corta: usá al menos 8 caracteres.'],
+  ['Password should contain at least', 'La contraseña no cumple los requisitos de seguridad (mezclá letras, números y símbolos).'],
+  ['For security purposes, you can only request this after', 'Por seguridad hay que esperar unos segundos antes de volver a intentar.'],
+  ['Too many requests', 'Demasiados intentos seguidos. Esperá un momento e intentá de nuevo.'],
+  ['over_email_send_rate_limit', 'Se enviaron demasiados correos. Esperá unos minutos e intentá de nuevo.'],
+];
+
+/**
+ * Traduce el mensaje de Supabase al español. Si no lo conocemos devuelve el
+ * original SIN tocar: preferimos un texto en inglés a esconder el error real.
+ */
+export function translateAuthError(message: string | null | undefined): string | null {
+  if (!message) return null;
+  const exact = SUPABASE_AUTH_ERRORS_ES[message];
+  if (exact) return exact;
+  const trimmed = message.trim();
+  const exactTrimmed = SUPABASE_AUTH_ERRORS_ES[trimmed];
+  if (exactTrimmed) return exactTrimmed;
+  const prefix = SUPABASE_AUTH_ERROR_PREFIXES_ES.find(([en]) => trimmed.toLowerCase().startsWith(en.toLowerCase()));
+  return prefix ? prefix[1] : message;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -88,12 +139,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email, password,
       options: { data: { display_name: displayName }, emailRedirectTo: window.location.origin }
     });
-    return { error: error?.message ?? null };
+    return { error: translateAuthError(error?.message) };
   };
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
+    // Traducido acá para que TODO toast de auth (login, alta, reseteo) hable
+    // español sin repetir el mapa en cada pantalla.
+    return { error: translateAuthError(error?.message) };
   };
 
   const signOut = async () => {
@@ -117,14 +170,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    return { error: error?.message ?? null };
+    return { error: translateAuthError(error?.message) };
   };
 
   // Setea la contraseña nueva. Solo funciona dentro de una sesión recovery
   // (después de hacer click en el link del email).
   const updatePassword = async (newPassword: string) => {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
-    return { error: error?.message ?? null };
+    return { error: translateAuthError(error?.message) };
   };
 
   return (

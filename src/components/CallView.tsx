@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
@@ -80,7 +80,7 @@ interface Props {
 }
 
 export default function CallView({ items, alerts }: Props) {
-  const { markResult, undoLast, allOrders, setAllOrders, buildWorkQueue } = useOrders();
+  const { markResult, undoLast, lastMark, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user, isAdmin } = useAuth();
   const { activeStore } = useStore();
   const countryCode = activeStore?.country_code;
@@ -131,6 +131,24 @@ export default function CallView({ items, alerts }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callOrderId, items]);
 
+  // ⚠ ANTI DOBLE-CLICK (bug verificado: "un doble-click despacha un pedido que
+  // nadie llamó"). `handleMark` avanza al SIGUIENTE pedido ANTES del await de
+  // markResult (deliberado, ver el comentario largo de 2026-07-07: arregla el
+  // desfase de la cola y el parpadeo). Como el avance ya ocurrió, el segundo
+  // click cae sobre OTRO dbId y el guard `markingInFlight` de OrderContext —que
+  // dedupea POR PEDIDO— lo deja pasar limpio: guía generada, flete cobrado,
+  // producto en camino, sin llamada. El candado tiene que vivir acá, en la
+  // pantalla, y ser POR ACCIÓN, no por pedido.
+  //
+  // Van los dos, ref Y estado, a propósito:
+  //  - `markingRef` es el candado real. Dos clicks en el mismo tick de React
+  //    leen el MISMO valor de estado (todavía false) porque no hubo re-render
+  //    en el medio; el ref se escribe sincrónicamente y sí los separa.
+  //  - `marking` es lo que ve la asesora (spinner + botones apagados). Sin
+  //    señal visible la gente vuelve a hacer click — y con la cuenta de Ecuador
+  //    throttleada, JUSTO cuando tarda es cuando se repite el click.
+  const markingRef = useRef(false);
+  const [marking, setMarking] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   // Sub-estado del modal de cancelación: cuando la operadora elige "Otro",
   // mostramos un campo de texto OBLIGATORIO en vez de cancelar de una.
@@ -659,6 +677,16 @@ export default function CallView({ items, alerts }: Props) {
     cacheKey: o?.dbId ?? 'noid',
   });
 
+  // NOTA: igual que `visualDecision` arriba, este ref vive ARRIBA del
+  // early-return. Estaba declarado abajo, junto al `undoActionFor` que lo usa —
+  // más legible, pero ilegal: cuando la cola queda vacía el componente retorna
+  // en la línea de abajo y ESTOS DOS HOOKS NO SE LLAMAN. React exige el mismo
+  // número de hooks en cada render, así que al gestionar el último pedido de la
+  // cola la pantalla reventaba con "rendered fewer hooks than expected".
+  // El comentario largo que explica QUÉ hace este ref está donde se usa.
+  const lastMarkRef = useRef(lastMark);
+  useEffect(() => { lastMarkRef.current = lastMark; }, [lastMark]);
+
   if (!items.length || !o) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -668,10 +696,75 @@ export default function CallView({ items, alerts }: Props) {
     );
   }
 
-  const pColor = o.dias >= 7 ? 'text-danger' : o.dias >= 4 ? 'text-warning' : 'text-success';
+  // Mismos cortes de antigüedad de siempre (7 / 4 días): lo único que cambia
+  // es que ahora el tono viste una pastilla completa (fondo + borde + texto),
+  // no un puntito de 10px al lado de un número gris.
   const pDot = o.dias >= 7 ? 'bg-danger glow-danger' : o.dias >= 4 ? 'bg-warning glow-warning' : 'bg-success glow-success';
+  const pChip = o.dias >= 7
+    ? 'bg-danger/14 border-danger/30 text-danger'
+    : o.dias >= 4
+      ? 'bg-warning/14 border-warning/30 text-warning'
+      : 'bg-success/14 border-success/30 text-success';
+
+  // Vuelta atrás de una confirmación de más — el mismo accidente que produce
+  // el doble-click. `undoLast` ya existía en OrderContext (borra el
+  // order_result, borra el touchpoint y devuelve el pedido a PENDIENTE
+  // CONFIRMACION) pero NINGUNA parte de la UI lo llamaba: se destructuraba y
+  // moría ahí. Va como acción del toast de éxito, que es el único momento en
+  // que la asesora sabe que acaba de marcar de más.
+  //
+  // ⚠️ POR QUÉ EL TOAST TIENE QUE ESTAR ATADO AL PEDIDO (bug encontrado en
+  // verificación): `undoLast` opera sobre el `lastMark` GLOBAL del contexto, y
+  // `setLastMark` se pisa con CADA marcado. Los toasts de sonner duran 4s y se
+  // apilan, y esta cola está diseñada para avanzar al instante — marcar un 2°
+  // pedido dentro de esos 4s es el caso NORMAL, sobre todo en "No contestó"
+  // (un click, sin modal, sin ida a Dropi). Sin este guard: marco A → marco B →
+  // toco "Deshacer" en el toast de A que sigue en pantalla → se revierte B.
+  // Doble daño: se desmarca el pedido equivocado Y el que se quería deshacer
+  // queda marcado. Si B era un 'conf' CON externalId (ya empujado a Dropi, con
+  // guía), undoLast lo devuelve a PENDIENTE CONFIRMACION en la DB sin avisarle
+  // a Dropi → desincronización silenciosa.
+  //
+  // El ref existe porque el onClick del toast cierra sobre el `lastMark` del
+  // render en que se creó — que es el ANTERIOR, no el que markResult acaba de
+  // escribir. El ref siempre tiene el valor vigente al momento del click.
+  // (el ref se declara ARRIBA del early-return — ver la nota allá)
+
+  const undoActionFor = (marked: OrderData) => ({
+    action: {
+      label: 'Deshacer',
+      onClick: () => {
+        const lm = lastMarkRef.current;
+        // Identidad por dbId (estable); para pedidos de Excel sin dbId caemos a
+        // identidad de objeto, que es lo que markResult guardó tal cual.
+        const isSame = lm && (marked.dbId
+          ? lm.order.dbId === marked.dbId
+          : lm.order === marked);
+        if (!isSame) {
+          toast.info('Ese "Deshacer" ya venció: marcaste otro pedido después.');
+          return;
+        }
+        void undoLast();
+      },
+    },
+  });
 
   const handleMark = async (result: string, reason?: string) => {
+    // Candado por ACCIÓN (ver markingRef arriba): mientras haya un marcado en
+    // vuelo, ningún otro click entra — ni sobre este pedido ni sobre el
+    // siguiente, que es el que el doble-click despachaba a ciegas.
+    if (markingRef.current) return;
+    markingRef.current = true;
+    setMarking(true);
+    try {
+      await doMark(result, reason);
+    } finally {
+      markingRef.current = false;
+      setMarking(false);
+    }
+  };
+
+  const doMark = async (result: string, reason?: string) => {
     // Fix 1 (2026-07-07): calcular el SIGUIENTE con la cola FRESCA de ESTE render
     // y avanzar YA — ANTES del await de markResult. Antes se hacía en un
     // setTimeout(400ms) que leía `items`/`callIdx` viejos (stale-closure → aterrizaba
@@ -696,17 +789,17 @@ export default function CallView({ items, alerts }: Props) {
     // no muestra ningún toast — restauramos el success local.
     if (result === 'conf') {
       if (!o.externalId) {
-        toast.success(`Confirmado — ${o.nombre.split(' ')[0]}`);
+        toast.success(`Confirmado — ${o.nombre.split(' ')[0]}`, undoActionFor(o));
       }
     } else if (result === 'canc') {
       // FASE 3: con externalId, markResult empuja la cancelación a Dropi y maneja
       // el toast (loading → ok/error con el mismo id). Sin externalId (Excel
       // manual) no hay nada que cancelar en Dropi → restauramos el success local.
       if (!o.externalId) {
-        toast.success(`Cancelado — ${o.nombre.split(' ')[0]}`);
+        toast.success(`Cancelado — ${o.nombre.split(' ')[0]}`, undoActionFor(o));
       }
     } else {
-      toast.success(`No respondió — ${o.nombre.split(' ')[0]}`);
+      toast.success(`No respondió — ${o.nombre.split(' ')[0]}`, undoActionFor(o));
     }
   };
 
@@ -745,13 +838,16 @@ export default function CallView({ items, alerts }: Props) {
           izquierda al marcar un resultado. */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2">
       {!o.result && (
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/16 border border-accent/40 text-xs font-semibold text-accent shadow-glow3d">
-          <Phone size={12} />
+        <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-br from-accent/24 to-accent/10 border border-accent/40 text-xs font-semibold text-accent shadow-glow3d">
+          {/* Punto que late: señal de que ESTE es el pedido en curso, no una
+              etiqueta más. Es la misma info que ya decía el chip. */}
+          <span className="w-2 h-2 rounded-full bg-accent glow-accent motion-safe:animate-gb-pulse" aria-hidden="true" />
+          <Phone size={12} aria-hidden="true" />
           Atendiendo: {o.nombre} · <span className="font-mono tabular-nums">{formatPhone(o.phone)}</span>
         </div>
       )}
         <div className="ml-auto flex items-center gap-2">
-        <span className="font-mono tabular-nums text-xs text-muted-foreground">{callIdx + 1} / {items.length}</span>
+        <span className="font-mono tabular-nums text-xs text-muted-foreground px-2.5 py-1 rounded-lg bg-card/40 border border-border">{callIdx + 1} / {items.length}</span>
         <div className="flex gap-2">
           <button aria-label="Pedido anterior" onClick={() => navCall(-1)} disabled={callIdx <= 0} className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors">
             <ChevronLeft size={14} aria-hidden="true" />
@@ -817,8 +913,10 @@ export default function CallView({ items, alerts }: Props) {
             </div>
             <button
               onClick={() => handleMark('conf')}
-              className="text-xs font-bold px-3 min-h-11 inline-flex items-center justify-center rounded-xl bg-success/16 border border-success/40 text-success hover:bg-success/25 transition-colors whitespace-nowrap"
+              disabled={marking}
+              className="text-xs font-bold px-3 min-h-11 inline-flex items-center gap-1.5 justify-center rounded-xl bg-success/16 border border-success/40 text-success hover:bg-success/25 transition-colors whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed"
             >
+              {marking && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
               Confirmar sin llamar
             </button>
           </div>
@@ -887,21 +985,37 @@ export default function CallView({ items, alerts }: Props) {
           );
         })()}
         {!o.result && <div className="mb-3"><FingerprintBadge phone={o.phone} /></div>}
-        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-          <div className={`w-2.5 h-2.5 rounded-full ${pDot}`} aria-hidden="true" />
-          <span className={`font-mono tabular-nums text-xs font-bold ${pColor}`}>D{o.dias}</span>
-          <span className="font-mono text-[10px] tracking-wide px-2.5 py-1 rounded-full bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
+        {/* BLOQUE DE IDENTIDAD — es lo que la asesora LEE EN VOZ ALTA por
+            teléfono, así que acá la regla es al revés que en un dashboard: el
+            dato manda sobre el adorno. El nombre sube de tamaño, el teléfono
+            deja de ser un link de 12px perdido en una línea gris y pasa a ser
+            una cifra grande en mono, y ciudad/producto/valor salen de la línea
+            corrida para ser tres placas con chip de ícono y tono propio —
+            ubicables por color sin releer.
+            NINGUNO de estos datos lleva .hud-label: mayusculizaría nombres,
+            ciudades y productos, que es justo lo que se dicta. El estado, que
+            viene verbatim de Dropi, usa .hud-label-cased (mismo rótulo mono,
+            SIN mayusculizar). */}
+        <div className="relative flex items-center gap-2 mb-2.5 flex-wrap">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${pChip}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${pDot}`} aria-hidden="true" />
+            <span className="font-mono tabular-nums">D{o.dias}</span>
+          </span>
+          <span className="hud-label-cased px-2.5 py-1 rounded-lg bg-card/40 border border-border text-muted-foreground">{o.estado}</span>
         </div>
 
-        <div className="text-2xl font-bold tracking-tight mb-1.5 text-foreground">{o.nombre}</div>
+        <div className="relative text-[28px] leading-tight font-bold tracking-tight mb-3 text-foreground">{o.nombre}</div>
 
-        <div className="text-sm text-muted-foreground mb-4 leading-relaxed space-y-1">
+        <div className="relative mb-4 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <Phone size={12} /> <button onClick={copyPhone} aria-label={`Copiar teléfono ${formatPhone(o.phone)}`} title="Copiar teléfono" className="min-h-11 inline-flex items-center font-mono tabular-nums text-cyan hover:underline">{formatPhone(o.phone)}</button>
+            <span className="w-9 h-9 rounded-xl bg-cyan/14 border border-cyan/30 text-cyan flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <Phone size={17} />
+            </span>
+            <button onClick={copyPhone} aria-label={`Copiar teléfono ${formatPhone(o.phone)}`} title="Copiar teléfono" className="min-h-11 inline-flex items-center font-mono tabular-nums text-lg font-semibold text-cyan hover:underline">{formatPhone(o.phone)}</button>
             {/* Contacto de 1 click — antes el teléfono SOLO se copiaba. */}
             <a
               href={`tel:+${waPhone}`}
-              className="ml-1 inline-flex items-center gap-1 text-xs px-3 min-h-11 rounded-full bg-accent/15 text-accent border border-accent/25 hover:bg-accent/25 no-underline transition-colors duration-200"
+              className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
             >
               <Phone size={14} aria-hidden="true" /> Llamar
             </a>
@@ -909,16 +1023,33 @@ export default function CallView({ items, alerts }: Props) {
               type="button"
               onClick={handleWhatsApp}
               title={waEnabled ? 'Abrir WhatsApp del cliente' : 'Abrir WhatsApp (canal externo)'}
-              className="inline-flex items-center gap-1 text-xs px-3 min-h-11 rounded-full bg-success/13 text-success border border-success/30 hover:bg-success/22 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
             >
               <MessageSquare size={14} aria-hidden="true" /> WhatsApp
             </button>
-            <span className="mx-2" />
-            <MapPin size={12} /> {o.ciudad || '—'}
           </div>
-          <div className="flex items-center gap-1.5">
-            <Package size={12} /> {o.producto || '—'}
-            {o.valor > 0 && <><span className="mx-2" /><DollarSign size={12} /> <span className="font-mono tabular-nums font-semibold text-foreground">{formatCOP(o.valor)}</span></>}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+              <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <MapPin size={16} />
+              </span>
+              <span className="text-sm font-medium text-foreground min-w-0 break-words">{o.ciudad || '—'}</span>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+              <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Package size={16} />
+              </span>
+              <span className="text-sm font-medium text-foreground min-w-0 break-words">{o.producto || '—'}</span>
+            </div>
+            {o.valor > 0 && (
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200 sm:col-span-2">
+                <span className="w-9 h-9 rounded-xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                  <DollarSign size={16} />
+                </span>
+                <span className="font-mono tabular-nums text-xl font-bold text-success num-glow-success">{formatCOP(o.valor)}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -931,9 +1062,12 @@ export default function CallView({ items, alerts }: Props) {
         )}
 
         {o.guia && (
-          <div className="text-xs mb-2 inline-flex items-center gap-1.5">
-            <Tag size={12} /> Guía: <a href={getTrackingUrl(o.transportadora, o.guia, countryCode) || '#'} target="_blank" rel="noreferrer" className="font-mono tabular-nums text-cyan">{o.guia}</a>
-            {o.transportadora && ` (${o.transportadora})`}
+          <div className="relative mb-3 inline-flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-card/40 border border-border text-xs flex-wrap">
+            <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <Tag size={16} />
+            </span>
+            Guía: <a href={getTrackingUrl(o.transportadora, o.guia, countryCode) || '#'} target="_blank" rel="noreferrer" className="font-mono tabular-nums text-sm font-semibold text-cyan hover:underline">{o.guia}</a>
+            {o.transportadora && <span className="hud-label-cased text-muted-foreground">{o.transportadora}</span>}
           </div>
         )}
 
@@ -947,7 +1081,7 @@ export default function CallView({ items, alerts }: Props) {
               onClick={() => setEditorState({ order: o })}
               title="Editar orden (datos, transportadora, cantidades y valor)"
               aria-label="Editar orden"
-              className="w-full inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-success/12 border border-success/30 text-success text-sm font-semibold hover:bg-success/20 hover:border-success/45 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
+              className="w-full inline-flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gradient-to-br from-success/22 to-success/8 border border-success/30 text-success text-sm font-semibold hover:brightness-110 hover:border-success/45 transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
             >
               <UserCog size={15} aria-hidden="true" /> Editar orden
               {o.transportadora && <span className="opacity-70">· {o.transportadora}</span>}
@@ -1121,6 +1255,27 @@ export default function CallView({ items, alerts }: Props) {
             card y ubicarla como fila 2 del grid, después del rail. */}
         <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card sm:bg-transparent -mx-6 sm:mx-0 px-6 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
         {!o.result ? (
+          <>
+          {/* ATRIBUCIÓN HONESTA DEL "EN VUELO". `doMark` avanza al SIGUIENTE
+              pedido ANTES del await (fix 2026-07-07, intencional), pero
+              `marking` sigue en true hasta que Dropi responde. Si el spinner
+              viviera DENTRO de "Confirmó"/"No contestó", se dibujaría sobre la
+              ficha del pedido NUEVO: con Ecuador throttleado (varios segundos)
+              la asesora ve la tarjeta de OTRO cliente con un spinner adentro
+              del botón de confirmar, sugiriendo que ESE pedido se está
+              confirmando. Los botones siguen apagados (eso es lo que corta el
+              doble-click), pero la señal de trabajo se dice aparte y nombra lo
+              que realmente está pasando. */}
+          {marking && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mb-2.5 flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground"
+            >
+              <Loader2 size={14} className="animate-spin shrink-0" aria-hidden="true" />
+              <span>Guardando el marcado anterior…</span>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-2.5">
             {/* Validador-direcciones: el botón Confirmar pasa por el gate
                 (validación dirección + teléfono + documento Coordinadora +
@@ -1146,6 +1301,11 @@ export default function CallView({ items, alerts }: Props) {
                 overrideChecked: addressOverride,
               }}
               onConfirm={() => handleMark('conf')}
+              // Ver markingRef: mientras el marcado viaja a Dropi el CTA se
+              // apaga. Antes NO había forma de apagarlo (rama habilitada = un
+              // <Button> pelado) y el segundo click despachaba el pedido
+              // siguiente.
+              disabled={marking}
               // Solo presentación: iguala la caja de "Canceló"/"No contestó"
               // (h-auto es imprescindible — sin él el h-10 del variant default
               // gana sobre py-4) y recupera el degradado + glow de acento del
@@ -1157,23 +1317,47 @@ export default function CallView({ items, alerts }: Props) {
               // es el único que no se hunde al tocarlo en el celular. El
               // `transition-all` además reemplaza al `transition-colors` de la
               // base, que no anima `filter` y hacía saltar el brightness.
-              className="w-full py-4 h-auto rounded-2xl font-bold text-sm bg-success text-success-foreground bg-gradient-to-br from-success to-success/80 border border-success/50 glow-success hover:bg-success hover:brightness-110 active:scale-[0.97] transition-all"
+              className="w-full py-4 h-auto rounded-2xl font-bold text-sm bg-success text-success-foreground bg-gradient-to-br from-success to-success/80 border border-success/50 glow-success hover:bg-success hover:brightness-110 active:scale-[0.97] transition-all disabled:opacity-100 disabled:brightness-90"
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 <CheckCircle2 size={16} aria-hidden="true" /> Confirmó
               </span>
             </DespachoGateButton>
-            <button onClick={() => setShowCancelModal(true)} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 active:scale-[0.97] transition-all">
+            <button onClick={() => setShowCancelModal(true)} disabled={marking} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 active:scale-[0.97] transition-all disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100">
               <XCircle size={16} aria-hidden="true" /> Canceló
             </button>
-            <button onClick={() => handleMark('noresp')} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-card/40 border border-border text-muted-foreground font-bold text-sm hover:text-foreground hover:border-border-strong active:scale-[0.97] transition-all">
+            <button onClick={() => handleMark('noresp')} disabled={marking} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-card/40 border border-border text-muted-foreground font-bold text-sm hover:text-foreground hover:border-border-strong active:scale-[0.97] transition-all disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100">
               <PhoneOff size={16} aria-hidden="true" /> No contestó
             </button>
           </div>
+          </>
         ) : (
-          <div className="text-center py-3 text-sm font-semibold inline-flex items-center gap-1.5 justify-center w-full">
-            {o.result === 'conf' ? <><CheckCircle2 size={16} className="text-success" aria-hidden="true" /> Confirmado</> : o.result === 'canc' ? <><XCircle size={16} className="text-danger" aria-hidden="true" /> Cancelado</> : <><PhoneOff size={16} aria-hidden="true" /> No respondió</>}
-          </div>
+          /* Cierre del pedido: antes era una línea de texto suelta del mismo
+             peso que cualquier nota. Ahora es una placa con el tono del
+             resultado (chip + barra lateral, misma fórmula que los banners de
+             la ficha) para que la asesora vea de un vistazo, sin leer, qué
+             quedó marcado antes de pasar al siguiente. */
+          (() => {
+            // Clases literales completas, NUNCA `bg-${tone}`: Tailwind escanea
+            // el texto del archivo y una clase compuesta en runtime no se
+            // genera — el color simplemente no aparece.
+            const skin = o.result === 'conf'
+              ? { box: 'border-success/30 bg-success/10', bar: 'bg-success', chip: 'bg-success/20 text-success glow-success', text: 'text-success' }
+              : o.result === 'canc'
+                ? { box: 'border-danger/30 bg-danger/10', bar: 'bg-danger', chip: 'bg-danger/20 text-danger glow-danger', text: 'text-danger' }
+                : { box: 'border-border bg-card/40', bar: 'bg-muted-foreground/50', chip: 'bg-muted/60 text-muted-foreground', text: 'text-muted-foreground' };
+            return (
+              <div className={`relative flex items-center gap-3 rounded-2xl border px-4 pl-5 py-3 shadow-card3d ${skin.box}`}>
+                <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${skin.bar}`} aria-hidden="true" />
+                <span className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${skin.chip}`}>
+                  {o.result === 'conf' ? <CheckCircle2 size={17} aria-hidden="true" /> : o.result === 'canc' ? <XCircle size={17} aria-hidden="true" /> : <PhoneOff size={17} aria-hidden="true" />}
+                </span>
+                <span className={`text-sm font-semibold ${skin.text}`}>
+                  {o.result === 'conf' ? 'Confirmado' : o.result === 'canc' ? 'Cancelado' : 'No respondió'}
+                </span>
+              </div>
+            );
+          })()
         )}
         </div>
         </div>
@@ -1200,7 +1384,8 @@ export default function CallView({ items, alerts }: Props) {
                     <button
                       key={reason}
                       onClick={() => (isOtro ? setCancelOtroMode(true) : handleMark('canc', reason))}
-                      className="w-full text-left py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors"
+                      disabled={marking}
+                      className="w-full text-left py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
                     >
                       {reason}
                     </button>
@@ -1230,10 +1415,11 @@ export default function CallView({ items, alerts }: Props) {
                     Volver
                   </button>
                   <button
-                    disabled={!cancelOtroText.trim()}
+                    disabled={!cancelOtroText.trim() || marking}
                     onClick={() => handleMark('canc', cancelOtroText.trim())}
-                    className="py-3 px-4 rounded-xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="py-3 px-4 rounded-xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
                   >
+                    {marking && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
                     Confirmar cancelación
                   </button>
                 </div>

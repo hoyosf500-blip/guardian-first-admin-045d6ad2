@@ -423,12 +423,12 @@ export default function ShopifyPendingPanel() {
   const mismatchBanner = mismatches.length > 0 ? (
     <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-destructive/30 to-destructive/12 border border-destructive/30 glow-danger flex items-center justify-center flex-shrink-0">
           <AlertTriangle size={18} className="text-destructive" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-extrabold tabular-nums text-destructive">{mismatches.length}</span>
+            <span className="text-3xl font-extrabold font-mono tabular-nums leading-none text-destructive num-glow-danger">{mismatches.length}</span>
             <span className="text-sm font-semibold text-foreground">con valor distinto a Shopify</span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">
@@ -480,12 +480,12 @@ export default function ShopifyPendingPanel() {
   // Banner anti-duplicados: avisa cuántos están bloqueados por teléfono repetido.
   const dupBanner = dupBlockedCount > 0 ? (
     <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-3 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-destructive/30 to-destructive/12 border border-destructive/30 glow-danger flex items-center justify-center flex-shrink-0">
         <Ban size={18} className="text-destructive" aria-hidden="true" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-2xl font-extrabold tabular-nums text-destructive">{dupBlockedCount}</span>
+          <span className="text-3xl font-extrabold font-mono tabular-nums leading-none text-destructive num-glow-danger">{dupBlockedCount}</span>
           <span className="text-sm font-semibold text-foreground">posible(s) duplicado(s) — mismo teléfono ya en Dropi</span>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
@@ -506,12 +506,14 @@ export default function ShopifyPendingPanel() {
   // Mientras vmData no cargó (outOfWindowCount === null) mostramos "…".
   const outOfWindowBanner = (outOfWindowCount === null || outOfWindowCount > 0) ? (
     <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-3 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-destructive/30 to-destructive/12 border border-destructive/30 glow-danger flex items-center justify-center flex-shrink-0">
         <AlertTriangle size={18} className="text-destructive" aria-hidden="true" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-2xl font-extrabold tabular-nums text-destructive">
+          {/* El '…' de "todavía no sé" NO se aplasta a 0 ni se anima como si
+              fuera una medición: sin dato, no hay cifra. */}
+          <span className="text-3xl font-extrabold font-mono tabular-nums leading-none text-destructive num-glow-danger">
             {outOfWindowCount === null ? '…' : outOfWindowCount}
           </span>
           <span className="text-sm font-semibold text-foreground">venta(s) de +{days} días sin pasar a Dropi</span>
@@ -533,20 +535,23 @@ export default function ShopifyPendingPanel() {
         cambia), y `motion.div initial=opacity:0,y:8` re-disparaba la animación
         de entrada → la pila visual de arriba "parpadeaba" cada poll. */}
     <div
-      className={`mb-4 rounded-2xl border shadow-card3d overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
+      className={`relative mb-4 rounded-2xl border shadow-card3d hairline-top overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
+      {/* Barra lateral del tono (fórmula de banner del DS): el estado se lee
+          por el borde izquierdo antes de leer la cifra. */}
+      <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full z-10 ${allClear ? 'bg-success' : 'bg-warning'}`} aria-hidden="true" />
       {/* Layout 2-rows en mobile, 1-row en sm+:
             - Row 1 (siempre): icono · texto principal · Actualizar (refresh).
             - Row 2: botones de acción (Subir todos / Ver lista). En mobile son
               full-width; en sm+ se acomodan a la derecha en la misma fila.
             En mobile el texto principal NO compite con 2 botones por espacio,
             así que "N sin pasar a Dropi" ya no se apila letra por palabra. */}
-      <div className="px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${allClear ? 'bg-success/20' : 'bg-warning/20'}`}>
+      <div className="px-4 pl-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 ${allClear ? 'bg-gradient-to-br from-success/30 to-success/12 border-success/30 glow-success' : 'bg-gradient-to-br from-warning/30 to-warning/12 border-warning/30 glow-warning'}`}>
           {allClear ? <CheckCircle2 size={18} className="text-success" aria-hidden="true" /> : <ShoppingBag size={18} className="text-warning" aria-hidden="true" />}
         </div>
         <div className="flex-1 min-w-0 basis-[14rem]">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className={`text-2xl font-extrabold tabular-nums ${allClear ? 'text-success' : 'text-foreground'}`}>{count}</span>
+            <span className={`text-3xl font-extrabold font-mono tabular-nums leading-none ${allClear ? 'text-success num-glow-success' : 'text-foreground'}`}>{count}</span>
             <span className="text-sm font-semibold text-foreground">
               {allClear ? 'sin pasar a Dropi — todo al día ✓' : 'sin pasar a Dropi'}
             </span>

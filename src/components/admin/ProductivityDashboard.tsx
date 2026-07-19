@@ -1,7 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
+import {
+  Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock,
+  CheckCircle2, Inbox, Users, PhoneCall, BarChart3, Activity,
+} from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { motion } from 'framer-motion';
+import { TiltCard, StatTile, GaugeRing, CountUp } from '@/components/ui3d';
+import {
+  CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR,
+} from '@/components/logistics/charts/chartTokens';
 import { confRateBySample, confRateByCohort, isBelowDailyTarget, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import { useShopifyPending } from '@/hooks/useShopifyPending';
@@ -87,6 +95,56 @@ const RANGE_LABELS: Record<Range, string> = {
   '30d': 'Últimos 30 días',
 };
 
+const hsl = (v: string) => `hsl(var(${v}))`;
+const CHART_SUCCESS = hsl('--success');
+const CHART_DANGER = hsl('--danger');
+
+/** Glow del trazo de barra — firma del DS. */
+const barGlow = (color: string) => ({ filter: `drop-shadow(0 0 6px ${color})` });
+
+/**
+ * Clases por tono, ESCRITAS COMPLETAS a propósito. Tailwind escanea el código
+ * como texto plano: un `bg-${tone}/14` armado en runtime no existe para el
+ * compilador y la clase se purga del CSS (el chip saldría transparente). Nada
+ * de interpolar nombres de clase de Tailwind.
+ */
+const TONE_CHIP = {
+  accent: 'bg-accent/14 border-accent/30 text-accent glow-accent',
+  success: 'bg-success/14 border-success/30 text-success glow-success',
+  warning: 'bg-warning/14 border-warning/30 text-warning glow-warning',
+  info: 'bg-info/14 border-info/30 text-info glow-info',
+} as const;
+
+const TONE_TEXT = {
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+} as const;
+
+/** Entrada escalonada: la pantalla se arma de arriba abajo. */
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
+/**
+ * Degradado vertical por serie. Los ids de `<defs>` son GLOBALES al documento:
+ * de ahí el `prefix` obligatorio para no pisar los de otra card.
+ */
+function BarGradientDefs({ prefix, entries }: { prefix: string; entries: { key: string; color: string }[] }) {
+  return (
+    <defs>
+      {entries.map(e => (
+        <linearGradient key={e.key} id={`${prefix}-${e.key}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={e.color} stopOpacity={0.95} />
+          <stop offset="100%" stopColor={e.color} stopOpacity={0.5} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+
 /** Bullet-style data bar para tasas. Tono semántico vs `target`. Para la tasa de
  *  CONFIRMACIÓN el target es la meta oficial del dueño (CONF_TARGET_PCT = 85%); la
  *  tasa de RESOLUCIÓN (Seguimiento/Novedades) es otra métrica y pasa su propio
@@ -96,11 +154,34 @@ function RateBar({ value, target = CONF_TARGET_PCT }: { value: number; target?: 
   // confirmó pedidos viejos además de los de hoy ya está "al día" — la columna
   // "faltan 0" de al lado lo indica). El dueño lo pidió explícito: nada de "140%".
   const pct = Math.max(0, Math.min(100, value));
-  const tone = pct >= target ? 'success' : pct >= target - 5 ? 'warning' : 'danger';
+  const tone: keyof typeof TONE_TEXT = pct >= target ? 'success' : pct >= target - 5 ? 'warning' : 'danger';
   return (
-    <div className={`data-bar tone-${tone}`}>
-      <div className="data-bar-fill" style={{ width: `${pct}%` }} aria-hidden="true" />
-      <span className="data-bar-value">{pct.toFixed(0)}%</span>
+    <div className="inline-flex flex-col items-end gap-1 w-full min-w-[92px]">
+      <span className={`font-mono tabular-nums text-xs font-bold ${TONE_TEXT[tone]}`}>{pct.toFixed(0)}%</span>
+      {/* Riel + relleno con degradado y halo del tono. La marca de la meta va
+          como tick sobre el riel: se ve de un vistazo si la barra la cruza. */}
+      <div
+        className="relative h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden"
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-700"
+          style={{
+            width: `${pct}%`,
+            background: `linear-gradient(90deg, hsl(var(--${tone}) / 0.55), hsl(var(--${tone})))`,
+            boxShadow: `0 0 6px hsl(var(--${tone}) / 0.55)`,
+          }}
+          aria-hidden="true"
+        />
+        <span
+          className="absolute top-0 bottom-0 w-px bg-foreground/35"
+          style={{ left: `${Math.max(0, Math.min(100, target))}%` }}
+          aria-hidden="true"
+        />
+      </div>
     </div>
   );
 }
@@ -260,6 +341,7 @@ export default function ProductivityDashboard() {
   // celda). Cobertura = lo GESTIONADO ÷ entró (¿trabajó todo o dejó pedidos?).
   const entrantes = rows[0]?.total_entrantes ?? 0;
   const teamConf = rows.reduce((a, r) => a + r.confirmados, 0);
+  const teamCanc = rows.reduce((a, r) => a + r.cancelados, 0);
   const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
   const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
   const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
@@ -270,11 +352,21 @@ export default function ProductivityDashboard() {
   // encima (auditoría 2026-07-07). Con 1 operadora activa no cambia nada.
   const opsActivas = Math.max(1, rows.filter((r) => (r.total_atendidos ?? 0) > 0).length);
   const metaPorOperadora = Math.max(1, Math.round(CONF_DIA_TARGET_PCT / opsActivas));
+  // Madurez del embudo del equipo — MISMA fuente y umbral que la fila TOTAL de la
+  // tabla (confRateByCohort). Solo se usa para rotular el hero como provisional:
+  // el número que se dibuja sigue siendo teamTasaDia, sin recalcular nada.
+  const cdHero = confRateByCohort(teamConf, teamCanc, entrantes);
+  const heroEnCurso = isToday && cdHero.inmaduro;
+  const heroTone = heroEnCurso || cdHero.tasaDia == null
+    ? 'brand'
+    : isBelowDailyTarget(teamTasaDia)
+      ? (teamTasaDia >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger')
+      : 'success';
 
   return (
     <div className="space-y-5">
       {/* Page sub-header — eyebrow + título + meta + actions */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <motion.header {...fadeUp(0)} className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-1.5">
           <div className="hud-label">
             Productividad · Equipo
@@ -289,15 +381,17 @@ export default function ProductivityDashboard() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <div className="inline-flex flex-wrap gap-2">
+          {/* Segmented control — mismo patrón que el Dashboard */}
+          <div className="inline-flex flex-wrap gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border">
             {(['today', '7d', '30d'] as Range[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
-                className={`px-4 py-2 rounded-xl text-sm transition-colors ${
+                aria-pressed={range === r}
+                className={`px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                   range === r
                     ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                    : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
                 {r}
@@ -313,7 +407,7 @@ export default function ProductivityDashboard() {
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
-      </header>
+      </motion.header>
 
       {error && (
         <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4 shadow-card3d">
@@ -337,6 +431,100 @@ export default function ProductivityDashboard() {
         </div>
       ) : !error ? (
         <>
+          {/* Embudo del equipo, dibujado. Son EXACTAMENTE los mismos números del
+              rótulo de la sección Confirmar (entraron → gestionó → contactó →
+              confirmó = % del día); acá se ven como aro + tarjetas en vez de una
+              línea de texto. Se muestra solo con inflow real (entrantes > 0): sin
+              eso no hay denominador y un 0% sería inventado. */}
+          {rows.length > 0 && entrantes > 0 && (
+            <motion.div {...fadeUp(0.06)} className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              <TiltCard
+                sheen
+                brackets
+                wrapperClassName="md:col-span-5"
+                className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between gap-3 tilt-layer-2">
+                  <div className="hud-label" title="Confirmados ÷ lo que ENTRÓ en el período.">
+                    Confirmación del día
+                  </div>
+                  {heroEnCurso && (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-lg border border-border bg-muted/50 text-[10px] font-semibold text-muted-foreground whitespace-nowrap"
+                      title={`Día en curso (${cdHero.pctProcesado}% trabajado) — provisional.`}
+                    >
+                      · en curso
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex justify-center py-4 tilt-layer-3">
+                  <GaugeRing value={teamTasaDia} label="del día" size={190} tone={heroTone} />
+                </div>
+
+                <div className="tilt-layer-1">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                    <span>Meta del día</span>
+                    <span className="font-mono tabular-nums text-foreground">
+                      <b>{teamConf}</b> / {entrantes}
+                    </span>
+                  </div>
+                  <div className="relative h-2 rounded-full bg-foreground/10 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-accent-gradient transition-[width] duration-700"
+                      style={{ width: `${Math.max(0, Math.min(100, teamTasaDia))}%` }}
+                      aria-hidden="true"
+                    />
+                    <span
+                      className="absolute top-0 bottom-0 w-px bg-foreground/40"
+                      style={{ left: `${CONF_DIA_TARGET_PCT}%` }}
+                      aria-hidden="true"
+                      title={`Meta del día ~${CONF_DIA_TARGET_PCT}%`}
+                    />
+                  </div>
+                </div>
+              </TiltCard>
+
+              {/* El embudo, tarjeta por tarjeta: cada paso pierde volumen contra
+                  el anterior — la caída se ve sin leer. */}
+              <div className="md:col-span-7 grid grid-cols-1 min-[390px]:grid-cols-2 gap-4">
+                <StatTile
+                  icon={Inbox}
+                  label="Entraron"
+                  value={entrantes}
+                  tone="accent"
+                  title="Pedidos que entraron al período (inflow del store)."
+                />
+                <StatTile
+                  icon={Users}
+                  label="Gestionó"
+                  value={teamAtendidos}
+                  tone="info"
+                  title="Pedidos distintos que el equipo gestionó."
+                  extra={
+                    <span className="font-mono tabular-nums text-[11px] font-medium text-muted-foreground">
+                      {Math.max(0, entrantes - teamAtendidos)} sin tocar
+                    </span>
+                  }
+                />
+                <StatTile
+                  icon={PhoneCall}
+                  label="Contactó"
+                  value={teamContactados}
+                  tone="warning"
+                  title="Clientes que contestaron y decidieron (confirmaron o cancelaron)."
+                />
+                <StatTile
+                  icon={CheckCircle2}
+                  label="Confirmó"
+                  value={teamConf}
+                  tone="success"
+                  title="Pedidos confirmados por el equipo en el período."
+                />
+              </div>
+            </motion.div>
+          )}
+
           {/* Jornada SIEMPRE arriba si hay activityRows — métrica de presencia
               (cuándo empezó / cuánto activa). Va separada de las secciones de
               resultado (Confirmar/Seguimiento/Rescate) porque pueden coexistir:
@@ -348,7 +536,8 @@ export default function ProductivityDashboard() {
           {jornadaOps.length > 0 && (
             <Section
               title="Jornada"
-              dotClass="bg-info"
+              tone="info"
+              icon={Clock}
               note={isToday
                 ? '¿Cumplió el horario? Hora de ENTRADA y SALIDA (primera y última señal del día) y cuánto del horario cubrió. NO se descuenta el estar quieta — puede estar en una llamada.'
                 : 'Horas trabajadas del rango, tiempo conectada al CRM, y la primera y última señal de cada operadora en el período.'}
@@ -581,23 +770,39 @@ export default function ProductivityDashboard() {
 
           {/* Top performer callout */}
           {leader && leader.confirmados > 0 && (
-            <div className="rounded-2xl border border-accent/30 bg-card/40 shadow-card3d hairline-top p-3.5 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent/12">
-                <Trophy size={16} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
+            <motion.div
+              {...fadeUp(0.1)}
+              className="relative overflow-hidden rounded-2xl border border-accent/32 bg-accent/12 glow-accent shadow-card3d px-4 py-3 flex items-center gap-3"
+            >
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-accent-gradient" aria-hidden="true" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent/30 bg-accent/20 glow-accent">
+                <Trophy size={17} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
+                <div className="hud-label">
                   Top operadora — {RANGE_LABELS[range].toLowerCase()}
                 </div>
-                <div className="text-sm font-bold text-foreground truncate">{leader.display_name}</div>
-                <div className="text-xs text-accent font-mono font-semibold tabular-nums">
-                  {leader.confirmados} confirmados · {(() => {
+                {/* El nombre de la operadora es DATO, no rótulo: va sin hud-label
+                    (que mayusculiza). */}
+                <div className="text-sm font-bold text-foreground truncate mt-0.5">{leader.display_name}</div>
+              </div>
+              {/* La cifra manda: cuenta al entrar, como en el Dashboard. */}
+              <div className="shrink-0 text-right">
+                <div className="text-2xl font-bold leading-none text-accent num-glow-accent">
+                  <CountUp value={leader.confirmados} />
+                </div>
+                <div className="hud-label mt-1.5">confirmados</div>
+              </div>
+              <div className="shrink-0 text-right border-l border-accent/25 pl-3">
+                <div className="text-2xl font-bold leading-none text-foreground font-mono tabular-nums">
+                  {(() => {
                     const t = confRateBySample(leader.confirmados, leader.cancelados).tasa;
                     return t == null ? '—' : `${t}%`;
-                  })()} confirmación
+                  })()}
                 </div>
+                <div className="hud-label mt-1.5">confirmación</div>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* Las secciones de outcome (Confirmar / Seguimiento / Rescate /
@@ -631,7 +836,8 @@ export default function ProductivityDashboard() {
               confundía. Ver src/lib/confirmationRate.ts. */}
           <Section
             title="Confirmar"
-            dotClass="bg-success"
+            tone="success"
+            icon={CheckCircle2}
             note={
               entrantes > 0
                 ? `Entraron ${entrantes} → gestionó ${teamAtendidos} → contactó ${teamContactados} → confirmó ${teamConf} = ${teamTasaDia}% del día`
@@ -955,7 +1161,7 @@ export default function ProductivityDashboard() {
           </Section>
 
           {/* Seguimiento */}
-          <Section title="Seguimiento" dotClass="bg-info" note="Touchpoints marcados sobre pedidos en seguimiento">
+          <Section title="Seguimiento" tone="info" icon={Activity} note="Touchpoints marcados sobre pedidos en seguimiento">
             <ResolutionTable
               rows={rows}
               acciones={r => r.seg_acciones}
@@ -968,7 +1174,7 @@ export default function ProductivityDashboard() {
 
           {/* Novedades — ocupa el lugar de la vieja sección "Rescate" (módulo
               eliminado del CRM). Siempre visible; si nadie resolvió, empty state. */}
-          <Section title="Novedades" dotClass="bg-warning" note="Novedades de transportadora resueltas">
+          <Section title="Novedades" tone="warning" icon={AlertTriangle} note="Novedades de transportadora resueltas">
             {rows.some(r => r.novedades_resueltas > 0) ? (
               <div className="overflow-x-auto">
                 <table className="data-table">
@@ -1007,35 +1213,50 @@ export default function ProductivityDashboard() {
 
       {/* Bar chart comparativo — recharts con HSL vars del DS */}
       {!loading && rows.length > 0 && (
-        <Section title="Comparativo Confirmados vs Cancelados" dotClass="bg-accent">
+        <Section title="Comparativo Confirmados vs Cancelados" tone="accent" icon={BarChart3}>
           <div className="p-4">
+            {/* Leyenda manual: swatch cuadrado, no le come alto al gráfico. */}
+            <div className="flex items-center gap-3 flex-wrap mb-3">
+              {[
+                { color: CHART_SUCCESS, label: 'Confirmados' },
+                { color: CHART_DANGER, label: 'Cancelados' },
+              ].map(l => (
+                <span key={l.label} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: l.color }} aria-hidden="true" />
+                  {l.label}
+                </span>
+              ))}
+            </div>
             <div className="h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <BarChart data={chartData} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+                  <BarGradientDefs
+                    prefix="prodComp"
+                    entries={[
+                      { key: 'conf', color: CHART_SUCCESS },
+                      { key: 'canc', color: CHART_DANGER },
+                    ]}
+                  />
+                  <CartesianGrid {...CHART_GRID_PROPS} />
                   <XAxis
                     dataKey="name"
-                    tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={10}
                     tickLine={false}
                     axisLine={false}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={10}
                     allowDecimals={false}
                     tickLine={false}
                     axisLine={false}
+                    width={36}
                   />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'hsl(var(--popover))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" iconSize={9} />
-                  <Bar dataKey="Confirmados" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Cancelados" fill="hsl(var(--danger))" radius={[4, 4, 0, 0]} />
+                  <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_BAR_CURSOR} />
+                  {/* Solo la serie "buena" lleva glow — la lectura es inmediata. */}
+                  <Bar dataKey="Confirmados" fill="url(#prodComp-conf)" radius={[6, 6, 0, 0]} style={barGlow(CHART_SUCCESS)} />
+                  <Bar dataKey="Cancelados" fill="url(#prodComp-canc)" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -1050,14 +1271,32 @@ export default function ProductivityDashboard() {
 // Sub-components
 // ──────────────────────────────────────────────────────────────
 
-function Section({ title, dotClass, note, children }: { title: string; dotClass: string; note?: string; children: React.ReactNode }) {
+type SectionTone = keyof typeof TONE_CHIP;
+
+/** Bloque de la pantalla. El punto de color de antes era la única señal de tono;
+ *  ahora el tono vive en un chip de ícono con halo (misma anatomía que las cards
+ *  del Dashboard) y el título va sobre un rótulo HUD. */
+function Section({
+  title, tone, icon: Icon, note, children,
+}: {
+  title: string;
+  tone: SectionTone;
+  icon: typeof Clock;
+  note?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
-      <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} aria-hidden="true" />
-          <h3 className="text-sm font-bold text-foreground tracking-tight">{title}</h3>
-          {note && <span className="text-[11px] text-muted-foreground hidden md:inline truncate">· {note}</span>}
+    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden transition-colors duration-200 hover:border-border-strong">
+      <header className="px-4 py-3.5 border-b border-border/60 flex items-start gap-3">
+        <span
+          className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${TONE_CHIP[tone]}`}
+          aria-hidden="true"
+        >
+          <Icon size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">{title}</h3>
+          {note && <p className="text-[11px] text-muted-foreground mt-0.5">{note}</p>}
         </div>
       </header>
       {children}

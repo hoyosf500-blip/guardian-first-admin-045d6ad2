@@ -297,14 +297,18 @@ export default function DropiSyncFailuresPanel() {
   const botCount = rows.filter(r => r.notes.startsWith(BOT_PREFIX)).length;
 
   return (
-    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
-      <div className="px-4 py-3 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
+    /* Barra lateral de color + chip con halo: la fórmula de banner del DS.
+       Antes el bloque se distinguía solo por el fondo rojo claro, que en tema
+       claro casi no se separa de la card de al lado. */
+    <div className="relative mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d hairline-top overflow-hidden">
+      <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger z-10" aria-hidden="true" />
+      <div className="px-4 pl-5 py-3 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-destructive/30 to-destructive/12 border border-destructive/30 glow-danger flex items-center justify-center flex-shrink-0">
           <CloudOff size={18} className="text-destructive" aria-hidden="true" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-2xl font-extrabold tabular-nums text-destructive">{rows.length}</span>
+            <span className="text-3xl font-extrabold font-mono tabular-nums text-destructive leading-none num-glow-danger">{rows.length}</span>
             <span className="text-sm font-semibold text-foreground">
               {rows.length === 1 ? 'gestión o edición no llegó a Dropi' : 'gestiones y ediciones no llegaron a Dropi'}
             </span>
@@ -317,13 +321,13 @@ export default function DropiSyncFailuresPanel() {
           </p>
         </div>
         <button onClick={() => void load()} aria-label="Actualizar lista de fallos"
-          className="h-8 w-8 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground flex-shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          className="h-9 w-9 rounded-xl border border-border bg-card/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 flex-shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
           <RefreshCw size={13} className={refreshing ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
         </button>
         <button onClick={() => setExpanded(e => !e)}
           aria-expanded={expanded}
           aria-label={expanded ? 'Ocultar lista de gestiones fallidas' : 'Ver lista de gestiones fallidas'}
-          className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-medium text-foreground flex items-center gap-1 flex-shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+          className="h-9 px-3 rounded-xl border border-border bg-card/60 text-xs font-medium text-foreground flex items-center gap-1 flex-shrink-0 hover:border-border-strong transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
           {expanded ? 'Ocultar' : 'Ver lista'}
           {expanded ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
         </button>

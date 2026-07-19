@@ -50,7 +50,7 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
     <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.05 }} className="md:col-span-2">
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-        <span className="w-8 h-8 rounded-xl bg-info/14 border border-info/30 text-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <ArrowDownToLine size={15} />
         </span>
         <div className="flex-1 min-w-0">
@@ -69,10 +69,11 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
 
       <div className="px-5 py-4 flex flex-wrap gap-3 items-end">
         <div className="flex flex-col gap-1">
-          <label className="hud-label">Desde</label>
+          <label className="hud-label" htmlFor="sync-from-date">Desde</label>
           <div className="relative">
             <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <input
+              id="sync-from-date"
               type="date"
               value={fromDate}
               onChange={e => setFromDate(e.target.value)}
@@ -81,10 +82,11 @@ export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => v
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="hud-label">Hasta</label>
+          <label className="hud-label" htmlFor="sync-to-date">Hasta</label>
           <div className="relative">
             <Calendar size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <input
+              id="sync-to-date"
               type="date"
               value={toDate}
               onChange={e => setToDate(e.target.value)}

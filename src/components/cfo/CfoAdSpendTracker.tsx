@@ -7,9 +7,17 @@ import {
   useAdSpendCompare, useMonthlyAdSpend,
   type AdPaymentMethod, type AdSpendRow, type AdPlatform,
 } from '@/hooks/useMonthlyAdSpend';
+import { PieChart, Pie, Cell, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { formatCOP } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import CfoAdSpendDialog from './CfoAdSpendDialog';
+import { CHART_TOOLTIP_STYLE } from '@/components/logistics/charts/chartTokens';
+import {
+  MoneyFigure, GradientBar,
+} from './cfoVisuals';
+import {
+  barGlow, ringOf, CHART_SUCCESS, CHART_WARNING, CHART_DANGER, CHART_MUTED,
+} from './cfoChartTokens';
 
 // ─────────────────────────────────────────────────────────────────
 // /cfo → bloque "Pauta del mes + Control de cargos a TC"
@@ -46,18 +54,19 @@ const PAYMENT_METHOD_INFO: Record<AdPaymentMethod, { label: string; tone: 'succe
   other:          { label: 'Otro',           tone: 'muted',   icon: '⚪' },
 };
 
-const TONE_BG: Record<string, string> = {
-  success: 'bg-green',
-  warning: 'bg-orange',
-  danger:  'bg-red',
-  muted:   'bg-muted-foreground',
+const TONE_TEXT: Record<string, string> = {
+  success: 'text-success',
+  warning: 'text-warning',
+  danger:  'text-danger',
+  muted:   'text-muted-foreground',
 };
 
-const TONE_TEXT: Record<string, string> = {
-  success: 'text-green',
-  warning: 'text-orange',
-  danger:  'text-red',
-  muted:   'text-muted-foreground',
+/** El mismo tono, como color de dibujo (token HSL) para barras y dona. */
+const TONE_STROKE: Record<string, string> = {
+  success: CHART_SUCCESS,
+  warning: CHART_WARNING,
+  danger:  CHART_DANGER,
+  muted:   CHART_MUTED,
 };
 
 function deltaPct(curr: number, prev: number): number | null {
@@ -177,8 +186,8 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
     <section className="space-y-4">
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="w-8 h-8 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center">
-            <Megaphone size={14} />
+          <span className="w-9 h-9 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+            <Megaphone size={17} aria-hidden="true" />
           </span>
           <h3 className="text-sm font-semibold text-foreground truncate">
             Pauta — <span className="capitalize">{fmtMonth(yearMonth)}</span>
@@ -205,49 +214,19 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
       </div>
 
       {/* Sección 2: Distribución por método de pago */}
-      {curr.total > 0 && (
-        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-4 space-y-2.5">
-          <div className="hud-label text-muted-foreground mb-2">
-            Por método de pago
-          </div>
-          {(['mastercard_usd', 'mastercard_cop', 'amex_cop', 'wallet', 'other'] as const)
-            .filter((m) => curr.byPaymentMethod[m] > 0)
-            .map((m) => {
-              const info = PAYMENT_METHOD_INFO[m];
-              const amount = curr.byPaymentMethod[m];
-              const pct = curr.total > 0 ? (amount / curr.total) * 100 : 0;
-              return (
-                <div key={m}>
-                  <div className="flex items-baseline justify-between text-xs mb-1">
-                    <span className="flex items-center gap-1.5">
-                      <span>{info.icon}</span>
-                      <span className="text-foreground">{info.label}</span>
-                    </span>
-                    <span className={`font-bold font-mono tabular-nums ${TONE_TEXT[info.tone]}`}>
-                      {formatCOP(amount)}
-                      <span className="text-muted-foreground font-normal ml-1.5">{Math.round(pct)}%</span>
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-                    <div className={`h-full rounded-full ${TONE_BG[info.tone]}`} style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-      )}
+      {curr.total > 0 && <PaymentMethodSplit total={curr.total} byMethod={curr.byPaymentMethod} />}
 
       {/* Sección 3: Tabla de cuentas */}
       {rows.length > 0 ? (
-        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden overflow-x-auto">
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-foreground/[0.03] text-muted-foreground">
               <tr>
-                <th className="px-4 py-2.5 text-left font-semibold">Plataforma</th>
-                <th className="px-4 py-2.5 text-left font-semibold">Cuenta</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Monto COP</th>
-                <th className="px-4 py-2.5 text-left font-semibold">Pago</th>
-                <th className="px-4 py-2.5 text-right font-semibold">Acción</th>
+                <th className="px-4 py-3 text-left hud-label">Plataforma</th>
+                <th className="px-4 py-3 text-left hud-label">Cuenta</th>
+                <th className="px-4 py-3 text-right hud-label">Monto COP</th>
+                <th className="px-4 py-3 text-left hud-label">Pago</th>
+                <th className="px-4 py-3 text-right hud-label">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -367,6 +346,109 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
   );
 }
 
+/**
+ * Distribución de la pauta por método de pago: dona + leyenda-ranking.
+ *
+ * Antes eran 5 barritas planas apiladas verticalmente; el reparto (cuánto se
+ * está difiriendo a la TC en dólares vs cuánto se paga limpio) es una
+ * PROPORCIÓN, y una dona la cuenta de un vistazo. Los montos y los porcentajes
+ * son exactamente los mismos que ya se imprimían.
+ */
+function PaymentMethodSplit({
+  total, byMethod,
+}: { total: number; byMethod: Record<AdPaymentMethod, number> }) {
+  const slices = (['mastercard_usd', 'mastercard_cop', 'amex_cop', 'wallet', 'other'] as const)
+    .filter((m) => byMethod[m] > 0)
+    .map((m) => {
+      const info = PAYMENT_METHOD_INFO[m];
+      const amount = byMethod[m];
+      return {
+        key: m,
+        label: info.label,
+        icon: info.icon,
+        tone: info.tone,
+        color: TONE_STROKE[info.tone] ?? CHART_MUTED,
+        amount,
+        pct: total > 0 ? (amount / total) * 100 : 0,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount);
+
+  if (slices.length === 0) return null;
+  const top = slices[0];
+
+  return (
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top p-5">
+      <div className="hud-label text-muted-foreground mb-4">
+        Por método de pago
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+        <div className="relative h-[220px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={slices}
+                dataKey="amount"
+                nameKey="label"
+                innerRadius={58}
+                outerRadius={96}
+                paddingAngle={2}
+                cornerRadius={6}
+                stroke="hsl(var(--card))"
+                strokeWidth={2}
+              >
+                {slices.map((s) => (
+                  <Cell key={s.key} fill={s.color} style={barGlow(s.color)} />
+                ))}
+              </Pie>
+              <RTooltip
+                contentStyle={CHART_TOOLTIP_STYLE}
+                formatter={(v: number) => formatCOP(v)}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* Cifra al centro: el método que más pesa. Mismo porcentaje que su
+              fila de la leyenda, no un número nuevo. */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="text-[34px] font-bold text-foreground font-mono tabular-nums leading-none num-glow-accent">
+              {Math.round(top.pct)}%
+            </div>
+            <div className="text-[11px] text-muted-foreground font-medium mt-2 truncate max-w-[130px] text-center">
+              {top.label}
+            </div>
+          </div>
+        </div>
+
+        <ul className="space-y-1.5">
+          {slices.map((s) => (
+            <li
+              key={s.key}
+              className="flex flex-col gap-1.5 px-3 py-2 rounded-xl border border-transparent transition-colors duration-200 hover:bg-card/60 hover:border-border"
+            >
+              <div className="flex items-center justify-between text-xs gap-2">
+                <span className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{ background: s.color, boxShadow: `0 0 0 3px ${ringOf(s.color)}` }}
+                    aria-hidden="true"
+                  />
+                  <span aria-hidden="true">{s.icon}</span>
+                  <span className="text-foreground truncate">{s.label}</span>
+                </span>
+                <span className="font-mono tabular-nums shrink-0 ml-2 flex items-baseline gap-2">
+                  <span className={`font-bold ${TONE_TEXT[s.tone]}`}>{formatCOP(s.amount)}</span>
+                  <span className="text-muted-foreground w-9 text-right">{Math.round(s.pct)}%</span>
+                </span>
+              </div>
+              <GradientBar pct={s.pct} color={s.color} height={4} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 interface KpiCardProps {
   label: string;
   value: number;
@@ -380,22 +462,44 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, prev, delta, prevHasRows = true, bold }: KpiCardProps) {
   const goingUp = delta !== null && delta > 0;
-  const tone = goingUp ? 'text-danger' : delta !== null && delta < 0 ? 'text-success' : 'text-muted-foreground';
+  // En pauta, SUBIR es la señal roja: el delta ya venía con ese criterio.
+  const deltaSkin = goingUp
+    ? 'bg-danger/14 border-danger/30 text-danger'
+    : delta !== null && delta < 0
+      ? 'bg-success/14 border-success/30 text-success'
+      : 'bg-muted/50 border-border text-muted-foreground';
   return (
-    <div className={`rounded-2xl border shadow-card3d ${bold ? 'border-accent/40 bg-accent/[0.07]' : 'border-border bg-card/40'} p-4 space-y-1.5`}>
-      <div className="hud-label text-muted-foreground">{label}</div>
-      <div className={`text-2xl font-bold font-mono tabular-nums ${bold ? 'text-accent' : 'text-foreground'}`}>
-        {formatCOP(value)}
+    <div className={`rounded-2xl border shadow-card3d hairline-top p-4 transition-colors duration-200 hover:border-border-strong ${bold ? 'border-accent/40 bg-accent/[0.07]' : 'border-border bg-card/40'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <span className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+          bold
+            ? 'bg-accent/14 border-accent/30 text-accent glow-accent'
+            : 'bg-muted/60 border-border text-muted-foreground'
+        }`}>
+          <Megaphone size={17} aria-hidden="true" />
+        </span>
+        {delta !== null && (
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-semibold whitespace-nowrap ${deltaSkin}`}>
+            {goingUp ? <TrendingUp size={10} aria-hidden="true" /> : <TrendingDown size={10} aria-hidden="true" />}
+            <span className="font-mono tabular-nums">{delta > 0 ? '+' : ''}{delta}%</span>
+          </span>
+        )}
       </div>
+
+      <MoneyFigure
+        text={formatCOP(value)}
+        className={`text-[28px] font-bold leading-none mt-3 ${bold ? 'text-accent num-glow-accent' : 'text-foreground'}`}
+      />
+
+      <div className="hud-label text-subtle mt-2">{label}</div>
+
       {delta !== null ? (
-        <div className={`text-[11px] inline-flex items-center gap-1 ${tone}`}>
-          {goingUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-          <span className="font-mono tabular-nums">{delta > 0 ? '+' : ''}{delta}%</span>
-          <span className="text-muted-foreground">vs mes anterior ({formatCOP(prev)})</span>
+        <div className="text-[11px] text-muted-foreground mt-1.5">
+          vs mes anterior (<span className="font-mono tabular-nums">{formatCOP(prev)}</span>)
         </div>
       ) : (
-        <div className="text-[11px] text-muted-foreground">
-          mes anterior: {prevHasRows ? formatCOP(prev) : 'sin pauta cargada'}
+        <div className="text-[11px] text-muted-foreground mt-1.5">
+          mes anterior: {prevHasRows ? <span className="font-mono tabular-nums">{formatCOP(prev)}</span> : 'sin pauta cargada'}
         </div>
       )}
     </div>

@@ -58,7 +58,7 @@ export default function StoreInvitePanel() {
     <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.04 }} className="md:col-span-2">
     <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
       <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <UserPlus size={15} />
         </span>
         <div className="min-w-0">
@@ -71,8 +71,9 @@ export default function StoreInvitePanel() {
 
       <div className="px-5 py-4 space-y-3">
         <div>
-          <label className="hud-label">Rol de la invitación</label>
+          <label className="hud-label" htmlFor="invite-role">Rol de la invitación</label>
           <select
+            id="invite-role"
             value={role}
             onChange={e => { setRole(e.target.value as 'operator' | 'supervisor'); setLink(''); }}
             className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"

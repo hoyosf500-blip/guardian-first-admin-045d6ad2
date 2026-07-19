@@ -3,17 +3,81 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   CheckCircle2, RotateCcw, Package, Star, AlertTriangle,
-  User, RefreshCw, Sparkles, Shield, Fingerprint, Store, Globe,
+  User, RefreshCw, Sparkles, Shield, Fingerprint, Store, Globe, Percent,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell,
-  BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { calcBadge, estadoColor } from '@/lib/customerUtils';
 import { formatCOP } from '@/lib/utils';
+import { AuroraBackdrop, CountUp, GaugeRing } from '@/components/ui3d';
+import {
+  CHART_TOOLTIP_STYLE,
+  CHART_GRID_PROPS,
+  CHART_BAR_CURSOR,
+} from '@/components/logistics/charts/chartTokens';
+
+// ── Lenguaje visual del Dashboard ───────────────────────────────────
+// Glow del trazo: 6px en barras y sectores de dona. Es la firma del DS.
+const barGlow = (color: string) => ({ filter: `drop-shadow(0 0 6px ${color})` });
+
+/** `hsl(var(--x))` → `hsl(var(--x) / a)`. El idiom `${color}22` solo sirve con hex. */
+const ring = (color: string, alpha = 0.13) => color.replace(/\)$/, ` / ${alpha})`);
+
+/**
+ * Degradado vertical de barra (pleno arriba → apagado en la base).
+ * Los ids de <defs> son GLOBALES al documento, de ahí el prefijo propio de
+ * esta tarjeta.
+ */
+function BarGradientDefs({ prefix, entries }: { prefix: string; entries: { key: string; color: string }[] }) {
+  return (
+    <defs>
+      {entries.map(e => (
+        <linearGradient key={e.key} id={`${prefix}-${e.key}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={e.color} stopOpacity={0.95} />
+          <stop offset="100%" stopColor={e.color} stopOpacity={0.5} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
+}
+
+/** Leyenda manual: swatch cuadrado de 10px (nunca círculos) + rótulo. */
+function SwatchLegend({ items, className = '' }: { items: { color: string; label: string }[]; className?: string }) {
+  return (
+    <div className={`flex items-center gap-3 flex-wrap ${className}`}>
+      {items.map(l => (
+        <span key={l.label} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: l.color }} aria-hidden="true" />
+          {l.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Barra proporcional con degradado + glow. Reemplaza las barritas planas de
+ * entregadas/devoluciones: mismo dato, dibujado como el resto del DS.
+ */
+function GlowBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
+      <div
+        className="h-full rounded-full transition-[width] duration-700"
+        style={{
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${ring(color, 0.55)}, ${color})`,
+          boxShadow: `0 0 10px ${ring(color, 0.6)}`,
+        }}
+      />
+    </div>
+  );
+}
 
 interface Props {
   currentPhone: string;
@@ -178,6 +242,16 @@ interface MonthData {
   enCamino: number;
 }
 
+/**
+ * Series de la barra mensual. Orden de apilado = orden del array (abajo →
+ * arriba). Los rótulos son los MISMOS `name` que ya usaba el tooltip.
+ */
+const MONTHLY_SERIES: { key: 'entregados' | 'noEntrega' | 'enCamino'; label: string; color: string }[] = [
+  { key: 'entregados', label: 'Entregados', color: 'hsl(var(--success))' },
+  { key: 'noEntrega',  label: 'No entrega', color: 'hsl(var(--danger))' },
+  { key: 'enCamino',   label: 'En camino',  color: 'hsl(var(--info))' },
+];
+
 function buildMonthlyChart(orders: HistoryOrder[]): MonthData[] {
   const months = new Map<string, MonthData>();
 
@@ -328,10 +402,10 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   // mandarlo a la IA sin ese guard: sería inventar un nivel de riesgo.
   const gaugeScore = deliveryScore ?? 50;
   const scoreConfig = getScoreConfig(gaugeScore);
-  const gaugeData = [
-    { value: gaugeScore },
-    { value: 100 - gaugeScore },
-  ];
+  // Tono del aro — MISMOS cortes que getScoreConfig (80 / 50), solo traducidos
+  // a la rampa del GaugeRing. Solo se usa cuando deliveryScore !== null.
+  const gaugeTone: 'success' | 'warning' | 'danger' =
+    gaugeScore >= 80 ? 'success' : gaugeScore >= 50 ? 'warning' : 'danger';
 
   const insights = useMemo(
     () => generateInsights(total, entregados, devoluciones, novedades, orders),
@@ -354,13 +428,23 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
 
   // ── Loading / empty states ─────────────────────────────────────
 
+  // Las TRES ramas de abajo comparten la anatomía de la tarjeta llena: chip de
+  // 36px con glow del tono + título `text-sm font-semibold`. Antes iban con
+  // ícono pelado y `font-bold`, así que el mismo título cambiaba de peso según
+  // el estado — y el estado VACÍO es el que la asesora ve en CADA comprador
+  // nuevo, o sea la ruta más frecuente de la tarjeta.
   if (loading) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
-        <div className="flex items-center gap-2">
-          <RefreshCw size={16} className="text-muted-foreground animate-spin" />
-          <span className="text-sm text-muted-foreground">Cargando huella del cliente…</span>
+        className="hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
+        <div className="flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-muted/60 border border-border text-muted-foreground flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <RefreshCw size={17} className="animate-spin" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">Huella del comprador</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Cargando huella del cliente…</p>
+          </div>
         </div>
       </motion.div>
     );
@@ -370,11 +454,15 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   if (loadError) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-card/40 border border-danger/40 rounded-2xl p-5 shadow-card3d">
-        <div className="flex items-start gap-3">
-          <AlertTriangle size={18} className="text-danger flex-shrink-0 mt-0.5" />
+        className="hairline-top relative overflow-hidden bg-card/40 border border-danger/40 rounded-2xl p-5 shadow-card3d">
+        {/* Barra lateral de tono: mismo molde de banner que el resto del área. */}
+        <span className="absolute left-0 top-0 bottom-0 w-1 bg-danger" aria-hidden="true" />
+        <div className="relative flex items-start gap-3">
+          <span className="w-9 h-9 rounded-xl bg-danger/14 border border-danger/30 text-danger glow-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <AlertTriangle size={17} />
+          </span>
           <div>
-            <h3 className="text-sm font-bold text-danger">No pudimos leer la huella del comprador</h3>
+            <h3 className="text-sm font-semibold text-danger">No pudimos leer la huella del comprador</h3>
             <p className="text-xs text-muted-foreground mt-1">
               La consulta del historial falló. No sabemos si este cliente ya compró antes — no lo trates como primer pedido.
             </p>
@@ -387,13 +475,14 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   if (orders.length === 0) {
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0">
-            <User size={18} />
-          </div>
+        className="hairline-top relative overflow-hidden bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
+        <AuroraBackdrop />
+        <div className="relative flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <User size={17} />
+          </span>
           <div>
-            <h3 className="text-sm font-bold text-foreground">Huella del comprador</h3>
+            <h3 className="text-sm font-semibold text-foreground">Huella del comprador</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Primer pedido de este cliente</p>
           </div>
         </div>
@@ -407,17 +496,19 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       className="bg-card/40 border border-border rounded-2xl overflow-hidden shadow-card3d">
 
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0">
-            <Shield size={15} />
+      {/* Header — el aurora vive acotado acá (la tarjeta ya es overflow-hidden;
+          los hermanos del backdrop necesitan `relative` para quedar encima). */}
+      <div className="relative overflow-hidden px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+        <AuroraBackdrop />
+        <div className="relative flex items-center gap-2 min-w-0">
+          <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0">
+            <Shield size={15} aria-hidden="true" />
           </span>
-          <h3 className="text-sm font-bold text-foreground">Huella del comprador</h3>
+          <h3 className="text-sm font-semibold text-foreground">Huella del comprador</h3>
           <span className="text-xs text-muted-foreground font-mono tabular-nums">· {totalLabel} pedido{totalReal === 1 ? '' : 's'}</span>
         </div>
         {badge && (
-          <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold ${badge.className}`}>
+          <span className={`relative inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg font-semibold ${badge.className}`}>
             {badge.label}
           </span>
         )}
@@ -447,30 +538,35 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
               <span className="hud-label">Datos Dropi — todas las tiendas</span>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-5">
-              {/* Donut: tu tienda vs otras */}
+              {/* Donut: tu tienda vs otras. Sectores separados, esquinas
+                  redondeadas, borde del color de la card y glow por sector —
+                  antes eran dos gajos planos pegados. */}
               <div className="relative flex-shrink-0" style={{ width: 130, height: 130 }}>
                 <PieChart width={130} height={130}>
                   <Pie
                     data={hasShopData ? shopGaugeData : [{ value: 1 }]}
                     cx={60} cy={60}
-                    innerRadius={42} outerRadius={56}
+                    innerRadius={40} outerRadius={58}
+                    paddingAngle={hasShopData ? 3 : 0}
+                    cornerRadius={6}
                     startAngle={90} endAngle={-270}
-                    dataKey="value" stroke="none"
+                    dataKey="value"
+                    stroke="hsl(var(--card))" strokeWidth={2}
                     animationBegin={0} animationDuration={800}
                   >
                     {hasShopData ? (
                       <>
-                        <Cell fill="hsl(var(--info))" />
+                        <Cell fill="hsl(var(--info))" style={barGlow('hsl(var(--info))')} />
                         <Cell fill="hsl(var(--muted-foreground))" />
                       </>
                     ) : (
-                      <Cell fill={GAUGE_REST_COLOR} />
+                      <Cell fill={GAUGE_REST_COLOR} stroke="none" />
                     )}
                   </Pie>
                 </PieChart>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-[10px] text-muted-foreground">Total</span>
-                  <span className="text-2xl font-bold text-foreground font-mono tabular-nums">{totals.orders}</span>
+                  <span className="hud-label">Total</span>
+                  <span className="text-2xl font-bold text-foreground font-mono tabular-nums leading-none mt-1 num-glow-accent">{totals.orders}</span>
                 </div>
               </div>
 
@@ -490,35 +586,46 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
                   </span>
                 </div>
 
+                {/* Los dos gajos de la dona, con el mismo aro suave que la
+                    leyenda-ranking de Logística. */}
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center gap-2">
-                    <Store size={11} className="text-info" />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ background: 'hsl(var(--info))', boxShadow: `0 0 0 3px ${ring('hsl(var(--info))')}` }}
+                      aria-hidden="true"
+                    />
+                    <Store size={11} className="text-info" aria-hidden="true" />
                     <span className="text-muted-foreground">En tu tienda:</span>
                     <span className="font-bold text-foreground font-mono tabular-nums">{myShop}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Globe size={11} className="text-muted-foreground" />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ background: 'hsl(var(--muted-foreground))', boxShadow: `0 0 0 3px ${ring('hsl(var(--muted-foreground))')}` }}
+                      aria-hidden="true"
+                    />
+                    <Globe size={11} className="text-muted-foreground" aria-hidden="true" />
                     <span className="text-muted-foreground">En otras tiendas:</span>
                     <span className="font-bold text-foreground font-mono tabular-nums">{otherShops}</span>
                   </div>
                 </div>
 
-                {/* Delivery / return bars */}
+                {/* Delivery / return bars. Sin pedidos concluidos el porcentaje
+                    es "—" y la barra queda vacía (0% de ancho, igual que antes):
+                    el "sin dato" lo dice la cifra y la nota de abajo, nunca un
+                    número inventado. */}
                 <div className="mt-3 space-y-1.5">
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Entregadas</span>
                     <span className="font-bold text-success font-mono tabular-nums">{totals.delivered} ({dropiScore === null ? '—' : `${dropiScore}%`})</span>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-                    <div className="h-full rounded-full bg-success transition-all" style={{ width: `${dropiScore ?? 0}%` }} />
-                  </div>
+                  <GlowBar pct={dropiScore ?? 0} color="hsl(var(--success))" />
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="text-muted-foreground">Devoluciones</span>
                     <span className="font-bold text-danger font-mono tabular-nums">{totals.returned} ({dropiScore === null ? '—' : `${100 - dropiScore}%`})</span>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-                    <div className="h-full rounded-full bg-danger transition-all" style={{ width: `${dropiScore !== null ? 100 - dropiScore : 0}%` }} />
-                  </div>
+                  <GlowBar pct={dropiScore !== null ? 100 - dropiScore : 0} color="hsl(var(--danger))" />
                   {dropiScore === null && (
                     <p className="text-[10px] text-muted-foreground pt-0.5">
                       Ningún pedido concluido todavía — sin base para calcular porcentajes.
@@ -540,38 +647,28 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
 
       {/* ── Local delivery probability gauge + insights ── */}
       <div className="px-5 py-5 border-b border-border flex flex-col sm:flex-row items-center gap-5">
-        {/* Circular gauge */}
-        <div className="relative flex-shrink-0" style={{ width: 130, height: 130 }}>
-          <PieChart width={130} height={130}>
-            <Pie
-              data={deliveryScore !== null ? gaugeData : [{ value: 1 }]}
-              cx={60}
-              cy={60}
-              innerRadius={42}
-              outerRadius={56}
-              startAngle={90}
-              endAngle={-270}
-              dataKey="value"
-              stroke="none"
-              animationBegin={0}
-              animationDuration={800}
-            >
-              {deliveryScore !== null ? (
-                <>
-                  <Cell fill={scoreConfig.color} />
-                  <Cell fill={GAUGE_REST_COLOR} />
-                </>
-              ) : (
-                <Cell fill={GAUGE_REST_COLOR} />
-              )}
-            </Pie>
-          </PieChart>
-          {/* Score number in center */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className={`text-3xl font-bold font-mono tabular-nums ${deliveryScore !== null ? scoreConfig.textClass : 'text-muted-foreground'}`}>
-              {deliveryScore !== null ? gaugeScore : '—'}
-            </span>
-          </div>
+        {/* Aro del DS (arco cónico + halo + cifra contando) en vez de la dona
+            plana de recharts. Con score null NO se dibuja aro: se muestra la
+            pista vacía y un guion — un anillo relleno sería inventar riesgo. */}
+        <div className="flex-shrink-0">
+          {deliveryScore !== null ? (
+            <GaugeRing value={deliveryScore} size={130} thickness={14} tone={gaugeTone} />
+          ) : (
+            <div className="relative" style={{ width: 130, height: 130 }} role="img" aria-label="Sin datos de probabilidad de entrega">
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: GAUGE_REST_COLOR,
+                  WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
+                  mask: 'radial-gradient(farthest-side, transparent calc(100% - 14px), #000 calc(100% - 13px))',
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-3xl font-bold font-mono tabular-nums text-muted-foreground">—</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Label + insights */}
@@ -604,39 +701,70 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         </div>
       </div>
 
-      {/* ── KPI grid ── */}
-      <div className="grid grid-cols-4 divide-x divide-border border-b border-border">
-        <div className="p-3 text-center">
-          <div className="hud-label">Total</div>
-          <div className="text-lg font-bold text-foreground font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
-            <Package size={14} className="text-muted-foreground" />{totalLabel}
+      {/* ── KPI grid — anatomía de tile del Dashboard: chip teñido con glow,
+             cifra grande contando y rótulo HUD. `Total` puede venir como "20+"
+             (muestra topada), así que va como texto y NO como contador. ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border-b border-border">
+        <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+          <div className="w-9 h-9 rounded-xl border bg-muted/60 border-border flex items-center justify-center flex-shrink-0">
+            <Package size={16} className="text-muted-foreground" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold leading-none text-foreground font-mono tabular-nums">{totalLabel}</div>
+            <div className="hud-label mt-1.5">Total</div>
           </div>
         </div>
-        <div className="p-3 text-center">
-          <div className="hud-label">Entregados</div>
-          <div className="text-lg font-bold text-success font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
-            <CheckCircle2 size={14} />{entregados}
+
+        <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+          <div className="w-9 h-9 rounded-xl border bg-success/14 border-success/30 glow-success flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 size={16} className="text-success" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold leading-none text-success num-glow-success"><CountUp value={entregados} /></div>
+            <div className="hud-label mt-1.5">Entregados</div>
           </div>
         </div>
-        <div className="p-3 text-center">
-          <div className="hud-label">Devueltos</div>
-          <div className="text-lg font-bold text-danger font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5">
-            <RotateCcw size={14} />{devoluciones}
+
+        <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
+          <div className="w-9 h-9 rounded-xl border bg-danger/14 border-danger/30 glow-danger flex items-center justify-center flex-shrink-0">
+            <RotateCcw size={16} className="text-danger" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold leading-none text-danger num-glow-danger"><CountUp value={devoluciones} /></div>
+            <div className="hud-label mt-1.5">Devueltos</div>
           </div>
         </div>
-        <div className="p-3 text-center">
-          <div className="hud-label">Efectividad</div>
-          <div className={`text-lg font-bold font-mono tabular-nums flex items-center justify-center gap-1 mt-0.5 ${
-            efectividad === null ? 'text-muted-foreground'
-              : efectividad >= 80 ? 'text-success' : efectividad >= 50 ? 'text-warning' : 'text-danger'
+
+        <div className={`flex items-center gap-3 p-3.5 rounded-2xl bg-card/40 border transition-colors duration-200 ${
+          efectividad === null ? 'border-border/50 opacity-75' : 'border-border hover:border-border-strong'
+        }`}>
+          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+            efectividad === null ? 'bg-muted/60 border-border text-muted-foreground'
+              : efectividad >= 80 ? 'bg-success/14 border-success/30 glow-success text-success'
+              : efectividad >= 50 ? 'bg-warning/14 border-warning/30 glow-warning text-warning'
+              : 'bg-danger/14 border-danger/30 glow-danger text-danger'
           }`}>
-            {efectividad !== null && efectividad >= 80 && <Star size={14} />}
-            {efectividad !== null && efectividad < 50 && <AlertTriangle size={14} />}
-            {efectividad === null ? '—' : `${efectividad}%`}
+            {/* Mismos cortes de siempre: estrella ≥80, alerta <50. En el medio
+                (y sin dato) va un ícono NEUTRO — una estrella ahí diría "bien"
+                sin que el dato lo diga. */}
+            {efectividad !== null && efectividad >= 80
+              ? <Star size={16} aria-hidden="true" />
+              : efectividad !== null && efectividad < 50
+              ? <AlertTriangle size={16} aria-hidden="true" />
+              : <Percent size={16} aria-hidden="true" />}
           </div>
-          {efectividad === null && (
-            <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">Sin pedidos concluidos</div>
-          )}
+          <div className="min-w-0">
+            <div className={`text-2xl font-bold leading-none font-mono tabular-nums ${
+              efectividad === null ? 'text-muted-foreground'
+                : efectividad >= 80 ? 'text-success' : efectividad >= 50 ? 'text-warning' : 'text-danger'
+            }`}>
+              {efectividad === null ? '—' : `${efectividad}%`}
+            </div>
+            <div className="hud-label mt-1.5">Efectividad</div>
+            {efectividad === null && (
+              <div className="text-[10px] text-muted-foreground mt-1 leading-tight">Sin pedidos concluidos</div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -666,7 +794,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             : `Efectividad: ${efectividad}%`,
           deliveryScore === null
             ? 'Score probabilidad entrega: sin datos — cliente sin pedidos concluidos, no afirmes un nivel de riesgo'
-            : `Score probabilidad entrega: ${deliveryScore}/100 (${scoreConfig.label})`,
+            : `Score probabilidad entrega: ${deliveryScore}% (${scoreConfig.label})`,
           `Productos pedidos: ${[...new Set(orders.map(o => o.producto).filter(Boolean))].join(', ')}`,
           `Ciudades: ${[...new Set(orders.map(o => o.ciudad).filter(Boolean))].join(', ') || 'N/A'}`,
           `Transportadoras usadas: ${[...new Set(orders.map(o => o.transportadora).filter(Boolean))].join(', ')}`,
@@ -699,7 +827,10 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
 
       {/* ── Análisis detallado (tabs) ── */}
       <div className="px-5 pt-4 pb-3 border-b border-border">
-        <h4 className="text-xs font-bold text-foreground mb-3">Análisis detallado</h4>
+        <header className="flex items-center gap-2 mb-3">
+          <Package size={14} className="text-accent" aria-hidden="true" />
+          <h4 className="hud-label text-foreground">Análisis detallado</h4>
+        </header>
         <div className="inline-flex flex-wrap gap-2">
           {TABS.map(tab => (
             <button
@@ -718,33 +849,61 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         </div>
       </div>
 
-      {/* ── Monthly bar chart ── */}
-      {chartData.length >= 2 && (
-        <div className="px-5 py-4 border-b border-border">
-          <ResponsiveContainer width="100%" height={90}>
-            <BarChart data={chartData} barGap={1}>
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 10, fill: 'currentColor' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                contentStyle={{
-                  fontSize: 11,
-                  borderRadius: 12,
-                  backgroundColor: 'hsl(var(--card))',
-                  borderColor: 'hsl(var(--border))',
-                }}
-                labelStyle={{ fontWeight: 600 }}
-              />
-              <Bar dataKey="entregados" stackId="a" fill="hsl(var(--success))" name="Entregados" />
-              <Bar dataKey="noEntrega"  stackId="a" fill="hsl(var(--danger))"  name="No entrega" />
-              <Bar dataKey="enCamino"   stackId="a" fill="hsl(var(--info))"    name="En camino" radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {/* ── Monthly bar chart — barras con degradado vertical, grilla y tooltip
+             del DS. El radio superior lo lleva la ÚLTIMA serie que tenga algún
+             valor en el período: dárselo a una serie vacía deja la pila con la
+             cabeza plana, y dárselo a todas produce muescas. ── */}
+      {chartData.length >= 2 && (() => {
+        const topKey = [...MONTHLY_SERIES].reverse()
+          .find(s => chartData.some(m => m[s.key] > 0))?.key;
+        return (
+          <div className="px-5 py-4 border-b border-border">
+            {/* Leyenda manual: no le come alto al gráfico y usa los MISMOS
+                rótulos que ya mostraba el tooltip. */}
+            <SwatchLegend
+              items={MONTHLY_SERIES.map(s => ({ color: s.color, label: s.label }))}
+              className="mb-3"
+            />
+
+            <ResponsiveContainer width="100%" height={130}>
+              <BarChart data={chartData} barGap={1} margin={{ top: 8, right: 10, bottom: 0, left: -22 }}>
+                <BarGradientDefs
+                  prefix="huellaMes"
+                  entries={MONTHLY_SERIES.map(s => ({ key: s.key, color: s.color }))}
+                />
+                <CartesianGrid {...CHART_GRID_PROPS} />
+                <XAxis
+                  dataKey="month"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={36}
+                  allowDecimals={false}
+                />
+                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_BAR_CURSOR} />
+                {MONTHLY_SERIES.map(s => (
+                  <Bar
+                    key={s.key}
+                    dataKey={s.key}
+                    stackId="a"
+                    name={s.label}
+                    fill={`url(#huellaMes-${s.key})`}
+                    radius={s.key === topKey ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                    style={s.key === 'entregados' ? barGlow(s.color) : undefined}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
 
       {/* ── Filtered orders list ── */}
       <div className="max-h-72 overflow-y-auto divide-y divide-border">
@@ -753,14 +912,20 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
             Sin pedidos en esta categoría
           </div>
         )}
-        {filteredOrders.slice(0, 10).map((o) => (
+        {filteredOrders.slice(0, 10).map((o) => {
+          // Riel de color por desenlace — el mismo `categorizeOrder` que ya
+          // clasifica las pestañas, ahora legible de un vistazo en la fila.
+          const cat = categorizeOrder(o.estado);
+          const rail = cat === 'entregado' ? 'bg-success' : cat === 'no_entrega' ? 'bg-danger' : 'bg-info';
+          return (
           <button
             key={o.id}
             onClick={() => o.external_id && navigate(`/pedido/${o.external_id}`)}
             disabled={!o.external_id}
             aria-label={`Pedido #${o.external_id || 'sin ID'} — ${o.estado || 'sin estado'} — ${formatCOP(Number(o.valor) || 0)}`}
-            className="w-full text-left px-5 py-3 hover:bg-secondary/40 transition-colors disabled:cursor-not-allowed"
+            className="relative w-full text-left px-5 py-3 pl-6 hover:bg-secondary/40 transition-colors duration-200 disabled:cursor-not-allowed"
           >
+            <span className={`absolute left-2 top-3 bottom-3 w-1 rounded-full ${rail}`} aria-hidden="true" />
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
@@ -791,7 +956,8 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
               </div>
             </div>
           </button>
-        ))}
+          );
+        })}
         {filteredOrders.length > 10 && (
           <div className="px-5 py-3 text-xs text-muted-foreground text-center bg-card/40 font-mono tabular-nums">
             + {filteredOrders.length - 10} pedidos más

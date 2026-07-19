@@ -2,10 +2,15 @@ import { useNovedadesSeguimiento, SeguimientoRange, DimensionRow } from '@/hooks
 import { CULPA_LABEL, CULPA_ORDER, Culpa } from '@/lib/novedadTaxonomy';
 import { Stat } from '@/components/novedades/Stat';
 import {
-  CHART_TOOLTIP_STYLE, CHART_LEGEND_PROPS, SEMANTIC_COLORS,
-} from '@/components/logistics/charts/chartTokens';
+  NovCard, SwatchLegend, MetricBar, RangePills, EmptyCard,
+} from '@/components/novedades/NovedadesChrome';
+import { fadeUp, barGlow } from '@/components/novedades/chromeTokens';
 import {
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip, Legend,
+  CHART_TOOLTIP_STYLE, SEMANTIC_COLORS,
+} from '@/components/logistics/charts/chartTokens';
+import { motion } from 'framer-motion';
+import {
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip,
 } from 'recharts';
 import {
   RefreshCw, AlertTriangle, Truck, MapPin, Target, Lightbulb, ShieldQuestion,
@@ -35,38 +40,47 @@ function catLabel(categoria: string): string {
   return categoria.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
-/** Tabla de dimensión problemática (transportadora / ciudad). */
+/** Tabla de dimensión problemática (transportadora / ciudad).
+ *  La barra representa la MISMA tasa que ya muestra la columna de la derecha;
+ *  cuando la tasa es null («—», sin pedidos terminados) la pista queda vacía en
+ *  vez de dibujar un 0% que se leería como "medimos y dio cero". */
 function DimensionTable({
-  title, icon, rows, fallbackLabel,
+  title, icon, iconClass, rows, fallbackLabel,
 }: {
-  title: string; icon: React.ReactNode; rows: DimensionRow[]; fallbackLabel: string;
+  title: string; icon: typeof Truck; iconClass: string; rows: DimensionRow[]; fallbackLabel: string;
 }) {
   return (
-    <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        {icon}
-        <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">{title}</h3>
-        <span className="text-[10px] text-muted-foreground">(mín. 3 pedidos · orden por % devolución)</span>
-      </div>
+    <NovCard title={title} icon={icon} iconClass={iconClass} note="(mín. 3 pedidos · orden por % devolución)">
       {rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-xs text-muted-foreground">{fallbackLabel}</div>
+        <p className="flex-1 flex items-center justify-center py-6 text-center text-xs text-muted-foreground">{fallbackLabel}</p>
       ) : (
-        <div className="divide-y divide-border">
+        <ul className="space-y-1">
           {rows.slice(0, 8).map((r) => {
             const danger = r.tasaDevolucion != null && r.tasaDevolucion >= 0.3;
+            const color = danger ? SEMANTIC_COLORS.danger : SEMANTIC_COLORS.info;
             return (
-              <div key={r.label} className="px-4 py-2.5 flex items-center gap-3 text-xs hover:bg-foreground/[0.03] transition-colors">
-                <span className="flex-1 min-w-0 truncate text-foreground">{r.label}</span>
-                <span className="text-muted-foreground font-mono tabular-nums" title="Pedidos con novedad">{r.total}</span>
-                <span className={`w-12 text-right font-mono font-bold tabular-nums ${danger ? 'text-danger' : 'text-foreground'}`} title="% devolución (de las terminadas)">
-                  {pct(r.tasaDevolucion)}
-                </span>
-              </div>
+              <MetricBar
+                key={r.label}
+                label={r.label}
+                color={color}
+                pct={r.tasaDevolucion == null ? null : r.tasaDevolucion * 100}
+                right={
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-muted-foreground" title="Pedidos con novedad">{r.total}</span>
+                    <span
+                      className={`w-12 text-right font-bold ${danger ? 'text-danger' : 'text-foreground'}`}
+                      title="% devolución (de las terminadas)"
+                    >
+                      {pct(r.tasaDevolucion)}
+                    </span>
+                  </span>
+                }
+              />
             );
           })}
-        </div>
+        </ul>
       )}
-    </section>
+    </NovCard>
   );
 }
 
@@ -85,127 +99,144 @@ export default function NovedadesPuntosMejora() {
   const donutData = culpaTotals.map((c) => ({ name: CULPA_LABEL[c.culpa], value: c.count, culpa: c.culpa }));
   const topCategorias = [...s.porCulpa].sort((a, b) => b.count - a.count).slice(0, 8);
   const maxCat = topCategorias[0]?.count || 1;
+  // Porción dominante del donut, para la cifra del centro. Misma proporción que
+  // ya muestra el tooltip de esa porción — no es una métrica nueva.
+  const topCulpa = donutData.reduce<typeof donutData[number] | null>(
+    (best, d) => (best == null || d.value > best.value ? d : best), null,
+  );
 
   return (
     <div className="space-y-5">
       {/* Range selector + refresh */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="inline-flex flex-wrap gap-2">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              onClick={() => s.setRange(r.key)}
-              className={`px-4 py-2 rounded-xl text-sm transition-colors ${
-                s.range === r.key
-                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
+      <motion.div {...fadeUp(0)} className="flex items-center justify-between gap-2 flex-wrap">
+        <RangePills items={RANGES} value={s.range} onChange={s.setRange} ariaLabel="Período del análisis" />
         <button
+          type="button"
           onClick={s.refresh}
           disabled={s.loading}
-          className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium flex items-center gap-1.5 hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-50"
+          className="px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-sm font-medium flex items-center gap-1.5 hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
-          <RefreshCw size={12} className={s.loading ? 'animate-spin' : ''} />
+          <RefreshCw size={13} className={s.loading ? 'animate-spin' : ''} aria-hidden="true" />
           Recargar
         </button>
-      </div>
+      </motion.div>
 
       {/* KPIs hero: el lever accionable */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Stat icon={<AlertTriangle size={11} />} label="Novedades analizadas" value={totalNov} hint="gestionadas + en cola" />
+      <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Stat icon={<AlertTriangle size={17} />} label="Novedades analizadas" value={totalNov} hint="gestionadas + en cola" />
         <Stat
-          icon={<Target size={11} />} label="Culpa: datos nuestros" value={pct(pctDatos)}
+          icon={<Target size={17} />} label="Culpa: datos nuestros" value={pct(pctDatos)}
           tone={pctDatos != null && pctDatos > 0.2 ? 'danger' : 'default'} hint="lo corregible por nosotros"
         />
         <Stat
-          icon={<ShieldQuestion size={11} />} label="Texto genérico / sin info" value={pct(pctGenerica)}
+          icon={<ShieldQuestion size={17} />} label="Texto genérico / sin info" value={pct(pctGenerica)}
           tone={pctGenerica != null && pctGenerica > 0.3 ? 'warning' : 'default'} hint="el carrier no dice el motivo"
         />
-      </div>
+      </motion.div>
 
       {/* Empty state */}
       {totalNov === 0 && !s.loading && (
-        <div className="bg-card/40 rounded-2xl border border-border p-10 text-center text-sm text-muted-foreground shadow-card3d">
-          No hay novedades en el período para analizar.
-        </div>
+        <motion.div {...fadeUp(0.1)}>
+          <EmptyCard msg="No hay novedades en el período para analizar." />
+        </motion.div>
       )}
 
       {totalNov > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Donut de culpa */}
-          <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
-            <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-              <Lightbulb size={13} className="text-warning" />
-              <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">¿De quién es la culpa?</h3>
-            </div>
-            <div className="p-3" style={{ height: 240 }}>
+          <NovCard
+            title="¿De quién es la culpa?"
+            icon={Lightbulb}
+            iconClass="text-warning"
+            right={<SwatchLegend items={donutData.map(d => ({ color: CULPA_COLOR[d.culpa], label: d.name }))} />}
+          >
+            <div className="relative h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                  {/* Relleno con degradado, igual que las barras del área: el
+                      sector va del color pleno en el borde exterior al mismo
+                      color al 55% en el interior. Es el ÚNICO gráfico de verdad
+                      de /novedades y era el que seguía con fill plano. */}
+                  <defs>
                     {donutData.map((d) => (
-                      <Cell key={d.culpa} fill={CULPA_COLOR[d.culpa]} stroke="hsl(var(--card))" strokeWidth={2} />
+                      <linearGradient key={d.culpa} id={`novCulpa-${d.culpa}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={CULPA_COLOR[d.culpa]} stopOpacity={1} />
+                        <stop offset="100%" stopColor={CULPA_COLOR[d.culpa]} stopOpacity={0.55} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <Pie
+                    data={donutData} dataKey="value" nameKey="name"
+                    innerRadius={62} outerRadius={102} paddingAngle={2} cornerRadius={6}
+                    stroke="hsl(var(--card))" strokeWidth={2}
+                  >
+                    {donutData.map((d) => (
+                      <Cell key={d.culpa} fill={`url(#novCulpa-${d.culpa})`} style={barGlow(CULPA_COLOR[d.culpa])} />
                     ))}
                   </Pie>
                   <RTooltip
                     contentStyle={CHART_TOOLTIP_STYLE}
                     formatter={(value: number) => [`${value} (${pct(totalNov ? value / totalNov : null)})`, 'Novedades']}
                   />
-                  <Legend {...CHART_LEGEND_PROPS} />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-          </section>
-
-          {/* Top categorías */}
-          <section className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden">
-            <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-              <AlertTriangle size={13} className="text-muted-foreground" />
-              <h3 className="text-xs font-bold text-foreground uppercase tracking-wide">Motivos más frecuentes</h3>
-            </div>
-            <div className="p-3 space-y-1.5">
-              {topCategorias.map((r) => (
-                <div key={`${r.culpa}-${r.categoria}`} className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: CULPA_COLOR[r.culpa] }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center mb-0.5">
-                      <span className="text-xs text-foreground truncate pr-2">{catLabel(r.categoria)}</span>
-                      <span className="text-xs font-mono font-bold text-muted-foreground tabular-nums">
-                        {r.count}
-                        {r.pctDevolucion != null && (
-                          <span className={`ml-1.5 ${r.pctDevolucion >= 0.3 ? 'text-danger' : 'text-muted-foreground/70'}`} title="% devolución de las terminadas">
-                            · {pct(r.pctDevolucion)} dev
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${(r.count / maxCat) * 100}%`, background: CULPA_COLOR[r.culpa] }} />
-                    </div>
+              {topCulpa && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-[38px] font-bold text-foreground font-mono tabular-nums leading-none num-glow-accent">
+                    {pct(totalNov ? topCulpa.value / totalNov : null)}
+                  </div>
+                  {/* max-w atado al agujero REAL del donut: innerRadius=62 →
+                      124px de diámetro, y a la altura donde cae este rótulo la
+                      cuerda mide ~108px. Con 150px el truncate no disparaba
+                      nunca y "Sin info / genérica" se montaba sobre el anillo. */}
+                  <div className="text-[11px] text-muted-foreground font-medium mt-2 truncate max-w-[100px] text-center" title={topCulpa.name}>
+                    {topCulpa.name}
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-          </section>
-        </div>
+          </NovCard>
+
+          {/* Top categorías */}
+          <NovCard title="Motivos más frecuentes" icon={AlertTriangle} iconClass="text-muted-foreground">
+            <ul className="space-y-1">
+              {topCategorias.map((r, i) => (
+                <MetricBar
+                  key={`${r.culpa}-${r.categoria}`}
+                  rank={i + 1}
+                  label={catLabel(r.categoria)}
+                  color={CULPA_COLOR[r.culpa]}
+                  dotTitle={CULPA_LABEL[r.culpa]}
+                  pct={(r.count / maxCat) * 100}
+                  right={
+                    <span className="font-bold text-muted-foreground">
+                      {r.count}
+                      {r.pctDevolucion != null && (
+                        <span className={`ml-1.5 ${r.pctDevolucion >= 0.3 ? 'text-danger' : 'text-muted-foreground/70'}`} title="% devolución de las terminadas">
+                          · {pct(r.pctDevolucion)} dev
+                        </span>
+                      )}
+                    </span>
+                  }
+                />
+              ))}
+            </ul>
+          </NovCard>
+        </motion.div>
       )}
 
       {/* Dimensiones problemáticas */}
       {totalNov > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <motion.div {...fadeUp(0.18)} className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <DimensionTable
-            title="Transportadoras problemáticas" icon={<Truck size={13} className="text-info" />}
+            title="Transportadoras problemáticas" icon={Truck} iconClass="text-info"
             rows={s.carriersProblematicos} fallbackLabel="Sin suficientes datos (mín. 3 pedidos por transportadora)."
           />
           <DimensionTable
-            title="Ciudades problemáticas" icon={<MapPin size={13} className="text-info" />}
+            title="Ciudades problemáticas" icon={MapPin} iconClass="text-info"
             rows={s.ciudadesProblematicas} fallbackLabel="Sin suficientes datos (mín. 3 pedidos por ciudad)."
           />
-        </div>
+        </motion.div>
       )}
 
       <p className="text-[10px] text-muted-foreground text-center">

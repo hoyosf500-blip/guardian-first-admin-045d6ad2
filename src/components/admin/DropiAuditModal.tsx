@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { X, AlertTriangle, CheckCircle2, Loader2, RefreshCw, Search } from 'lucide-react';
+import { X, AlertTriangle, CheckCircle2, Loader2, RefreshCw, Search, Database, Cloud, HelpCircle } from 'lucide-react';
+import { StatTile } from '@/components/ui3d';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -113,7 +114,23 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 
   const handleApply = async () => {
     if (filtered.length === 0) return;
-    if (!window.confirm(`¿Aplicar ${filtered.length} cambios en Guardian? Esta acción NO modifica Dropi.`)) return;
+    // El confirm viejo decía solo "¿Aplicar N cambios?" y ocultaba lo grave:
+    // cada divergencia `cancel_orphan` ESCRIBE estado CANCELADO sobre el pedido
+    // en Guardian (ver applyDivergences en src/lib/dropiAudit.ts). Cancelar
+    // pedidos es irreversible desde acá, así que el texto ahora lo dice, con el
+    // desglose exacto de cuántos se cancelan y cuántos solo se actualizan.
+    const toCancel = filtered.filter(d => d.action === 'cancel_orphan').length;
+    const toUpdate = filtered.length - toCancel;
+    const detalle = [
+      toCancel > 0 ? `CANCELAR ${toCancel} pedido${toCancel === 1 ? '' : 's'} (se les escribe estado CANCELADO)` : null,
+      toUpdate > 0 ? `actualizar estado/guía/transportadora de ${toUpdate}` : null,
+    ].filter(Boolean).join(' y ');
+    const aviso = toCancel > 0
+      ? '\n\nCancelar un pedido NO se puede deshacer desde esta pantalla.'
+      : '';
+    if (!window.confirm(
+      `Vas a ${detalle} en Guardian.${aviso}\n\nEsta acción NO modifica Dropi. ¿Continuar?`,
+    )) return;
     setState('applying');
     try {
       const r = await applyDivergences(supabase, storeId, filtered);
@@ -197,20 +214,25 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 
           {(state === 'results' || state === 'applying') && (
             <>
-              <div className={`grid gap-3 ${coverageMissing > 0 ? 'grid-cols-5' : 'grid-cols-4'}`}>
-                <Stat
+              <div className={`grid gap-3 ${coverageMissing > 0 ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
+                <StatTile
+                  icon={Database}
                   label="Guardian"
                   value={guardianCount}
-                  accent={guardianTruncated ? 'warning' : undefined}
-                  note={guardianTruncated
-                    ? (guardianTotal !== null ? `de ${guardianTotal} · parcial` : 'parcial · hay más')
+                  tone={guardianTruncated ? 'warning' : 'neutral'}
+                  extra={guardianTruncated
+                    ? (
+                      <span className="text-[10px] font-semibold text-warning">
+                        {guardianTotal !== null ? `de ${guardianTotal} · parcial` : 'parcial · hay más'}
+                      </span>
+                    )
                     : undefined}
                 />
-                <Stat label="Dropi" value={dropiCount} />
-                <Stat label="Updates" value={updates} accent={updates > 0 ? 'warning' : undefined} />
-                <Stat label="Huérfanos" value={orphans} accent={orphans > 0 ? 'danger' : undefined} />
+                <StatTile icon={Cloud} label="Dropi" value={dropiCount} tone="neutral" />
+                <StatTile icon={RefreshCw} label="Updates" value={updates} tone={updates > 0 ? 'warning' : 'neutral'} />
+                <StatTile icon={AlertTriangle} label="Huérfanos" value={orphans} tone={orphans > 0 ? 'danger' : 'neutral'} />
                 {coverageMissing > 0 && (
-                  <Stat label="Sin verificar" value={coverageMissing} accent="warning" />
+                  <StatTile icon={HelpCircle} label="Sin verificar" value={coverageMissing} tone="warning" />
                 )}
               </div>
 
@@ -358,17 +380,7 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
   );
 }
 
-function Stat({ label, value, accent, note }: { label: string; value: number; accent?: 'warning' | 'danger'; note?: string }) {
-  const color = accent === 'danger' ? 'text-destructive' : accent === 'warning' ? 'text-warning' : 'text-foreground';
-  return (
-    <div className="rounded-2xl border border-border bg-card/40 px-3 py-2 shadow-card3d hairline-top">
-      <div className="hud-label">{label}</div>
-      <div className={`text-lg font-bold ${color}`}>{value}</div>
-      {/* `note` califica el número (ej. "de 3400 · parcial") para que una muestra
-          nunca se lea como si fuera el total. */}
-      {note && (
-        <div className={`text-[10px] font-medium leading-tight ${accent ? color : 'text-muted-foreground'}`}>{note}</div>
-      )}
-    </div>
-  );
-}
+// El `Stat` local se reemplazó por <StatTile> de ui3d: misma información
+// (rótulo + cifra + nota que califica el número, ej. "de 3400 · parcial", para
+// que una muestra nunca se lea como si fuera el total) pero con la anatomía del
+// DS — chip de ícono con halo, cifra que cuenta y estado apagado en cero.

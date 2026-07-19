@@ -9,6 +9,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { copyToClipboard } from '@/lib/clipboard';
 import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
 import { NovedadResultTipo } from '@/lib/novedadGestion';
+import { AuroraBackdrop } from '@/components/ui3d';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -35,6 +36,14 @@ interface Props {
    *  de la otra y la operadora perdía su lugar en la cola de llamadas. */
   stateKey?: string;
 }
+
+/** Tinte de urgencia por antigüedad. Mismos cortes de siempre (7 / 4 días),
+ *  ahora con los tonos semánticos del DS en vez de los colores legacy. */
+const URGENCIA = {
+  danger:  { chip: 'bg-danger/14 border-danger/30 text-danger glow-danger',    dot: 'bg-danger' },
+  warning: { chip: 'bg-warning/14 border-warning/30 text-warning glow-warning', dot: 'bg-warning' },
+  success: { chip: 'bg-success/14 border-success/30 text-success glow-success', dot: 'bg-success' },
+} as const;
 
 export default function NovedadView({ items, stateKey = 'novedades:callOrderId' }: Props) {
   const { loadNovedades } = useOrders();
@@ -87,16 +96,19 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
   if (!visibleItems.length || !o) {
     return (
-      <div className="text-center py-10 text-muted-foreground">
-        <CheckCircle2 size={40} className="mx-auto mb-3 text-green" />
-        <p className="text-sm font-semibold text-foreground">No hay novedades pendientes</p>
-        <p className="text-xs mt-1">Todas las novedades están resueltas 🎉</p>
+      <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+        <span className="w-12 h-12 rounded-2xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center" aria-hidden="true">
+          <CheckCircle2 size={24} />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-foreground">No hay novedades pendientes</p>
+          <p className="text-xs text-muted-foreground mt-1">Todas las novedades están resueltas 🎉</p>
+        </div>
       </div>
     );
   }
 
-  const pColor = o.dias >= 7 ? 'text-red' : o.dias >= 4 ? 'text-yellow' : 'text-green';
-  const pDot = o.dias >= 7 ? 'bg-red' : o.dias >= 4 ? 'bg-yellow' : 'bg-green';
+  const urg = URGENCIA[o.dias >= 7 ? 'danger' : o.dias >= 4 ? 'warning' : 'success'];
 
   const copyPhone = () => {
     void copyToClipboard(o.phone, `${o.phone} copiado`);
@@ -138,51 +150,58 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
   // corre post-paint) y el primer render no resuelve GINTRACOM/LAAR/Serv-EC.
   const trackUrl = o.guia ? getTrackingUrl(o.transportadora, o.guia, countryCode) : null;
 
+  const navBtn = 'min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
+
   return (
     <>
       {/* Persistent "currently attending" chip + navegación, en UNA sola fila
           (mockup Novedades3DBody.dc.html:46) — survives tab switches */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="pill-warning inline-flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs">
-          <AlertTriangle size={12} className="shrink-0" />
+        <span className="pill pill-warning inline-flex min-w-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs">
+          <AlertTriangle size={12} className="shrink-0" aria-hidden="true" />
           <span className="dark:opacity-80">Atendiendo:</span>
           <span className="font-semibold truncate">{o.nombre}</span>
           <span className="dark:opacity-60">·</span>
-          <span className="font-mono">{formatPhone(o.phone)}</span>
+          <span className="font-mono tabular-nums">{formatPhone(o.phone)}</span>
         </span>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{callIdx + 1} / {visibleItems.length}</span>
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">{callIdx + 1} / {visibleItems.length}</span>
           <div className="flex gap-1.5">
             <button
               onClick={() => navCall(-1)}
               disabled={callIdx <= 0 || submitting}
-              className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors"
+              aria-label="Anterior"
+              className={navBtn}
             >
-              <ChevronLeft size={14} />
+              <ChevronLeft size={14} aria-hidden="true" />
             </button>
             <button
               onClick={() => navCall(1)}
               disabled={submitting}
-              className="min-h-11 min-w-11 justify-center px-3 rounded-xl bg-card/40 border border-border text-muted-foreground text-xs font-semibold disabled:opacity-30 inline-flex items-center hover:text-foreground hover:border-border-strong transition-colors"
+              aria-label="Siguiente"
+              className={navBtn}
             >
-              <ChevronRight size={14} />
+              <ChevronRight size={14} aria-hidden="true" />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="bg-gradient-to-b from-card to-surface border border-border-strong rounded-2xl p-5 mb-4 shadow-card3d-lg flex flex-col gap-[22px] lg:flex-row lg:flex-wrap">
+      <div className="hairline-top relative overflow-hidden bg-card/40 border border-border-strong rounded-3xl p-5 mb-4 shadow-card3d-lg flex flex-col gap-[22px] lg:flex-row lg:flex-wrap">
+        <AuroraBackdrop />
         {/* Columna A: datos del cliente (mockup: flex 1 1 340px). Apilada en
             móvil, lado a lado desde lg — las asesoras entran desde el celular. */}
-        <div className="flex flex-col gap-3.5 lg:flex-1 lg:basis-[340px] lg:min-w-[280px]">
+        <div className="relative flex flex-col gap-3.5 lg:flex-1 lg:basis-[340px] lg:min-w-[280px]">
         {/* Header: badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className={`w-2 h-2 rounded-full ${pDot}`} />
-          <span className={`text-xs font-bold ${pColor}`}>D{o.dias}</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted font-semibold">{o.estado}</span>
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-bold ${urg.chip}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${urg.dot}`} aria-hidden="true" />
+            <span className="font-mono tabular-nums">D{o.dias}</span>
+          </span>
+          <span className="pill pill-neutral text-[10px] px-2 py-0.5 rounded-full font-semibold">{o.estado}</span>
           {o.transportadora && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan/10 text-cyan border border-cyan/20 font-semibold">
-              <Truck size={10} className="inline mr-1" />
+            <span className="pill pill-info text-[10px] px-2 py-0.5 rounded-full font-semibold">
+              <Truck size={10} className="inline mr-1" aria-hidden="true" />
               {o.transportadora}
             </span>
           )}
@@ -192,18 +211,18 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
         <div><FingerprintBadge phone={o.phone} /></div>
 
         {/* Customer name */}
-        <div className="text-xl font-bold">{o.nombre}</div>
+        <div className="text-xl font-bold text-foreground">{o.nombre}</div>
 
         {/* Contact + location line */}
         <div className="text-sm text-muted-foreground leading-relaxed space-y-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <Phone size={12} />
-            <button onClick={copyPhone} className="text-cyan hover:underline">{formatPhone(o.phone)}</button>
+            <Phone size={12} aria-hidden="true" />
+            <button onClick={copyPhone} className="text-cyan font-mono tabular-nums hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded">{formatPhone(o.phone)}</button>
             <a
               href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
-              className="ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue/10 text-blue border border-blue/20 hover:bg-blue/20 no-underline"
+              className="pill pill-info ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full no-underline transition-colors hover:brightness-110"
             >
-              <Phone size={10} /> Llamar
+              <Phone size={10} aria-hidden="true" /> Llamar
             </a>
             {waEnabled && (
               <button
@@ -211,36 +230,36 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                 onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
                 className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-success border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
               >
-                <MessageSquare size={10} /> WhatsApp
+                <MessageSquare size={10} aria-hidden="true" /> WhatsApp
               </button>
             )}
           </div>
           <div className="flex items-center gap-1.5">
-            <MapPin size={12} /> {o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}
+            <MapPin size={12} aria-hidden="true" /> {o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}
           </div>
           <div className="flex items-start gap-1.5">
-            <Package size={12} className="mt-0.5" />
+            <Package size={12} className="mt-0.5" aria-hidden="true" />
             <span className="flex-1">{o.producto || '—'}{o.cantidad > 1 ? ` × ${o.cantidad}` : ''}</span>
             {o.valor > 0 && (
-              <span className="inline-flex items-center gap-1 text-foreground">
-                <DollarSign size={12} />{formatCOP(o.valor)}
+              <span className="inline-flex items-center gap-1 font-mono tabular-nums font-bold text-foreground">
+                <DollarSign size={12} aria-hidden="true" />{formatCOP(o.valor)}
               </span>
             )}
           </div>
           {o.direccion && (
             <div className="flex items-start gap-1.5 text-xs">
-              <MapPin size={12} className="mt-0.5 text-muted-foreground/60" />
+              <MapPin size={12} className="mt-0.5 text-muted-foreground/60" aria-hidden="true" />
               <span className="flex-1 text-muted-foreground">{o.direccion}</span>
             </div>
           )}
           {o.guia && (
             <div className="text-xs inline-flex items-center gap-1.5">
-              <Tag size={12} /> Guía:{' '}
+              <Tag size={12} aria-hidden="true" /> Guía:{' '}
               <a
                 href={trackUrl || '#'}
                 target="_blank"
                 rel="noreferrer"
-                className="text-cyan hover:underline"
+                className="text-cyan font-mono tabular-nums hover:underline"
               >
                 {o.guia}
               </a>
@@ -248,26 +267,34 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
           )}
         </div>
 
-        {/* Novedad banner */}
+        {/* Novedad banner — molde de aviso del DS: barra lateral de color pleno
+            + chip de ícono, para que el motivo del carrier no se lea como una
+            caja gris más. */}
         {o.novedad && (
-          <div className="p-3 rounded-2xl text-xs bg-attention/10 border border-attention/20 shadow-card3d flex items-start gap-2">
-            <AlertTriangle size={14} className="text-attention mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
+          <div className="relative flex items-start gap-3 rounded-2xl border border-attention/30 bg-attention/10 px-4 pl-5 py-3 shadow-card3d">
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-attention" aria-hidden="true" />
+            <span className="w-9 h-9 rounded-xl bg-attention/20 flex items-center justify-center flex-shrink-0 text-attention" aria-hidden="true">
+              <AlertTriangle size={17} />
+            </span>
+            <div className="flex-1 min-w-0">
+              {/* Sin `hud-label`: acá adentro va el nombre de la transportadora
+                  (dato de Dropi) y esa utilidad mayusculiza. Se conservan las
+                  clases originales, que ya daban este mismo rendering. */}
               <div className="text-[10px] font-bold text-attention uppercase tracking-wide mb-0.5">
                 Novedad de {o.transportadora || 'transportadora'}
               </div>
-              <div className="text-foreground leading-relaxed">{o.novedad}</div>
+              <div className="text-xs text-foreground leading-relaxed">{o.novedad}</div>
             </div>
           </div>
         )}
         </div>
 
         {/* Columna B: panel de resolución (mockup: flex 1 1 300px) */}
-        <div className="flex flex-col gap-3 lg:flex-1 lg:basis-[300px] lg:min-w-[260px]">
+        <div className="relative flex flex-col gap-3 lg:flex-1 lg:basis-[300px] lg:min-w-[260px]">
         {/* Gestión: marca local (la colaboradora ya resolvió en Dropi). */}
         {submitting ? (
-          <div className="text-center py-4 text-sm font-semibold inline-flex items-center gap-2 justify-center w-full text-green">
-            <CheckCircle2 size={18} className="text-green animate-pulse" />
+          <div className="text-center py-4 text-sm font-semibold inline-flex items-center gap-2 justify-center w-full text-success">
+            <CheckCircle2 size={18} className="animate-pulse" aria-hidden="true" />
             Marcando…
           </div>
         ) : (
@@ -283,10 +310,10 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                 placeholder="Ej: Cliente confirma estar en casa mañana entre 2-5pm. Barrio correcto: Chapinero."
                 rows={2}
                 disabled={submitting}
-                className="w-full flex-1 min-h-[120px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none disabled:opacity-60"
+                className="w-full flex-1 min-h-[120px] rounded-xl bg-muted/50 border border-border p-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 resize-none disabled:opacity-60 transition-colors"
               />
               <div className="flex justify-end mt-1">
-                <span className={`text-[10px] ${solution.length > 450 ? 'text-attention' : 'text-muted-foreground'}`}>
+                <span className={`text-[10px] font-mono tabular-nums ${solution.length > 450 ? 'text-attention' : 'text-muted-foreground'}`}>
                   {solution.length}/500
                 </span>
               </div>
@@ -297,23 +324,23 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
               <button
                 onClick={() => doMark('resuelta')}
                 disabled={submitting}
-                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-gradient-to-br from-success to-success/85 text-success-foreground border border-transparent shadow-[0_8px_22px_-8px_hsl(var(--success)/0.4)] dark:shadow-[0_8px_22px_-8px_hsl(var(--success)/0.9)] font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-gradient-to-br from-success to-success/85 text-success-foreground border border-transparent shadow-[0_8px_22px_-8px_hsl(var(--success)/0.4)] dark:shadow-[0_8px_22px_-8px_hsl(var(--success)/0.9)] font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <CheckCircle2 size={16} /> Resuelta
+                <CheckCircle2 size={16} aria-hidden="true" /> Resuelta
               </button>
               <button
                 onClick={() => setShowReturnConfirm(true)}
                 disabled={submitting}
-                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-red/15 text-red border border-red/25 font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-danger/14 text-danger border border-danger/30 glow-danger font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <Truck size={16} /> Devolución
+                <Truck size={16} aria-hidden="true" /> Devolución
               </button>
               <button
                 onClick={() => doMark('sin_respuesta')}
                 disabled={submitting}
-                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-muted/50 text-muted-foreground border border-border font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                className="inline-flex flex-row items-center justify-center gap-1.5 py-3 min-h-12 w-full rounded-xl bg-muted/50 text-muted-foreground border border-border font-bold text-xs active:scale-[0.97] transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <PhoneOff size={16} /> Sin respuesta
+                <PhoneOff size={16} aria-hidden="true" /> Sin respuesta
               </button>
             </div>
             <p className="text-[10px] text-muted-foreground text-center">
@@ -331,12 +358,12 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
           onClick={() => setShowReturnConfirm(false)}
         >
           <div
-            className="bg-surface rounded-t-2xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] w-full max-w-[480px] animate-slide-up"
+            className="hairline-top bg-surface border border-border rounded-t-3xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] w-full max-w-[480px] animate-slide-up shadow-card3d-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-red/15 flex items-center justify-center flex-shrink-0">
-                <Truck size={18} className="text-red" />
+              <div className="w-10 h-10 rounded-xl bg-danger/14 border border-danger/30 text-danger glow-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Truck size={18} />
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="text-base font-bold text-foreground">Marcar como devolución</h3>
@@ -344,30 +371,32 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                   La novedad de <strong>{o.nombre}</strong> se marcará como <strong>devolución</strong> y saldrá de la cola. Asegurate de haberla gestionado en Dropi.
                 </p>
                 {solution.trim() && (
-                  <div className="mt-3 p-2.5 rounded-lg bg-yellow/10 border border-yellow/20 text-[11px] text-yellow-700 dark:text-yellow-400">
+                  <div className="relative mt-3 p-2.5 pl-3.5 rounded-xl bg-warning/10 border border-warning/30 text-[11px] text-warning">
+                    <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-warning" aria-hidden="true" />
                     <strong>Aviso:</strong> la nota que escribiste (<em>"<TruncatedText text={solution} maxChars={60} />"</em>) no se guarda en una devolución.
                   </div>
                 )}
               </div>
               <button
                 onClick={() => setShowReturnConfirm(false)}
-                className="text-muted-foreground hover:text-foreground p-1"
+                aria-label="Cerrar"
+                className="text-muted-foreground hover:text-foreground p-1 rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <X size={18} />
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2">
               <button
                 onClick={() => setShowReturnConfirm(false)}
-                className="py-3 rounded-xl bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80"
+                className="py-3 rounded-xl bg-muted text-muted-foreground font-semibold text-sm hover:bg-muted/80 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleDevolucionConfirm}
-                className="py-3 rounded-xl bg-red/15 text-red border border-red/25 font-bold text-sm active:scale-[0.97]"
+                className="py-3 rounded-xl bg-danger/14 text-danger border border-danger/30 glow-danger font-bold text-sm active:scale-[0.97] transition-transform focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <Send size={14} className="inline mr-1" /> Sí, devolución
+                <Send size={14} className="inline mr-1" aria-hidden="true" /> Sí, devolución
               </button>
             </div>
           </div>

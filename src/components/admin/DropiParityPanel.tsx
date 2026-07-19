@@ -74,7 +74,7 @@ export default function DropiParityPanel() {
         <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
               <Shield size={15} />
             </span>
             <div className="min-w-0">

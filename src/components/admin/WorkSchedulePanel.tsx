@@ -79,7 +79,7 @@ export default function WorkSchedulePanel() {
   return (
     <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d">
       <div className="flex items-center gap-2.5 mb-1">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <Clock size={15} />
         </span>
         <h3 className="text-sm font-bold text-foreground">Horario laboral de la tienda</h3>

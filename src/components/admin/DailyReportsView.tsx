@@ -1,10 +1,77 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { ClipboardList, Download, Loader2, Users } from 'lucide-react';
+import {
+  ClipboardList, Download, Loader2, Users, AlertTriangle, CalendarRange,
+  Inbox, CheckCircle2, XCircle, PhoneOff, Clock, Activity,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
+import {
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as RTooltip, ResponsiveContainer,
+} from 'recharts';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
 import { confRateByCohort, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
 import CancelledReasonsModal from '@/components/admin/CancelledReasonsModal';
+import { TiltCard, StatTile, GaugeRing } from '@/components/ui3d';
+import {
+  CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR, fmtDay,
+} from '@/components/logistics/charts/chartTokens';
+
+const hsl = (v: string) => `hsl(var(${v}))`;
+const C_SUCCESS = hsl('--success');
+const C_DANGER = hsl('--danger');
+const C_WARNING = hsl('--warning');
+const C_MUTED = hsl('--muted-foreground');
+const C_ACCENT = hsl('--accent');
+const C_CYAN = hsl('--cyan');
+const C_BG = hsl('--background');
+
+/** Glow del trazo: 8px líneas/áreas, 6px barras. Es la firma del DS. */
+const lineGlow = (color: string) => ({ filter: `drop-shadow(0 0 8px ${color})` });
+
+/** Entrada escalonada: la pantalla se arma de arriba abajo. */
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
+/** Degradado vertical por serie. Los ids de `<defs>` son GLOBALES al documento
+ *  → `prefix` obligatorio para no pisar los de otra card de la pantalla. */
+function BarGradientDefs({ prefix, entries }: { prefix: string; entries: { slug: string; color: string }[] }) {
+  return (
+    <>
+      {entries.map(e => (
+        <linearGradient key={e.slug} id={`${prefix}-${e.slug}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={e.color} stopOpacity={0.95} />
+          <stop offset="100%" stopColor={e.color} stopOpacity={0.5} />
+        </linearGradient>
+      ))}
+    </>
+  );
+}
+
+/** Leyenda manual: swatch CUADRADO de 10px (nunca círculo). */
+function SwatchLegend({ items, className = '' }: { items: { color: string; label: string }[]; className?: string }) {
+  return (
+    <div className={`flex items-center gap-3 flex-wrap ${className}`}>
+      {items.map(l => (
+        <span key={l.label} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: l.color }} aria-hidden="true" />
+          {l.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Series apiladas del día — el orden ES el embudo, de abajo hacia arriba. */
+const DAY_STACK = [
+  { key: 'Confirmados', slug: 'conf', color: C_SUCCESS },
+  { key: 'Cancelados', slug: 'canc', color: C_DANGER },
+  { key: 'No Respondió', slug: 'noresp', color: C_MUTED },
+  { key: 'Pendientes', slug: 'pend', color: C_WARNING },
+] as const;
 
 // Panel de "Reportes diarios" con DOS vistas:
 //
@@ -222,6 +289,32 @@ export default function DailyReportsView() {
     return { ...t, ...m };
   }, [days]);
 
+  // Mismos datos de la tabla, dibujados: una columna por día (embudo apilado)
+  // más la línea de % confirmación. NO recalcula nada — reusa deriveDayMetrics,
+  // y `pctConf` queda en null cuando no hay denominador (la línea se corta,
+  // no se aplasta a 0).
+  const chartRows = useMemo(
+    () => days.map(r => {
+      const m = deriveDayMetrics(r.confirmados, r.cancelados, r.entrantes);
+      return {
+        fecha: r.fecha,
+        Confirmados: r.confirmados,
+        Cancelados: r.cancelados,
+        'No Respondió': r.noresp,
+        Pendientes: r.pendientes,
+        pctConf: m.tasaConfDia,
+      };
+    }),
+    [days],
+  );
+
+  // Radio SOLO en el segmento más alto que realmente tiene volumen: ponérselo a
+  // una serie vacía deja el tope de la columna cuadrado.
+  const topStackSlug = useMemo(() => {
+    const withData = DAY_STACK.filter(s => chartRows.some(r => (r[s.key] as number) > 0));
+    return withData.length > 0 ? withData[withData.length - 1].slug : null;
+  }, [chartRows]);
+
   const fmtHora = (h: string | null) =>
     h ? new Date(h).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true }) : '';
 
@@ -289,32 +382,46 @@ export default function DailyReportsView() {
   // (~55%), NO contra el 85% (esa es la efectividad ÷resueltos, va en el tooltip).
   // Verde en meta; ámbar en la banda "cerca" (5 pts por debajo); rojo debajo.
   function pctConfClass(p: number) {
-    if (p >= CONF_DIA_TARGET_PCT) return 'text-green';
-    if (p >= CONF_DIA_TARGET_PCT - 5) return 'text-orange';
-    return 'text-red';
+    if (p >= CONF_DIA_TARGET_PCT) return 'text-success';
+    if (p >= CONF_DIA_TARGET_PCT - 5) return 'text-warning';
+    return 'text-danger';
   }
 
   return (
     <div className="space-y-5">
       {/* Filtros de rango compartidos por las dos vistas */}
-      <div className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top px-5 py-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-muted-foreground">
-          Reportes diarios — rango compartido por las dos vistas
+      <motion.div
+        {...fadeUp(0)}
+        className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top p-3 flex flex-wrap items-center justify-between gap-3"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center shrink-0" aria-hidden="true">
+            <CalendarRange size={17} />
+          </span>
+          <div className="text-xs text-muted-foreground">
+            Reportes diarios — rango compartido por las dos vistas
+          </div>
         </div>
         <PresetDateRangePicker
           value={{ from, to }}
           onChange={({ from: f, to: t }) => { setFrom(f); setTo(t); }}
           align="end"
         />
-      </div>
+      </motion.div>
 
       {/* Banner de error de RPC. Se muestra arriba de las dos tablas cuando
           alguna RPC falla (auth, función inexistente, signature mismatch).
           Texto en mono+wrap para no truncar el mensaje crudo de PostgREST. */}
       {errMsg && (
-        <div className="bg-red/10 border border-red/30 text-red rounded-2xl shadow-card3d px-4 py-3 text-xs font-mono whitespace-pre-wrap break-all">
-          <span className="font-sans font-semibold text-red mr-2">Error:</span>
-          {errMsg}
+        <div className="relative flex flex-col sm:flex-row sm:items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl bg-danger/20 glow-danger flex items-center justify-center flex-shrink-0 text-danger">
+            <AlertTriangle size={17} aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0 text-xs font-mono whitespace-pre-wrap break-all text-danger">
+            <span className="font-sans font-semibold text-danger mr-2">Error:</span>
+            {errMsg}
+          </div>
         </div>
       )}
 
@@ -324,16 +431,180 @@ export default function DailyReportsView() {
         </div>
       )}
 
+      {/* ── Titular del rango: el mismo total del pie de la tabla, dibujado ── */}
+      {!loading && days.length > 0 && (
+        <motion.div {...fadeUp(0.06)} className="grid grid-cols-1 md:grid-cols-12 gap-4">
+          <TiltCard
+            sheen
+            brackets
+            wrapperClassName="md:col-span-5"
+            className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between gap-3 tilt-layer-2">
+              <div className="hud-label" title="Confirmados ÷ lo que ENTRÓ en el rango.">
+                Confirmación del rango
+              </div>
+              <span className="inline-flex items-center px-2 py-1 rounded-lg text-[11px] font-semibold font-mono tabular-nums bg-card/40 border border-border text-muted-foreground whitespace-nowrap">
+                {days.length} día{days.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {/* Sin denominador NO hay tasa: se muestra el guion, nunca un 0%. */}
+            <div className="flex justify-center py-4 tilt-layer-3">
+              {totals.tasaConfDia == null ? (
+                <div className="flex flex-col items-center justify-center gap-2 h-[190px] text-muted-foreground">
+                  <span className="text-[38px] font-bold font-mono leading-none">—</span>
+                  <span className="text-xs">Sin pedidos que entraran en el rango</span>
+                </div>
+              ) : (
+                <GaugeRing
+                  value={totals.tasaConfDia}
+                  label="del rango"
+                  size={190}
+                  tone={
+                    totals.tasaConfDia >= CONF_DIA_TARGET_PCT
+                      ? 'success'
+                      : totals.tasaConfDia >= CONF_DIA_TARGET_PCT - 5
+                        ? 'warning'
+                        : 'danger'
+                  }
+                />
+              )}
+            </div>
+
+            <div className="tilt-layer-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                <span>Procesado</span>
+                <span className="font-mono tabular-nums text-foreground">
+                  <b>{totals.resueltos}</b> / {totals.entrantes}
+                </span>
+              </div>
+              <div className="relative h-2 rounded-full bg-foreground/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-accent-gradient transition-[width] duration-700"
+                  style={{ width: `${Math.max(0, Math.min(100, totals.pctProcesado))}%` }}
+                  aria-hidden="true"
+                />
+                <span
+                  className="absolute top-0 bottom-0 w-px bg-foreground/40"
+                  style={{ left: `${CONF_DIA_TARGET_PCT}%` }}
+                  aria-hidden="true"
+                  title={`Meta del día ~${CONF_DIA_TARGET_PCT}%`}
+                />
+              </div>
+            </div>
+          </TiltCard>
+
+          <div className="md:col-span-7 grid grid-cols-1 min-[390px]:grid-cols-2 gap-4">
+            <StatTile icon={Inbox} label="Entrantes" value={totals.entrantes} tone="accent"
+              title="Pedidos creados en el rango que entraron al flujo de confirmación." />
+            <StatTile icon={CheckCircle2} label="Confirmados" value={totals.confirmados} tone="success"
+              title="Pedidos del cohort que terminaron confirmados." />
+            <StatTile icon={XCircle} label="Cancelados" value={totals.cancelados} tone="danger"
+              title="Pedidos del cohort que terminaron cancelados." />
+            <StatTile icon={PhoneOff} label="No Respondió" value={totals.noresp} tone="neutral"
+              title="Pedidos del cohort que tuvieron noresp y nunca terminaron en conf/canc."
+              extra={
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg border border-warning/30 bg-warning/14 text-warning text-[10px] font-semibold whitespace-nowrap">
+                  <Clock size={10} aria-hidden="true" />
+                  <span className="font-mono tabular-nums">{totals.pendientes}</span> pendientes
+                </span>
+              } />
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── Curva del rango: una columna por día + la línea de % Conf ── */}
+      {!loading && chartRows.length > 0 && (
+        <motion.div
+          {...fadeUp(0.12)}
+          className="hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong"
+        >
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Activity size={14} className="text-accent" aria-hidden="true" />
+              Cómo terminó cada día
+            </h3>
+            <SwatchLegend
+              items={[
+                ...DAY_STACK.map(s => ({ color: s.color, label: s.key })),
+                { color: C_ACCENT, label: '% Conf' },
+              ]}
+            />
+          </div>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={chartRows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+                <defs>
+                  <BarGradientDefs prefix="repDia" entries={DAY_STACK.map(s => ({ slug: s.slug, color: s.color }))} />
+                  <linearGradient id="repDiaLine" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor={C_ACCENT} />
+                    <stop offset="100%" stopColor={C_CYAN} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid {...CHART_GRID_PROPS} />
+                <XAxis
+                  dataKey="fecha" tickFormatter={fmtDay}
+                  stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false}
+                />
+                <YAxis
+                  yAxisId="left"
+                  stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false}
+                  width={36} allowDecimals={false}
+                />
+                <YAxis
+                  yAxisId="right" orientation="right" domain={[0, 100]} unit="%"
+                  stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false}
+                  width={40}
+                />
+                <RTooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_BAR_CURSOR} />
+                {DAY_STACK.map(s => (
+                  <Bar
+                    key={s.slug}
+                    yAxisId="left"
+                    dataKey={s.key}
+                    stackId="dia"
+                    fill={`url(#repDia-${s.slug})`}
+                    radius={s.slug === topStackSlug ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                    style={s.slug === 'conf' ? { filter: `drop-shadow(0 0 6px ${C_SUCCESS})` } : undefined}
+                  />
+                ))}
+                {/* connectNulls={false} a propósito: un día sin entrantes NO tiene
+                    tasa — la línea se corta en vez de fingir un 0%. */}
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="pctConf"
+                  name="% Conf"
+                  connectNulls={false}
+                  stroke="url(#repDiaLine)"
+                  strokeWidth={2.5}
+                  strokeLinecap="round"
+                  style={lineGlow(C_ACCENT)}
+                  dot={(p: { cx?: number; cy?: number; index?: number }) =>
+                    p.index === chartRows.length - 1
+                      ? <circle key={`dot-${p.index}`} cx={p.cx} cy={p.cy} r={5}
+                          fill={C_BG} stroke={C_CYAN} strokeWidth={2}
+                          style={lineGlow(C_CYAN)} />
+                      : <circle key={`dot-${p.index}`} cx={p.cx} cy={p.cy} r={2} fill={C_ACCENT} />}
+                  activeDot={{ r: 4, strokeWidth: 2, stroke: C_BG }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+      )}
+
       {/* ── Vista 1: Resumen cohort por día ── */}
       {!loading && (
         <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden"
+          {...fadeUp(0.18)}
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden transition-colors duration-200 hover:border-border-strong"
         >
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                <ClipboardList size={15} />
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <ClipboardList size={17} />
               </span>
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Vista por día — cohort de inflow</h3>
@@ -418,17 +689,17 @@ export default function DailyReportsView() {
                       <tr key={r.fecha} className="hover:bg-muted/30 transition-colors">
                         <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
                         <td className={`${cellBase} text-center font-bold text-foreground`}>{r.entrantes}</td>
-                        <td className={`${cellBase} text-center text-green font-semibold`}>{r.confirmados}</td>
-                        <td className={`${cellBase} text-center text-red font-semibold`}>{r.cancelados}</td>
+                        <td className={`${cellBase} text-center text-success font-semibold`}>{r.confirmados}</td>
+                        <td className={`${cellBase} text-center text-danger font-semibold`}>{r.cancelados}</td>
                         <td className={`${cellBase} text-center text-muted-foreground`}>{r.noresp}</td>
-                        <td className={`${cellBase} text-center text-orange`}>{r.pendientes}</td>
+                        <td className={`${cellBase} text-center text-warning`}>{r.pendientes}</td>
                         <td className={`${cellBase} text-center font-semibold ${m.inmaduro ? 'text-muted-foreground' : 'text-foreground'}`}>
                           {m.pctProcesado}%
                         </td>
                         <td className={`${cellBase} text-center font-bold ${confClass}`} title={confTitle}>
                           {m.tasaConfDia == null ? '—' : `${m.tasaConfDia}%`}
                         </td>
-                        <td className={`${cellBase} text-center ${m.tasaCancDia == null ? 'text-muted-foreground' : (m.tasaCancDia > 0 ? 'text-red' : 'text-muted-foreground')}`}>
+                        <td className={`${cellBase} text-center ${m.tasaCancDia == null ? 'text-muted-foreground' : (m.tasaCancDia > 0 ? 'text-danger' : 'text-muted-foreground')}`}>
                           {m.tasaCancDia == null ? '—' : `${m.tasaCancDia}%`}
                         </td>
                       </tr>
@@ -440,16 +711,16 @@ export default function DailyReportsView() {
                     <tr className="bg-muted/40 border-t-2 border-border">
                       <td className={`${cellBase} font-sans font-bold text-foreground`}>Total rango</td>
                       <td className={`${cellBase} text-center font-bold text-foreground`}>{totals.entrantes}</td>
-                      <td className={`${cellBase} text-center text-green font-bold`}>{totals.confirmados}</td>
-                      <td className={`${cellBase} text-center text-red font-bold`}>{totals.cancelados}</td>
+                      <td className={`${cellBase} text-center text-success font-bold`}>{totals.confirmados}</td>
+                      <td className={`${cellBase} text-center text-danger font-bold`}>{totals.cancelados}</td>
                       <td className={`${cellBase} text-center text-muted-foreground font-bold`}>{totals.noresp}</td>
-                      <td className={`${cellBase} text-center text-orange font-bold`}>{totals.pendientes}</td>
+                      <td className={`${cellBase} text-center text-warning font-bold`}>{totals.pendientes}</td>
                       <td className={`${cellBase} text-center font-bold text-foreground`}>{totals.pctProcesado}%</td>
                       <td className={`${cellBase} text-center font-bold ${totals.tasaConfDia == null ? 'text-muted-foreground' : pctConfClass(totals.tasaConfDia)}`}
                         title={`${totals.confirmados} confirmados de ${totals.entrantes} que entraron. Efectividad de cierre: ${totals.tasaConf == null ? 'N/A' : totals.tasaConf + '%'} (÷ resueltos, meta 85%).`}>
                         {totals.tasaConfDia == null ? '—' : `${totals.tasaConfDia}%`}
                       </td>
-                      <td className={`${cellBase} text-center font-bold ${totals.tasaCancDia != null && totals.tasaCancDia > 0 ? 'text-red' : 'text-muted-foreground'}`}>
+                      <td className={`${cellBase} text-center font-bold ${totals.tasaCancDia != null && totals.tasaCancDia > 0 ? 'text-danger' : 'text-muted-foreground'}`}>
                         {totals.tasaCancDia == null ? '—' : `${totals.tasaCancDia}%`}
                       </td>
                     </tr>
@@ -464,13 +735,13 @@ export default function DailyReportsView() {
       {/* ── Vista 2: Detalle apertura/cierre por operadora ── */}
       {!loading && (
         <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }}
-          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden"
+          {...fadeUp(0.24)}
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden transition-colors duration-200 hover:border-border-strong"
         >
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                <Users size={15} />
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Users size={17} />
               </span>
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Apertura y cierre por operadora</h3>
@@ -515,18 +786,18 @@ export default function DailyReportsView() {
                     <tr
                       key={`${r.fecha}-${r.tipo}-${r.operadora}-${i}`}
                       className={`hover:bg-muted/30 transition-colors ${
-                        r.tipo === 'apertura' ? 'bg-blue/5' : 'bg-green/5'
+                        r.tipo === 'apertura' ? 'bg-info/5' : 'bg-success/5'
                       }`}
                     >
                       <td className={cellBase}>{r.fecha}</td>
                       <td className={cellBase}>
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          r.tipo === 'apertura' ? 'bg-blue/15 text-blue' : 'bg-green/15 text-green'
+                          r.tipo === 'apertura' ? 'bg-info/15 text-info' : 'bg-success/15 text-success'
                         }`}>{r.tipo}</span>
                       </td>
                       <td className={`${cellBase} font-sans`}>{r.operadora}</td>
                       <td className={cellBase}>{fmtHora(r.hora)}</td>
-                      <td className={`${cellBase} text-center ${r.pedidos_nuevos != null ? 'text-orange font-bold' : 'text-muted-foreground'}`}>
+                      <td className={`${cellBase} text-center ${r.pedidos_nuevos != null ? 'text-warning font-bold' : 'text-muted-foreground'}`}>
                         {r.pedidos_nuevos ?? ''}
                       </td>
                       <td className={`${cellBase} text-center`}>{r.guias_apertura ?? ''}</td>
@@ -538,7 +809,7 @@ export default function DailyReportsView() {
                           <button
                             type="button"
                             onClick={() => setCancelDetail({ operadora: r.operadora, fecha: r.fecha })}
-                            className="text-red font-bold underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+                            className="text-danger font-bold underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
                             title="Ver motivos de cancelación"
                           >
                             {r.cancelados}
@@ -562,12 +833,14 @@ export default function DailyReportsView() {
       {/* ── Vista 3: Acciones por operadora por día (por fecha de la acción) ── */}
       {!loading && (
         <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
-          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden"
+          {...fadeUp(0.28)}
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden transition-colors duration-200 hover:border-border-strong"
         >
           <div className="px-5 py-4 border-b border-border">
-            <div className="flex items-center gap-2">
-              <Users size={16} className="text-primary" />
+            <div className="flex items-center gap-3">
+              <span className="w-9 h-9 rounded-xl bg-ai/14 border border-ai/30 text-ai flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <Users size={17} />
+              </span>
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Acciones por operadora por día</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -608,8 +881,8 @@ export default function DailyReportsView() {
                         <td className={`${cellBase} font-sans font-semibold text-foreground`}>{r.fecha}</td>
                         <td className={`${cellBase} font-sans`}>{r.operadora}</td>
                         <td className={`${cellBase} text-center font-bold text-foreground`}>{r.atendidos}</td>
-                        <td className={`${cellBase} text-center text-green font-semibold`}>{r.conf}</td>
-                        <td className={`${cellBase} text-center text-red font-semibold`}>{r.canc}</td>
+                        <td className={`${cellBase} text-center text-success font-semibold`}>{r.conf}</td>
+                        <td className={`${cellBase} text-center text-danger font-semibold`}>{r.canc}</td>
                         <td className={`${cellBase} text-center text-muted-foreground`}>{r.noresp}</td>
                         <td className={`${cellBase} text-center font-bold ${pctConfClass(pct)}`}>{pct}%</td>
                       </tr>

@@ -7,6 +7,10 @@ import {
   usePersonalPaymentsList, usePersonalResidualDebt,
 } from '@/hooks/usePersonalCardMovements';
 import { formatCOP } from '@/lib/utils';
+import { GaugeRing } from '@/components/ui3d';
+import {
+  MoneyFigure,
+} from './cfoVisuals';
 
 // Calcula el interés total que pagarías si dejás la deuda en 36 cuotas
 // al 25.5% EA. Aproximación: saldo promedio durante la vida del crédito
@@ -160,9 +164,14 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
       <div className="px-4 py-3.5 border-b border-border flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="font-semibold text-sm">Cuánto pagué · Cuánto me falta</h3>
+        <h3 className="font-semibold text-sm flex items-center gap-2.5">
+          <span className="w-9 h-9 shrink-0 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center">
+            <CreditCard size={17} aria-hidden="true" />
+          </span>
+          Cuánto pagué · Cuánto me falta
+        </h3>
         <div className="flex items-center gap-2 text-xs">
           <label className="text-muted-foreground">TRM:</label>
           <input
@@ -189,8 +198,9 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
             <div className="flex items-center gap-2 hud-label text-success mb-1.5">
               <CheckCircle2 size={14} /> YA PAGUÉ
             </div>
-            <div className="text-3xl font-bold text-success font-mono tabular-nums">
-              {pagadoEsEstimado ? '≈ ' : ''}{formatCOP(totalPagadoCop)}
+            <div className="text-[34px] font-bold text-success num-glow-success leading-none">
+              {pagadoEsEstimado ? <span className="text-[0.55em] align-baseline mr-1 opacity-80 font-mono">≈</span> : ''}
+              <MoneyFigure text={formatCOP(totalPagadoCop)} />
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
               en {pagos.length} pago{pagos.length === 1 ? '' : 's'} hecho{pagos.length === 1 ? '' : 's'}
@@ -245,8 +255,9 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
             <div className="flex items-center gap-2 hud-label text-danger mb-1.5">
               <AlertCircle size={14} /> ME FALTA
             </div>
-            <div className="text-3xl font-bold text-danger font-mono tabular-nums">
-              {faltaEsEstimado ? '≈ ' : ''}{formatCOP(totalFaltaCop)}
+            <div className="text-[34px] font-bold text-danger num-glow-danger leading-none">
+              {faltaEsEstimado ? <span className="text-[0.55em] align-baseline mr-1 opacity-80 font-mono">≈</span> : ''}
+              <MoneyFigure text={formatCOP(totalFaltaCop)} />
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
               en cuotas diferidas pendientes
@@ -389,23 +400,30 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
 
               {/* Resultados */}
               {pagoCapped > 0 && (
-                <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="rounded-2xl border border-danger/30 bg-danger/[0.07] p-2.5 shadow-card3d">
-                    <div className="hud-label text-muted-foreground">Deuda restante</div>
-                    <div className="font-mono tabular-nums font-semibold text-danger mt-1">
-                      {faltaEsEstimado ? '≈ ' : ''}{formatCOP(deudaRestante)}
-                    </div>
-                    <div className="text-[10px] font-mono tabular-nums text-muted-foreground mt-0.5">
+                /* La porción liquidada es una PROPORCIÓN: va en aro. El aro
+                   redondea igual que el `toFixed(0)` que ya estaba debajo. */
+                <div className="flex items-center gap-3 pt-1">
+                  <div className="flex flex-col items-center shrink-0">
+                    <GaugeRing value={pctLiquidado} size={104} thickness={11} tone="success" />
+                    <div className="text-[10px] font-mono tabular-nums text-muted-foreground mt-1">
                       {pctLiquidado.toFixed(0)}% liquidado
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-success/30 bg-success/[0.07] p-2.5 shadow-card3d">
-                    <div className="hud-label text-muted-foreground">Interés ahorrado</div>
-                    <div className="font-mono tabular-nums font-semibold text-success mt-1">
-                      {formatCOP(interesAhorrado)}
+                  <div className="grid grid-cols-1 gap-2 text-xs flex-1 min-w-0">
+                    <div className="rounded-2xl border border-danger/30 bg-danger/[0.07] p-2.5 shadow-card3d hairline-top">
+                      <div className="hud-label text-muted-foreground">Deuda restante</div>
+                      <div className="font-mono tabular-nums font-semibold text-danger text-base mt-1">
+                        {faltaEsEstimado ? '≈ ' : ''}{formatCOP(deudaRestante)}
+                      </div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">
-                      vs dejar 36 cuotas · estimado
+                    <div className="rounded-2xl border border-success/30 bg-success/[0.07] p-2.5 shadow-card3d hairline-top">
+                      <div className="hud-label text-muted-foreground">Interés ahorrado</div>
+                      <div className="font-mono tabular-nums font-semibold text-success text-base mt-1">
+                        {formatCOP(interesAhorrado)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        vs dejar 36 cuotas · estimado
+                      </div>
                     </div>
                   </div>
                 </div>

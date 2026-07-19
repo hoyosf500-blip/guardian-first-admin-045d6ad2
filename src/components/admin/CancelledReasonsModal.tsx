@@ -89,7 +89,9 @@ export default function CancelledReasonsModal({
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2 min-w-0">
-            <XCircle size={16} className="text-red shrink-0" aria-hidden="true" />
+            <span className="w-9 h-9 rounded-xl bg-danger/14 border border-danger/30 text-danger glow-danger flex items-center justify-center shrink-0" aria-hidden="true">
+              <XCircle size={17} />
+            </span>
             <div className="min-w-0">
               <h3 id="cancel-reasons-title" className="text-sm font-bold text-foreground truncate">Cancelaciones · {operadora}</h3>
               <p className="text-xs text-muted-foreground">
@@ -115,7 +117,8 @@ export default function CancelledReasonsModal({
           )}
 
           {error && (
-            <div className="bg-red/10 border border-red/30 text-red rounded-lg px-3 py-2 text-xs font-mono break-all">
+            <div className="relative rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d text-xs font-mono break-all text-danger">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
               {error}
             </div>
           )}
@@ -137,17 +140,17 @@ export default function CancelledReasonsModal({
                 {/* Resumen rápido: cuántos cancelados eran frescos vs cola vieja. */}
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
                   {nuevos > 0 && (
-                    <span className="font-bold px-2 py-0.5 rounded-full bg-red/15 text-red">
+                    <span className="font-bold px-2.5 py-1 rounded-lg border border-danger/30 bg-danger/14 text-danger">
                       {nuevos} {nuevos === 1 ? 'nuevo' : 'nuevos'}
                     </span>
                   )}
                   {arrastre > 0 && (
-                    <span className="font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                    <span className="font-bold px-2.5 py-1 rounded-lg border border-border bg-muted/50 text-muted-foreground">
                       {arrastre} arrastre
                     </span>
                   )}
                   {desconocidos > 0 && (
-                    <span className="font-bold px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground">
+                    <span className="font-bold px-2.5 py-1 rounded-lg border border-border bg-muted/40 text-muted-foreground">
                       {desconocidos} sin fecha
                     </span>
                   )}
@@ -156,7 +159,7 @@ export default function CancelledReasonsModal({
                   {rows.map((r, i) => {
                     const age = ages[i];
                     return (
-                      <li key={r.external_id ?? i} className="rounded-xl border border-border bg-card/40 p-3">
+                      <li key={r.external_id ?? i} className="rounded-xl border border-border bg-card/40 p-3 transition-colors duration-200 hover:border-border-strong">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-foreground truncate">{r.nombre || '(sin nombre)'}</div>
@@ -170,7 +173,7 @@ export default function CancelledReasonsModal({
                               className={
                                 'text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ' +
                                 (age.fresh === true
-                                  ? 'bg-red/15 text-red'              // pedido fresco cancelado → ojo
+                                  ? 'border border-danger/30 bg-danger/14 text-danger' // pedido fresco cancelado → ojo
                                   : age.fresh === false
                                     ? 'bg-muted text-muted-foreground' // arrastre, menos preocupante
                                     : 'bg-muted/50 text-muted-foreground')
@@ -181,7 +184,7 @@ export default function CancelledReasonsModal({
                             </span>
                           </div>
                         </div>
-                        <div className="mt-2 text-sm text-red font-medium">{r.reason}</div>
+                        <div className="mt-2 text-sm text-danger font-medium">{r.reason}</div>
                       </li>
                     );
                   })}
