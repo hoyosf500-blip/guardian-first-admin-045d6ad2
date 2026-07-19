@@ -213,15 +213,39 @@ async function processStore(
     await sleep(PUSH_DELAY_MS);
   }
 
-  // Log a sync_logs (best-effort): 'warn' si hubo errores de infra, sino 'success'.
+  // Log a sync_logs (best-effort). Criterio de status igual que dropi-cron:
+  // un cron que corre pero no trae nada NO es éxito → 'warn' con el motivo.
+  // Casos:
+  //   - errors > 0 (fallo de red/infra al pushear) → warn
+  //   - candidatos > 0 && subidos === 0 (todos bloqueados por candados de
+  //     shopify-push-dropi: duplicado, precio raro, sin vínculo, sin cobertura)
+  //     → warn con el desglose real, para que el panel deje de mentir en verde.
+  //   - sino → success.
+  const zeroWithCandidates = picked.length > 0 && pushed === 0;
+  let logStatus: "success" | "warn" = "success";
+  let logError: string | null = null;
+  if (errors > 0) {
+    logStatus = "warn";
+    logError = `${errors} error(es) de red/infra en el push`;
+  } else if (zeroWithCandidates) {
+    logStatus = "warn";
+    // Primeros 3 motivos concretos del array `detail` para diagnóstico rápido.
+    const firstReasons = detail.slice(0, 3).map((d) => {
+      const id = d.id ?? "?";
+      const why = d.blocked ?? d.error ?? "?";
+      const msg = d.msg ? `: ${String(d.msg).slice(0, 80)}` : "";
+      return `#${id}→${why}${msg}`;
+    }).join(" | ");
+    logError = `0 de ${picked.length} subidos — bloqueados: ${blocked}, duplicados: ${dup}, errores: ${errors}. Primeros motivos: ${firstReasons || "(sin detalle)"}`;
+  }
   try {
     await sb.from("sync_logs").insert({
       source: "shopify-auto-push",
-      status: errors > 0 ? "warn" : "success",
+      status: logStatus,
       synced_count: pushed,
       duplicates_count: dup,
       total_count: picked.length,
-      error_message: errors > 0 ? `${errors} error(es) de red/infra en el push` : null,
+      error_message: logError,
       store_id: storeId,
     });
   } catch { /* logging best-effort */ }
