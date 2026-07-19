@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/integrations/supabase/client';
-import { Sun, Moon, Package, Phone, BarChart3, ShieldCheck, Store as StoreIcon, Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { Package, Phone, BarChart3, ShieldCheck, Store as StoreIcon, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
 interface InvitePreview {
   store_name: string | null;
@@ -21,7 +21,8 @@ export default function AuthPage() {
   // (?invite=TOKEN). Sin invitación, la página muestra únicamente login +
   // recuperación de contraseña (las cuentas internas se crean desde Admin).
   const { signIn, signUp, resetPassword, user } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  // Tema único oscuro: el hook ya no togglea, solo garantiza la clase.
+  useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -194,14 +195,6 @@ export default function AuthPage() {
 
       {/* Right panel — form */}
       <div className="flex-1 flex items-center justify-center p-6 relative bg-aurora">
-        <button
-          onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
-          className="absolute top-4 right-4 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        >
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
-
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-accent-gradient flex items-center justify-center text-accent-foreground shadow-glow">

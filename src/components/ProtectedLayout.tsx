@@ -11,7 +11,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { BarChart3, Phone, Package, Settings, Sun, Moon, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
+import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import OpeningReportGate from '@/components/OpeningReportGate';
 import SetupWizard from '@/components/SetupWizard';
@@ -61,7 +61,8 @@ function LiveClock() {
 // Inner layout: tiene acceso a useStore() porque StoreProvider lo envuelve.
 function ProtectedLayoutInner() {
   const { user, profile, isAdmin, loading, signOut } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  // Tema único oscuro: el hook ya no togglea, solo garantiza la clase.
+  useTheme();
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
@@ -288,11 +289,6 @@ function ProtectedLayoutInner() {
                   </div>
                 )}
                 <LiveClock />
-                <button onClick={toggleTheme}
-                  aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                  className="w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
-                  {theme === 'dark' ? <Sun size={14} aria-hidden="true" /> : <Moon size={14} aria-hidden="true" />}
-                </button>
                 <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent"
                   aria-label={`Usuario: ${profile?.display_name || 'Usuario'}`}
                   title={profile?.display_name || 'Usuario'}>

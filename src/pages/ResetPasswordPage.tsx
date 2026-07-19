@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/hooks/useTheme';
-import { Sun, Moon, Lock, CheckCircle2 } from 'lucide-react';
+import { Lock, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 // Pantalla a la que cae el usuario tras hacer click en el link del email
@@ -14,7 +14,8 @@ import { supabase } from '@/integrations/supabase/client';
 
 export default function ResetPasswordPage() {
   const { updatePassword } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  // Tema único oscuro: el hook ya no togglea, solo garantiza la clase.
+  useTheme();
   const navigate = useNavigate();
 
   const [password, setPassword] = useState('');
@@ -107,14 +108,6 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6 relative">
-      <button
-        onClick={toggleTheme}
-        aria-label={theme === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
-        className="absolute top-4 right-4 w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-accent/40 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      >
-        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
-
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-3 mb-8">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent/70 flex items-center justify-center text-accent-foreground shadow-ds-md">
