@@ -2915,7 +2915,12 @@ export type Database = {
           ingresos_entregados: number
         }[]
       }
-      logistics_dashboard: { Args: { p_range?: string }; Returns: Json }
+      logistics_dashboard:
+        | {
+            Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
+            Returns: Json
+          }
+        | { Args: { p_range?: string }; Returns: Json }
       logistics_recommendations: {
         Args: { p_from_date: string; p_min_orders?: number; p_to_date: string }
         Returns: {
