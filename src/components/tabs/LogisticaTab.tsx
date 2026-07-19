@@ -103,14 +103,11 @@ function pct(n: number, total: number): string {
   if (!total) return '0%';
   return `${((n / total) * 100).toFixed(1)}%`;
 }
-function rangeKey(filters: LogisticsFilters): '7d' | '30d' | '90d' {
-  const from = new Date(filters.fromDate).getTime();
-  const to = new Date(filters.toDate).getTime();
-  const days = Math.round((to - from) / (24 * 3600 * 1000));
-  if (days <= 7) return '7d';
-  if (days <= 30) return '30d';
-  return '90d';
-}
+// `rangeKey` se eliminó el 2026-07-18. Convertía un rango de fechas en un
+// bucket ('7d'|'30d'|'90d') para `logistics_dashboard`, y ese bucket era el bug:
+// junio y mayo colapsaban al mismo valor, así que el server devolvía una ventana
+// rodante desde hoy y cambiar de mes no refetcheaba. No se reintroduce: si algo
+// necesita agrupar por duración, que lo haga sin perder las fechas.
 
 function useInteractiveLegend() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -242,10 +239,30 @@ export default function LogisticaTab() {
   // Query extra para los 4 gráficos nuevos (RPC `logistics_dashboard`).
   // Si el RPC no existe en DB, cae a EmptyChart y el resto sigue funcionando.
   // storeId en la key: la RPC resuelve la tienda server-side (auditoría 2026-07-07).
+  //
+  // FECHAS REALES (2026-07-18). Antes acá iba `rangeKey(filters)`, que tiraba
+  // las fechas y mandaba solo la DURACIÓN ('7d'|'30d'|'90d'); la RPC la traducía
+  // a `NOW() - INTERVAL`, o sea una ventana rodante pegada a hoy. Elegir junio
+  // mostraba los últimos 30 días con el encabezado diciendo junio. Y como la
+  // queryKey también usaba el bucket, junio y mayo eran la MISMA key: cambiar
+  // de mes ni siquiera refetcheaba. Ahora van las fechas literales, así que la
+  // key cambia con el filtro y el server recibe el rango que el usuario pidió.
+  // La ciudad también viaja: antes este era el único bloque de /logistica que
+  // ignoraba ese filtro.
   const dashboardQuery = useQuery<DashboardData>({
-    queryKey: ['logistics_dashboard', activeStoreId ?? 'none', rangeKey(filters)],
+    queryKey: ['logistics_dashboard', activeStoreId ?? 'none', filters.fromDate, filters.toDate, filters.ciudad ?? ''],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('logistics_dashboard', { p_range: rangeKey(filters) });
+      // `.bind` no es opcional: guardar `supabase.rpc` en una variable suelta le
+      // saca el `this` y revienta con "Cannot read properties of undefined".
+      const rpcDashboard = supabase.rpc.bind(supabase) as unknown as (
+        fn: 'logistics_dashboard',
+        args: { p_from_date: string; p_to_date: string; p_ciudad: string | null },
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+      const { data, error } = await rpcDashboard('logistics_dashboard', {
+        p_from_date: filters.fromDate,
+        p_to_date: filters.toDate,
+        p_ciudad: filters.ciudad ?? null,
+      });
       if (error) throw error;
       return data as unknown as DashboardData;
     },
