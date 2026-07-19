@@ -20,7 +20,7 @@ export default memo(function SummaryCards({ data }: Props) {
     return (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className="h-[132px] rounded-xl border border-border bg-card skeleton-shimmer" />
+          <div key={i} className="h-[132px] rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top skeleton-shimmer" />
         ))}
       </div>
     );
@@ -151,7 +151,7 @@ function KpiCard({ label, icon: Icon, value, valueClassName, hint, hintTone, ton
   const fillWidth = bullet ? Math.min(100, Math.max(0, bullet.value)) : 0;
 
   return (
-    <article className={`relative overflow-hidden rounded-xl border ${toneStyles.border} bg-card transition-colors hover:border-border-strong`}>
+    <article className={`relative overflow-hidden rounded-2xl border ${toneStyles.border} bg-card/40 shadow-card3d hairline-top transition-colors hover:border-border-strong`}>
       <div className={`absolute inset-y-0 left-0 w-[2px] ${toneStyles.indicator}`} aria-hidden="true" />
 
       <div className="p-4 pl-[18px]">

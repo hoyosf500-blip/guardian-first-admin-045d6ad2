@@ -276,7 +276,7 @@ export default function ProductivityDashboard() {
       {/* Page sub-header — eyebrow + título + meta + actions */}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-1.5">
-          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
+          <div className="hud-label">
             Productividad · Equipo
           </div>
           <h2 className="text-xl font-bold tracking-tight text-foreground leading-none flex items-center gap-2">
@@ -316,7 +316,7 @@ export default function ProductivityDashboard() {
       </header>
 
       {error && (
-        <div className="rounded-xl border border-danger/30 bg-danger/5 p-4">
+        <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4 shadow-card3d">
           <div className="flex items-start gap-3">
             <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" aria-hidden="true" strokeWidth={2.25} />
             <div className="min-w-0 space-y-1">
@@ -332,7 +332,7 @@ export default function ProductivityDashboard() {
       )}
 
       {loading ? (
-        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d p-10 flex items-center justify-center">
+        <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top p-10 flex items-center justify-center">
           <Loader2 className="animate-spin text-accent" size={20} aria-hidden="true" />
         </div>
       ) : !error ? (
@@ -573,7 +573,7 @@ export default function ProductivityDashboard() {
               ocultando la sección Jornada. Ahora cubre solo el verdadero
               cero-y-cero. */}
           {rows.length === 0 && jornadaOps.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+            <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center">
               <p className="text-sm font-semibold text-foreground mb-1">Sin actividad</p>
               <p className="text-xs text-muted-foreground">Nadie ha registrado acciones en {RANGE_LABELS[range].toLowerCase()}.</p>
             </div>
@@ -581,7 +581,7 @@ export default function ProductivityDashboard() {
 
           {/* Top performer callout */}
           {leader && leader.confirmados > 0 && (
-            <div className="rounded-2xl border border-accent/30 bg-card/40 shadow-card3d p-3.5 flex items-center gap-3">
+            <div className="rounded-2xl border border-accent/30 bg-card/40 shadow-card3d hairline-top p-3.5 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent/12">
                 <Trophy size={16} className="text-accent" aria-hidden="true" strokeWidth={2.25} />
               </div>
@@ -1052,7 +1052,7 @@ export default function ProductivityDashboard() {
 
 function Section({ title, dotClass, note, children }: { title: string; dotClass: string; note?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d overflow-hidden">
+    <section className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
       <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} aria-hidden="true" />

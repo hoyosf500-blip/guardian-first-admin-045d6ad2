@@ -194,7 +194,7 @@ export default function CfoPaymentsVsDebt() {
       </div>
 
       {residualByCard.length > 0 && (
-        <div className="rounded-xl border border-border bg-foreground/[0.03] p-3 space-y-2">
+        <div className="rounded-2xl border border-border bg-foreground/[0.03] p-3 space-y-2 shadow-card3d hairline-top">
           <h4 className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
             <CreditCard size={12} /> Deuda residual actual por tarjeta
           </h4>

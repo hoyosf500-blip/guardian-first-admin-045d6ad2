@@ -293,12 +293,12 @@ export default function CfoAdSpendTracker({ yearMonth, prevYearMonth, walletGene
           Próximo ciclo TC
         </div>
         <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="rounded-xl border border-border bg-card/40 p-3 hover:border-border-strong transition-colors">
+          <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top hover:border-border-strong transition-colors">
             <div className="hud-label text-muted-foreground">Cierre Mastercard</div>
             <div className="text-sm font-bold font-mono tabular-nums text-foreground mt-1">{fmtDate(cutoffMC.cierre)}</div>
             <div className="text-[10px] font-mono tabular-nums text-muted-foreground">en {daysUntil(cutoffMC.cierre)} días</div>
           </div>
-          <div className="relative rounded-xl border border-danger/30 bg-danger/[0.06] p-3 pl-4">
+          <div className="relative rounded-2xl border border-danger/30 bg-danger/[0.06] p-3 pl-4 shadow-card3d">
             <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-danger" aria-hidden="true" />
             <div className="hud-label text-danger">Vence pago</div>
             <div className="text-sm font-bold font-mono tabular-nums text-danger mt-1">{fmtDate(cutoffMC.vencimiento)}</div>

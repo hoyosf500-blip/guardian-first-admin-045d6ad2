@@ -83,7 +83,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+      <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center shadow-card3d">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/40">
           <MapPin size={20} className="text-muted-foreground" aria-hidden="true" />
         </div>
@@ -99,7 +99,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
     <div className="space-y-4">
       {/* Stat banner: valor total perdido — gradient hero pattern */}
       {totalLost > 0 && (
-        <div className="rounded-2xl border-2 border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent p-5 flex items-center gap-4">
+        <div className="rounded-2xl border-2 border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent p-5 shadow-card3d flex items-center gap-4">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-danger/15 border-danger/40">
             <AlertTriangle size={18} className="text-danger" aria-hidden="true" strokeWidth={2.25} />
           </div>
@@ -114,7 +114,7 @@ export default memo(function CityReturnsTable({ rows }: Props) {
         </div>
       )}
 
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-foreground tracking-tight">

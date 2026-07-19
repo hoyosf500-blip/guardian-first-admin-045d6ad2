@@ -147,7 +147,7 @@ export default function SimuladorUnitEconomics({
   const sinCostos = !costBasis && !costBasisLoading;
 
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
+    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
       <header className="px-5 py-3 border-b border-border flex items-center gap-2">
         <Calculator size={14} className="text-accent" />
         <h3 className="text-sm font-semibold text-foreground">Indicadores &amp; Simulador</h3>
@@ -172,7 +172,7 @@ export default function SimuladorUnitEconomics({
 
       {/* Cascada real */}
       <div className="px-4 pb-4">
-        <div className="rounded-lg border border-border bg-muted/10 divide-y divide-border text-sm">
+        <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border text-sm shadow-card3d">
           <CascadaRow label="Facturado" sub="pedidos generados" count={generadosSinCancel} valor={totalVendido} tone="base" />
           <CascadaRow label="Despachado" sub="salió a la transportadora" count={Math.round(despachadosCount)} valor={despachadoValor} tone="muted" />
           <CascadaRow label="Entregado" sub="realizado" count={entregadosCount} valor={valorEntregado} tone="success" />
@@ -217,7 +217,7 @@ export default function SimuladorUnitEconomics({
         </div>
 
         {/* Proyección */}
-        <div className="rounded-lg border border-border bg-muted/10 divide-y divide-border text-sm mt-1">
+        <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border text-sm shadow-card3d mt-1">
           <SimRow label="Ingresos (entregados)" value={result.ingresos} tone="base"
             sub={`${Math.round(result.entregadoPedidos)} entregas`} />
           <SimRow label="Costo de producto" value={-result.cogs} tone="muted" />
@@ -228,7 +228,7 @@ export default function SimuladorUnitEconomics({
             sub={`${Math.round(result.devueltoPedidos)} devueltos`} />
         </div>
 
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5">
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-card/40 px-3.5 py-2.5 shadow-card3d hairline-top">
           <span className="text-xs text-foreground font-medium">
             Ganancia neta
             <span className="block text-[10px] text-muted-foreground/70">

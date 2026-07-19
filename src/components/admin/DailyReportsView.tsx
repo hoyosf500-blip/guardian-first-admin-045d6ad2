@@ -297,7 +297,7 @@ export default function DailyReportsView() {
   return (
     <div className="space-y-5">
       {/* Filtros de rango compartidos por las dos vistas */}
-      <div className="bg-card/40 rounded-2xl border border-border shadow-card3d px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top px-5 py-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-muted-foreground">
           Reportes diarios — rango compartido por las dos vistas
         </div>
@@ -312,14 +312,14 @@ export default function DailyReportsView() {
           alguna RPC falla (auth, función inexistente, signature mismatch).
           Texto en mono+wrap para no truncar el mensaje crudo de PostgREST. */}
       {errMsg && (
-        <div className="bg-red/10 border border-red/30 text-red rounded-xl px-4 py-3 text-xs font-mono whitespace-pre-wrap break-all">
+        <div className="bg-red/10 border border-red/30 text-red rounded-2xl shadow-card3d px-4 py-3 text-xs font-mono whitespace-pre-wrap break-all">
           <span className="font-sans font-semibold text-red mr-2">Error:</span>
           {errMsg}
         </div>
       )}
 
       {loading && (
-        <div className="bg-card/40 rounded-2xl border border-border shadow-card3d flex items-center justify-center py-12">
+        <div className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top flex items-center justify-center py-12">
           <Loader2 size={20} className="animate-spin text-muted-foreground" />
         </div>
       )}
@@ -328,7 +328,7 @@ export default function DailyReportsView() {
       {!loading && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
-          className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden"
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden"
         >
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -465,7 +465,7 @@ export default function DailyReportsView() {
       {!loading && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05 }}
-          className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden"
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden"
         >
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -563,7 +563,7 @@ export default function DailyReportsView() {
       {!loading && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}
-          className="bg-card/40 rounded-2xl border border-border shadow-card3d overflow-hidden"
+          className="bg-card/40 rounded-2xl border border-border shadow-card3d hairline-top overflow-hidden"
         >
           <div className="px-5 py-4 border-b border-border">
             <div className="flex items-center gap-2">

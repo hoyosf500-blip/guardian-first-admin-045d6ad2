@@ -51,7 +51,7 @@ function pct(n: number): string {
 /** Celda individual del semáforo. Estática, sin animaciones. */
 function Cell({ ind }: { ind: Indicator }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-2">
+    <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-semibold text-foreground leading-tight">
           {ind.label}
@@ -206,14 +206,16 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
       </p>
 
       {finQuery.isLoading ? (
-        // Skeleton con rounded-lg = el MISMO radio que la celda real (línea 54).
-        // Con rounded-2xl las 6 cajas cambiaban de forma al terminar de cargar:
-        // un salto visual, justo lo que la regla de arriba pide evitar.
+        // Skeleton con rounded-2xl = el MISMO radio que la celda real (Cell).
+        // Si los dos radios divergen, las 6 cajas cambian de forma al terminar
+        // de cargar: un salto visual, justo lo que la regla de arriba pide
+        // evitar. Al pasar la celda al radio de tarjeta del DS, el skeleton la
+        // sigue.
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-lg border border-border bg-muted/30 h-[112px]"
+              className="rounded-2xl border border-border bg-muted/30 h-[112px]"
               aria-hidden="true"
             />
           ))}
@@ -221,7 +223,7 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
       ) : finQuery.isError || !indicators ? (
         // bg-muted/20, no bg-card/40: el contenedor padre (línea 195) ya es
         // bg-card/40 y el mensaje quedaba sin contraste contra su fondo.
-        <div className="rounded-lg border border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">
           Sin datos financieros en este período.
         </div>
       ) : (

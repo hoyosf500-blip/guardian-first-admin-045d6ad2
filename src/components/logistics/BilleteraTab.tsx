@@ -73,7 +73,7 @@ const KPI_TONE_VALUE: Record<KpiProps['tone'], string> = {
 
 function Kpi({ label, value, icon: Icon, tone }: KpiProps) {
   return (
-    <div className={`rounded-2xl border-2 p-4 ${KPI_TONE_CARD[tone]}`}>
+    <div className={`rounded-2xl border-2 p-4 shadow-card3d ${KPI_TONE_CARD[tone]}`}>
       <div className="flex items-start justify-between gap-2">
         <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
           {label}
@@ -110,7 +110,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="rounded-xl border border-border bg-card p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-muted/40 flex items-center justify-center">
             <Wallet size={18} className="text-foreground" aria-hidden="true" />
@@ -134,10 +134,10 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {movQ.isLoading ? (
           <>
-            <Skeleton className="h-[88px] rounded-xl" />
-            <Skeleton className="h-[88px] rounded-xl" />
-            <Skeleton className="h-[88px] rounded-xl" />
-            <Skeleton className="h-[88px] rounded-xl" />
+            <Skeleton className="h-[88px] rounded-2xl" />
+            <Skeleton className="h-[88px] rounded-2xl" />
+            <Skeleton className="h-[88px] rounded-2xl" />
+            <Skeleton className="h-[88px] rounded-2xl" />
           </>
         ) : (
           <>
@@ -150,7 +150,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
       </div>
 
       {/* Gráfica diaria */}
-      <div className="rounded-xl border border-border bg-card p-5">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top">
         <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
           Movimientos por día
         </h3>
@@ -187,7 +187,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
       </div>
 
       {/* Filtros + tabla */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Tipo:</span>

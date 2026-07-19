@@ -223,7 +223,7 @@ function RetroCard({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card/40 hover:border-border-strong transition-colors overflow-hidden">
+    <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top hover:border-border-strong transition-colors overflow-hidden">
       <button
         onClick={onToggle}
         className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 hover:bg-foreground/[0.035] transition-colors"
@@ -264,7 +264,7 @@ function RetroCard({
 
       {isOpen && (
         <div className="border-t border-border p-3 space-y-4 text-xs">
-          <div className="rounded-xl border border-border bg-foreground/[0.03] p-3 space-y-2">
+          <div className="rounded-2xl border border-border bg-foreground/[0.03] p-3 space-y-2 shadow-card3d hairline-top">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-xs font-semibold flex items-center gap-1.5">
                 <Camera size={12} className="text-accent" />
@@ -364,7 +364,7 @@ function RetroCard({
             </Label>
             <div className="space-y-1.5">
               {decisiones.map((d, i) => (
-                <div key={i} className={`flex items-center gap-2 rounded border px-2 py-1.5 ${STATUS_TONE[d.status]}`}>
+                <div key={i} className={`flex items-center gap-2 rounded-xl border px-2 py-1.5 ${STATUS_TONE[d.status]}`}>
                   <span className="flex-1 text-xs">{d.accion}</span>
                   {d.deadline && (
                     <span className="text-[10px] opacity-80">→ {d.deadline}</span>
@@ -504,7 +504,7 @@ function DiagItem({ label, value, kind, tone }: {
     else                     display = String(Math.round(Number(value)));
   }
   return (
-    <div className="rounded-xl bg-card/40 border border-border px-2.5 py-2 hover:border-border-strong transition-colors">
+    <div className="rounded-2xl bg-card/40 border border-border px-2.5 py-2 shadow-card3d hairline-top hover:border-border-strong transition-colors">
       <div className="text-[10px] text-muted-foreground">{label}</div>
       <div className={`text-xs font-semibold font-mono tabular-nums mt-0.5 ${toneCls}`}>{display}</div>
     </div>

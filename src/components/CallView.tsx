@@ -784,7 +784,7 @@ export default function CallView({ items, alerts }: Props) {
         {/* Orbe aurora decorativo (Dirección 3D) */}
         <div className="pointer-events-none absolute -left-10 -top-24 w-72 h-72 rounded-full blur-[50px] bg-accent/15" aria-hidden="true" />
         {o.retryCount && !o.result && (
-          <div className="relative flex items-center gap-2 mb-3 rounded-xl bg-success/10 border border-success/30 px-3 py-2 pl-4">
+          <div className="relative flex items-center gap-2 mb-3 rounded-2xl bg-success/10 border border-success/30 px-3 py-2 pl-4 shadow-card3d">
             <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-success" aria-hidden="true" />
             <RotateCcw size={14} className="text-success" />
             <span className="text-[11px] font-semibold text-success">
@@ -807,7 +807,7 @@ export default function CallView({ items, alerts }: Props) {
             Solo se muestra si hay intentos previos → no ensucia pedidos frescos. */}
         <AttemptHistory attempts={attempts} />
         {vip?.isVip && !o.result && (
-          <div className="relative flex items-center justify-between gap-2 mb-3 rounded-xl bg-success/10 border border-success/25 px-3 py-2 pl-4">
+          <div className="relative flex items-center justify-between gap-2 mb-3 rounded-2xl bg-success/10 border border-success/25 px-3 py-2 pl-4 shadow-card3d">
             <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-success" aria-hidden="true" />
             <div className="flex items-center gap-2">
               <Star size={14} className="text-success fill-success" />
@@ -830,7 +830,7 @@ export default function CallView({ items, alerts }: Props) {
           const dups = dupAlertsFor(alerts?.dupByPhone, o);
           if (dups.length === 0) return null;
           return (
-            <div className="relative mb-3 rounded-xl bg-destructive/10 border border-destructive/30 px-3 py-2 pl-4 space-y-1">
+            <div className="relative mb-3 rounded-2xl bg-destructive/10 border border-destructive/30 px-3 py-2 pl-4 space-y-1 shadow-card3d">
               <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-danger" aria-hidden="true" />
               <div className="flex items-center gap-2">
                 <AlertTriangle size={14} className="text-destructive flex-shrink-0" aria-hidden="true" />
@@ -866,7 +866,7 @@ export default function CallView({ items, alerts }: Props) {
           const oc = overchargeFor(alerts?.mismatchByExt, o);
           if (!oc) return null;
           return (
-            <div className="relative mb-3 flex items-center justify-between gap-2 rounded-xl bg-warning/10 border border-warning/30 px-3 py-2 pl-4 flex-wrap">
+            <div className="relative mb-3 flex items-center justify-between gap-2 rounded-2xl bg-warning/10 border border-warning/30 px-3 py-2 pl-4 flex-wrap shadow-card3d">
               <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-warning" aria-hidden="true" />
               <div className="flex items-center gap-2 min-w-0">
                 <DollarSign size={14} className="text-warning flex-shrink-0" aria-hidden="true" />
@@ -923,7 +923,7 @@ export default function CallView({ items, alerts }: Props) {
         </div>
 
         {o.novedad && (
-          <div className={`relative p-2.5 pl-4 rounded-xl mb-3 text-xs inline-flex items-start gap-1.5 w-full ${o.novedadSol ? 'bg-success/10 border border-success/25' : 'bg-warning/10 border border-warning/25'}`}>
+          <div className={`relative p-2.5 pl-4 rounded-2xl mb-3 text-xs inline-flex items-start gap-1.5 w-full shadow-card3d ${o.novedadSol ? 'bg-success/10 border border-success/25' : 'bg-warning/10 border border-warning/25'}`}>
             <span className={`absolute left-0 top-2 bottom-2 w-1 rounded-full ${o.novedadSol ? 'bg-success' : 'bg-warning'}`} aria-hidden="true" />
             {o.novedadSol ? <CheckCircle2 size={12} className="text-success mt-0.5" /> : <AlertTriangle size={12} className="text-warning mt-0.5" />}
             <span>{o.novedadSol ? 'RESUELTA' : 'NOVEDAD'}: {o.novedad}</span>

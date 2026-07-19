@@ -41,7 +41,7 @@ export default function KpiCard({
     'text-2xl';
 
   return (
-    <div className="card-elevated p-4">
+    <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top transition-colors hover:border-border-strong">
       <div className="flex items-start justify-between gap-3">
         <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground leading-tight">
           {label}

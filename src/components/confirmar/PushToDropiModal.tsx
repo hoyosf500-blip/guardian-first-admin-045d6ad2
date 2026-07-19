@@ -151,7 +151,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[88vh] overflow-y-auto rounded-2xl border border-border bg-card shadow-xl">
+        className="w-full max-w-lg max-h-[88vh] overflow-y-auto rounded-3xl border border-border bg-card shadow-card3d-lg">
         <div className="sticky top-0 z-10 px-5 py-4 border-b border-border bg-card flex items-center gap-2">
           <Truck size={16} className="text-primary" />
           <h3 className="text-sm font-semibold text-foreground flex-1">Subir a Dropi {shopifyName && <span className="text-muted-foreground font-mono">· {shopifyName}</span>}</h3>
@@ -203,7 +203,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
             </div>
 
             {/* Productos */}
-            <div className="rounded-lg border border-border overflow-hidden">
+            <div className="rounded-2xl border border-border overflow-hidden shadow-card3d">
               <div className="px-3 py-2 bg-muted/40 text-[10px] font-medium text-muted-foreground uppercase tracking-wider grid grid-cols-[1fr,3rem,5rem] gap-2">
                 <span>Producto</span><span className="text-center">Cant.</span><span className="text-right">Precio u.</span>
               </div>
@@ -275,7 +275,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                 que YA existen en Dropi con este teléfono y deja "subir igual" para
                 recompra real. */}
             {dupBlock && (
-              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive space-y-2">
+              <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive space-y-2 shadow-card3d">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <span>
@@ -300,7 +300,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                 server-side). Evita el duplicado con doble guía. Salvo 'in_progress',
                 deja "Forzar" para reintentar DESPUÉS de verificar en Dropi. */}
             {verifyBlock && (
-              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning space-y-2">
+              <div className="rounded-2xl border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning space-y-2 shadow-card3d">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <span>{verifyBlock.msg}</span>

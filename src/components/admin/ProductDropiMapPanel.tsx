@@ -127,7 +127,7 @@ export default function ProductDropiMapPanel() {
   if (!user || !activeStore) return null;
   if (!isManagerOfActive) {
     return (
-      <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="md:col-span-2 rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         Solo el dueño o supervisor de <span className="font-medium text-foreground">{activeStore.name}</span> puede ver/editar los vínculos de productos.
       </div>
     );
@@ -167,7 +167,7 @@ export default function ProductDropiMapPanel() {
 
             {/* Lista de productos de Shopify con su estado */}
             {shopProducts.length > 0 && (
-              <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
+              <div className="rounded-2xl border border-border divide-y divide-border overflow-hidden shadow-card3d">
                 {shopProducts.map(p => {
                   const m = mapById.get(p.id);
                   return (
@@ -218,7 +218,7 @@ export default function ProductDropiMapPanel() {
             {orphans.length > 0 && (
               <div className="space-y-1">
                 <div className="hud-label">Otros vínculos (producto no encontrado en Shopify)</div>
-                <div className="rounded-lg border border-border divide-y divide-border">
+                <div className="rounded-2xl border border-border divide-y divide-border overflow-hidden shadow-card3d">
                   {orphans.map(r => (
                     <div key={r.shopify_product_id} className="px-3 py-2 grid grid-cols-[1fr,1fr,2rem] gap-2 items-center text-sm font-mono">
                       <span className="truncate text-muted-foreground">Shopify {r.shopify_product_id}</span>

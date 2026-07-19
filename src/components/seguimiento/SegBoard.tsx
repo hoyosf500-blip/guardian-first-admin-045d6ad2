@@ -481,14 +481,22 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
         return (
           <section
             key={col.key}
-            className="snap-start shrink-0 w-[286px] flex flex-col gap-2.5"
+            // La carpeta pasa a ser un panel con cuerpo propio: sin superficie
+            // ni elevación, las tarjetas flotaban sueltas sobre el fondo y no
+            // se leía dónde termina una columna y empieza la otra. Solo piel —
+            // el ancho, el snap y el flujo interno quedan igual.
+            className="snap-start shrink-0 w-[286px] flex flex-col gap-2.5 rounded-2xl border border-border bg-card/40 shadow-card3d"
           >
             {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓). */}
             <button
               type="button"
               onClick={() => setFocusedKey(col.key)}
               title={`Concentrarse solo en ${col.label}`}
-              className="group/h flex items-center gap-2 rounded-xl px-3 py-3 text-left hover:bg-card/60 transition-colors"
+              // rounded-t-2xl (no rounded-xl): el header es el primer hijo del
+              // panel y su fondo de hover se dibuja hasta el borde. Con un radio
+              // menor que el de la carpeta, ese fondo asomaba por fuera de la
+              // esquina redondeada al pasar el mouse.
+              className="group/h flex items-center gap-2 rounded-t-2xl px-3 py-3 text-left hover:bg-card/60 transition-colors"
             >
               <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
               <span className="text-foreground/90">{col.icon}</span>

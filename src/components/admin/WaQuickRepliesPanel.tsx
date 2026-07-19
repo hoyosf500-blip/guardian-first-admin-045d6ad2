@@ -26,7 +26,7 @@ export default function WaQuickRepliesPanel() {
 
   if (!isManagerOfActive) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         Solo el dueño o supervisor de la tienda puede gestionar respuestas rápidas.
       </div>
     );
@@ -108,7 +108,7 @@ export default function WaQuickRepliesPanel() {
         </div>
 
         {/* Form alta/edición */}
-        <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+        <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-3 shadow-card3d hairline-top">
           <div className="text-sm font-medium text-foreground flex items-center gap-1.5">
             {editingId ? <><Pencil size={13} /> Editar respuesta</> : <><Plus size={13} /> Nueva respuesta</>}
           </div>

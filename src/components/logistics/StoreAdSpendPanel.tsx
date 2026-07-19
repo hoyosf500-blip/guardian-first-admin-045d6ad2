@@ -33,7 +33,7 @@ export default function StoreAdSpendPanel({ filters }: Props) {
   const totals = sumAdSpend(rows);
 
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
+    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
       <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <Megaphone size={14} className="text-accent" />

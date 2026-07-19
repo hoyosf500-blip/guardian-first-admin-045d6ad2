@@ -880,7 +880,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       )}
 
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 shadow-card3d px-6 py-16 text-center">
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent">
             <Search size={20} />
           </div>
@@ -920,7 +920,15 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                   // ColumnBody hijo entre refrescos cuando la columna queda
                   // momentáneamente vacía.
                   style={isEmpty ? { display: 'none' } : undefined}
-                  className="flex-1 min-w-[280px] max-w-[340px] flex flex-col"
+                  // La columna (header + body) YA forma una tarjeta: el header
+                  // es rounded-t-2xl y el ColumnBody rounded-b-2xl. Lo que le
+                  // faltaba era la elevación. El `rounded-2xl` va en el
+                  // envoltorio para que la sombra siga ese contorno redondeado
+                  // en vez de dibujar un rectángulo alrededor de una card
+                  // curva. Las TARJETAS de adentro se dejan planas a propósito:
+                  // son decenas por columna y elevarlas una por una vuelve la
+                  // lista ilegible.
+                  className="flex-1 min-w-[280px] max-w-[340px] flex flex-col rounded-2xl shadow-card3d"
                 >
                   {/* Column header — clickeable. Si la asesora hace click en
                       "Novedad 8" se activa el filtro a SOLO esa categoría; el

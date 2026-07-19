@@ -107,7 +107,7 @@ export default function SlaAlertCard({ order }: Props) {
 
           {/* Countdown for office pickup */}
           {alert.officeCD && (
-            <div className="mt-3 p-2.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors text-xs">
+            <div className="mt-3 p-2.5 rounded-2xl bg-card/40 border border-border shadow-card3d hairline-top hover:border-border-strong transition-colors text-xs">
               <strong>Plazo de oficina:</strong> {alert.officeCD.remaining > 0
                 ? `Quedan ${alert.officeCD.remaining} día${alert.officeCD.remaining === 1 ? '' : 's'} para que el cliente reclame en ${alert.officeCD.carrier}`
                 : `Plazo vencido — el paquete puede volver al remitente`}
@@ -116,7 +116,7 @@ export default function SlaAlertCard({ order }: Props) {
 
           {/* Countdown for novedad rescue */}
           {alert.novedadW && (
-            <div className="mt-3 p-2.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors text-xs">
+            <div className="mt-3 p-2.5 rounded-2xl bg-card/40 border border-border shadow-card3d hairline-top hover:border-border-strong transition-colors text-xs">
               <strong>Rescate de novedad:</strong> {alert.novedadW.remaining > 0
                 ? `Quedan ${alert.novedadW.remaining} día${alert.novedadW.remaining === 1 ? '' : 's'} de la ventana de 3 días para rescatar`
                 : `Ventana de rescate vencida — devolución probable`}

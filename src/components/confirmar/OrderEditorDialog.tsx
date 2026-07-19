@@ -647,7 +647,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           {/* ---- Columna derecha: transportadora + producto + total ---- */}
           <div className="space-y-5">
             {!rightEnabled ? (
-              <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2">
+              <div className="rounded-2xl border border-border bg-muted/30 p-3 text-xs text-muted-foreground flex items-start gap-2 shadow-card3d">
                 <Lock size={13} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <span>
                   {order.guia

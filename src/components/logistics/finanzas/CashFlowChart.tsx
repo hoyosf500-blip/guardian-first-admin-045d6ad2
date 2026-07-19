@@ -38,7 +38,7 @@ function fmtCompact(v: number): string {
 
 export default function CashFlowChart({ series, isLoading = false }: CashFlowChartProps) {
   if (isLoading) {
-    return <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />;
+    return <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />;
   }
 
   const totalIn = series.reduce((acc, s) => acc + s.ENTRADA, 0);
@@ -46,7 +46,7 @@ export default function CashFlowChart({ series, isLoading = false }: CashFlowCha
   const neto = totalIn - totalOut;
 
   return (
-    <div className="card-elevated p-5">
+    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top transition-colors hover:border-border-strong">
       <div className="flex items-end justify-between gap-3 mb-3">
         <div>
           <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em]">

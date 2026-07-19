@@ -250,7 +250,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
         {/* Novedad banner */}
         {o.novedad && (
-          <div className="p-3 rounded-xl text-xs bg-attention/10 border border-attention/20 flex items-start gap-2">
+          <div className="p-3 rounded-2xl text-xs bg-attention/10 border border-attention/20 shadow-card3d flex items-start gap-2">
             <AlertTriangle size={14} className="text-attention mt-0.5 flex-shrink-0" />
             <div className="flex-1">
               <div className="text-[10px] font-bold text-attention uppercase tracking-wide mb-0.5">
@@ -274,7 +274,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
           <>
             {/* Nota opcional (solo aplica a "Resuelta") */}
             <div className="flex flex-1 flex-col min-h-0">
-              <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wide mb-1.5">
+              <label className="block hud-label font-bold text-muted-foreground mb-1.5">
                 Nota de la gestión <span className="text-muted-foreground/60 normal-case font-normal">(opcional)</span>
               </label>
               <textarea

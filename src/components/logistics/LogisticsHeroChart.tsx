@@ -69,7 +69,7 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
 
   if (top.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 h-full flex flex-col items-center justify-center text-center min-h-[280px]">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col items-center justify-center text-center min-h-[280px]">
         <p className="text-sm font-semibold text-foreground mb-1">Sin datos</p>
         <p className="text-xs text-muted-foreground max-w-xs">
           No hay transportadoras con suficientes pedidos en este rango.
@@ -79,7 +79,7 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 h-full flex flex-col">
+    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col">
       {/* Header con título + leyenda inline (oculta en mobile) */}
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>

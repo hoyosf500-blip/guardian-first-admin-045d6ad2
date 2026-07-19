@@ -532,7 +532,7 @@ export default function CfoTab() {
                mostraba una pérdida en pesos (bruta=0 menos pauta y costos
                fijos) que se leía como un mes desastroso medido de verdad.
                Mismo banner que /logistica → Finanzas. */
-            <div className="rounded-xl border border-danger/40 bg-danger/5 p-6">
+            <div className="rounded-2xl border border-danger/40 bg-danger/5 p-6 shadow-card3d">
               <div className="flex items-start gap-3">
                 <AlertTriangle size={18} className="text-danger shrink-0 mt-0.5" />
                 <div>

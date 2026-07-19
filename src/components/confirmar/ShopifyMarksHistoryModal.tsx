@@ -65,7 +65,7 @@ export default function ShopifyMarksHistoryModal({ storeId, pendingIds, onClose,
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
-        className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-2xl border border-border bg-card shadow-xl">
+        className="w-full max-w-lg max-h-[88vh] flex flex-col rounded-3xl border border-border bg-card shadow-card3d-lg">
 
         {/* Header */}
         <div className="px-5 py-4 border-b border-border flex items-center gap-2 flex-shrink-0">

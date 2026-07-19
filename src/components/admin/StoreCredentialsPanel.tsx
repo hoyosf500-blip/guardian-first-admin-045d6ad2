@@ -356,21 +356,21 @@ export default function StoreCredentialsPanel() {
   if (!user) return null;
   if (!activeStore) {
     return (
-      <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="md:col-span-2 rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         No hay tienda activa.
       </div>
     );
   }
   if (!isManagerOfActive) {
     return (
-      <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="md:col-span-2 rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         Solo el dueño o supervisor de <span className="font-medium text-foreground">{activeStore.name}</span> puede ver/editar las credenciales.
       </div>
     );
   }
   if (loading) {
     return (
-      <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 flex items-center justify-center">
+      <div className="md:col-span-2 rounded-2xl border border-border bg-card/40 p-5 flex items-center justify-center shadow-card3d hairline-top">
         <Loader2 className="animate-spin text-muted-foreground" size={18} />
       </div>
     );
@@ -479,7 +479,7 @@ export default function StoreCredentialsPanel() {
           </div>
 
           {/* Login automático: renueva el session token solo cuando vence */}
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
+          <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top">
             <label className="hud-label">
               Login automático (renueva el token solo)
             </label>

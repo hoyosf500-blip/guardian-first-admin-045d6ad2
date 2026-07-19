@@ -26,7 +26,7 @@ export default function ComposicionList({
   emptyMessage = 'Sin datos en este rango',
 }: ComposicionListProps) {
   if (isLoading) {
-    return <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />;
+    return <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />;
   }
 
   // Filtramos los <=0 (ruido visual) y ordenamos desc por value.
@@ -39,7 +39,7 @@ export default function ComposicionList({
     'text-foreground';
 
   return (
-    <div className="card-elevated p-5 flex flex-col">
+    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top transition-colors hover:border-border-strong flex flex-col">
       <div className="flex items-end justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           {Icon && (

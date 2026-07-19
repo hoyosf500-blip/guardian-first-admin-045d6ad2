@@ -105,14 +105,14 @@ export default function ProductKnowledgePanel() {
 
   if (!isManagerOfActive) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         Solo el dueño o supervisor de la tienda puede configurar el conocimiento de los productos.
       </div>
     );
   }
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-center">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 flex items-center justify-center shadow-card3d hairline-top">
         <Loader2 className="animate-spin text-muted-foreground" size={18} />
       </div>
     );
@@ -162,7 +162,7 @@ export default function ProductKnowledgePanel() {
 
         {/* Lista de productos */}
         {rows.length > 0 && (
-          <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
+          <div className="rounded-2xl border border-border divide-y divide-border overflow-hidden shadow-card3d">
             {rows.map((r) => (
               <div key={r.id}>
                 <div className="px-3 py-2.5 flex items-center gap-3 text-sm">
@@ -280,13 +280,13 @@ function ProductEditor({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card/40 p-4 space-y-3">
+    <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-3 shadow-card3d hairline-top">
       <datalist id={dlistId}>
         {productNames.map((n) => <option key={n} value={n} />)}
       </datalist>
 
       {/* Traer de Dropi (recomendado): autocompleta nombre + ID + foto */}
-      <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
+      <div className="rounded-2xl border border-accent/30 bg-accent/5 p-3 shadow-card3d">
         <div className="text-[11px] font-semibold text-foreground mb-1.5 flex items-center gap-1.5">
           <Package size={12} className="text-accent" /> Traer de Dropi (recomendado)
         </div>

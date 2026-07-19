@@ -13,7 +13,7 @@ export default memo(function CompactKpiGrid({ data }: Props) {
     return (
       <div className="grid grid-cols-2 gap-3 h-full">
         {[0, 1, 2, 3].map(i => (
-          <div key={i} className="rounded-2xl border-2 border-border bg-card skeleton-shimmer min-h-[140px]" />
+          <div key={i} className="rounded-2xl border-2 border-border bg-card/40 shadow-card3d skeleton-shimmer min-h-[140px]" />
         ))}
       </div>
     );
@@ -121,7 +121,7 @@ function KpiCard({ label, value, valueClass, icon: Icon, tone, hint, hintTone, t
   const arrow = inverseTrend ? '↓' : '↑';
 
   return (
-    <article className={`rounded-2xl border-2 p-4 transition-colors flex flex-col justify-between min-h-[140px] ${TONE_CARD[tone]}`}>
+    <article className={`rounded-2xl border-2 p-4 shadow-card3d transition-colors flex flex-col justify-between min-h-[140px] ${TONE_CARD[tone]}`}>
       <div className="flex items-start justify-between gap-2">
         <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
           {label}

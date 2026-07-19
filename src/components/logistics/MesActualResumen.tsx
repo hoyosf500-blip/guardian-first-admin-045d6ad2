@@ -122,10 +122,13 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
   const title = rangeTitle(filters);
 
+  // Misma piel que el panel ya cargado (más abajo): rounded-3xl + card3d-lg.
+  // Si el skeleton usa otro radio/elevación, el bloque cambia de forma al
+  // terminar de cargar y se lee como un salto.
   if (!resumen) {
     return (
-      <section className="rounded-xl border border-border bg-card p-5">
-        <div className="h-40 animate-pulse bg-muted/30 rounded" />
+      <section className="rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top">
+        <div className="h-40 animate-pulse bg-muted/30 rounded-2xl" />
       </section>
     );
   }
@@ -453,7 +456,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
               /* Sin operativo medido, el Neto Real (operativo − pauta − admin)
                  sería 0 − pauta − admin = una PÉRDIDA en pesos que nadie midió.
                  Preferimos no mostrar la cifra y decir por qué. */
-              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 flex items-start gap-2">
+              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 shadow-card3d flex items-start gap-2">
                 <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
                 <p className="text-[11px] text-warning leading-relaxed">
                   No se pudo cargar el <strong>operativo del mes</strong>, así que el{' '}

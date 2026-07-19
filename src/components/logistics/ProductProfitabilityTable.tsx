@@ -84,7 +84,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
 
   if (isLoading) {
     return (
-      <section className="rounded-xl border border-border bg-card p-8 flex items-center gap-2 text-sm text-muted-foreground">
+      <section className="rounded-2xl border border-border bg-card/40 p-8 shadow-card3d hairline-top flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 size={14} className="animate-spin" />
         Calculando rentabilidad por producto…
       </section>
@@ -93,7 +93,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
 
   if (isError) {
     return (
-      <section className="rounded-xl border border-red/40 bg-red/5 p-4 flex items-start gap-2 text-sm text-red">
+      <section className="rounded-2xl border border-red/40 bg-red/5 p-4 shadow-card3d flex items-start gap-2 text-sm text-red">
         <AlertCircle size={14} className="shrink-0 mt-0.5" />
         <div>
           <span className="font-semibold">No pude calcular rentabilidad.</span>{' '}
@@ -108,7 +108,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
 
   if (!rows || rows.length === 0) {
     return (
-      <section className="rounded-xl border border-border bg-card p-8 text-center">
+      <section className="rounded-2xl border border-border bg-card/40 p-8 shadow-card3d hairline-top text-center">
         <PackageIcon size={24} className="mx-auto text-muted-foreground mb-2" />
         <p className="text-sm text-muted-foreground">Sin productos en el rango seleccionado</p>
       </section>
@@ -118,7 +118,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
   return (
     <section className="space-y-4">
       {truncated && (
-        <div className="rounded-lg border border-warning/30 bg-warning/8 px-4 py-2.5 text-[11px] text-warning">
+        <div className="rounded-2xl border border-warning/30 bg-warning/8 px-4 py-2.5 shadow-card3d text-[11px] text-warning">
           Mostrando los <strong>100 productos de mayor utilidad</strong>. Si tenés más productos, los KPIs y el total de abajo pueden <strong>subestimar la pérdida real</strong> (los mayores perdedores quedan fuera del corte). Afiná el rango para ver menos productos.
         </div>
       )}
@@ -153,7 +153,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
       </div>
 
       {/* Tabla */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <header className="px-4 py-3 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PackageIcon size={14} className="text-accent" />
@@ -254,7 +254,7 @@ export default function ProductProfitabilityTable({ filters }: Props) {
       </div>
 
       {/* Leyenda */}
-      <div className="rounded-xl border border-border bg-card/50 p-3">
+      <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top">
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">Leyenda</div>
         <div className="flex flex-wrap gap-3 text-[11px]">
           <span className="inline-flex items-center gap-1.5">
@@ -292,7 +292,7 @@ function KpiCard({ label, value, subtitle, tone, icon }: KpiCardProps) {
     muted:   'border-border bg-card',
   };
   return (
-    <div className={`rounded-xl border ${TONE_CARD[tone]} p-3 space-y-1`}>
+    <div className={`rounded-2xl border ${TONE_CARD[tone]} p-3 shadow-card3d space-y-1`}>
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
         <span className={TONE_TEXT[tone]}>{icon}</span>
         {label}

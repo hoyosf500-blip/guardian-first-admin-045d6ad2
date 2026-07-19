@@ -79,7 +79,7 @@ export default memo(function GeoDistribution({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 h-full flex flex-col items-center justify-center text-center">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col items-center justify-center text-center">
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted/40">
           <MapPin size={18} className="text-muted-foreground" aria-hidden="true" />
         </div>
@@ -92,7 +92,7 @@ export default memo(function GeoDistribution({ rows }: Props) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 h-full flex flex-col">
+    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col">
       <header className="mb-4">
         <div className="flex items-center gap-2">
           <MapPin size={14} className="text-info" aria-hidden="true" strokeWidth={2.25} />

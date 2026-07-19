@@ -525,7 +525,7 @@ export default function CrmCallView({
 
   if (!items.length) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center">
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 shadow-card3d px-6 py-16 text-center">
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-success/10">
           <CheckCircle size={20} className="text-success" />
         </div>
@@ -895,7 +895,7 @@ export default function CrmCallView({
 
           {/* Novedad banner */}
           {o.novedad && (
-            <div className="relative p-3 pl-4 rounded-2xl mb-4 text-xs bg-warning/10 border border-warning/25 flex items-start gap-2">
+            <div className="relative p-3 pl-4 rounded-2xl mb-4 text-xs bg-warning/10 border border-warning/25 shadow-card3d flex items-start gap-2">
               <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
               <AlertTriangle size={14} className="text-warning mt-0.5 flex-shrink-0" />
               <div className="flex-1">
@@ -959,7 +959,7 @@ export default function CrmCallView({
 
           {/* Managed state or action buttons */}
           {currentManaged ? (
-            <div className="relative flex items-center justify-between gap-3 rounded-2xl bg-success/10 border border-success/25 px-4 py-3 pl-5">
+            <div className="relative flex items-center justify-between gap-3 rounded-2xl bg-success/10 border border-success/25 shadow-card3d px-4 py-3 pl-5">
               <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-success" aria-hidden="true" />
               <div className="flex items-center gap-2">
                 <CheckCircle size={16} className="text-success" />

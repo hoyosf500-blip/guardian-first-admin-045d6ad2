@@ -99,14 +99,14 @@ export default function WaBotConfigPanel() {
 
   if (!isManagerOfActive) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         Solo el dueño o supervisor de la tienda puede configurar el bot.
       </div>
     );
   }
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-center">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 flex items-center justify-center shadow-card3d hairline-top">
         <Loader2 className="animate-spin text-muted-foreground" size={18} />
       </div>
     );
@@ -137,7 +137,7 @@ export default function WaBotConfigPanel() {
 
       <div className="px-5 py-4 space-y-5">
         {/* Switch global on/off */}
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card/40 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 px-4 py-3 shadow-card3d hairline-top">
           <div className="flex items-center gap-2.5">
             <Power size={15} className={enabled ? 'text-success' : 'text-muted-foreground'} />
             <div>

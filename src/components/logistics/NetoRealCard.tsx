@@ -71,7 +71,7 @@ export default function NetoRealCard({
       : 'cargá en Pauta diaria';
 
   return (
-    <div className="rounded-lg border border-border bg-card p-3.5 space-y-3">
+    <div className="rounded-2xl border border-border bg-card/40 p-3.5 shadow-card3d hairline-top space-y-3">
       <div className="flex items-center gap-2">
         <TrendingUp size={13} className="text-accent" />
         <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">

@@ -375,7 +375,7 @@ export default function ShopifyPendingPanel() {
   if (!data || data.configured === false) return null;
   if (!data.ok) {
     return (
-      <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive flex items-center gap-2">
+      <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-2.5 text-sm text-destructive flex items-center gap-2">
         <AlertTriangle size={15} />
         <span>No se pudo revisar Shopify: {data.error || 'error'}</span>
         <button onClick={() => refetch()} className="ml-auto text-destructive/80 hover:text-destructive" title="Reintentar">
@@ -421,9 +421,9 @@ export default function ShopifyPendingPanel() {
     return !mismatchFixed.has(String(m.external_id || m.shopify_name || ''));
   });
   const mismatchBanner = mismatches.length > 0 ? (
-    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 overflow-hidden">
+    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
           <AlertTriangle size={18} className="text-destructive" />
         </div>
         <div className="flex-1 min-w-0">
@@ -479,8 +479,8 @@ export default function ShopifyPendingPanel() {
 
   // Banner anti-duplicados: avisa cuántos están bloqueados por teléfono repetido.
   const dupBanner = dupBlockedCount > 0 ? (
-    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-3 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
         <Ban size={18} className="text-destructive" aria-hidden="true" />
       </div>
       <div className="flex-1 min-w-0">
@@ -505,8 +505,8 @@ export default function ShopifyPendingPanel() {
   // el admin de Shopify antes de que se pierda la confirmación por completo.
   // Mientras vmData no cargó (outOfWindowCount === null) mostramos "…".
   const outOfWindowBanner = (outOfWindowCount === null || outOfWindowCount > 0) ? (
-    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d px-4 py-3 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
         <AlertTriangle size={18} className="text-destructive" aria-hidden="true" />
       </div>
       <div className="flex-1 min-w-0">
@@ -533,7 +533,7 @@ export default function ShopifyPendingPanel() {
         cambia), y `motion.div initial=opacity:0,y:8` re-disparaba la animación
         de entrada → la pila visual de arriba "parpadeaba" cada poll. */}
     <div
-      className={`mb-4 rounded-xl border overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
+      className={`mb-4 rounded-2xl border shadow-card3d overflow-hidden ${allClear ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'}`}>
       {/* Layout 2-rows en mobile, 1-row en sm+:
             - Row 1 (siempre): icono · texto principal · Actualizar (refresh).
             - Row 2: botones de acción (Subir todos / Ver lista). En mobile son
@@ -541,7 +541,7 @@ export default function ShopifyPendingPanel() {
             En mobile el texto principal NO compite con 2 botones por espacio,
             así que "N sin pasar a Dropi" ya no se apila letra por palabra. */}
       <div className="px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${allClear ? 'bg-success/20' : 'bg-warning/20'}`}>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${allClear ? 'bg-success/20' : 'bg-warning/20'}`}>
           {allClear ? <CheckCircle2 size={18} className="text-success" aria-hidden="true" /> : <ShoppingBag size={18} className="text-warning" aria-hidden="true" />}
         </div>
         <div className="flex-1 min-w-0 basis-[14rem]">
@@ -623,7 +623,7 @@ export default function ShopifyPendingPanel() {
           </div>
           <div className="space-y-2">
             {unmappedProducts.map(u => (
-              <div key={u.product_id} className="rounded-lg border border-border bg-card p-2.5 space-y-2">
+              <div key={u.product_id} className="rounded-2xl border border-border bg-card p-2.5 space-y-2 shadow-card3d hairline-top">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-foreground truncate flex-1">{u.title}</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/15 text-warning flex-shrink-0">{u.count} pedido(s)</span>

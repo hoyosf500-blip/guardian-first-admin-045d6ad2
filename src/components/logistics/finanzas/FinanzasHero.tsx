@@ -26,7 +26,7 @@ export default function FinanzasHero({
     return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="rounded-xl border border-border bg-card animate-pulse h-[148px]" />
+          <div key={i} className="rounded-2xl border-2 border-border bg-card/40 shadow-card3d animate-pulse h-[148px]" />
         ))}
       </div>
     );
@@ -51,7 +51,7 @@ export default function FinanzasHero({
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
       {/* Hero principal — Ganancia Neta REAL */}
       <div
-        className={`rounded-2xl border-2 p-5 relative overflow-hidden ${
+        className={`rounded-2xl border-2 p-5 shadow-card3d relative overflow-hidden ${
           isPositive
             ? 'border-success/40 bg-gradient-to-br from-success/8 via-success/3 to-transparent'
             : 'border-danger/40 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent'
@@ -96,7 +96,7 @@ export default function FinanzasHero({
       </div>
 
       {/* Ingresos Brutos */}
-      <div className="rounded-2xl border-2 border-info/30 bg-gradient-to-br from-info/8 via-info/3 to-transparent p-5">
+      <div className="rounded-2xl border-2 border-info/30 bg-gradient-to-br from-info/8 via-info/3 to-transparent p-5 shadow-card3d">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
             Ingresos Brutos
@@ -114,7 +114,7 @@ export default function FinanzasHero({
       </div>
 
       {/* Margen Operativo */}
-      <div className={`rounded-2xl border-2 p-5 ${
+      <div className={`rounded-2xl border-2 p-5 shadow-card3d ${
         margenTone === 'neutral' ? 'border-border bg-card/40' :
         margenTone === 'success' ? 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent' :
         margenTone === 'warning' ? 'border-warning/30 bg-gradient-to-br from-warning/8 via-warning/3 to-transparent' :

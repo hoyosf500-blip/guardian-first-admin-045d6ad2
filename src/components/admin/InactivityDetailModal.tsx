@@ -78,7 +78,7 @@ export default function InactivityDetailModal({
       aria-labelledby="inactivity-detail-title"
     >
       <div
-        className="bg-card rounded-2xl border border-border w-full max-w-[480px] max-h-[80vh] flex flex-col shadow-2xl"
+        className="bg-card rounded-3xl border border-border w-full max-w-[480px] max-h-[80vh] flex flex-col shadow-card3d-lg hairline-top"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">

@@ -161,7 +161,7 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" role="dialog">
-      <div className="bg-card border border-border rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+      <div className="bg-card border border-border rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden shadow-card3d-lg hairline-top">
         <header className="px-5 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
             <Search size={16} className="text-accent" />
@@ -215,14 +215,14 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
               </div>
 
               {guardianTruncated && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                <div className="flex items-start gap-2 p-3 rounded-2xl bg-warning/10 border border-warning/30 shadow-card3d">
                   <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-warning">{truncationNote}</p>
                 </div>
               )}
 
               {warning && (
-                <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                <div className="flex items-start gap-2 p-3 rounded-2xl bg-warning/10 border border-warning/30 shadow-card3d">
                   <AlertTriangle size={14} className="text-warning flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-warning">{warning}</p>
                 </div>
@@ -233,7 +233,7 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
                   // Cobertura incompleta: no podemos afirmar paridad perfecta.
                   // Mostramos un mensaje neutro con el número de no verificados
                   // y CTA para reintentar (en 1–2 min, throttle Dropi suele liberar).
-                  <div className="flex items-start gap-3 p-4 rounded-lg bg-warning/10 border border-warning/30">
+                  <div className="flex items-start gap-3 p-4 rounded-2xl bg-warning/10 border border-warning/30 shadow-card3d">
                     <AlertTriangle size={20} className="text-warning flex-shrink-0 mt-0.5" />
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-semibold text-warning">
@@ -249,7 +249,7 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
                 ) : guardianTruncated ? (
                   // Muestra truncada: cero divergencias ACÁ no es paridad. Los
                   // pedidos que nunca leímos no pueden declararse alineados.
-                  <div className="flex items-start gap-3 p-4 rounded-lg bg-warning/10 border border-warning/30">
+                  <div className="flex items-start gap-3 p-4 rounded-2xl bg-warning/10 border border-warning/30 shadow-card3d">
                     <AlertTriangle size={20} className="text-warning flex-shrink-0 mt-0.5" />
                     <div className="flex-1 space-y-1">
                       <p className="text-sm font-semibold text-warning">
@@ -262,7 +262,7 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/30">
+                  <div className="flex items-center gap-3 p-4 rounded-2xl bg-success/10 border border-success/30 shadow-card3d">
                     <CheckCircle2 size={20} className="text-success" />
                     <p className="text-sm font-semibold text-success">Paridad perfecta — sin divergencias.</p>
                   </div>
@@ -279,7 +279,7 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
                     ))}
                   </div>
 
-                  <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="border border-border rounded-2xl overflow-hidden shadow-card3d">
                     <table className="w-full text-xs">
                       <thead className="bg-secondary text-muted-foreground">
                         <tr>
@@ -361,8 +361,8 @@ export default function DropiAuditModal({ open, onClose, storeId }: Props) {
 function Stat({ label, value, accent, note }: { label: string; value: number; accent?: 'warning' | 'danger'; note?: string }) {
   const color = accent === 'danger' ? 'text-destructive' : accent === 'warning' ? 'text-warning' : 'text-foreground';
   return (
-    <div className="bg-secondary rounded-lg px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">{label}</div>
+    <div className="rounded-2xl border border-border bg-card/40 px-3 py-2 shadow-card3d hairline-top">
+      <div className="hud-label">{label}</div>
       <div className={`text-lg font-bold ${color}`}>{value}</div>
       {/* `note` califica el número (ej. "de 3400 · parcial") para que una muestra
           nunca se lea como si fuera el total. */}

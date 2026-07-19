@@ -7,7 +7,7 @@ interface Props {
 
 export default function LogisticsErrorState({ message, onRetry }: Props) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 text-center" role="alert">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 px-6 py-16 shadow-card3d text-center" role="alert">
       <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10">
         <AlertTriangle size={20} className="text-red-500" aria-hidden="true" />
       </div>

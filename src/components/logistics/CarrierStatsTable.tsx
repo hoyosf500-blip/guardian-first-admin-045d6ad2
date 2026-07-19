@@ -194,7 +194,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+      <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center shadow-card3d">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/40">
           <Truck size={20} className="text-muted-foreground" aria-hidden="true" />
         </div>
@@ -212,7 +212,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
           recharts. Cada fila = una transportadora con rank, nombre,
           composition bar (volumen relativo al líder + segmentos por
           estado), y bullet de entrega vs meta 70%. ── */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-foreground tracking-tight">
@@ -258,7 +258,7 @@ export default memo(function CarrierStatsTable({ rows }: Props) {
 
       {/* ── Tabla detalle: todas las transportadoras con sort y CSV.
           Usa .data-table del DS (sticky thead, hover row). ── */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <header className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-foreground tracking-tight">

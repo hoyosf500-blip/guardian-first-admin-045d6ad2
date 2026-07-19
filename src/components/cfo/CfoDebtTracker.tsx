@@ -239,11 +239,11 @@ function CardBlock({ card, history }: CardBlockProps) {
 
       {/* Métricas: COP vs USD diferida */}
       <div className="grid grid-cols-2 gap-2 pt-1">
-        <div className="rounded-xl border border-border bg-card/40 p-2.5 hover:border-border-strong transition-colors">
+        <div className="rounded-2xl border border-border bg-card/40 p-2.5 shadow-card3d hairline-top hover:border-border-strong transition-colors">
           <div className="hud-label text-muted-foreground">Saldo COP</div>
           <div className="text-sm font-bold font-mono tabular-nums text-foreground mt-1">{formatCOP(current.saldo_cop)}</div>
         </div>
-        <div className="rounded-xl border border-border bg-card/40 p-2.5 hover:border-border-strong transition-colors">
+        <div className="rounded-2xl border border-border bg-card/40 p-2.5 shadow-card3d hairline-top hover:border-border-strong transition-colors">
           <div className="hud-label text-muted-foreground">Saldo USD diferido</div>
           <div className={`text-sm font-bold font-mono tabular-nums mt-1 ${current.saldo_usd > 0 ? 'text-danger' : 'text-foreground'}`}>
             {current.saldo_usd > 0
@@ -261,7 +261,7 @@ function CardBlock({ card, history }: CardBlockProps) {
       {/* Historial mini (timeline de barras) */}
       {history.length > 1 && (
         <div className="pt-2 border-t border-border/50">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
+          <div className="hud-label text-muted-foreground mb-2">
             Evolución ({history.length} snapshots)
           </div>
           <div className="flex items-end gap-1 h-12">
@@ -310,7 +310,7 @@ function CardBlock({ card, history }: CardBlockProps) {
       {/* Notas del snapshot actual */}
       {current.notas && (
         <div className="pt-2 border-t border-border/50">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+          <div className="hud-label text-muted-foreground mb-1">
             Nota del último snapshot
           </div>
           <div className="text-[11px] text-foreground/80 leading-relaxed">{current.notas}</div>

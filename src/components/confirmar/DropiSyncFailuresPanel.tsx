@@ -297,9 +297,9 @@ export default function DropiSyncFailuresPanel() {
   const botCount = rows.filter(r => r.notes.startsWith(BOT_PREFIX)).length;
 
   return (
-    <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 overflow-hidden">
+    <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 shadow-card3d overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-destructive/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-destructive/20 flex items-center justify-center flex-shrink-0">
           <CloudOff size={18} className="text-destructive" aria-hidden="true" />
         </div>
         <div className="flex-1 min-w-0">

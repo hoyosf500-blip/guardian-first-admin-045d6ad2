@@ -242,7 +242,7 @@ export default function AdminTab() {
           <div>
 
       {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
-        <motion.div {...fadeUp} className="relative mb-5 rounded-2xl border border-border bg-card/40 p-4 pl-5 shadow-card3d">
+        <motion.div {...fadeUp} className="relative mb-5 rounded-2xl border border-border bg-card/40 p-4 pl-5 shadow-card3d hairline-top">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
           <div className="flex items-start gap-3">
             <span className="w-8 h-8 rounded-xl bg-danger/14 border border-danger/30 text-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">

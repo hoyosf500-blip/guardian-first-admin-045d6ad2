@@ -110,14 +110,14 @@ export default function WaChannelsPanel() {
 
   if (!isManagerOfActive) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 text-sm text-muted-foreground shadow-card3d hairline-top">
         Solo el dueño o supervisor de la tienda puede ver los canales de WhatsApp.
       </div>
     );
   }
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-center">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 flex items-center justify-center shadow-card3d hairline-top">
         <Loader2 className="animate-spin text-muted-foreground" size={18} />
       </div>
     );
@@ -174,7 +174,7 @@ export default function WaChannelsPanel() {
 
         {/* Webhook a configurar en el gateway */}
         {webhookUrl && (
-          <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2.5">
+          <div className="rounded-2xl border border-accent/20 bg-accent/5 px-3 py-2.5 shadow-card3d">
             <div className="hud-label mb-1 flex items-center gap-1">
               <QrCode size={11} /> Webhook a configurar en el gateway {provider === 'waha' ? '(WAHA: evento "message")' : '(evento messages.upsert, webhookByEvents = false)'}
             </div>
@@ -190,11 +190,11 @@ export default function WaChannelsPanel() {
 
         {/* Form de alta (solo dueño) */}
         {!isOwnerOfActive ? (
-          <div className="rounded-xl border border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+          <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground shadow-card3d hairline-top">
             Solo el <strong>dueño</strong> de la tienda puede registrar o editar el canal.
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card/40 p-4 space-y-4">
+          <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-4 shadow-card3d hairline-top">
             <div className="text-sm font-medium text-foreground">Registrar / actualizar canal</div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -72,7 +72,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
     return (
       <div className="space-y-4">
         {[0, 1, 2].map(i => (
-          <div key={i} className="rounded-xl border border-border bg-card p-5 skeleton-shimmer min-h-[140px]" />
+          <div key={i} className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top skeleton-shimmer min-h-[140px]" />
         ))}
       </div>
     );
@@ -161,7 +161,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
     <div className="space-y-6">
 
       {migrationStale && (
-        <div className="rounded-xl border border-warning/40 bg-warning/8 p-4 flex items-start gap-3">
+        <div className="rounded-2xl border border-warning/40 bg-warning/8 p-4 shadow-card3d flex items-start gap-3">
           <AlertTriangle size={16} className="text-warning shrink-0 mt-0.5" aria-hidden="true" strokeWidth={2.25} />
           <div className="text-sm">
             <p className="font-semibold text-foreground">Datos parciales — falta aplicar migration</p>
@@ -205,7 +205,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
       </div>
 
       {/* SECCIÓN 1: Estado de guías despachadas */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <div className="px-5 py-4 border-b border-border/60">
           <div className="flex items-center gap-2">
             <Truck size={14} className="text-info" aria-hidden="true" strokeWidth={2.25} />
@@ -260,7 +260,7 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
       </div>
 
       {/* SECCIÓN 3: Pedidos pendientes */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <div className="px-5 py-4 border-b border-border/60">
           <div className="flex items-center gap-2">
             <ListChecks size={14} className="text-warning" aria-hidden="true" strokeWidth={2.25} />
@@ -319,14 +319,14 @@ export default memo(function TrazabilidadView({ summary, range, carriers }: Prop
       </section>
 
       {enPreparacion > 0 && (
-        <div className="rounded-lg border border-border/60 bg-muted/10 px-4 py-2.5 text-xs text-muted-foreground">
+        <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-2.5 shadow-card3d text-xs text-muted-foreground">
           <span className="font-mono tabular-nums text-foreground">{enPreparacion.toLocaleString('es-CO')}</span>
           {' '}pedidos en preparación (confirmados con guía generada / en alistamiento, todavía no salieron al transportador). Es inventario normal previo al despacho.
         </div>
       )}
 
       {/* SECCIÓN 4: Timeline de guías */}
-      <section className="rounded-xl border border-border bg-card overflow-hidden">
+      <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
         <div className="px-5 py-4 border-b border-border/60 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
@@ -521,7 +521,7 @@ function HeroKpi({ label, value, subline, tone, icon: Icon }: HeroKpiProps) {
                text: 'text-danger', iconBg: 'bg-danger/15 border-danger/40' },
   }[tone];
   return (
-    <article className={`rounded-2xl border-2 ${styles.card} p-5 flex items-start gap-4`}>
+    <article className={`rounded-2xl border-2 ${styles.card} p-5 shadow-card3d flex items-start gap-4`}>
       <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${styles.iconBg}`}>
         <Icon size={18} className={styles.text} aria-hidden="true" strokeWidth={2.25} />
       </div>
@@ -589,7 +589,7 @@ function RateCard({ label, pct, subline, tone }: RateCardProps) {
     ? 'text-muted-foreground'
     : tone === 'success' ? 'text-success' : 'text-danger';
   return (
-    <article className={`rounded-2xl border-2 ${styles} p-5`}>
+    <article className={`rounded-2xl border-2 ${styles} p-5 shadow-card3d`}>
       <div className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground">
         {label}
       </div>

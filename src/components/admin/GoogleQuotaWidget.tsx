@@ -6,7 +6,7 @@ export function GoogleQuotaWidget() {
   const { data, isLoading } = useGoogleQuota();
 
   if (isLoading || !data) {
-    return <div className="rounded-md border border-border bg-card p-3 text-sm text-muted-foreground">Cargando cuota Google…</div>;
+    return <div className="rounded-2xl border border-border bg-card/40 p-3 text-sm text-muted-foreground shadow-card3d hairline-top">Cargando cuota Google…</div>;
   }
 
   const pct = Math.round(data.pct * 100);
@@ -21,7 +21,7 @@ export function GoogleQuotaWidget() {
   const Icon = tone === 'danger' || tone === 'warning' ? AlertTriangle : Activity;
 
   return (
-    <div className={`rounded-md border p-3 text-sm ${toneClass}`}>
+    <div className={`rounded-2xl border p-3 text-sm shadow-card3d ${toneClass}`}>
       <div className="flex items-center gap-2 font-medium">
         <Icon size={14} />
         <span>Cuota Google API hoy</span>

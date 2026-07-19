@@ -29,7 +29,7 @@ export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] })
   const hidden = attempts.length - shown.length;
 
   return (
-    <div className="mb-3 rounded-xl border border-border bg-card/40 px-3 py-2.5">
+    <div className="mb-3 rounded-2xl border border-border bg-card/40 px-3 py-2.5 shadow-card3d hairline-top">
       <div className="hud-label flex items-center gap-1.5 mb-1.5 text-muted-foreground">
         <History size={12} />
         Intentos previos ({attempts.length})

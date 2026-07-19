@@ -72,7 +72,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
 
   if (isError) {
     return (
-      <div className="rounded-xl border border-danger/40 bg-danger/5 p-6">
+      <div className="rounded-2xl border border-danger/40 bg-danger/5 p-6 shadow-card3d">
         <div className="flex items-start gap-3">
           <AlertTriangle size={18} className="text-danger shrink-0 mt-0.5" />
           <div>
@@ -147,7 +147,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   return (
     <div className="space-y-4">
       {/* Banner Fase A */}
-      <div className="rounded-xl border border-info/30 bg-info/5 p-4">
+      <div className="rounded-2xl border border-info/30 bg-info/5 p-4 shadow-card3d">
         <div className="flex items-start gap-3">
           <Info size={16} className="text-info shrink-0 mt-0.5" aria-hidden="true" />
           <div className="space-y-1 flex-1 min-w-0">
@@ -188,7 +188,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
           Sin esto un socio veía $0 en silencio, indistinguible de un mes real sin
           ganancia. El hook ya distingue error de "función no desplegada". */}
       {gananciaError && !gananciaLoading && (
-        <div className="rounded-xl border border-danger/30 bg-danger/5 p-3 flex items-center gap-2 text-xs">
+        <div className="rounded-2xl border border-danger/30 bg-danger/5 p-3 shadow-card3d flex items-center gap-2 text-xs">
           <Info size={14} className="text-danger shrink-0" aria-hidden="true" />
           <span className="text-foreground">
             No se pudo cargar la <strong>Ganancia Neta</strong> (error temporal, reintentando). El número de abajo puede no ser real — tocá <strong>Sincronizar</strong> o recargá.
@@ -200,16 +200,16 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
         <>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="rounded-2xl border border-border bg-card animate-pulse h-[148px]" />
+              <div key={i} className="rounded-2xl border-2 border-border bg-card/40 shadow-card3d animate-pulse h-[148px]" />
             ))}
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />
-            <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />
+            <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />
+            <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border bg-card animate-pulse h-[110px]" />
+              <div key={i} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[110px]" />
             ))}
           </div>
         </>
@@ -343,7 +343,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
 
           {/* 5. Volumen + ticket promedio */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div className="rounded-xl border border-border bg-card p-5 lg:col-span-2">
+            <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top lg:col-span-2">
               <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
                 Volumen de operación
               </h3>
@@ -388,7 +388,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
           </div>
 
           {/* 6. Wallet neto */}
-          <div className="rounded-xl border border-border bg-card p-4">
+          <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-muted/40 flex items-center justify-center">

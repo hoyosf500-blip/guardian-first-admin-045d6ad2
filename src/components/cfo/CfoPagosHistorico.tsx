@@ -103,7 +103,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
   if (paymentsQuery.isError || residualQuery.isError) {
     const err = (paymentsQuery.error ?? residualQuery.error) as Error | null;
     return (
-      <div className="rounded-2xl border border-danger/40 bg-danger/5 p-6">
+      <div className="rounded-2xl border border-danger/40 bg-danger/5 p-6 shadow-card3d">
         <div className="flex items-start gap-3">
           <AlertTriangle size={18} className="text-danger shrink-0 mt-0.5" />
           <div>
@@ -132,7 +132,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
   // MEDIDO (la consulta respondió y no hay filas) y sigue su curso normal.
   if (paymentsQuery.data === undefined || residualQuery.data === undefined) {
     return (
-      <div className="rounded-2xl border border-border bg-card/40 p-6">
+      <div className="rounded-2xl border border-border bg-card/40 p-6 shadow-card3d">
         <div className="flex items-start gap-3">
           <AlertTriangle size={18} className="text-muted-foreground shrink-0 mt-0.5" />
           <div>
@@ -390,7 +390,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
               {/* Resultados */}
               {pagoCapped > 0 && (
                 <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                  <div className="rounded-xl border border-danger/30 bg-danger/[0.07] p-2.5">
+                  <div className="rounded-2xl border border-danger/30 bg-danger/[0.07] p-2.5 shadow-card3d">
                     <div className="hud-label text-muted-foreground">Deuda restante</div>
                     <div className="font-mono tabular-nums font-semibold text-danger mt-1">
                       {faltaEsEstimado ? '≈ ' : ''}{formatCOP(deudaRestante)}
@@ -399,7 +399,7 @@ export default function CfoPagosHistorico({ walletDisponible = null }: Props) {
                       {pctLiquidado.toFixed(0)}% liquidado
                     </div>
                   </div>
-                  <div className="rounded-xl border border-success/30 bg-success/[0.07] p-2.5">
+                  <div className="rounded-2xl border border-success/30 bg-success/[0.07] p-2.5 shadow-card3d">
                     <div className="hud-label text-muted-foreground">Interés ahorrado</div>
                     <div className="font-mono tabular-nums font-semibold text-success mt-1">
                       {formatCOP(interesAhorrado)}

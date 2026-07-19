@@ -667,7 +667,7 @@ export default function OrderDetailPage() {
                 <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
                 <AlertTriangle size={13} className="text-danger mt-0.5 flex-shrink-0" aria-hidden="true" />
                 <div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-danger mb-0.5">Novedad</div>
+                  <div className="hud-label text-danger mb-0.5">Novedad</div>
                   <div className="text-xs text-foreground">{order.novedad}</div>
                 </div>
               </div>

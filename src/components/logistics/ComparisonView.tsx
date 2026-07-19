@@ -89,7 +89,7 @@ export default memo(function ComparisonView({
   return (
     <div className="space-y-4">
       {(aError || bError) && (
-        <div className="rounded-xl border border-danger/40 bg-danger/5 p-4 flex items-start gap-3">
+        <div className="rounded-2xl border border-danger/40 bg-danger/5 p-4 shadow-card3d flex items-start gap-3">
           <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-danger">
@@ -155,7 +155,7 @@ function PeriodHeader({
     (new Date(range.toDate).getTime() - new Date(range.fromDate).getTime()) / (24 * 3600 * 1000),
   );
   return (
-    <div className="rounded-lg border border-border bg-card p-3 space-y-2">
+    <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top space-y-2">
       <div className="flex items-center gap-2">
         <span className={`pill text-[11px] font-bold ring-1 ${accentClass}`}>
           {label}
@@ -180,7 +180,7 @@ function NoticeCard({
   children: ReactNode;
 }) {
   return (
-    <div className={`rounded-xl border-2 ${accentBorder} bg-card overflow-hidden`}>
+    <div className={`rounded-2xl border-2 ${accentBorder} bg-card/40 overflow-hidden shadow-card3d hairline-top`}>
       <header className="px-5 py-3 border-b border-border/60 bg-muted/10">
         <h3 className="text-[11px] uppercase tracking-[0.08em] font-bold text-muted-foreground">
           {label}
@@ -227,7 +227,7 @@ function PeriodColumn({ label, accent, summary, isPending, isError, compareTo, c
 
   if (isPending) {
     return (
-      <div className={`rounded-xl border-2 ${accentBorder} bg-card p-5 skeleton-shimmer min-h-[400px]`} />
+      <div className={`rounded-2xl border-2 ${accentBorder} bg-card/40 p-5 shadow-card3d hairline-top skeleton-shimmer min-h-[400px]`} />
     );
   }
 
@@ -258,7 +258,7 @@ function PeriodColumn({ label, accent, summary, isPending, isError, compareTo, c
   const prelimHint = `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o cohorte todavía en tránsito — la tasa aún no es confiable.`;
 
   return (
-    <div className={`rounded-xl border-2 ${accentBorder} bg-card overflow-hidden`}>
+    <div className={`rounded-2xl border-2 ${accentBorder} bg-card/40 overflow-hidden shadow-card3d hairline-top`}>
       <header className="px-5 py-3 border-b border-border/60 bg-muted/10">
         <h3 className="text-[11px] uppercase tracking-[0.08em] font-bold text-muted-foreground">
           {label}
@@ -391,7 +391,7 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
       ? 'Ninguno de los dos períodos tiene'
       : mA.entrega == null ? 'El período A todavía no tiene' : 'El período B todavía no tiene';
     return (
-      <div className="rounded-xl border border-border bg-muted/20 p-4 flex items-start gap-3">
+      <div className="rounded-2xl border border-border bg-muted/20 p-4 shadow-card3d flex items-start gap-3">
         <GitCompare size={16} className="text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" strokeWidth={2.25} />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-muted-foreground">Sin datos concluidos para comparar</p>
@@ -437,7 +437,7 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
   }[tone];
 
   return (
-    <div className={`rounded-xl border ${toneStyles.border} ${toneStyles.bg} p-4 flex items-start gap-3`}>
+    <div className={`rounded-2xl border ${toneStyles.border} ${toneStyles.bg} p-4 shadow-card3d flex items-start gap-3`}>
       <GitCompare size={16} className={`${toneStyles.text} shrink-0 mt-0.5`} aria-hidden="true" strokeWidth={2.25} />
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-bold ${toneStyles.text}`}>{headline}</p>

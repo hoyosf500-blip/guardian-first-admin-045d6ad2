@@ -118,7 +118,7 @@ export default function WaBotNotifyPanel() {
   if (!isManagerOfActive) return null;
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-center">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 flex items-center justify-center shadow-card3d hairline-top">
         <Loader2 className="animate-spin text-muted-foreground" size={18} />
       </div>
     );
@@ -143,7 +143,7 @@ export default function WaBotNotifyPanel() {
 
       <div className="px-5 py-4 space-y-4">
         {/* Master switch */}
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card/40 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 px-4 py-3 shadow-card3d hairline-top">
           <div className="flex items-center gap-2.5">
             <Power size={15} className={st.enabled ? 'text-success' : 'text-muted-foreground'} />
             <div>
@@ -159,7 +159,7 @@ export default function WaBotNotifyPanel() {
         {/* Momentos + plantillas */}
         <div className={`space-y-3 ${st.enabled ? '' : 'opacity-50 pointer-events-none'}`}>
           {BUCKETS.map(b => (
-            <div key={b.key} className="rounded-lg border border-border overflow-hidden">
+            <div key={b.key} className="rounded-2xl border border-border overflow-hidden shadow-card3d">
               <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-background">
                 <div>
                   <div className="text-sm font-medium text-foreground">{b.label}</div>

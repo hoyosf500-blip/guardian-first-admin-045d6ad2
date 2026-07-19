@@ -120,7 +120,7 @@ export default function DropiParityPanel() {
           </div>
 
           {history.length > 0 && (
-            <div className="border border-border rounded-xl overflow-x-auto">
+            <div className="border border-border rounded-2xl overflow-x-auto shadow-card3d">
               <table className="w-full text-xs">
                 <thead className="bg-card/40 text-muted-foreground">
                   <tr className="border-b border-border">

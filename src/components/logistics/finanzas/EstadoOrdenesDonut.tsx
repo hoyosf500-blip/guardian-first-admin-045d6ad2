@@ -47,12 +47,12 @@ export default function EstadoOrdenesDonut({
   const tasaEntrega = tasaEntregaMadura ?? (resueltosLocal > 0 ? (entregadas / resueltosLocal) * 100 : null);
 
   if (isLoading) {
-    return <div className="rounded-xl border border-border bg-card animate-pulse h-[340px]" />;
+    return <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />;
   }
 
   if (totalOrdenes === 0) {
     return (
-      <div className="card-elevated p-5 h-[340px] flex flex-col items-center justify-center text-center">
+      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-[340px] flex flex-col items-center justify-center text-center">
         <div className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-2">
           Estado de órdenes
         </div>
@@ -62,7 +62,7 @@ export default function EstadoOrdenesDonut({
   }
 
   return (
-    <div className="card-elevated p-5">
+    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top transition-colors hover:border-border-strong">
       <div className="flex items-end justify-between gap-3 mb-3">
         <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em]">
           Estado de órdenes
