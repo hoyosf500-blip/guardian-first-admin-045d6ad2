@@ -102,7 +102,11 @@ export default function DashboardTab() {
       data: Array<Record<string, unknown>> | null;
       error: { message: string } | null;
     }>;
-    const rpcDiario = supabase.rpc as unknown as RpcDiario;
+    // .bind(supabase) NO es opcional: guardar `supabase.rpc` en una variable
+    // suelta le saca el `this` y adentro revienta con "Cannot read properties
+    // of undefined (reading 'rest')", que el ErrorBoundary muestra como
+    // "Algo salió mal" en toda la pantalla.
+    const rpcDiario = supabase.rpc.bind(supabase) as unknown as RpcDiario;
     rpcDiario('admin_daily_reports_range', { p_from: desde, p_to: hasta })
       .then(({ data, error }) => {
         if (cancelado) return;
@@ -122,6 +126,61 @@ export default function DashboardTab() {
       });
     return () => { cancelado = true; };
   }, [isManagerOfActive, activeStoreId]);
+
+  // ─────────────────────────────────────────────────────────────
+  // QUÉ HIZO CADA OPERADORA — desglose por persona del período.
+  //
+  // El ranking de más abajo es de HOY. El dueño necesita además ver el período
+  // completo y las TRES áreas de trabajo (confirmar, seguimiento, novedades),
+  // que hasta ahora solo existían en /admin → Productividad.
+  //
+  // OJO con el rango: operator_productivity_stats acepta 'today' | '7d' | '30d'.
+  // Con cualquier otro valor devuelve LISTA VACÍA y status 200 — sin error. Si
+  // se le pasara el 15d del selector, el panel diría "nadie trabajó" y sería
+  // mentira. Por eso el 15 se sirve con la ventana de 7 y el rótulo dice
+  // SIEMPRE la ventana real que se consultó, no la que eligió el selector.
+  // ─────────────────────────────────────────────────────────────
+  interface OperadoraPeriodo {
+    id: string; nombre: string;
+    conf: number; canc: number; noresp: number;
+    novedades: number; segAcciones: number;
+  }
+  const rangoEquipo: '7d' | '30d' = period >= 30 ? '30d' : '7d';
+  const diasRangoEquipo = rangoEquipo === '30d' ? 30 : 7;
+  const [porOperadora, setPorOperadora] = useState<OperadoraPeriodo[]>([]);
+  const [porOperadoraEstado, setPorOperadoraEstado] = useState<'idle' | 'cargando' | 'ok' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!isManagerOfActive || !activeStoreId) { setPorOperadoraEstado('idle'); return; }
+    let cancelado = false;
+    setPorOperadoraEstado('cargando');
+    type RpcOperadoras = (fn: string, p: Record<string, unknown>) => Promise<{
+      data: Array<Record<string, unknown>> | null;
+      error: { message: string } | null;
+    }>;
+    const rpcOperadoras = supabase.rpc.bind(supabase) as unknown as RpcOperadoras;
+    rpcOperadoras('operator_productivity_stats', { p_range: rangoEquipo })
+      .then(({ data, error }) => {
+        if (cancelado) return;
+        if (error || !Array.isArray(data)) {
+          console.error('No se pudo leer el desglose por operadora:', error?.message);
+          setPorOperadora([]);
+          setPorOperadoraEstado('error');
+          return;
+        }
+        setPorOperadora(data.map(f => ({
+          id: String(f.operator_id ?? ''),
+          nombre: String(f.display_name ?? 'Sin nombre'),
+          conf: Number(f.confirmados) || 0,
+          canc: Number(f.cancelados) || 0,
+          noresp: Number(f.noresp) || 0,
+          novedades: Number(f.novedades_resueltas) || 0,
+          segAcciones: Number(f.seg_acciones) || 0,
+        })).sort((a, b) => b.conf - a.conf));
+        setPorOperadoraEstado('ok');
+      });
+    return () => { cancelado = true; };
+  }, [isManagerOfActive, activeStoreId, rangoEquipo]);
 
   // Audit M3: cancellation guards — evitan setState en componente desmontado.
   useEffect(() => {
@@ -1084,6 +1143,101 @@ export default function DashboardTab() {
               )}
             </TiltCard>
           </motion.div>
+
+          {/* QUÉ HIZO CADA OPERADORA — desglose del período, solo para quien
+              manda en la tienda. Es lo que antes obligaba a entrar a
+              /admin → Productividad para saber quién hizo qué. */}
+          {isManagerOfActive && (
+            <motion.div {...fadeUp(0.14)} className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d hairline-top mb-5">
+              <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Layers size={14} className="text-accent" aria-hidden="true" />
+                  <h3 className="text-sm font-semibold text-foreground">Qué hizo cada operadora</h3>
+                </div>
+                {/* El rótulo dice la ventana REAL consultada. Con el selector en
+                    15d acá se lee "últimos 7 días": el desfase queda a la vista
+                    en vez de disimularse con datos de otro período. */}
+                <span className="hud-label text-subtle whitespace-nowrap">
+                  ÚLTIMOS {diasRangoEquipo} DÍAS
+                </span>
+              </div>
+
+              {porOperadoraEstado === 'cargando' && (
+                <p className="text-xs text-muted-foreground">Cargando el desglose del equipo…</p>
+              )}
+
+              {porOperadoraEstado === 'error' && (
+                <div className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2.5 text-[11px] leading-relaxed text-danger">
+                  <span className="font-semibold">No se pudo cargar el desglose por operadora.</span>{' '}
+                  No se muestran cifras para no inventar ceros. Recargá la página para reintentar.
+                </div>
+              )}
+
+              {porOperadoraEstado === 'ok' && porOperadora.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Nadie registró gestiones en los últimos {diasRangoEquipo} días en esta tienda.
+                </p>
+              )}
+
+              {porOperadoraEstado === 'ok' && porOperadora.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="px-3 py-2.5 text-left hud-label font-normal">Operadora</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal">Confirmó</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal">Canceló</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal">No respondió</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal" title="Confirmados sobre lo que tuvo respuesta (confirmados + cancelados). No entra el «no respondió»: nadie decidió nada ahí.">Tasa</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal" title="Novedades de transportadora que resolvió en el período.">Novedades</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal" title="Acciones registradas en Seguimiento (contacto con el cliente sobre pedidos ya despachados).">Seguimiento</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {porOperadora.map(o => {
+                        // Misma regla que el resto del CRM: sin nada resuelto NO
+                        // hay tasa, y una muestra chica no se pinta con veredicto.
+                        const r = confRateBySample(o.conf, o.canc);
+                        return (
+                          <tr key={o.id} className="border-b border-border/50 last:border-0">
+                            <td className="px-3 py-2.5 font-semibold text-foreground">{o.nombre}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums font-bold text-success">{o.conf}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums font-bold text-danger">{o.canc}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums text-muted-foreground">{o.noresp}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              {r.tasa == null ? (
+                                <span className="font-mono text-muted-foreground" title="Sin nada resuelto todavía: no hay tasa que calcular.">—</span>
+                              ) : (
+                                <span
+                                  className={`font-mono tabular-nums font-bold ${
+                                    r.inmaduro ? 'text-muted-foreground'
+                                      : r.tasa >= CONF_TARGET_PCT ? 'text-success'
+                                      : r.tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger'
+                                  }`}
+                                  title={r.inmaduro
+                                    ? `Solo ${r.resueltos} resueltos: muestra insuficiente para sacar conclusiones (mínimo ${MATURITY_MIN_RESUELTOS}).`
+                                    : `${o.conf} confirmados de ${r.resueltos} con respuesta.`}
+                                >
+                                  {r.tasa}%{r.inmaduro ? '*' : ''}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums text-muted-foreground">{o.novedades}</td>
+                            <td className="px-3 py-2.5 text-center font-mono tabular-nums text-muted-foreground">{o.segAcciones}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {porOperadora.some(o => confRateBySample(o.conf, o.canc).inmaduro) && (
+                    <p className="mt-2.5 text-[10px] text-muted-foreground">
+                      * Muestra insuficiente (menos de {MATURITY_MIN_RESUELTOS} resueltos): el porcentaje se muestra pero no concluye.
+                    </p>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* F5: Operator ranking */}
           {operatorRanking.length > 1 && (

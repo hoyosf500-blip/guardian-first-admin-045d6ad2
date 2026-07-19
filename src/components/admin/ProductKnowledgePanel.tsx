@@ -13,7 +13,14 @@ import type { DropiProductHit } from '@/hooks/usePushToDropi';
 // (mismo patrón que WaBotConfigPanel / useWaConversations).
 const sb = supabase as unknown as SupabaseClient;
 type RpcRes = { error: { message: string } | null };
-const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
+// .bind(supabase) obligatorio: guardar `supabase.rpc` en una constante suelta
+// le saca el `this` y al invocarla revienta con "Cannot read properties of
+// undefined (reading 'rest')". Acá era una bomba de tiempo: se usa para
+// guardar y borrar el conocimiento del bot (líneas ~92 y ~247).
+// La forma `(supabase.rpc as X)(...)` que usa el resto del repo SÍ es segura —
+// el paréntesis conserva la referencia; lo que rompe es asignarla a una
+// variable.
+const rpc = supabase.rpc.bind(supabase) as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
