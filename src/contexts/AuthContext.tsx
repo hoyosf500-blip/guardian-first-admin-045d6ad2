@@ -7,6 +7,21 @@ interface AuthState {
   session: Session | null;
   profile: { display_name: string } | null;
   isAdmin: boolean;
+  /**
+   * `true` cuando YA se consultaron profiles + user_roles, o sea cuando
+   * `isAdmin` y `profile` dicen la verdad.
+   *
+   * Existe porque `loading` NO alcanza: se apaga apenas hay sesión, pero
+   * `fetchProfile` sale por `setTimeout(…, 0)` y encima hace dos queries. En
+   * esa ventana `isAdmin` todavía vale su valor inicial `false`, así que
+   * cualquier cosa que pregunte "¿sos admin?" recibe un NO prematuro.
+   *
+   * Eso ya causó un bug real (2026-07-19): `useOperatorHeartbeat` le fichaba
+   * jornada AL DUEÑO — quedó una fila de 1 segundo en operator_activity_daily
+   * a su nombre — y la bienvenida le mostraba el chip "Turno iniciado" a quien
+   * no tiene turno. Quien dependa del rol tiene que esperar esta bandera.
+   */
+  profileLoaded: boolean;
   loading: boolean;
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -73,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<{ display_name: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Prevents fetchProfile from running twice when onAuthStateChange and
@@ -84,13 +100,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (profileFetchedFor.current === userId) return;
     profileFetchedFor.current = userId;
 
-    const { data: p, error: profileErr } = await supabase.from('profiles').select('display_name').eq('user_id', userId).single();
-    if (profileErr) console.error('Error loading profile:', profileErr.message);
-    if (p) setProfile(p);
+    try {
+      const { data: p, error: profileErr } = await supabase.from('profiles').select('display_name').eq('user_id', userId).single();
+      if (profileErr) console.error('Error loading profile:', profileErr.message);
+      if (p) setProfile(p);
 
-    const { data: roles, error: rolesErr } = await supabase.from('user_roles').select('role').eq('user_id', userId);
-    if (rolesErr) console.error('Error loading roles:', rolesErr.message);
-    setIsAdmin(roles?.some(r => r.role === 'admin') ?? false);
+      const { data: roles, error: rolesErr } = await supabase.from('user_roles').select('role').eq('user_id', userId);
+      if (rolesErr) console.error('Error loading roles:', rolesErr.message);
+      setIsAdmin(roles?.some(r => r.role === 'admin') ?? false);
+    } finally {
+      // En `finally` a propósito: si la query de roles falla, `isAdmin` queda
+      // en false — que es el valor SEGURO (menos permisos) — pero la app tiene
+      // que seguir andando. Dejar la bandera en false colgaría la jornada de la
+      // operadora para siempre por un error de red.
+      setProfileLoaded(true);
+    }
   }
 
   useEffect(() => {
@@ -115,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setIsAdmin(false);
+        setProfileLoaded(false);
         profileFetchedFor.current = null;
       }
       initialDone = true;
@@ -181,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, isAdmin, loading, signUp, signIn, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, session, profile, isAdmin, profileLoaded, loading, signUp, signIn, signOut, resetPassword, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );

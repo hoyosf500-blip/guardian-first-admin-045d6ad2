@@ -2,8 +2,11 @@ import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
+import { supabase } from '@/integrations/supabase/client';
 import { AuroraBackdrop } from '@/components/ui3d';
 import { greetingFor } from '@/lib/greeting';
+import { decidirApertura } from '@/lib/aperturaTurno';
 import { formatTimeBogota } from '@/lib/timeFormat';
 import { bogotaToday } from '@/lib/utils';
 
@@ -35,6 +38,25 @@ interface Props { children: ReactNode }
  *
  * Si localStorage falla (Safari privado, cuota llena), el catch degrada a "no
  * mostrar": ante la duda, no estorbar.
+ *
+ * ── POR QUÉ ADEMÁS SE PREGUNTA AL SERVIDOR (2026-07-19) ──
+ *
+ * Pedido del dueño: "ya hice apertura, pero si cierro el CRM y vuelvo a entrar
+ * sin hacer cierre, no me tiene que volver a contar la apertura".
+ *
+ * En la BASE eso ya estaba bien y se verificó contra la función desplegada: el
+ * `ON CONFLICT` de `record_operator_heartbeat` no toca `first_action_at`, así
+ * que volver a entrar suma segundos pero NO mueve la hora de llegada.
+ *
+ * El agujero estaba acá arriba. localStorage es por navegador y por equipo: se
+ * borra con la caché, no existe en incógnito y no viaja a otra máquina. En
+ * cualquiera de esos casos la bienvenida reaparecía — y como mostraba el reloj
+ * local, anunciaba "Turno iniciado · 2:15 p.m." mientras el reporte del dueño
+ * seguía diciendo 8:03 a.m. La pantalla se contradecía con la base.
+ *
+ * Por eso ahora, cuando localStorage no sabe, se le pregunta al servidor: si ya
+ * hay marca de hoy y no es de recién, esto es una re-entrada y no se saluda. Y
+ * la hora que se muestra sale SIEMPRE de esa marca, nunca del reloj de turno.
  */
 
 const DURACION_MS = 2800;
@@ -51,21 +73,78 @@ function marcarSaludado(userId: string): void {
   try { localStorage.setItem(claveDeHoy(userId), '1'); } catch { /* sin persistencia, no rompe nada */ }
 }
 
+const esperar = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+/**
+ * Lee del SERVIDOR la hora de entrada sellada hoy, o null si todavía no hay.
+ *
+ * Reintenta una vez porque compite con el latido de `useOperatorHeartbeat`:
+ * ambos arrancan al montar y el que gane la carrera es indistinto. Si leemos
+ * antes de que el latido escriba, un segundo intento lo encuentra.
+ *
+ * Filtra por `operator_id` explícito en vez de confiar en RLS: si algún día una
+ * política deja a un supervisor ver las filas de su equipo, esta consulta
+ * seguiría trayendo UNA sola fila — la propia — en lugar de la de otra persona.
+ */
+async function leerMarcaDeEntrada(userId: string, storeId: string): Promise<string | null> {
+  const hoy = bogotaToday();
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const { data } = await supabase
+        .from('operator_activity_daily')
+        .select('first_action_at')
+        .eq('operator_id', userId)
+        .eq('store_id', storeId)
+        .eq('activity_date', hoy)
+        .maybeSingle();
+      if (data?.first_action_at) return data.first_action_at;
+    } catch { /* red caída: se resuelve abajo sin afirmar ninguna hora */ }
+    if (intento === 0) await esperar(600);
+  }
+  return null;
+}
+
 export default function WelcomeGate({ children }: Props) {
-  const { user, profile, isAdmin } = useAuth();
+  const { user, profile, isAdmin, profileLoaded } = useAuth();
+  const { activeStoreId } = useStore();
   const [visible, setVisible] = useState(false);
-  // Hora congelada al ABRIR, no `new Date()` en cada render: la bienvenida vive
-  // 2.8s y re-renderiza varias veces; leer el reloj cada vez haría saltar el
-  // minuto en pantalla justo cuando la asesora lo está leyendo.
+  // Hora SELLADA POR EL SERVIDOR (operator_activity_daily.first_action_at), no
+  // el reloj de esta máquina. Antes se mostraba `new Date()`, que coincide con
+  // la hora real solo en la primerísima apertura del día en ESE navegador: si
+  // la bienvenida reaparecía (caché borrada, otro equipo, incógnito) anunciaba
+  // una hora nueva mientras la base conservaba la original — la pantalla
+  // contradecía a /admin → Productividad. '' = no se pudo confirmar.
   const [horaEntrada, setHoraEntrada] = useState('');
 
   useEffect(() => {
-    if (!user) return;
+    // Esperar a saber QUIÉN es: hasta que cargan los roles, `isAdmin` es false.
+    if (!user || !profileLoaded) return;
     if (yaSaludadoHoy(user.id)) return;
-    marcarSaludado(user.id);
-    setHoraEntrada(formatTimeBogota(new Date().toISOString()));
-    setVisible(true);
-  }, [user]);
+
+    // El dueño no ficha jornada: no hay marca que consultar. Se lo saluda igual
+    // pero sin chip de turno — la decisión la toma `decidirApertura`.
+    if (isAdmin) {
+      marcarSaludado(user.id);
+      setVisible(decidirApertura({ esAdmin: true, marcaEntrada: null }).saludar);
+      return;
+    }
+    if (!activeStoreId) return;
+
+    let cancelado = false;
+    void (async () => {
+      const marca = await leerMarcaDeEntrada(user.id, activeStoreId);
+      if (cancelado) return;
+      marcarSaludado(user.id);
+      // La regla vive en `lib/aperturaTurno.ts`, pura y con tests: acá no se
+      // puede verificar porque el único que abre este navegador es el dueño, y
+      // el camino de la operadora nunca se ejecuta con su sesión.
+      const { saludar, horaSellada } = decidirApertura({ esAdmin: false, marcaEntrada: marca });
+      if (!saludar) return;
+      setHoraEntrada(horaSellada ? formatTimeBogota(horaSellada) : '');
+      setVisible(true);
+    })();
+    return () => { cancelado = true; };
+  }, [user, profileLoaded, isAdmin, activeStoreId]);
 
   const cerrar = useCallback(() => setVisible(false), []);
 
@@ -146,8 +225,12 @@ export default function WelcomeGate({ children }: Props) {
                   que la asesora sepa que quedó registrada y a qué hora — si no
                   se ve, la marca existe pero nadie confía en ella.
                   Solo para quien realmente ficha: al admin no se le trackea
-                  jornada, así que anunciarle un turno sería mentirle. */}
-              {!isAdmin && (
+                  jornada, así que anunciarle un turno sería mentirle.
+                  Y solo si `horaEntrada` tiene valor: eso significa que se LEYÓ
+                  del servidor. Sin lectura confirmada no se muestra el chip —
+                  un turno anunciado con una hora inventada es peor que no
+                  anunciarlo, porque después no cuadra con el reporte. */}
+              {!isAdmin && horaEntrada && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.94 }}
                   animate={{ opacity: 1, scale: 1 }}

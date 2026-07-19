@@ -35,7 +35,7 @@ const TICK_INTERVAL_MS = 1000;
 const MOUSEMOVE_THROTTLE_MS = 1000;
 
 export function useOperatorHeartbeat() {
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, profileLoaded, loading: authLoading } = useAuth();
   const { activeStoreId } = useStore();
 
   // Refs (no rerenders): bucket de segundos activos/idle acumulados desde
@@ -50,7 +50,14 @@ export function useOperatorHeartbeat() {
   useEffect(() => {
     // Gates: solo correr para operadora/supervisor de una tienda. Admin
     // global y "sin tienda activa" no se trackean.
-    if (authLoading) return;
+    //
+    // `profileLoaded` NO es redundante con `authLoading` (bug 2026-07-19):
+    // `loading` se apaga apenas hay sesión, pero los roles se consultan en un
+    // `setTimeout(…, 0)` posterior. Sin esta bandera el hook corría con
+    // `isAdmin === false` prematuro y le fichaba jornada AL DUEÑO — quedó
+    // evidencia en operator_activity_daily: una fila suya de 1 segundo, que es
+    // exactamente la firma de la marca de entrada de acá abajo.
+    if (authLoading || !profileLoaded) return;
     if (!user || isAdmin) return;
     if (!activeStoreId) return;
 
@@ -177,5 +184,5 @@ export function useOperatorHeartbeat() {
       // Flush final best-effort — no esperamos la promesa
       void flush();
     };
-  }, [user, isAdmin, authLoading, activeStoreId]);
+  }, [user, isAdmin, profileLoaded, authLoading, activeStoreId]);
 }
