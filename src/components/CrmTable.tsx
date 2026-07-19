@@ -110,6 +110,11 @@ const TONE_STYLES: Record<Tone, {
   headerBg: string;
   headerBorder: string;
   headerText: string;
+  /** Glow de la cifra del header. Igual que SegBoard.TONE.numGlow: solo se
+      declara donde index.css define el token (accent/danger/success) — nada
+      de inventar num-glow-warning. Sin esto las dos vistas dibujaban el MISMO
+      header de dos formas distintas, que era justo lo que se venía a unificar. */
+  headerNumGlow: string;
   headerCount: string;
   pillIdle: string;
   pillActive: string;
@@ -121,6 +126,7 @@ const TONE_STYLES: Record<Tone, {
     headerBg: 'bg-card/40',
     headerBorder: 'border-border',
     headerText: 'text-foreground',
+    headerNumGlow: '',
     headerCount: 'bg-muted/50 text-foreground border border-border',
     pillIdle: 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
     pillActive: 'bg-accent/16 border-accent/40 text-accent shadow-glow3d',
@@ -132,6 +138,7 @@ const TONE_STYLES: Record<Tone, {
     headerBg: 'bg-accent/10',
     headerBorder: 'border-accent/30',
     headerText: 'text-accent',
+    headerNumGlow: 'num-glow-accent',
     headerCount: 'bg-accent/14 text-accent border border-accent/30',
     pillIdle: 'bg-card/40 border-accent/25 text-accent hover:border-accent/50',
     pillActive: 'bg-accent/16 border-accent/40 text-accent shadow-glow3d',
@@ -143,6 +150,7 @@ const TONE_STYLES: Record<Tone, {
     headerBg: 'bg-warning/10',
     headerBorder: 'border-warning/30',
     headerText: 'text-warning',
+    headerNumGlow: '',
     headerCount: 'bg-warning/14 text-warning border border-warning/30',
     pillIdle: 'bg-card/40 border-warning/25 text-warning hover:border-warning/50',
     pillActive: 'bg-warning/16 border-warning/45 text-warning',
@@ -154,6 +162,7 @@ const TONE_STYLES: Record<Tone, {
     headerBg: 'bg-danger/10',
     headerBorder: 'border-danger/30',
     headerText: 'text-danger',
+    headerNumGlow: 'num-glow-danger',
     headerCount: 'bg-danger/14 text-danger border border-danger/30',
     pillIdle: 'bg-card/40 border-danger/25 text-danger hover:border-danger/50',
     pillActive: 'bg-danger/16 border-danger/45 text-danger',
@@ -165,6 +174,7 @@ const TONE_STYLES: Record<Tone, {
     headerBg: 'bg-success/10',
     headerBorder: 'border-success/30',
     headerText: 'text-success',
+    headerNumGlow: 'num-glow-success',
     headerCount: 'bg-success/14 text-success border border-success/30',
     pillIdle: 'bg-card/40 border-success/25 text-success hover:border-success/50',
     pillActive: 'bg-success/16 border-success/45 text-success',
@@ -176,6 +186,7 @@ const TONE_STYLES: Record<Tone, {
     headerBg: 'bg-muted/30',
     headerBorder: 'border-border',
     headerText: 'text-muted-foreground',
+    headerNumGlow: '',
     headerCount: 'bg-muted/50 text-muted-foreground border border-border',
     pillIdle: 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
     pillActive: 'bg-muted/40 border-border-strong text-foreground',
@@ -703,137 +714,183 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
           flujo de trabajo). */}
       {pendingChanges > 0 && (
         <div className="sticky top-2 z-30">
+          {/* Vocabulario de banner del Dashboard: riel de color a la izquierda +
+              chip de ícono con glow + la cifra en mono. El ámbar plano lo hacía
+              parecer una advertencia de error cuando es una INVITACIÓN a
+              actualizar. El patrón de fondo (la lista no se mueve hasta el
+              clic) es correcto y no se toca — junto con onDataApplied es lo que
+              mantiene chips y contador en sincronía con las filas visibles. */}
           <button
             type="button"
             onClick={applyPendingNow}
-            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-warning/40 bg-warning/16 px-4 py-3 text-sm font-semibold text-warning shadow-card3d hover:border-warning/70 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-warning focus-visible:outline-none"
+            className="relative w-full inline-flex items-center gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 pl-5 py-3 text-sm font-semibold text-accent shadow-card3d hover:border-accent/60 hover:bg-accent/16 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             aria-live="polite"
           >
-            <RotateCcw size={16} aria-hidden="true" />
-            <span>{pendingChanges} {pendingChanges === 1 ? 'cambio nuevo' : 'cambios nuevos'} — clic para actualizar</span>
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-accent" aria-hidden="true" />
+            <span className="w-9 h-9 rounded-xl bg-accent/20 glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <RotateCcw size={16} />
+            </span>
+            <span className="text-left">
+              <span className="font-mono tabular-nums text-base font-bold num-glow-accent">{pendingChanges}</span>{' '}
+              {pendingChanges === 1 ? 'cambio nuevo' : 'cambios nuevos'} — clic para actualizar
+            </span>
           </button>
         </div>
       )}
-      {/* Search + delayed filter */}
-      <div className="flex flex-col gap-3 lg:flex-row">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar nombre, teléfono, guía, ciudad..."
-            aria-label="Buscar pedidos"
-            className="w-full pl-10 pr-4 py-2.5 bg-card/40 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
-          />
-        </div>
-        <button
-          type="button"
-          aria-pressed={onlyDelayed}
-          onClick={() => setOnlyDelayed(prev => !prev)}
-          className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-            onlyDelayed
-              ? 'border-warning/45 bg-warning/16 text-warning'
-              : 'border-border bg-card/40 text-muted-foreground hover:text-warning hover:border-warning/50'
-          }`}
-        >
-          <Clock size={14} aria-hidden="true" />
-          <span>Retrasados (2d+)</span>
-          <span className={`rounded-lg px-2 py-0.5 text-[11px] font-mono tabular-nums font-semibold ${onlyDelayed ? 'bg-warning/25 text-warning' : 'bg-muted/50 text-foreground'}`}>
-            {delayedCount}
-          </span>
-        </button>
-        {managedCount > 0 && (
-          <button
-            type="button"
-            aria-pressed={showManaged}
-            onClick={() => setShowManaged(prev => !prev)}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-              showManaged
-                ? 'border-success/45 bg-success/16 text-success'
-                : 'border-border bg-card/40 text-muted-foreground hover:text-success hover:border-success/50'
-            }`}
-          >
-            <CheckCircle size={14} aria-hidden="true" />
-            <span>Mostrar En espera</span>
-            <span className={`rounded-lg px-2 py-0.5 text-[11px] font-mono tabular-nums font-semibold ${showManaged ? 'bg-success/25 text-success' : 'bg-muted/50 text-foreground'}`}>
-              {managedCount}
-            </span>
-          </button>
-        )}
-        {/* Revisión diaria: cuántos del tablero ya están al día hoy
-            (gestionados hoy + cerrados) sobre el total activo. Se vacía a
-            medida que el equipo trabaja y se resetea cada día (las gestiones
-            del día anterior reaparecen). Visible también para el dueño. */}
-        {data.length > 0 && (
+      {/* ─────────────────────────────────────────────────────────────
+          BARRA DE HERRAMIENTAS EN TRES NIVELES.
+          Antes eran SEIS grupos en una sola fila, todos con el mismo alto,
+          el mismo radio y la misma superficie: un filtro booleano, un
+          contador de progreso y un cambio de modo de trabajo resultaban
+          indistinguibles porque en píxeles pesaban exactamente igual.
+          Ahora: (1) modo de trabajo con superficie propia · (2) "Al día hoy"
+          promovido a KPI con su barra · (3) filtros como chips de menor peso.
+          ───────────────────────────────────────────────────────────── */}
+      <div className="space-y-3">
+        {/* NIVEL 1 + 2 — modo de trabajo y KPI del día */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Lista / Llamar: segmented control con superficie propia. Cambia
+              TODA la forma de trabajar, no es un filtro más. */}
           <div
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/40 shadow-card3d px-3 py-2.5 text-sm hover:border-border-strong transition-colors"
-            title="Pedidos del tablero que ya gestionaste hoy o cerraste, sobre el total activo. Mañana los gestionados vuelven a aparecer."
+            className="inline-flex gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border shadow-card3d"
+            role="group"
+            aria-label="Modo de trabajo"
           >
-            <span className="hud-label">Al día hoy</span>
-            <span className="font-mono font-bold tabular-nums text-foreground">
-              {managedCount}<span className="text-muted-foreground">/{data.length}</span>
-            </span>
-            <span className="hidden sm:block h-1.5 w-16 rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
-              <span
-                className="block h-full rounded-full bg-success transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.round((managedCount / data.length) * 100))}%` }}
-              />
-            </span>
-          </div>
-        )}
-
-        {/* Filtro por gestión real (no bloquea — todas pueden gestionar todo).
-            'Míos' = los que he gestionado · 'Disponibles' = los que nadie ha
-            tocado todavía · 'Todas' = sin filtro. */}
-        <div className="inline-flex flex-wrap items-center gap-2">
-          {([
-            { key: 'all', label: 'Todas' },
-            { key: 'mine', label: 'Míos' },
-            { key: 'available', label: 'Disponibles' },
-          ] as const).map(opt => (
             <button
-              key={opt.key}
               type="button"
-              onClick={() => setOwnerFilter(opt.key)}
-              aria-pressed={ownerFilter === opt.key}
-              className={`inline-flex items-center px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                ownerFilter === opt.key
+              onClick={() => setView('list')}
+              aria-pressed={view === 'list'}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                view === 'list'
                   ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                  : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                  : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
-              {opt.label}
+              <List size={13} aria-hidden="true" /> Lista
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setView('call')}
+              aria-pressed={view === 'call'}
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                view === 'call'
+                  ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
+                  : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              <PhoneIcon size={13} aria-hidden="true" /> Llamar
+            </button>
+          </div>
+
+          {/* Revisión diaria: cuántos del tablero ya están al día hoy
+              (gestionados hoy + cerrados) sobre el total activo. Se vacía a
+              medida que el equipo trabaja y se resetea cada día (las gestiones
+              del día anterior reaparecen). Visible también para el dueño.
+              Promovido a KPI con la anatomía del Dashboard: chip con glow,
+              cifra en mono y barra de avance a lo ancho. `data.length > 0`
+              sigue guardando la división por cero. */}
+          {data.length > 0 && (
+            <div
+              className="inline-flex items-center gap-3 rounded-2xl border border-border bg-card/40 shadow-card3d px-4 py-2.5 hover:border-border-strong transition-colors sm:ml-auto"
+              title="Pedidos del tablero que ya gestionaste hoy o cerraste, sobre el total activo. Mañana los gestionados vuelven a aparecer."
+            >
+              <span className="w-9 h-9 rounded-xl border bg-success/14 border-success/30 text-success glow-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                <CheckCircle size={16} />
+              </span>
+              <div>
+                <div className="font-mono tabular-nums font-bold leading-none text-success text-xl">
+                  {managedCount}<span className="text-muted-foreground text-sm">/{data.length}</span>
+                </div>
+                <div className="hud-label text-subtle mt-1.5">Al día hoy</div>
+              </div>
+              <span className="hidden sm:block h-1.5 w-20 rounded-full bg-foreground/10 overflow-hidden self-end mb-1" aria-hidden="true">
+                <span
+                  className="block h-full rounded-full bg-success transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.round((managedCount / data.length) * 100))}%` }}
+                />
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Lista / Llamar toggle */}
-        <div className="inline-flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setView('list')}
-            aria-pressed={view === 'list'}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-              view === 'list'
-                ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
-            }`}
-          >
-            <List size={13} aria-hidden="true" /> Lista
-          </button>
-          <button
-            type="button"
-            onClick={() => setView('call')}
-            aria-pressed={view === 'call'}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-              view === 'call'
-                ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
-            }`}
-          >
-            <PhoneIcon size={13} aria-hidden="true" /> Llamar
-          </button>
+        {/* NIVEL 3 — buscador y filtros. Menor altura y menor peso tipográfico
+            que el modo de trabajo: acotan lo que se ve, no cambian cómo se
+            trabaja. */}
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <div className="relative flex-1 min-w-0">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar nombre, teléfono, guía, ciudad..."
+              aria-label="Buscar pedidos"
+              className="w-full pl-10 pr-4 py-2 bg-card/40 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:border-accent/40 hover:border-border-strong transition-colors duration-200"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={onlyDelayed}
+              onClick={() => setOnlyDelayed(prev => !prev)}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                onlyDelayed
+                  ? 'border-warning/45 bg-warning/16 text-warning font-semibold'
+                  : 'border-border bg-card/40 text-muted-foreground hover:text-warning hover:border-warning/50'
+              }`}
+            >
+              <Clock size={12} aria-hidden="true" />
+              <span>Retrasados (2d+)</span>
+              <span className={`font-mono tabular-nums font-bold ${onlyDelayed ? 'text-warning' : 'text-foreground'}`}>
+                {delayedCount}
+              </span>
+            </button>
+            {/* Solo aparece con managedCount > 0: su AUSENCIA significa cero,
+                no error. Se conserva la condición tal cual. */}
+            {managedCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={showManaged}
+                onClick={() => setShowManaged(prev => !prev)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors duration-200 whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                  showManaged
+                    ? 'border-success/45 bg-success/16 text-success font-semibold'
+                    : 'border-border bg-card/40 text-muted-foreground hover:text-success hover:border-success/50'
+                }`}
+              >
+                <CheckCircle size={12} aria-hidden="true" />
+                <span>Mostrar En espera</span>
+                <span className={`font-mono tabular-nums font-bold ${showManaged ? 'text-success' : 'text-foreground'}`}>
+                  {managedCount}
+                </span>
+              </button>
+            )}
+            <span className="hidden sm:block h-5 w-px bg-border" aria-hidden="true" />
+            {/* Filtro por gestión real (no bloquea — todas pueden gestionar todo).
+                'Míos' = los que he gestionado · 'Disponibles' = los que nadie ha
+                tocado todavía · 'Todas' = sin filtro. */}
+            <div className="inline-flex gap-[2px] p-[2px] rounded-lg bg-card/40 border border-border">
+              {([
+                { key: 'all', label: 'Todas' },
+                { key: 'mine', label: 'Míos' },
+                { key: 'available', label: 'Disponibles' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setOwnerFilter(opt.key)}
+                  aria-pressed={ownerFilter === opt.key}
+                  className={`inline-flex items-center px-3 py-1.5 rounded-[7px] text-xs transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    ownerFilter === opt.key
+                      ? 'font-semibold bg-accent/16 border border-accent/40 text-accent'
+                      : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -901,8 +958,9 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         />
       ) : (
         <div className="relative">
-          {/* Scroll fade indicators */}
-          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-r from-background to-transparent opacity-0 transition-opacity" id="scroll-fade-left" />
+          {/* Indicador de scroll horizontal. El gemelo de la izquierda tenía
+              opacity-0 hardcodeado (nada lo encendía nunca): era un elemento
+              muerto y se borró. */}
           <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-l from-background to-transparent" />
           <div className="overflow-x-auto pb-4 -mx-2 px-2 scroll-hint">
             <div className="flex gap-3" style={{ minWidth: `${Math.max(1, visibleColumnCount) * 300}px` }}>
@@ -951,27 +1009,30 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         ? `Quitar filtro — volver a ver todas las columnas`
                         : `Click para enfocarse en "${col.label}" (después podés pasar a Llamar)`
                     }
-                    className={`relative w-full rounded-t-2xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-3 flex items-center justify-between cursor-pointer hover:border-border-strong transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    className={`relative w-full rounded-t-2xl border border-b-0 ${t.headerBorder} ${t.headerBg} px-3.5 py-3.5 flex items-start gap-2.5 cursor-pointer hover:border-border-strong transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                       activeFilter === col.key ? 'ring-2 ring-accent' : ''
                     }`}
                   >
                     <span className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-tl-2xl ${t.dot}`} aria-hidden="true" />
-                    <div className={`flex items-center gap-2 pl-1.5 ${t.headerText}`}>
-                      <span className="flex items-center justify-center w-7 h-7 rounded-xl bg-card/60 border border-border">
-                        {col.icon}
-                      </span>
-                      <span className="text-[13px] font-semibold tracking-tight text-foreground">{col.label}</span>
-                    </div>
-                    <span className="flex items-center gap-1.5">
-                      {activeFilter === col.key && (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent">
-                          ✕ filtro
-                        </span>
-                      )}
-                      <span className={`inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded-lg text-[11px] font-mono font-semibold tabular-nums ${t.headerCount}`}>
+                    {/* Misma anatomía de KPI que los headers de SegBoard: chip
+                        de 36px, la CIFRA como protagonista y el nombre de la
+                        fase en hud-label debajo. Antes el tablero de la vista
+                        Lista y el de la vista Tablero dibujaban el mismo
+                        concepto de dos formas distintas. */}
+                    <span className={`flex items-center justify-center w-9 h-9 rounded-xl flex-shrink-0 ${t.headerCount}`} aria-hidden="true">
+                      {col.icon}
+                    </span>
+                    <div className="min-w-0 flex-1 text-left">
+                      <span className={`block text-[22px] font-mono font-bold tabular-nums leading-none ${t.headerText} ${t.headerNumGlow}`}>
                         {items.length}
                       </span>
-                    </span>
+                      <span className="hud-label block truncate mt-1.5">{col.label}</span>
+                    </div>
+                    {activeFilter === col.key && (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent glow-accent flex-shrink-0">
+                        ✕ filtro
+                      </span>
+                    )}
                   </button>
 
                   {/* Column body */}
@@ -1107,26 +1168,33 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
           }
         }}
       >
-        {/* Name + ID + days */}
+        {/* ANILLO 1 — IDENTIDAD. El nombre sube de tamaño y peso: es lo que la
+            asesora lee en voz alta cuando contesta. El externalId baja a
+            font-mono apagado (sigue siendo link al detalle): era un número de
+            sistema pintado en accent, compitiendo con la persona. */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <TruncatedText
               text={o.nombre}
               cssTruncate
-              className="block text-[13px] font-bold text-foreground truncate"
+              className="block text-[15px] font-bold text-foreground truncate leading-tight"
             />
             {o.externalId && (
-              <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[10px] text-accent hover:underline font-mono tabular-nums mt-0.5 block truncate">
+              <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[11px] text-muted-foreground hover:text-accent hover:underline font-mono tabular-nums mt-1 block truncate">
                 {o.externalId}
               </a>
             )}
-            {!o.externalId && <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Sin ID</div>}
+            {!o.externalId && <div className="text-[11px] text-muted-foreground font-mono mt-1">Sin ID</div>}
           </div>
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            {/* Sin `uppercase`: `o.estado` es texto de DROPI y el lenguaje
+                prohíbe mayusculizar datos que no escribimos nosotros (los
+                valores ya vienen en mayúsculas desde la API — esto solo evita
+                deformar cualquier estado que no lo esté). */}
             <TruncatedText
               text={o.estado}
               cssTruncate
-              className="text-[9px] font-semibold px-2 py-1 rounded-lg bg-muted/50 border border-border text-muted-foreground uppercase tracking-wide leading-tight max-w-[120px] truncate"
+              className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-muted/50 border border-border text-muted-foreground tracking-wide leading-tight max-w-[120px] truncate"
             />
             {pLevel !== 'low' && (
               <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-lg border ${pConfig.bgClass} ${pConfig.color}`}>
@@ -1312,16 +1380,24 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
           )
         ) : null}
 
-        {/* Delay warning — collapsed to 2 tones so it doesn't fight the column tone */}
+        {/* ANILLO 2 — URGENCIA. Los días sin movimiento son la variable que
+            decide si se llama ahora o después, así que toman el tratamiento de
+            cifra del Dashboard (mono grande + num-glow del tono) dentro de un
+            callout con riel de color. El aviso y el badge de alerta se dejan
+            como DOS bloques a propósito: dicen cosas parecidas pero no iguales
+            (uno es el contador de días, el otro el veredicto de alertSystem), y
+            fusionarlos habría borrado el texto de `alert.label`. Lo que se hace
+            es bajarle peso al segundo para que no compitan. */}
         {isDelayed && !isExcludedFromDelay(o.estado) && (
-          <div className={`mt-2.5 flex items-center gap-2 rounded-xl px-3 py-2 border ${
+          <div className={`relative mt-2.5 flex items-center gap-2.5 rounded-xl pl-3.5 pr-3 py-2 border ${
             diasEnEstatus >= 5
               ? 'bg-danger/12 border-danger/30'
               : 'bg-warning/12 border-warning/30'
           }`}>
-            <Clock size={12} className={diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'} />
+            <span className={`absolute left-0 top-2 bottom-2 w-1 rounded-full ${diasEnEstatus >= 5 ? 'bg-danger' : 'bg-warning'}`} aria-hidden="true" />
+            <Clock size={12} className={`flex-shrink-0 ${diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'}`} />
             <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'}`}>
-              <span className="font-mono tabular-nums">{diasEnEstatus}</span>d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
+              <span className={`font-mono tabular-nums text-base font-bold ${diasEnEstatus >= 5 ? 'num-glow-danger' : ''}`}>{diasEnEstatus}</span>d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
             </span>
           </div>
         )}
@@ -1329,7 +1405,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         {/* Alert badge */}
         {alert && alert.level !== 'ok' && alert.level !== 'watch' && (
           <div className="mt-2">
-            <span className={`inline-flex items-center text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${
+            <span className={`inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
               alert.level === 'lost' ? 'bg-muted/60 text-muted-foreground border-border' :
               alert.level === 'critical' ? 'bg-danger/14 text-danger border-danger/30' :
               'bg-warning/14 text-warning border-warning/30'
@@ -1356,36 +1432,59 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             transition={{ duration: 0.2 }}
             className="border-t border-border/40 overflow-hidden">
             <div className="px-3.5 py-3.5 space-y-3 bg-card/30">
-              {/* Info grid */}
-              <div className="grid grid-cols-2 gap-2">
+              {/* DIRECCIÓN a ancho completo y SIN truncar.
+                  Era una celda de 1/4 con maxChars={35}: "Calle 45 # 12-34 Apto
+                  302 Torre B Conjunto…" se mostraba mutilada y el texto íntegro
+                  solo llegaba por tooltip de hover — inalcanzable en móvil, que
+                  es donde trabajan las asesoras. Esta es LA pantalla donde la
+                  dirección se lee en voz alta al cliente: el dato completo tiene
+                  que estar a la vista, no escondido. Se conserva el fallback
+                  '—' cuando viene vacía. */}
+              <div className="bg-card/40 rounded-xl px-3 py-2.5 border border-border hover:border-border-strong transition-colors">
+                <div className="hud-label flex items-center gap-1.5">
+                  <MapPin size={10} aria-hidden="true" /> Dirección
+                </div>
+                <div className="text-[13px] font-semibold text-foreground mt-1 leading-snug break-words">
+                  {o.direccion || '—'}
+                </div>
+              </div>
+
+              {/* El resto del grid sigue compacto: son datos de referencia, no
+                  se dictan por teléfono. Producto pasa de un corte duro a 30
+                  caracteres a truncado por ancho real con tooltip, así el
+                  nombre completo siempre es alcanzable. */}
+              <div className="grid grid-cols-3 gap-2">
                 {([
-                  { label: 'Producto', value: o.producto || '—', maxChars: 30 },
-                  { label: 'Valor', value: formatCOP(o.valor), maxChars: null },
-                  { label: 'Dirección', value: o.direccion || '—', maxChars: 35 },
-                  { label: 'Departamento', value: o.departamento || '—', maxChars: null },
+                  { label: 'Producto', value: o.producto || '—', mono: false },
+                  { label: 'Valor', value: formatCOP(o.valor), mono: true },
+                  { label: 'Departamento', value: o.departamento || '—', mono: false },
                 ] as const).map(d => (
-                  <div key={d.label} className="bg-card/40 rounded-xl p-2.5 border border-border hover:border-border-strong transition-colors">
+                  <div key={d.label} className="bg-card/40 rounded-xl p-2.5 border border-border hover:border-border-strong transition-colors min-w-0">
                     <div className="hud-label">{d.label}</div>
-                    {d.maxChars ? (
+                    {d.mono ? (
+                      <div className="text-[11px] font-semibold text-foreground mt-0.5 truncate font-mono tabular-nums">{d.value}</div>
+                    ) : (
                       <TruncatedText
                         text={d.value}
-                        maxChars={d.maxChars}
-                        className="block text-[11px] font-semibold text-foreground mt-0.5"
+                        cssTruncate
+                        className="block text-[11px] font-semibold text-foreground mt-0.5 truncate"
                       />
-                    ) : (
-                      <div className={`text-[11px] font-semibold text-foreground mt-0.5 truncate ${d.label === 'Valor' ? 'font-mono tabular-nums' : ''}`}>{d.value}</div>
                     )}
                   </div>
                 ))}
               </div>
 
-              {/* Novedad */}
+              {/* Novedad — callout con riel de color, igual que en SegBoard.
+                  Sigue siendo TruncatedText (el tooltip da el texto íntegro de
+                  Dropi), pero el corte sube de 100 a 160 caracteres ahora que
+                  el bloque tiene el ancho completo del panel. */}
               {o.novedad && (
-                <div className="flex items-start gap-2 bg-warning/12 border border-warning/30 rounded-xl px-3 py-2">
+                <div className="relative flex items-start gap-2.5 bg-warning/12 border border-warning/30 rounded-xl pl-4 pr-3 py-2.5">
+                  <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-warning" aria-hidden="true" />
                   <AlertTriangle size={12} className="text-warning mt-0.5 flex-shrink-0" />
                   <TruncatedText
                     text={o.novedad}
-                    maxChars={100}
+                    maxChars={160}
                     className="text-[11px] text-foreground/90 leading-snug"
                   />
                 </div>

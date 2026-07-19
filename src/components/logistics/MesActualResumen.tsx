@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import {
   Package as PackageIcon, Wallet, ArrowRight, TrendingDown, Info,
-  Boxes, DollarSign, CheckCircle2, AlertTriangle, RefreshCw,
+  Boxes, DollarSign, CheckCircle2, AlertTriangle, RefreshCw, ChevronDown,
 } from 'lucide-react';
+import { AuroraBackdrop } from '@/components/ui3d';
 import { buildMesResumen, buildMesResumenFromBreakdown, type BucketTone } from '@/lib/mesResumen';
 import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
 import { useEstadoBreakdown } from '@/hooks/useEstadoBreakdown';
@@ -244,12 +245,17 @@ export default function MesActualResumen({ summary, filters }: Props) {
         </div>
       </header>
 
-      {/* ── Pedidos en la calle (lo que falta cerrar) — lo primero que mira el dueño ── */}
-      <div className="px-5 py-5 border-b border-border bg-accent/5 flex items-center gap-3">
-        <span className="w-10 h-10 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
-          <ArrowRight size={18} />
+      {/* ── Pedidos en la calle (lo que falta cerrar) — lo primero que mira el dueño ──
+          La cifra protagonista de la pantalla va sobre fondo aurora: los blobs de
+          acento/violeta la despegan del resto de la card en vez de dejarla en una
+          franja tintada plana. El padre es relative + overflow-hidden, si no los
+          blobs se escapan del bloque. */}
+      <div className="relative overflow-hidden px-5 py-6 border-b border-border bg-accent/5 flex items-center gap-4">
+        <AuroraBackdrop />
+        <span className="relative w-12 h-12 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+          <ArrowRight size={20} />
         </span>
-        <div className="min-w-0">
+        <div className="relative min-w-0">
           <div className="text-[38px] font-bold font-mono tabular-nums text-accent leading-none num-glow-accent">
             {/* Sin <CountUp/>: formatea con toFixed y perdería el separador de
                 miles es-CO ("1.284" → "1284"). */}
@@ -336,14 +342,26 @@ export default function MesActualResumen({ summary, filters }: Props) {
           <h4 className="hud-label">
             Embudo del mes · por estado
           </h4>
-          <div className="space-y-2.5">
+          {/* Cada escalón del embudo es una fila con la anatomía del ranking del
+              Dashboard: punto de color del bucket, nombre, cifras alineadas y
+              barra proporcional del color del estado (con su propio halo). La
+              fila entera reacciona al hover, así se puede seguir con el dedo. */}
+          <div className="space-y-1">
             {resumen.buckets.map((b) => (
-              <div key={b.key}>
-                <div className="flex items-baseline justify-between gap-2 mb-1">
-                  <div className="min-w-0">
+              <div
+                key={b.key}
+                className="px-3 py-2 rounded-xl border border-transparent transition-colors duration-200 hover:bg-card/60 hover:border-border"
+              >
+                <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                  <div className="min-w-0 flex items-baseline gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0 translate-y-[-1px]"
+                      style={{ background: TONE_BAR[b.tone] }}
+                      aria-hidden="true"
+                    />
                     <span className="text-xs font-medium text-foreground">{b.label}</span>
                     {b.sublabel && (
-                      <span className="text-[10px] text-muted-foreground ml-2">{b.sublabel}</span>
+                      <span className="text-[10px] text-muted-foreground">{b.sublabel}</span>
                     )}
                   </div>
                   <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
@@ -358,10 +376,14 @@ export default function MesActualResumen({ summary, filters }: Props) {
                 </div>
                 <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden">
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-full transition-[width] duration-700"
                     style={{
+                      // El piso de 2% es DELIBERADO: un bucket con 0.1% tiene que
+                      // seguir siendo visible. O sea el ancho no es fiel para
+                      // valores muy chicos — no "corregirlo" a width exacto.
                       width: `${Math.max(2, Math.min(100, b.pct))}%`,
                       background: TONE_BAR[b.tone],
+                      boxShadow: `0 0 8px ${TONE_BAR[b.tone]}`,
                     }}
                   />
                 </div>
@@ -426,7 +448,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
                       Entró {formatCOP(totalEntradas)} · salió {formatCOP(totalSalidas)} · por fecha de pago (mezcla meses)
                     </span>
                   </span>
-                  <span className={`text-base font-bold font-mono tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
+                  <span className={`text-base font-bold font-mono tabular-nums shrink-0 ${gananciaNeta >= 0 ? 'text-success' : 'text-danger'}`}>
                     {formatCOP(gananciaNeta)}
                   </span>
                 </div>
@@ -502,12 +524,20 @@ export default function MesActualResumen({ summary, filters }: Props) {
       {estadoDetalle.length > 0 && (
         <div className="border-t border-border px-5 py-5">
           <details className="group">
-            <summary className="flex items-center gap-2 cursor-pointer list-none select-none">
+            {/* Marcadores con ChevronDown de lucide (antes ▸/▾ en texto plano):
+                mismo ícono de "desplegar" que usa el resto de la app, y rota en
+                vez de cambiar de glifo. */}
+            <summary className="flex items-center gap-2 cursor-pointer list-none select-none rounded-xl -mx-1 px-1 py-1 transition-colors duration-200 hover:bg-foreground/[0.03] focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none">
               <span className="hud-label">
                 Detalle por estado · tabla dinámica
               </span>
-              <span className="text-[10px] text-muted-foreground group-open:hidden">▸ ver todos</span>
-              <span className="text-[10px] text-muted-foreground hidden group-open:inline">▾ ocultar</span>
+              <ChevronDown
+                size={13}
+                className="text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+                aria-hidden="true"
+              />
+              <span className="text-[10px] text-muted-foreground group-open:hidden">ver todos</span>
+              <span className="text-[10px] text-muted-foreground hidden group-open:inline">ocultar</span>
               <span className="ml-auto text-[10px] text-muted-foreground font-mono tabular-nums">
                 {estadoDetalle.length} estados · {estadoDetalleTotal.toLocaleString('es-CO')} pedidos
               </span>
@@ -582,17 +612,20 @@ function WaterfallRow({
   emphasis?: boolean;
 }) {
   const isNeg = value < 0;
+  // text-success/text-danger, no text-green/text-red: --green y --red son un alias
+  // exacto de --success y --danger (mismo HSL en ambos temas), así que el píxel no
+  // cambia — lo que se corrige es el drift de tokens contra el resto del módulo.
   const valTone =
-    tone === 'success' ? 'text-green'
-    : tone === 'danger' ? 'text-red'
+    tone === 'success' ? 'text-success'
+    : tone === 'danger' ? 'text-danger'
     : tone === 'muted' ? 'text-muted-foreground'
     : 'text-foreground';
 
   return (
-    <div className={`flex items-center justify-between gap-2 px-3.5 py-2 ${emphasis ? 'bg-green/5' : ''}`}>
+    <div className={`flex items-center justify-between gap-2 px-3.5 py-2 transition-colors duration-200 hover:bg-foreground/[0.03] ${emphasis ? 'bg-success/5' : ''}`}>
       <span className={`flex items-center gap-1.5 ${emphasis ? 'text-sm font-bold text-foreground' : 'text-xs text-foreground/90'}`}>
-        {emphasis && <ArrowRight size={12} className="text-green" />}
-        {tone === 'danger' && <TrendingDown size={11} className="text-red" />}
+        {emphasis && <ArrowRight size={12} className="text-success" />}
+        {tone === 'danger' && <TrendingDown size={11} className="text-danger" />}
         {label}
       </span>
       <span className={`font-mono tabular-nums shrink-0 ${emphasis ? 'text-sm font-bold' : 'text-xs'} ${valTone}`}>

@@ -1,10 +1,23 @@
 import { memo, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid } from 'recharts';
+import { Truck } from 'lucide-react';
 import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
 import type { CarrierStats } from '@/lib/logistics.types';
 import {
   CHART_GRID_PROPS, CHART_BAR_CURSOR, SEMANTIC_COLORS,
 } from './charts/chartTokens';
+
+// Degradado vertical por serie: el segmento arranca pleno arriba y se apaga
+// hacia la base, que es lo que le da volumen a la pila (una barra de color
+// plano se lee como un bloque de cartón). Los ids llevan prefijo `heroVol`
+// porque los ids de <defs> son GLOBALES al documento: sin prefijo, el donut
+// de la tab Transportadoras pisaría estos degradados.
+const BAR_GRADIENTS = [
+  { id: 'heroVolSuccess', color: SEMANTIC_COLORS.success },
+  { id: 'heroVolInfo',    color: SEMANTIC_COLORS.info },
+  { id: 'heroVolWarning', color: SEMANTIC_COLORS.warning },
+  { id: 'heroVolDanger',  color: SEMANTIC_COLORS.danger },
+] as const;
 
 interface Props {
   rows: CarrierStats[];
@@ -70,6 +83,9 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
   if (top.length === 0) {
     return (
       <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col items-center justify-center text-center min-h-[280px]">
+        <span className="w-9 h-9 rounded-xl border bg-muted/60 border-border text-muted-foreground flex items-center justify-center mb-3" aria-hidden="true">
+          <Truck size={17} />
+        </span>
         <p className="text-sm font-semibold text-foreground mb-1">Sin datos</p>
         <p className="text-xs text-muted-foreground max-w-xs">
           No hay transportadoras con suficientes pedidos en este rango.
@@ -79,18 +95,19 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col">
+    <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top h-full flex flex-col transition-colors duration-200 hover:border-border-strong">
       {/* Header con título + leyenda inline (oculta en mobile) */}
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold text-foreground tracking-tight">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Truck size={14} className="text-info" aria-hidden="true" />
             Volumen por transportadora
           </h2>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             Top 8 — composición de envíos por estado actual
           </p>
         </div>
-        <div className="hidden md:flex items-center gap-3 text-[11px] text-muted-foreground">
+        <div className="hidden md:flex items-center gap-3 text-[10px] text-muted-foreground">
           {[
             { color: 'hsl(var(--success))', label: 'Entregados' },
             { color: 'hsl(var(--info))',    label: 'Tránsito' },
@@ -98,7 +115,7 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
             { color: 'hsl(var(--danger))',  label: 'Devueltos' },
           ].map(it => (
             <span key={it.label} className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-sm" style={{ background: it.color }} aria-hidden="true" />
+              <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: it.color }} aria-hidden="true" />
               {it.label}
             </span>
           ))}
@@ -110,8 +127,16 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
           <BarChart
             data={top}
             margin={{ top: 8, right: 8, left: -16, bottom: 4 }}
-            barCategoryGap="22%"
+            barCategoryGap="26%"
           >
+            <defs>
+              {BAR_GRADIENTS.map(g => (
+                <linearGradient key={g.id} id={g.id} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor={g.color} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={g.color} stopOpacity={0.5} />
+                </linearGradient>
+              ))}
+            </defs>
             <CartesianGrid {...CHART_GRID_PROPS} />
             <XAxis
               dataKey="name"
@@ -127,10 +152,14 @@ export default memo(function LogisticsHeroChart({ rows }: Props) {
               allowDecimals={false}
             />
             <Tooltip content={<HeroTooltip />} cursor={CHART_BAR_CURSOR} />
-            <Bar dataKey="entregados"  stackId="vol" name="Entregados"  fill={SEMANTIC_COLORS.success} />
-            <Bar dataKey="en_transito" stackId="vol" name="En tránsito" fill={SEMANTIC_COLORS.info} />
-            <Bar dataKey="novedades"   stackId="vol" name="Novedades"   fill={SEMANTIC_COLORS.warning} />
-            <Bar dataKey="devueltos"   stackId="vol" name="Devueltos"   fill={SEMANTIC_COLORS.danger} radius={[8, 8, 0, 0]} />
+            {/* En una pila SOLO el segmento de arriba lleva radio: si se lo ponés
+                a los de abajo quedan muescas entre segmentos. El glow va solo en
+                el protagonista (entregados) para que la vista aterrice ahí. */}
+            <Bar dataKey="entregados"  stackId="vol" name="Entregados"  fill="url(#heroVolSuccess)" maxBarSize={54}
+                 style={{ filter: `drop-shadow(0 0 6px ${SEMANTIC_COLORS.success})` }} />
+            <Bar dataKey="en_transito" stackId="vol" name="En tránsito" fill="url(#heroVolInfo)"    maxBarSize={54} />
+            <Bar dataKey="novedades"   stackId="vol" name="Novedades"   fill="url(#heroVolWarning)" maxBarSize={54} />
+            <Bar dataKey="devueltos"   stackId="vol" name="Devueltos"   fill="url(#heroVolDanger)"  maxBarSize={54} radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

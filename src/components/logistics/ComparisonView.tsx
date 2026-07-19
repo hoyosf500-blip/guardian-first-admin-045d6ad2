@@ -89,18 +89,27 @@ export default memo(function ComparisonView({
   return (
     <div className="space-y-4">
       {(aError || bError) && (
-        <div className="rounded-2xl border border-danger/40 bg-danger/5 p-4 shadow-card3d flex items-start gap-3">
-          <AlertTriangle size={16} className="text-danger shrink-0 mt-0.5" aria-hidden="true" />
+        // Banner del lenguaje: barra lateral w-1 + chip de 36px con glow.
+        <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-danger/20 glow-danger">
+            <AlertTriangle size={17} className="text-danger" aria-hidden="true" />
+          </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-danger">
+            <div className="text-sm font-bold text-danger">
               {aError && bError
                 ? 'No pudimos cargar ninguno de los dos períodos'
                 : `No pudimos cargar el período ${aError ? 'A' : 'B'}`}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
+            </div>
+            {/* La ADVERTENCIA va en prosa legible, no en mono de 10px: es lo que
+                evita que alguien decida con una pantalla rota. El detalle
+                técnico (el mensaje del error) sí es dato y va en mono aparte. */}
+            <div className="text-xs text-foreground/90 mt-1 leading-relaxed">
+              No hay comparación válida: no tomes decisiones con esta pantalla hasta que cargue.
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-1 font-mono tabular-nums leading-relaxed">
               {(a.summary.error as Error)?.message ?? (b.summary.error as Error)?.message ?? 'Error desconocido'}
-              {' · '}No hay comparación válida: no tomes decisiones con esta pantalla hasta que cargue.
-            </p>
+            </div>
           </div>
         </div>
       )}
@@ -149,18 +158,18 @@ function PeriodHeader({
   onChange: (range: LogisticsFilters) => void;
 }) {
   const accentClass = accent === 'info'
-    ? 'bg-info/12 text-info ring-info/30'
-    : 'bg-accent/12 text-accent ring-accent/30';
+    ? 'bg-info/14 border-info/30 text-info'
+    : 'bg-accent/14 border-accent/30 text-accent';
   const days = Math.round(
     (new Date(range.toDate).getTime() - new Date(range.fromDate).getTime()) / (24 * 3600 * 1000),
   );
   return (
     <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top space-y-2">
       <div className="flex items-center gap-2">
-        <span className={`pill text-[11px] font-bold ring-1 ${accentClass}`}>
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold ${accentClass}`}>
           {label}
         </span>
-        <span className="text-[11px] text-muted-foreground tabular-nums">
+        <span className="text-[10px] text-muted-foreground font-mono tabular-nums">
           {days} día{days !== 1 ? 's' : ''}
         </span>
       </div>
@@ -180,19 +189,21 @@ function NoticeCard({
   children: ReactNode;
 }) {
   return (
-    <div className={`rounded-2xl border-2 ${accentBorder} bg-card/40 overflow-hidden shadow-card3d hairline-top`}>
-      <header className="px-5 py-3 border-b border-border/60 bg-muted/10">
-        <h3 className="text-[11px] uppercase tracking-[0.08em] font-bold text-muted-foreground">
-          {label}
-        </h3>
+    <div className={`rounded-2xl border ${accentBorder} bg-card/40 overflow-hidden shadow-card3d hairline-top`}>
+      <header className="px-5 py-3.5 border-b border-border/60">
+        <h3 className="hud-label">{label}</h3>
       </header>
-      <div className="p-5 flex items-start gap-2">
-        <AlertTriangle
-          size={14}
-          className={`shrink-0 mt-0.5 ${tone === 'danger' ? 'text-danger' : 'text-muted-foreground'}`}
-          aria-hidden="true"
-        />
-        <p className="text-xs text-muted-foreground">{children}</p>
+      <div className="p-5 flex items-start gap-3">
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+          tone === 'danger' ? 'bg-danger/20 glow-danger' : 'bg-muted/60 border border-border'
+        }`}>
+          <AlertTriangle
+            size={17}
+            className={tone === 'danger' ? 'text-danger' : 'text-muted-foreground'}
+            aria-hidden="true"
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">{children}</p>
       </div>
     </div>
   );
@@ -227,7 +238,7 @@ function PeriodColumn({ label, accent, summary, isPending, isError, compareTo, c
 
   if (isPending) {
     return (
-      <div className={`rounded-2xl border-2 ${accentBorder} bg-card/40 p-5 shadow-card3d hairline-top skeleton-shimmer min-h-[400px]`} />
+      <div className={`rounded-2xl border ${accentBorder} bg-card/40 p-5 shadow-card3d hairline-top skeleton-shimmer min-h-[400px]`} />
     );
   }
 
@@ -258,19 +269,17 @@ function PeriodColumn({ label, accent, summary, isPending, isError, compareTo, c
   const prelimHint = `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos o cohorte todavía en tránsito — la tasa aún no es confiable.`;
 
   return (
-    <div className={`rounded-2xl border-2 ${accentBorder} bg-card/40 overflow-hidden shadow-card3d hairline-top`}>
-      <header className="px-5 py-3 border-b border-border/60 bg-muted/10">
-        <h3 className="text-[11px] uppercase tracking-[0.08em] font-bold text-muted-foreground">
-          {label}
-        </h3>
+    <div className={`rounded-2xl border ${accentBorder} bg-card/40 overflow-hidden shadow-card3d hairline-top`}>
+      <header className="px-5 py-3.5 border-b border-border/60">
+        <h3 className="hud-label">{label}</h3>
       </header>
-      <div className="p-5 space-y-3">
+      <div className="p-5 space-y-1">
         <KpiLine icon={Package}      label="Total pedidos" value={total.toLocaleString('es-CO')}      rawValue={total}      rawCompare={cmp ? (cmp.total_pedidos ?? 0) : null} format="absolute" />
         <KpiLine icon={CheckCircle2} label="Entregados"    value={entregados.toLocaleString('es-CO')} rawValue={entregados} rawCompare={cmp ? (cmp.entregados ?? 0) : null}    format="absolute" tone="success" />
         <KpiLine icon={RotateCcw}    label="Devueltos"     value={devueltos.toLocaleString('es-CO')}  rawValue={devueltos}  rawCompare={cmp ? (cmp.devueltos ?? 0) : null}     format="absolute" tone="danger" inverseDelta />
         <KpiLine icon={TruckIcon}    label="En tránsito"   value={enTransito.toLocaleString('es-CO')} rawValue={enTransito} rawCompare={cmp ? (cmp.en_transito ?? 0) : null}   format="absolute" />
 
-        <div className="pt-3 mt-3 border-t border-border/60 space-y-3">
+        <div className="pt-2 mt-2 border-t border-border/60 space-y-1">
           <KpiLine
             label="Tasa de entrega"
             value={fmtTasa(mThis.entrega, mThis.prelim)}
@@ -350,27 +359,37 @@ function KpiLine({ icon: Icon, label, value, rawValue, rawCompare, format, tone,
     deltaTone = isGood ? 'success' : 'danger';
   }
 
-  const deltaColorClass =
-    deltaTone === 'success' ? 'text-success' :
-    deltaTone === 'danger' ? 'text-danger' :
-    'text-muted-foreground';
+  // Píldora de delta con la MISMA forma que el TrendBadge del Dashboard
+  // (rounded-lg, fondo /14, borde /30) para que "subió/bajó" se lea igual en las
+  // dos pantallas. El gris neutro se conserva para el caso preliminar.
+  const deltaChipClass =
+    deltaTone === 'success' ? 'bg-success/14 border-success/30 text-success' :
+    deltaTone === 'danger' ? 'bg-danger/14 border-danger/30 text-danger' :
+    'bg-muted/50 border-border text-muted-foreground';
 
   const DeltaIcon = delta === null ? null
     : Math.abs(delta) < 0.05 ? Minus
     : delta > 0 ? TrendingUp : TrendingDown;
 
   return (
-    <div className="flex items-center justify-between gap-3" title={hint}>
+    <div
+      className="flex items-center justify-between gap-3 rounded-xl px-2 py-1.5 -mx-2 hover:bg-card/60 transition-colors duration-200"
+      title={hint}
+    >
       <div className="flex items-center gap-2 min-w-0">
-        {Icon && <Icon size={13} className="text-muted-foreground shrink-0" aria-hidden="true" />}
+        {Icon && (
+          <span className="w-7 h-7 rounded-lg bg-muted/60 border border-border text-muted-foreground flex items-center justify-center flex-shrink-0">
+            <Icon size={13} aria-hidden="true" />
+          </span>
+        )}
         <span className="text-xs text-muted-foreground truncate">{label}</span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <span className={`font-mono font-bold tabular-nums text-sm ${valueClass}`}>{value}</span>
         {delta !== null && DeltaIcon && (
-          <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold tabular-nums ${deltaColorClass}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[10px] font-semibold whitespace-nowrap ${deltaChipClass}`}>
             <DeltaIcon size={10} aria-hidden="true" />
-            {deltaLabel}
+            <span className="font-mono tabular-nums">{deltaLabel}</span>
           </span>
         )}
       </div>
@@ -391,13 +410,16 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
       ? 'Ninguno de los dos períodos tiene'
       : mA.entrega == null ? 'El período A todavía no tiene' : 'El período B todavía no tiene';
     return (
-      <div className="rounded-2xl border border-border bg-muted/20 p-4 shadow-card3d flex items-start gap-3">
-        <GitCompare size={16} className="text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" strokeWidth={2.25} />
+      <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-border bg-muted/20 px-4 pl-5 py-3 shadow-card3d">
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-muted-foreground/40" aria-hidden="true" />
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-muted/60 border border-border">
+          <GitCompare size={17} className="text-muted-foreground" aria-hidden="true" />
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-muted-foreground">Sin datos concluidos para comparar</p>
-          <p className="text-xs text-muted-foreground mt-1">
+          <div className="text-xs font-semibold text-muted-foreground">Sin datos concluidos para comparar</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
             {cual} pedidos entregados ni devueltos, así que no hay tasa de entrega que comparar. No es 0%: es que todavía no concluyó nada.
-          </p>
+          </div>
         </div>
       </div>
     );
@@ -429,25 +451,31 @@ function DeltaSummary({ periodA, periodB }: { periodA: LogisticsSummary; periodB
     return 'Empeoramiento: tasa de entrega cayó y/o devoluciones subieron.';
   })();
 
+  // Banner del lenguaje: barra lateral de color pleno + chip de 36px con glow +
+  // la línea de metadatos en font-mono. El veredicto sigue siendo TEXTO: esto es
+  // un delta con signo, no un 0-100, así que no lleva aro ni barra.
   const toneStyles = {
-    success: { bg: 'bg-success/8', border: 'border-success/30', text: 'text-success' },
-    warning: { bg: 'bg-warning/8', border: 'border-warning/30', text: 'text-warning' },
-    danger:  { bg: 'bg-danger/8',  border: 'border-danger/30',  text: 'text-danger' },
-    neutral: { bg: 'bg-muted/20',  border: 'border-border',     text: 'text-muted-foreground' },
+    success: { bg: 'bg-success/10', border: 'border-success/30', text: 'text-success', bar: 'bg-success', chip: 'bg-success/20 glow-success' },
+    warning: { bg: 'bg-warning/10', border: 'border-warning/30', text: 'text-warning', bar: 'bg-warning', chip: 'bg-warning/20 glow-warning' },
+    danger:  { bg: 'bg-danger/10',  border: 'border-danger/30',  text: 'text-danger',  bar: 'bg-danger',  chip: 'bg-danger/20 glow-danger' },
+    neutral: { bg: 'bg-muted/20',   border: 'border-border',     text: 'text-muted-foreground', bar: 'bg-muted-foreground/40', chip: 'bg-muted/60 border border-border' },
   }[tone];
 
   return (
-    <div className={`rounded-2xl border ${toneStyles.border} ${toneStyles.bg} p-4 shadow-card3d flex items-start gap-3`}>
-      <GitCompare size={16} className={`${toneStyles.text} shrink-0 mt-0.5`} aria-hidden="true" strokeWidth={2.25} />
+    <div className={`relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border ${toneStyles.border} ${toneStyles.bg} px-4 pl-5 py-3 shadow-card3d`}>
+      <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${toneStyles.bar}`} aria-hidden="true" />
+      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${toneStyles.chip}`}>
+        <GitCompare size={17} className={toneStyles.text} aria-hidden="true" />
+      </div>
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-bold ${toneStyles.text}`}>{headline}</p>
-        <p className="text-xs text-muted-foreground mt-1 tabular-nums">
+        <div className={`text-xs font-semibold ${toneStyles.text}`}>{headline}</div>
+        <div className="text-[10px] text-muted-foreground mt-0.5 font-mono tabular-nums leading-relaxed">
           Tasa de entrega: <span className="font-mono">{tasaA.toFixed(1)}% → {tasaB.toFixed(1)}%</span> ({deltaTasa > 0 ? '+' : ''}{deltaTasa.toFixed(1)} pts) ·
           {' '}Devolución: <span className="font-mono">{devA.toFixed(1)}% → {devB.toFixed(1)}%</span> ({deltaDev > 0 ? '+' : ''}{deltaDev.toFixed(1)} pts)
           {prelim && (
             <> · <span className="font-semibold">prelim.</span> ({mA.resueltos} y {mB.resueltos} pedidos concluidos)</>
           )}
-        </p>
+        </div>
       </div>
     </div>
   );

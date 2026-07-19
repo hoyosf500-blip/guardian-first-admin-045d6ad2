@@ -71,20 +71,20 @@ export default function NetoRealCard({
       : 'cargá en Pauta diaria';
 
   return (
-    <div className="rounded-2xl border border-border bg-card/40 p-3.5 shadow-card3d hairline-top space-y-3">
+    <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top space-y-3">
       <div className="flex items-center gap-2">
-        <TrendingUp size={13} className="text-accent" />
-        <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-          Neto real del mes
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0">
+          <TrendingUp size={17} aria-hidden="true" />
         </span>
+        <span className="hud-label">Neto real del mes</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         {/* Pauta — read-only, viene de la bitácora diaria (o fallback mensual) */}
-        <div className="space-y-1">
-          <span className="block text-[10px] text-muted-foreground">Pauta{pautaFromDaily ? ' (diaria)' : ''}</span>
-          <span className="block text-xs tabular-nums text-foreground">{formatCOP(pautaTotal)}</span>
-          <span className="block text-[9px] text-muted-foreground/70">{pautaHint}</span>
+        <div className="rounded-xl border border-border bg-card/40 px-3 py-2.5 space-y-1">
+          <span className="block hud-label">Pauta{pautaFromDaily ? ' (diaria)' : ''}</span>
+          <span className="block text-sm font-mono tabular-nums text-foreground">{formatCOP(pautaTotal)}</span>
+          <span className="block text-[10px] text-muted-foreground/70">{pautaHint}</span>
         </div>
         {/* Costos admin — editable mensual */}
         {canEdit ? (
@@ -116,19 +116,21 @@ export default function NetoRealCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 border-t border-border pt-2.5">
-        <span className="text-xs text-foreground font-medium">
-          Neto real
-          <span className="block text-[10px] text-muted-foreground/70">
+      {/* Cifra de cierre: rótulo en .hud-label sobre la fórmula en mono, y el
+          neto como cifra grande. Tokens alineados (success/danger, no green/red). */}
+      <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+        <span className="min-w-0">
+          <span className="block hud-label">Neto real</span>
+          <span className="block text-[10px] text-muted-foreground/70 mt-1 font-mono tabular-nums">
             Operativo {formatCOP(operativo)} − pauta {formatCOP(pautaTotal)} − admin {formatCOP(costosAdmin)}
           </span>
         </span>
-        <span className={`text-lg font-bold tabular-nums shrink-0 ${neto >= 0 ? 'text-green' : 'text-red'}`}>
+        <span className={`text-2xl font-mono font-bold tabular-nums leading-none shrink-0 ${neto >= 0 ? 'text-success' : 'text-danger'}`}>
           {formatCOP(neto)}
         </span>
       </div>
 
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-[10px] text-muted-foreground leading-relaxed">
         Realizado a hoy. Sube cuando se entreguen los{' '}
         {pedidosEnCalle != null ? `${pedidosEnCalle.toLocaleString('es-CO')} ` : ''}pedidos en la calle.
         No incluye deudas personales.
@@ -146,15 +148,15 @@ function CostInput({
   label, value, onChange,
 }: { label: string; value: number; onChange: (n: number) => void }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-[10px] text-muted-foreground">{label}</span>
+    <label className="block rounded-xl border border-border bg-card/40 px-3 py-2.5 space-y-1.5">
+      <span className="block hud-label">{label}</span>
       <input
         type="text"
         inputMode="numeric"
         value={value === 0 ? '' : String(value)}
         placeholder="0"
         onChange={(e) => onChange(parseInput(e.target.value))}
-        className="w-full rounded border border-border bg-background px-2 py-1 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-accent"
+        className="w-full rounded-lg border border-border bg-background px-2 py-1 text-sm font-mono tabular-nums transition-colors duration-200 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none focus:outline-none"
       />
     </label>
   );
@@ -162,9 +164,9 @@ function CostInput({
 
 function ReadOnly({ label, value }: { label: string; value: number }) {
   return (
-    <div className="space-y-1">
-      <span className="block text-[10px] text-muted-foreground">{label}</span>
-      <span className="block text-xs tabular-nums text-foreground">{formatCOP(value)}</span>
+    <div className="rounded-xl border border-border bg-card/40 px-3 py-2.5 space-y-1">
+      <span className="block hud-label">{label}</span>
+      <span className="block text-sm font-mono tabular-nums text-foreground">{formatCOP(value)}</span>
     </div>
   );
 }

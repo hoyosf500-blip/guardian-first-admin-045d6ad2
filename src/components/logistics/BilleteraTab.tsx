@@ -22,6 +22,9 @@ import { useWalletMovements, useWalletDailySeries, useWalletSaldoHoy } from '@/h
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import type { LogisticsFilters } from '@/lib/logistics.types';
+import { motion } from 'framer-motion';
+import { TiltCard } from '@/components/ui3d';
+import KpiCard from './finanzas/KpiCard';
 import {
   CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR,
   fmtCompact, fmtDay,
@@ -43,51 +46,16 @@ function fmtFecha(s: string): string {
 // fmtDay y TOOLTIP_STYLE consolidados en chartTokens.ts (importados arriba).
 // Mantenemos solo fmtFecha para timestamps con hora (lo usa la tabla).
 
-interface KpiProps {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  tone: 'success' | 'danger' | 'info' | 'neutral';
-}
+// El <Kpi> local que vivía acá (la QUINTA variante de tarjeta KPI del módulo)
+// se borró: era duplicación pura del KpiCard de finanzas/ — mismo layout, otro
+// archivo, y por eso Billetera y Finanzas se veían como dos productos.
 
-const KPI_TONE_CARD: Record<KpiProps['tone'], string> = {
-  success: 'border-success/30 bg-gradient-to-br from-success/8 via-success/3 to-transparent',
-  danger:  'border-danger/30 bg-gradient-to-br from-danger/8 via-danger/3 to-transparent',
-  info:    'border-info/30 bg-gradient-to-br from-info/8 via-info/3 to-transparent',
-  neutral: 'border-border bg-card',
-};
-
-const KPI_TONE_ICON: Record<KpiProps['tone'], { bg: string; color: string }> = {
-  success: { bg: 'bg-success/15 border-success/40', color: 'text-success' },
-  danger:  { bg: 'bg-danger/15 border-danger/40',   color: 'text-danger' },
-  info:    { bg: 'bg-info/15 border-info/40',       color: 'text-info' },
-  neutral: { bg: 'bg-muted/40 border-border',       color: 'text-foreground' },
-};
-
-const KPI_TONE_VALUE: Record<KpiProps['tone'], string> = {
-  success: 'text-success',
-  danger:  'text-danger',
-  info:    'text-info',
-  neutral: 'text-foreground',
-};
-
-function Kpi({ label, value, icon: Icon, tone }: KpiProps) {
-  return (
-    <div className={`rounded-2xl border-2 p-4 shadow-card3d ${KPI_TONE_CARD[tone]}`}>
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-[0.12em] font-bold text-muted-foreground leading-tight">
-          {label}
-        </span>
-        <div className={`h-8 w-8 shrink-0 rounded-lg border flex items-center justify-center ${KPI_TONE_ICON[tone].bg}`}>
-          <Icon size={14} className={KPI_TONE_ICON[tone].color} aria-hidden="true" />
-        </div>
-      </div>
-      <div className={`mt-3 text-2xl font-extrabold tabular-nums leading-none ${KPI_TONE_VALUE[tone]}`}>
-        {value}
-      </div>
-    </div>
-  );
-}
+/** Entrada escalonada, misma cascada que Finanzas y el Dashboard. */
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
 
 export default function BilleteraTab({ filters }: { filters: LogisticsFilters }) {
   const [tipo, setTipo] = useState<'ALL' | 'ENTRADA' | 'SALIDA'>('ALL');
@@ -108,86 +76,121 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
   const series = useMemo(() => seriesQ.data ?? [], [seriesQ.data]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-muted/40 flex items-center justify-center">
-            <Wallet size={18} className="text-foreground" aria-hidden="true" />
+      <motion.div {...fadeUp(0)}>
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 tilt-layer-1">
+            <span className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 bg-accent/14 border-accent/30 text-accent glow-accent">
+              <Wallet size={17} aria-hidden="true" />
+            </span>
+            <div className="space-y-1">
+              <h2 className="text-base font-bold text-foreground tracking-tight">Billetera Dropi</h2>
+              <p className="text-xs text-muted-foreground">
+                Saldo actual:{' '}
+                {/* COP() distingue null de 0 — el '…' del loading tampoco es un
+                    cero: mientras carga no se afirma un saldo. */}
+                <span className="font-mono tabular-nums font-semibold text-foreground">
+                  {saldoHoyQ.isLoading ? '…' : COP(saldoHoyQ.data)}
+                </span>
+              </p>
+              <WalletSyncBadge size="md" showLabel />
+            </div>
           </div>
-          <div className="space-y-1">
-            <h2 className="text-base font-bold text-foreground tracking-tight">Billetera Dropi</h2>
-            <p className="text-xs text-muted-foreground">
-              Saldo actual:{' '}
-              <span className="font-semibold tabular-nums text-foreground">
-                {saldoHoyQ.isLoading ? '…' : COP(saldoHoyQ.data)}
-              </span>
-            </p>
-            <WalletSyncBadge size="md" showLabel />
-          </div>
-        </div>
 
-        <WalletSyncButton />
-      </div>
+          <WalletSyncButton />
+        </TiltCard>
+      </motion.div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* KPIs — ahora el MISMO KpiCard de Finanzas, no una variante local */}
+      <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {movQ.isLoading ? (
           <>
-            <Skeleton className="h-[88px] rounded-2xl" />
-            <Skeleton className="h-[88px] rounded-2xl" />
-            <Skeleton className="h-[88px] rounded-2xl" />
-            <Skeleton className="h-[88px] rounded-2xl" />
+            <Skeleton className="h-[132px] rounded-2xl" />
+            <Skeleton className="h-[132px] rounded-2xl" />
+            <Skeleton className="h-[132px] rounded-2xl" />
+            <Skeleton className="h-[132px] rounded-2xl" />
           </>
         ) : (
           <>
-            <Kpi label="Total Entradas" value={COP(movQ.data?.totalEntradas ?? 0)} icon={ArrowDown} tone="success" />
-            <Kpi label="Total Salidas"  value={COP(movQ.data?.totalSalidas ?? 0)}  icon={ArrowUp}   tone="danger" />
-            <Kpi label="Neto"           value={COP(neto)}                          icon={TrendingUp} tone={neto >= 0 ? 'success' : 'danger'} />
-            <Kpi label="Movimientos"    value={String(movQ.data?.countTotal ?? 0)} icon={ListOrdered} tone="neutral" />
+            <KpiCard label="Total Entradas" value={COP(movQ.data?.totalEntradas ?? 0)} icon={ArrowDown} tone="success" />
+            <KpiCard label="Total Salidas"  value={COP(movQ.data?.totalSalidas ?? 0)}  icon={ArrowUp}   tone="danger" />
+            <KpiCard label="Neto"           value={COP(neto)}                          icon={TrendingUp} tone={neto >= 0 ? 'success' : 'danger'} />
+            <KpiCard label="Movimientos"    value={String(movQ.data?.countTotal ?? 0)} icon={ListOrdered} tone="neutral" />
           </>
         )}
-      </div>
+      </motion.div>
 
       {/* Gráfica diaria */}
-      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top">
-        <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
-          Movimientos por día
-        </h3>
-        {seriesQ.isLoading ? (
-          <Skeleton className="h-[280px] w-full" />
-        ) : series.length === 0 ? (
-          <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
-            Sin movimientos en este rango
-          </div>
-        ) : (
-          <div className="h-[280px]">
-            <ResponsiveContainer>
-              <BarChart data={series} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
-                <CartesianGrid {...CHART_GRID_PROPS} />
-                <XAxis dataKey="fecha" tickFormatter={fmtDay} stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
-                <YAxis
-                  tickFormatter={fmtCompact}
-                  stroke="hsl(var(--muted-foreground))" fontSize={10}
-                  tickLine={false} axisLine={false} width={48}
-                />
-                <RTooltip
-                  contentStyle={CHART_TOOLTIP_STYLE}
-                  cursor={CHART_BAR_CURSOR}
-                  formatter={(v: number) => COP(v)}
-                  labelFormatter={(l) => fmtDay(String(l))}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" iconSize={8} />
-                <Bar dataKey="ENTRADA" stackId="a" fill="hsl(var(--success))" name="Entrada" />
-                <Bar dataKey="SALIDA"  stackId="a" fill="hsl(var(--danger))"  name="Salida" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
+      <motion.div {...fadeUp(0.12)}>
+        <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4 tilt-layer-1">
+            <TrendingUp size={14} className="text-success" aria-hidden="true" /> Movimientos por día
+          </h3>
+          {seriesQ.isLoading ? (
+            <Skeleton className="h-[280px] w-full" />
+          ) : series.length === 0 ? (
+            <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
+              Sin movimientos en este rango
+            </div>
+          ) : (
+            <div className="h-[280px] tilt-layer-2">
+              <ResponsiveContainer>
+                <BarChart data={series} margin={{ top: 5, right: 10, bottom: 0, left: -15 }}>
+                  <defs>
+                    {/* Ids propios de este chart: los de <linearGradient> son
+                        globales al documento y CashFlowChart dibuja la MISMA
+                        serie con los suyos (finCash*). */}
+                    <linearGradient id="walletInGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.95} />
+                      <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.35} />
+                    </linearGradient>
+                    <linearGradient id="walletOutGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--danger))" stopOpacity={0.95} />
+                      <stop offset="100%" stopColor="hsl(var(--danger))" stopOpacity={0.35} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...CHART_GRID_PROPS} />
+                  <XAxis
+                    dataKey="fecha" tickFormatter={fmtDay}
+                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                    tickLine={false} axisLine={false}
+                  />
+                  <YAxis
+                    tickFormatter={fmtCompact}
+                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                    tickLine={false} axisLine={false} width={48}
+                  />
+                  <RTooltip
+                    contentStyle={CHART_TOOLTIP_STYLE}
+                    cursor={CHART_BAR_CURSOR}
+                    formatter={(v: number) => COP(v)}
+                    labelFormatter={(l) => fmtDay(String(l))}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6 }} iconType="circle" iconSize={8} />
+                  {/* Solo el segmento de ARRIBA lleva radio, si no quedan muescas
+                      entre segmentos de la pila. */}
+                  <Bar
+                    dataKey="ENTRADA" stackId="a" name="Entrada"
+                    fill="url(#walletInGrad)" radius={[0, 0, 0, 0]}
+                    style={{ filter: 'drop-shadow(0 0 6px hsl(var(--success)))' }}
+                  />
+                  <Bar
+                    dataKey="SALIDA" stackId="a" name="Salida"
+                    fill="url(#walletOutGrad)" radius={[6, 6, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </TiltCard>
+      </motion.div>
 
       {/* Filtros + tabla */}
-      <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top space-y-4">
+      <motion.div
+        {...fadeUp(0.15)}
+        className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top space-y-4"
+      >
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Tipo:</span>
@@ -214,7 +217,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
             </Select>
           </div>
 
-          <div className="ml-auto text-xs text-muted-foreground tabular-nums">
+          <div className="ml-auto font-mono tabular-nums text-[10px] text-muted-foreground">
             {movQ.data?.total ?? 0} movimientos
           </div>
         </div>
@@ -230,14 +233,17 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
+                  {/* hud-label MAYUSCULIZA — va solo sobre estos rótulos fijos
+                      escritos por nosotros. Las celdas de abajo llevan datos de
+                      Dropi (tipo, categoría, descripción) y NO se tocan. */}
                   <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Descripción</TableHead>
-                    <TableHead className="text-right">Monto</TableHead>
-                    <TableHead className="text-right">Saldo después</TableHead>
-                    <TableHead>Pedido</TableHead>
+                    <TableHead className="hud-label font-normal">Fecha</TableHead>
+                    <TableHead className="hud-label font-normal">Tipo</TableHead>
+                    <TableHead className="hud-label font-normal">Categoría</TableHead>
+                    <TableHead className="hud-label font-normal">Descripción</TableHead>
+                    <TableHead className="hud-label font-normal text-right">Monto</TableHead>
+                    <TableHead className="hud-label font-normal text-right">Saldo después</TableHead>
+                    <TableHead className="hud-label font-normal">Pedido</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -246,8 +252,8 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
                     const sign = isEntrada ? '+' : '−';
                     const colorClass = isEntrada ? 'text-success' : 'text-danger';
                     return (
-                      <TableRow key={m.id}>
-                        <TableCell className="tabular-nums text-xs whitespace-nowrap">
+                      <TableRow key={m.id} className="transition-colors duration-200">
+                        <TableCell className="font-mono tabular-nums text-xs whitespace-nowrap">
                           {fmtFecha(m.fecha)}
                         </TableCell>
                         <TableCell>
@@ -278,17 +284,17 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
                             )}
                           </Tooltip>
                         </TableCell>
-                        <TableCell className={`text-right tabular-nums font-semibold ${colorClass}`}>
+                        <TableCell className={`text-right font-mono tabular-nums font-semibold ${colorClass}`}>
                           {sign}{COP(m.monto)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-xs text-muted-foreground">
+                        <TableCell className="text-right font-mono tabular-nums text-xs text-muted-foreground">
                           {COP(m.saldo_despues)}
                         </TableCell>
                         <TableCell>
                           {m.related_order_id ? (
                             <Link
                               to={`/pedido/${m.related_order_id}`}
-                              className="inline-flex items-center gap-1 text-xs text-info hover:underline"
+                              className="inline-flex items-center gap-1 font-mono tabular-nums text-xs text-info hover:underline focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded"
                             >
                               {m.related_order_id}
                               <ExternalLink size={11} />
@@ -309,7 +315,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
         {/* Paginación */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-muted-foreground">
+            <span className="font-mono tabular-nums text-[10px] text-muted-foreground">
               Página {page} de {totalPages}
             </span>
             <div className="flex gap-2">
@@ -322,7 +328,7 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

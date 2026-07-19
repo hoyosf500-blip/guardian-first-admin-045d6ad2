@@ -12,7 +12,9 @@ import {
   Target, Package, CheckCircle2, AlertTriangle, Receipt, Wallet, Info,
   Ban, Sparkles, ArrowDownToLine, ArrowUpFromLine, RefreshCw,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
+import { TiltCard } from '@/components/ui3d';
 import KpiCard from './finanzas/KpiCard';
 import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import FinanzasHero from './finanzas/FinanzasHero';
@@ -36,6 +38,15 @@ import ComposicionList, { type ComposicionItem } from './finanzas/ComposicionLis
 // "Wallet neto del período", "Cancelados", "Pérdida por devoluciones",
 // "Ganancia markup" + disclaimer. Cualquier cambio de copy debe respetar
 // esos contracts.
+
+/** Entrada escalonada del lenguaje del Dashboard: la pantalla se arma de arriba
+ *  abajo. Duración fija 0.35s, y=14, y la cascada de delays es la que hace que
+ *  se lea como una sola pieza y no como ocho bloques que aparecen de golpe. */
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
 
 export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) {
   const { fromDate, toDate } = filters;
@@ -72,15 +83,16 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
 
   if (isError) {
     return (
-      <div className="rounded-2xl border border-danger/40 bg-danger/5 p-6 shadow-card3d">
-        <div className="flex items-start gap-3">
-          <AlertTriangle size={18} className="text-danger shrink-0 mt-0.5" />
-          <div>
-            <h3 className="text-sm font-semibold text-danger">No pudimos cargar las finanzas</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              {(error as Error)?.message ?? 'Error desconocido'}
-            </p>
-          </div>
+      <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-danger/20 glow-danger">
+          <AlertTriangle size={18} className="text-danger" aria-hidden="true" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xs font-semibold text-danger">No pudimos cargar las finanzas</h3>
+          <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+            {(error as Error)?.message ?? 'Error desconocido'}
+          </p>
         </div>
       </div>
     );
@@ -145,11 +157,17 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   ];
 
   return (
-    <div className="space-y-4">
-      {/* Banner Fase A */}
-      <div className="rounded-2xl border border-info/30 bg-info/5 p-4 shadow-card3d">
+    <div className="space-y-5">
+      {/* Banner Fase A — recipe "banner de estado con barra lateral" */}
+      <motion.div
+        {...fadeUp(0)}
+        className="relative rounded-2xl border border-info/30 bg-info/10 px-4 pl-5 py-3 shadow-card3d"
+      >
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-info" aria-hidden="true" />
         <div className="flex items-start gap-3">
-          <Info size={16} className="text-info shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-info/20 glow-info">
+            <Info size={17} className="text-info" aria-hidden="true" />
+          </div>
           <div className="space-y-1 flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <h3 className="text-sm font-semibold text-foreground">
@@ -172,7 +190,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                 )}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
               {usingCohort ? (
                 <>La <strong className="text-foreground">Ganancia Neta</strong> del hero es el <strong className="text-foreground">operativo por cohorte</strong> (pedidos creados en el mes, por fecha de pedido) — reconcilia con la Utilidad de Dropi y NO se infla por mezcla de meses. La composición y el wallet neto de abajo son la <strong className="text-foreground">caja</strong> del wallet por fecha de pago (mezcla cohortes).</>
               ) : (
@@ -182,52 +200,63 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             </p>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Aviso: la Ganancia Neta falló al cargar (error transitorio, NO "sin datos").
           Sin esto un socio veía $0 en silencio, indistinguible de un mes real sin
           ganancia. El hook ya distingue error de "función no desplegada". */}
       {gananciaError && !gananciaLoading && (
-        <div className="rounded-2xl border border-danger/30 bg-danger/5 p-3 shadow-card3d flex items-center gap-2 text-xs">
-          <Info size={14} className="text-danger shrink-0" aria-hidden="true" />
-          <span className="text-foreground">
+        <motion.div
+          {...fadeUp(0.03)}
+          className="relative flex items-center gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d"
+        >
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-danger/20 glow-danger">
+            <Info size={17} className="text-danger" aria-hidden="true" />
+          </div>
+          <span className="text-[11px] leading-relaxed text-foreground flex-1 min-w-0">
             No se pudo cargar la <strong>Ganancia Neta</strong> (error temporal, reintentando). El número de abajo puede no ser real — tocá <strong>Sincronizar</strong> o recargá.
           </span>
-        </div>
+        </motion.div>
       )}
 
       {loading ? (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="rounded-2xl border-2 border-border bg-card/40 shadow-card3d animate-pulse h-[148px]" />
-            ))}
+          {/* Los skeletons calcan la GEOMETRÍA real de lo que va a llegar
+              (hero 5/4/3, dos charts, grid de 8) para que no haya salto de
+              layout cuando resuelven los hooks. */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-5 rounded-3xl border border-border bg-card/40 shadow-card3d-lg animate-pulse h-[196px]" />
+            <div className="md:col-span-4 rounded-2xl border border-border bg-card/40 shadow-card3d animate-pulse h-[196px]" />
+            <div className="md:col-span-3 rounded-2xl border border-border bg-card/40 shadow-card3d animate-pulse h-[196px]" />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />
             <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[340px]" />
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[110px]" />
+              <div key={i} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top animate-pulse h-[132px]" />
             ))}
           </div>
         </>
       ) : (
         <>
           {/* 1. Hero strip */}
-          <FinanzasHero
-            gananciaNeta={operativoReal}
-            totalEntradas={heroEntradas}
-            totalSalidas={heroSalidas}
-            ingresosBrutos={ingresosBrutos}
-            totalEntregadas={data?.total_entregadas ?? 0}
-            margenPct={margenPct}
-            cohorte={usingCohort}
-          />
+          <motion.div {...fadeUp(0.05)}>
+            <FinanzasHero
+              gananciaNeta={operativoReal}
+              totalEntradas={heroEntradas}
+              totalSalidas={heroSalidas}
+              ingresosBrutos={ingresosBrutos}
+              totalEntregadas={data?.total_entregadas ?? 0}
+              margenPct={margenPct}
+              cohorte={usingCohort}
+            />
+          </motion.div>
 
           {/* 2. Donut + Cash flow */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <EstadoOrdenesDonut
               totalOrdenes={data?.total_ordenes ?? 0}
               entregadas={data?.total_entregadas ?? 0}
@@ -240,10 +269,10 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               series={dailySeries ?? []}
               isLoading={seriesLoading}
             />
-          </div>
+          </motion.div>
 
           {/* 3. Composición ingresos + gastos */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <motion.div {...fadeUp(0.15)} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <ComposicionList
               title="Composición de ingresos"
               total={totalEntradas}
@@ -262,16 +291,16 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               items={gastosItems}
               emptyMessage="Sin gastos en el período"
             />
-          </div>
+          </motion.div>
 
           {/* 4. KPI grid secundario */}
-          <div className="flex items-end justify-between gap-3 pt-2">
-            <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em]">
+          <motion.div {...fadeUp(0.18)} className="flex items-end justify-between gap-3 pt-1">
+            <h3 className="hud-label">
               Métricas detalladas
             </h3>
-            <span className="text-[11px] text-muted-foreground">Vista contable + operativa</span>
-          </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <span className="text-[10px] text-muted-foreground">Vista contable + operativa</span>
+          </motion.div>
+          <motion.div {...fadeUp(0.2)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="Ingresos brutos"
               value={formatCOP(ingresosBrutos)}
@@ -329,92 +358,99 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
                 : (entregaMaturity.tasaEntregaMadura ?? 0) >= 60 ? 'success' : 'warning'}
               hint={`${data?.total_entregadas ?? 0} de ${entregaMaturity.resueltos} concluidas · ${entregaMaturity.pctConcluido}% del total${entregaMaturity.inmaduro ? ' (prelim.)' : ''}`}
             />
-          </div>
+          </motion.div>
 
-          {/* Mini-info: desglose pérdida devoluciones */}
-          <div className="text-xs text-muted-foreground italic">
-            Pérdida devoluciones = Flete de ida ({formatCOP(fleteDevs)}) + Cargo extra Dropi ({formatCOP(cargoExtra)})
-          </div>
-
-          {/* Disclaimer ganancia markup */}
-          <div className="text-xs text-muted-foreground italic">
-            Nota: <strong>Ganancia Markup</strong> aparece como referencia. Aún no se suma a la utilidad bruta hasta confirmar (con sanity check) que no genera doble conteo con `cobro_entrega`. Una vez confirmado, lo sumamos.
-          </div>
-
-          {/* 5. Volumen + ticket promedio */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-border bg-card/40 p-5 shadow-card3d hairline-top lg:col-span-2">
-              <h3 className="text-sm font-bold text-foreground tracking-tight uppercase tracking-[0.06em] mb-3">
-                Volumen de operación
-              </h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                    <Package size={12} aria-hidden="true" />
-                    Órdenes totales
-                  </div>
-                  <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-                    {data?.total_ordenes ?? 0}
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                    <CheckCircle2 size={12} className="text-success" aria-hidden="true" />
-                    Entregadas
-                  </div>
-                  <div className="mt-1 text-2xl font-bold tabular-nums text-success">
-                    {data?.total_entregadas ?? 0}
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-                    <RotateCcw size={12} className="text-danger" aria-hidden="true" />
-                    Devueltas
-                  </div>
-                  <div className="mt-1 text-2xl font-bold tabular-nums text-danger">
-                    {data?.total_devueltas ?? 0}
-                  </div>
-                </div>
-              </div>
+          {/* Notas al pie del grid — metadatos, no cifras: van al ritmo
+              text-[10px] del lenguaje, no en itálica de 12px. */}
+          <motion.div {...fadeUp(0.21)} className="space-y-1.5">
+            {/* Mini-info: desglose pérdida devoluciones */}
+            <div className="text-[10px] text-muted-foreground">
+              Pérdida devoluciones = Flete de ida ({formatCOP(fleteDevs)}) + Cargo extra Dropi ({formatCOP(cargoExtra)})
             </div>
 
+            {/* Disclaimer ganancia markup */}
+            <div className="text-[10px] text-muted-foreground leading-relaxed">
+              Nota: <strong>Ganancia Markup</strong> aparece como referencia. Aún no se suma a la utilidad bruta hasta confirmar (con sanity check) que no genera doble conteo con `cobro_entrega`. Una vez confirmado, lo sumamos.
+            </div>
+          </motion.div>
+
+          {/* 5. Volumen + ticket promedio.
+              Los tres contadores eran cifras sueltas dentro de una card: dos
+              gramáticas de KPI en la misma pantalla. Ahora son el MISMO KpiCard
+              del grid de arriba (size sm), así que "Órdenes totales" se lee
+              igual que "Ingresos brutos". Ticket promedio entra en la misma
+              fila en vez de quedar de card huérfana al costado. */}
+          <motion.div {...fadeUp(0.22)} className="flex items-end justify-between gap-3 pt-1">
+            <h3 className="hud-label">
+              Volumen de operación
+            </h3>
+          </motion.div>
+          <motion.div {...fadeUp(0.23)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard
+              label="Órdenes totales"
+              value={String(data?.total_ordenes ?? 0)}
+              icon={Package}
+              tone="neutral"
+              size="sm"
+            />
+            <KpiCard
+              label="Entregadas"
+              value={String(data?.total_entregadas ?? 0)}
+              icon={CheckCircle2}
+              tone="success"
+              size="sm"
+            />
+            <KpiCard
+              label="Devueltas"
+              value={String(data?.total_devueltas ?? 0)}
+              icon={RotateCcw}
+              tone="danger"
+              size="sm"
+            />
             <KpiCard
               label="Ticket promedio"
               value={formatCOP(data?.ticket_promedio ?? 0)}
               icon={Receipt}
               tone="info"
+              size="sm"
               hint="Promedio por pedido entregado"
             />
-          </div>
+          </motion.div>
 
           {/* 6. Wallet neto */}
-          <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-lg bg-muted/40 flex items-center justify-center">
-                  <Wallet size={16} className="text-foreground" aria-hidden="true" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-foreground">Wallet neto del período</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Entradas − salidas operativas de Dropi — igual al neto de la composición de arriba (informativo, no entra en utilidad bruta).
+          <motion.div {...fadeUp(0.24)}>
+            <TiltCard className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3 min-w-0 tilt-layer-1">
+                  <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+                    gn >= 0
+                      ? 'bg-success/14 border-success/30 text-success glow-success'
+                      : 'bg-danger/14 border-danger/30 text-danger glow-danger'
+                  }`}>
+                    <Wallet size={17} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">Wallet neto del período</div>
+                    <div className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
+                      Entradas − salidas operativas de Dropi — igual al neto de la composición de arriba (informativo, no entra en utilidad bruta).
+                    </div>
                   </div>
                 </div>
+                {/* Caja operativa real del wallet = gn (= totalEntradas − totalSalidas del
+                    hook useGananciaNetaDropi, mismo origen que la composición). NO usamos
+                    data.wallet_neto del RPC financial_summary: ese suma TODOS los movimientos
+                    (incluye tesorería: retiros/depósitos), así que no cuadra con la
+                    composición ni con el label de esta card. Ver review fix-first 2026-06-24. */}
+                <div
+                  className={`font-mono tabular-nums text-2xl font-bold leading-none shrink-0 tilt-layer-3 ${
+                    gn >= 0 ? 'text-success num-glow-success' : 'text-danger num-glow-danger'
+                  }`}
+                >
+                  {formatCOP(gn)}
+                </div>
               </div>
-              {/* Caja operativa real del wallet = gn (= totalEntradas − totalSalidas del
-                  hook useGananciaNetaDropi, mismo origen que la composición). NO usamos
-                  data.wallet_neto del RPC financial_summary: ese suma TODOS los movimientos
-                  (incluye tesorería: retiros/depósitos), así que no cuadra con la
-                  composición ni con el label de esta card. Ver review fix-first 2026-06-24. */}
-              <div
-                className={`text-xl font-bold tabular-nums shrink-0 ${
-                  gn >= 0 ? 'text-success' : 'text-danger'
-                }`}
-              >
-                {formatCOP(gn)}
-              </div>
-            </div>
-          </div>
+            </TiltCard>
+          </motion.div>
         </>
       )}
     </div>

@@ -5,9 +5,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useSessionState } from '@/hooks/useSessionState';
 import {
   PieChart, Pie, Cell, Tooltip as RTooltip, ResponsiveContainer,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Legend,
+  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Legend,
   BarChart, Bar,
 } from 'recharts';
+import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useLogisticsStats } from '@/hooks/useLogisticsStats';
 import DateRangeFilter from '@/components/logistics/DateRangeFilter';
@@ -34,8 +35,10 @@ import {
   CHART_TOOLTIP_STYLE,
   CHART_GRID_PROPS,
   CHART_BAR_CURSOR,
+  CHART_LINE_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins } from 'lucide-react';
+import { AuroraBackdrop } from '@/components/ui3d';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Layers } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -48,12 +51,16 @@ interface DashboardData {
 }
 
 // ── Paletas — tokens semánticos DS (dark/light mode automático) ────
+// `Rechazada` va con el MISMO token que devolución pero al 60% — es el alpha que
+// ya usa TONE_BAR.rechazado en MesActualResumen para este mismo estado. Antes
+// ambas series se pintaban con el danger pleno: en la pila de 5 series quedaban
+// indistinguibles y la barra mentía sobre su composición.
 const ESTADO_COLORS: Record<string, string> = {
   'Entregada a destino': 'hsl(var(--success))',
   'Devolucion a origen': 'hsl(var(--danger))',
   'En transito':         'hsl(var(--info))',
   'Novedad':             'hsl(var(--warning))',
-  'Rechazada':           'hsl(var(--danger))',
+  'Rechazada':           'hsl(var(--danger) / 0.6)',
   'En preparacion':      'hsl(var(--ai))',
   'Cancelada':           'hsl(var(--muted-foreground))',
   'Otro':                'hsl(var(--muted-foreground))',
@@ -64,7 +71,7 @@ const STACK_COLORS: Record<string, string> = {
   transito:   'hsl(var(--info))',
   novedad:    'hsl(var(--warning))',
   devolucion: 'hsl(var(--danger))',
-  rechazada:  'hsl(var(--danger))',
+  rechazada:  'hsl(var(--danger) / 0.6)',
 };
 
 const STACK_LABELS: Record<string, string> = {
@@ -92,6 +99,44 @@ function carrierColorAt(index: number): string {
  *  (ni en dark ni en light). */
 function carrierRing(color: string | undefined, alpha = 0.13): string | undefined {
   return color ? color.replace(/\)$/, ` / ${alpha})`) : undefined;
+}
+
+// ── Lenguaje visual del Dashboard ───────────────────────────────
+// Mismos tokens que DashboardTab: todo color de gráfico sale de una var HSL,
+// así dark/light cambian solos y nadie hardcodea un hex.
+const hsl = (v: string) => `hsl(var(${v}))`;
+const CHART_ACCENT = hsl('--accent');
+const CHART_CYAN   = hsl('--cyan');
+const CHART_BG     = hsl('--background');
+
+/** Glow del trazo: 8px para líneas/áreas, 6px para barras. Es la firma del DS. */
+const lineGlow = (color: string) => ({ filter: `drop-shadow(0 0 8px ${color})` });
+const barGlow  = (color: string) => ({ filter: `drop-shadow(0 0 6px ${color})` });
+
+/** Entrada escalonada: la pantalla se arma de arriba abajo. */
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
+/**
+ * Degradado vertical para una barra (pleno arriba → apagado en la base).
+ * Los ids de <defs> son GLOBALES al documento: si dos charts de esta pantalla
+ * usan el mismo id, el segundo pisa al primero y las barras se pintan con el
+ * degradado equivocado. De ahí el `prefix` obligatorio.
+ */
+function BarGradientDefs({ prefix, entries }: { prefix: string; entries: { key: string; color: string }[] }) {
+  return (
+    <defs>
+      {entries.map(e => (
+        <linearGradient key={e.key} id={`${prefix}-${e.key}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={e.color} stopOpacity={0.95} />
+          <stop offset="100%" stopColor={e.color} stopOpacity={0.5} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -139,23 +184,80 @@ const TAB_PILL = [
   'data-[state=active]:shadow-glow3d',
 ].join(' ');
 
-function ChartCard({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
+/**
+ * Shell de card de gráfico, con la anatomía del Dashboard: ícono teñido +
+ * título semibold a la izquierda, leyenda/nota a la derecha, gráfico abajo.
+ */
+function ChartCard({
+  title, icon: Icon, iconClass = 'text-accent', right, children, className = '',
+}: {
+  title: string;
+  icon: typeof Truck;
+  iconClass?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     // Sin TiltCard a propósito: TiltCard aplica overflow-hidden y los tooltips
     // de recharts se recortarían contra el borde de la card.
-    <div className={`hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors hover:border-border-strong ${className}`}>
-      <h3 className="hud-label mb-3">
-        {title}
-      </h3>
+    // h-full flex flex-col: lo traía la card vieja y se había perdido — sin eso
+    // dos cards lado a lado en la misma fila del grid dejan de igualar alto.
+    <div className={`hairline-top bg-card/40 border border-border rounded-2xl p-5 shadow-card3d transition-colors duration-200 hover:border-border-strong h-full flex flex-col ${className}`}>
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Icon size={14} className={iconClass} aria-hidden="true" />
+          {title}
+        </h3>
+        {right}
+      </div>
       {children}
+    </div>
+  );
+}
+
+/** Leyenda manual: swatch cuadrado de 10px (nunca círculos) + rótulo. */
+function SwatchLegend({
+  items, className = '',
+}: {
+  items: { color: string; label: string }[];
+  className?: string;
+}) {
+  return (
+    <div className={`flex items-center gap-3 flex-wrap ${className}`}>
+      {items.map(l => (
+        <span key={l.label} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: l.color }} aria-hidden="true" />
+          {l.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Aviso de que los gráficos del RPC no cargaron. Molde de banner del Dashboard:
+ * barra lateral de color pleno + chip de ícono con glow. El texto NO cambia —
+ * lo único que cambia es que ahora se ve como aviso y no como una caja más.
+ */
+function ChartsErrorBanner({ text }: { text: string }) {
+  return (
+    <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+      <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+      <div className="w-9 h-9 rounded-xl bg-warning/20 glow-warning flex items-center justify-center flex-shrink-0 text-warning">
+        <Info size={17} aria-hidden="true" />
+      </div>
+      <div className="flex-1 min-w-0 text-xs font-semibold text-warning">{text}</div>
     </div>
   );
 }
 
 function EmptyChart({ msg = 'No hay datos suficientes para este periodo' }: { msg?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-[280px] text-muted-foreground gap-2">
-      <Info size={28} aria-hidden="true" />
+    <div className="flex flex-col items-center justify-center h-[280px] text-muted-foreground gap-3">
+      <span className="w-9 h-9 rounded-xl border border-border bg-muted/60 flex items-center justify-center" aria-hidden="true">
+        <Info size={17} />
+      </span>
       <p className="text-sm">{msg}</p>
     </div>
   );
@@ -309,9 +411,17 @@ export default function LogisticaTab() {
   }, [dashboardQuery.data?.by_transportadora]);
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-1.5">
+    <div className="space-y-5">
+      {/* Cabecera-hero: el fondo aurora la separa del contenido y le da el mismo
+          peso de apertura que la card hero del Dashboard. Sin sheen ni brackets:
+          esos son la firma de UNA sola card por pantalla y acá los lleva
+          "Cómo voy" (MesActualResumen), que es la protagonista real. */}
+      <motion.header
+        {...fadeUp(0)}
+        className="relative overflow-hidden rounded-3xl border border-border bg-card/40 p-5 shadow-card3d-lg hairline-top flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"
+      >
+        <AuroraBackdrop />
+        <div className="relative min-w-0 space-y-1.5">
           <div className="hud-label mb-1 whitespace-nowrap truncate">
             Análisis · Admin
           </div>
@@ -326,7 +436,7 @@ export default function LogisticaTab() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <div className="relative flex items-center gap-2 shrink-0 flex-wrap">
           {!isLoading && !isError && summary.data && (
             <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold font-mono tabular-nums bg-card/40 border border-border text-muted-foreground whitespace-nowrap">
               {formatRange(filters)}
@@ -377,18 +487,18 @@ export default function LogisticaTab() {
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
-      </header>
+      </motion.header>
 
       {/* Date range — solo visible cuando NO estamos en modo comparación
           (en modo comparación cada período tiene su propio picker dentro
           del ComparisonView). */}
       {!compareMode && (
-        <div className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top">
+        <motion.div {...fadeUp(0.05)} className="rounded-2xl border border-border bg-card/40 p-3 shadow-card3d hairline-top">
           <DateRangeFilter
             value={filters}
             onChange={(next) => setFilters((f) => ({ ...next, ciudad: f.ciudad }))}
           />
-        </div>
+        </motion.div>
       )}
 
       {/* Modo comparación — vista alternativa que reemplaza hero+tabs */}
@@ -413,6 +523,7 @@ export default function LogisticaTab() {
         // TabsList horizontalmente scrollable en mobile (overflow-x-auto +
         // whitespace-nowrap en TabsList override + flex shrink-0 en cada
         // trigger). En desktop hace wrap y ocupa todo el ancho disponible.
+        <motion.div {...fadeUp(0.1)}>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="overflow-x-auto -mx-1 px-1">
             <TabsList
@@ -432,55 +543,74 @@ export default function LogisticaTab() {
           {/* TAB: Resumen — vista por defecto. KPIs globales + volumen por
               transportadora. Antes vivían fuera del sistema de tabs y se
               renderizaban siempre (espacio muerto en las otras tabs). */}
-          <TabsContent value="resumen" className="mt-4 space-y-4">
+          {/* Cascada de entrada: cada bloque entra 30-60ms después del anterior,
+              así la pestaña "se arma" de arriba abajo en vez de aparecer de golpe.
+              Los delays son los mismos del Dashboard. */}
+          <TabsContent value="resumen" className="mt-4 space-y-5">
             {/* "Cómo voy este mes": tiles Dropi-parity + embudo por estado (sin
                 huecos) + conciliación (realizado vs pendiente vs perdido + wallet
-                real). Reemplaza al CompactKpiGrid (sus KPIs quedan cubiertos). */}
-            <MesActualResumen summary={summary.data ?? null} filters={filters} />
+                real). Es la card protagonista de la pantalla. */}
+            <motion.div {...fadeUp(0.12)}>
+              <MesActualResumen summary={summary.data ?? null} filters={filters} />
+            </motion.div>
 
             {/* Semáforo de salud financiera (estándares de mercado, estilo Wintrack). */}
-            <SemaforoSalud from={filters.fromDate} to={filters.toDate} />
+            <motion.div {...fadeUp(0.15)}>
+              <SemaforoSalud from={filters.fromDate} to={filters.toDate} />
+            </motion.div>
 
             {/* Pauta diaria por tienda — se resta de la Ganancia Neta de arriba. */}
-            <StoreAdSpendPanel filters={filters} />
+            <motion.div {...fadeUp(0.18)}>
+              <StoreAdSpendPanel filters={filters} />
+            </motion.div>
 
             {/* Composición por transportadora (complementa los tiles de arriba). */}
-            <LogisticsHeroChart rows={carriers.data ?? []} />
+            <motion.div {...fadeUp(0.24)}>
+              <LogisticsHeroChart rows={carriers.data ?? []} />
+            </motion.div>
           </TabsContent>
 
-          <TabsContent value="carriers" className="mt-4 space-y-4">
-            <CarrierStatsTable rows={carriers.data ?? []} />
+          <TabsContent value="carriers" className="mt-4 space-y-5">
+            <motion.div {...fadeUp(0.05)}>
+              <CarrierStatsTable rows={carriers.data ?? []} />
+            </motion.div>
 
             {/* Antes un error del RPC (retry:false) hacía DESAPARECER los charts
                 en silencio — parecía "no hay datos" (auditoría 2026-07-07). */}
             {dashboardQuery.isError && (
-              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-4 text-xs text-warning shadow-card3d">
-                No se pudieron cargar los gráficos de transportadoras — usá el botón Refrescar.
-              </div>
+              <ChartsErrorBanner text="No se pudieron cargar los gráficos de transportadoras — usá el botón Refrescar." />
             )}
 
             {dashboardQuery.data && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <motion.div {...fadeUp(0.12)} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <CarrierDonut data={dashboardQuery.data.by_transportadora} colorMap={carrierColorMap} />
                 <CarrierTimeline data={dashboardQuery.data.by_transportadora_and_date} colorMap={carrierColorMap} />
-              </div>
+              </motion.div>
             )}
 
             {dashboardQuery.data && (
-              <CarrierHorizontalStack data={dashboardQuery.data.by_transportadora_and_estado} />
+              <motion.div {...fadeUp(0.18)}>
+                <CarrierHorizontalStack data={dashboardQuery.data.by_transportadora_and_estado} />
+              </motion.div>
             )}
           </TabsContent>
 
-          <TabsContent value="cities" className="mt-4 space-y-4">
-            <GeoDistribution rows={cities.data ?? []} />
-            <CityReturnsTable rows={cities.data ?? []} />
+          <TabsContent value="cities" className="mt-4 space-y-5">
+            <motion.div {...fadeUp(0.05)}>
+              <GeoDistribution rows={cities.data ?? []} />
+            </motion.div>
+            <motion.div {...fadeUp(0.14)}>
+              <CityReturnsTable rows={cities.data ?? []} />
+            </motion.div>
           </TabsContent>
 
           {/* TAB: Productos — solo tasa de entrega/falla por SKU. La
               rentabilidad por SKU se movió a la tab "Finanzas" porque es
               análisis de plata. */}
-          <TabsContent value="products" className="mt-4 space-y-4">
-            <ProductFailuresTable rows={products.data ?? []} />
+          <TabsContent value="products" className="mt-4 space-y-5">
+            <motion.div {...fadeUp(0.05)}>
+              <ProductFailuresTable rows={products.data ?? []} />
+            </motion.div>
           </TabsContent>
 
           {/* TAB: Decisiones — heatmap matriz + tabla recomendador.
@@ -488,28 +618,34 @@ export default function LogisticaTab() {
               y logistics_recommendations). NO se filtran por ciudad porque
               es un análisis comparativo entre ciudades — el filtro ciudad
               no aplica acá. */}
-          <TabsContent value="decisiones" className="mt-4 space-y-4">
-            <CarrierRecommendations filters={filters} />
-            <CarrierCityMatrix filters={filters} />
+          <TabsContent value="decisiones" className="mt-4 space-y-5">
+            <motion.div {...fadeUp(0.05)}>
+              <CarrierRecommendations filters={filters} />
+            </motion.div>
+            <motion.div {...fadeUp(0.14)}>
+              <CarrierCityMatrix filters={filters} />
+            </motion.div>
           </TabsContent>
 
-          <TabsContent value="trazabilidad" className="mt-4 space-y-4">
+          <TabsContent value="trazabilidad" className="mt-4 space-y-5">
             {dashboardQuery.isError && (
-              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-4 text-xs text-warning shadow-card3d">
-                No se pudieron cargar los gráficos de estados — usá el botón Refrescar.
-              </div>
+              <ChartsErrorBanner text="No se pudieron cargar los gráficos de estados — usá el botón Refrescar." />
             )}
             {dashboardQuery.data && (
-              <EstadoDonutAndDailyStack
-                donut={dashboardQuery.data.by_estado}
-                stack={dashboardQuery.data.by_date_and_estado}
-              />
+              <motion.div {...fadeUp(0.05)}>
+                <EstadoDonutAndDailyStack
+                  donut={dashboardQuery.data.by_estado}
+                  stack={dashboardQuery.data.by_date_and_estado}
+                />
+              </motion.div>
             )}
-            <TrazabilidadView
-              summary={summary.data ?? null}
-              range={filters}
-              carriers={carriers.data ?? []}
-            />
+            <motion.div {...fadeUp(0.14)}>
+              <TrazabilidadView
+                summary={summary.data ?? null}
+                range={filters}
+                carriers={carriers.data ?? []}
+              />
+            </motion.div>
           </TabsContent>
 
           {/* TAB: Finanzas — vista unificada de TODA la plata operativa de
@@ -553,6 +689,7 @@ export default function LogisticaTab() {
             </section>
           </TabsContent>
         </Tabs>
+        </motion.div>
       )}
     </div>
   );
@@ -575,21 +712,23 @@ function CarrierDonut({
   const top = data[0];
 
   return (
-    <ChartCard title="Distribución por transportadora">
+    <ChartCard title="Distribución por transportadora" icon={PieChartIcon} iconClass="text-info">
       {data.length === 0 ? <EmptyChart /> : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
           <div className="relative h-[260px]">
             <ResponsiveContainer>
               <PieChart>
-                {/* innerRadius más grande (60 vs 55) + outerRadius (100 vs 95)
-                    = anillo más grueso y legible. paddingAngle 3 separa
-                    slices mejor cuando hay muchos carriers. */}
+                {/* Aro grueso con extremos redondeados (cornerRadius) y glow del
+                    color de cada slice: el mismo tratamiento de "el dato brilla"
+                    del Dashboard. stroke del color de la card = separación limpia
+                    entre slices sin dibujar una línea ajena a la paleta. */}
                 <Pie data={data} dataKey="total" nameKey="transportadora"
-                     innerRadius={60} outerRadius={100} paddingAngle={3}
+                     innerRadius={62} outerRadius={102} paddingAngle={2} cornerRadius={6}
                      stroke="hsl(var(--card))" strokeWidth={2}>
-                  {data.map((d) => (
-                    <Cell key={d.transportadora} fill={colorMap.get(d.transportadora) ?? 'hsl(var(--muted-foreground))'} />
-                  ))}
+                  {data.map((d) => {
+                    const color = colorMap.get(d.transportadora) ?? 'hsl(var(--muted-foreground))';
+                    return <Cell key={d.transportadora} fill={color} style={barGlow(color)} />;
+                  })}
                 </Pie>
                 <RTooltip
                   contentStyle={TOOLTIP_STYLE}
@@ -599,32 +738,55 @@ function CarrierDonut({
             </ResponsiveContainer>
             {top && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="text-3xl font-extrabold text-foreground font-mono tabular-nums leading-none">
+                <div className="text-[38px] font-bold text-foreground font-mono tabular-nums leading-none num-glow-accent">
                   {pct(top.total, total)}
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-[0.1em] font-semibold mt-1.5 truncate max-w-[140px] text-center">
+                {/* Sin `uppercase`: es el nombre que manda Dropi, no un rótulo
+                    nuestro — mayusculizarlo es reescribir el dato. */}
+                <div className="text-[11px] text-muted-foreground font-medium mt-2 truncate max-w-[150px] text-center">
                   {top.transportadora}
                 </div>
               </div>
             )}
           </div>
-          <ul className="space-y-2">
-            {data.map((d) => (
-              <li key={d.transportadora} className="flex items-center justify-between text-xs gap-2">
-                <span className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{ background: colorMap.get(d.transportadora), boxShadow: `0 0 0 3px ${carrierRing(colorMap.get(d.transportadora))}` }}
-                    aria-hidden="true"
-                  />
-                  <span className="font-medium text-foreground truncate">{d.transportadora}</span>
-                </span>
-                <span className="font-mono tabular-nums shrink-0 ml-2 flex items-baseline gap-2">
-                  <span className="text-muted-foreground">{d.total}</span>
-                  <span className="font-bold text-foreground w-12 text-right">{pct(d.total, total)}</span>
-                </span>
-              </li>
-            ))}
+          {/* Leyenda-ranking: cada carrier con su barra proporcional del color de
+              su slice. El dot suelto sólo decía "existe"; la barra deja comparar
+              volúmenes sin volver a la dona. */}
+          <ul className="space-y-1.5">
+            {data.map((d, i) => {
+              const color = colorMap.get(d.transportadora) ?? 'hsl(var(--muted-foreground))';
+              // total===0 (todos los carriers en cero) ⇒ barra vacía, igual que el
+              // '0%' que devuelve pct(). No se inventa un ancho.
+              const width = total > 0 ? (d.total / total) * 100 : 0;
+              return (
+                <li
+                  key={d.transportadora}
+                  className="flex flex-col gap-1.5 px-3 py-2 rounded-xl border border-transparent transition-colors duration-200 hover:bg-card/60 hover:border-border"
+                >
+                  <div className="flex items-center justify-between text-xs gap-2">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono tabular-nums text-[11px] text-muted-foreground w-4 shrink-0">{i + 1}</span>
+                      <span
+                        className="h-2.5 w-2.5 rounded-full shrink-0"
+                        style={{ background: color, boxShadow: `0 0 0 3px ${carrierRing(color)}` }}
+                        aria-hidden="true"
+                      />
+                      <span className="font-medium text-foreground truncate">{d.transportadora}</span>
+                    </span>
+                    <span className="font-mono tabular-nums shrink-0 ml-2 flex items-baseline gap-2">
+                      <span className="text-muted-foreground">{d.total}</span>
+                      <span className="font-bold text-foreground w-12 text-right">{pct(d.total, total)}</span>
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-foreground/10 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-[width] duration-700"
+                      style={{ width: `${width}%`, background: color }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -657,15 +819,35 @@ function CarrierTimeline({
   }), [data, dates, carriers]);
 
   return (
-    <ChartCard title="Guías por fecha y transportadora">
+    <ChartCard
+      title="Guías por fecha y transportadora"
+      icon={LineChartIcon}
+      iconClass="text-accent"
+      right={<span className="text-[10px] text-muted-foreground">tocá la leyenda para ocultar una serie</span>}
+    >
       {rows.length === 0 ? <EmptyChart /> : (
         <div className="h-[260px]">
           <ResponsiveContainer>
-            <LineChart data={rows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+            {/* ComposedChart (antes LineChart): el TOTAL diario ahora es un ÁREA
+                con degradado + trazo accent→cyan, y cada transportadora una línea
+                con glow encima. Misma data (`TODAS` ya se calculaba); lo que cambia
+                es que el volumen del día se lee como masa y las series como detalle
+                sobre ella, en vez de 7 líneas planas compitiendo entre sí. */}
+            <ComposedChart data={rows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+              <defs>
+                <linearGradient id="carrierTotalGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"   stopColor={CHART_ACCENT} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={CHART_ACCENT} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="carrierTotalLine" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%"   stopColor={CHART_ACCENT} />
+                  <stop offset="100%" stopColor={CHART_CYAN} />
+                </linearGradient>
+              </defs>
               <CartesianGrid {...CHART_GRID_PROPS} />
-              <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
+              <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
               <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={36} />
-              <RTooltip contentStyle={TOOLTIP_STYLE} />
+              <RTooltip contentStyle={TOOLTIP_STYLE} cursor={CHART_LINE_CURSOR} />
               <Legend
                 wrapperStyle={{ fontSize: 11, cursor: 'pointer', paddingTop: 8 }}
                 iconType="circle"
@@ -678,7 +860,27 @@ function CarrierTimeline({
                 )}
               />
               {legend.isVisible('TODAS') && (
-                <Line type="monotone" dataKey="TODAS" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 4 }} />
+                <Area
+                  type="monotone"
+                  dataKey="TODAS"
+                  stroke="url(#carrierTotalLine)"
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeDasharray="5 5"
+                  fill="url(#carrierTotalGrad)"
+                  style={lineGlow(CHART_ACCENT)}
+                  // Punto final destacado: ancla la vista en el día más reciente.
+                  // El relleno va con --background (no #fff: en tema claro la card
+                  // es casi blanca y el punto desaparecería).
+                  dot={(p: { cx?: number; cy?: number; index?: number }) =>
+                    p.index === rows.length - 1
+                      ? <circle key={`tot-${p.index}`} cx={p.cx} cy={p.cy} r={5}
+                                fill={CHART_BG} stroke={CHART_CYAN} strokeWidth={2}
+                                style={lineGlow(CHART_CYAN)} />
+                      : <g key={`tot-${p.index}`} />
+                  }
+                  activeDot={{ r: 4, strokeWidth: 2, stroke: CHART_BG }}
+                />
               )}
               {carriers.map((c) =>
                 legend.isVisible(c) ? (
@@ -687,13 +889,15 @@ function CarrierTimeline({
                     type="monotone"
                     dataKey={c}
                     stroke={colorMap.get(c) ?? 'hsl(var(--muted-foreground))'}
-                    strokeWidth={2}
+                    strokeWidth={2.5}
+                    strokeLinecap="round"
+                    style={lineGlow(colorMap.get(c) ?? 'hsl(var(--muted-foreground))')}
                     dot={false}
-                    activeDot={{ r: 4, strokeWidth: 0 }}
+                    activeDot={{ r: 4, strokeWidth: 2, stroke: CHART_BG }}
                   />
                 ) : null,
               )}
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
@@ -710,53 +914,78 @@ function EstadoDonutAndDailyStack({
 }) {
   const total = donut.reduce((s, x) => s + x.total, 0);
   const top = donut[0];
-  const stackRows = stack.map((s) => ({ ...s, fecha: fmtDate(s.fecha) }));
+  // `esHoy` sale de la fecha CRUDA (antes de formatearla a DD/MM) comparada con
+  // hoy en horario local — el mismo criterio que el resto del archivo, que no usa
+  // toISOString() justo para no correrse un día en Bogotá.
+  const hoyISO = localISODate(new Date());
+  const stackRows = stack.map((s) => ({ ...s, esHoy: s.fecha === hoyISO, fecha: fmtDate(s.fecha) }));
   const stackKeys = ['entregada', 'transito', 'novedad', 'devolucion', 'rechazada'];
   const legend = useInteractiveLegend();
+  const visibleKeys = stackKeys.filter((k) => legend.isVisible(k));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <ChartCard title="Estado global">
+      <ChartCard title="Estado global" icon={PieChartIcon} iconClass="text-success">
         {donut.length === 0 ? <EmptyChart /> : (
-          <div className="relative h-[280px]">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie data={donut} dataKey="total" nameKey="estado_agrupado"
-                     innerRadius={62} outerRadius={102} paddingAngle={3}
-                     stroke="hsl(var(--card))" strokeWidth={2}>
-                  {donut.map((d) => (
-                    <Cell key={d.estado_agrupado} fill={ESTADO_COLORS[d.estado_agrupado] ?? 'hsl(var(--muted-foreground))'} />
-                  ))}
-                </Pie>
-                <RTooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  formatter={(v: number, n) => [`${v} (${pct(v, total)})`, n]}
-                />
-                <Legend wrapperStyle={{ fontSize: 10, color: 'hsl(var(--muted-foreground))', paddingTop: 8 }}
-                        iconType="circle" iconSize={8} />
-              </PieChart>
-            </ResponsiveContainer>
-            {top && (
-              <div className="absolute inset-x-0 top-1/2 -translate-y-[60%] flex flex-col items-center pointer-events-none">
-                <div className="text-3xl font-extrabold text-foreground font-mono tabular-nums leading-none">
-                  {pct(top.total, total)}
+          <>
+            <div className="relative h-[240px]">
+              <ResponsiveContainer>
+                <PieChart>
+                  {/* Mismo tratamiento que la dona de transportadoras: extremos
+                      redondeados + glow del color del propio estado. El fallback
+                      gris (estado nuevo de Dropi sin mapear) se conserva: se ve,
+                      no se pierde ni se re-etiquetea. */}
+                  <Pie data={donut} dataKey="total" nameKey="estado_agrupado"
+                       innerRadius={58} outerRadius={96} paddingAngle={2} cornerRadius={6}
+                       stroke="hsl(var(--card))" strokeWidth={2}>
+                    {donut.map((d) => {
+                      const color = ESTADO_COLORS[d.estado_agrupado] ?? 'hsl(var(--muted-foreground))';
+                      return <Cell key={d.estado_agrupado} fill={color} style={barGlow(color)} />;
+                    })}
+                  </Pie>
+                  <RTooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    formatter={(v: number, n) => [`${v} (${pct(v, total)})`, n]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              {top && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="text-[38px] font-bold text-foreground font-mono tabular-nums leading-none num-glow-accent">
+                    {pct(top.total, total)}
+                  </div>
+                  {/* El nombre del estado viene de Dropi: se muestra tal cual. */}
+                  <div className="text-[11px] text-muted-foreground font-medium mt-2 max-w-[150px] text-center truncate">
+                    {top.estado_agrupado}
+                  </div>
                 </div>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-[0.1em] font-semibold mt-1.5 max-w-[140px] text-center truncate">
-                  {top.estado_agrupado}
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+            {/* Leyenda propia (antes la <Legend> de recharts): swatches cuadrados
+                de 10px, que es como rotula el Dashboard, y sin comerle alto al
+                gráfico. */}
+            <SwatchLegend
+              className="mt-3 justify-center"
+              items={donut.map((d) => ({
+                color: ESTADO_COLORS[d.estado_agrupado] ?? 'hsl(var(--muted-foreground))',
+                label: d.estado_agrupado,
+              }))}
+            />
+          </>
         )}
       </ChartCard>
 
-      <ChartCard title="Estados por día de creación">
+      <ChartCard title="Estados por día de creación" icon={Layers} iconClass="text-warning">
         {stackRows.length === 0 ? <EmptyChart /> : (
           <div className="h-[280px]">
             <ResponsiveContainer>
               <BarChart data={stackRows} margin={{ top: 8, right: 10, bottom: 5, left: -10 }}>
+                <BarGradientDefs
+                  prefix="estadoDia"
+                  entries={stackKeys.map((k) => ({ key: k, color: STACK_COLORS[k] }))}
+                />
                 <CartesianGrid {...CHART_GRID_PROPS} />
-                <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={{ stroke: 'hsl(var(--border))' }} />
+                <XAxis dataKey="fecha" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} width={36} />
                 <RTooltip contentStyle={TOOLTIP_STYLE} cursor={CHART_BAR_CURSOR} />
                 <Legend
@@ -776,17 +1005,31 @@ function EstadoDonutAndDailyStack({
                     );
                   }}
                 />
-                {stackKeys.map((key, i) =>
+                {stackKeys.map((key) =>
                   legend.isVisible(key) ? (
                     <Bar
                       key={key}
                       dataKey={key}
                       stackId="a"
-                      fill={STACK_COLORS[key]}
+                      fill={`url(#estadoDia-${key})`}
                       name={STACK_LABELS[key]}
-                      // Última barra visible recibe radius arriba — efecto pill cleán.
-                      radius={i === stackKeys.length - 1 ? [4, 4, 0, 0] : 0}
-                    />
+                      // Solo el segmento MÁS ALTO de la pila lleva radio; si se lo
+                      // ponés a los de abajo aparecen muescas entre segmentos. Y
+                      // "más alto" es el último VISIBLE, no el último del array:
+                      // con series ocultas el tope cambia.
+                      radius={key === visibleKeys[visibleKeys.length - 1] ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                      style={key === 'entregada' ? barGlow(STACK_COLORS.entregada) : undefined}
+                    >
+                      {/* La columna de hoy se marca con contorno cian, nunca
+                          cambiándole el relleno: el color es el estado. */}
+                      {stackRows.map((d, idx) => (
+                        <Cell
+                          key={`${key}-${idx}`}
+                          stroke={d.esHoy ? CHART_CYAN : 'transparent'}
+                          strokeWidth={d.esHoy ? 1.5 : 0}
+                        />
+                      ))}
+                    </Bar>
                   ) : null,
                 )}
               </BarChart>
@@ -812,12 +1055,28 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
     };
   });
 
+  // Los dataKey llevan espacios y tildes ("En tránsito"): no sirven como id de
+  // <defs> (url(#…) los rompe), así que el degradado va con un slug propio.
+  const PCT_SERIES = [
+    { key: 'Entregada',   slug: 'entregada',  color: 'hsl(var(--success))' },
+    { key: 'En tránsito', slug: 'transito',   color: 'hsl(var(--info))' },
+    { key: 'Novedad',     slug: 'novedad',    color: 'hsl(var(--warning))' },
+    { key: 'Devolución',  slug: 'devolucion', color: 'hsl(var(--danger))' },
+    { key: 'Rechazada',   slug: 'rechazada',  color: 'hsl(var(--danger) / 0.6)' },
+  ];
+
   return (
-    <ChartCard title="Desempeño por transportadora (% de estado)">
+    <ChartCard
+      title="Desempeño por transportadora (% de estado)"
+      icon={BarChart3}
+      iconClass="text-success"
+      right={<SwatchLegend items={PCT_SERIES.map(s => ({ color: s.color, label: s.key }))} />}
+    >
       {rows.length === 0 ? <EmptyChart /> : (
         <div style={{ height: Math.max(220, rows.length * 56) }}>
           <ResponsiveContainer>
-            <BarChart data={rows} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }} stackOffset="expand">
+            <BarChart data={rows} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 20 }} stackOffset="expand" barCategoryGap="28%">
+              <BarGradientDefs prefix="carrierPct" entries={PCT_SERIES.map(s => ({ key: s.slug, color: s.color }))} />
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" horizontal={false} />
               <XAxis
                 type="number"
@@ -825,7 +1084,7 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
                 stroke="hsl(var(--muted-foreground))"
                 fontSize={10}
                 tickLine={false}
-                axisLine={{ stroke: 'hsl(var(--border))' }}
+                axisLine={false}
                 tickFormatter={(v) => `${v}%`}
               />
               <YAxis
@@ -845,13 +1104,21 @@ function CarrierHorizontalStack({ data }: { data: DashboardData['by_transportado
                   return [`${v.toFixed(1)}% (${Math.round(v * total / 100)} ped)`, n];
                 }}
               />
-              <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', paddingTop: 8 }}
-                      iconType="circle" iconSize={8} />
-              <Bar dataKey="Entregada"     stackId="b" fill="hsl(var(--success))" />
-              <Bar dataKey="En tránsito"   stackId="b" fill="hsl(var(--info))" />
-              <Bar dataKey="Novedad"       stackId="b" fill="hsl(var(--warning))" />
-              <Bar dataKey="Devolución"    stackId="b" fill="hsl(var(--danger))" />
-              <Bar dataKey="Rechazada"     stackId="b" fill="hsl(var(--danger))" radius={[0, 4, 4, 0]} />
+              {/* La leyenda vive en el header de la card (SwatchLegend): acá abajo
+                  le comía alto a barras que ya son finas. */}
+              {PCT_SERIES.map((s, i) => (
+                <Bar
+                  key={s.key}
+                  dataKey={s.key}
+                  stackId="b"
+                  fill={`url(#carrierPct-${s.slug})`}
+                  // Extremos redondeados solo en las puntas de la pila (izquierda
+                  // la primera, derecha la última); los del medio a 0 para que no
+                  // queden muescas.
+                  radius={i === 0 ? [6, 0, 0, 6] : i === PCT_SERIES.length - 1 ? [0, 6, 6, 0] : [0, 0, 0, 0]}
+                  style={s.slug === 'entregada' ? barGlow(s.color) : undefined}
+                />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Activity } from 'lucide-react';
+import { Activity, Package, Truck, Undo2, Percent, Megaphone, Coins } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
 import {
@@ -15,22 +16,59 @@ import {
 //
 // REGLA DEL DUEÑO: CERO animaciones ni parpadeos. Todo estático y calmo.
 // No usar animate-*, pulse, ping, transition de color, etc.
+//
+// Por esa regla las celdas NO usan <StatTile>/<TiltCard>/<GaugeRing> del
+// Dashboard: los tres traen movimiento (tilt con el puntero, CountUp, halo y
+// sheen girando). Lo que sí se adopta es su ANATOMÍA — chip de ícono de 36px
+// con glow, cifra grande en el color del tono, rótulo en .hud-label bajo la
+// cifra, y una barra de referencia al pie — todo dibujado estático acá.
 
-// ── Chip por color ─ reusa las utility classes del DS (index.css) ──
-const CHIP_CLASS: Record<HealthColor, string> = {
-  green:  'pill pill-success',
-  yellow: 'pill pill-warning',
-  red:    'pill pill-danger',
-  gray:   'pill pill-neutral',
+type Tone = 'success' | 'warning' | 'danger' | 'neutral';
+
+/** HealthColor (dominio) → tono del design system (presentación). */
+const TONE_BY_COLOR: Record<HealthColor, Tone> = {
+  green:  'success',
+  yellow: 'warning',
+  red:    'danger',
+  gray:   'neutral',
+};
+
+// Chip de ícono con la fórmula invariable del lenguaje: fondo /14, borde /30,
+// texto pleno + glow del tono. El glow es box-shadow: estático, no anima.
+const CHIP_CLASS: Record<Tone, string> = {
+  success: 'bg-success/14 border-success/30 text-success glow-success',
+  warning: 'bg-warning/14 border-warning/30 text-warning glow-warning',
+  danger:  'bg-danger/14 border-danger/30 text-danger glow-danger',
+  neutral: 'bg-muted/60 border-border text-muted-foreground',
+};
+
+// Chip de veredicto (recipe del Dashboard): fondo /10, borde /25, rounded-lg.
+// Reemplaza al .pill del DS, que trae `transition-colors` y por la regla de
+// arriba esta pantalla no puede tener transiciones de color.
+const VERDICT_CLASS: Record<Tone, string> = {
+  success: 'bg-success/10 border-success/25 text-success',
+  warning: 'bg-warning/10 border-warning/25 text-warning',
+  danger:  'bg-danger/10 border-danger/25 text-danger',
+  neutral: 'bg-muted/50 border-border text-muted-foreground',
 };
 
 // Valor grande coloreado por estado (más legible que solo el chip).
-const VALUE_CLASS: Record<HealthColor, string> = {
-  green:  'text-success',
-  yellow: 'text-warning',
-  red:    'text-danger',
-  gray:   'text-muted-foreground',
+const VALUE_CLASS: Record<Tone, string> = {
+  success: 'text-success',
+  warning: 'text-warning',
+  danger:  'text-danger',
+  neutral: 'text-muted-foreground',
 };
+
+const BAR_CLASS: Record<Tone, string> = {
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger:  'bg-danger',
+  neutral: '',
+};
+
+/** Dónde cae la marca de la referencia dentro de la pista, en %. */
+const REF_MARK_PCT = 60;
 
 interface Indicator {
   label: string;
@@ -41,6 +79,11 @@ interface Indicator {
   ref: string;
   /** Micro-frase de contexto/veredicto extendido. */
   hint: string;
+  icon: LucideIcon;
+  /** Valor crudo para la barra. `null` = sin medición: no se dibuja barra. */
+  raw: number | null;
+  /** Umbral verde en crudo — el MISMO que ya dice `ref` en texto. */
+  refValue: number;
 }
 
 function pct(n: number): string {
@@ -48,23 +91,68 @@ function pct(n: number): string {
   return `${n.toFixed(1)}%`;
 }
 
+/**
+ * Ancho de la barra: la referencia se ancla siempre en REF_MARK_PCT de la
+ * pista, así que la barra dice "estás por debajo / por encima del estándar"
+ * de un vistazo, con cualquier unidad (% o múltiplo).
+ *
+ * No inventa nada: usa el valor medido y el mismo umbral que la celda ya
+ * muestra escrito. Sin medición (`raw === null`) la barra no se dibuja.
+ */
+function barWidthPct(raw: number, refValue: number): number {
+  if (!isFinite(raw) || !isFinite(refValue) || refValue <= 0) return 0;
+  // Un CERO MEDIDO tiene que verse como cero. El piso de 2% existe para que una
+  // magnitud chiquita no desaparezca, pero aplicado a un 0.0% real (ej. un mes
+  // sin pérdida por devoluciones) pintaba una astilla de color donde no hay
+  // nada que dibujar. Mismo criterio que TrazabilidadView y el Simulador.
+  if (raw <= 0) return 0;
+  return Math.max(2, Math.min(100, (raw / refValue) * REF_MARK_PCT));
+}
+
 /** Celda individual del semáforo. Estática, sin animaciones. */
 function Cell({ ind }: { ind: Indicator }) {
+  const tone = TONE_BY_COLOR[ind.color];
+  const Icon = ind.icon;
+  const width = ind.raw === null ? 0 : barWidthPct(ind.raw, ind.refValue);
+
   return (
-    <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top flex flex-col gap-2">
+    <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d hairline-top flex flex-col">
       <div className="flex items-start justify-between gap-2">
-        <span className="text-xs font-semibold text-foreground leading-tight">
-          {ind.label}
+        <span
+          className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${CHIP_CLASS[tone]}`}
+        >
+          <Icon size={17} aria-hidden="true" />
         </span>
-        <span className={`${CHIP_CLASS[ind.color]} shrink-0 whitespace-nowrap`}>
+        <span
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold whitespace-nowrap shrink-0 ${VERDICT_CLASS[tone]}`}
+        >
           {veredictoLabel(ind.color)}
         </span>
       </div>
-      <div className={`text-2xl font-bold font-mono tabular-nums leading-none ${VALUE_CLASS[ind.color]}`}>
+
+      <div className={`text-[34px] font-mono tabular-nums font-bold leading-none mt-3 ${VALUE_CLASS[tone]}`}>
         {ind.display}
       </div>
-      <div className="text-[11px] text-muted-foreground font-mono tabular-nums">{ind.ref}</div>
-      <div className="text-[11px] text-muted-foreground leading-snug">{ind.hint}</div>
+
+      <div className="hud-label mt-2">{ind.label}</div>
+
+      {/* Barra de referencia: pista tenue + marca del estándar. Sin medición
+          (gris) no se dibuja — un track vacío se leería como "cero medido". */}
+      <div className="mt-3 h-1.5 rounded-full bg-foreground/10 relative overflow-hidden" aria-hidden="true">
+        {ind.raw !== null && (
+          <div
+            className={`h-full rounded-full ${BAR_CLASS[tone]}`}
+            style={{ width: `${width}%` }}
+          />
+        )}
+        <span
+          className="absolute top-0 bottom-0 w-px bg-foreground/35"
+          style={{ left: `${REF_MARK_PCT}%` }}
+        />
+      </div>
+
+      <div className="mt-2 text-[11px] text-muted-foreground font-mono tabular-nums">{ind.ref}</div>
+      <div className="mt-1 text-[11px] text-muted-foreground leading-snug">{ind.hint}</div>
     </div>
   );
 }
@@ -98,6 +186,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
         color,
         ref: 'Ref: ≤38%',
         hint: 'Cuánto del precio se va en producto.',
+        icon: Package,
+        raw: isFinite(v) ? v : null,
+        refValue: 38,
       });
     }
 
@@ -111,6 +202,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
         color,
         ref: 'Ref: ≤20%',
         hint: 'Flete de entregadas sobre ventas.',
+        icon: Truck,
+        raw: isFinite(v) ? v : null,
+        refValue: 20,
       });
     }
 
@@ -124,6 +218,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
         color,
         ref: 'Ref: ≤3%',
         hint: 'Plata perdida en devoluciones.',
+        icon: Undo2,
+        raw: isFinite(v) ? v : null,
+        refValue: 3,
       });
     }
 
@@ -137,6 +234,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
         color,
         ref: 'Ref: ≥45%',
         hint: 'Utilidad bruta sobre ventas.',
+        icon: Percent,
+        raw: isFinite(v) ? v : null,
+        refValue: 45,
       });
     }
 
@@ -152,6 +252,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           color,
           ref: 'Ref: ≤45%',
           hint: 'Cuánto del margen se come la pauta.',
+          icon: Megaphone,
+          raw: isFinite(v) ? v : null,
+          refValue: 45,
         });
       } else {
         list.push({
@@ -160,6 +263,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           color: 'gray',
           ref: 'Ref: ≤45%',
           hint: 'Registrá tu pauta para ver esto.',
+          icon: Megaphone,
+          raw: null,
+          refValue: 45,
         });
       }
     }
@@ -176,6 +282,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           color,
           ref: 'Ref: ≥2×',
           hint: 'Utilidad bruta por cada $1 de pauta.',
+          icon: Coins,
+          raw: isFinite(v) ? v : null,
+          refValue: 2,
         });
       } else {
         list.push({
@@ -184,6 +293,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           color: 'gray',
           ref: 'Ref: ≥2×',
           hint: 'Registrá tu pauta para ver esto.',
+          icon: Coins,
+          raw: null,
+          refValue: 2,
         });
       }
     }
@@ -194,10 +306,10 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
   return (
     <div className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d hairline-top">
       <header className="flex items-center gap-2 mb-1">
-        <span className="w-8 h-8 rounded-xl bg-accent/14 border border-accent/30 text-accent flex items-center justify-center shrink-0" aria-hidden="true">
-          <Activity size={15} />
+        <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+          <Activity size={17} />
         </span>
-        <h3 className="text-sm font-bold tracking-tight text-foreground">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
           Semáforo de salud financiera
         </h3>
       </header>
@@ -209,13 +321,14 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
         // Skeleton con rounded-2xl = el MISMO radio que la celda real (Cell).
         // Si los dos radios divergen, las 6 cajas cambian de forma al terminar
         // de cargar: un salto visual, justo lo que la regla de arriba pide
-        // evitar. Al pasar la celda al radio de tarjeta del DS, el skeleton la
-        // sigue.
+        // evitar. La ALTURA también va emparejada con la celda real (que creció
+        // al sumar chip de ícono + barra de referencia): si el esqueleto es más
+        // bajo, la grilla salta hacia abajo al llegar los datos.
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="rounded-2xl border border-border bg-muted/30 h-[112px]"
+              className="rounded-2xl border border-border bg-muted/30 h-[196px]"
               aria-hidden="true"
             />
           ))}

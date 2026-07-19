@@ -465,12 +465,21 @@
     letter-spacing: 0.2em;
     text-transform: uppercase;
   }
+  /* Gemela de .hud-label que NO mayusculiza. Para cuando el rótulo tiene que
+     verse del mismo lenguaje pero el texto no es nuestro para reescribir:
+     nombres de transportadora que vienen de Dropi, nombres propios de marca
+     (Meta, TikTok), cualquier cosa donde el casing ES el dato. */
+  .hud-label-cased {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+  }
   /* El color va en :where() a propósito: especificidad CERO. Así el gris es
      solo un valor por defecto y cualquier `text-danger` / `text-success`
      puesto en el mismo elemento le gana. Declarado dentro de .hud-label
      pisaba los colores semánticos (el rótulo "ME FALTA" del CFO perdía el
      rojo) porque esta hoja va después de las utilidades de Tailwind. */
-  :where(.hud-label) { color: hsl(var(--subtle)); }
+  :where(.hud-label, .hud-label-cased) { color: hsl(var(--subtle)); }
 
   /* Hairline superior de las cards (el handoff lo pide en todas).
      Lo hereda cada TiltCard, así que son ~39 cards.
@@ -594,13 +603,17 @@
   /* Bullet chart — barra fina con marcador de objetivo (target
      line). Patrón Stephen Few. Comunica "performance vs target"
      en muy poco espacio — ideal para KPIs en grid. */
+  /* Sin overflow:hidden. El relleno ya trae border-radius propio, así que no
+     hacía falta recortar — y recortar tenía DOS costos invisibles: mataba el
+     glow del relleno (sombra hacia afuera clipeada a cero) y le comía al
+     .bullet-target los 3px de sobresalida arriba/abajo que lo hacen legible
+     como línea de meta. */
   .bullet {
     position: relative;
     height: 8px;
     width: 100%;
     border-radius: 999px;
     background: hsl(var(--muted) / 0.5);
-    overflow: hidden;
   }
   .bullet > .bullet-fill {
     position: absolute;

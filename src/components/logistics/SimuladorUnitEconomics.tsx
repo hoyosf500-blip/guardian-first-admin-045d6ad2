@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ElementType } from 'react';
 import {
   Calculator, Truck, PackageCheck, Undo2, TrendingDown, Receipt, RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { formatCOP, getCurrencyCountry } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import KpiCard from '@/components/logistics/finanzas/KpiCard';
 import {
   computeRealKpis, computeSimulation, type SimulationInput,
 } from '@/lib/unitEconomics';
@@ -147,61 +146,75 @@ export default function SimuladorUnitEconomics({
   const sinCostos = !costBasis && !costBasisLoading;
 
   return (
-    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
-      <header className="px-5 py-3 border-b border-border flex items-center gap-2">
-        <Calculator size={14} className="text-accent" />
-        <h3 className="text-sm font-semibold text-foreground">Indicadores &amp; Simulador</h3>
-        <span className="text-[11px] text-muted-foreground ml-auto">unit-economics del mes</span>
+    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong">
+      <header className="px-5 py-3.5 border-b border-border flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Calculator size={14} className="text-accent" aria-hidden="true" />
+          Indicadores &amp; Simulador
+        </h3>
+        <span className="hud-label ml-auto">unit-economics del mes</span>
       </header>
 
-      {/* KPIs reales */}
+      {/* KPIs reales — anatomía del Dashboard (chip de 36px con glow · cifra ·
+          rótulo en .hud-label BAJO la cifra · hint al pie). No es <StatTile>
+          porque acá el valor ya viene formateado como string ("38.5%",
+          formatCOP) y StatTile sólo acepta un number crudo. */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 p-4">
-        <KpiCard label="Tasa de despachos" value={pct1(kpis.tasaDespachos)} icon={Truck} tone="info"
+        <UnitKpi label="Tasa de despachos" value={pct1(kpis.tasaDespachos)} icon={Truck} tone="info"
           hint={`${despachadosCount} de ${generadosSinCancel} generados`} />
-        <KpiCard label="Tasa de entrega" value={pct1(kpis.tasaEntrega)} icon={PackageCheck} tone="success"
+        <UnitKpi label="Tasa de entrega" value={pct1(kpis.tasaEntrega)} icon={PackageCheck} tone="success"
           hint={`${entregadosCount} de ${resueltos} resueltos · sin rechazos`} />
-        <KpiCard label="% Devolución" value={pct1(kpis.pctDevolucion)} icon={Undo2} tone="danger"
+        <UnitKpi label="% Devolución" value={pct1(kpis.pctDevolucion)} icon={Undo2} tone="danger"
           hint={`${devueltosCount} de ${resueltos} resueltos`} />
-        <KpiCard label="% Rechazo" value={pct1(kpis.pctRechazo)} icon={Undo2} tone="warning"
+        <UnitKpi label="% Rechazo" value={pct1(kpis.pctRechazo)} icon={Undo2} tone="warning"
           hint={`${rechazadosCount} rechazados / despachado`} />
-        <KpiCard label="% Inefectividad" value={pct1(kpis.pctInefectividad)} icon={TrendingDown} tone="warning"
+        <UnitKpi label="% Inefectividad" value={pct1(kpis.pctInefectividad)} icon={TrendingDown} tone="warning"
           hint="no entregado / generado · incluye lo aún en camino: baja solo al madurar el mes" />
-        <KpiCard label="Ticket promedio" value={formatCOP(kpis.ticketPromedio)} icon={Receipt} tone="accent"
+        <UnitKpi label="Ticket promedio" value={formatCOP(kpis.ticketPromedio)} icon={Receipt} tone="accent"
           hint="por pedido entregado" />
       </div>
 
-      {/* Cascada real */}
+      {/* Cascada real — ahora con barra proporcional sobre el facturado (la base
+          del embudo), igual que el embudo de MesActualResumen. La barra no
+          agrega ningún número a la pantalla: es el mismo `count` de la fila
+          medido contra la primera fila. Sin base (`generadosSinCancel <= 0`) no
+          se dibuja ninguna barra: no habría contra qué proporcionar. */}
       <div className="px-4 pb-4">
-        <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border text-sm shadow-card3d">
-          <CascadaRow label="Facturado" sub="pedidos generados" count={generadosSinCancel} valor={totalVendido} tone="base" />
-          <CascadaRow label="Despachado" sub="salió a la transportadora" count={Math.round(despachadosCount)} valor={despachadoValor} tone="muted" />
-          <CascadaRow label="Entregado" sub="realizado" count={entregadosCount} valor={valorEntregado} tone="success" />
-          <CascadaRow label="Devolución" sub="devolución logística" count={devueltosCount} valor={valorPerdido} tone="danger" />
-          <CascadaRow label="Rechazo" sub="cliente rechazó" count={rechazadosCount} valor={valorRechazos} tone="danger" />
+        <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border shadow-card3d">
+          <CascadaRow label="Facturado" sub="pedidos generados" count={generadosSinCancel} valor={totalVendido} tone="base" base={generadosSinCancel} />
+          <CascadaRow label="Despachado" sub="salió a la transportadora" count={Math.round(despachadosCount)} valor={despachadoValor} tone="muted" base={generadosSinCancel} />
+          <CascadaRow label="Entregado" sub="realizado" count={entregadosCount} valor={valorEntregado} tone="success" base={generadosSinCancel} />
+          <CascadaRow label="Devolución" sub="devolución logística" count={devueltosCount} valor={valorPerdido} tone="danger" base={generadosSinCancel} />
+          <CascadaRow label="Rechazo" sub="cliente rechazó" count={rechazadosCount} valor={valorRechazos} tone="danger" base={generadosSinCancel} />
         </div>
       </div>
 
       {/* Simulador */}
       <div className="border-t border-border p-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] uppercase tracking-[0.08em] font-semibold text-muted-foreground">
-            Simulador de ganancia
-          </span>
+          <span className="hud-label">Simulador de ganancia</span>
           {dirty && (
             <button
               onClick={() => setSim(seed)}
-              className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-card/40 border border-border text-muted-foreground text-[11px] font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
-              <RefreshCw size={11} /> Restaurar reales
+              <RefreshCw size={11} aria-hidden="true" /> Restaurar reales
             </button>
           )}
         </div>
 
         {sinCostos && (
-          <p className="text-[11px] text-warning leading-relaxed">
-            Faltan los costos reales (COGS y flete): aplicá la migration <code className="font-mono">logistics_cost_basis</code>.
-            Mientras tanto podés tipear los % a mano.
-          </p>
+          // Mismo banner de estado que el resto del módulo: barra lateral + chip.
+          <div className="relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20 glow-warning">
+              <AlertTriangle size={17} className="text-warning" aria-hidden="true" />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
+              Faltan los costos reales (COGS y flete): aplicá la migration <code className="font-mono text-[10px]">logistics_cost_basis</code>.
+              Mientras tanto podés tipear los % a mano.
+            </p>
+          </div>
         )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -217,7 +230,7 @@ export default function SimuladorUnitEconomics({
         </div>
 
         {/* Proyección */}
-        <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border text-sm shadow-card3d mt-1">
+        <div className="rounded-2xl border border-border bg-muted/10 divide-y divide-border shadow-card3d mt-1">
           <SimRow label="Ingresos (entregados)" value={result.ingresos} tone="base"
             sub={`${Math.round(result.entregadoPedidos)} entregas`} />
           <SimRow label="Costo de producto" value={-result.cogs} tone="muted" />
@@ -228,14 +241,26 @@ export default function SimuladorUnitEconomics({
             sub={`${Math.round(result.devueltoPedidos)} devueltos`} />
         </div>
 
-        <div className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-card/40 px-3.5 py-2.5 shadow-card3d hairline-top">
-          <span className="text-xs text-foreground font-medium">
-            Ganancia neta
-            <span className="block text-[10px] text-muted-foreground/70">
-              {pct1(result.gananciaPct)} sobre facturado · {pct1(result.margenEntregaPct)} sobre entregado
+        {/* Cierre del bloque: la cifra protagonista del simulador, con el chip
+            de ícono y el tamaño de una tarjeta de resumen. Tokens alineados con
+            el resto del lenguaje (success/danger en vez de green/red). */}
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/40 px-4 py-3.5 shadow-card3d hairline-top">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+              result.gananciaNeta >= 0
+                ? 'bg-success/14 border-success/30 text-success glow-success'
+                : 'bg-danger/14 border-danger/30 text-danger glow-danger'
+            }`}>
+              <Calculator size={17} aria-hidden="true" />
             </span>
-          </span>
-          <span className={`text-lg font-bold tabular-nums shrink-0 ${result.gananciaNeta >= 0 ? 'text-green' : 'text-red'}`}>
+            <span className="min-w-0">
+              <span className="block hud-label">Ganancia neta</span>
+              <span className="block text-[10px] text-muted-foreground/70 mt-1 font-mono tabular-nums">
+                {pct1(result.gananciaPct)} sobre facturado · {pct1(result.margenEntregaPct)} sobre entregado
+              </span>
+            </span>
+          </div>
+          <span className={`text-2xl font-mono font-bold tabular-nums leading-none shrink-0 ${result.gananciaNeta >= 0 ? 'text-success' : 'text-danger'}`}>
             {formatCOP(result.gananciaNeta)}
           </span>
         </div>
@@ -252,23 +277,81 @@ export default function SimuladorUnitEconomics({
 
 // ── Sub-componentes ────────────────────────────────────────────────────────
 
+type UnitTone = 'success' | 'danger' | 'info' | 'warning' | 'accent';
+
+const UNIT_TONE: Record<UnitTone, { chip: string; text: string }> = {
+  success: { chip: 'bg-success/14 border-success/30 text-success glow-success', text: 'text-success' },
+  danger:  { chip: 'bg-danger/14 border-danger/30 text-danger glow-danger',     text: 'text-danger' },
+  info:    { chip: 'bg-info/14 border-info/30 text-info glow-info',             text: 'text-info' },
+  warning: { chip: 'bg-warning/14 border-warning/30 text-warning glow-warning', text: 'text-warning' },
+  accent:  { chip: 'bg-accent/14 border-accent/30 text-accent glow-accent',     text: 'text-accent' },
+};
+
+/** KPI de unit-economics con la anatomía del Dashboard. Valor ya formateado. */
+function UnitKpi({
+  label, value, icon: Icon, tone, hint,
+}: { label: string; value: string; icon: ElementType; tone: UnitTone; hint?: string }) {
+  const t = UNIT_TONE[tone];
+  // Mismo criterio que finanzas/KpiCard: un "—" es un HUECO, no una medición.
+  // Se atenúa en vez de pintarse a todo color con chip glow, para que no se
+  // lea como un valor medido. Hoy `pct1` siempre devuelve algo, así que es una
+  // defensa por si mañana alguna de las 6 cifras puede venir vacía.
+  const sinDato = value === '—';
+  return (
+    <div className={`rounded-2xl border bg-card/40 p-4 shadow-card3d hairline-top h-full flex flex-col transition-colors duration-200 hover:border-border-strong ${sinDato ? 'border-border/50 opacity-75' : 'border-border'}`}>
+      <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${sinDato ? 'bg-muted/50 border-border text-muted-foreground' : t.chip}`}>
+        <Icon size={17} aria-hidden="true" />
+      </span>
+      <div className={`text-2xl font-mono tabular-nums font-bold leading-none mt-3 ${sinDato ? 'text-muted-foreground' : t.text}`}>
+        {value}
+      </div>
+      <div className="hud-label mt-2">{label}</div>
+      {hint && (
+        <div className="mt-2 text-[11px] text-muted-foreground leading-snug">{hint}</div>
+      )}
+    </div>
+  );
+}
+
+const CASCADA_BAR: Record<'base' | 'muted' | 'success' | 'danger', string> = {
+  base:    'bg-accent-gradient',
+  muted:   'bg-muted-foreground/45',
+  success: 'bg-success',
+  danger:  'bg-danger',
+};
+
 function CascadaRow({
-  label, sub, count, valor, tone,
-}: { label: string; sub: string; count: number; valor: number; tone: 'base' | 'muted' | 'success' | 'danger' }) {
+  label, sub, count, valor, tone, base,
+}: {
+  label: string; sub: string; count: number; valor: number;
+  tone: 'base' | 'muted' | 'success' | 'danger';
+  /** Facturado del período = 100% de la barra. `<= 0` → sin barra. */
+  base: number;
+}) {
   const valTone =
-    tone === 'success' ? 'text-green'
-    : tone === 'danger' ? 'text-red'
+    tone === 'success' ? 'text-success'
+    : tone === 'danger' ? 'text-danger'
     : tone === 'muted' ? 'text-muted-foreground'
     : 'text-foreground';
+  // Sólo ancho de barra — ningún porcentaje nuevo se imprime en pantalla.
+  const share = base > 0 ? (count / base) * 100 : null;
+  const width = share === null || share <= 0 ? 0 : Math.max(2, Math.min(100, share));
   return (
-    <div className="flex items-center justify-between gap-2 px-3.5 py-2">
-      <span className="text-xs text-foreground/90">
-        {label} <span className="text-[10px] text-muted-foreground">· {sub}</span>
-      </span>
-      <span className="flex items-baseline gap-3 shrink-0 tabular-nums">
-        <span className="text-xs font-bold text-foreground">{count.toLocaleString('es-CO')}</span>
-        <span className={`text-xs font-mono w-28 text-right ${valTone}`}>{formatCOP(valor)}</span>
-      </span>
+    <div className="px-3.5 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-foreground/90">
+          {label} <span className="text-[10px] text-muted-foreground">· {sub}</span>
+        </span>
+        <span className="flex items-baseline gap-3 shrink-0 font-mono tabular-nums">
+          <span className="text-xs font-bold text-foreground">{count.toLocaleString('es-CO')}</span>
+          <span className={`text-xs w-28 text-right ${valTone}`}>{formatCOP(valor)}</span>
+        </span>
+      </div>
+      {share !== null && (
+        <div className="mt-1.5 h-1.5 rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
+          <div className={`h-full rounded-full ${CASCADA_BAR[tone]}`} style={{ width: `${width}%` }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -277,9 +360,9 @@ function SimRow({
   label, value, tone, sub,
 }: { label: string; value: number; tone: 'base' | 'muted' | 'danger'; sub?: string }) {
   const isNeg = value < 0;
-  const valTone = tone === 'danger' ? 'text-red' : tone === 'muted' ? 'text-muted-foreground' : 'text-foreground';
+  const valTone = tone === 'danger' ? 'text-danger' : tone === 'muted' ? 'text-muted-foreground' : 'text-foreground';
   return (
-    <div className="flex items-center justify-between gap-2 px-3.5 py-1.5">
+    <div className="flex items-center justify-between gap-2 px-3.5 py-2">
       <span className="text-xs text-foreground/90">
         {label}{sub && <span className="text-[10px] text-muted-foreground ml-1.5">· {sub}</span>}
       </span>
@@ -292,15 +375,15 @@ function SimRow({
 
 function FieldShell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-[10px] text-muted-foreground">{label}</span>
+    <label className="block space-y-1.5">
+      <span className="hud-label block">{label}</span>
       {children}
     </label>
   );
 }
 
 const inputCls =
-  'w-full rounded border border-border bg-background px-2 py-1 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-accent';
+  'w-full rounded-xl border border-border bg-card/40 px-2.5 py-1.5 text-xs font-mono tabular-nums transition-colors duration-200 hover:border-border-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none focus:outline-none';
 
 function NumField({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
   return (

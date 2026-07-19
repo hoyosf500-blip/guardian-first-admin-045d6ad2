@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { Lightbulb, Copy, ArrowRightLeft, CheckCircle2, Info } from 'lucide-react';
 import { useCityCarrierMatrix } from '@/hooks/useCityCarrierMatrix';
 import { deriveCarrierRecommendations } from '@/lib/carrierRecommendations';
@@ -10,6 +11,45 @@ interface Props {
   filters: LogisticsFilters;
   /** Pedidos mínimos para considerar la ciudad. Default: 20. */
   minOrders?: number;
+}
+
+// Entrada escalonada — misma cascada de delays que el Dashboard.
+// Cascada INTERNA del bloque. Solo opacidad, sin `y`: LogisticaTab ya envuelve
+// a este componente en su propio motion.div con fadeUp, así que si acá también
+// se desplazara, los dos translateY se SUMAN (14px + 14px) y el hijo arranca
+// antes que el padre, deshaciendo el escalonado que el padre intenta armar.
+// El deslizamiento lo pone el padre; acá solo el ritmo interno.
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
+
+/** Todo color sale de tokens del DS — nunca un valor raw. */
+const hsl = (v: string, a?: number) => (a == null ? `hsl(var(${v}))` : `hsl(var(${v}) / ${a})`);
+
+/**
+ * Barra fina de magnitud: dibuja como LARGO un número que ya se muestra como
+ * texto al lado. No agrega métrica — solo le da forma al mismo dato.
+ */
+function MiniMeter({ value, varName, max = 100 }: { value: number; varName: string; max?: number }) {
+  // Sin dato NO se dibuja la pista: una barra vacía se lee como "cero medido",
+  // y acá el cero no está medido (mismo criterio que la celda sin tasa del
+  // heatmap). El número real se sigue imprimiendo al lado sin coerción.
+  if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) return null;
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <div className="h-1 rounded-full bg-foreground/10 mt-1" aria-hidden="true">
+      <div
+        className="h-full rounded-full transition-[width] duration-700"
+        style={{
+          width: `${pct}%`,
+          background: `linear-gradient(90deg, ${hsl(varName, 0.55)}, ${hsl(varName)})`,
+          boxShadow: `0 0 6px -1px ${hsl(varName, 0.7)}`,
+        }}
+      />
+    </div>
+  );
 }
 
 /**
@@ -28,6 +68,13 @@ export default memo(function CarrierRecommendations({
   const rows = useMemo(
     () => deriveCarrierRecommendations(matrix.data ?? [], minOrders),
     [matrix.data, minOrders],
+  );
+
+  // Dominio real del spread para la mini-barra del Δ. Es solo escala de dibujo:
+  // no se imprime en ningún lado y no cambia ningún número de la tabla.
+  const maxDelta = useMemo(
+    () => rows.reduce((mx, r) => Math.max(mx, r.delta_puntos ?? 0), 0),
+    [rows],
   );
 
   if (matrix.isLoading) {
@@ -62,21 +109,21 @@ export default memo(function CarrierRecommendations({
   const mantenerCount = rows.filter(r => r.mejor_transportadora === r.carrier_actual_top).length;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {/* Stats banner — resumen accionable arriba de la tabla */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <motion.div {...fadeUp(0)} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatsBanner tone="danger"  icon={ArrowRightLeft} label="Cambiar urgente"     value={urgentCount}   hint="Spread ≥ 20 pts entre el mejor y el peor carrier de la ciudad" />
         <StatsBanner tone="warning" icon={ArrowRightLeft} label="Considerar cambio"   value={cambioCount}   hint="Δ entre 10 y 20 puntos" />
         <StatsBanner tone="success" icon={CheckCircle2}   label="Ya están óptimas"    value={mantenerCount} hint="El mejor carrier ya es el más usado" />
-      </div>
+      </motion.div>
 
-      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
-        <header className="px-5 py-4 border-b border-border/60">
+      <motion.div {...fadeUp(0.14)} className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
+        <header className="px-5 py-3.5 border-b border-border/60">
           <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-warning/14 border border-warning/30 text-warning glow-warning flex items-center justify-center shrink-0" aria-hidden="true">
-              <Lightbulb size={14} strokeWidth={2.25} />
+            <span className="w-9 h-9 rounded-xl border bg-warning/14 border-warning/30 text-warning glow-warning flex items-center justify-center flex-shrink-0" aria-hidden="true">
+              <Lightbulb size={17} strokeWidth={2.25} />
             </span>
-            <h2 className="text-sm font-bold text-foreground tracking-tight">
+            <h2 className="text-sm font-semibold text-foreground">
               Recomendaciones de transportadora por ciudad
             </h2>
           </div>
@@ -87,26 +134,26 @@ export default memo(function CarrierRecommendations({
         </header>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border/60 bg-foreground/[0.03]">
-              <th className="text-left px-4 py-2.5 hud-label">Ciudad</th>
-              <th className="text-right px-3 py-2.5 hud-label">Vol.</th>
-              <th className="text-left px-3 py-2.5 hud-label">Mejor carrier</th>
-              <th className="text-left px-3 py-2.5 hud-label">Peor carrier</th>
-              <th className="text-center px-3 py-2.5 hud-label" title="Diferencia de puntos entre el MEJOR y el PEOR carrier de la ciudad (el spread), no la ganancia exacta de cambiar desde tu carrier actual.">Δ pts</th>
-              <th className="text-left px-3 py-2.5 hud-label">Acción</th>
-              <th className="text-right px-3 py-2.5 hud-label"></th>
+        <table className="w-full text-xs">
+          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-card/95 [&_th]:backdrop-blur-sm">
+            <tr className="border-b border-border">
+              <th className="text-left px-5 py-2.5 hud-label font-normal">Ciudad</th>
+              <th className="text-right px-3 py-2.5 hud-label font-normal">Vol.</th>
+              <th className="text-left px-3 py-2.5 hud-label font-normal">Mejor carrier</th>
+              <th className="text-left px-3 py-2.5 hud-label font-normal">Peor carrier</th>
+              <th className="text-center px-3 py-2.5 hud-label font-normal" title="Diferencia de puntos entre el MEJOR y el PEOR carrier de la ciudad (el spread), no la ganancia exacta de cambiar desde tu carrier actual.">Δ pts</th>
+              <th className="text-left px-3 py-2.5 hud-label font-normal">Acción</th>
+              <th className="text-right px-3 py-2.5 hud-label font-normal"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map(row => (
-              <RecommendationRow key={`${row.ciudad}|${row.departamento}`} row={row} filters={filters} />
+              <RecommendationRow key={`${row.ciudad}|${row.departamento}`} row={row} filters={filters} maxDelta={maxDelta} />
             ))}
           </tbody>
         </table>
       </div>
-      </div>
+      </motion.div>
     </div>
   );
 });
@@ -133,9 +180,9 @@ function StatsBanner({ tone, icon: Icon, label, value, hint }: StatsBannerProps)
 
 // Tono semántico de la fila → barra lateral y badge de veredicto.
 const ROW_BAR: Record<'success' | 'warning' | 'danger', string> = {
-  success: 'border-success',
-  warning: 'border-warning',
-  danger:  'border-danger',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger:  'bg-danger',
 };
 const ROW_BADGE: Record<'success' | 'warning' | 'danger', string> = {
   success: 'bg-success/14 border-success/30 text-success',
@@ -146,8 +193,10 @@ const ROW_BADGE: Record<'success' | 'warning' | 'danger', string> = {
 interface RowProps {
   row: CarrierRecommendation;
   filters: LogisticsFilters;
+  /** Δ más grande de la tabla — domina la escala de la mini-barra del spread. */
+  maxDelta: number;
 }
-function RecommendationRow({ row, filters }: RowProps) {
+function RecommendationRow({ row, filters, maxDelta }: RowProps) {
   const isMantener = row.mejor_transportadora === row.carrier_actual_top;
   const delta = row.delta_puntos ?? 0;
 
@@ -167,15 +216,23 @@ function RecommendationRow({ row, filters }: RowProps) {
     badgeLabel = 'Cambiar';
   }
 
+  // Mismos cortes que el color del texto del Δ — el token solo le da forma
+  // (largo + degradado) al número que ya se imprime al lado.
+  const deltaVar = delta >= 20 ? '--danger'
+    : delta >= 10 ? '--warning'
+    : delta >= 5 ? '--foreground'
+    : '--muted-foreground';
+
   const handleCopy = async () => {
     const msg = buildWhatsAppMessage(row, filters);
     await copyToClipboard(msg, 'Mensaje copiado');
   };
 
   return (
-    <tr className="border-b border-border/40 hover:bg-foreground/[0.03] transition-colors">
+    <tr className="border-b border-border/50 last:border-0 hover:bg-card/60 transition-colors duration-200">
       {/* Barra semántica lateral: el veredicto de la fila se lee antes del texto. */}
-      <td className={`px-4 py-2.5 border-l-2 ${ROW_BAR[badgeTone]}`}>
+      <td className="relative px-5 py-2.5">
+        <span className={`absolute left-0 top-2 bottom-2 w-1 rounded-full ${ROW_BAR[badgeTone]}`} aria-hidden="true" />
         <div className="font-semibold text-foreground truncate max-w-[160px]" title={row.ciudad}>
           {row.ciudad}
         </div>
@@ -195,6 +252,7 @@ function RecommendationRow({ row, filters }: RowProps) {
         <div className="font-mono tabular-nums text-success text-[11px]" title={`${row.mejor_resueltos} pedidos concluidos de ${row.mejor_pedidos} totales`}>
           {row.mejor_tasa_entrega.toFixed(1)}% · {row.mejor_resueltos}r/{row.mejor_pedidos}p
         </div>
+        <MiniMeter value={row.mejor_tasa_entrega} varName="--success" />
       </td>
       <td className="px-3 py-2.5">
         <div className="font-semibold text-foreground text-xs truncate max-w-[140px]" title={row.peor_transportadora}>
@@ -203,6 +261,7 @@ function RecommendationRow({ row, filters }: RowProps) {
         <div className="font-mono tabular-nums text-danger text-[11px]" title={`${row.peor_resueltos} pedidos concluidos de ${row.peor_pedidos} totales`}>
           {row.peor_tasa_entrega.toFixed(1)}% · {row.peor_resueltos}r/{row.peor_pedidos}p
         </div>
+        <MiniMeter value={row.peor_tasa_entrega} varName="--danger" />
       </td>
       <td className="px-3 py-2.5 text-center">
         <span className={`inline-flex items-center gap-0.5 font-mono font-bold tabular-nums text-sm ${
@@ -214,6 +273,13 @@ function RecommendationRow({ row, filters }: RowProps) {
           {delta >= 10 && <span aria-hidden="true">↑</span>}
           {delta.toFixed(0)}
         </span>
+        {/* El Δ viene en PUNTOS (rango real ~0-40), no en %. Dibujarlo contra
+            un fondo de 0-100 dejaba la barra casi invisible justo en las filas
+            críticas. Se escala contra el Δ MÁS GRANDE DE ESTA TABLA — un
+            dominio medido, no un tope inventado. */}
+        <div className="mx-auto w-12">
+          <MiniMeter value={delta} varName={deltaVar} max={maxDelta} />
+        </div>
       </td>
       <td className="px-3 py-2.5">
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${ROW_BADGE[badgeTone]}`}>
@@ -234,11 +300,11 @@ function RecommendationRow({ row, filters }: RowProps) {
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 h-7 rounded-xl border border-border bg-card/40 px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card/40 border border-border text-muted-foreground text-[11px] font-medium hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           aria-label={`Copiar mensaje WhatsApp para ${row.ciudad}`}
           title="Copiar mensaje para WhatsApp"
         >
-          <Copy size={11} aria-hidden="true" />
+          <Copy size={13} aria-hidden="true" />
           Copiar
         </button>
       </td>

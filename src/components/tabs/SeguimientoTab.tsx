@@ -10,7 +10,7 @@ import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
-import { TiltCard, CountUp } from '@/components/ui3d';
+import { TiltCard, CountUp, GaugeRing } from '@/components/ui3d';
 import SegBoard from '@/components/seguimiento/SegBoard';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
@@ -41,12 +41,57 @@ const DEFAULT_WINDOW_DAYS = 45;
 
 // Punto de color por urgencia para los chips de listas SLA (mapea SegListDef.tone).
 const LIST_TONE_DOT: Record<string, string> = {
-  danger: 'bg-danger',
-  warning: 'bg-warning',
-  success: 'bg-success',
-  info: 'bg-info',
+  danger: 'bg-danger glow-danger',
+  warning: 'bg-warning glow-warning',
+  success: 'bg-success glow-success',
+  info: 'bg-info glow-info',
   neutral: 'bg-muted-foreground/50',
 };
+
+/**
+ * Tinte COMPLETO del chip por urgencia de la lista SLA. Antes las 8 listas se
+ * dibujaban todas iguales (bg-card/40 + un punto de 1.5px) y "En oficina
+ * (cliente recoge)" pesaba lo mismo que "Otros estados": el orden de prioridad
+ * que documenta segLists.ts quedaba aplanado por el diseño. Ahora el chip
+ * entero lleva el tono, con la fórmula invariable del lenguaje (fondo /10,
+ * borde /30, texto pleno) y el conteo con el tratamiento de cifra del
+ * Dashboard. `numGlow` solo existe para accent/success/danger en index.css —
+ * las demás van sin glow en vez de inventar un token.
+ */
+const LIST_TONE_CHIP: Record<string, { idle: string; count: string; numGlow: string }> = {
+  danger: {
+    idle: 'bg-danger/10 border-danger/30 text-danger hover:border-danger/60 hover:bg-danger/16',
+    count: 'text-danger',
+    numGlow: 'num-glow-danger',
+  },
+  warning: {
+    idle: 'bg-warning/10 border-warning/30 text-warning hover:border-warning/60 hover:bg-warning/16',
+    count: 'text-warning',
+    numGlow: '',
+  },
+  success: {
+    idle: 'bg-success/10 border-success/30 text-success hover:border-success/60 hover:bg-success/16',
+    count: 'text-success',
+    numGlow: 'num-glow-success',
+  },
+  info: {
+    idle: 'bg-info/10 border-info/30 text-info hover:border-info/60 hover:bg-info/16',
+    count: 'text-info',
+    numGlow: '',
+  },
+  neutral: {
+    idle: 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
+    count: 'text-foreground',
+    numGlow: '',
+  },
+};
+
+// Cascada de entrada del Dashboard: los bloques se arman de arriba abajo.
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 14 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35, delay, ease: 'easeOut' as const },
+});
 
 export default function SeguimientoTab() {
   // Cached in OrderContext so the data survives route unmounts when the
@@ -311,50 +356,60 @@ export default function SeguimientoTab() {
    * Cada tono usa tokens semánticos del DS (success/danger/warning/
    * accent) — coherentes con dark/light mode automático. El active
    * state suma ring + bg tonal sin sombras pesadas (look más limpio).
+   *
+   * El chip de ícono usa la fórmula INVARIABLE del lenguaje del Dashboard
+   * (fondo /14 · borde /30 · texto pleno · clase glow-<tono>), que es la firma
+   * visual de todo KPI de la app. Antes cada tono llevaba su propio alpha
+   * (accent/15, warning/12, muted/40) y ningún chip tenía glow: el resumen por
+   * estado parecía de otra aplicación que el resto del CRM.
+   *
+   * `numGlow` solo se declara donde index.css define el token
+   * (accent/success/danger). Para warning/neutral/muted va vacío en vez de
+   * inventar una clase que no existe.
    */
   const STAT_TONE: Record<StatTone, {
-    iconBg: string; iconText: string;
-    numberColor: string; cardHover: string;
+    iconBg: string; iconText: string; glow: string;
+    numberColor: string; numGlow: string; cardHover: string;
     activeRing: string; activeBg: string;
   }> = {
     neutral: {
-      iconBg: 'bg-muted/40', iconText: 'text-muted-foreground',
-      numberColor: 'text-foreground',
+      iconBg: 'bg-muted/60 border-border', iconText: 'text-muted-foreground', glow: '',
+      numberColor: 'text-foreground', numGlow: '',
       cardHover: 'hover:border-border-strong hover:bg-muted/20',
       activeRing: 'ring-2 ring-accent/60 border-accent/60',
       activeBg: 'bg-accent/5',
     },
     accent: {
-      iconBg: 'bg-accent/15', iconText: 'text-accent',
-      numberColor: 'text-accent',
+      iconBg: 'bg-accent/14 border-accent/30', iconText: 'text-accent', glow: 'glow-accent',
+      numberColor: 'text-accent', numGlow: 'num-glow-accent',
       cardHover: 'hover:border-accent/40 hover:bg-accent/8',
       activeRing: 'ring-2 ring-accent border-accent',
       activeBg: 'bg-accent/12',
     },
     warning: {
-      iconBg: 'bg-warning/12', iconText: 'text-warning',
-      numberColor: 'text-warning',
+      iconBg: 'bg-warning/14 border-warning/30', iconText: 'text-warning', glow: 'glow-warning',
+      numberColor: 'text-warning', numGlow: '',
       cardHover: 'hover:border-warning/40 hover:bg-warning/5',
       activeRing: 'ring-2 ring-warning/70 border-warning/70',
       activeBg: 'bg-warning/10',
     },
     danger: {
-      iconBg: 'bg-danger/12', iconText: 'text-danger',
-      numberColor: 'text-danger',
+      iconBg: 'bg-danger/14 border-danger/30', iconText: 'text-danger', glow: 'glow-danger',
+      numberColor: 'text-danger', numGlow: 'num-glow-danger',
       cardHover: 'hover:border-danger/40 hover:bg-danger/5',
       activeRing: 'ring-2 ring-danger/70 border-danger/70',
       activeBg: 'bg-danger/10',
     },
     success: {
-      iconBg: 'bg-success/12', iconText: 'text-success',
-      numberColor: 'text-success',
+      iconBg: 'bg-success/14 border-success/30', iconText: 'text-success', glow: 'glow-success',
+      numberColor: 'text-success', numGlow: 'num-glow-success',
       cardHover: 'hover:border-success/40 hover:bg-success/5',
       activeRing: 'ring-2 ring-success/70 border-success/70',
       activeBg: 'bg-success/10',
     },
     muted: {
-      iconBg: 'bg-muted/40', iconText: 'text-muted-foreground',
-      numberColor: 'text-muted-foreground',
+      iconBg: 'bg-muted/60 border-border', iconText: 'text-muted-foreground', glow: '',
+      numberColor: 'text-muted-foreground', numGlow: '',
       cardHover: 'hover:border-border-strong hover:text-foreground',
       activeRing: 'ring-2 ring-border-strong border-border-strong',
       activeBg: 'bg-muted/30',
@@ -385,13 +440,37 @@ export default function SeguimientoTab() {
   // spinner instead — no flash, no lost state.
   if (!segLoaded && segLoading) {
     return (
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col items-center justify-center py-16 gap-4" role="status" aria-live="polite">
-          <RefreshCw size={32} className="text-accent animate-spin" aria-hidden="true" />
-          <div className="text-center">
-            <p className="text-sm font-semibold text-foreground">Cargando seguimiento...</p>
-            <p className="text-xs text-muted-foreground mt-1">Recuperando pedidos desde la base de datos</p>
+      <div className="max-w-7xl mx-auto" role="status" aria-live="polite">
+        {/* Esqueleto de la estructura REAL (cabecera + hero + carpetas) en vez
+            de un spinner centrado: la asesora ya ve dónde va a estar cada cosa
+            y no hay salto de layout cuando entran los datos. El aviso de texto
+            se conserva íntegro para lectores de pantalla y para quien lee. */}
+        <div className="mb-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+              <Truck size={20} strokeWidth={2.25} />
+            </span>
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <RefreshCw size={14} className="text-accent animate-spin" aria-hidden="true" />
+                Cargando seguimiento...
+              </p>
+              <p className="text-xs text-muted-foreground">Recuperando pedidos desde la base de datos</p>
+            </div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div className="md:col-span-7 h-32 rounded-3xl border border-border bg-card/40 shadow-card3d-lg motion-safe:animate-pulse" aria-hidden="true" />
+            <div className="md:col-span-5 h-32 rounded-2xl border border-border bg-card/40 shadow-card3d motion-safe:animate-pulse" aria-hidden="true" />
+          </div>
+        </div>
+        <div className="flex gap-3 overflow-hidden" aria-hidden="true">
+          {[0, 1, 2, 3].map(i => (
+            <div
+              key={i}
+              className="shrink-0 w-[286px] rounded-2xl border border-border bg-card/40 shadow-card3d motion-safe:animate-pulse"
+              style={{ height: `${320 - i * 40}px`, animationDelay: `${i * 120}ms` }}
+            />
+          ))}
         </div>
       </div>
     );
@@ -400,45 +479,65 @@ export default function SeguimientoTab() {
   return (
     <div className="max-w-7xl mx-auto">
       <SegCounterBar />
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-        className="mb-6 space-y-4"
-      >
+      <div className="mb-6 space-y-4">
         {/* Título y controles en FILAS SEPARADAS, no lado a lado.
             El cluster de controles son 6 (toggle, buscador, rango de fechas,
             total, WhatsApp, sincronizar) y su ancho mínimo ronda los 1100px:
             al ponerlo en la misma fila que el título, no podía encogerse por
             debajo de ese mínimo y le dejaba al título ~100px, partiéndolo en
             una palabra por línea. Apilarlos lo hace imposible por construcción. */}
-        <header className="flex flex-col gap-4">
-          <div className="min-w-0 space-y-1.5">
-            <div className="hud-label whitespace-nowrap truncate mb-1">
-              CRM · Operadora
+        <motion.header {...fadeUp(0)} className="flex flex-col gap-4">
+          {/* Patrón HudTopbar del Dashboard: identidad a la izquierda, salud
+              del dato a la derecha. El reloj de última sincronización vivía
+              perdido al final de la fila de botones y oculto en <md — que es
+              justo donde trabajan las asesoras. Sigue con su guard `&&`: si no
+              hay dato NO se pinta una hora falsa. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0 space-y-1.5">
+              <div className="hud-label whitespace-nowrap truncate mb-1">
+                CRM · Operadora
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-3">
+                <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+                  <Truck size={20} strokeWidth={2.25} />
+                </span>
+                Seguimiento
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Pedidos en ruta — todos los estados de Dropi sincronizados.
+              </p>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-3">
-              <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
-                <Truck size={20} strokeWidth={2.25} />
+            {segLastUpdate && (
+              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-card/40 border border-border shadow-card3d text-xs text-muted-foreground shrink-0 self-start sm:self-end">
+                <span className="w-2 h-2 rounded-full bg-success glow-success motion-safe:animate-gb-pulse" aria-hidden="true" />
+                <span className="font-mono tabular-nums">
+                  {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                </span>
               </span>
-              Seguimiento
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Pedidos en ruta — todos los estados de Dropi sincronizados.
-            </p>
+            )}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Toggle de vista: Tablero (Kommo, en vivo) ↔ Lista (CrmTable) */}
-            <div className="inline-flex flex-wrap gap-2">
+          {/* Fila de controles en TRES niveles de peso, en vez de seis grupos
+              indistinguibles: (1) el modo de trabajo con superficie propia,
+              (2) los filtros, (3) las acciones de datos empujadas al extremo. */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* NIVEL 1 — Segmented control de vista: Tablero (Kommo, en vivo) ↔
+                Lista (CrmTable). Es el switch que cambia TODA la pantalla, así
+                que sale del pelotón de pills y toma superficie propia con la
+                pastilla activa sólida (receta de toggles del Dashboard). */}
+            <div
+              className="inline-flex gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border shadow-card3d"
+              role="group"
+              aria-label="Modo de trabajo"
+            >
               <button
                 type="button"
                 onClick={() => setViewMode('board')}
                 aria-pressed={viewMode === 'board'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors',
+                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
                   viewMode === 'board'
                     ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                    : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
               >
                 <LayoutGrid size={13} aria-hidden="true" /> Tablero
@@ -448,30 +547,33 @@ export default function SeguimientoTab() {
                 onClick={() => setViewMode('list')}
                 aria-pressed={viewMode === 'list'}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors',
+                  'inline-flex items-center gap-1.5 px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
                   viewMode === 'list'
                     ? 'font-semibold bg-accent/16 border border-accent/40 text-accent shadow-glow3d'
-                    : 'font-medium bg-card/40 border border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                    : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
               >
                 <List size={13} aria-hidden="true" /> Lista
               </button>
             </div>
-            {/* Buscador (nombre · teléfono · ciudad · guía · producto) */}
+            <div className="h-6 w-px bg-border hidden sm:block" aria-hidden="true" />
+            {/* NIVEL 2 — Buscador (nombre · teléfono · ciudad · guía · producto).
+                Es lo que usa la asesora cuando el cliente llama y dice su
+                nombre: se ensancha para tener rango de herramienta primaria. */}
             <div className="relative">
-              <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden="true" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden="true" />
               <input
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Buscar…"
                 aria-label="Buscar en seguimiento"
-                className="h-9 w-36 sm:w-52 rounded-xl border border-border bg-card/40 pl-7 pr-7 text-xs text-foreground placeholder:text-muted-foreground hover:border-border-strong transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                className="h-11 w-44 sm:w-72 rounded-xl border border-border bg-card/40 pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground hover:border-border-strong transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
               />
               {search && (
                 <button type="button" onClick={() => setSearch('')} aria-label="Limpiar búsqueda"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <X size={12} aria-hidden="true" />
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X size={13} aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -532,75 +634,195 @@ export default function SeguimientoTab() {
               )}
             </div>
 
-            {/* flex-wrap + min-w-0: con los tres contadores ocultos a la vez el
-                ancho intrínseco pasa de 450px y forzaba scroll horizontal en
-                pantallas de 375px. Ahora envuelve en vez de desbordar. */}
-            <div className="flex flex-wrap items-center gap-2 min-w-0 rounded-xl border border-border bg-card/40 px-3 py-2 shadow-card3d hover:border-border-strong transition-colors">
-              <Package size={13} className="text-muted-foreground" aria-hidden="true" />
-              <span className="hud-label">Total</span>
-              <span className="text-sm font-semibold text-foreground font-mono tabular-nums">{stats.total}</span>
-              {(dateFrom || dateTo) && stats.total !== segData.length && (
-                <span className="text-[10px] text-muted-foreground/70 font-mono">/ {segData.length}</span>
-              )}
-              {hiddenStaleCount > 0 && (
-                <span
-                  className="text-[10px] text-muted-foreground/70 font-mono"
-                  title={`${hiddenStaleCount} pedidos con más de ${DEFAULT_WINDOW_DAYS} días (fuera de la ventana por defecto de los últimos ${DEFAULT_WINDOW_DAYS} días). No se borraron — vé el histórico completo poniendo un rango de fechas.`}
-                >
-                  · {hiddenStaleCount} viejos ocultos
-                </span>
-              )}
-              {hiddenSupersededCount > 0 && (
-                <span
-                  className="text-[10px] text-warning/80 font-mono"
-                  title={`${hiddenSupersededCount} pedido${hiddenSupersededCount > 1 ? 's' : ''} reemplazados por Dropi (mismo cliente + producto, nueva versión más reciente). Se ocultan para no duplicar la cola — el más reciente sí aparece.`}
-                >
-                  · {hiddenSupersededCount} reemplazados Dropi
-                </span>
-              )}
-              {hiddenClosedCount > 0 && (
-                <span
-                  className="text-[10px] text-muted-foreground/70 font-mono"
-                  title={`${hiddenClosedCount} pedido${hiddenClosedCount > 1 ? 's' : ''} cerrados (Resuelto/Devolución) ocultos. No se borraron — aparecen en el histórico con un rango de fechas más amplio.`}
-                >
-                  · {hiddenClosedCount} resueltos/devueltos ocultos
-                </span>
-              )}
+            {/* NIVEL 3 — Acciones de datos, empujadas al extremo con ml-auto
+                para que no compitan con los filtros. Se conservan los DOS
+                botones (y por lo tanto los dos indicadores de carga): isSyncing-
+                Dropi y segLoading son estados independientes, y fusionarlos
+                dejaría a la asesora sin saber cuál de los dos corrió. */}
+            <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+              <WaInbox storeId={activeStoreId} />
+              {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
+                  visibles ahora (vs "Actualizar" que solo re-lee la base). */}
+              <button
+                onClick={() => refreshNow(activeStoreId, { force: true })}
+                disabled={isSyncingDropi}
+                title="Trae el estado real de Dropi de los pedidos recientes ahora mismo"
+                className="btn-accent-3d inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />
+                <span className="hidden sm:inline">{isSyncingDropi ? 'Sincronizando...' : 'Sincronizar Dropi'}</span>
+              </button>
+              <button
+                onClick={() => loadSegData(true)}
+                disabled={segLoading}
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} aria-hidden="true" />
+                <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
+              </button>
             </div>
-            <WaInbox storeId={activeStoreId} />
-            {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
-                visibles ahora (vs "Actualizar" que solo re-lee la base). */}
-            <button
-              onClick={() => refreshNow(activeStoreId, { force: true })}
-              disabled={isSyncingDropi}
-              title="Trae el estado real de Dropi de los pedidos recientes ahora mismo"
-              className="btn-accent-3d inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-            >
-              <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />
-              <span className="hidden sm:inline">{isSyncingDropi ? 'Sincronizando...' : 'Sincronizar Dropi'}</span>
-            </button>
-            <button
-              onClick={() => loadSegData(true)}
-              disabled={segLoading}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-            >
-              <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} aria-hidden="true" />
-              <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
-            </button>
-            {segLastUpdate && (
-              <span className="text-[11px] text-muted-foreground font-mono tabular-nums hidden md:inline">
-                {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            )}
           </div>
-        </header>
+        </motion.header>
+
+        {/* ─────────────────────────────────────────────────────────────
+            HERO — "cómo voy hoy" antes que cualquier filtro.
+            El contador diario vivía ENTERRADO debajo de los chips y del
+            resumen por estado, aunque es la única pieza que ya usaba
+            TiltCard+CountUp (el hero del Dashboard). Sube arriba del todo y
+            toma el molde completo: aro con el % del día (el pct ya estaba
+            calculado, solo no se dibujaba) + la cifra contando + la barra de
+            meta. Al lado, el Total con anatomía de StatTile.
+            ───────────────────────────────────────────────────────────── */}
+        {(() => {
+          // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
+          // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
+          const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
+          const feedBase = listaActiva && !listaActiva.externalRoute
+            ? counterSource.filter((o) => listaActiva.matches(o))
+            : counterSource;
+          const total = feedBase.length;
+          // Se conserva EXACTA la condición original (`total === 0` → sin hero):
+          // no se inventa un estado vacío que afirme algo que no se midió.
+          const heroVisible = total > 0;
+          const gestionados = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
+          const faltan = Math.max(0, total - gestionados);
+          const pct = total > 0 ? Math.round((gestionados / total) * 100) : 0;
+          const done = faltan === 0;
+          const tone = done
+            ? 'success'
+            : faltan >= Math.max(1, Math.ceil(total / 2)) ? 'danger' : 'warning';
+          const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
+          const barTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
+          const faltanTone = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : 'text-danger';
+          // num-glow solo existe para success/danger en index.css — warning va
+          // sin glow en vez de inventar un token que no está definido.
+          const faltanGlow = tone === 'success' ? 'num-glow-success' : tone === 'danger' ? 'num-glow-danger' : '';
+          return (
+            <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              {heroVisible && (
+                <TiltCard
+                  sheen
+                  brackets
+                  wrapperClassName="md:col-span-7"
+                  className={`relative bg-card/40 border ${borderTone} rounded-3xl p-6 pl-7 shadow-card3d-lg h-full`}
+                >
+                  <span className={`absolute left-0 top-5 bottom-5 w-1 rounded-full ${barTone}`} aria-hidden="true" />
+                  <div className="flex items-center gap-5 flex-wrap sm:flex-nowrap tilt-layer-2">
+                    {/* Aro del día: el mismo % que llena la barra, dibujado con
+                        el gauge del Dashboard. Antes el pct solo existía como
+                        una barra de 1.5px al pie de la tarjeta. */}
+                    <div className="shrink-0 mx-auto sm:mx-0">
+                      {/* El aro toma el MISMO tono que el resto de la tarjeta:
+                          es el elemento más grande y con la rampa índigo fija
+                          presidía "sano" una tarjeta en rojo. */}
+                      <GaugeRing value={pct} size={132} thickness={13} tone={tone} />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2.5 tilt-layer-3">
+                      <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
+                        <CountUp value={faltan} className={`text-4xl font-extrabold leading-none ${faltanTone} ${faltanGlow}`} />
+                        <span className="text-sm font-semibold text-foreground">
+                          {done
+                            ? '¡Todo gestionado hoy! ✓'
+                            : `${faltan === 1 ? 'pedido' : 'pedidos'} por gestionar${listaActiva && !listaActiva.externalRoute ? ' en esta lista' : ''} hoy`}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground flex items-baseline gap-x-1.5 flex-wrap">
+                        <span>Gestionados</span>
+                        <strong className="font-mono tabular-nums text-foreground">{gestionados}</strong>
+                        <span>de</span>
+                        <strong className="font-mono tabular-nums text-foreground">{total}</strong>
+                      </div>
+                      {/* Barra de progreso del día — se llena a medida que gestionás. */}
+                      <div className="h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
+                        <div className={`h-full rounded-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {viewMode === 'board' && (
+                        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none pt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={onlyUntouchedSeg}
+                            onChange={(e) => setOnlyUntouchedSeg(e.target.checked)}
+                            className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
+                          />
+                          Ocultar gestionados
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </TiltCard>
+              )}
+
+              {/* TOTAL — anatomía de StatTile: chip con glow, cifra contando,
+                  hud-label bajo la cifra. Las tres notas de transparencia
+                  ("viejos ocultos" / "reemplazados Dropi" / "resueltos ocultos")
+                  son las que explican por qué el total no cuadra con Dropi:
+                  bajan a una línea propia legible en vez de quedar apretadas en
+                  10px al lado del número. Sus condiciones y sus `title` van
+                  intactos. */}
+              <TiltCard
+                perspective={1200}
+                wrapperClassName={heroVisible ? 'md:col-span-5' : 'md:col-span-12'}
+                className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full"
+              >
+                <div className="flex items-start justify-between gap-2 tilt-layer-2">
+                  <span className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 bg-accent/14 border-accent/30 text-accent glow-accent">
+                    <Package size={17} aria-hidden="true" />
+                  </span>
+                  {(dateFrom || dateTo) && stats.total !== segData.length && (
+                    <span className="text-[11px] font-medium text-muted-foreground font-mono tabular-nums">
+                      / {segData.length}
+                    </span>
+                  )}
+                </div>
+                {/* Cifra deliberadamente MÁS CHICA que la del hero. Las dos son
+                    grandes, adyacentes y de alcance distinto: el hero cuenta la
+                    LISTA SLA activa (feedBase) y este Total cuenta todo lo
+                    cargado (dedupedByDate). A igual peso tipográfico se leían
+                    como la misma métrica y "no cuadraban". El hero es el
+                    protagonista; este es contexto. */}
+                <div className="text-2xl font-bold leading-none mt-3 text-accent tilt-layer-3">
+                  <CountUp value={stats.total} />
+                </div>
+                <div className="hud-label text-subtle mt-2 tilt-layer-1">Total</div>
+                {(hiddenStaleCount > 0 || hiddenSupersededCount > 0 || hiddenClosedCount > 0) && (
+                  <div className="mt-3 pt-3 border-t border-border/50 flex flex-col gap-1 tilt-layer-1">
+                    {hiddenStaleCount > 0 && (
+                      <span
+                        className="text-[11px] text-muted-foreground font-mono tabular-nums"
+                        title={`${hiddenStaleCount} pedidos con más de ${DEFAULT_WINDOW_DAYS} días (fuera de la ventana por defecto de los últimos ${DEFAULT_WINDOW_DAYS} días). No se borraron — vé el histórico completo poniendo un rango de fechas.`}
+                      >
+                        · {hiddenStaleCount} viejos ocultos
+                      </span>
+                    )}
+                    {hiddenSupersededCount > 0 && (
+                      <span
+                        className="text-[11px] text-warning font-mono tabular-nums"
+                        title={`${hiddenSupersededCount} pedido${hiddenSupersededCount > 1 ? 's' : ''} reemplazados por Dropi (mismo cliente + producto, nueva versión más reciente). Se ocultan para no duplicar la cola — el más reciente sí aparece.`}
+                      >
+                        · {hiddenSupersededCount} reemplazados Dropi
+                      </span>
+                    )}
+                    {hiddenClosedCount > 0 && (
+                      <span
+                        className="text-[11px] text-muted-foreground font-mono tabular-nums"
+                        title={`${hiddenClosedCount} pedido${hiddenClosedCount > 1 ? 's' : ''} cerrados (Resuelto/Devolución) ocultos. No se borraron — aparecen en el histórico con un rango de fechas más amplio.`}
+                      >
+                        · {hiddenClosedCount} resueltos/devueltos ocultos
+                      </span>
+                    )}
+                  </div>
+                )}
+              </TiltCard>
+            </motion.div>
+          );
+        })()}
 
         {/* Listas de trabajo (SLA) — forma PRINCIPAL de priorizar. Reemplaza
             al viejo dropdown + banner de atrasados: una sola fila de chips
             ordenados por urgencia, con conteo y un "Sugerido" hacia dónde
             empezar. Solo se muestran las listas con pedidos (+ las que linkean
             a otra ruta, ej. confirmación). */}
-        <div className="space-y-2">
+        <motion.div {...fadeUp(0.12)} className="space-y-2">
           <div className="flex items-center gap-1.5 hud-label">
             <Filter size={12} aria-hidden="true" /> Listas de trabajo
           </div>
@@ -614,7 +836,7 @@ export default function SeguimientoTab() {
               onClick={() => setListaSlug(null)}
               aria-pressed={!listaSlug}
               className={cn(
-                "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[38px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                 !listaSlug
                   ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
                   : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
@@ -623,7 +845,10 @@ export default function SeguimientoTab() {
               Todas
               {/* chipsBase (no dedupedByDate): en vista Lista respira con el
                   mismo snapshot congelado que los demás chips y la tabla. */}
-              <span className="font-mono tabular-nums text-[11px] opacity-80">{chipsBase.length}</span>
+              <span className={cn(
+                "font-mono tabular-nums text-[13px] font-bold",
+                !listaSlug ? "text-accent num-glow-accent" : "text-foreground",
+              )}>{chipsBase.length}</span>
             </button>
             {SEG_LISTS
               .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
@@ -631,6 +856,10 @@ export default function SeguimientoTab() {
                 const active = listaSlug === l.slug;
                 const count = listCounts[l.slug] ?? 0;
                 const suggested = l.slug === suggestedSlug;
+                // Tinte completo por urgencia: el chip ENTERO habla, no un punto
+                // de 1.5px. Las listas ya vienen ordenadas por prioridad de
+                // embudo en segLists.ts — el diseño ahora lo respeta.
+                const lt = LIST_TONE_CHIP[l.tone] ?? LIST_TONE_CHIP.neutral;
                 return (
                   <button
                     key={l.slug}
@@ -639,21 +868,27 @@ export default function SeguimientoTab() {
                     aria-pressed={active}
                     title={l.label}
                     className={cn(
-                      "snap-start shrink-0 inline-flex items-center gap-2 rounded-xl border px-4 min-h-[38px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                      "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                       active
                         ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
-                        : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong"
+                        : cn("font-medium", lt.idle),
                     )}
                   >
                     {l.externalRoute
-                      ? <ExternalLink size={12} className={active ? '' : 'text-muted-foreground'} aria-hidden="true" />
-                      : <span className={cn("w-1.5 h-1.5 rounded-full", active ? "bg-accent" : LIST_TONE_DOT[l.tone])} aria-hidden="true" />}
+                      ? <ExternalLink size={13} aria-hidden="true" />
+                      : <span className={cn("w-2 h-2 rounded-full shrink-0", active ? "bg-accent glow-accent" : LIST_TONE_DOT[l.tone])} aria-hidden="true" />}
                     <span className="truncate max-w-[15rem]">{l.label}</span>
+                    {/* El conteo SOLO se pinta en listas que se cuentan acá. Las
+                        que viven en otra ruta (confirmación) tienen count 0 por
+                        construcción: mostrarlo sería un 0 mentiroso. */}
                     {!l.externalRoute && (
-                      <span className="font-mono tabular-nums text-[11px] opacity-80">{count}</span>
+                      <span className={cn(
+                        "font-mono tabular-nums text-[13px] font-bold",
+                        active ? "text-accent num-glow-accent" : cn(lt.count, lt.numGlow),
+                      )}>{count}</span>
                     )}
                     {suggested && !active && (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-danger/14 border border-danger/30 text-danger">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-accent/14 border border-accent/30 text-accent glow-accent shrink-0">
                         Sugerido
                       </span>
                     )}
@@ -661,7 +896,7 @@ export default function SeguimientoTab() {
                 );
               })}
           </div>
-        </div>
+        </motion.div>
 
         {/* Resumen por estado — vista SECUNDARIA, colapsada por defecto. Las
             listas de trabajo (arriba) son la forma principal de priorizar;
@@ -697,20 +932,25 @@ export default function SeguimientoTab() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
                 whileTap={{ scale: 0.97 }}
-                className={`group relative bg-card/40 border rounded-2xl px-3 py-3 flex flex-col items-center gap-1.5 shadow-card3d transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background text-center ${
+                className={`group relative bg-card/40 border rounded-2xl p-4 flex flex-col items-start shadow-card3d hairline-top transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background text-left ${
                   isActive
                     ? `${t.activeRing} ${t.activeBg}`
                     : `border-border ${t.cardHover}`
                 }`}
               >
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText}`}>
+                {/* Anatomía de StatTile: chip de ícono 36px con la fórmula de
+                    glow del lenguaje · cifra contando en el color del tono ·
+                    rótulo BAJO la cifra (nunca encima). Antes era chip plano +
+                    número estático centrado: la misma información dibujada sin
+                    ninguna de las señales del Dashboard. */}
+                <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText} ${t.glow}`}>
                   {card.icon}
-                </div>
-                <span className={`font-mono text-xl font-bold leading-none tabular-nums ${isActive ? t.numberColor : 'text-foreground'}`}>
-                  {card.value}
                 </span>
-                <span className={`hud-label text-center leading-tight ${
-                  isActive ? t.numberColor : 'text-muted-foreground'
+                <span className={`font-mono text-[26px] font-bold leading-none tabular-nums mt-3 ${t.numberColor} ${t.numGlow}`}>
+                  <CountUp value={card.value} />
+                </span>
+                <span className={`hud-label leading-tight mt-2 ${
+                  isActive ? t.numberColor : 'text-subtle'
                 }`}>
                   {card.label}
                 </span>
@@ -719,7 +959,7 @@ export default function SeguimientoTab() {
           })}
         </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Banner solo para listas que viven en OTRA ruta (ej. confirmación).
           Las demás listas ya muestran su estado activo + conteo en los chips
@@ -752,73 +992,17 @@ export default function SeguimientoTab() {
         </motion.div>
       )}
 
-      {/* Contador diario de seguimiento — análogo a la cola de Confirmar. "Te
-          faltan N" es el número grande que BAJA a medida que la operadora
-          gestiona pedidos (touchpoint SEG:* → mySegTouchedToday, por phone, mismo
-          patrón que classifySegOwnershipFromTps en segOwnership.ts). Con "Ocultar
-          gestionados" (default), cada pedido gestionado desaparece del tablero. */}
-      {(() => {
-        // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
-        // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
-        const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
-        const feedBase = listaActiva && !listaActiva.externalRoute
-          ? counterSource.filter((o) => listaActiva.matches(o))
-          : counterSource;
-        const total = feedBase.length;
-        if (total === 0) return null;
-        const gestionados = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
-        const faltan = Math.max(0, total - gestionados);
-        const pct = total > 0 ? Math.round((gestionados / total) * 100) : 0;
-        const done = faltan === 0;
-        const tone = done
-          ? 'success'
-          : faltan >= Math.max(1, Math.ceil(total / 2)) ? 'danger' : 'warning';
-        const borderTone = tone === 'success' ? 'border-success/30' : tone === 'warning' ? 'border-warning/30' : 'border-danger/30';
-        const barTone = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : 'bg-danger';
-        const faltanTone = tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : 'text-danger';
-        return (
-          <TiltCard sheen brackets wrapperClassName="mb-3" className={`relative bg-card/40 border ${borderTone} rounded-2xl p-4 pl-5 shadow-card3d-lg`}>
-            <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${barTone}`} aria-hidden="true" />
-            <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
-              <div className="flex items-baseline gap-2 min-w-0">
-                <CountUp value={faltan} className={`text-3xl font-extrabold leading-none ${faltanTone}`} />
-                <span className="text-sm font-semibold text-foreground">
-                  {done
-                    ? '¡Todo gestionado hoy! ✓'
-                    : `${faltan === 1 ? 'pedido' : 'pedidos'} por gestionar${listaActiva && !listaActiva.externalRoute ? ' en esta lista' : ''} hoy`}
-                </span>
-              </div>
-              <div className="text-xs text-muted-foreground flex items-baseline gap-x-1.5">
-                <span>Gestionados</span>
-                <strong className="font-mono tabular-nums text-foreground">{gestionados}</strong>
-                <span>de</span>
-                <strong className="font-mono tabular-nums text-foreground">{total}</strong>
-              </div>
-              {viewMode === 'board' && (
-                <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={onlyUntouchedSeg}
-                    onChange={(e) => setOnlyUntouchedSeg(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
-                  />
-                  Ocultar gestionados
-                </label>
-              )}
-            </div>
-            {/* Barra de progreso del día — se llena a medida que gestionás. */}
-            <div className="mt-3 h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
-              <div className={`h-full rounded-full ${barTone} transition-all duration-300`} style={{ width: `${pct}%` }} />
-            </div>
-          </TiltCard>
-        );
-      })()}
+      {/* El contador diario ("Te faltan N") ya NO vive acá: subió al hero, junto
+          al título, para que la asesora vea "cómo voy hoy" ANTES de cualquier
+          filtro — igual que el aro de confirmación del Dashboard. Misma fuente
+          (chipsBase en Lista / dedupedByDate en Tablero), misma fórmula. */}
 
       {viewMode === 'board' ? (
         <SegBoard
           data={boardData}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}
+          celebratory={allManagedToday}
           emptyTitle={allManagedToday ? '¡Todo gestionado hoy! ✓' : undefined}
           emptyDesc={allManagedToday
             ? 'Ya gestionaste todos los pedidos de hoy. Destildá "Ocultar gestionados" en el contador para verlos de nuevo, o vuelve mañana para el próximo ciclo.'

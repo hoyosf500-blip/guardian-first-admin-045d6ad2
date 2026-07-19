@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { Fragment, memo, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
@@ -12,6 +12,7 @@ import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useSessionState } from '@/hooks/useSessionState';
+import { TiltCard } from '@/components/ui3d';
 import { cn } from '@/lib/utils';
 
 /**
@@ -30,7 +31,11 @@ type Tone = 'neutral' | 'info' | 'accent' | 'warning' | 'danger' | 'success' | '
 
 interface ColumnDef { key: SegStatusKey; label: string; icon: React.ReactNode; tone: Tone; }
 
-// Orden de pipeline (izq → der), estilo embudo logístico.
+// Orden de pipeline (izq → der), estilo embudo logístico. ESTE ORDEN NO SE
+// TOCA en un pase visual: las asesoras lo tienen memorizado y moverlo es
+// arquitectura de información, no dibujo. (Un pase anterior había subido
+// "Otros" al medio del embudo; se revirtió — ver CATCHALL_KEYS abajo, que
+// resuelve la misma preocupación sin reordenar nada.)
 const BOARD_COLUMNS: ColumnDef[] = [
   { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={13} />, tone: 'neutral' },
   { key: 'guia', label: 'Guía Generada', icon: <Tag size={13} />, tone: 'info' },
@@ -49,16 +54,40 @@ const BOARD_COLUMNS: ColumnDef[] = [
   { key: 'otros', label: 'Otros', icon: <Layers size={13} />, tone: 'muted' },
 ];
 
+/**
+ * Fases donde TODAVÍA se puede hacer algo. Las que no están acá son terminales
+ * (el pedido ya llegó a su desenlace) y se dibujan como un grupo atenuado y más
+ * angosto al final: siguen enteras y clicables, pero dejan de pesar lo mismo
+ * que "En Reparto", que es donde se decide la entrega.
+ *
+ */
+const LIVE_KEYS = new Set<SegStatusKey>([
+  'procesamiento', 'guia', 'bodega_trans', 'transito', 'reparto', 'oficina', 'novedad', 'novedad_sol',
+]);
+
+/**
+ * "Otros" no es ni VIVA ni TERMINAL: es el catch-all de los estados que Dropi
+ * inventa —sobre todo en EC— y por lo tanto la señal de que hay drift sin
+ * mapear. Va al final del embudo, como siempre, pero NO se atenúa con el grupo
+ * terminal: atenuar la única columna que avisa de un estado desconocido era
+ * apagar justo la alarma. Queda angosta (no compite con las fases vivas) pero
+ * a opacidad plena.
+ */
+const CATCHALL_KEYS = new Set<SegStatusKey>(['otros']);
+
 // Cada tono aporta: punto con glow (acento semántico del encabezado), la barra
-// superior de la columna y el chip de conteo (color + número, nunca color solo).
-const TONE: Record<Tone, { dot: string; headBar: string; count: string }> = {
-  neutral: { dot: 'bg-muted-foreground/50', headBar: 'border-t-muted-foreground/40', count: 'bg-muted/50 text-muted-foreground border border-border' },
-  info: { dot: 'bg-info glow-info', headBar: 'border-t-info', count: 'bg-info/14 text-info border border-info/30' },
-  accent: { dot: 'bg-accent glow-accent', headBar: 'border-t-accent', count: 'bg-accent/14 text-accent border border-accent/30' },
-  warning: { dot: 'bg-warning glow-warning', headBar: 'border-t-warning', count: 'bg-warning/14 text-warning border border-warning/30' },
-  danger: { dot: 'bg-danger glow-danger', headBar: 'border-t-danger', count: 'bg-danger/14 text-danger border border-danger/30' },
-  success: { dot: 'bg-success glow-success', headBar: 'border-t-success', count: 'bg-success/14 text-success border border-success/30' },
-  muted: { dot: 'bg-muted-foreground/40', headBar: 'border-t-border-strong', count: 'bg-muted/40 text-muted-foreground border border-border' },
+// superior de la columna, el chip de conteo (color + número, nunca color solo),
+// y el color/glow de la cifra cuando el conteo toma peso de KPI en el header.
+// `numGlow` solo se declara donde index.css define el token (accent/success/
+// danger); el resto va vacío en vez de inventar una clase inexistente.
+const TONE: Record<Tone, { dot: string; headBar: string; count: string; num: string; numGlow: string }> = {
+  neutral: { dot: 'bg-muted-foreground/50', headBar: 'border-t-muted-foreground/40', count: 'bg-muted/50 text-muted-foreground border border-border', num: 'text-foreground', numGlow: '' },
+  info: { dot: 'bg-info glow-info', headBar: 'border-t-info', count: 'bg-info/14 text-info border border-info/30', num: 'text-info', numGlow: '' },
+  accent: { dot: 'bg-accent glow-accent', headBar: 'border-t-accent', count: 'bg-accent/14 text-accent border border-accent/30', num: 'text-accent', numGlow: 'num-glow-accent' },
+  warning: { dot: 'bg-warning glow-warning', headBar: 'border-t-warning', count: 'bg-warning/14 text-warning border border-warning/30', num: 'text-warning', numGlow: '' },
+  danger: { dot: 'bg-danger glow-danger', headBar: 'border-t-danger', count: 'bg-danger/14 text-danger border border-danger/30', num: 'text-danger', numGlow: 'num-glow-danger' },
+  success: { dot: 'bg-success glow-success', headBar: 'border-t-success', count: 'bg-success/14 text-success border border-success/30', num: 'text-success', numGlow: 'num-glow-success' },
+  muted: { dot: 'bg-muted-foreground/40', headBar: 'border-t-border-strong', count: 'bg-muted/40 text-muted-foreground border border-border', num: 'text-muted-foreground', numGlow: '' },
 };
 
 function statusAgeDays(o: OrderData): number {
@@ -76,12 +105,25 @@ function hoursSinceMovement(o: OrderData): number | null {
   return (Date.now() - d.getTime()) / 3_600_000;
 }
 
-function freshnessDot(o: OrderData): { cls: string; title: string } {
+/**
+ * Punto de frescura: hace cuánto se movió el pedido EN DROPI de verdad.
+ *
+ * CUATRO estados, y el cuarto es "no sé": sin `lastMovementAt` va GRIS, nunca
+ * verde ni rojo. Esa distinción es la que impide que un pedido sin dato se lea
+ * como un pedido sano — no se toca.
+ *
+ * Lo que cambia es el DIBUJO: era un punto de 2px que comunicaba una decisión
+ * solo con color, algo que el lenguaje del Dashboard no hace en ningún lado.
+ * Ahora es una pastilla tonal con anillo y glow (salvo el gris de "no sé", que
+ * a propósito NO lleva glow: un estado desconocido no debe brillar como los
+ * medidos). El texto sigue viajando íntegro en `title` + en el `sr-only`.
+ */
+function freshnessDot(o: OrderData): { cls: string; ring: string; title: string } {
   const h = hoursSinceMovement(o);
-  if (h == null) return { cls: 'bg-muted-foreground/40', title: 'Sin fecha de último movimiento' };
-  if (h < 24) return { cls: 'bg-success', title: 'Movido en las últimas 24 h' };
-  if (h < 72) return { cls: 'bg-warning', title: `Sin moverse hace ${Math.floor(h / 24)}–${Math.ceil(h / 24)} días` };
-  return { cls: 'bg-danger', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
+  if (h == null) return { cls: 'bg-muted-foreground/40', ring: 'ring-muted-foreground/20', title: 'Sin fecha de último movimiento' };
+  if (h < 24) return { cls: 'bg-success glow-success', ring: 'ring-success/25', title: 'Movido en las últimas 24 h' };
+  if (h < 72) return { cls: 'bg-warning glow-warning', ring: 'ring-warning/25', title: `Sin moverse hace ${Math.floor(h / 24)}–${Math.ceil(h / 24)} días` };
+  return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
 const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void }) {
@@ -130,13 +172,26 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
       {/* Fila de badges arriba (patrón del handoff: "● D3  PRIORIDAD"), para que
           el nombre del cliente use TODO el ancho de la columna en vez de pelear
           espacio con los badges. Era la causa principal del amontonamiento. */}
-      <div className="flex items-center gap-1.5">
-        <span className={cn('h-2 w-2 rounded-full shrink-0', fresh.cls)} title={fresh.title} aria-hidden="true" />
+      {/* Fila de señal: frescura (pastilla tonal) + días hábiles como CIFRA
+          (font-mono, el tratamiento de número del Dashboard) + prioridad
+          anclada a la derecha, que es donde el ojo barre buscando urgencias.
+          D{n} NO se tiñe por umbral: no existe un corte de SLA definido para
+          este contador, e inventarle uno sería pintar un veredicto que nadie
+          calculó. La frescura sí es semántica y ahí sí va el color. */}
+      <div className="flex items-center gap-2">
+        <span
+          className={cn('h-2.5 w-2.5 rounded-full shrink-0 ring-2', fresh.cls, fresh.ring)}
+          title={fresh.title}
+          aria-hidden="true"
+        />
         {/* El punto es decorativo (color solo) — el estado de frescura va en texto
             para lector de pantalla, ya que en touch el `title` no se ve. */}
         <span className="sr-only">{fresh.title}</span>
-        <span className="text-xs font-mono tabular-nums font-semibold text-muted-foreground" title="Días hábiles en este estado">
-          D{dias}
+        <span
+          className="inline-flex items-baseline gap-0.5 text-[13px] font-mono tabular-nums font-bold text-foreground"
+          title="Días hábiles en este estado"
+        >
+          <span className="text-[10px] font-semibold text-muted-foreground">D</span>{dias}
         </span>
         {pLevel !== 'low' && (
           <span className={cn('ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-lg border shrink-0', pConfig.bgClass, pConfig.color)}>
@@ -145,19 +200,32 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         )}
       </div>
 
-      {/* Nombre a todo el ancho + id */}
-      <div className="mt-1.5 min-w-0">
-        <span className="block text-[13.5px] font-bold text-foreground truncate leading-tight">
+      {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
+          quién llama, así que sube de tamaño y peso. El externalId baja a
+          font-mono apagado: era el elemento más coloreado de la tarjeta
+          (text-accent) compitiendo con el nombre, y es un número de sistema.
+          El ancho para crecer sale del pie de acciones, no de agrandar la
+          tarjeta: esto sigue siendo pantalla de trabajo y la densidad manda.
+          `title` con el nombre completo — el truncate CSS lo cortaba sin
+          ninguna forma de leerlo entero (SegCard no usa TruncatedText). */}
+      <div className="mt-2 min-w-0">
+        <span
+          className="block text-[15px] font-bold text-foreground truncate leading-tight"
+          title={o.nombre || 'Sin nombre'}
+        >
           {o.nombre || 'Sin nombre'}
         </span>
         {o.externalId
-          ? <span className="text-xs text-accent font-mono tabular-nums mt-0.5 block truncate">{o.externalId}</span>
-          : <span className="text-xs text-muted-foreground font-mono mt-0.5 block">Sin ID</span>}
+          ? <span className="text-[11px] text-muted-foreground font-mono tabular-nums mt-1 block truncate">{o.externalId}</span>
+          : <span className="text-[11px] text-muted-foreground font-mono mt-1 block">Sin ID</span>}
       </div>
 
-      {/* Producto · ciudad en UNA línea (en el mockup van juntos) */}
+      {/* Producto · ciudad como subtítulo (en el mockup van juntos) */}
       {(o.producto || o.ciudad) && (
-        <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+        <div
+          className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground min-w-0"
+          title={[o.producto, o.ciudad].filter(Boolean).join(' · ')}
+        >
           {o.ciudad && <MapPin size={10} className="shrink-0" aria-hidden="true" />}
           <span className="truncate">
             {o.producto}
@@ -169,9 +237,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
 
       {/* Motivo de la novedad / instrucción de la transportadora. Solo en fases
           vivas: `novedad` sobrevive en pedidos ya terminales (entregado/devuelto)
-          y ahí sería una advertencia sobre algo que ya no se puede gestionar. */}
+          y ahí sería una advertencia sobre algo que ya no se puede gestionar.
+          Tratamiento de callout del Dashboard (riel de color a la izquierda).
+          `title` con el texto COMPLETO: es texto literal de Dropi que la asesora
+          le repite al cliente, y el line-clamp-2 lo cortaba sin ninguna forma de
+          alcanzarlo — pérdida de información silenciosa justo donde más duele. */}
       {o.novedad && (tone === 'warning' || tone === 'accent' || tone === 'info' || tone === 'neutral') && (
-        <div className="mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/12 px-2 py-1.5">
+        <div
+          className="relative mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/12 pl-3 pr-2 py-1.5"
+          title={o.novedad}
+        >
+          <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full bg-warning" aria-hidden="true" />
           <AlertTriangle size={11} className="text-warning mt-0.5 shrink-0" aria-hidden="true" />
           <span className="text-xs text-foreground/90 leading-snug line-clamp-2">{o.novedad}</span>
         </div>
@@ -185,7 +261,14 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         </div>
         {/* Tres blancos táctiles dentro de una tarjeta que YA es clickeable: sin
             separación real y con menos de 44px, un toque impreciso disparaba la
-            acción vecina o navegaba al detalle. gap-2 + 44px mínimo cada uno. */}
+            acción vecina o navegaba al detalle. gap-2 + 44px mínimo cada uno.
+            El layout tolera 1, 2 o 3 botones: rastrear depende de que haya URL
+            de transportadora, y WhatsApp de waEnabled + teléfono normalizable.
+
+            Jerarquía: WhatsApp es la acción REAL (es como se contacta al
+            cliente) y va tintado; rastrear y refrescar son secundarias y van
+            fantasma. Antes los tres pesaban igual y se comían medio ancho de la
+            tarjeta con el mismo gris. */}
         <div className="flex items-center gap-2 shrink-0">
           {(trackUrl || carrierHome) && (
             <a
@@ -194,11 +277,21 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               onClick={(e) => e.stopPropagation()}
               title={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
               aria-label={trackUrl ? 'Rastrear envío' : 'Página de la transportadora'}
-              className="p-2.5 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors"
+              className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"
             >
               <ExternalLink size={14} aria-hidden="true" />
             </a>
           )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void refresh(activeStoreId, o.externalId); }}
+            disabled={isRefreshing || !o.externalId}
+            title="Refrescar estado desde Dropi"
+            aria-label="Refrescar estado desde Dropi"
+            className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
+          >
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
+          </button>
           {waEnabled && waPhone && (
             <button
               type="button"
@@ -208,21 +301,11 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               }}
               title="Abrir chat de WhatsApp (ver el bot / escribir)"
               aria-label="Abrir chat de WhatsApp"
-              className="p-2.5 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-success hover:bg-success/10 transition-colors"
+              className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg bg-success/12 border border-success/30 text-success hover:bg-success/20 hover:border-success/60 transition-colors"
             >
               <MessageCircle size={14} aria-hidden="true" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); void refresh(activeStoreId, o.externalId); }}
-            disabled={isRefreshing || !o.externalId}
-            title="Refrescar estado desde Dropi"
-            aria-label="Refrescar estado desde Dropi"
-            className="p-2.5 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-          >
-            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
-          </button>
         </div>
       </div>
     </div>
@@ -299,44 +382,67 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
 
   return (
     <div className="space-y-3">
-      {/* Barra de enfoque */}
-      <div className="flex items-center gap-3 rounded-2xl border border-border bg-card/40 shadow-card3d px-4 py-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
-        >
-          <ChevronLeft size={14} aria-hidden="true" /> Tablero
-        </button>
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', t.dot)} aria-hidden="true" />
-          <span className="text-foreground/90">{col.icon}</span>
-          <h3 className="text-sm font-bold text-foreground truncate">{col.label}</h3>
-          <span className={cn('text-[11px] font-mono tabular-nums font-semibold px-2 py-0.5 rounded-lg', t.count)}>{orders.length}</span>
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground font-mono tabular-nums">
-            {orders.length ? `${selIdx + 1} / ${orders.length}` : '0 / 0'}
-          </span>
+      {/* Barra de enfoque con peso de HudTopbar contextual: es el mejor flujo de
+          trabajo de la pantalla y estaba dibujado como una fila más. Identidad
+          de la carpeta a la izquierda, posición y navegación a la derecha. */}
+      <div className="rounded-2xl border border-border bg-card/40 shadow-card3d-lg hairline-top px-4 py-3.5">
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => { move(-1); listRef.current?.focus(); }}
-            disabled={selIdx <= 0}
-            title="Anterior (↑)"
-            className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+            onClick={onBack}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
           >
-            <ChevronUp size={15} aria-hidden="true" />
+            <ChevronLeft size={14} aria-hidden="true" /> Tablero
           </button>
-          <button
-            type="button"
-            onClick={() => { move(1); listRef.current?.focus(); }}
-            disabled={selIdx >= orders.length - 1}
-            title="Siguiente (↓)"
-            className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
-          >
-            <ChevronDown size={15} aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-9 h-9 rounded-xl border border-border bg-card/60 flex items-center justify-center shrink-0 text-foreground/90" aria-hidden="true">
+              {col.icon}
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-foreground truncate leading-tight">{col.label}</h3>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
+                <span className={cn('text-[13px] font-mono tabular-nums font-bold', t.num, t.numGlow)}>{orders.length}</span>
+              </div>
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            {/* Posición dentro de la carpeta con tratamiento de cifra. */}
+            <span className="text-sm text-foreground font-mono tabular-nums font-semibold">
+              {orders.length ? `${selIdx + 1} / ${orders.length}` : '0 / 0'}
+            </span>
+            <button
+              type="button"
+              onClick={() => { move(-1); listRef.current?.focus(); }}
+              disabled={selIdx <= 0}
+              title="Anterior (↑)"
+              className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+            >
+              <ChevronUp size={15} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => { move(1); listRef.current?.focus(); }}
+              disabled={selIdx >= orders.length - 1}
+              title="Siguiente (↓)"
+              className="p-2 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-40"
+            >
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
+          </div>
         </div>
+        {/* Avance por la carpeta — la asesora está recorriendo una cola y no
+            veía cuánto le falta. Es el MISMO "N / M" de arriba dibujado como
+            barra (decorativa: el texto ya lo dice para lector de pantalla), no
+            una métrica nueva. */}
+        {orders.length > 0 && (
+          <div className="mt-3 h-1 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
+            <div
+              className="h-full rounded-full bg-accent-gradient transition-[width] duration-700"
+              style={{ width: `${Math.round(((selIdx + 1) / orders.length) * 100)}%` }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Lista de la columna enfocada (solo estos pedidos) */}
@@ -397,9 +503,16 @@ interface SegBoardProps {
   statusFilter?: string | null;
   emptyTitle?: string;
   emptyDesc?: string;
+  /**
+   * El vacío es porque la asesora YA gestionó todo hoy (no porque no haya
+   * pedidos). Son dos cosas muy distintas y se dibujaban igual de apagadas;
+   * este es el único momento de recompensa de la pantalla. Presentación pura:
+   * el padre ya calculaba `allManagedToday` para elegir los textos.
+   */
+  celebratory?: boolean;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const navigate = useNavigate();
   // Scroll por columna persistido en sessionStorage → sobrevive el remount de
   // entrar/salir de un pedido (y los discards de tab). Se inicializa UNA sola vez
@@ -462,9 +575,30 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
   }
 
   if (columns.length === 0) {
+    // "No hay nada" y "ya lo hiciste todo" se dibujaban idénticos y apagados.
+    // El caso celebratorio toma el lenguaje del Dashboard (tarjeta con glow
+    // success + chip de ícono); el vacío normal se queda sobrio, como debe ser.
+    if (celebratory) {
+      return (
+        <TiltCard
+          sheen
+          className="bg-card/40 border border-success/30 rounded-3xl px-6 py-14 shadow-card3d-lg text-center flex flex-col items-center gap-4"
+        >
+          <span className="w-14 h-14 rounded-2xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center tilt-layer-3" aria-hidden="true">
+            <CheckCircle size={28} />
+          </span>
+          <div className="tilt-layer-2">
+            <p className="text-base font-bold text-success">{emptyTitle}</p>
+            <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto leading-relaxed">{emptyDesc}</p>
+          </div>
+        </TiltCard>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-        <Truck size={28} className="text-muted-foreground" aria-hidden="true" />
+        <span className="w-14 h-14 rounded-2xl bg-card/40 border border-border shadow-card3d flex items-center justify-center" aria-hidden="true">
+          <Truck size={28} className="text-muted-foreground" />
+        </span>
         <div>
           <p className="text-sm font-semibold text-foreground">{emptyTitle}</p>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm">{emptyDesc}</p>
@@ -473,21 +607,62 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
     );
   }
 
+  // Índice de la primera columna TERMINAL visible → ahí va el divisor "en juego
+  // | cerrado". Se calcula sobre las columnas realmente pintadas (las vacías no
+  // existen), así que si no hay ninguna terminal, no se dibuja divisor.
+  const firstTerminalIdx = columns.findIndex((c) => !LIVE_KEYS.has(c.key) && !CATCHALL_KEYS.has(c.key));
+
   return (
-    <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] snap-x">
-      {columns.map((col) => {
+    <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] snap-x items-start">
+      {columns.map((col, colIdx) => {
         const t = TONE[col.tone];
+        const isLive = LIVE_KEYS.has(col.key);
+        // El catch-all va angosto (como las terminales) pero SIN atenuar.
+        const isCatchall = CATCHALL_KEYS.has(col.key);
         const siblingIds = col.orders.map((x) => String(x.externalId ?? '')).filter(Boolean);
         return (
+          <Fragment key={col.key}>
+            {/* Divisor "en juego | cerrado": el scroll de 15 columnas idénticas
+                obligaba a barrer toda la fila para encontrar dónde está el
+                trabajo. Nada se oculta — solo se separan los dos mundos. */}
+            {firstTerminalIdx > 0 && colIdx === firstTerminalIdx && (
+              <div className="shrink-0 self-stretch w-px bg-border mx-1" aria-hidden="true" />
+            )}
           <section
-            key={col.key}
             // La carpeta pasa a ser un panel con cuerpo propio: sin superficie
             // ni elevación, las tarjetas flotaban sueltas sobre el fondo y no
-            // se leía dónde termina una columna y empieza la otra. Solo piel —
-            // el ancho, el snap y el flujo interno quedan igual.
-            className="snap-start shrink-0 w-[286px] flex flex-col gap-2.5 rounded-2xl border border-border bg-card/40 shadow-card3d"
+            // se leía dónde termina una columna y empieza la otra.
+            //
+            // Jerarquía de fase: las columnas VIVAS (donde hay algo que hacer)
+            // van más anchas y con la elevación mayor; las TERMINALES quedan
+            // angostas, atenuadas y sin realce. Antes "En Reparto" —donde se
+            // decide la entrega— medía exactamente lo mismo que "Cancelado".
+            className={cn(
+              'snap-start shrink-0 flex flex-col gap-2.5 rounded-2xl border bg-card/40 transition-colors',
+              // La jerarquía sale del ANCHO y la ELEVACIÓN, no de atenuar.
+              // "Devolución", "Dev. en Tránsito" y "Entregado" son terminales
+              // pero se LEEN (análisis de devoluciones): bajarles la opacidad
+              // era pagar legibilidad de dato real por jerarquía visual.
+              isLive
+                ? 'w-[300px] border-border shadow-card3d-lg'
+                : isCatchall
+                  ? 'w-[248px] border-border shadow-card3d'
+                  : 'w-[248px] border-border/60 shadow-card3d',
+            )}
           >
-            {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓). */}
+            {/* Header clickeable → enfoca esta carpeta (solo estos pedidos + ↑/↓).
+                Anatomía de StatTile: la CIFRA es la protagonista y el nombre de
+                la fase baja a hud-label debajo, así cada carpeta se lee de un
+                vistazo como un KPI. (hud-label mayusculiza, y acá es legítimo:
+                son rótulos fijos nuestros de BOARD_COLUMNS, no texto de Dropi.)
+
+                OJO con el número (pendiente para el dueño, NO lo cambié acá):
+                es cuántos pedidos QUEDAN VISIBLES en esa fase después de
+                "Ocultar gestionados" + búsqueda + lista SLA + ventana de 45
+                días + dedup. NO es el total del estado en Dropi, y ahora que
+                tiene peso de KPI conviene rotularlo — pero eso exige texto
+                nuevo en español, que no me toca inventar. El `title` queda
+                EXACTAMENTE como estaba. */}
             <button
               type="button"
               onClick={() => setFocusedKey(col.key)}
@@ -496,15 +671,24 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
               // panel y su fondo de hover se dibuja hasta el borde. Con un radio
               // menor que el de la carpeta, ese fondo asomaba por fuera de la
               // esquina redondeada al pasar el mouse.
-              className="group/h flex items-center gap-2 rounded-t-2xl px-3 py-3 text-left hover:bg-card/60 transition-colors"
+              className="group/h flex items-start gap-2.5 rounded-t-2xl px-3.5 py-3.5 text-left hover:bg-card/60 transition-colors"
             >
-              <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
-              <span className="text-foreground/90">{col.icon}</span>
-              <h3 className="text-[12.5px] font-semibold text-foreground truncate flex-1">{col.label}</h3>
-              <Maximize2 size={12} className="text-muted-foreground opacity-0 group-hover/h:opacity-100 transition-opacity" aria-hidden="true" />
-              <span className={cn('text-[11px] font-mono tabular-nums font-semibold px-2 py-0.5 rounded-lg', t.count)}>
-                {col.orders.length}
+              <span className={cn('w-9 h-9 rounded-xl border flex items-center justify-center shrink-0', t.count)} aria-hidden="true">
+                {col.icon}
               </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn('h-2 w-2 rounded-full shrink-0', t.dot)} aria-hidden="true" />
+                  <span className={cn('text-[22px] font-mono tabular-nums font-bold leading-none', t.num, t.numGlow)}>
+                    {col.orders.length}
+                  </span>
+                </div>
+                <h3 className="hud-label truncate mt-1.5">{col.label}</h3>
+              </div>
+              {/* Affordance de enfoque PERMANENTE: era un Maximize2 que solo
+                  aparecía al hover, o sea invisible en móvil/táctil — que es
+                  justo donde más se usa el modo enfoque. */}
+              <Maximize2 size={13} className="text-muted-foreground/60 group-hover/h:text-accent transition-colors shrink-0 mt-0.5" aria-hidden="true" />
             </button>
             <ColumnBody colKey={col.key} scrollRefs={scrollRefs}>
               {col.orders.map((o) => (
@@ -518,6 +702,7 @@ export default function SegBoard({ data, countryCode, statusFilter, emptyTitle =
               ))}
             </ColumnBody>
           </section>
+          </Fragment>
         );
       })}
     </div>

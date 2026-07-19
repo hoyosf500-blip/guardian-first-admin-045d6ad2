@@ -33,36 +33,57 @@ export default function StoreAdSpendPanel({ filters }: Props) {
   const totals = sumAdSpend(rows);
 
   return (
-    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors hover:border-border-strong">
+    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden shadow-card3d hairline-top transition-colors duration-200 hover:border-border-strong">
       <header className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Megaphone size={14} className="text-accent" />
-          <h3 className="text-sm font-semibold text-foreground">Pauta diaria</h3>
-        </div>
-        <Button size="sm" variant="outline" className="h-8" onClick={() => setDialog({ open: true, row: null })}>
-          <Plus size={12} className="mr-1.5" /> Registrar pauta
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Megaphone size={14} className="text-accent" aria-hidden="true" />
+          Pauta diaria
+        </h3>
+        <Button size="sm" variant="outline" className="h-9 rounded-xl" onClick={() => setDialog({ open: true, row: null })}>
+          <Plus size={13} className="mr-1.5" aria-hidden="true" /> Registrar pauta
         </Button>
       </header>
 
       {isError ? (
-        <div className="px-5 py-4 flex items-start gap-2 text-xs text-muted-foreground">
-          <AlertCircle size={14} className="text-warning shrink-0 mt-0.5" />
-          <span>
+        // "La feature todavía no existe" NO es un error genérico: banner ámbar,
+        // no rojo, con el mismo molde de barra lateral + chip del resto.
+        <div className="m-4 relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20 glow-warning">
+            <AlertCircle size={17} className="text-warning" aria-hidden="true" />
+          </div>
+          <span className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
             El control de pauta aún no está activo (falta aplicar la migración en la base).
             Cuando se aplique, acá vas a poder registrar tu gasto diario.
           </span>
         </div>
       ) : (
         <>
-          {/* Totales del período por canal */}
-          <div className="px-5 py-3 border-b border-border flex items-center gap-4 flex-wrap text-xs">
-            <span className="text-muted-foreground">Este período:</span>
-            <span className="text-foreground"><strong>Meta</strong> {formatCOP(totals.meta)}</span>
-            <span className="text-foreground"><strong>TikTok</strong> {formatCOP(totals.tiktok)}</span>
-            {totals.other > 0 && (
-              <span className="text-foreground"><strong>Otros</strong> {formatCOP(totals.other)}</span>
-            )}
-            <span className="ml-auto text-accent font-bold">Total {formatCOP(totals.total)}</span>
+          {/* Totales del período por canal — cada canal como celda con su
+              rótulo en .hud-label sobre la cifra en mono, en vez de spans
+              sueltos en una línea. El Total va con el tono de acento. */}
+          <div className="px-5 py-4 border-b border-border">
+            <div className="hud-label mb-2.5">Este período:</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-xl border border-border bg-card/40 px-3 py-2.5">
+                <div className="hud-label-cased">Meta</div>
+                <div className="text-sm font-mono tabular-nums font-bold text-foreground mt-1.5">{formatCOP(totals.meta)}</div>
+              </div>
+              <div className="rounded-xl border border-border bg-card/40 px-3 py-2.5">
+                <div className="hud-label-cased">TikTok</div>
+                <div className="text-sm font-mono tabular-nums font-bold text-foreground mt-1.5">{formatCOP(totals.tiktok)}</div>
+              </div>
+              {totals.other > 0 && (
+                <div className="rounded-xl border border-border bg-card/40 px-3 py-2.5">
+                  <div className="hud-label">Otros</div>
+                  <div className="text-sm font-mono tabular-nums font-bold text-foreground mt-1.5">{formatCOP(totals.other)}</div>
+                </div>
+              )}
+              <div className="rounded-xl border border-accent/30 bg-accent/10 px-3 py-2.5 sm:ml-auto sm:w-full">
+                <div className="hud-label text-accent">Total</div>
+                <div className="text-sm font-mono tabular-nums font-bold text-accent mt-1.5">{formatCOP(totals.total)}</div>
+              </div>
+            </div>
           </div>
 
           {/* Tabla de últimos días */}
@@ -74,29 +95,29 @@ export default function StoreAdSpendPanel({ filters }: Props) {
               lo del día.
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-muted/30 text-muted-foreground text-[10px] uppercase tracking-wider">
-                <tr>
-                  <th className="px-5 py-2 text-left font-semibold">Día</th>
-                  <th className="px-5 py-2 text-left font-semibold">Canal</th>
-                  <th className="px-5 py-2 text-right font-semibold">Monto</th>
-                  <th className="px-5 py-2 text-left font-semibold">Nota</th>
-                  <th className="px-5 py-2 text-right font-semibold">Acción</th>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-5 py-2.5 text-left hud-label font-normal">Día</th>
+                  <th className="px-3 py-2.5 text-left hud-label font-normal">Canal</th>
+                  <th className="px-3 py-2.5 text-right hud-label font-normal">Monto</th>
+                  <th className="px-3 py-2.5 text-left hud-label font-normal">Nota</th>
+                  <th className="px-5 py-2.5 text-right hud-label font-normal">Acción</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} className="hover:bg-muted/20">
-                    <td className="px-5 py-2 text-xs text-foreground">{fmtDay(r.spend_date)}</td>
-                    <td className="px-5 py-2 text-xs text-foreground">{PLATFORM_LABEL[r.platform]}</td>
-                    <td className="px-5 py-2 text-right text-xs font-mono tabular-nums text-foreground">{formatCOP(r.amount)}</td>
-                    <td className="px-5 py-2 text-xs text-muted-foreground truncate max-w-[12rem]">{r.notas ?? ''}</td>
-                    <td className="px-5 py-2 text-right">
+                  <tr key={r.id} className="border-b border-border/50 last:border-0 hover:bg-card/60 transition-colors duration-200">
+                    <td className="px-5 py-2.5 font-mono tabular-nums text-foreground whitespace-nowrap">{fmtDay(r.spend_date)}</td>
+                    <td className="px-3 py-2.5 text-foreground">{PLATFORM_LABEL[r.platform]}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">{formatCOP(r.amount)}</td>
+                    <td className="px-3 py-2.5 text-muted-foreground truncate max-w-[12rem]">{r.notas ?? ''}</td>
+                    <td className="px-5 py-2.5 text-right">
                       <button
                         onClick={() => setDialog({ open: true, row: r })}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-transparent text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
                       >
-                        <Pencil size={11} /> Editar
+                        <Pencil size={11} aria-hidden="true" /> Editar
                       </button>
                     </td>
                   </tr>
