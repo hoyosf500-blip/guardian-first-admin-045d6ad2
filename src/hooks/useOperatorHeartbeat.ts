@@ -26,10 +26,24 @@ import { useStore } from '@/contexts/StoreContext';
 
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 // COST 2026-07-16: 60s → 5min. Reduce ~80% de writes de heartbeat. El server
-// cappea cada bucket a 300s (ver record_operator_heartbeat) para no perder
+// cappea cada bucket a 900s (ver record_operator_heartbeat) para no perder
 // jornada tras un flush espaciado.
 const PING_INTERVAL_MS = 5 * 60 * 1000;
 const TICK_INTERVAL_MS = 1000;
+
+/**
+ * Techo de crédito para UN tick (2026-07-20).
+ *
+ * El tick mide tiempo de RELOJ, no cuenta ejecuciones (ver abajo). Eso lo hace
+ * inmune al throttling del navegador, pero abre otro riesgo: si el PC se
+ * suspende 8 horas, al despertar un solo tick reporta 8 horas de "jornada" que
+ * nadie trabajó. Este techo las descarta.
+ *
+ * 300s = el intervalo de flush. Un tick legítimo, incluso con Chrome
+ * throttleando pestañas de fondo a 1/minuto, nunca supera eso. Si lo supera,
+ * la máquina estuvo dormida — no presente.
+ */
+const MAX_TICK_GAP_S = 300;
 // Throttle el mousemove (que se dispara cientos de veces por segundo) a 1
 // "marca de actividad" por segundo. Para los demás eventos no hace falta.
 const MOUSEMOVE_THROTTLE_MS = 1000;
@@ -46,6 +60,9 @@ export function useOperatorHeartbeat() {
   // contamos todo como idle (operadora abrió pestaña pero no tocó).
   const lastActivityRef = useRef<number | null>(null);
   const lastMousemoveRef = useRef(0);
+  // Momento del último tick — para medir tiempo de RELOJ en vez de contar
+  // ejecuciones del interval (ver el tick más abajo).
+  const lastTickRef = useRef(0);
 
   useEffect(() => {
     // Gates: solo correr para operadora/supervisor de una tienda. Admin
@@ -120,14 +137,35 @@ export function useOperatorHeartbeat() {
       }
     })();
 
-    // Tick cada segundo: decide bucket basado en última actividad.
+    // ── TICK POR RELOJ, NO POR CONTEO (fix 2026-07-20) ───────────────────
+    //
+    // Antes esto hacía `bucket += 1` en cada ejecución, asumiendo que un
+    // interval de 1000ms corre 60 veces por minuto. FALSO cuando la pestaña
+    // no está al frente: Chrome throttlea los timers de pestañas ocultas a
+    // ~1 por minuto. La operadora que atiende por teléfono y tiene el CRM
+    // detrás de WhatsApp acumulaba 1 segundo por minuto real.
+    //
+    // Medido en producción antes del fix: una operadora con 5h07m entre su
+    // primera y su última señal tenía 26 MINUTOS registrados. El 92% de su
+    // jornada no estaba ni en activo ni en quieto — no se registró nunca.
+    // El patrón se repetía todos los días (8%, 22%, 12%, 27%) solo para ella,
+    // que es justamente la que trabaja con el CRM de fondo.
+    //
+    // Ahora se acredita el tiempo TRANSCURRIDO entre ticks. Si el navegador
+    // ejecuta el tick una vez por minuto, ese tick vale 60 segundos. El
+    // throttling deja de importar.
+    lastTickRef.current = Date.now();
     const tickId = window.setInterval(() => {
       const now = Date.now();
+      const transcurrido = Math.round((now - lastTickRef.current) / 1000);
+      lastTickRef.current = now;
+      if (transcurrido <= 0) return;
+      const seg = Math.min(transcurrido, MAX_TICK_GAP_S);
       const last = lastActivityRef.current;
       if (last !== null && now - last < IDLE_THRESHOLD_MS) {
-        activeBucket.current += 1;
+        activeBucket.current += seg;
       } else {
-        idleBucket.current += 1;
+        idleBucket.current += seg;
       }
     }, TICK_INTERVAL_MS);
 
@@ -171,11 +209,21 @@ export function useOperatorHeartbeat() {
     };
     const pingId = window.setInterval(() => { void flush(); }, PING_INTERVAL_MS);
 
+    // Volcar el bucket ANTES de que el navegador nos congele o nos cierre.
+    // Chrome puede suspender por completo una pestaña oculta: si eso pasa a
+    // mitad de un ciclo de 5 minutos, ese tramo se perdía. Al ocultarse o al
+    // descargarse la página lo mandamos primero.
+    const onHidden = () => { if (document.visibilityState === 'hidden') void flush(); };
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', onHidden);
+
     // Cleanup en unmount / cambio de store / logout
     return () => {
       cancelado = true;
       window.clearInterval(tickId);
       window.clearInterval(pingId);
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', onHidden);
       window.removeEventListener('mousemove', onMousemove);
       window.removeEventListener('keydown', onActivity);
       window.removeEventListener('touchstart', onActivity);
