@@ -19,6 +19,7 @@ import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorar
 import { scheduleFromMinutes, DEFAULT_SCHEDULE } from '@/lib/inactivityWindow';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { gestionesPorHora, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
+import { bogotaToday } from '@/lib/utils';
 
 interface ActivityRow {
   operator_id: string;
@@ -197,6 +198,10 @@ export default function ProductivityDashboard() {
   // de un error silenciado vs cero filas reales. Ahora capturamos el mensaje
   // y lo renderizamos como banner visible para diagnóstico inmediato.
   const [error, setError] = useState<string | null>(null);
+  // Acciones CRUDAS del período (sin excluir a nadie), solo para que el estado
+  // vacío pueda distinguir "nadie trabajó" de "sí hubo trabajo pero no se
+  // cuenta acá". null = todavía no se consultó.
+  const [accionesPeriodo, setAccionesPeriodo] = useState<number | null>(null);
 
   // Fuga Shopify→Dropi: ventas que entraron a Shopify pero NUNCA pasaron a Dropi
   // (no entran al flujo de confirmación → plata que se pierde en silencio). Es
@@ -236,6 +241,30 @@ export default function ProductivityDashboard() {
       setRows(arr);
       setError(null);
     }
+    // Conteo CRUDO de acciones del período — sin excluir admins ni nada.
+    //
+    // Existe por un caso real (2026-07-20): el dueño marcó un pedido, la tabla
+    // siguió vacía y leyó "está roto". No lo estaba: `operator_productivity_stats`
+    // excluye a los admin a propósito, y esa era la ÚNICA acción del día. El
+    // cartel decía "Todavía sin gestiones" cuando la verdad era "hubo una, pero
+    // no se cuenta acá". Con este número el estado vacío puede decir cuál de las
+    // dos cosas pasó. Es best-effort: si falla, el cartel cae al texto genérico.
+    try {
+      const hoy = bogotaToday();
+      const desde = range === 'today'
+        ? hoy
+        : new Date(Date.now() - (range === '7d' ? 6 : 29) * 86400000)
+            .toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      const { count } = await supabase
+        .from('order_results')
+        .select('id', { count: 'exact', head: true })
+        .gte('result_date', desde)
+        .lte('result_date', hoy);
+      setAccionesPeriodo(count ?? 0);
+    } catch {
+      setAccionesPeriodo(null);
+    }
+
     // Jornada: error silencioso (la migration puede no estar) pero LIMPIANDO
     // el estado — antes se retenían las filas del range anterior y, si solo
     // fallaba la RPC de un range, se cruzaba startedAt de 'today' contra
@@ -816,14 +845,34 @@ export default function ProductivityDashboard() {
               "ya no está". */}
           {rows.length === 0 && jornadaOps.length > 0 && (
             <div className="rounded-2xl border border-dashed border-border bg-card/40 p-6 text-center">
-              <p className="text-sm font-semibold text-foreground mb-1">
-                Todavía sin gestiones en {RANGE_LABELS[range].toLowerCase()}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Las tablas de Confirmar, Seguimiento y Novedades aparecen acá apenas
-                el equipo registre la primera acción. La Jornada de arriba ya muestra
-                quién entró.
-              </p>
+              {/* Dos situaciones MUY distintas que antes se leían igual. El
+                  cartel viejo decía siempre "Todavía sin gestiones", así que un
+                  día en que sí hubo trabajo (pero de un admin, que no se cuenta
+                  acá) se leía como "el CRM está roto". Ahora se dicen aparte. */}
+              {accionesPeriodo != null && accionesPeriodo > 0 ? (
+                <>
+                  <p className="text-sm font-semibold text-foreground mb-1">
+                    Hubo {accionesPeriodo} {accionesPeriodo === 1 ? 'gestión' : 'gestiones'} en{' '}
+                    {RANGE_LABELS[range].toLowerCase()}, pero ninguna de una operadora
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    El CRM sí está registrando. Esta tabla mide solo a las operadoras: las
+                    acciones de administradores (las tuyas) quedan afuera a propósito, para
+                    no mezclarlas con la productividad del equipo.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-foreground mb-1">
+                    Ninguna gestión registrada en {RANGE_LABELS[range].toLowerCase()}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {accionesPeriodo === 0
+                      ? 'Nadie marcó pedidos en el CRM en este período — ni operadoras ni administradores. La Jornada de arriba muestra quién entró.'
+                      : 'Las tablas de Confirmar, Seguimiento y Novedades aparecen acá apenas el equipo registre la primera acción. La Jornada de arriba ya muestra quién entró.'}
+                  </p>
+                </>
+              )}
             </div>
           )}
 
