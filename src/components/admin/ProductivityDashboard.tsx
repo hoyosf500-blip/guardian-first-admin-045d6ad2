@@ -202,6 +202,12 @@ export default function ProductivityDashboard() {
   // vacío pueda distinguir "nadie trabajó" de "sí hubo trabajo pero no se
   // cuenta acá". null = todavía no se consultó.
   const [accionesPeriodo, setAccionesPeriodo] = useState<number | null>(null);
+  // Cierre de turno por operadora (el ÚLTIMO del período). El dueño pidió que
+  // "SALIÓ" sea el cierre de turno y no la última señal: una asesora que sigue
+  // trabajando por teléfono con el navegador cerrado no "salió" a esa hora.
+  // Sin cierre se muestra vacío + etiqueta — decisión suya: prefiere ver quién
+  // no cerró antes que un número estimado.
+  const [closingByOp, setClosingByOp] = useState<Record<string, string>>({});
 
   // Fuga Shopify→Dropi: ventas que entraron a Shopify pero NUNCA pasaron a Dropi
   // (no entran al flujo de confirmación → plata que se pierde en silencio). Es
@@ -261,8 +267,24 @@ export default function ProductivityDashboard() {
         .gte('result_date', desde)
         .lte('result_date', hoy);
       setAccionesPeriodo(count ?? 0);
+
+      // Cierres de turno del período. Nos quedamos con el MÁS RECIENTE por
+      // operadora: en un rango de varios días la columna muestra el último.
+      const { data: cierres } = await supabase
+        .from('operator_daily_reports')
+        .select('user_id, closing_at')
+        .gte('report_date', desde)
+        .lte('report_date', hoy)
+        .not('closing_at', 'is', null)
+        .order('closing_at', { ascending: false });
+      const mapa: Record<string, string> = {};
+      for (const c of (cierres ?? []) as { user_id: string; closing_at: string }[]) {
+        if (!mapa[c.user_id]) mapa[c.user_id] = c.closing_at;
+      }
+      setClosingByOp(mapa);
     } catch {
       setAccionesPeriodo(null);
+      setClosingByOp({});
     }
 
     // Jornada: error silencioso (la migration puede no estar) pero LIMPIANDO
@@ -568,8 +590,8 @@ export default function ProductivityDashboard() {
               tone="info"
               icon={Clock}
               note={isToday
-                ? '¿Cumplió el horario? Hora de ENTRADA y SALIDA (primera y última señal del día) y cuánto del horario cubrió. NO se descuenta el estar quieta — puede estar en una llamada.'
-                : 'Horas trabajadas del rango, tiempo conectada al CRM, y la primera y última señal de cada operadora en el período.'}
+                ? 'ENTRÓ = primera señal del día. SALIÓ = el CIERRE DE TURNO (si no cerró, dice "sin cierre" — no se inventa la hora). EN EL CRM = tiempo con el CRM abierto, y debajo cuánto del horario estuvo con el CRM cerrado. TRABAJANDO = horas con pedidos marcados (es un PISO: una llamada larga sin clic no cuenta). NO se descuenta el estar quieta — puede estar en una llamada.'
+                : 'Del rango: tiempo con el CRM abierto, horas con evidencia de trabajo, promedio por pedido, y el último cierre de turno de cada operadora.'}
             >
               <div className="overflow-x-auto">
                 <table className="data-table">
@@ -590,8 +612,19 @@ export default function ProductivityDashboard() {
                           desde siempre (active_seconds / idle_seconds), estaba
                           declarado en el tipo y NO SE DIBUJABA en ningún lado:
                           llegaba a la pantalla y se tiraba. */}
-                      <th className="text-right" title="Tiempo con el CRM abierto y en uso (mouse/teclado) vs. tiempo sin señal. Estar quieta NO es estar ausente: en una llamada no se mueve el mouse. Sirve para ver de un vistazo cuánto estuvo fuera del CRM, no para castigar.">
+                      <th className="text-right" title="Tiempo con el CRM ABIERTO (esté moviendo el mouse o no), y debajo cuánto del turno estuvo con el CRM cerrado. Estar quieta NO es estar ausente: en una llamada no se mueve el mouse.">
                         En el CRM
+                      </th>
+                      {/* TRABAJANDO — evidencia de marcado, no presencia. Es el
+                          contrapeso de "En el CRM": una cosa es tener la pestaña
+                          abierta y otra es estar gestionando pedidos. */}
+                      <th className="text-right" title="Horas con evidencia de trabajo: bloques de pedidos marcados, cortando cuando pasan más de 15 minutos sin ninguna acción. OJO: es un PISO, no una medida exacta — una llamada larga que no termina en un clic no aparece acá.">
+                        Trabajando
+                      </th>
+                      {/* MIN/INTENTO — sobre TODOS los intentos (incl. no
+                          contestó), por decisión del dueño. */}
+                      <th className="text-right" title="Promedio de minutos por pedido marcado = horas trabajando ÷ total de intentos (incluye los 'no contestó', que son rápidos). Sirve para comparar ritmo entre operadoras, no como estándar absoluto.">
+                        Min/pedido
                       </th>
                       <th className="text-right" title={isToday
                         ? "Hora de la PRIMERA señal del día (cuándo se conectó), zona Bogotá. 'puntual' si llegó a tiempo; rojo si llegó tarde respecto al horario."
@@ -634,6 +667,29 @@ export default function ProductivityDashboard() {
                         ? Math.max(0, Math.floor((nowMs - lastSignalMs) / 60000))
                         : null;
                       const enLinea = desconectadaMin != null && desconectadaMin < UMBRAL_DESCONECTADA_MIN;
+                      // EN EL CRM = pestaña abierta, MUEVA O NO el mouse. Antes
+                      // esta columna mostraba solo `active_seconds` (mouse), que
+                      // para una asesora telefónica es una fracción del tiempo
+                      // que de verdad estuvo en el CRM.
+                      const enCrmSec = a ? (Number(a.active_seconds) || 0) + (Number(a.idle_seconds) || 0) : null;
+                      // FUERA DEL CRM = horario pactado − tiempo con el CRM abierto.
+                      // Solo tiene sentido contra un horario, así que es por-día.
+                      const fueraSec = comp && enCrmSec != null
+                        ? Math.max(0, comp.horarioNetoSec - enCrmSec)
+                        : null;
+                      // MIN/PEDIDO sobre TODOS los intentos (incl. "no contestó"),
+                      // por decisión del dueño. Denominador desde la RPC de
+                      // productividad, emparejada por operator_id.
+                      const prod = rows.find(r => r.operator_id === op.id);
+                      const intentos = prod
+                        ? (Number(prod.intentos_total) || Number(prod.total_atendidos) || 0)
+                        : 0;
+                      const minPorPedido = workedSec != null && workedSec > 0 && intentos > 0
+                        ? workedSec / 60 / intentos
+                        : null;
+                      // SALIÓ = CIERRE DE TURNO. Sin cierre no se estima: se
+                      // muestra vacío con etiqueta, para que se vea quién no cerró.
+                      const cierreAt = closingByOp[op.id] ?? null;
                       return (
                         <tr key={op.id}>
                           <td>
@@ -685,27 +741,52 @@ export default function ProductivityDashboard() {
                               </span>
                             )}
                           </td>
-                          {/* EN EL CRM — conectada vs. sin señal. */}
+                          {/* EN EL CRM — pestaña abierta (mueva o no el mouse),
+                              con el tiempo FUERA del CRM debajo. */}
                           <td className="text-right">
-                            {a == null || (!a.active_seconds && !a.idle_seconds) ? (
+                            {enCrmSec == null || enCrmSec === 0 ? (
                               <span className="font-mono text-muted-foreground text-xs" title="Sin registro de conexión en este rango.">—</span>
                             ) : (
                               <div className="inline-flex flex-col items-end gap-0.5">
                                 <span
                                   className="font-mono tabular-nums text-xs font-bold text-foreground"
-                                  title="Tiempo con el CRM abierto y con actividad de mouse o teclado."
+                                  title={`Tiempo con el CRM abierto. De eso, ${formatDurationHM(a?.active_seconds ?? 0)} con mouse o teclado y ${formatDurationHM(a?.idle_seconds ?? 0)} quieta (puede estar en una llamada).`}
                                 >
-                                  {formatDurationHM(a.active_seconds)}
+                                  {formatDurationHM(enCrmSec)}
                                 </span>
-                                {a.idle_seconds > 0 && (
+                                {fueraSec != null && fueraSec > 0 && (
                                   <span
-                                    className="text-[10px] text-muted-foreground tabular-nums"
-                                    title="Tiempo con el CRM abierto pero sin mouse ni teclado. OJO: en una llamada no se mueve el mouse, así que esto NO es tiempo perdido por sí solo."
+                                    className="text-[10px] text-warning tabular-nums"
+                                    title="Parte del horario pactado en la que el CRM NO estuvo abierto (navegador cerrado, PC apagado o sin internet). No prueba que no trabajara — puede haber estado en Dropi o en el teléfono."
                                   >
-                                    {formatDurationHM(a.idle_seconds)} sin señal
+                                    {formatDurationHM(fueraSec)} fuera
                                   </span>
                                 )}
                               </div>
+                            )}
+                          </td>
+                          {/* TRABAJANDO — evidencia de marcado (piso, no exacto). */}
+                          <td className="text-right">
+                            <span
+                              className={`font-mono tabular-nums text-xs font-bold ${workedSec == null || workedSec === 0 ? 'text-muted-foreground' : 'text-success'}`}
+                              title={workedSec == null || workedSec === 0
+                                ? 'Sin pedidos marcados en este período.'
+                                : `Bloques de trabajo con evidencia (${formatDurationHM(workedSec)}). Es un PISO: una llamada larga sin clic no cuenta.`}
+                            >
+                              {workedSec == null || workedSec === 0 ? '—' : formatDurationHM(workedSec)}
+                            </span>
+                          </td>
+                          {/* MIN/PEDIDO — trabajado ÷ TODOS los intentos. */}
+                          <td className="text-right">
+                            {minPorPedido == null ? (
+                              <span className="font-mono text-muted-foreground text-xs" title="Hace falta tiempo trabajado y pedidos marcados para promediar.">—</span>
+                            ) : (
+                              <span
+                                className="font-mono tabular-nums text-xs font-bold text-foreground"
+                                title={`${formatDurationHM(workedSec!)} trabajando ÷ ${intentos} pedido(s) marcado(s), incluyendo los "no contestó".`}
+                              >
+                                {minPorPedido < 1 ? '<1' : Math.round(minPorPedido)} min
+                              </span>
                             )}
                           </td>
                           {/* ENTRÓ — hora + puntual / tarde. */}
@@ -742,39 +823,44 @@ export default function ProductivityDashboard() {
                               <span className="font-mono text-muted-foreground text-xs" title="Sin ninguna señal en este rango.">—</span>
                             )}
                           </td>
-                          {/* SALIÓ — hora + en línea / salió antes. */}
+                          {/* SALIÓ — el CIERRE DE TURNO, no la última señal.
+                              Pedido del dueño (2026-07-20): una asesora que sigue
+                              trabajando por teléfono con el navegador cerrado NO
+                              "salió" a la hora del último clic. Sin cierre no se
+                              estima nada: se marca "sin cierre" — eligió ver quién
+                              no cerró antes que un número inventado. */}
                           <td className="text-right">
-                            {isToday && turnoEnd ? (
+                            {cierreAt ? (
                               <span className="inline-flex items-center justify-end gap-1.5 flex-wrap font-mono tabular-nums text-xs">
                                 <span className="inline-flex items-center gap-1 whitespace-nowrap text-foreground">
                                   <Clock size={11} className="text-muted-foreground" aria-hidden="true" />
-                                  {formatTimeBogota(turnoEnd)}
+                                  {isToday ? formatTimeBogota(cierreAt) : formatDateTimeBogota(cierreAt)}
                                 </span>
-                                {enLinea ? (
-                                  <span
-                                    className="inline-flex items-center rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success whitespace-nowrap"
-                                    title="Sigue activa ahora (señal hace menos de 10 min)."
-                                  >
-                                    en línea
-                                  </span>
-                                ) : comp && (comp.tempranoMin ?? 0) > 0 ? (
+                                {isToday && comp && (comp.tempranoMin ?? 0) > 0 && (
                                   <span
                                     className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger whitespace-nowrap"
-                                    title={`Se fue ${formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes del fin del horario.`}
+                                    title={`Cerró ${formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes del fin del horario.`}
                                   >
                                     {formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes
                                   </span>
-                                ) : null}
+                                )}
                               </span>
-                            ) : turnoEnd ? (
-                              // Última señal del período, con fecha. Sin juicio de
-                              // "se fue antes": comparar contra el horario solo
-                              // tiene sentido dentro de un día.
-                              <span className="font-mono tabular-nums text-xs text-foreground whitespace-nowrap">
-                                {formatDateTimeBogota(turnoEnd)}
+                            ) : enLinea ? (
+                              <span
+                                className="inline-flex items-center rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success whitespace-nowrap"
+                                title="Todavía no cerró turno, pero sigue conectada (señal hace menos de 10 min)."
+                              >
+                                en línea
                               </span>
                             ) : (
-                              <span className="font-mono text-muted-foreground text-xs" title="Sin ninguna señal en este rango.">—</span>
+                              <span
+                                className="inline-flex items-center rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-[10px] font-bold text-warning whitespace-nowrap"
+                                title={turnoEnd
+                                  ? `No hizo el cierre de turno. La última señal que dio el CRM fue ${isToday ? formatTimeBogota(turnoEnd) : formatDateTimeBogota(turnoEnd)}, pero eso NO es su hora de salida: pudo seguir trabajando fuera del CRM.`
+                                  : 'No hizo el cierre de turno y no hay ninguna señal en el período.'}
+                              >
+                                sin cierre
+                              </span>
                             )}
                           </td>
                         </tr>
