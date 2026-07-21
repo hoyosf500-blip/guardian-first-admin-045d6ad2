@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle, Loader2, Clock } from 'lucide-react';
-import { useWalletSyncHealth, type WalletSyncStatus } from '@/hooks/useWalletSyncHealth';
+import { useWalletSyncHealth, deriveStatus, type WalletSyncStatus } from '@/hooks/useWalletSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
 
 // Badge visual de "última sincronización wallet" — verde/amarillo/rojo
@@ -20,6 +20,7 @@ const STATUS_CLS: Record<WalletSyncStatus, string> = {
   fresh:    'border-success/40 bg-success/10 text-success',
   stale:    'border-orange/40 bg-orange/10 text-orange',
   critical: 'border-danger/40 bg-danger/10 text-danger',
+  failing:  'border-danger/40 bg-danger/10 text-danger',
   never:    'border-border bg-muted/30 text-muted-foreground',
 };
 
@@ -27,6 +28,7 @@ const STATUS_ICON: Record<WalletSyncStatus, React.ElementType> = {
   fresh:    CheckCircle2,
   stale:    AlertTriangle,
   critical: AlertCircle,
+  failing:  AlertCircle,
   never:    Clock,
 };
 
@@ -74,26 +76,30 @@ export default function WalletSyncBadge({ size = 'sm', showLabel = false, classN
     ? (Date.now() - q.data.lastSyncAt.getTime()) / 3_600_000
     : null;
 
-  const status: WalletSyncStatus = hours === null
-    ? 'never'
-    : hours < 8
-      ? 'fresh'
-      : hours < 24
-        ? 'stale'
-        : 'critical';
+  // Se reusa deriveStatus del hook. Antes esta lógica estaba COPIADA acá con
+  // ternarios (hours<8 ? fresh : …), así que el badge ignoraba cualquier arreglo
+  // hecho en el hook — incluido el de "la corrida falló". Una sola fuente.
+  const status: WalletSyncStatus = deriveStatus(hours, q.data.status === 'failing' ? 'error' : null);
 
   const Icon = STATUS_ICON[status];
-  const text = formatRelative(hours);
+  // Cuando falla, el relativo miente: decir "hace 2h" al lado de un tilde verde
+  // fue exactamente lo que ocultó 15 días de billetera congelada.
+  const text = status === 'failing' ? 'Falla al sincronizar' : formatRelative(hours);
   const padding = size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-[11px]';
+  const title = status === 'failing'
+    ? `La última corrida del sync falló${q.data.lastErrorMessage ? `: ${q.data.lastErrorMessage}` : ''}. Los montos que ves NO están actualizados.`
+    : q.data.lastSyncAt
+      ? `Última corrida del sync: ${q.data.lastSyncAt.toLocaleString('es-CO')}`
+      : 'Sin corridas de sync';
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full border tabular-nums ${STATUS_CLS[status]} ${padding} ${className}`}
-      title={q.data.lastSyncAt ? `Última corrida del sync: ${q.data.lastSyncAt.toLocaleString('es-CO')}` : 'Sin corridas de sync'}
+      title={title}
     >
       <Icon size={size === 'md' ? 12 : 10} />
       <span>
-        {showLabel && status !== 'never' ? 'Sincronizado ' : ''}
+        {showLabel && status !== 'never' && status !== 'failing' ? 'Sincronizado ' : ''}
         {text}
       </span>
     </span>

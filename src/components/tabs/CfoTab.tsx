@@ -429,7 +429,15 @@ export default function CfoTab() {
     if (curr.tarjeta_pago > 0 && curr.tarjeta_pago < curr.tarjeta_interes) {
       out.push({ tone: 'warning', text: 'Pago de tarjeta no cubre los intereses del mes' });
     }
-    if (walletHealth.data?.status === 'critical') {
+    // 'failing' = el cron corre puntual pero termina en error, así que no guarda
+    // nada. Es el caso que dejó la billetera congelada 15 días sin ninguna señal
+    // (2026-07-21). Va primero porque es más grave que "hace rato que no corre".
+    if (walletHealth.data?.status === 'failing') {
+      out.push({
+        tone: 'danger',
+        text: 'La sincronización de la billetera está FALLANDO. Los montos de abajo no están actualizados.',
+      });
+    } else if (walletHealth.data?.status === 'critical') {
       const hours = walletHealth.data.hoursSinceSync ?? 0;
       const days = Math.round(hours / 24);
       out.push({

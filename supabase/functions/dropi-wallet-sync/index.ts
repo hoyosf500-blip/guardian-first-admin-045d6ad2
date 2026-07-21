@@ -117,7 +117,9 @@ function mapRow(row: XlsxRow, syncedBy: string | null, storeId: string) {
     concepto_retiro: str(row["CONCEPTO DE RETIRO"]),
     related_order_id: relatedOrderId,
     raw: row,
-    synced_by: syncedBy,
+    // Nunca "" — la columna es UUID nullable (FK a auth.users). Ver el comentario
+    // del call-site: un string vacío acá tumba el upsert completo.
+    synced_by: syncedBy || null,
   };
 }
 
@@ -210,7 +212,14 @@ async function syncStore(
   type Mapped = ReturnType<typeof mapRow>;
   const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
   const mapped = slice
-    .map((r: XlsxRow): Mapped => mapRow(r, userId ?? "", storeId))
+    // `userId` es NULL cuando dispara el cron (no hay usuario autenticado).
+    // El `?? ""` que había acá metía string vacío en `synced_by`, que es UUID:
+    // Postgres respondía `invalid input syntax for type uuid: ""` y RECHAZABA EL
+    // LOTE ENTERO. Resultado: el cron falló en TODAS sus corridas, en las dos
+    // tiendas, y la billetera quedó congelada (último movimiento 7-jul en EC,
+    // 26-jun en CO). Los datos que había entraron por corridas manuales, donde
+    // sí hay usuario. Verificado en producción 2026-07-21.
+    .map((r: XlsxRow): Mapped => mapRow(r, userId, storeId))
     .filter((r): r is NonNullable<Mapped> => r !== null);
 
   let totalSynced = 0;

@@ -20,13 +20,27 @@ import { supabase } from '@/integrations/supabase/client';
 // is_store_member, migration 20260623120000); dropi_wallet_movements es admin-only
 // (wallet_admin_select), así que el badge viejo NUNCA funcionó para socios — ahora sí.
 //
+// FIX 2026-07-21 — EL CRON PODÍA FALLAR EN VERDE.
+//
+// Hasta hoy la query pedía SOLO `created_at`: medía que el cron se hubiera
+// EJECUTADO, nunca si había funcionado. El cron del wallet estuvo fallando en
+// TODAS sus corridas, cada 6 horas, en las dos tiendas (`invalid input syntax
+// for type uuid: ""`) — y como se ejecutaba puntualmente, el badge decía
+// "Sincronizado hace 2h" en VERDE. La billetera quedó clavada 15 días (último
+// movimiento 7-jul en EC, 26-jun en CO) y el dueño estuvo mirando la misma
+// ganancia creyendo que era real.
+//
+// Ahora también se lee `status`: una corrida que terminó en error es 'failing',
+// por reciente que sea. "Corrió" y "funcionó" son dos preguntas distintas.
+//
 // Devuelve un status simbólico que el badge usa para colorear:
-//   fresh     → corrió < 8h    (verde)
-//   stale     → corrió 8h-24h  (amarillo, warning)
-//   critical  → corrió > 24h   (rojo, cron caído)
-//   never     → sin corridas   (gris)
+//   fresh     → corrió < 8h y sin error   (verde)
+//   stale     → corrió 8h-24h             (amarillo, warning)
+//   critical  → corrió > 24h              (rojo, cron caído)
+//   failing   → la última corrida FALLÓ   (rojo, el cron corre pero no guarda)
+//   never     → sin corridas              (gris)
 
-export type WalletSyncStatus = 'fresh' | 'stale' | 'critical' | 'never';
+export type WalletSyncStatus = 'fresh' | 'stale' | 'critical' | 'failing' | 'never';
 
 export interface WalletSyncHealth {
   /** Última CORRIDA del cron del wallet (sync_logs), no la última fila upserteada. */
@@ -36,17 +50,27 @@ export interface WalletSyncHealth {
   // dirige el color — una tienda sin movimientos nuevos no está "rota". Admin-only
   // por RLS (wallet_admin_select); para socios queda en null sin romper el badge.
   hoursSinceNewMovement: number | null;
+  /** Mensaje de error de la última corrida, si falló. Para el tooltip. */
+  lastErrorMessage: string | null;
   status: WalletSyncStatus;
 }
 
 const FRESH_HOURS = 8;
 const STALE_HOURS = 24;
 
-// Pura y exportada para testear. El color depende SOLO de cuándo corrió el sync,
-// no de si hubo movimientos nuevos (ese era el bug: una tienda de baja actividad
-// envejecía aunque el cron estuviera sano).
-export function deriveStatus(hoursSinceRun: number | null): WalletSyncStatus {
+// Pura y exportada para testear.
+//
+// El color NO depende de si hubo movimientos nuevos (ese era el bug de 2026-06:
+// una tienda de baja actividad envejecía aunque el cron estuviera sano). Sí
+// depende de si la última corrida terminó bien — eso es lo que faltaba.
+export function deriveStatus(
+  hoursSinceRun: number | null,
+  lastRunStatus?: string | null,
+): WalletSyncStatus {
   if (hoursSinceRun === null) return 'never';
+  // Una corrida fallida manda sobre la frescura: da igual que haya sido hace
+  // 5 minutos si no guardó nada.
+  if (lastRunStatus === 'error') return 'failing';
   if (hoursSinceRun < FRESH_HOURS) return 'fresh';
   if (hoursSinceRun < STALE_HOURS) return 'stale';
   return 'critical';
@@ -65,7 +89,9 @@ export function useWalletSyncHealth(storeId?: string | null) {
       //    (source='dropi'), que comparte la misma tabla sync_logs.
       let runQ = supabase
         .from('sync_logs')
-        .select('created_at')
+        // `status` y `error_message` NO son decorativos: sin ellos una corrida
+        // fallida es indistinguible de una exitosa (ver el FIX del encabezado).
+        .select('created_at, status, error_message')
         .eq('source', 'dropi-wallet-sync')
         .order('created_at', { ascending: false })
         .limit(1);
@@ -91,11 +117,14 @@ export function useWalletSyncHealth(storeId?: string | null) {
       const tsNew = !fechaRes.error && fechaRes.data?.fecha ? new Date(fechaRes.data.fecha) : null;
       const hoursSinceRun = tsRun ? (Date.now() - tsRun.getTime()) / 3_600_000 : null;
       const hoursNew = tsNew ? (Date.now() - tsNew.getTime()) / 3_600_000 : null;
+      const lastRunStatus = (runRes.data as { status?: string } | null)?.status ?? null;
+      const lastErrorMessage = (runRes.data as { error_message?: string } | null)?.error_message ?? null;
       return {
         lastSyncAt: tsRun,
         hoursSinceSync: hoursSinceRun,
         hoursSinceNewMovement: hoursNew,
-        status: deriveStatus(hoursSinceRun),
+        lastErrorMessage,
+        status: deriveStatus(hoursSinceRun, lastRunStatus),
       };
     },
     staleTime: 60_000,

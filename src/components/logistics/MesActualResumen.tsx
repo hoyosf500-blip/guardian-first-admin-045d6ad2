@@ -79,7 +79,12 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const { isOwnerOfActive, isManagerOfActive, activeStoreId } = useStore();
   const resumenSync = useResumenSync();
   const walletHealth = useWalletSyncHealth(activeStoreId);
-  const walletStale = walletHealth.data?.status === 'stale' || walletHealth.data?.status === 'critical';
+  // 'failing' incluido: el cron puede correr puntual y fallar en cada corrida
+  // (caso real 2026-07-21, billetera congelada 15 días en verde). Si no está acá,
+  // esta pantalla sigue mostrando la cifra vieja como si fuera buena.
+  const walletStale = walletHealth.data?.status === 'stale'
+    || walletHealth.data?.status === 'critical'
+    || walletHealth.data?.status === 'failing';
 
   const { data: ganancia, isLoading: gananciaLoading, isError: gananciaError } = useGananciaNetaDropi(
     filters.fromDate, filters.toDate,
