@@ -129,7 +129,11 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
   { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
   { key: 'indemnizada', match: (e) => e.includes('INDEMNIZADA') },
   { key: 'entregado', match: (e) => e === 'ENTREGADO' },
-  { key: 'cancelado', match: (e) => e === 'CANCELADO' || e === 'REEMPLAZADA' || e === 'ARCHIVADO_GHOST' },
+  // 'ARCHIVADO GHOST' con ESPACIO es la escritura canónica (la que reconoce
+  // _estado_bucket en SQL y la que escribe dropi-nightly-reconcile); el guion
+  // bajo son filas históricas. Faltaba la primera: los pedidos borrados en
+  // Dropi no se clasificaban y aparecían como si siguieran vivos.
+  { key: 'cancelado', match: (e) => e === 'CANCELADO' || e === 'REEMPLAZADA' || e === 'ARCHIVADO GHOST' || e === 'ARCHIVADO_GHOST' },
 ];
 
 // Alerting de estados nuevos — log una sola vez por estado para no spamear.

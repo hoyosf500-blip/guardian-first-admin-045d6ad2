@@ -125,6 +125,10 @@ export const ESTADO_TO_BUCKET: Record<string, BucketKey> = {
   // los tiles "sin cancelar" — el efecto neto es el mismo.
   'REEMPLAZADA': 'cancelado',
   'ARCHIVADO GHOST': 'cancelado',
+  // Las dos escrituras conviven en la base: el SQL canónico usa ESPACIO, pero
+  // hay filas históricas con guion bajo. Faltando esta línea, esas filas caían
+  // al fallback y se contaban como pedidos vivos.
+  'ARCHIVADO_GHOST': 'cancelado',
 };
 
 // Fallback por CONTENIDO para estados de transportadoras de Ecuador (Servientrega

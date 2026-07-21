@@ -310,13 +310,24 @@ async function reconcileStore(
         const deleted = existenceCandidates.filter((g) => !createdSet.has(String(g.external_id)));
         for (let i = 0; i < deleted.length; i += 50) {
           const batch = deleted.slice(i, i + 50);
-          const { error } = await sb.from("orders").update({ estado: "CANCELADO" }).in("id", batch.map(g => g.id));
+          // 'ARCHIVADO GHOST', NO 'CANCELADO' (fix 2026-07-21).
+          //
+          // Un pedido BORRADO en Dropi no es una cancelación del cliente, pero
+          // marcarlo CANCELADO lo metía en la tasa de cancelación. Efecto real:
+          // en julio EC, Guardian mostraba 250 cancelados contra los 154 del
+          // informe de Dropi — 22,5% vs 19,87% — y el dueño dejó de confiar en
+          // el número. Los 96 de diferencia eran ESTOS.
+          //
+          // 'ARCHIVADO GHOST' (con ESPACIO) es la escritura que reconoce
+          // `_estado_bucket` en SQL → bucket 'borrado' → excluido de TODAS las
+          // RPCs de logística. Con guion bajo NO lo excluye: no cambiar.
+          const { error } = await sb.from("orders").update({ estado: "ARCHIVADO GHOST" }).in("id", batch.map(g => g.id));
           if (!error) {
             deletedCancelled += batch.length;
             cancelledIds.deleted.push(...batch.map(g => String(g.external_id)));
           }
         }
-        console.log(`reconcile ${storeId}: barrido creación COMPLETO (${createdPull.orders.length} pedidos); ${deleted.length} huérfanos ELIMINADOS en Dropi → CANCELADO`);
+        console.log(`reconcile ${storeId}: barrido creación COMPLETO (${createdPull.orders.length} pedidos); ${deleted.length} huérfanos ELIMINADOS en Dropi → ARCHIVADO GHOST`);
       } else {
         console.warn(`reconcile ${storeId}: barrido por creación NO confiable (complete=${createdPull.complete}, n=${createdPull.orders.length}) → 0 cancelados esta corrida (fail-safe)`);
       }
