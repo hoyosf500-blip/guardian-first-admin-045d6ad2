@@ -1065,6 +1065,7 @@ export type Database = {
           phone: string
           product_ids: string | null
           producto: string | null
+          productos_detalle: Json | null
           store_id: string
           suggested_address: string | null
           suggested_customer_message: string | null
@@ -1115,6 +1116,7 @@ export type Database = {
           phone: string
           product_ids?: string | null
           producto?: string | null
+          productos_detalle?: Json | null
           store_id?: string
           suggested_address?: string | null
           suggested_customer_message?: string | null
@@ -1165,6 +1167,7 @@ export type Database = {
           phone?: string
           product_ids?: string | null
           producto?: string | null
+          productos_detalle?: Json | null
           store_id?: string
           suggested_address?: string | null
           suggested_customer_message?: string | null
@@ -2655,6 +2658,7 @@ export type Database = {
           phone: string
           product_ids: string | null
           producto: string | null
+          productos_detalle: Json | null
           store_id: string
           suggested_address: string | null
           suggested_customer_message: string | null
