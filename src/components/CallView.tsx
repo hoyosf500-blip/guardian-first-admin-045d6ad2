@@ -13,9 +13,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, Package, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
+import { ProductoTile } from '@/components/ProductoTile';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import AttemptHistory from '@/components/confirmar/AttemptHistory';
 import OrderLabels from '@/components/confirmar/OrderLabels';
@@ -1036,45 +1037,9 @@ export default function CallView({ items, alerts }: Props) {
               </span>
               <span className="text-sm font-medium text-foreground min-w-0 break-words">{o.ciudad || '—'}</span>
             </div>
-            <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200">
-              <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center flex-shrink-0" aria-hidden="true">
-                <Package size={16} />
-              </span>
-              {/* Con variantes (zapatos: talla/color) se lista UNA LÍNEA POR PAR.
-                  Antes salía el nombre repetido —"Sneakers, Sneakers"— y la
-                  asesora no podía decirle al cliente qué tallas venían.
-                  Sin variantes, o en pedidos que todavía no re-sincronizaron,
-                  cae al texto de siempre.
-                  OJO: esta es la ficha de CONFIRMAR (ConfirmarTab → CallView).
-                  La de Seguimiento es CrmCallView y tiene su propia copia: si
-                  tocás una, tocá la otra. */}
-              {(o.productosDetalle?.length ?? 0) > 0 ? (
-                <div className="min-w-0 flex-1 flex flex-col gap-1">
-                  {o.productosDetalle.map((l, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-2 min-w-0">
-                      <span className="text-sm font-medium text-foreground min-w-0 break-words">
-                        {l.nombre}
-                        {l.variante && (
-                          <span className="ml-1.5 inline-flex items-center rounded-lg border border-accent/30 bg-accent/14 px-1.5 py-0.5 text-[11px] font-bold text-accent align-middle">
-                            {l.variante}
-                          </span>
-                        )}
-                        {l.cantidad > 1 && (
-                          <span className="ml-1.5 font-mono text-xs text-muted-foreground tabular-nums">× {l.cantidad}</span>
-                        )}
-                      </span>
-                      {l.precio > 0 && (
-                        <span className="font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap">
-                          {formatCOP(l.precio)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-sm font-medium text-foreground min-w-0 break-words">{o.producto || '—'}</span>
-              )}
-            </div>
+            {/* Ficha de CONFIRMAR. Seguimiento (CrmCallView) usa el MISMO
+                componente — no volver a copiar el markup acá. */}
+            <ProductoTile producto={o.producto} lineas={o.productosDetalle} />
             {o.valor > 0 && (
               <div className="flex items-center gap-3 p-3 rounded-2xl bg-card/40 border border-border hover:border-border-strong transition-colors duration-200 sm:col-span-2">
                 <span className="w-9 h-9 rounded-xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center flex-shrink-0" aria-hidden="true">

@@ -333,12 +333,55 @@ function calcDias(dateStr: string): number {
   }
 }
 
+// Variante (talla / color) de una línea. Copia deliberada de la lógica de
+// _shared/dropiOrderMapper.ts: este archivo NO usa el mapper compartido
+// (tiene su propio mapOrder desde antes) y duplicar 12 líneas es más barato
+// que fusionar dos mapeos con historias distintas. Si cambia el formato de
+// Dropi, hay que tocar LOS DOS.
+function variantLabel(p: Record<string, unknown>): string {
+  const v = (p.variation ?? p.product_variation ?? p.variacion ?? p.variant ?? null) as
+    Record<string, unknown> | null;
+  if (!v || typeof v !== "object") return "";
+  const attrs = v.attribute_values;
+  if (Array.isArray(attrs)) {
+    const txt = (attrs as Record<string, unknown>[])
+      .map((a) => String(a?.value ?? a?.name ?? "").trim())
+      .filter(Boolean)
+      .join(" / ");
+    if (txt) return txt;
+  }
+  return String(v.name ?? v.sku ?? "").trim();
+}
+
 function mapOrder(o: Record<string, unknown>, userId: string, today: string, storeId: string) {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
   const productName = products
     .map((p) => (p.product as Record<string, unknown>)?.name || "")
     .filter(Boolean)
     .join(", ");
+
+  // Detalle por línea (talla/color/cantidad/precio) para la ficha de la
+  // asesora. El cron es el ÚNICO pipe que toca TODOS los pedidos cada 5 min:
+  // sin esto, sólo tenían variante los pedidos refrescados a mano (3 de 11.094,
+  // verificado en producción 2026-07-21).
+  //
+  // Se manda NULL cuando ninguna línea trae variante, y el RPC hace
+  // COALESCE(nuevo, viejo): si la lista de Dropi resultara venir sin
+  // `variation`, el cron NO pisa el dato bueno que sí trajo el refresh por
+  // pedido. Nunca se pierde información, en el peor caso no se agrega.
+  const detalle = products
+    .map((p) => {
+      const prod = (p.product as Record<string, unknown>) || {};
+      const qty = Math.round(parseFloat(String(p.quantity || "1")) || 1);
+      return {
+        nombre: String(prod.name || "").trim(),
+        variante: variantLabel(p),
+        cantidad: qty > 0 ? qty : 1,
+        precio: parseFloat(String(p.price ?? p.sale_price ?? prod.sale_price ?? "0")) || 0,
+      };
+    })
+    .filter((d) => d.nombre || d.variante);
+  const productosDetalle = detalle.some((d) => d.variante) ? detalle : null;
   const cantidad = products.reduce(
     (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
     0,
@@ -385,6 +428,7 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
     ciudad: String(o.city || ""),
     departamento: String(o.state || ""),
     producto: productName || "Sin producto",
+    productos_detalle: productosDetalle,
     estado: status,
     fecha,
     fecha_conf: fechaConf,
