@@ -27,6 +27,17 @@ interface StoreState {
   // owner O supervisor de la tienda activa — pueden entrar a Admin/Logística.
   isManagerOfActive: boolean;
   needsSetup: boolean;        // owner + tienda activa sin dropi_api_key
+  /**
+   * ¿Quedó sincronizada la tienda activa EN EL SERVIDOR (profiles.active_store_id)?
+   *
+   * Importa porque las RPC de reportes/logística/productividad no reciben la
+   * tienda: la resuelven solas con `_resolve_scope_store()`, que para un admin
+   * lee esa columna. Si la sync falla, el encabezado dice "Ecuador" y las
+   * tablas responden por otra tienda (o vacías, desde el fix fail-closed del
+   * 2026-07-21). Con esta bandera la UI puede avisar en vez de mostrar números
+   * del país equivocado como si fueran los buenos.
+   */
+  scopeSynced: boolean;
   setActiveStoreId: (id: string) => void;
   refresh: () => Promise<void>;
 }
@@ -37,12 +48,46 @@ const LS_KEY = 'guardian.activeStoreId';
 // tienda (pasa con filas duplicadas viejas), gana el rol más fuerte.
 const ROLE_RANK: Record<StoreRole, number> = { owner: 3, supervisor: 2, operator: 1 };
 
+/**
+ * Sincroniza la tienda activa en el servidor. Devuelve si QUEDÓ sincronizada.
+ *
+ * ⚠️ El bug que arregla (2026-07-21): antes esto era
+ * `try { await supabase.rpc(...) } catch { console.warn }`. Pero **supabase.rpc
+ * NO lanza excepción cuando el RPC falla** — resuelve con `{ data, error }`.
+ * O sea que el catch solo atrapaba caídas de red, y un fallo real del RPC
+ * (permisos, función inexistente, firma cambiada) pasaba como éxito. El código
+ * seguía creyendo que la tienda estaba sincronizada mientras el servidor
+ * mezclaba Colombia con Ecuador.
+ *
+ * Ahora se mira `error` de verdad y se reintenta una vez: esta llamada decide
+ * de qué país son TODOS los números de reportes, así que un tropiezo de red no
+ * puede dejarla a medias sin que nadie se entere.
+ */
+async function syncActiveStore(storeId: string): Promise<boolean> {
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const { error } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ error: { message?: string } | null }>)('set_active_store', { p_store_id: storeId });
+      if (!error) return true;
+      console.warn('[StoreContext] set_active_store devolvió error:', error);
+    } catch (e) {
+      console.warn('[StoreContext] set_active_store lanzó:', e);
+    }
+    if (intento === 0) await new Promise(r => setTimeout(r, 400));
+  }
+  return false;
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [stores, setStores] = useState<StoreMembership[]>([]);
   const [activeStoreId, setActiveStoreIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Arranca en true para no mostrar el aviso durante la carga inicial: recién
+  // se pone en false si una sincronización REAL falla.
+  const [scopeSynced, setScopeSynced] = useState(true);
   // Solo bloqueamos la UI (loading=true) en la PRIMERA carga. Refreshes
   // posteriores (token refresh al volver de pestaña, etc.) NO deben bloquear,
   // o ProtectedLayout desmonta toda la app y la operadora pierde su lugar.
@@ -115,22 +160,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (valid && stored !== valid) localStorage.setItem(LS_KEY, valid);
 
     // Persistir la tienda activa server-side ANTES de soltar el loading. Las
-    // RPCs admin de logística/billetera/finanzas resuelven su alcance con
+    // RPCs admin de logística/reportes/productividad resuelven su alcance con
     // _resolve_scope_store(), que para un admin lee profiles.active_store_id.
     // Al esperar acá, los reportes (que montan recién con loading=false) ya leen
-    // la tienda correcta y NO combinan CO+EC. Best-effort: si falla, el resolver
-    // cae a su default (admin = todas) y la app igual carga.
+    // la tienda correcta y NO combinan CO+EC.
     if (valid) {
-      try {
-        await (supabase.rpc as unknown as (
-          fn: string, args: Record<string, unknown>
-        ) => Promise<unknown>)('set_active_store', { p_store_id: valid });
-      } catch (e) {
-        // No bloquea el arranque (el resolver del backend tiene fallback), pero
-        // sí logueamos para diagnosticar desincronización server-side de la
-        // tienda activa cuando un admin reporta "reportes mezclan tiendas".
-        console.warn('[StoreContext] set_active_store falló:', e);
-      }
+      const ok = await syncActiveStore(valid);
+      setScopeSynced(ok);
     }
 
     hasLoadedRef.current = true;
@@ -153,15 +189,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // sincronizada (las de fecha-only no refetchean solas porque su key no tiene
     // store; las de store-key podrían haber corrido contra la tienda vieja).
     void (async () => {
-      try {
-        await (supabase.rpc as unknown as (
-          fn: string, args: Record<string, unknown>
-        ) => Promise<unknown>)('set_active_store', { p_store_id: id });
-      } catch (e) {
-        // No rompe la navegación; logueamos para diagnosticar desincronización.
-        console.warn('[StoreContext] set_active_store (cambio de tienda) falló:', e);
-        return; // si no se sincronizó, no invalidamos (evita refetch a la vieja)
-      }
+      const ok = await syncActiveStore(id);
+      setScopeSynced(ok);
+      // Si no se sincronizó NO invalidamos: refetchear ahora traería la tienda
+      // vieja (o vacío, con el resolver fail-closed). Mejor dejar lo que hay y
+      // que el banner avise, que pintar datos del país equivocado.
+      if (!ok) return;
       for (const key of [
         'ganancia-neta-dropi', 'operativo-cohorte', 'orders-estado-breakdown',
         'financial-summary', 'wallet_daily_series', 'wallet_movements',
@@ -194,7 +227,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <StoreContext.Provider value={{
       loading, stores, activeStoreId, activeStore, isOwnerOfActive, isManagerOfActive, needsSetup,
-      setActiveStoreId, refresh,
+      scopeSynced, setActiveStoreId, refresh,
     }}>
       {children}
     </StoreContext.Provider>

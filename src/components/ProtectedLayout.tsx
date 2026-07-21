@@ -306,6 +306,26 @@ function ProtectedLayoutInner() {
                   (decisión del dueño; el costo — 3 columnas de Reportes diarios
                   que dejan de llenarse — está documentado en WelcomeGate). */}
               <WelcomeGate>
+                {/* AVISO DE PAÍS SIN SINCRONIZAR. Los reportes no reciben la
+                    tienda: la resuelven server-side con profiles.active_store_id.
+                    Si esa sincronización falla, el encabezado dice un país y las
+                    tablas responden por otro (antes MEZCLABA CO+EC; desde el fix
+                    del 2026-07-21 salen vacías). En cualquiera de los dos casos
+                    el dueño tiene que saberlo ANTES de leer un número y tomar
+                    una decisión de plata con él. */}
+                {!store.scopeSynced && (
+                  <div
+                    role="alert"
+                    className="mb-3 flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 shadow-card3d"
+                  >
+                    <AlertTriangle size={17} className="text-danger flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <div className="min-w-0 text-xs text-danger">
+                      <span className="font-semibold">No se pudo confirmar la tienda activa en el servidor.</span>{' '}
+                      Los reportes, Productividad y Logística pueden salir vacíos o no corresponder a{' '}
+                      <b>{brandName}</b>. Recargá la página antes de tomar decisiones con estos números.
+                    </div>
+                  </div>
+                )}
                 <div className="mb-3"><SyncFreshness /></div>
                 {isConfirmar && <CounterBar />}
                 <Suspense fallback={<InlineRouteLoader />}>
