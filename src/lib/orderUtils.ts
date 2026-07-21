@@ -7,6 +7,37 @@ export function getErrorMessage(err: unknown): string {
   return 'Error desconocido';
 }
 
+/** Una línea del pedido, con su variante (talla/color) resuelta. */
+export interface OrderLineDetail {
+  nombre: string;
+  /** "38 / Negro". Vacío si el producto no tiene variantes. */
+  variante: string;
+  cantidad: number;
+  precio: number;
+}
+
+/**
+ * Normaliza el jsonb `orders.productos_detalle` que escribe el mapper de Dropi.
+ *
+ * Defensivo a propósito: es un jsonb suelto que puede venir null, con otra
+ * forma, o con números como texto. Ante cualquier duda devuelve [] y la ficha
+ * cae al nombre del producto de siempre — nunca rompe la pantalla de la
+ * asesora por un dato de catálogo mal formado.
+ */
+export function parseProductosDetalle(raw: unknown): OrderLineDetail[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((l) => {
+    const o = (l ?? {}) as Record<string, unknown>;
+    const cant = Math.round(Number(o.cantidad));
+    return {
+      nombre: String(o.nombre ?? '').trim(),
+      variante: String(o.variante ?? '').trim(),
+      cantidad: Number.isFinite(cant) && cant > 0 ? cant : 1,
+      precio: Number(o.precio) || 0,
+    };
+  }).filter((l) => l.nombre || l.variante);
+}
+
 export interface OrderData {
   idx: number;
   id: string;
@@ -15,6 +46,17 @@ export interface OrderData {
   phone: string;
   ciudad: string;
   producto: string;
+  /**
+   * Detalle por línea del pedido: talla/color, cantidad y precio de cada una.
+   *
+   * `producto` sigue siendo el nombre BASE sin repetir (lo agrupan los reportes
+   * de logística, meterle la talla los pulverizaría). Esto es lo que la asesora
+   * necesita leerle al cliente: "dos pares, uno 38 negro y otro 40 blanco".
+   *
+   * Vacío en pedidos anteriores al 2026-07-21: ese dato nunca se guardó y no se
+   * inventa. Se llena cuando el sync los vuelve a tocar.
+   */
+  productosDetalle: OrderLineDetail[];
   estado: string;
   fecha: string;
   fechaConf: string;
@@ -72,6 +114,7 @@ export interface DbOrderRow {
   departamento?: string | null;
   direccion?: string | null;
   producto?: string | null;
+  productos_detalle?: unknown;
   estado?: string | null;
   fecha?: string | null;
   fecha_conf?: string | null;
@@ -118,7 +161,8 @@ export function dbToOrderData(o: DbOrderRow, idx: number): OrderData {
   return {
     idx, id: String(idx), externalId: o.external_id || '', dbId: o.id || undefined, assignedTo: o.assigned_to || undefined,
     nombre: o.nombre || '', phone: o.phone || '', ciudad: o.ciudad || '',
-    producto: o.producto || '', estado: o.estado || '', fecha: o.fecha || '',
+    producto: o.producto || '', productosDetalle: parseProductosDetalle(o.productos_detalle),
+    estado: o.estado || '', fecha: o.fecha || '',
     fechaConf: o.fecha_conf || '', dias: o.dias || 0, diasConf: o.dias_conf || 0,
     valor: Number(o.valor) || 0, flete: Number(o.flete) || 0,
     costoProd: Number(o.costo_prod) || 0, costoDev: Number(o.costo_dev) || 0,
@@ -549,6 +593,11 @@ export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[]
       phone,
       ciudad: String(r[map.CIUDAD] || ''),
       producto: String(r[map.PRODUCTO] || ''),
+      // El Excel no trae variantes (talla/color): solo las manda la API de
+      // Dropi. Se setea vacío EXPLÍCITAMENTE porque tsc no lo exige acá (el
+      // proyecto no está en modo estricto) y sin esto quedaba `undefined` →
+      // la ficha reventaba con un `.map()` sobre undefined en plena llamada.
+      productosDetalle: [],
       estado,
       fecha: String(r[map.FECHA] || ''),
       fechaConf: String(r[map.FECHA_CONF] || ''),

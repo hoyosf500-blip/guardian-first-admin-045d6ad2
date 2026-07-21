@@ -75,10 +75,58 @@ export function mapDropiOrderToRow(
   storeId: string,
 ): Record<string, unknown> {
   const products = (o.orderdetails as Array<Record<string, unknown>>) || [];
-  const productName = products
-    .map((p) => (p.product as Record<string, unknown>)?.name || "")
-    .filter(Boolean)
-    .join(", ");
+
+  // ── VARIANTES (talla / color) ─────────────────────────────────────────
+  //
+  // Antes esto era `products.map(p => p.product?.name).join(", ")`: leía SOLO
+  // el nombre base y TIRABA la variante. Con zapatos en Colombia el resultado
+  // era "Nuevo modelo Sneakers 2801, Nuevo modelo Sneakers 2801" — el mismo
+  // nombre repetido, sin forma de saber qué tallas pidió el cliente. 10 de los
+  // últimos 40 pedidos de CO estaban así (verificado en producción 2026-07-21).
+  //
+  // Dropi expone la variante como `attribute_values` (ej. [{value:"38"},
+  // {value:"Negro"}] → "38 / Negro"). El nombre del contenedor cambia según el
+  // endpoint, así que se prueban los candidatos conocidos en vez de asumir uno:
+  // si Dropi usa otro, la línea sale sin variante pero NADA se rompe.
+  const variantLabel = (p: Record<string, unknown>): string => {
+    const v = (p.variation ?? p.product_variation ?? p.variacion ?? p.variant ?? null) as
+      Record<string, unknown> | null;
+    if (!v || typeof v !== "object") return "";
+    const attrs = v.attribute_values;
+    if (Array.isArray(attrs)) {
+      const txt = (attrs as Record<string, unknown>[])
+        .map((a) => String(a?.value ?? a?.name ?? "").trim())
+        .filter(Boolean)
+        .join(" / ");
+      if (txt) return txt;
+    }
+    return String(v.name ?? v.sku ?? "").trim();
+  };
+
+  // Detalle por LÍNEA — lo que ve la asesora en la ficha. El dueño pidió
+  // variante + cantidad + precio de cada línea (2026-07-21).
+  const detalle = products.map((p) => {
+    const prod = (p.product as Record<string, unknown>) || {};
+    const qty = Math.round(parseFloat(String(p.quantity || "1")) || 1);
+    const precio = parseFloat(
+      String(p.price ?? p.sale_price ?? prod.sale_price ?? "0"),
+    ) || 0;
+    return {
+      nombre: String(prod.name || "").trim(),
+      variante: variantLabel(p),
+      cantidad: qty > 0 ? qty : 1,
+      precio,
+    };
+  }).filter((d) => d.nombre || d.variante);
+
+  // `producto` queda con los nombres base SIN REPETIR.
+  //
+  // Ojo, esto además arregla un bug de reportes que ya existía: al repetir el
+  // nombre por cada línea, "Sneakers, Sneakers" quedaba como un producto
+  // DISTINTO de "Sneakers" en logistics_by_product y product_profitability →
+  // el mismo zapato partido en dos grupos. Las variantes NO van acá justamente
+  // para no volver a fragmentar (una fila por talla); viven en el detalle.
+  const productName = [...new Set(detalle.map((d) => d.nombre).filter(Boolean))].join(", ");
   const cantidad = products.reduce(
     (sum, p) => sum + (parseFloat(String(p.quantity || "1")) || 1),
     0,
@@ -151,6 +199,13 @@ export function mapDropiOrderToRow(
     ciudad: String(o.city || ""),
     departamento: String(o.state || ""),
     producto: productName || "Sin producto",
+    // Detalle por línea con variante/cantidad/precio.
+    //
+    // ⚠️ ORDEN OBLIGATORIO: la migración 20260721130000 (que crea la columna)
+    // va ANTES de redesplegar estas funciones. Postgres NO ignora una columna
+    // inexistente en un upsert: devuelve error y se cae TODO el sync de pedidos.
+    // Si por lo que sea hay que desplegar primero, comentar esta línea.
+    productos_detalle: detalle.length > 0 ? detalle : null,
     estado: status,
     fecha,
     fecha_conf: fechaConf,

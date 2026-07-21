@@ -7,4 +7,9 @@ export const ORDER_COLUMNS =
   'cantidad, direccion, novedad, guia, transportadora, tags, tienda, ' +
   'novedad_sol, assigned_to, locked_by, locked_at, created_at, uploaded_by, ' +
   'validation_decision, address_kind, missing_fields, suggested_customer_message, ' +
-  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed, last_movement_at, suggested_address';
+  'barrio, complemento, documento_destinatario, lat, lng, google_place_id, address_parsed, last_movement_at, suggested_address, ' +
+  // Detalle por línea con talla/color (migración 20260721130000).
+  // ⚠️ Si esa migración NO está aplicada, el SELECT explota con "column
+  // productos_detalle does not exist" y se caen TODAS las pantallas de pedidos.
+  // Ante ese síntoma: sacar esta línea, publicar, aplicar el SQL y reponerla.
+  'productos_detalle';
