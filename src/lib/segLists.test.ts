@@ -18,6 +18,7 @@ const baseOrder: OrderData = {
   ciudad: 'BOGOTA',
   departamento: 'CUNDINAMARCA',
   producto: 'Test',
+  productosDetalle: [],
   estado: 'PENDIENTE',
   fecha: '',
   fechaConf: '',
