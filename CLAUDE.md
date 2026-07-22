@@ -4,6 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **This file is the source of truth.** `AGENTS.md` and `README.md` are older and stale on several points — they still describe the pre-multitienda model (`app_settings.dropi_token`, "integration-key not Bearer"), a `mapDbRow()` mapper that no longer exists (it's `dbToOrderData`), a `/rescate` route that was removed, CO-only scope, and a 1-min cron. When they disagree with this file, this file wins.
 
+## ⛔ REGLA #1 — NUNCA reescribir una función SQL copiándola del repo
+
+**Las funciones desplegadas en la base DIFIEREN de las de `supabase/migrations/`.** Lovable
+edita funciones directo en la base; el repo va atrás. Copiar un cuerpo del repo a un
+`CREATE OR REPLACE` **revierte fixes vivos**.
+
+Qué pasó (2026-07-21): se reescribió `upsert_orders_from_dropi` desde el repo. Esa copia ya
+había perdido la columna `store_id`. Durante **2h30 los pedidos nuevos de Ecuador entraron
+etiquetados como Colombia** y se mezclaron en la cola de una asesora. Fix: commit `6d1cdf8`.
+
+**Mezclar países está PROHIBIDO en esta operación.**
+
+Antes de proponer cualquier SQL: pedir el `pg_get_functiondef` de la función que está
+corriendo y comparar. Si no se puede leer la versión desplegada, **decirlo y no entregar el
+SQL**. La migración `20260721120000_scope_admin_fail_closed.sql` aplica esta misma regla:
+el fix se puso solo en `_resolve_scope_store()` y NO en las ~5 RPCs que repiten el patrón
+NULL, precisamente para no pisar sus versiones desplegadas.
+
+Diagnóstico rápido de países cruzados: el largo del `external_id` delata el país —
+**Ecuador 7 dígitos (`6xxxxxx`), Colombia 8 (`7xxxxxxx` / `8xxxxxxx`)**. Tiendas:
+CO = `00000000-0000-0000-0000-000000000001` · EC = `512309c3-d5b7-4434-898a-31bed51dcd4d`.
+
 ## Commands
 
 ```bash
@@ -37,7 +59,16 @@ supabase functions deploy dropi-wallet-sync
 supabase functions deploy google-places-proxy
 supabase functions deploy shopify-push-dropi
 supabase functions deploy shopify-reconcile
+supabase functions deploy shopify-auto-push
 supabase functions deploy parse-bank-pdf-text
+supabase functions deploy dropi-open-incidences
+supabase functions deploy dropi-refresh-batch
+supabase functions deploy dropi-webhook
+supabase functions deploy wa-webhook
+supabase functions deploy wa-send
+supabase functions deploy wa-ai-responder
+supabase functions deploy wa-status-notifier
+supabase functions deploy wa-mine-conversations
 
 # Apply DB migrations
 supabase db push
@@ -65,11 +96,53 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 - **Lovable does NOT auto-apply migrations.** Files in `supabase/migrations/` need explicit `supabase db push` or a Lovable prompt. If `ORDER_COLUMNS` (`src/lib/orderColumns.ts`) references a column whose migration hasn't run, the SELECT explodes with `column X does not exist` and breaks every order-loading screen. Mitigation pattern: hotfix by removing the column from `orderColumns.ts` until the migration is applied.
 - The DB row mapper is **`dbToOrderData`** (not `mapDbRow`) in `src/lib/orderUtils.ts`.
 - **Dropi tokens — la integration-key permanente sirve para TODO (corregido 2026-05-22):**
-  - `store_dropi_config.dropi_api_key` (multi-tienda; antes `app_settings.dropi_token`) — Bearer **INTEGRATIONS, permanente** (`exp` año 2126). Verificado por curl que funciona para `dropi-sync`, `dropi-update-order`, `dropi-resolve-incidence`, **`dropi-wallet-sync` (`/api/wallet/exportexcel`) y `dropi-fingerprint` (`/bff/customers/fingerprint/v2`)**. Su `payload.sub` ES el dropi user_id (lo usan wallet/fingerprint en el query param). Configurado en `/admin → Credenciales Dropi`.
+  - `store_dropi_config.dropi_api_key` (multi-tienda; antes `app_settings.dropi_token`) — clave **INTEGRATIONS, permanente** (`exp` año 2126). Su `payload.sub` ES el dropi user_id (lo usan wallet/fingerprint en el query param). Configurado en `/admin → Credenciales Dropi`.
+  - **⚠️ El esquema del header NO es uniforme — son TRES (verificado en código 2026-07-22):**
+
+    | Endpoint | Header | Credencial |
+    |---|---|---|
+    | `/integrations/*` | `dropi-integration-key: <key>` | api_key |
+    | `/api/wallet/exportexcel` | `x-authorization: Bearer <key>` | api_key (`cfg.apiKey \|\| cfg.sessionToken`) |
+    | `/api/orders/myorders` (novedades) | session token web | **NO acepta la api_key** |
+
+    Decir "va como Bearer" es incorrecto y era lo que afirmaba este doc: `/integrations/*`
+    usa header propio (14 funciones lo hacen así), y el wallet usa `x-authorization`, no
+    `Authorization`. Los hosts salen de `_shared/dropiHosts.ts` (`dropiHostFor(countryCode)`
+    — CO `api.dropi.co`, EC `api.dropi.ec`), nunca hardcodeados.
   - `store_dropi_config.dropi_session_token` — JWT de sesión de `app.dropi.co` (vence ~1h). **LEGACY/opcional**: solo se usa como *fallback* (`cfg.apiKey || cfg.sessionToken`) si una tienda no tiene api_key. **Ojo:** el doc viejo afirmaba que exportexcel/fingerprint *requerían* este JWT — es FALSO (de hecho fingerprint con session_token da 401 "Invalid token"). Ya no hace falta refrescarlo a mano si la api_key está cargada.
 - **Wallet sync default = últimos 30 días.** `supabase/functions/dropi-wallet-sync/index.ts:218-219` setea `defaultFrom = today - 30d`. Para histórico completo pasar body `{from, to}`. Critical when migrando o queriendo backfill — sin esto la wallet pierde meses anteriores.
 - **Cliente-side calculations son más resilientes que migrations pendientes.** Patrón usado en `FinanzasTab.tsx`: cuando una migration agrega un campo nuevo al RPC pero aún no se aplica, el parser del hook coerce `undefined → 0` y el operador `??` no cae al fallback. Solución: calcular client-side desde campos que SÍ vienen (`flete_devoluciones + costo_devoluciones`), ignorar el campo del server. Funciona con cualquier versión del RPC.
 - **⚠️ HAY DOS "dropi-relay" con roles OPUESTOS — no confundir:** (1) `supabase/functions/dropi-relay` = **INBOUND**, le presta la IP de Supabase (que rota) a un tercero externo; ver `RELAY_README.md`. (2) `vps/dropi-relay/` = **OUTBOUND**, un contenedor Deno en un VPS Hostinger (IP fija `2.25.69.238`, detrás de Caddy en `https://srv1784684.hstgr.cloud/dropi/`) para que **nuestras** llamadas a la API oficial de Dropi salgan por una IP whitelisteada; ver `vps/dropi-relay/README.md`. El relay del VPS vive SOLO en el VPS + copia versionada en `vps/dropi-relay/` — Lovable NO lo despliega. Toda la migración a la API oficial de integración (webhook + relay IP-fija) está documentada en la memoria `dropi_integration_api_oficial`.
+
+## Lecciones de producción (sesión 2026-07-21)
+
+- **"Corrió" y "funcionó" son dos preguntas distintas.** `useWalletSyncHealth` solo miraba
+  *cuándo* corrió el cron, nunca *si guardó*: el badge marcaba verde mientras la billetera
+  llevaba semanas muerta. Ahora existe el estado **`'failing'`** y manda sobre la frescura
+  (`deriveStatus`: una corrida fallida hace 5 min es peor que una exitosa hace 6h). **Todo
+  indicador de salud debe leer `status` + `error_message`, no solo el timestamp.** La fuente
+  es `sync_logs` filtrando por `source` (`'dropi-wallet-sync'` para la billetera; el sync de
+  ÓRDENES comparte tabla con `source='dropi'`).
+- **Un string vacío en una columna UUID tumba el lote ENTERO.** `dropi-wallet-sync` pasaba
+  `userId ?? ""` a `synced_by` (UUID nullable): Postgres respondía `invalid input syntax for
+  type uuid: ""` y **rechazaba el batch completo, en todas las corridas y en las dos tiendas**.
+  El cron dispara sin usuario autenticado, así que era siempre. Correcto: `syncedBy || null`.
+  Al recuperar el histórico, EC pasó de 265 a 5.880 movimientos y CO a 1.725 — **las cifras de
+  julio cambiaron**: antes se veía menos de un cuarto de la operación.
+- **Un pedido BORRADO en Dropi NO es una cancelación del cliente.** `dropi-nightly-reconcile`
+  los marcaba `CANCELADO` e inflaba la tasa de cancelación. Ahora marca **`ARCHIVADO GHOST`
+  — CON ESPACIO**: es la escritura que reconoce `_estado_bucket` en SQL; con guion bajo
+  (`ARCHIVADO_GHOST`) **NO se excluye** y vuelve a contaminar la métrica. Ojo: el guion bajo sí
+  aparece en varios mapas de TS (`estadoBuckets.ts`, `segStatus.ts`) por compatibilidad, pero
+  **lo que se ESCRIBE es con espacio**. Tras corregir 126 filas, julio EC quedó: cancelados
+  250 → 152 contra 154 de Dropi; entregados 216 = 216; devoluciones 70 = 70.
+- **Ficha de producto: UN solo componente.** `ProductoTile.tsx` dibuja talla/color (desde
+  `orders.productos_detalle`, jsonb por línea, que llena `dropi-cron`) y lo usan **Confirmar y
+  Seguimiento**. Antes eran dos copias y se arregló una sola — el bug reapareció en la otra
+  pantalla. No volver a duplicarlo.
+- **Guardian no inventa datos** (auditado 2026-07-21 contra un Excel oficial de Dropi): 380
+  pedidos comparados uno por uno, CERO desacuerdos. Lo que tenía era de *más* (reemplazados +
+  borrados), no de menos. Antes de sospechar de los datos, mirar si el estado es un soft-delete.
 
 ## Architecture Overview
 
@@ -99,7 +172,9 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 All authenticated routes share `ProtectedLayout`, which nests `StoreProvider → ProtectedLayoutInner → OrderProvider`. `ProtectedLayoutInner`:
 - Blocks render while `auth.loading || store.loading` (first load only — see "single-app-mount" note below).
 - Branches: no session → `/auth`; member of zero stores → "Sin tiendas asignadas" screen; `store.needsSetup` (owner + active store has no `dropi_api_key`) → `<SetupWizard>`.
-- Renders the sidebar with `<StoreSelector>` and the store brand name/logo, filters `NAV_ITEMS` by gate (see below), and wraps the outlet in `<OpeningReportGate>`. Shows `CounterBar` only on `/confirmar`.
+- Renders the sidebar with `<StoreSelector>` and the store brand name/logo, filters `NAV_ITEMS` by gate (see below), and wraps the outlet in **`<WelcomeGate>`**. Shows `CounterBar` only on `/confirmar`.
+- **⚠️ `OpeningReportGate` está MUERTO** (2026-07-19). El archivo sigue en el árbol pero `ProtectedLayout` ya no lo usa — solo queda un comentario donde estaba. Era un formulario de 4 pasos que BLOQUEABA (`fixed inset-0` sin Esc; una auditoría lo marcó como trampa de teclado). `WelcomeGate` lo reemplazó: no bloquea, una vez por día Bogotá vía localStorage (F5 no lo repite) y se muestra a todos, admin incluido. **Costo aceptado explícitamente:** las columnas `pedidos nuevos` / `guías de ayer` / `pendientes de ayer` de `/admin → Reportes diarios` y del CSV quedan vacías desde esa fecha. Desde `20260720120000` la **apertura la sella el heartbeat**, no un formulario (`COALESCE` preserva la PRIMERA marca del día, así reabrir el CRM no la pisa). El cierre diario sigue siendo manual y no se tocó.
+- La lógica pura de apertura vive en `src/lib/aperturaTurno.ts` (`decidirApertura({esAdmin, marcaEntrada, ahora})`). Se extrajo porque **el dueño es admin y los admins no marcan entrada — el camino de la operadora no se puede ejercitar en su navegador**, así que se testea en vez de probarse a mano. Reglas: a un admin se lo saluda pero nunca se le muestra chip de turno (sería mentira); marca del server ausente/corrupta → saludar sin hora (NUNCA derivar la hora del reloj local); y si `first_action_at` es más viejo que `VENTANA_APERTURA_MS` (90s) es **re-entrada, no apertura** → ni saludo ni chip.
 - Redeems pending store invites: a `?invite=TOKEN` from `/auth` is stashed in `localStorage('guardian.pendingInvite')` and consumed once via the `redeem_store_invite` RPC.
 
 ### Auth & Roles — TWO independent layers
@@ -142,13 +217,29 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-refresh-order` — refresca UN pedido en vivo desde la API Dropi (`GET /integrations/orders/{external_id}`) y lo upsertea en `orders` por `external_id`. Disparado por el botón "Refrescar desde Dropi" en `CrmCallView`/`OrderCard` de Seguimiento (hook `useRefreshOrder`) para dar parity inmediata sin esperar al cron de 5 min (que en EC puede ir throttleado). Auth = JWT del miembro (valida `isStoreMember`). El UPDATE viaja a todos los clientes vía el realtime existente sobre `orders`. Devuelve `{ok, estado, guia, transportadora, rateLimited?}`. Comparte el mapper `mapDropiOrderToRow` (`_shared/dropiOrderMapper.ts`) con `dropi-sync` y `dropi-nightly-reconcile`.
 - `dropi-change-carrier` — cambia la transportadora de un pedido pendiente desde Confirmar. `mode:"quote"` lee los productos del pedido (GET integrations por id) y cotiza en vivo vía `quoteCarriers` (`_shared/dropiWebQuote.ts`, session token web) → lista transportadoras + precio; `mode:"apply"` reasigna en Dropi vía `PUT /integrations/orders/myorders/{id}` con `{distribution_company_id}` (integration-key) + actualiza `orders.transportadora` + audita en `order_results` (`result:'cambio_transportadora'`). Solo sin guía generada. **OJO FASE 0:** el campo `distribution_company_id` del PUT es el candidato a confirmar — si Dropi lo rechaza, ver `dropiHttpStatus`/`dropiBody` y capturar el request real del panel. La cotización depende del `dropi_session_token` (legacy, vence ~1h).
 - `dropi-relay` — generic proxy/relay to Dropi endpoints from the client (avoids CORS + hides session token)
-- `dropi-refresh-order` — refresca UN pedido desde la API Dropi y lo upsertea en `orders` por `external_id`. Disparado por el botón "Refrescar desde Dropi" en `CrmCallView`/`OrderCard` de Seguimiento — da parity en tiempo real para el pedido que la asesora mira AHORA, sin esperar al cron (que cada 5 min puede estar throttleado por la cuenta EC). Auth = JWT del usuario + `isStoreMember`. Realtime propaga el UPSERT a todos los clientes conectados. Usa `_shared/dropiOrderMapper.ts` (`mapDropiOrderToRow`).
+- `dropi-refresh-batch` — el botón "Sincronizar Dropi" de Seguimiento. **Usa el endpoint de LISTA (~1 request por 200 pedidos), NO uno por pedido** — la versión per-order disparaba 429 y sincronizaba cero (fix 2026-06-23). UPSERTea (a diferencia de `dropi-snapshot`, que es read-only), así que el realtime existente mueve el tablero solo. Ventana default 10 días por "FECHA DE CAMBIO DE ESTATUS", backoff exponencial y presupuesto de 60s.
+- `dropi-open-incidences` — devuelve los `external_id` con novedad **abierta AHORA** en Dropi. Existe porque un pedido puede quedar en estado `NOVEDAD` sin incidencia abierta (la transportadora la cerró/venció) y Dropi rechaza resolverla; Novedades usa esta lista para partir "Por gestionar" vs "Esperando transportadora". **Usa el session token web** — `/api/*` rechaza la integration-key. Siempre HTTP 200: si falla, el cliente degrada a una sola lista sin romperse.
 - `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
 - `dropi-cron` — scheduled sync trigger (cada 5 min, ver migration `20260427140000_dropi_cron_revert_to_5min.sql`). **Resiliente a "zombie state":** intenta una cadena `STATUS_FILTER_VARIANTS` y persiste el ganador en `app_settings.dropi_winning_status_filter`. Si todos los filtros vuelven 0 sin error/throttle, marca `status='warn'` (no `success`) para que el banner de freshness pueda detectar "corre pero no trae nada". Ver `PLAN-PARITY-DROPI.md`.
 - `dropi-health` — ping read-only por tienda contra `/integrations/orders/myorders` (page=1). Escribe `last_health_status` en `store_dropi_config` cada hora. Alimenta el banner `SyncFreshness` (verde=OK 24h, amarillo=zombie, rojo=error). Usa el `dropi_winning_status_filter` calculado por `dropi-cron`.
 - `dropi-nightly-reconcile` — reconciliación diaria 3am UTC. Cancela huérfanos `PENDIENTE CONFIRMACION` con `external_id < 5M` que no se mueven hace +N días y barre divergencias estado-Guardian vs Dropi. Defensa contra zombies que sobreviven al cron.
 - `dropi-webhook` — **INBOUND**: recibe los POST de cambio de estado de la **API OFICIAL de Integraciones** de Dropi (real-time, reemplaza polling para pedidos creados vía nuestra integración shop_type "Guardian"). Público (`verify_jwt=false`) pero **fail-closed** con `DROPI_WEBHOOK_SECRET` (header `x-dropi-secret`). UPDATE dirigido por `external_id` (estado/guía/transportadora, sella `fecha_conf`) sin pisar `valor/flete/costo_prod` (payload parcial); INSERT insert-only por si el pedido no existe. Siempre 200 salvo secreto inválido. La API oficial saliente (prod, IP whitelisteada) se enruta por el relay de IP fija del VPS — ver `vps/dropi-relay/README.md` y la memoria `dropi_integration_api_oficial`.
+
+  **ESTADO (2026-07-22): la función existe y responde, pero el webhook NO está activo.** Falta
+  (a) configurar `DROPI_WEBHOOK_SECRET` — sin él la función devuelve **401 a todo**, es
+  fail-closed a propósito; (b) que Dropi registre la URL; (c) confirmar que la IP fija
+  `2.25.69.238` esté whitelisteada.
+
+  **⛔ BLOQUEANTE CON RIESGO DESTRUCTIVO — resolver ANTES de tocar la clave:** no está
+  verificado si el token de la integración tipo `GUARDIAN` (el `shop_type` está confirmado en
+  el panel de Dropi) lee **TODAS** las órdenes de la cuenta o **solo las suyas**. Si es solo
+  las suyas y se reemplaza la clave actual, **se vacía el CRM**. Prueba segura antes de
+  cambiar nada: consultar `/integrations/orders/myorders` con la clave nueva **sin guardarla**
+  en `store_dropi_config` y comparar el total contra el de la clave actual. Si coinciden, lee
+  todo; si la nueva devuelve mucho menos, NO cambiarla.
+
+  **NO apagar el cron de 5 min** hasta ver el webhook andando varios días en paralelo.
 - `dropi-snapshot` — proxy server-side de auditoría: recibe `{store_id, from, to}`, pagina `/integrations/orders/myorders` (PAGE_SIZE 200, MAX_PAGES 30, backoff 2s/4s/8s en 429), filtra por `dropi_winning_status_filter` con fallback a "FECHA DE CAMBIO DE ESTATUS", devuelve `{orders, partial, message}`. Llamado por `DropiAuditModal` para comparar Dropi vs Guardian guía-por-guía. Existe por CORS — `api.dropi.co/ec` no permite fetch desde el browser.
 - `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`. **NOTE: currently NOT called from the app** (`GOOGLE_PLACES_ENABLED = false`); the function still exists but is dormant.
 - `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. Usa `cfg.apiKey || cfg.sessionToken` (la api_key permanente funciona; el session_token es fallback legacy). Decodifica `payload.sub` del token para el query `user_id`.
@@ -156,6 +247,8 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `ai-order-assistant` — Claude-powered order assistant
 - `shopify-push-dropi` — sube un pedido de Shopify a Dropi (anti-fuga). Resuelve el producto Dropi leyendo el metafield `dropi/_dropi_product` que Dropify deja en cada producto Shopify. `mode: "preview"` arma cliente+productos+total sin crear nada; `"confirm"` crea la orden (`POST /integrations/orders/myorders`) y registra en `shopify_pushed_orders` (idempotente). Auth = JWT de miembro de la tienda. La secuencia de cotización web (A–D: product/show → locations → getOriginCity → cotizaEnvioTransportadoraV2) vive en `_shared/dropiWebQuote.ts` (`quoteCarriers`) y la comparte con `dropi-change-carrier`; al crear sigue eligiendo la más barata ≠ VELOCES.
 - `shopify-reconcile` — detecta pedidos de Shopify que NUNCA llegaron a Dropi cruzando por TELÉFONO (últimos 9 dígitos) contra `orders`. Body `{store_id, days?=3}`. Alimenta la cola anti-fuga.
+- `shopify-auto-push` — robot de cron (**cada 15 min**, migration `20260718140000`) que sube a Dropi solo los pedidos Shopify LIMPIOS de tiendas con `auto_push_enabled`. La selección vive en `_shared/autoPushSelect.ts`: con teléfono, pasada una gracia de 30 min (deja que Dropify lo suba primero), menos de 3 días, no existente en Dropi, sin intento previo. **Sube llamando a `shopify-push-dropi` en `mode:"confirm"`**, así siguen aplicando todos los locks (anti-duplicado por teléfono, anti-sobreprecio, idempotencia) — el robot nunca fuerza nada; lo bloqueado cae al panel manual. Auth `x-cron-secret`. Body `{store_id?, dry_run?}`.
+- `wa-webhook` · `wa-send` · `wa-ai-responder` · `wa-status-notifier` · `wa-mine-conversations` — el bot de WhatsApp; ver la sección "Bot de WhatsApp & gateway" más abajo. Dos datos operativos que no están ahí: **`wa-status-notifier`** (pg_cron ~10 min) escribe en la PRIMERA aparición de un pedido una fila baseline en `wa_order_notifications` **sin enviar nada** — así no bombardea el histórico; solo notifica transiciones posteriores. Tope `MAX_SENDS_PER_RUN = 40` y ventana `SEND_HOUR_END = 21` (08:00–21:00 Bogotá) que **aplica SOLO a envíos proactivos** — las respuestas reactivas del bot van 24/7. **`wa-send`** (botón manual de la asesora) escribe además un touchpoint `WHATSAPP: ...` con `operator_id`; el camino de la IA NO escribe touchpoints.
 - `parse-bank-pdf-text` — recibe el TEXTO plano de un extracto Bancolombia (Mastercard/Amex) — el cliente extrae el texto con `pdfjs-dist` en `CfoPersonalCardUploader.tsx`, porque pdfjs server-side no corre bien en edge — y devuelve movimientos categorizados; opcionalmente upserta. Alimenta el módulo de tarjeta personal del CFO.
 
 Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_key` = INTEGRATIONS permanente; `dropi_session_token` = JWT de sesión legacy/fallback). Se leen en runtime vía `loadStoreConfig` (`_shared/dropiStoreConfig.ts`), NUNCA hardcoded. (El viejo `app_settings.dropi_token`/`dropi_session_token` era el modelo single-tenant previo.) Las credenciales **Shopify** viven en `store_shopify_config` y se leen vía `loadShopifyConfig` + `getShopifyAccessToken` (`_shared/shopifyStoreConfig.ts`) — usa client-credentials grant (token 24h auto-refresh; pegar un `shpss_` da 401). Todas las edge functions multi-tienda validan membresía con `isStoreMember` antes de tocar datos.
@@ -323,3 +416,57 @@ Tests use Vitest + Testing Library. Test files live next to the source files the
 ### Design System
 
 Tailwind + shadcn/ui components (`src/components/ui/`). Custom CSS variables for theming are in `src/index.css`. The design token names follow shadcn conventions: `bg-surface`, `bg-card`, `text-accent`, `border-border`, etc. Dark/light mode toggled via `useTheme` hook and stored in `localStorage`.
+
+### Capa `ui3d` — primitivas de presentación (rediseño "3D command center")
+
+`src/components/ui3d/` (`TiltCard`, `CountUp`, `GaugeRing`, `Sparkline`, `StatTile`, `RankRow`,
+`StackedDayBars`, `AuroraBackdrop`, `IconRail`, `HudTopbar` + hooks `useTilt`/`useCountUp`, con
+barrel `index.ts`). `ProtectedLayout` ya monta `IconRail`, `HudTopbar` y `AuroraBackdrop`.
+
+Contrato duro — respetarlo al agregar pantallas:
+- **Solo reciben `number` / `string` / `ReactNode`.** Nunca hooks de datos, queries ni el cliente
+  de Supabase. Ninguna pantalla reimplementa tilt/count-up/gauge por su cuenta.
+- **Nada nuevo usa `backdrop-filter`** — es deliberado: `bg-card/40` sobre la aurora da
+  profundidad sin matar el scroll de un `CrmTable` de 100 filas. Los `.glass-panel` de
+  `ConfirmarTab`/`AuthPage` son preexistentes y están grandfathered.
+- La decisión de desactivar el tilt (táctil, mobile, `prefers-reduced-motion`) vive **solo** en
+  `useTilt`. Los alfas de `AuroraBackdrop` están calibrados de contraste **a través** de las
+  tarjetas translúcidas — subirlos obliga a re-chequear contraste sobre la tarjeta, no sobre el
+  fondo desnudo.
+
+Estado del rediseño: el spec (`docs/superpowers/specs/2026-07-18-rediseno-3d-command-center-design.md`)
+planea 10 tandas (0–9), un commit cada una, en `redesign/3d-command-center`. El plan
+`plans/2026-07-18-rediseno-3d-tandas-0-2.md` cubre solo las tandas 0–2 y tiene **82 casillas sin
+marcar y 0 marcadas, pero el código ya está puesto** — las casillas están desactualizadas, no
+pendientes. Las tandas 3–9 no tienen archivo de plan. El propio spec advierte: **"No usar el git
+log como fuente de estado"** (commits anteriores prometieron más cobertura de la que entregaron) y
+marca la **tanda 4 (`CallView`/`CrmCallView`) como la peligrosa** — toca los overrides
+module-level de validación de direcciones, `visualDecision` y `DespachoGateButton`; si aparece un
+`visualDecision` o un efecto de auto-validación en el diff, revertir.
+
+### Convención `docs/superpowers/`
+
+`specs/*-design.md` (documentos de diseño fechados: contexto, tabla de decisiones, arquitectura,
+zonas de riesgo, fuera-de-alcance) alimentan `plans/*.md` (planes de implementación fechados, tarea
+por tarea, con casillas `- [ ]`, tabla de archivos a crear/modificar y verificación por tarea).
+
+**Trampa:** los encabezados de los planes exigen una sub-skill `superpowers:*` que **no está
+instalada en este entorno** (no hay `.claude/skills/` ni plugin). Son artefactos de un setup
+anterior: hay que seguir la convención a mano. Y como muestra el plan del rediseño 3D, **el estado
+de las casillas puede mentir** — verificar contra el código, nunca contra el checkbox.
+
+### ⚠️ Artefactos obsoletos que ensucian búsquedas y engañan
+
+- **`everything-claude-code/`** — repo de terceros vendorizado (cientos de `SKILL.md`, su propio
+  `CLAUDE.md` y `AGENTS.md`). **No es código de este proyecto** y no está conectado a `.claude/`.
+  Contamina cualquier grep amplio.
+- **`.claude/worktrees/practical-banach-d13722/`** — copia COMPLETA del proyecto. Todo grep a nivel
+  repo devuelve resultados duplicados si no se la excluye.
+- **`design-system/guardian-crm/MASTER.md`** — dice de sí mismo que hay que "seguir estrictamente"
+  sus reglas, pero **no es autoritativo**: es un artefacto de abril (paleta clara `#F8FAFC`, Fira),
+  su directorio de overrides `design-system/pages/` no existe, nada en `src/` lo referencia, y
+  contradice de frente la dirección actual (aurora oscura / command center 3D). La verdad de UI son
+  los tokens de `src/index.css` + el spec del rediseño 3D.
+- **`.claude/settings.local.json`** — sus ~166 reglas de permisos apuntan a
+  `c:\Users\hoyos\Desktop\...`, **otro home distinto al checkout actual** (`C:\Users\FABIAN\...`),
+  así que muchas reglas de git no matchean y vuelven a pedir permiso.
