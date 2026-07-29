@@ -7,6 +7,7 @@ import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { PROVINCIAS_ECUADOR } from '@/lib/ecuadorGeo';
 import { useDropiCityCatalog } from '@/hooks/useDropiCityCatalog';
 import { optionsPreservingCurrent } from '@/lib/geoCatalog';
+import GeoCombobox from '@/components/confirmar/GeoCombobox';
 import { useStore } from '@/contexts/StoreContext';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
@@ -241,17 +242,13 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             <Label className={LABEL_CLS}>{isEC ? 'Provincia *' : 'Departamento *'}</Label>
             {isEC ? (
               ecHasCatalog ? (
-                <Select
-                  value={ecProv.selected || undefined}
-                  onValueChange={(v) => onChange(f => ({ ...f, departamento: v, ciudad: '' }))}
-                >
-                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                  <SelectContent>
-                    {ecProv.options.map(d => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <GeoCombobox
+                  value={ecProv.selected}
+                  onSelect={(v) => onChange(f => ({ ...f, departamento: v, ciudad: '' }))}
+                  options={ecProv.options}
+                  placeholder="Seleccionar..."
+                  searchPlaceholder="Buscar provincia…"
+                />
               ) : (
                 // Fallback: el catálogo de Dropi no cargó → texto con sugerencias
                 // (comportamiento viejo). Nunca dejamos al operador sin editar.
@@ -286,22 +283,16 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
             <Label className={LABEL_CLS}>Ciudad *</Label>
             {isEC ? (
               ecHasCatalog && !ecOtraCity ? (
-                <Select
-                  value={ecCity.selected || undefined}
-                  onValueChange={handleEcCity}
+                <GeoCombobox
+                  value={ecCity.selected}
+                  onSelect={handleEcCity}
+                  options={ecCity.options}
+                  placeholder={form.departamento ? 'Seleccionar...' : 'Elegí la provincia primero'}
+                  searchPlaceholder="Buscar ciudad…"
                   disabled={!form.departamento}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elegí la provincia primero'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ecCity.options.map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                    {/* Salida para el ~5% de ciudades que Dropi no lista. */}
-                    <SelectItem value={OTRA}>➕ Otra ciudad (escribir)</SelectItem>
-                  </SelectContent>
-                </Select>
+                  // Salida para el ~5% de ciudades que Dropi no lista.
+                  extra={{ value: OTRA, label: '➕ Otra ciudad (escribir)' }}
+                />
               ) : (
                 // Modo texto: catálogo no cargó, o el operador eligió "Otra".
                 <div className="space-y-1">
