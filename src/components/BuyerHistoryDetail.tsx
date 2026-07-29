@@ -6,6 +6,7 @@ import {
   type BuyerContext, otherShopsSummary, sortCouriersByVolume,
 } from '@/lib/buyerHistory';
 import { courierName } from '@/lib/dropiCouriers';
+import { carrierLogo } from '@/lib/carrierLogos';
 
 /**
  * Detalle expandible del historial del comprador (huella Dropi), debajo de la
@@ -26,10 +27,10 @@ import { courierName } from '@/lib/dropiCouriers';
  */
 
 /**
- * Un dato de la fila: distinto de cero → PASTILLA de color; cero → texto plano
- * apagado, SIN borde ni fondo — exactamente el trato del panel de Dropi. Con
- * borde, doce "0 en tránsito" grises convertían la tarjeta en una pared de
- * cápsulas ("se ve amontonado"); como texto plano el ojo va directo al color.
+ * Un dato de la fila: distinto de cero → PASTILLA de color; cero → NADA.
+ * Antes los ceros iban como texto apagado, pero siete "0 en tránsito · 0
+ * entregas" repetidos seguían siendo ruido: el resumen de arriba ya declara
+ * los ceros con etiqueta, así que en las filas solo habla lo que existe.
  */
 function Stat({ count, uno, muchos, tone }: {
   count: number;
@@ -37,15 +38,7 @@ function Stat({ count, uno, muchos, tone }: {
   muchos: string;
   tone: 'success' | 'danger' | 'warning';
 }) {
-  const label = count === 1 ? uno : muchos;
-  if (count === 0) {
-    // /70 = atenuado pero legible (~3.8:1 en oscuro; /50 caía a 2.6:1).
-    return (
-      <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap tabular-nums">
-        {count} {label}
-      </span>
-    );
-  }
+  if (count === 0) return null;
   const on: Record<string, string> = {
     success: 'border-success/40 bg-success/15 text-success',
     danger: 'border-danger/40 bg-danger/15 text-danger',
@@ -53,14 +46,17 @@ function Stat({ count, uno, muchos, tone }: {
   };
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap tabular-nums ${on[tone]}`}>
-      {count} {label}
+      {count} {count === 1 ? uno : muchos}
     </span>
   );
 }
 
-/** Los tres datos en el orden del panel de Dropi: tránsito → devoluciones
- *  → entregas. Un solo componente para que TODAS las filas hablen igual. */
+/** Los datos en el orden del panel de Dropi: tránsito → devoluciones →
+ *  entregas. Fila sin nada distinto de cero → un guion apagado (no vacío). */
 function PillRow({ delivered, returned, transit }: { delivered: number; returned: number; transit: number }) {
+  if (delivered + returned + transit === 0) {
+    return <span className="text-[10px] text-muted-foreground/70">—</span>;
+  }
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1">
       <Stat count={transit} uno="en tránsito" muchos="en tránsito" tone="warning" />
@@ -71,11 +67,11 @@ function PillRow({ delivered, returned, transit }: { delivered: number; returned
 }
 
 /**
- * "Logo" de transportadora: iniciales sobre un color ESTABLE derivado del
- * nombre (mismo nombre → siempre el mismo color, como los avatares de
- * Linear/Notion). No inventamos logos ajenos; esto es honesto y se ve pro.
- * Paleta CURADA: todos los fondos dan ≥4.5:1 con texto blanco (un hue de
- * hash libre podía caer en tonos claros ilegibles).
+ * Badge de transportadora: LOGO REAL empaquetado si lo tenemos
+ * (src/lib/carrierLogos.ts) — círculo blanco para marcas transparentes,
+ * relleno completo para íconos cuadrados, chip ancho para wordmarks. Sin
+ * logo (VELOCES, CO sin resolver) o si la imagen falla → iniciales sobre un
+ * color ESTABLE por nombre. Paleta CURADA: ≥4.5:1 con texto blanco.
  */
 const AVATAR_COLORS = [
   '#4F46E5', // indigo
@@ -89,6 +85,31 @@ const AVATAR_COLORS = [
 ];
 
 function CarrierAvatar({ name }: { name: string }) {
+  const [broken, setBroken] = useState(false);
+  const logo = carrierLogo(name);
+
+  if (logo && !broken) {
+    if (logo.fit === 'wide') {
+      // Wordmark horizontal (Laar): chip redondeado ancho sobre blanco.
+      return (
+        <span aria-hidden="true" className="flex h-6 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white px-1 ring-1 ring-border">
+          <img src={logo.src} alt="" loading="lazy" className="max-h-4 w-full object-contain" onError={() => setBroken(true)} />
+        </span>
+      );
+    }
+    return (
+      <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ring-1 ring-border">
+        <img
+          src={logo.src}
+          alt=""
+          loading="lazy"
+          className={logo.fit === 'cover' ? 'h-full w-full object-cover' : 'h-5 w-5 object-contain'}
+          onError={() => setBroken(true)}
+        />
+      </span>
+    );
+  }
+
   const words = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
   const initials = (words.length >= 2 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase();
   let hash = 0;
@@ -96,7 +117,7 @@ function CarrierAvatar({ name }: { name: string }) {
   return (
     <span
       aria-hidden="true"
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ring-1 ring-border"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ring-1 ring-border"
       style={{ backgroundColor: AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length] }}
     >
       {initials}

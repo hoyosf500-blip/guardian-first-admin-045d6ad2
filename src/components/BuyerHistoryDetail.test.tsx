@@ -36,8 +36,9 @@ describe('BuyerHistoryDetail', () => {
     expect(screen.getByText('más usada')).toBeInTheDocument();
     // Una fila (li) por transportadora — el conteo se ve de un vistazo
     expect(screen.getByTestId('lista-transportadoras').children).toHaveLength(2);
-    // Avatar tipo logo: iniciales estables por nombre ("LA" de LAARCOURIER)
-    expect(screen.getByText('LA')).toBeInTheDocument();
+    // Transportadora con logo empaquetado (LAARCOURIER) → <img>, no iniciales
+    expect(screen.getByTestId('lista-transportadoras').querySelector('img')).not.toBeNull();
+    expect(screen.queryByText('LA')).toBeNull();
     // Las secciones Por precio y Contra entrega también se dibujan
     expect(screen.getByText('Por precio')).toBeInTheDocument();
     expect(screen.getByText('$30 - $45')).toBeInTheDocument();
@@ -68,14 +69,15 @@ describe('BuyerHistoryDetail', () => {
     expect(panel.className).toContain('border-warning');
   });
 
-  it('sin pedidos en tránsito con otras tiendas: pastilla en 0, singulares bien y panel SIN ámbar', () => {
+  it('sin pedidos en tránsito con otras tiendas: cero OCULTO, singulares bien y panel SIN ámbar', () => {
     const cerrado = parseBuyerContext({
       all_shops: { period_orders: 4 }, my_shop: { period_orders: 1 },
       other_shops: { period_orders: 3, period_delivered: 2, period_returned: 1, period_transit: 0 },
     })!;
     render(<BuyerHistoryDetail context={cerrado} countryCode="EC" />);
     fireEvent.click(screen.getByText('Ver historial detallado'));
-    expect(screen.getByText('0 en tránsito')).toBeInTheDocument();
+    // Los ceros NO se dibujan en las filas (solo habla lo que existe)
+    expect(screen.queryByText('0 en tránsito')).toBeNull();
     expect(screen.getByText('2 entregas')).toBeInTheDocument();
     // singular: "1 devolución", no "1 devoluciones"
     expect(screen.getByText('1 devolución')).toBeInTheDocument();
