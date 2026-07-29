@@ -36,10 +36,33 @@ describe('BuyerHistoryDetail', () => {
     expect(screen.getByText('más usada')).toBeInTheDocument();
   });
 
-  it('resalta la actividad con OTRAS tiendas', async () => {
+  it('resalta la actividad con OTRAS tiendas en PALABRAS: en camino / entregados / devueltos', () => {
     render(<BuyerHistoryDetail context={ctx} countryCode="EC" />);
     fireEvent.click(screen.getByText('Ver historial detallado'));
     expect(screen.getByText('Con otras tiendas:')).toBeInTheDocument();
+    // other_shops: 3 entregados, 2 devueltos, 1 en tránsito → chips con palabras
+    expect(screen.getByText('1 en camino')).toBeInTheDocument();
+    expect(screen.getByText('3 entregados')).toBeInTheDocument();
+    expect(screen.getByText('2 devueltos')).toBeInTheDocument();
+    // Con pedidos ACTIVOS (transit>0) el panel entero escala a ámbar — la señal
+    // de riesgo COD que motiva el panel.
+    expect(screen.getByTestId('otras-tiendas-panel').className).toContain('border-warning');
+  });
+
+  it('sin pedidos activos con otras tiendas: chip "0 en camino", singulares bien y panel SIN ámbar', () => {
+    const cerrado = parseBuyerContext({
+      all_shops: { period_orders: 4 }, my_shop: { period_orders: 1 },
+      other_shops: { period_orders: 3, period_delivered: 2, period_returned: 1, period_transit: 0 },
+    })!;
+    render(<BuyerHistoryDetail context={cerrado} countryCode="EC" />);
+    fireEvent.click(screen.getByText('Ver historial detallado'));
+    expect(screen.getByText('0 en camino')).toBeInTheDocument();
+    expect(screen.getByText('2 entregados')).toBeInTheDocument();
+    // singular: "1 devuelto", no "1 devueltos"
+    expect(screen.getByText('1 devuelto')).toBeInTheDocument();
+    const panel = screen.getByTestId('otras-tiendas-panel');
+    expect(panel.className).not.toContain('border-warning');
+    expect(panel.className).toContain('border-border');
   });
 
   it('CO con ID desconocido cae al fallback, no inventa nombre', async () => {

@@ -25,6 +25,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
+import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 // Clasificador robusto de categoría: matchea por contención sobre la descripción
 // COMPLETA normalizada (no el `codigo` truncado en el primer ":"). Ver el header de
 // _shared/walletCategoria.ts para el root cause del bug 2026-06-24.
@@ -148,38 +149,125 @@ async function syncStore(
   userId: string | null,
 ): Promise<SyncStoreResult> {
   const cfg = await loadStoreConfig(sb, storeId);
-  // 2026-05-22: priorizar INTEGRATIONS api_key (permanente) sobre session_token.
-  const authToken = cfg.apiKey || cfg.sessionToken;
-  if (!authToken) {
-    return { store_id: storeId, ok: false, error: "Sin credencial Dropi (api_key ni session_token)" };
-  }
 
-  // Decodificar JWT → `sub` (dropi user_id) para el query.
-  let dropiUserId: number;
+  // 2026-07-29: Dropi empezó a rechazar la api_key de INTEGRATIONS en
+  // exportexcel — "Token not issued to this api" — en las DOS cuentas a la
+  // misma hora (04:23 UTC), sin que nadie tocara credenciales acá. El endpoint
+  // volvió a exigir el token de SESIÓN web (como era antes de 2026-05-22).
+  // Cadena de intentos, del más probable al último recurso:
+  //   1. session token (auto-renovado por exp; EC tiene login configurado),
+  //   2. si Dropi rechaza un session "vigente", UN re-login forzado
+  //      (Dropi puede revocar tokens antes del exp),
+  //   3. api_key — funcionó hasta el 28-jul; si Dropi revierte, seguimos vivos.
+  // Cada intento decodifica su PROPIO `sub` (ambos JWT traen el dropi user_id).
+  let sessionToken = "";
+  // Si el auto-login falla, su mensaje es la CAUSA RAÍZ (clave mala, 2FA) — se
+  // guarda para adjuntarlo al error final en sync_logs, no solo a console.
+  let loginFailMsg = "";
   try {
-    const payload = JSON.parse(atob(authToken.split(".")[1]));
-    dropiUserId = Number(payload.sub);
-    if (!dropiUserId) throw new Error("sin sub");
-  } catch {
-    return { store_id: storeId, ok: false, error: "Token Dropi inválido — no se pudo decodificar." };
+    sessionToken = await ensureFreshSessionToken(sb, cfg);
+  } catch (e) {
+    loginFailMsg = e instanceof Error ? e.message : String(e);
+    console.warn(`[wallet] auto-login Dropi falló (store ${storeId}):`, loginFailMsg);
   }
 
-  const params = new URLSearchParams({
-    from: fromDate,
-    until: toDate,
-    user_id: String(dropiUserId),
-    wallet_id: "0",
-  });
-  const xlsxRes = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
-    method: "GET",
-    headers: {
-      "Accept": "application/json, text/plain, */*",
-      "x-authorization": `Bearer ${authToken}`,
-    },
-  });
-  if (!xlsxRes.ok) {
-    const txt = await xlsxRes.text();
-    const errMsg = `Dropi exportexcel [${xlsxRes.status}]: ${txt.slice(0, 200)}`;
+  const decodeSub = (token: string): number => {
+    try {
+      return Number(JSON.parse(atob(token.split(".")[1])).sub) || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const candidates: Array<{ label: string; token: string }> = [];
+  if (sessionToken) candidates.push({ label: "session", token: sessionToken });
+  if (cfg.apiKey) candidates.push({ label: "api_key", token: cfg.apiKey });
+  if (candidates.length === 0) {
+    const errMsg = "Sin credencial Dropi (api_key ni session_token)" +
+      (loginFailMsg ? ` (auto-login: ${loginFailMsg.slice(0, 160)})` : "");
+    // También a sync_logs: un fallo de config sin fila era invisible al badge.
+    if (!dryRun) {
+      await sb.from("sync_logs").insert({
+        source: "dropi-wallet-sync",
+        status: "error",
+        synced_count: 0,
+        total_count: 0,
+        error_message: errMsg,
+        triggered_by: userId,
+        store_id: storeId,
+      });
+    }
+    return { store_id: storeId, ok: false, error: errMsg };
+  }
+
+  let xlsxRes: Response | null = null;
+  // TODOS los fallos se acumulan (no solo el último): el diagnóstico completo
+  // llega a sync_logs, que es lo único que ve el dueño en el badge.
+  const fallos: string[] = [];
+  // Solo un 401/403 REAL de Dropi (no un token indescifrable local) habilita el
+  // hint de credenciales y el `expired` de la respuesta.
+  let sawAuthReject = false;
+  let renewedOnce = false;
+
+  // UN re-login forzado por corrida, insertado como candidato siguiente. Se
+  // dispara tanto por 401 de Dropi como por un session token indescifrable en
+  // DB (paste corrupto): en ambos casos el login lo repara solo.
+  const tryForcedRenew = async (i: number, currentToken: string) => {
+    if (renewedOnce) return;
+    renewedOnce = true;
+    try {
+      const forced = await ensureFreshSessionToken(sb, cfg, { force: true });
+      if (forced && forced !== currentToken) {
+        candidates.splice(i + 1, 0, { label: "session renovado", token: forced });
+      }
+    } catch (e) {
+      loginFailMsg = e instanceof Error ? e.message : String(e);
+      console.warn(`[wallet] re-login forzado falló (store ${storeId}):`, loginFailMsg);
+    }
+  };
+
+  for (let i = 0; i < candidates.length; i++) {
+    const cand = candidates[i];
+    const dropiUserId = decodeSub(cand.token);
+    if (!dropiUserId) {
+      fallos.push(`token (${cand.label}) indescifrable — sin user_id`);
+      if (cand.label === "session") await tryForcedRenew(i, cand.token);
+      continue;
+    }
+    const params = new URLSearchParams({
+      from: fromDate,
+      until: toDate,
+      user_id: String(dropiUserId),
+      wallet_id: "0",
+    });
+    const res = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "x-authorization": `Bearer ${cand.token}`,
+      },
+    });
+    if (res.ok) {
+      xlsxRes = res;
+      break;
+    }
+    const txt = await res.text();
+    fallos.push(`[${res.status}] con ${cand.label}: ${txt.slice(0, 160)}`);
+    console.warn(`[wallet] exportexcel ${fallos[fallos.length - 1]}`);
+    // Errores que NO son de credencial (429 throttle EC, 5xx): probar otro
+    // token no ayuda y suma requests al throttle — cortar acá.
+    if (res.status !== 401 && res.status !== 403) break;
+    sawAuthReject = true;
+    // 401 con un session "vigente" por exp → Dropi lo revocó antes: renovar.
+    if (cand.label === "session") await tryForcedRenew(i, cand.token);
+  }
+
+  if (!xlsxRes) {
+    const hint = sawAuthReject
+      ? " Dropi rechazó las credenciales para la billetera. Si la tienda no tiene auto-login (cuenta con 2FA), pegá un session token fresco en Admin → Credenciales Dropi."
+      : "";
+    const login = loginFailMsg ? ` (auto-login: ${loginFailMsg.slice(0, 160)})` : "";
+    const errMsg = `Dropi exportexcel: ${fallos.join(" | ") || "sin respuesta"}${hint}${login}`;
     // Loguear el FALLO a sync_logs: antes el wallet-sync solo escribía en el
     // camino de éxito → un 401 (token vencido) o 429 (throttle EC) dejaba CERO
     // rastro y el banner solo lo notaba como envejecimiento, sin distinguir
@@ -198,17 +286,36 @@ async function syncStore(
     return {
       store_id: storeId,
       ok: false,
-      expired: xlsxRes.status === 401,
+      expired: sawAuthReject,
       error: errMsg,
     };
   }
 
-  const arrayBuffer = await xlsxRes.arrayBuffer();
-  const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
-  const firstSheetName = wb.SheetNames[0];
-  if (!firstSheetName) return { store_id: storeId, ok: false, error: "XLSX sin sheets" };
-
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheetName], { defval: null }) as XlsxRow[];
+  // Parseo defensivo: si Dropi devuelve 200 con basura (HTML de mantenimiento
+  // en vez del binario), XLSX.read tira — y ese fallo TAMBIÉN va a sync_logs,
+  // no solo al catch del fan-out (donde el badge no lo veía).
+  let rows: XlsxRow[];
+  try {
+    const arrayBuffer = await xlsxRes.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(arrayBuffer), { type: "array" });
+    const firstSheetName = wb.SheetNames[0];
+    if (!firstSheetName) throw new Error("XLSX sin sheets");
+    rows = XLSX.utils.sheet_to_json(wb.Sheets[firstSheetName], { defval: null }) as XlsxRow[];
+  } catch (e) {
+    const errMsg = `El export de Dropi no se pudo leer como XLSX: ${e instanceof Error ? e.message : String(e)}`;
+    if (!dryRun) {
+      await sb.from("sync_logs").insert({
+        source: "dropi-wallet-sync",
+        status: "error",
+        synced_count: 0,
+        total_count: 0,
+        error_message: errMsg,
+        triggered_by: userId,
+        store_id: storeId,
+      });
+    }
+    return { store_id: storeId, ok: false, error: errMsg };
+  }
   type Mapped = ReturnType<typeof mapRow>;
   const slice: XlsxRow[] = limit > 0 ? rows.slice(0, limit) : rows;
   const mapped = slice
@@ -224,7 +331,7 @@ async function syncStore(
 
   let totalSynced = 0;
   let anyUpsertError: string | null = null;
-  if (!dryRun && mapped.length > 0) {
+  if (!dryRun) {
     for (let i = 0; i < mapped.length; i += 50) {
       const batch = mapped.slice(i, i + 50);
       const { data: changedCount, error: upsertError } = await sb.rpc(
@@ -240,6 +347,10 @@ async function syncStore(
     }
     // status='error' si algún batch falló (antes siempre 'success' aunque el
     // upsert reventara → un fallo de RPC quedaba oculto). Auditoría EC 2026-07-07.
+    // OJO: este insert corre AUNQUE mapped esté vacío — el contrato del badge
+    // (useWalletSyncHealth) es "una fila por CADA corrida, incluso con 0
+    // movimientos". Con el guard `mapped.length > 0` una tienda quieta
+    // envejecía el badge a stale/critical en falso.
     await sb.from("sync_logs").insert({
       source: "dropi-wallet-sync",
       status: anyUpsertError ? "error" : "success",
@@ -250,6 +361,21 @@ async function syncStore(
       triggered_by: userId,
       store_id: storeId,
     });
+  }
+
+  // Si el upsert falló, decirlo también en la RESPUESTA — no solo en sync_logs.
+  // Antes esto devolvía ok:true y el sync manual mostraba "Sync OK: 0
+  // movimientos" con la RPC reventada: el mismo "fallar en verde" del 21-jul,
+  // en el otro canal.
+  if (anyUpsertError) {
+    return {
+      store_id: storeId,
+      ok: false,
+      synced: totalSynced,
+      total: mapped.length,
+      rows_in_excel: rows.length,
+      error: `upsert_wallet_movements: ${anyUpsertError}`,
+    };
   }
 
   return {

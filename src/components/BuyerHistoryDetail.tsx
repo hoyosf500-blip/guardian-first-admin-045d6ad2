@@ -1,5 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronUp, Truck, DollarSign, Wallet, AlertTriangle } from 'lucide-react';
+import {
+  ChevronDown, ChevronUp, Truck, DollarSign, Wallet, AlertTriangle, Store,
+  CheckCircle2, RotateCcw,
+} from 'lucide-react';
 import {
   type BuyerContext, otherShopsSummary, sortCouriersByVolume,
 } from '@/lib/buyerHistory';
@@ -9,22 +12,52 @@ import { courierName } from '@/lib/dropiCouriers';
  * Detalle expandible del historial del comprador (huella Dropi), debajo de la
  * tarjeta compacta en Confirmar. La asesora abre "Ver más" y ve, sobre TODAS
  * las tiendas, cómo le fue a este cliente por transportadora, por precio y en
- * contra entrega — más una alerta de qué hizo con OTRAS tiendas.
+ * contra entrega — más una alerta de qué hizo con OTRAS tiendas, dejando claro
+ * si esos pedidos siguen EN CAMINO (activos = riesgo COD) o ya se entregaron.
  *
  * Los datos ya llegan en la huella (`fingerprint.context_analysis`); acá solo
  * se dibujan. Ver `src/lib/buyerHistory.ts`.
+ *
+ * Lenguaje visual = el de la tarjeta compacta: entregado verde + CheckCircle2,
+ * devuelto rojo + RotateCcw, en camino ámbar + Truck, barras de proporción.
  */
 
-/**
- * Celda numérica de ancho fijo. Los CEROS se atenúan a propósito: así el ojo va
- * directo al dato que importa (una devolución, un pedido en tránsito) en vez de
- * ahogarse en una pared de "0 0 0". Entregado=verde, devuelto=rojo, tránsito=muted.
- */
-function Num({ value, tone }: { value: number; tone: string }) {
+const plural = (n: number, uno: string, muchos: string) => `${n} ${n === 1 ? uno : muchos}`;
+
+/** Chip con PALABRA (no número suelto): "2 en camino", "4 entregados"… Se
+ *  apaga cuando el conteo es 0 para que el dato real salte a la vista. */
+function WordChip({ count, text, tone }: {
+  count: number;
+  text: string;
+  tone: 'success' | 'danger' | 'warning';
+}) {
+  const on: Record<string, string> = {
+    success: 'border-success/40 bg-success/15 text-success',
+    danger: 'border-danger/40 bg-danger/15 text-danger',
+    warning: 'border-warning/40 bg-warning/15 text-warning',
+  };
   return (
     <span
-      className={`w-9 shrink-0 text-right tabular-nums text-[11px] font-semibold ${
-        value === 0 ? 'text-muted-foreground/40' : tone
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${
+        count === 0 ? 'border-border bg-muted/30 text-muted-foreground/50' : on[tone]
+      }`}
+    >
+      {text}
+    </span>
+  );
+}
+
+/** Celda numérica de ancho fijo → las tres columnas alinean fila a fila.
+ *  Los ceros se atenúan a propósito (en /50 — la única variante alfa cubierta
+ *  por el bloque COMPATIBILIDAD TEMA CLARO de index.css; /40 era invisible en
+ *  claro). El aria-label da la semántica que el layout visual pone en el
+ *  encabezado de iconos ("6" solo no dice nada a un lector de pantalla). */
+function Num({ value, tone, label }: { value: number; tone: string; label: string }) {
+  return (
+    <span
+      aria-label={`${value} ${label}`}
+      className={`w-8 shrink-0 text-right tabular-nums text-[11px] font-semibold ${
+        value === 0 ? 'text-muted-foreground/50' : tone
       }`}
     >
       {value}
@@ -32,34 +65,35 @@ function Num({ value, tone }: { value: number; tone: string }) {
   );
 }
 
-/** Las tres métricas como columnas fijas → alinean verticalmente fila a fila. */
 function Metrics({ delivered, returned, transit }: { delivered: number; returned: number; transit: number }) {
   return (
     <div className="flex items-center gap-1.5 shrink-0">
-      <Num value={delivered} tone="text-success" />
-      <Num value={returned} tone="text-danger" />
-      <Num value={transit} tone="text-muted-foreground" />
+      <Num value={delivered} tone="text-success" label="entregados" />
+      <Num value={returned} tone="text-danger" label="devueltos" />
+      <Num value={transit} tone="text-warning" label="en camino" />
     </div>
   );
 }
 
-/** Encabezado de columnas (Entr / Dev / Trán), una sola vez arriba de las filas. */
+/** Encabezado de columnas con los MISMOS iconos de la tarjeta compacta —
+ *  verde entregado / rojo devuelto / ámbar en camino. */
 function ColHeader() {
+  const cols: Array<{ icon: typeof CheckCircle2; tone: string; label: string }> = [
+    { icon: CheckCircle2, tone: 'text-success', label: 'Entregados' },
+    { icon: RotateCcw, tone: 'text-danger', label: 'Devueltos' },
+    { icon: Truck, tone: 'text-warning', label: 'En camino' },
+  ];
   return (
-    <div className="flex items-center justify-end gap-1.5 pb-1.5">
-      {['Entr', 'Dev', 'Trán'].map((h) => (
-        <span
-          key={h}
-          className="w-9 shrink-0 text-right text-[9px] font-bold uppercase tracking-wide text-muted-foreground/70"
-        >
-          {h}
+    <div className="flex items-center justify-end gap-1.5 pb-1">
+      {cols.map(({ icon: Icon, tone, label }) => (
+        <span key={label} className="w-8 flex justify-end" role="img" aria-label={label} title={label}>
+          <Icon size={11} className={tone} aria-hidden="true" />
         </span>
       ))}
     </div>
   );
 }
 
-/** Sección con icono, título y una línea fina que la separa visualmente. */
 function Section({ icon: Icon, label, children }: { icon: typeof Truck; label: string; children: ReactNode }) {
   return (
     <div className="mt-3 first:mt-0">
@@ -73,18 +107,32 @@ function Section({ icon: Icon, label, children }: { icon: typeof Truck; label: s
   );
 }
 
+/** Fila de datos: label + columnas alineadas + mini barra de proporción
+ *  (verde/rojo/ámbar) — la misma gramática que las barras de la tarjeta. */
 function DataRow({ label, tag, delivered, returned, transit }: {
   label: string; tag?: string; delivered: number; returned: number; transit: number;
 }) {
+  const total = delivered + returned + transit;
+  const pct = (v: number) => (total > 0 ? `${(v / total) * 100}%` : '0%');
+  const seg = (v: number) => ({ width: pct(v), minWidth: v > 0 ? '6px' : '0' });
   return (
-    <div className="flex items-center gap-2 py-[3px]">
-      <span className="flex-1 min-w-0 truncate text-[11px] font-medium text-foreground">
-        {label}
-        {tag && (
-          <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-muted-foreground/70">{tag}</span>
-        )}
-      </span>
-      <Metrics delivered={delivered} returned={returned} transit={transit} />
+    <div className="py-1">
+      <div className="flex items-center gap-2">
+        <span className="flex-1 min-w-0 truncate text-[11px] font-medium text-foreground">
+          {label}
+          {tag && (
+            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-muted-foreground/70">{tag}</span>
+          )}
+        </span>
+        <Metrics delivered={delivered} returned={returned} transit={transit} />
+      </div>
+      {total > 0 && (
+        <div className="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60" aria-hidden="true">
+          <div className="bg-success transition-[width] duration-500" style={seg(delivered)} />
+          <div className="bg-danger transition-[width] duration-500" style={seg(returned)} />
+          <div className="bg-warning transition-[width] duration-500" style={seg(transit)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -102,28 +150,47 @@ export default function BuyerHistoryDetail({
   const couriers = sortCouriersByVolume(all.byCourier);
   const hasCod = all.byPayment.some((p) => p.isCod);
   const hasRows = couriers.length > 0 || all.byPrice.length > 0 || hasCod;
+  // Pedidos ACTIVOS con otras tiendas = el riesgo COD que el CRM solo no ve:
+  // si ya tiene 2 contraentregas en camino, la 3ra tiene más chance de rechazo.
+  const otrasActivos = (otras?.transit ?? 0) > 0;
 
   return (
     <div className="px-4 pb-3 pt-1 border-t border-border/60">
+      {/* min-h-11 = 44px táctiles, la convención del proyecto (CallView). */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+        className="flex min-h-11 w-full items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
       >
         {open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
         {open ? 'Ver menos' : 'Ver historial detallado'}
       </button>
 
       {open && (
-        <div className="mt-2.5">
-          {/* Alerta cross-tienda: qué hizo el cliente con OTRAS tiendas — el
-              riesgo que nuestro CRM solo no puede ver. Va resaltada en ámbar. */}
+        <div className="mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+          {/* Con OTRAS tiendas: chips con palabras. "En camino" = pedidos
+              ACTIVOS ahora — si hay, el panel entero escala a ámbar. */}
           {otras && (
-            <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 mb-1.5">
-              <AlertTriangle size={13} className="text-warning shrink-0" aria-hidden="true" />
-              <span className="flex-1 min-w-0 text-[11px] font-semibold text-foreground">Con otras tiendas:</span>
-              <Metrics delivered={otras.delivered} returned={otras.returned} transit={otras.transit} />
+            <div
+              data-testid="otras-tiendas-panel"
+              className={`rounded-lg border px-3 py-2 mb-1.5 ${
+                otrasActivos ? 'border-warning/40 bg-warning/10' : 'border-border bg-surface/40'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 mb-1.5">
+                {otrasActivos ? (
+                  <AlertTriangle size={12} className="text-warning shrink-0" aria-hidden="true" />
+                ) : (
+                  <Store size={12} className="text-muted-foreground shrink-0" aria-hidden="true" />
+                )}
+                <span className="text-[11px] font-semibold text-foreground">Con otras tiendas:</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <WordChip count={otras.transit} text={`${otras.transit} en camino`} tone="warning" />
+                <WordChip count={otras.delivered} text={plural(otras.delivered, 'entregado', 'entregados')} tone="success" />
+                <WordChip count={otras.returned} text={plural(otras.returned, 'devuelto', 'devueltos')} tone="danger" />
+              </div>
             </div>
           )}
 
