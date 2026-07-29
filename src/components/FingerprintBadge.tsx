@@ -215,6 +215,21 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
       </div>
     );
   }
+  // Pedido SIN teléfono — la huella se consulta por teléfono, así que no hay
+  // nada que pedir. Antes esto caía en `return null` y la tarjeta desaparecía
+  // muda: la asesora no distinguía "este pedido no tiene teléfono" de "la huella
+  // se rompió". Típico en pedidos marcados "Datos incompletos". Ahora es visible.
+  if (!phone) {
+    return (
+      <div className="rounded-xl border border-border bg-card px-4 py-2.5 flex items-center gap-2">
+        <Fingerprint size={14} className="text-muted-foreground" aria-hidden="true" />
+        <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Huella Dropi
+        </span>
+        <span className="text-[11px] text-muted-foreground">Sin teléfono para consultar</span>
+      </div>
+    );
+  }
   if (!state) return null;
 
   // Cliente NUEVO — sin historial en Dropi. Señal útil (primera compra), no ausencia.

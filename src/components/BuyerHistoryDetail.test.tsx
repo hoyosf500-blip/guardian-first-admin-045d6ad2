@@ -24,13 +24,16 @@ describe('BuyerHistoryDetail', () => {
     expect(screen.queryByText('Por transportadora')).not.toBeInTheDocument();
   });
 
-  it('al abrir muestra transportadoras con nombre (EC), ordenadas por volumen', async () => {
+  it('al abrir muestra transportadoras con nombre (EC), ordenadas por volumen', () => {
     render(<BuyerHistoryDetail context={ctx} countryCode="EC" />);
     fireEvent.click(screen.getByText('Ver historial detallado'));
     expect(screen.getByText('Por transportadora')).toBeInTheDocument();
-    const trans = screen.getAllByText(/LAARCOURIER|VELOCES/).map((e) => e.textContent);
-    // LAARCOURIER (vol 9) antes que VELOCES (vol 1)
-    expect(trans).toEqual(['LAARCOURIER', 'VELOCES']);
+    // LAARCOURIER (vol 9) antes que VELOCES (vol 1); la más usada lleva el tag.
+    const trans = screen.getAllByText(/LAARCOURIER|VELOCES/);
+    expect(trans).toHaveLength(2);
+    expect(trans[0]).toHaveTextContent('LAARCOURIER');
+    expect(trans[1]).toHaveTextContent('VELOCES');
+    expect(screen.getByText('más usada')).toBeInTheDocument();
   });
 
   it('resalta la actividad con OTRAS tiendas', async () => {
