@@ -1,10 +1,12 @@
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
 import { PROVINCIAS_ECUADOR } from '@/lib/ecuadorGeo';
+import { useDropiCityCatalog } from '@/hooks/useDropiCityCatalog';
+import { optionsPreservingCurrent } from '@/lib/geoCatalog';
 import { useStore } from '@/contexts/StoreContext';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
@@ -148,6 +150,31 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ciudades]);
 
+  // ── Ecuador: desplegables sincronizados con el catálogo de Dropi ──────────
+  // El operador ELIGE provincia y ciudad de la lista real de Dropi en vez de
+  // escribir (y equivocarse). Si el catálogo no cargó, cae al texto libre viejo
+  // (fallback más abajo) para no dejar a nadie sin poder editar.
+  const OTRA = '__OTRA__';
+  const { catalog: ecCatalog } = useDropiCityCatalog(isEC ? 'EC' : 'CO');
+  const ecHasCatalog = isEC && ecCatalog.provinces.length > 0;
+  const ecProv = optionsPreservingCurrent(form.departamento, ecCatalog.provinces);
+  const ecCities = useMemo(() => {
+    if (!ecHasCatalog || !ecProv.selected) return [];
+    // La provincia seleccionada ya es una etiqueta del catálogo → lookup directo.
+    return ecCatalog.citiesByProvince[ecProv.selected] || [];
+  }, [ecHasCatalog, ecProv.selected, ecCatalog]);
+  const ecCity = optionsPreservingCurrent(form.ciudad, ecCities);
+
+  // "Otra ciudad" (escribir) — solo para el ~5% que Dropi no lista. Se resetea
+  // al cambiar de provincia para no arrastrar el modo texto a la nueva.
+  const [ecOtraCity, setEcOtraCity] = useState(false);
+  useEffect(() => { setEcOtraCity(false); }, [form.departamento]);
+
+  const handleEcCity = (v: string) => {
+    if (v === OTRA) { setEcOtraCity(true); onChange(f => ({ ...f, ciudad: '' })); }
+    else { setEcOtraCity(false); onChange(f => ({ ...f, ciudad: v })); }
+  };
+
   return (
     <div className="space-y-6">
       {/* ---- Información del cliente ---- */}
@@ -213,17 +240,33 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
           <div className="space-y-1.5">
             <Label className={LABEL_CLS}>{isEC ? 'Provincia *' : 'Departamento *'}</Label>
             {isEC ? (
-              <>
-                <Input
-                  list="ec-provincias"
-                  value={form.departamento}
-                  onChange={e => onChange(f => ({ ...f, departamento: e.target.value }))}
-                  placeholder="Ej. Guayas"
-                />
-                <datalist id="ec-provincias">
-                  {PROVINCIAS_ECUADOR.map(p => <option key={p} value={p} />)}
-                </datalist>
-              </>
+              ecHasCatalog ? (
+                <Select
+                  value={ecProv.selected || undefined}
+                  onValueChange={(v) => onChange(f => ({ ...f, departamento: v, ciudad: '' }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {ecProv.options.map(d => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                // Fallback: el catálogo de Dropi no cargó → texto con sugerencias
+                // (comportamiento viejo). Nunca dejamos al operador sin editar.
+                <>
+                  <Input
+                    list="ec-provincias"
+                    value={form.departamento}
+                    onChange={e => onChange(f => ({ ...f, departamento: e.target.value }))}
+                    placeholder="Ej. Guayas"
+                  />
+                  <datalist id="ec-provincias">
+                    {PROVINCIAS_ECUADOR.map(p => <option key={p} value={p} />)}
+                  </datalist>
+                </>
+              )
             ) : (
               <Select
                 value={form.departamento || undefined}
@@ -242,11 +285,43 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
           <div className="space-y-1.5">
             <Label className={LABEL_CLS}>Ciudad *</Label>
             {isEC ? (
-              <Input
-                value={form.ciudad}
-                onChange={e => onChange(f => ({ ...f, ciudad: e.target.value }))}
-                placeholder="Ej. Guayaquil"
-              />
+              ecHasCatalog && !ecOtraCity ? (
+                <Select
+                  value={ecCity.selected || undefined}
+                  onValueChange={handleEcCity}
+                  disabled={!form.departamento}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={form.departamento ? 'Seleccionar...' : 'Elegí la provincia primero'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ecCity.options.map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                    {/* Salida para el ~5% de ciudades que Dropi no lista. */}
+                    <SelectItem value={OTRA}>➕ Otra ciudad (escribir)</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                // Modo texto: catálogo no cargó, o el operador eligió "Otra".
+                <div className="space-y-1">
+                  <Input
+                    value={form.ciudad}
+                    onChange={e => onChange(f => ({ ...f, ciudad: e.target.value }))}
+                    placeholder="Ej. Guayaquil"
+                    autoFocus={ecOtraCity}
+                  />
+                  {ecHasCatalog && ecOtraCity && (
+                    <button
+                      type="button"
+                      onClick={() => { setEcOtraCity(false); onChange(f => ({ ...f, ciudad: '' })); }}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      ← Elegir de la lista de Dropi
+                    </button>
+                  )}
+                </div>
+              )
             ) : (
               <Select
                 value={form.ciudad || undefined}
