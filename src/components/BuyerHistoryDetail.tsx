@@ -25,40 +25,47 @@ import { courierName } from '@/lib/dropiCouriers';
  * se dibujan. Ver `src/lib/buyerHistory.ts`.
  */
 
-/** Pastilla con palabra y plural correcto: "1 entrega", "2 devoluciones",
- *  "0 en tránsito" (atenuada cuando el conteo es 0 — mismo trato que Dropi). */
-function CountPill({ count, uno, muchos, tone }: {
+/**
+ * Un dato de la fila: distinto de cero → PASTILLA de color; cero → texto plano
+ * apagado, SIN borde ni fondo — exactamente el trato del panel de Dropi. Con
+ * borde, doce "0 en tránsito" grises convertían la tarjeta en una pared de
+ * cápsulas ("se ve amontonado"); como texto plano el ojo va directo al color.
+ */
+function Stat({ count, uno, muchos, tone }: {
   count: number;
   uno: string;
   muchos: string;
   tone: 'success' | 'danger' | 'warning';
 }) {
+  const label = count === 1 ? uno : muchos;
+  if (count === 0) {
+    // /70 = atenuado pero legible (~3.8:1 en oscuro; /50 caía a 2.6:1).
+    return (
+      <span className="text-[10px] text-muted-foreground/70 whitespace-nowrap tabular-nums">
+        {count} {label}
+      </span>
+    );
+  }
   const on: Record<string, string> = {
     success: 'border-success/40 bg-success/15 text-success',
     danger: 'border-danger/40 bg-danger/15 text-danger',
     warning: 'border-warning/40 bg-warning/15 text-warning',
   };
-  // Cero = atenuado pero LEGIBLE: /70 da ~3.8:1 en oscuro; /50 caía a 2.6:1 y
-  // "0 devoluciones" (la señal de comprador confiable) se volvía ilegible.
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap tabular-nums ${
-        count === 0 ? 'border-border bg-muted/30 text-muted-foreground/70' : on[tone]
-      }`}
-    >
-      {count} {count === 1 ? uno : muchos}
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap tabular-nums ${on[tone]}`}>
+      {count} {label}
     </span>
   );
 }
 
-/** Las tres pastillas en el orden del panel de Dropi: tránsito → devoluciones
+/** Los tres datos en el orden del panel de Dropi: tránsito → devoluciones
  *  → entregas. Un solo componente para que TODAS las filas hablen igual. */
 function PillRow({ delivered, returned, transit }: { delivered: number; returned: number; transit: number }) {
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1">
-      <CountPill count={transit} uno="en tránsito" muchos="en tránsito" tone="warning" />
-      <CountPill count={returned} uno="devolución" muchos="devoluciones" tone="danger" />
-      <CountPill count={delivered} uno="entrega" muchos="entregas" tone="success" />
+    <div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1">
+      <Stat count={transit} uno="en tránsito" muchos="en tránsito" tone="warning" />
+      <Stat count={returned} uno="devolución" muchos="devoluciones" tone="danger" />
+      <Stat count={delivered} uno="entrega" muchos="entregas" tone="success" />
     </div>
   );
 }
@@ -122,12 +129,20 @@ function SummaryBar({ label, value, max, fill, valueTone }: {
   );
 }
 
-function Section({ icon: Icon, label, children }: { icon: typeof Truck; label: string; children: ReactNode }) {
+function Section({ icon: Icon, label, count, children }: {
+  icon: typeof Truck; label: string; count?: number; children: ReactNode;
+}) {
   return (
-    <div className="mt-3 first:mt-0">
-      <div className="flex items-center gap-1.5 mb-1.5">
+    <div className="mt-3.5 first:mt-0">
+      <div className="flex items-center gap-1.5 mb-1">
         <Icon size={11} className="text-accent shrink-0" aria-hidden="true" />
         <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
+        {/* Cuántas hay, de un vistazo — antes había que contarlas a ojo. */}
+        {typeof count === 'number' && count > 1 && (
+          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-muted/50 px-1 text-[9px] font-bold tabular-nums text-muted-foreground">
+            {count}
+          </span>
+        )}
         <span className="flex-1 h-px bg-border/40" aria-hidden="true" />
       </div>
       {children}
@@ -203,22 +218,25 @@ export default function BuyerHistoryDetail({
             </div>
           )}
 
-          {/* Por transportadora — la más usada primero, con "logo" estable. */}
+          {/* Por transportadora — la más usada primero, con "logo" estable.
+              UNA línea por transportadora (nombre izquierda, datos derecha) y
+              separador entre filas: las pastillas en línea aparte quedaban
+              flotando y el ojo las emparejaba con la transportadora EQUIVOCADA. */}
           {couriers.length > 0 && (
-            <Section icon={Truck} label="Por transportadora">
-              <ul className="space-y-2">
+            <Section icon={Truck} label="Por transportadora" count={couriers.length}>
+              <ul className="divide-y divide-border/40" data-testid="lista-transportadoras">
                 {couriers.map((c, i) => {
                   const name = courierName(countryCode, c.courierId);
                   return (
-                    <li key={c.courierId}>
-                      <div className="flex items-center gap-2">
+                    <li key={c.courierId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
+                      <div className="flex min-w-0 items-center gap-2">
                         <CarrierAvatar name={name} />
                         <span className="min-w-0 truncate text-[11px] font-semibold text-foreground">{name}</span>
                         {i === 0 && couriers.length > 1 && (
                           <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/70">más usada</span>
                         )}
                       </div>
-                      <div className="mt-1 pl-8">
+                      <div className="ml-auto">
                         <PillRow delivered={c.delivered} returned={c.returned} transit={c.transit} />
                       </div>
                     </li>
@@ -228,15 +246,15 @@ export default function BuyerHistoryDetail({
             </Section>
           )}
 
-          {/* Por rango de precio. */}
+          {/* Por rango de precio — mismo ritmo de filas con separador. */}
           {all.byPrice.length > 0 && (
-            <Section icon={DollarSign} label="Por precio">
+            <Section icon={DollarSign} label="Por precio" count={all.byPrice.length}>
               {/* El label con basis natural (sin flex-1/basis-0): así el wrap
                   SÍ se dispara y las pastillas bajan de línea en 375px en vez
                   de aplastar "$50.000 - $100.000" a "$50.00…". */}
-              <ul className="space-y-1.5">
+              <ul className="divide-y divide-border/40">
                 {all.byPrice.map((p, i) => (
-                  <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
                     <span className="text-[11px] font-medium text-foreground whitespace-nowrap">{p.label}</span>
                     <div className="ml-auto">
                       <PillRow delivered={p.delivered} returned={p.returned} transit={p.transit} />
@@ -250,9 +268,9 @@ export default function BuyerHistoryDetail({
           {/* Contra entrega. */}
           {cod.length > 0 && (
             <Section icon={Wallet} label="Contra entrega">
-              <ul className="space-y-1.5">
+              <ul className="divide-y divide-border/40">
                 {cod.map((p, i) => (
-                  <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
                     <span className="text-[11px] font-medium text-foreground whitespace-nowrap">Pago contra entrega</span>
                     <div className="ml-auto">
                       <PillRow delivered={p.delivered} returned={p.returned} transit={p.transit} />

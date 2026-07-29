@@ -34,6 +34,8 @@ describe('BuyerHistoryDetail', () => {
     expect(trans[0]).toHaveTextContent('LAARCOURIER');
     expect(trans[1]).toHaveTextContent('VELOCES');
     expect(screen.getByText('más usada')).toBeInTheDocument();
+    // Una fila (li) por transportadora — el conteo se ve de un vistazo
+    expect(screen.getByTestId('lista-transportadoras').children).toHaveLength(2);
     // Avatar tipo logo: iniciales estables por nombre ("LA" de LAARCOURIER)
     expect(screen.getByText('LA')).toBeInTheDocument();
     // Las secciones Por precio y Contra entrega también se dibujan
