@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Fingerprint, Package, CheckCircle2, RotateCcw, TrendingUp, ShieldAlert, ShieldCheck, Shield, Sparkles, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
+import { parseBuyerContext, type BuyerContext } from '@/lib/buyerHistory';
+import BuyerHistoryDetail from '@/components/BuyerHistoryDetail';
 
 
 interface FpData {
@@ -11,6 +13,9 @@ interface FpData {
   delivered: number;
   returned: number;
   buyerType: string;
+  // Historial detallado (por transportadora/precio/otras tiendas). Puede ser
+  // null: huella vieja sin este bloque, o cliente sin desglose. La UI lo omite.
+  context: BuyerContext | null;
 }
 
 /**
@@ -107,7 +112,7 @@ function devolutionColor(): { text: string; fill: string } {
 }
 
 export default function FingerprintBadge({ phone }: { phone: string }) {
-  const { activeStoreId } = useStore();
+  const { activeStoreId, activeStore } = useStore();
   const cacheKey = `${activeStoreId ?? 'none'}|${phone}`;
   const [state, setState] = useState<FpState | undefined>(
     () => getCachedFp(cacheKey),
@@ -160,6 +165,10 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
               delivered: gp.lifetime_totals.delivered,
               returned: gp.lifetime_totals.returned,
               buyerType: gp.buyer_type,
+              // Detalle por transportadora/precio/otras tiendas (ya venía en la
+              // respuesta; el badge lo ignoraba). parseBuyerContext tolera que
+              // falte o sea de una versión vieja → null y la UI no lo muestra.
+              context: parseBuyerContext(dd.fingerprint.context_analysis),
             },
           };
           setCachedFp(cacheKey, next);
@@ -341,6 +350,12 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
           </div>
         </div>
       </div>
+
+      {/* Historial detallado (por transportadora/precio/otras tiendas). Solo si
+          la huella lo trae — cliente sin desglose o versión vieja → no aparece. */}
+      {data.context && (
+        <BuyerHistoryDetail context={data.context} countryCode={activeStore?.country_code} />
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-t border-border/60 bg-surface/40">
