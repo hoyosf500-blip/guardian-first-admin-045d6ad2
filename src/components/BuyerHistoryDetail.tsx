@@ -128,9 +128,9 @@ function DataRow({ label, tag, delivered, returned, transit }: {
       </div>
       {total > 0 && (
         <div className="mt-1 flex h-1.5 w-full overflow-hidden rounded-full bg-muted/60" aria-hidden="true">
-          <div className="bg-success transition-[width] duration-500" style={seg(delivered)} />
-          <div className="bg-danger transition-[width] duration-500" style={seg(returned)} />
-          <div className="bg-warning transition-[width] duration-500" style={seg(transit)} />
+          <div className="bg-success transition-[width] duration-500 motion-reduce:transition-none" style={seg(delivered)} />
+          <div className="bg-danger transition-[width] duration-500 motion-reduce:transition-none" style={seg(returned)} />
+          <div className="bg-warning transition-[width] duration-500 motion-reduce:transition-none" style={seg(transit)} />
         </div>
       )}
     </div>
@@ -161,14 +161,14 @@ export default function BuyerHistoryDetail({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex min-h-11 w-full items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+        className="flex min-h-11 w-full cursor-pointer items-center gap-1 text-[11px] font-semibold text-accent transition-colors hover:underline active:opacity-80"
       >
         {open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
         {open ? 'Ver menos' : 'Ver historial detallado'}
       </button>
 
       {open && (
-        <div className="mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200 motion-reduce:animate-none">
           {/* Con OTRAS tiendas: chips con palabras. "En camino" = pedidos
               ACTIVOS ahora — si hay, el panel entero escala a ámbar. */}
           {otras && (

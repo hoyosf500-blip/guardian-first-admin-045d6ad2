@@ -338,7 +338,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de entrega ${pctEntrega}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ${entregaStyle.fill}`}
+              className={`h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none ${entregaStyle.fill}`}
               style={{ width: `${pctEntrega}%`, minWidth: pctEntrega > 0 ? '8px' : '0' }}
             />
           </div>
@@ -359,7 +359,7 @@ export default function FingerprintBadge({ phone }: { phone: string }) {
             aria-label={`Tasa de devolución ${pctDevol}%`}
           >
             <div
-              className={`h-full rounded-full transition-[width] duration-500 ${devolStyle.fill}`}
+              className={`h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none ${devolStyle.fill}`}
               style={{ width: `${pctDevol}%`, minWidth: pctDevol > 0 ? '8px' : '0' }}
             />
           </div>
