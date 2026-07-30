@@ -146,8 +146,10 @@ export default function DashboardTab() {
     conf: number; canc: number; noresp: number;
     novedades: number; segAcciones: number;
   }
-  const rangoEquipo: '7d' | '30d' = period >= 30 ? '30d' : '7d';
-  const diasRangoEquipo = rangoEquipo === '30d' ? 30 : 7;
+  const rangoEquipo: 'today' | '7d' | '30d' = period >= 30 ? '30d' : period === 1 ? 'today' : '7d';
+  const diasRangoEquipo = rangoEquipo === '30d' ? 30 : rangoEquipo === 'today' ? 1 : 7;
+  // Cómo se nombra la ventana del EQUIPO en rótulos y tooltips (1 día = "hoy").
+  const ventanaEquipoTexto = diasRangoEquipo === 1 ? 'hoy' : `en los últimos ${diasRangoEquipo} días`;
   const [porOperadora, setPorOperadora] = useState<OperadoraPeriodo[]>([]);
   const [porOperadoraEstado, setPorOperadoraEstado] = useState<'idle' | 'cargando' | 'ok' | 'error'>('idle');
 
@@ -546,7 +548,7 @@ export default function DashboardTab() {
    * corrigiendo: un rótulo que miente sobre el período de su propio número.
    * Se interpola desde `period`, así que no puede desincronizarse del selector.
    */
-  const ventanaTexto = `en los últimos ${period} días`;
+  const ventanaTexto = period === 1 ? 'hoy' : `en los últimos ${period} días`;
   // `inmaduro` (resueltos < 5) ya lo calcula confRateBySample y el Dashboard lo
   // estaba tirando. Importa: con 1 confirmado y 0 cancelados la fórmula da
   // 100%, que es aritméticamente cierto y operativamente una mentira — nadie
@@ -818,9 +820,10 @@ export default function DashboardTab() {
               ))}
             </div>
           )}
-          {/* Period tabs */}
+          {/* Period tabs — "Hoy" existe porque el dueño quería revisar EL DÍA
+              con las tarjetas grandes y el selector solo ofrecía acumulados. */}
           <div className="inline-flex flex-wrap gap-[2px] p-[3px] rounded-xl bg-card/40 border border-border">
-            {[{ n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
+            {[{ n: 1, l: 'Hoy' }, { n: 7, l: '7d' }, { n: 15, l: '15d' }, { n: 30, l: '30d' }].map(p => (
               <button key={p.n} onClick={() => setPeriod(p.n)}
                 className={`px-4 py-2 rounded-[9px] text-sm transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
                   period === p.n
@@ -1120,22 +1123,24 @@ export default function DashboardTab() {
                 ese ancho se apilan, que es como estaba antes del rediseño. */}
             <div className="md:col-span-6 grid grid-cols-1 min-[390px]:grid-cols-2 gap-4">
             {[
-              // Los tres siguen al SELECTOR (7/15/30), no a "hoy" — ver `periodo`.
+              // Los tres siguen al SELECTOR (Hoy/7/15/30), no a "hoy" fijo — ver
+              // `periodo`. Con "Hoy" el sparkline se omite: un solo punto no es
+              // una tendencia y dibujarlo sería ruido.
               // `prev` va en null a propósito: comparar un acumulado de 7 días
               // contra AYER no significa nada, y esta pantalla solo carga la
               // ventana elegida (no la anterior), así que no hay con qué
               // comparar honestamente. Antes de inventar un delta, no hay chip:
               // la tendencia dentro del período ya la cuenta el sparkline.
-              { icon: CheckCircle2, label: 'Confirmados', value: periodo.conf, prev: null, tone: 'success' as const, spark: sparkData.conf },
-              { icon: XCircle, label: 'Cancelados', value: periodo.canc, prev: null, tone: 'danger' as const, spark: sparkData.canc },
-              { icon: PhoneOff, label: 'No respondió', value: periodo.noresp, prev: null, tone: 'neutral' as const, spark: sparkData.noresp },
+              { icon: CheckCircle2, label: 'Confirmados', value: periodo.conf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf },
+              { icon: XCircle, label: 'Cancelados', value: periodo.canc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc },
+              { icon: PhoneOff, label: 'No respondió', value: periodo.noresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp },
               // prev: null — no hay conteo de "total de pedidos de ayer" en los
               // datos que carga esta pantalla. Antes decía 0, que no es "sin
               // dato": es un dato FALSO que produciría un delta inventado.
               // El rótulo solo dice "Total" cuando la cifra ES el total: si la
               // fuente es la cola en memoria, o la paginación se cortó, lo que
               // se ve es una muestra y se llama por su nombre.
-              { icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
+              { icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
             ].map((k) => (
               <StatTile
                 key={k.label}
@@ -1210,7 +1215,7 @@ export default function DashboardTab() {
                 </h3>
                 {/* A 7d la leyenda de recharts no existe: se dibuja acá con los
                     MISMOS textos, para no perder qué significa cada color. */}
-                {period === 7 && (
+                {period <= 7 && (
                   <div className="flex items-center gap-3 flex-wrap">
                     {[
                       { c: 'bg-success', t: 'Confirmados' },
@@ -1232,7 +1237,7 @@ export default function DashboardTab() {
                   A 15 y 30 días no hay ancho para meter números adentro (se
                   recortarían), así que cae al BarChart de recharts, que aporta
                   ejes y tooltip. Misma serie, misma leyenda. */}
-              {period === 7 ? (
+              {period <= 7 ? (
                 <div className="h-52 flex flex-col justify-end pb-1">
                   <StackedDayBars data={chartData} height={150} />
                 </div>
@@ -1284,7 +1289,7 @@ export default function DashboardTab() {
                     15d acá se lee "últimos 7 días": el desfase queda a la vista
                     en vez de disimularse con datos de otro período. */}
                 <span className="hud-label text-subtle whitespace-nowrap">
-                  ÚLTIMOS {diasRangoEquipo} DÍAS
+                  {diasRangoEquipo === 1 ? 'HOY' : `ÚLTIMOS ${diasRangoEquipo} DÍAS`}
                 </span>
               </div>
 
@@ -1301,7 +1306,7 @@ export default function DashboardTab() {
 
               {porOperadoraEstado === 'ok' && porOperadora.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Nadie registró gestiones en los últimos {diasRangoEquipo} días en esta tienda.
+                  Nadie registró gestiones {ventanaEquipoTexto} en esta tienda.
                 </p>
               )}
 
@@ -1440,9 +1445,9 @@ export default function DashboardTab() {
                                no "hoy": el encabezado de arriba ya dice "ÚLTIMOS N
                                DÍAS" y el tooltip lo contradecía. */
                             title={sinBase
-                              ? `Sin pedidos resueltos en los últimos ${diasRangoEquipo} días (solo no respondió) — no hay tasa de confirmación que medir. Es contactabilidad, no calidad de venta.`
+                              ? `Sin pedidos resueltos ${ventanaEquipoTexto} (solo no respondió) — no hay tasa de confirmación que medir. Es contactabilidad, no calidad de venta.`
                               : prelim
-                                ? `Preliminar: solo ${op.resueltos} ${op.resueltos === 1 ? 'pedido resuelto' : 'pedidos resueltos'} en los últimos ${diasRangoEquipo} días — la tasa todavía no es concluyente`
+                                ? `Preliminar: solo ${op.resueltos} ${op.resueltos === 1 ? 'pedido resuelto' : 'pedidos resueltos'} ${ventanaEquipoTexto} — la tasa todavía no es concluyente`
                                 : undefined}
                           >
                             {sinBase ? '—' : `${op.tasa}%${prelim ? '·pr' : ''}`}
@@ -1457,7 +1462,7 @@ export default function DashboardTab() {
                   cuándo NO está midiendo — que es la mitad de la verdad. */}
               <p className="mt-3 text-[10px] text-muted-foreground leading-relaxed">
                 {/* "hoy" era falso también acá: esta tabla mide `diasRangoEquipo`. */}
-                <span className="font-mono">—</span> sin pedidos resueltos en los últimos {diasRangoEquipo} días (solo no respondió): no hay tasa que medir.
+                <span className="font-mono">—</span> sin pedidos resueltos {ventanaEquipoTexto} (solo no respondió): no hay tasa que medir.
                 {' '}<span className="font-mono">·pr</span> preliminar: menos de {MATURITY_MIN_RESUELTOS} resueltos, la tasa aún no concluye.
               </p>
             </motion.div>
