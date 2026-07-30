@@ -35,6 +35,9 @@ export default function ReportsTable() {
   const activeStoreId = useActiveStoreId();
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Error VISIBLE: sin esto, un fallo de lectura mostraba "No hay reportes aún"
+  // — el dueño no distinguía "no hay" de "no se pudo leer".
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeStoreId) return;
@@ -43,6 +46,7 @@ export default function ReportsTable() {
 
   async function loadReports(storeId: string) {
     setLoading(true);
+    setError(null);
     const { data: profiles, error: profErr } = await supabase.from('profiles').select('user_id, display_name');
     if (profErr) console.error('Error loading profiles:', profErr.message);
     // Filtro de tienda: para el admin global la RLS le muestra TODAS las
@@ -57,6 +61,11 @@ export default function ReportsTable() {
       .limit(100);
     if (repErr) console.error('Error loading reports:', repErr.message);
 
+    if (repErr || profErr) {
+      setError('No se pudieron cargar los reportes. Esto NO significa que no haya: no se pudo leer la base. Recargá.');
+      setLoading(false);
+      return;
+    }
     if (!reports || !profiles) { setLoading(false); return; }
 
     const profileMap = new Map(profiles.map(p => [p.user_id, p.display_name]));
@@ -150,6 +159,8 @@ export default function ReportsTable() {
         <div className="flex items-center justify-center py-12">
           <Loader2 size={20} className="animate-spin text-muted-foreground" />
         </div>
+      ) : error ? (
+        <div className="m-4 rounded-xl border border-danger/30 bg-danger/8 px-4 py-3 text-sm text-danger">{error}</div>
       ) : rows.length === 0 ? (
         <div className="p-8 text-center text-sm text-muted-foreground">No hay reportes aún</div>
       ) : (

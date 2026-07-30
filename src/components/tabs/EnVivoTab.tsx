@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import {
-  Activity, Phone, Package, AlertTriangle, CheckCircle2, Radio, Loader2,
+  Activity, Phone, Package, AlertTriangle, CheckCircle2, Radio, Loader2, MousePointerClick,
 } from 'lucide-react';
-import { useLiveTeam, type LiveOperator } from '@/hooks/useLiveTeam';
+import { useLiveTeam, type LiveOperator, type WorkStatus } from '@/hooks/useLiveTeam';
 import { TiltCard, CountUp } from '@/components/ui3d';
 
 /**
@@ -22,13 +22,20 @@ const fadeUp = (delay = 0) => ({
   transition: { duration: 0.3, delay, ease: 'easeOut' as const },
 });
 
-function ultimaSenal(min: number | null): string {
-  if (min == null) return 'sin señal hoy';
-  if (min < 1) return 'activa ahora';
+function hace(min: number | null): string {
+  if (min == null) return '';
+  if (min < 1) return 'ahora';
   if (min < 60) return `hace ${min} min`;
   const h = Math.floor(min / 60);
   return `hace ${h} h`;
 }
+
+/** Estilo del chip de estado de trabajo. */
+const ESTADO: Record<WorkStatus, { label: string; dot: string; text: string; chip: string }> = {
+  trabajando: { label: 'Trabajando', dot: 'bg-success', text: 'text-success', chip: 'bg-success/12 border-success/40 text-success' },
+  presente_sin_marcar: { label: 'Presente sin marcar', dot: 'bg-warning', text: 'text-warning', chip: 'bg-warning/12 border-warning/40 text-warning' },
+  ausente: { label: 'Ausente', dot: 'bg-muted-foreground/40', text: 'text-muted-foreground', chip: 'bg-muted/40 border-border text-muted-foreground' },
+};
 
 /** Mini-columna de una cola: ícono + cifra grande + rótulo. */
 function ColaStat({ icon: Icon, label, value, tone }: {
@@ -53,26 +60,28 @@ function ColaStat({ icon: Icon, label, value, tone }: {
 }
 
 function OperatorCard({ op }: { op: LiveOperator }) {
+  const est = ESTADO[op.estado];
+  // Qué está haciendo AHORA: última acción + hace cuánto. Es el "sin preguntar".
+  const ultima = op.ultimaAccion
+    ? `${op.ultimaAccion} ${hace(op.lastWorkMin)}`
+    : 'sin marcar hoy';
   return (
     <TiltCard
       sheen
       wrapperClassName="w-full"
       className="bg-card/40 border border-border rounded-2xl p-4 shadow-card3d h-full"
     >
-      <div className="flex items-center gap-2.5 mb-3">
-        {/* Semáforo de presencia */}
-        <span
-          className={`relative h-2.5 w-2.5 rounded-full shrink-0 ${op.enLinea ? 'bg-success' : 'bg-muted-foreground/40'}`}
-          aria-hidden="true"
-        >
-          {op.enLinea && <span className="absolute inset-0 rounded-full bg-success animate-ping opacity-75" />}
+      <div className="flex items-center gap-2.5 mb-2.5">
+        {/* Semáforo por ESTADO de trabajo (no solo mouse) */}
+        <span className={`relative h-2.5 w-2.5 rounded-full shrink-0 ${est.dot}`} aria-hidden="true">
+          {op.estado === 'trabajando' && <span className="absolute inset-0 rounded-full bg-success animate-ping opacity-75" />}
         </span>
         <div className="min-w-0 flex-1">
           <span className="block text-sm font-bold text-foreground truncate leading-tight" title={op.name}>
             {op.name}
           </span>
-          <span className={`text-[11px] ${op.enLinea ? 'text-success' : 'text-muted-foreground'}`}>
-            {op.enLinea ? 'en línea' : ultimaSenal(op.lastActiveMin)}
+          <span className={`inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold ${est.chip}`}>
+            {est.label}
           </span>
         </div>
         <div className="text-right shrink-0">
@@ -82,6 +91,15 @@ function OperatorCard({ op }: { op: LiveOperator }) {
           <span className="block text-[9px] uppercase tracking-[0.06em] text-muted-foreground">hoy</span>
         </div>
       </div>
+
+      {/* Última acción — qué hizo lo último y cuándo. */}
+      <div className="flex items-center gap-1.5 mb-2.5 text-[11px] text-muted-foreground">
+        <MousePointerClick size={11} className="shrink-0" aria-hidden="true" />
+        <span className="truncate">
+          Último: <span className={op.ultimaAccion ? 'text-foreground font-medium' : ''}>{ultima}</span>
+        </span>
+      </div>
+
       <div className="flex items-stretch gap-1 rounded-xl bg-muted/20 border border-border/60 divide-x divide-border/50">
         <ColaStat icon={Phone} label="Confirmar" value={op.confirmar} tone="accent" />
         <ColaStat icon={Package} label="Seguim." value={op.seguimiento} tone="info" />
@@ -125,7 +143,8 @@ export default function EnVivoTab() {
   const team = useLiveTeam();
 
   const totalHoy = team.operators.reduce((a, o) => a + o.total, 0);
-  const enLinea = team.operators.filter(o => o.enLinea).length;
+  const trabajando = team.operators.filter(o => o.estado === 'trabajando').length;
+  const sinMarcar = team.operators.filter(o => o.estado === 'presente_sin_marcar').length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -138,9 +157,11 @@ export default function EnVivoTab() {
             </span>
             Cómo va el equipo
           </h1>
-          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+          <p className="text-sm text-muted-foreground flex items-center gap-1.5 flex-wrap">
             <Radio size={12} className="text-success animate-pulse" aria-hidden="true" />
-            En tiempo real · {enLinea} en línea · {totalHoy} gestiones hoy
+            En tiempo real · <span className="text-success font-semibold">{trabajando} trabajando</span>
+            {sinMarcar > 0 && <> · <span className="text-warning font-semibold">{sinMarcar} sin marcar</span></>}
+            {' '}· {totalHoy} gestiones hoy
           </p>
         </div>
       </motion.header>
@@ -172,9 +193,16 @@ export default function EnVivoTab() {
             </div>
           </motion.section>
 
-          {/* Operadoras — en línea primero. */}
+          {/* Operadoras — trabajando primero. */}
           <motion.section {...fadeUp(0.1)} className="space-y-2">
-            <div className="hud-label text-muted-foreground/70">Por operadora · hoy</div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="hud-label text-muted-foreground/70">Por operadora · hoy</div>
+              {!team.presenceMouseOk && (
+                <span className="text-[11px] text-warning">
+                  Presencia por actividad de mouse no disponible — se usa el trabajo marcado.
+                </span>
+              )}
+            </div>
             {team.operators.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border bg-card/40 p-8 text-center">
                 <CheckCircle2 size={22} className="text-muted-foreground mx-auto mb-2" aria-hidden="true" />

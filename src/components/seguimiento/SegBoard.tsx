@@ -136,6 +136,10 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const recordGestion = useRecordGestion();
   const [gestionada, setGestionada] = useState(false);
   const [gestionando, setGestionando] = useState(false);
+  // Guard SÍNCRONO contra doble-tap: el estado se actualiza en el próximo render,
+  // así que dos clicks en el mismo frame verían gestionando=false los dos e
+  // insertarían dos touchpoints (touchpoints no tiene constraint anti-dup).
+  const enVueloRef = useRef(false);
   const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
 
   // "Gestioné hoy" desde el tablero: registra el touchpoint (SEG: ...) para que
@@ -145,10 +149,12 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // el método puntual (Envié la guía, etc.) se elige en el detalle del pedido.
   const gestionar = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (gestionando || gestionada || !o.phone) return;
+    if (enVueloRef.current || gestionada || !o.phone) return;
+    enVueloRef.current = true;
     setGestionando(true);
     const ok = await recordGestion(o.phone, 'SEG', 'Gestioné hoy');
     setGestionando(false);
+    enVueloRef.current = false;
     if (ok) {
       setGestionada(true);
       toast.success('Gestión registrada');

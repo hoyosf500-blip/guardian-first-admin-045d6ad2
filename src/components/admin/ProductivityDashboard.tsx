@@ -213,6 +213,8 @@ export default function ProductivityDashboard() {
   const [inactivityRows, setInactivityRows] = useState<InactivityRow[]>([]);
   // Operadora cuyo detalle de avisos está abierto (nombre → InactivityDetailModal).
   const [inactivityDetail, setInactivityDetail] = useState<string | null>(null);
+  // Aviso visible si falló alguna consulta de Jornada (actividad/horas/inactividad).
+  const [jornadaWarn, setJornadaWarn] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Antes solo console.error → la UI mostraba "Sin actividad" indistinguible
@@ -345,6 +347,17 @@ export default function ProductivityDashboard() {
         console.warn('[productivity] inactivity rpc error', inactivity.error);
       }
     }
+    // Aviso VISIBLE cuando una consulta de jornada falla: antes se limpiaba en
+    // silencio y, si fallaban las tres, la sección Jornada desaparecía sin decir
+    // por qué → el dueño no distinguía "falló la consulta" de "nadie trabajó".
+    const fallosJornada = [
+      activity.error ? 'actividad' : null,
+      worked.error ? 'horas trabajadas' : null,
+      inactivity.error ? 'inactividad' : null,
+    ].filter(Boolean);
+    setJornadaWarn(fallosJornada.length
+      ? `No se pudo leer: ${fallosJornada.join(', ')}. La Jornada puede salir incompleta — NO significa que no trabajaron.`
+      : null);
     setLoading(false);
     setRefreshing(false);
   }, [range, activeStoreId]);
@@ -662,6 +675,12 @@ export default function ProductivityDashboard() {
               Bug del primer release: estaba DENTRO del branch
               `rows.length > 0`, así que con 0 confirmados se ocultaba aunque
               hubiera pings — ahora vive fuera. */}
+          {jornadaWarn && (
+            <div className="rounded-2xl border border-warning/30 bg-warning/8 px-4 py-2.5 flex items-start gap-2.5 shadow-card3d" role="status">
+              <AlertTriangle size={15} className="text-warning mt-0.5 shrink-0" aria-hidden="true" />
+              <p className="text-xs text-foreground/90">{jornadaWarn}</p>
+            </div>
+          )}
           {jornadaOps.length > 0 && (
             <Section
               title="Jornada"
@@ -1256,23 +1275,30 @@ export default function ProductivityDashboard() {
                         // cierre (÷resueltos, la vieja) queda en el tooltip.
                         const cd = confRateByCohort(r.confirmados, r.cancelados, entrantes);
                         const ef = confRateBySample(r.confirmados, r.cancelados);
+                        // El % del día usa los confirmados DEL COHORTE (de los que
+                        // entraron en el período), igual que el aro grande — así
+                        // nunca pasa de 100% ni contradice al hero. `cd`/`ef` (crudos)
+                        // se quedan para pctProcesado, madurez y la efectividad de
+                        // cierre del tooltip. Con la RPC vieja cae a `confirmados`.
+                        const confCohorte = r.confirmados_cohorte ?? r.confirmados;
+                        const tasaDiaCohorte = entrantes > 0 ? Math.min(100, Math.round((confCohorte / entrantes) * 100)) : null;
                         const metaTip = opsActivas > 1
                           ? ` Meta individual: ${metaPorOperadora}% (${CONF_DIA_TARGET_PCT}% del equipo ÷ ${opsActivas} operadoras activas).`
                           : '';
                         const tip = ef.tasa != null
                           ? `Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que decidieron). ${cd.pctProcesado}% del día trabajado.${metaTip}`
                           : `Sin pedidos resueltos aún.${metaTip}`;
-                        if (cd.tasaDia == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title={tip}>—</span>;
+                        if (tasaDiaCohorte == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title={tip}>—</span>;
                         // SOLO en 'today' (día vivo) y con < 90% trabajado → provisional
                         // gris, NUNCA rojo: temprano en la jornada la tasa ÷inflow es baja
                         // solo porque falta trabajar. En 7d/30d es una ventana ya cerrada
                         // (la cola reciente pendiente es normal) → número firme vs meta.
                         if (isToday && cd.inmaduro) return (
                           <span className="font-mono tabular-nums text-xs text-muted-foreground" title={`Día en curso (${cd.pctProcesado}% trabajado) — provisional. ${tip}`}>
-                            {Math.min(100, cd.tasaDia)}% <span className="opacity-70">· en curso</span>
+                            {tasaDiaCohorte}% <span className="opacity-70">· en curso</span>
                           </span>
                         );
-                        return <span title={tip}><RateBar value={cd.tasaDia} target={metaPorOperadora} /></span>;
+                        return <span title={tip}><RateBar value={tasaDiaCohorte} target={metaPorOperadora} /></span>;
                       })()}</td>
                       {/* Clientes REALES por hora (conf+canc ÷ horas) — producción,
                           informativo (sin rojo: un día malo de no-contesta no es su culpa). */}
@@ -1343,11 +1369,16 @@ export default function ProductivityDashboard() {
                     // Confirmación del día del EQUIPO = confirmados ÷ entrantes,
                     // con la misma madurez que las filas (día en curso → provisional).
                     const cdTeam = confRateByCohort(totConf, totCanc, entrantes);
+                    // % del día del equipo = confirmados DEL COHORTE ÷ entrantes,
+                    // igual que el aro grande (≤100%). cdTeam (crudo) se queda para
+                    // la madurez "en curso" y pctProcesado.
+                    const totConfCohorte = rows.reduce((a, r) => a + (r.confirmados_cohorte ?? r.confirmados), 0);
+                    const tasaDiaTeamCohorte = entrantes > 0 ? Math.min(100, Math.round((totConfCohorte / entrantes) * 100)) : null;
                     // "en curso" gris solo en 'today' (día vivo); en 7d/30d firme.
                     const teamEnCurso = isToday && cdTeam.inmaduro;
                     const diaTone = teamEnCurso ? 'muted-foreground'
-                      : cdTeam.tasaDia == null ? 'muted-foreground'
-                      : isBelowDailyTarget(cdTeam.tasaDia) ? (cdTeam.tasaDia >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger')
+                      : tasaDiaTeamCohorte == null ? 'muted-foreground'
+                      : isBelowDailyTarget(tasaDiaTeamCohorte) ? (tasaDiaTeamCohorte >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger')
                       : 'success';
                     return (
                       <tr className="border-t-2 border-border bg-muted/30 font-bold">
@@ -1375,16 +1406,16 @@ export default function ProductivityDashboard() {
                         </td>
                         {/* Confirmación del día del equipo = confirmados ÷ entrantes vs meta ~55% */}
                         <td className="text-right">
-                          {cdTeam.tasaDia == null
+                          {tasaDiaTeamCohorte == null
                             ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
                             : (
                               <span
                                 className={`font-mono tabular-nums text-sm text-${diaTone}`}
                                 title={teamEnCurso
                                   ? `Día en curso (${cdTeam.pctProcesado}% trabajado) — provisional. Meta del día ~${CONF_DIA_TARGET_PCT}%.`
-                                  : `${totConf} confirmados de ${entrantes} que entraron. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
+                                  : `${totConfCohorte} confirmados de los ${entrantes} que entraron. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
                               >
-                                {Math.min(100, cdTeam.tasaDia)}%{teamEnCurso ? ' ·en curso' : ''}
+                                {tasaDiaTeamCohorte}%{teamEnCurso ? ' ·en curso' : ''}
                               </span>
                             )}
                         </td>
