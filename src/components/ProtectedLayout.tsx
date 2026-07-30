@@ -15,6 +15,7 @@ import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, Refre
 import CounterBar from '@/components/CounterBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import SetupWizard from '@/components/SetupWizard';
+import CreateStoreScreen from '@/components/CreateStoreScreen';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
 import type { LucideIcon } from 'lucide-react';
@@ -117,24 +118,12 @@ function ProtectedLayoutInner() {
 
   if (!user) return <Navigate to="/auth" replace />;
 
-  // El user no es miembro de ninguna tienda.
+  // El user no es miembro de ninguna tienda → alta autoservicio: crea la SUYA
+  // y queda de owner (antes era un callejón "Sin tiendas asignadas" y las
+  // tiendas se creaban a mano). El camino de invitación sigue intacto: si vino
+  // con ?invite=TOKEN ya se canjeó arriba y stores.length > 0.
   if (store.stores.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-6">
-        <div className="max-w-md w-full bg-card border border-border rounded-2xl p-8 text-center space-y-3">
-          <div className="w-12 h-12 rounded-xl bg-warning/10 border border-warning/25 flex items-center justify-center mx-auto">
-            <Package size={22} className="text-warning" />
-          </div>
-          <h1 className="text-lg font-bold text-foreground">Sin tiendas asignadas</h1>
-          <p className="text-sm text-muted-foreground">
-            Tu cuenta no pertenece a ninguna tienda todavía. Pedile al dueño que te agregue como miembro.
-          </p>
-          <button onClick={signOut} className="text-xs text-muted-foreground hover:text-foreground">
-            Cerrar sesión
-          </button>
-        </div>
-      </div>
-    );
+    return <CreateStoreScreen onCreated={() => store.refresh()} onSignOut={signOut} />;
   }
 
   // Gate: si la tienda activa no tiene credenciales Dropi cargadas Y el usuario
