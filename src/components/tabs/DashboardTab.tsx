@@ -80,7 +80,7 @@ export default function DashboardTab() {
   useEffect(() => { setAlcance(isManagerOfActive ? 'equipo' : 'yo'); }, [isManagerOfActive]);
   const verEquipo = isManagerOfActive && alcance === 'equipo';
 
-  interface DiaEquipo { fecha: string; conf: number; canc: number; noresp: number; }
+  interface DiaEquipo { fecha: string; conf: number; canc: number; noresp: number; entrantes: number; }
   const [equipoDiario, setEquipoDiario] = useState<DiaEquipo[]>([]);
   // 'error' existe a propósito y NO se colapsa a lista vacía: una lista vacía
   // pinta ceros, y un cero que en realidad significa "no pude leer la base" es
@@ -122,6 +122,7 @@ export default function DashboardTab() {
           conf: Number(f.confirmados) || 0,
           canc: Number(f.cancelados) || 0,
           noresp: Number(f.noresp) || 0,
+          entrantes: Number(f.entrantes) || 0,
         })));
         setEquipoEstado('ok');
       });
@@ -450,10 +451,10 @@ export default function DashboardTab() {
     }
     // Dos fuentes según el alcance, pero UN solo formato de salida para que
     // todo lo de abajo (gráficos, sparklines, KPIs) no sepa de dónde vino.
-    const porDia: Record<string, { conf: number; canc: number; noresp: number }> = verEquipo
+    const porDia: Record<string, { conf: number; canc: number; noresp: number; entrantes?: number }> = verEquipo
       ? Object.fromEntries(dates.map(f => {
           const r = equipoDiario.find(e => e.fecha === f);
-          return [f, { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0 }];
+          return [f, { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0, entrantes: r?.entrantes ?? 0 }];
         }))
       : computeDailyCounterByDay(historyData, dates);
     return dates.map(date => {
@@ -504,6 +505,7 @@ export default function DashboardTab() {
       canc: last7.map(d => d.canc),
       noresp: last7.map(d => d.noresp),
       total: last7.map(d => d.total),
+      entrantes: last7.map(d => ('entrantes' in d ? Number(d.entrantes) : 0) || 0),
     };
   }, [chartData]);
 
@@ -535,8 +537,15 @@ export default function DashboardTab() {
    * discrepar — salen del mismo array.
    */
   const periodo = useMemo(() => chartData.reduce(
-    (a, d) => ({ conf: a.conf + d.conf, canc: a.canc + d.canc, noresp: a.noresp + d.noresp }),
-    { conf: 0, canc: 0, noresp: 0 },
+    (a, d) => ({
+      conf: a.conf + d.conf,
+      canc: a.canc + d.canc,
+      noresp: a.noresp + d.noresp,
+      // entrantes solo existe en modo Equipo (viene de admin_daily_reports_range);
+      // en modo Yo queda 0 y la tarjeta correspondiente ni lo usa.
+      entrantes: a.entrantes + (('entrantes' in d ? Number(d.entrantes) : 0) || 0),
+    }),
+    { conf: 0, canc: 0, noresp: 0, entrantes: 0 },
   ), [chartData]);
 
   /**
@@ -1131,16 +1140,19 @@ export default function DashboardTab() {
               // ventana elegida (no la anterior), así que no hay con qué
               // comparar honestamente. Antes de inventar un delta, no hay chip:
               // la tendencia dentro del período ya la cuenta el sparkline.
-              { icon: CheckCircle2, label: 'Confirmados', value: periodo.conf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf },
-              { icon: XCircle, label: 'Cancelados', value: periodo.canc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc },
-              { icon: PhoneOff, label: 'No respondió', value: periodo.noresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp },
-              // prev: null — no hay conteo de "total de pedidos de ayer" en los
-              // datos que carga esta pantalla. Antes decía 0, que no es "sin
-              // dato": es un dato FALSO que produciría un delta inventado.
-              // El rótulo solo dice "Total" cuando la cifra ES el total: si la
-              // fuente es la cola en memoria, o la paginación se cortó, lo que
-              // se ve es una muestra y se llama por su nombre.
-              { icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes` },
+              { icon: CheckCircle2, label: 'Confirmados', value: periodo.conf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'Pedidos que ENTRARON en la ventana elegida y quedaron confirmados. El trabajo del día completo de cada operadora (incluye pedidos viejos) está en su cierre y en Confirmar.' : undefined },
+              { icon: XCircle, label: 'Cancelados', value: periodo.canc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos terminaron cancelados.' : undefined },
+              { icon: PhoneOff, label: 'No respondió', value: periodo.noresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos siguen sin contestar.' : undefined },
+              // La 4ª tarjeta SIGUE AL SELECTOR en modo Equipo: pedidos que
+              // ENTRARON en la ventana (con "Hoy" mostraba 9056 = TODO el
+              // histórico de la tienda, y el dueño lo leyó — con razón — como
+              // "los pedidos de la fecha que estoy viendo"). El chip de
+              // pendientes es la cola AHORA (estado actual, no ventana).
+              // En modo Yo no hay fuente de entrantes (la RPC es de managers):
+              // se mantiene el universo cargado, rotulado como siempre.
+              ...(verEquipo
+                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: periodo.entrantes, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${statusBreakdown.pendientes} pendientes ahora`, title: 'Pedidos que entraron a la tienda en la ventana elegida (todos menos reemplazados).' }]
+                : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
             ].map((k) => (
               <StatTile
                 key={k.label}
@@ -1149,6 +1161,7 @@ export default function DashboardTab() {
                 value={k.value}
                 tone={k.tone}
                 spark={k.spark}
+                title={k.title}
                 extra={k.extra
                   ? <span className="text-[11px] font-medium text-accent">{k.extra}</span>
                   : <TrendBadge current={k.value} previous={k.prev} />}
