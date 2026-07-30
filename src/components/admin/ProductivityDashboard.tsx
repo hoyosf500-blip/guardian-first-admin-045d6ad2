@@ -18,6 +18,7 @@ import { formatTimeBogota, formatDateTimeBogota, formatDurationHM } from '@/lib/
 import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorarioCompliance, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import { scheduleFromMinutes, DEFAULT_SCHEDULE } from '@/lib/inactivityWindow';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
+import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { gestionesPorHora, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
 import { bogotaToday } from '@/lib/utils';
@@ -532,6 +533,12 @@ export default function ProductivityDashboard() {
           </button>
         </div>
       </motion.header>
+
+      {/* Pulso EN VIVO del equipo — reemplaza la vieja página /en-vivo, ahora
+          embebida acá. Solo en 'Hoy': el "quién trabaja ahora" no tiene sentido
+          mirando un rango pasado. Monta su propio hook (useLiveTeam) únicamente
+          cuando se renderiza, así no dispara consultas en 7d/30d. */}
+      {isToday && <TeamNowStrip />}
 
       {error && (
         <div className="rounded-2xl border border-danger/30 bg-danger/5 p-4 shadow-card3d">

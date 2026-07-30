@@ -21,7 +21,6 @@ const NovedadesPage = lazy(() => import("@/pages/NovedadesPage"));
 const AdminPage = lazy(() => import("@/pages/AdminPage"));
 const OrderDetailPage = lazy(() => import("@/pages/OrderDetailPage"));
 const LogisticsPage = lazy(() => import("@/pages/LogisticsPage"));
-const EnVivoPage = lazy(() => import("@/pages/EnVivoPage"));
 // CFO module is opt-in via env var (VITE_ENABLE_CFO=true). Para clientes
 // externos NO se registra la ruta — un acceso directo a /cfo cae al 404.
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
@@ -81,7 +80,6 @@ const App = () => (
                   <Route path="/novedades" element={route(<NovedadesPage />)} />
                   <Route path="/admin" element={route(<AdminPage />)} />
                   <Route path="/logistica" element={route(<LogisticsPage />)} />
-                  <Route path="/en-vivo" element={route(<EnVivoPage />)} />
                   {CFO_ENABLED && CfoPage && (
                     <Route path="/cfo" element={route(<CfoPage />)} />
                   )}

@@ -4,7 +4,8 @@ import { useActiveStoreId } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 
 /**
- * Datos del panel "En vivo" (/en-vivo): cómo va el equipo HOY, por operadora,
+ * Datos de la franja "Ahora mismo" (TeamNowStrip, embebida en Productividad):
+ * cómo va el equipo HOY, por operadora,
  * en las tres colas (Confirmar / Seguimiento / Novedades) + qué está haciendo
  * cada una AHORA (última acción) + su estado (trabajando / presente sin marcar /
  * ausente) + el backlog compartido de la tienda. Todo store-scoped.

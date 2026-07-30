@@ -12,7 +12,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2, Activity } from 'lucide-react';
+import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2 } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import SetupWizard from '@/components/SetupWizard';
@@ -43,7 +43,6 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/seguimiento', icon: Package, label: 'Seguimiento', section: 'CRM' },
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades', section: 'Gestión' },
   { path: '/admin', icon: Settings, label: 'Admin', section: 'Sistema', managerOnly: true },
-  { path: '/en-vivo', icon: Activity, label: 'En vivo', section: 'Operación', managerOnly: true },
   { path: '/logistica', icon: Truck, label: 'Logística', section: 'Operación', managerOnly: true },
   ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', section: 'Finanzas', adminOnly: true } as NavItem] : []),
   // Panel multi-inquilino: SOLO el admin global (dueño de la plataforma). Los
