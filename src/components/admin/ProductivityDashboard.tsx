@@ -406,15 +406,22 @@ export default function ProductivityDashboard() {
   const teamCanc = rows.reduce((a, r) => a + r.cancelados, 0);
   const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
   const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
+  // Numerador del ARO acotado al MISMO cohorte que `entrantes` (pedidos creados
+  // en el período). Si la RPC aún no expone confirmados_cohorte, cae a teamConf.
+  const hasCohorte = rows.some((r) => r.confirmados_cohorte != null);
+  const teamConfCohorte = hasCohorte
+    ? rows.reduce((a, r) => a + (r.confirmados_cohorte ?? 0), 0)
+    : teamConf;
   const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
   // Un aro de PORCENTAJE no puede pasar de 100%. El equipo puede confirmar MÁS
   // pedidos hoy de los que entraron hoy cuando trabaja el backlog de días
   // anteriores (teamConf cuenta TODA confirmación de hoy; entrantes solo el
-  // inflow del período). En ese caso mostramos 100% y lo decimos, en vez de
-  // pintar un imposible "154%". El fix de fondo (numerador acotado al cohorte)
-  // vive en la RPC operator_productivity_stats — ver prompt/SQL.
-  const teamTasaDiaGauge = Math.min(100, teamTasaDia);
-  const trabajoBacklog = teamConf > entrantes;
+  // inflow del período). El aro usa el numerador de cohorte (≤ entrantes); el
+  // clamp queda como red de seguridad para la rama de fallback.
+  const teamTasaDiaCohorte = entrantes > 0 ? Math.round((teamConfCohorte / entrantes) * 100) : 0;
+  const teamTasaDiaGauge = Math.min(100, teamTasaDiaCohorte);
+  const trabajoBacklog = teamConf > teamConfCohorte;
+
   // Meta POR OPERADORA = la meta del equipo repartida entre las que trabajaron.
   // La fila de cada una divide SUS confirmados por el inflow GLOBAL (la cola es
   // compartida, no hay inflow por-operadora), así que con 2+ operadoras que se
