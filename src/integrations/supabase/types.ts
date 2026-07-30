@@ -3128,6 +3128,7 @@ export type Database = {
         Returns: {
           cancelados: number
           confirmados: number
+          confirmados_cohorte: number
           display_name: string
           intentos_noresp: number
           intentos_total: number
