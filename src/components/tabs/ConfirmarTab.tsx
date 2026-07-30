@@ -582,7 +582,19 @@ export default function ConfirmarTab({ profile }: Props) {
             // aplicados). Antes se contaba sobre visibleQueue crudo → el chip
             // decía 8 pero la lista mostraba 5 y no bajaba (divergían).
             const sinTocarEnCola = filteredItems.filter(o => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
-            const tone = sinTocarEnCola === 0
+            // PENDIENTES OCULTOS: el ✓ verde mentía. La cola visible esconde
+            //  (1) los "no contestó" en enfriamiento (~2h) que vuelven solos, y
+            //  (2) los que otra asesora tiene tomados (lock 15 min).
+            // Ambos siguen siendo PENDIENTE CONFIRMACION reales en la tienda,
+            // así que el ✓ solo aparece cuando NO queda ninguno.
+            const nowMs = Date.now();
+            const enFriamiento = visibleQueue.filter(o => o.result === 'noresp').length;
+            const tomadosPorOtra = visibleQueue.filter(
+              o => !o.result && isLockedByOther(o, user?.id ?? null, nowMs),
+            ).length;
+            const ocultos = enFriamiento + tomadosPorOtra;
+            const todoLimpio = sinTocarEnCola === 0 && ocultos === 0;
+            const tone = todoLimpio
               ? 'success'
               : sinTocarEnCola >= Math.max(1, Math.ceil(filteredItems.length / 2))
                 ? 'danger'
@@ -612,9 +624,26 @@ export default function ConfirmarTab({ profile }: Props) {
                   <span className="opacity-50">·</span>
                   <span>
                     Te faltan <CountUp value={sinTocarEnCola} className={`text-base font-bold ${skin.num}`} /> sin tocar
-                    {sinTocarEnCola === 0 && <span className="text-success ml-1">✓</span>}
+                    {todoLimpio && <span className="text-success ml-1">✓</span>}
                   </span>
+                  {enFriamiento > 0 && (
+                    <>
+                      <span className="opacity-50">·</span>
+                      <span title="Marcados 'no contestó': vuelven solos a la cola cuando pasa el enfriamiento (~2 h).">
+                        quedan <span className="text-base font-bold text-warning font-mono tabular-nums">{enFriamiento}</span> que van a volver
+                      </span>
+                    </>
+                  )}
+                  {tomadosPorOtra > 0 && (
+                    <>
+                      <span className="opacity-50">·</span>
+                      <span title="Otra asesora los tiene abiertos ahora (bloqueo de 15 min). Reaparecen al liberarse.">
+                        <span className="text-base font-bold text-foreground font-mono tabular-nums">{tomadosPorOtra}</span> tomados por otra asesora
+                      </span>
+                    </>
+                  )}
                 </div>
+
                 <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
                   <input
                     type="checkbox"
