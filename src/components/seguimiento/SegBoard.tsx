@@ -1,14 +1,16 @@
-import { Fragment, memo, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { Fragment, memo, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle,
-  ChevronUp, ChevronDown, ChevronLeft, Maximize2,
+  ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
+import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -131,7 +133,29 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
   const { openChat, waEnabled } = useWaChat();
+  const recordGestion = useRecordGestion();
+  const [gestionada, setGestionada] = useState(false);
+  const [gestionando, setGestionando] = useState(false);
   const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
+
+  // "Gestioné hoy" desde el tablero: registra el touchpoint (SEG: ...) para que
+  // el contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca
+  // vía el realtime de OrderContext (mySegTouchedToday). Antes NO existía en el
+  // kanban: quien trabajaba desde acá no registraba nada. Genérico a propósito:
+  // el método puntual (Envié la guía, etc.) se elige en el detalle del pedido.
+  const gestionar = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (gestionando || gestionada || !o.phone) return;
+    setGestionando(true);
+    const ok = await recordGestion(o.phone, 'SEG', 'Gestioné hoy');
+    setGestionando(false);
+    if (ok) {
+      setGestionada(true);
+      toast.success('Gestión registrada');
+    } else {
+      toast.error('No se pudo registrar. Reintentá.');
+    }
+  };
 
   const trackUrl = getTrackingUrl(o.transportadora, o.guia, countryCode);
   const carrierHome = getTrackingUrl(o.transportadora, '', countryCode);
@@ -308,6 +332,28 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           )}
         </div>
       </div>
+
+      {/* Acción principal: registrar la gestión SIN salir del tablero. Antes no
+          existía en el kanban → el trabajo desde acá no se contaba. Solo en
+          fases con trabajo (no en entregado/cancelado/devuelto). El método
+          puntual (Envié la guía, etc.) se elige en el detalle del pedido. */}
+      {(tone === 'warning' || tone === 'accent' || tone === 'info' || tone === 'neutral' || tone == null) && o.phone && (
+        <button
+          type="button"
+          onClick={gestionar}
+          disabled={gestionando || gestionada}
+          title="Registrar que gestionaste este pedido hoy"
+          className={cn(
+            'mt-2.5 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl font-bold text-[13px] transition-colors',
+            gestionada
+              ? 'bg-success/15 text-success border border-success/40 cursor-default'
+              : 'bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-60',
+          )}
+        >
+          <CheckCircle2 size={15} aria-hidden="true" />
+          {gestionada ? 'Gestionado ✓' : gestionando ? 'Registrando…' : 'Gestioné hoy'}
+        </button>
+      )}
     </div>
   );
 });

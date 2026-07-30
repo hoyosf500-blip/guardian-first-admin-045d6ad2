@@ -27,6 +27,7 @@ import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import { isHiddenFromTodayList, hiddenLabel, isSegCloser, cleanSegAction, type LatestTouch } from '@/lib/segDailyReview';
 import { bogotaToday } from '@/lib/utils';
+import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { classifySegEstado, matchOficina, matchTransito, type SegStatusKey } from '@/lib/segStatus';
 import {
   classifySegOwnership,
@@ -586,6 +587,10 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     return new Date(tps[0].created_at).getTime();
   }, [phoneTouchpoints]);
 
+  // Insert del touchpoint centralizado (mismo formato para lista, kanban y
+  // detalle → ningún contador se desincroniza). Ver useRecordGestion.
+  const recordGestion = useRecordGestion();
+
   // HIGH-1: useCallback estable para no romper React.memo de OrderCard.
   // Antes era función plana → cambiaba identidad cada render → cada
   // re-render del padre re-renderizaba TODAS las cards.
@@ -600,24 +605,13 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       // "Gestionado hoy" (vuelve mañana); cierre = sale (snooze 30d).
       const label = isSegCloser(action) ? cleanSegAction(action) : 'Gestionado hoy';
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
-      if (user && activeStoreId) {
-        const now = new Date();
-        const tp = {
-          phone: order.phone,
-          action: `${module}: ${action}`,
-          operator_id: user.id,
-          store_id: activeStoreId,
-          action_date: bogotaToday(),
-          action_time: now.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
-        };
-        const { data: inserted } = await supabase.from('touchpoints').insert(tp).select();
-        if (inserted) setTouchpoints(prev => [...inserted, ...prev]);
-      }
+      const inserted = await recordGestion(order.phone, module, action);
+      if (inserted) setTouchpoints(prev => [inserted as Touchpoint, ...prev]);
       toast.success(action);
     } finally {
       markingInFlightRef.current.delete(order.dbId);
     }
-  }, [user, module, activeStoreId]);
+  }, [module, recordGestion]);
 
 
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
