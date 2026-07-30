@@ -8,6 +8,7 @@ import { TruncatedText } from '@/components/TruncatedText';
 import { useSessionState } from '@/hooks/useSessionState';
 import { copyToClipboard } from '@/lib/clipboard';
 import { useMarkNovedadResolved } from '@/hooks/useMarkNovedadResolved';
+import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { NovedadResultTipo } from '@/lib/novedadGestion';
 import { AuroraBackdrop } from '@/components/ui3d';
 import {
@@ -49,6 +50,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
   const { loadNovedades } = useOrders();
   const { markNovedad } = useMarkNovedadResolved();
   const { openChat, waEnabled } = useWaChat();
+  const recordContacto = useRecordGestion();
   const { activeStore } = useStore();
   const countryCode = activeStore?.country_code;
   // BUG B fix: persist by *order id*, not array index. When the queue
@@ -220,6 +222,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             <button onClick={copyPhone} className="text-cyan font-mono tabular-nums hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded">{formatPhone(o.phone)}</button>
             <a
               href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
+              onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
               className="pill pill-info ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full no-underline transition-colors hover:brightness-110"
             >
               <Phone size={10} aria-hidden="true" /> Llamar

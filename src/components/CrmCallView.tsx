@@ -14,6 +14,7 @@ import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import SegActionButtons from '@/components/SegActionButtons';
+import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { ProductoTile } from '@/components/ProductoTile';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 import { heuristicValidate } from '@/lib/addressHeuristic';
@@ -100,6 +101,7 @@ export default function CrmCallView({
   const { isAdmin } = useAuth();
   const { activeStore, activeStoreId } = useStore();
   const { openChat, waEnabled } = useWaChat();
+  const recordContacto = useRecordGestion();
   const countryCode = activeStore?.country_code;
   // Refresh on-demand desde la API de Dropi — la asesora no espera al cron
   // (que cada 5 min puede estar throttleado en EC). El realtime de orders
@@ -737,6 +739,7 @@ export default function CrmCallView({
               </button>
               <a
                 href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
+                onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
                 className="ml-1 inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
               >
                 <PhoneIcon size={12} aria-hidden="true" /> Llamar

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { supabase } from '@/integrations/supabase/client';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useStore } from '@/contexts/StoreContext';
+import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import WaThreadView from '@/components/seguimiento/WaThread';
 import type { WaConversation } from '@/hooks/useWaConversations';
@@ -60,6 +61,7 @@ export function useWaChat(): WaChatContextValue {
  */
 export function WaChatProvider({ children }: { children: ReactNode }) {
   const { activeStoreId, activeStore } = useStore();
+  const recordContacto = useRecordGestion();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<WaConversation | null>(null);
   // ¿La tienda activa tiene WhatsApp configurado? Arranca en false y se confirma
@@ -104,6 +106,10 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
     // Defensa: si la tienda no tiene WhatsApp configurado, no abrimos nada (los
     // botones ya se ocultan con waEnabled; esto cubre llamadas programáticas).
     if (!waEnabled) return 'none';
+    // Registra el intento de contacto por WhatsApp (fire-and-forget). Prefijo
+    // WHATSAPP: → no cuenta como gestión ni oculta tarjetas, pero se ve en "En
+    // vivo" como última acción y hace contable el trabajo de contacto.
+    void recordContacto(phone || '', 'WHATSAPP', 'abrió WhatsApp');
 
     const existing = await findByPhone(digits);
     if (existing) {
@@ -144,7 +150,7 @@ export function WaChatProvider({ children }: { children: ReactNode }) {
     });
     setOpen(true);
     return 'thread';
-  }, [activeStoreId, activeStore?.country_code, findByPhone, waEnabled]);
+  }, [activeStoreId, activeStore?.country_code, findByPhone, waEnabled, recordContacto]);
 
   // Tras enviar el 1er mensaje de un chat nuevo, wa-send ya creó la conversación
   // → la cargamos por teléfono y reemplazamos el hilo sintético por el real (así

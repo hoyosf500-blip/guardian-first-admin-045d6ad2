@@ -17,6 +17,7 @@ import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertT
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { ProductoTile } from '@/components/ProductoTile';
+import { useRecordGestion } from '@/hooks/useRecordGestion';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import AttemptHistory from '@/components/confirmar/AttemptHistory';
 import OrderLabels from '@/components/confirmar/OrderLabels';
@@ -86,6 +87,7 @@ export default function CallView({ items, alerts }: Props) {
   const { activeStore } = useStore();
   const countryCode = activeStore?.country_code;
   const { openChat, waEnabled } = useWaChat();
+  const recordContacto = useRecordGestion();
   const { claimOrder, releaseOrder } = useOrderLock();
   // FIX "Siguiente salta ~10": último pedido cuyo lock conseguimos NOSOTROS y
   // el último pedido visto — los usa el efecto release-on-navigate de abajo.
@@ -823,8 +825,11 @@ export default function CallView({ items, alerts }: Props) {
     // externo — relajación del diseño anti-baneo SOLO para Confirmar, donde
     // hoy no hay segundo canal y el contacto está por el piso. Ver concerns.
     if (waEnabled) {
+      // openChat ya registra el intento de contacto (WHATSAPP:) internamente.
       void openChat({ phone: o.phone, name: o.nombre });
     } else {
+      // Fallback wa.me externo: openChat no corre, así que registramos acá.
+      void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
       window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
     }
   };
@@ -1016,6 +1021,7 @@ export default function CallView({ items, alerts }: Props) {
             {/* Contacto de 1 click — antes el teléfono SOLO se copiaba. */}
             <a
               href={`tel:+${waPhone}`}
+              onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
               className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
             >
               <Phone size={14} aria-hidden="true" /> Llamar

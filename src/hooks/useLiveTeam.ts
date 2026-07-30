@@ -72,6 +72,7 @@ function accionTouchpoint(action: string): string {
   if (action.startsWith('SEG:')) return 'seguimiento';
   if (action.startsWith('NOVEDAD:')) return 'novedad';
   if (action.startsWith('RESCUE:')) return 'rescate';
+  if (action.startsWith('LLAMADA:')) return 'llamó';
   if (action.startsWith('WHATSAPP:')) return 'WhatsApp';
   return 'gestión';
 }

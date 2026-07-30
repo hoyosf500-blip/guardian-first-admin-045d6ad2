@@ -1137,6 +1137,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   const { activeStoreId: cardActiveStoreId } = useStore();
   const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
   const { openChat, waEnabled } = useWaChat();
+  const recordContacto = useRecordGestion();
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
   const pConfig = PRIORITY_CONFIG[pLevel];
@@ -1530,6 +1531,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
                   </button>
                 )}
                 <a href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
+                  onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
                   className="flex-1 text-[11px] py-2.5 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong no-underline inline-flex items-center justify-center gap-1.5 border border-border transition-colors">
                   <PhoneIcon size={12} /> Llamar
                 </a>

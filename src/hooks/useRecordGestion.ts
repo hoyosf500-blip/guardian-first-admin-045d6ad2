@@ -4,7 +4,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 
-export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD';
+// SEG/RESCUE/NOVEDAD son GESTIONES (cuentan como trabajo resuelto/tocado).
+// LLAMADA/WHATSAPP son INTENTOS DE CONTACTO — se registran para que el trabajo
+// telefónico deje de ser invisible, pero con prefijo propio para NO contar como
+// gestión ni ocultar tarjetas (no matchean 'SEG:%' ni el módulo confirmar).
+export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD' | 'LLAMADA' | 'WHATSAPP';
 
 /**
  * Inserta un touchpoint de gestión `MODULE: acción` (store-scoped, con el
