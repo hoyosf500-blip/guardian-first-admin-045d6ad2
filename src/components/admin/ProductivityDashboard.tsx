@@ -67,6 +67,12 @@ interface Row {
   /** % confirmados sobre total_entrantes (NO sobre gestionados). Refleja
    *  productividad real: penaliza dejar pedidos sin gestionar. */
   tasa_confirmacion: number;
+  /** Confirmaciones acotadas al MISMO cohorte que `total_entrantes` (pedidos
+   *  creados dentro del período). Es el numerador correcto del aro: `confirmados`
+   *  cuenta también backlog de días previos y puede superar el inflow → >100%.
+   *  Opcional: si la migración no está aplicada, la UI cae a `confirmados`. */
+  confirmados_cohorte?: number;
+
   /** Conteos por PEDIDO DISTINTO (phone), no por acción. Base correcta de la
    *  tasa de resolución. Opcionales: si la migración 20260526140000 aún no se
    *  aplicó, vienen undefined y la UI cae al cálculo viejo sobre acciones. */
