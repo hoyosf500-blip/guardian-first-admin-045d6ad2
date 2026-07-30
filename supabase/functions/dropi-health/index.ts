@@ -87,18 +87,31 @@ Deno.serve(async (req) => {
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  // Auth: cron secret O service-role bearer.
+  // Auth: cron secret VÁLIDO o service-role bearer. Fail-closed.
+  //
+  // ⚠️ 2026-07-30 — BYPASS REAL, verificado en producción: el guard anterior era
+  //   if (!cronSecret && auth !== service_role) { if (cronSecret) {...valida...} else 401 }
+  // Con el header presente, `!cronSecret` es false → NO entraba al bloque y la
+  // rama que compara contra app_settings.cron_shared_secret era INALCANZABLE
+  // (dentro del bloque, cronSecret siempre era falsy). Resultado: cualquiera con
+  // la anon key (pública, sale del bundle JS) + `x-cron-secret: cualquier-cosa`
+  // recibía 200 con el roster COMPLETO de tiendas (store_id, país, salud) — o sea
+  // la lista de inquilinos de la plataforma — y disparaba llamadas a la API Dropi
+  // de todas ellas. Probado con `x-cron-secret: valor-invalido-de-prueba` → 200.
+  // Ahora: se exige credencial válida SÍ o SÍ; sin ninguna, 401.
   const cronSecret = req.headers.get("x-cron-secret");
   const auth = req.headers.get("Authorization") || "";
-  if (!cronSecret && auth !== `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`) {
-    if (cronSecret) {
-      const { data: secret } = await sb.from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
-      if (!secret || secret.value !== cronSecret) {
-        return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS });
-      }
-    } else {
-      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: CORS });
-    }
+  const isServiceRole = auth === `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`;
+  let authorized = isServiceRole;
+  if (!authorized && cronSecret) {
+    const { data: secret } = await sb.from("app_settings").select("value").eq("key", "cron_shared_secret").maybeSingle();
+    authorized = Boolean(secret?.value) && secret!.value === cronSecret;
+  }
+  if (!authorized) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
   }
 
   const { data: configs } = await sb
