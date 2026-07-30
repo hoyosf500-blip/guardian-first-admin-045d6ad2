@@ -544,14 +544,14 @@ export default function ProductivityDashboard() {
                   label="Entraron"
                   value={entrantes}
                   tone="accent"
-                  title="Pedidos que entraron al período (inflow del store)."
+                  title="Pedidos que ENTRARON en el período (inflow de la tienda). Todo el embudo se mide sobre estos."
                 />
                 <StatTile
                   icon={Users}
                   label="Gestionó"
                   value={teamAtendidos}
                   tone="info"
-                  title="Pedidos distintos que el equipo gestionó."
+                  title="De los que ENTRARON en el período, cuántos gestionó el equipo. El trabajo sobre pedidos de días anteriores NO aparece acá — ese sí lo cuenta el cierre diario."
                   extra={
                     <span className="font-mono tabular-nums text-[11px] font-medium text-muted-foreground">
                       {Math.max(0, entrantes - teamAtendidos)} sin tocar
@@ -563,16 +563,28 @@ export default function ProductivityDashboard() {
                   label="Contactó"
                   value={teamContactados}
                   tone="warning"
-                  title="Clientes que contestaron y decidieron (confirmaron o cancelaron)."
+                  title="De los que ENTRARON, cuántos contestaron y decidieron (confirmaron o cancelaron)."
                 />
                 <StatTile
                   icon={CheckCircle2}
                   label="Confirmó"
                   value={teamConf}
                   tone="success"
-                  title="Pedidos confirmados por el equipo en el período."
+                  title="De los que ENTRARON en el período, cuántos quedaron confirmados. OJO: no es todo lo que confirmó el equipo hoy — el cierre diario también cuenta confirmaciones de pedidos de días anteriores (backlog), por eso el cierre puede decir un número más alto. Los dos son correctos."
                 />
               </div>
+
+              {/* Por qué el cierre de la operadora puede decir MÁS que este embudo:
+                  el cierre cuenta TODO su trabajo del día (incluye backlog de días
+                  anteriores); el embudo solo mira los pedidos que entraron en el
+                  período. Auditado 2026-07-29: cierre 75 conf vs embudo 65 — los
+                  11 de diferencia eran pedidos viejos. Sin este rótulo, el dueño
+                  leyó los dos números como contradicción. */}
+              <p className="md:col-span-12 -mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Este embudo mide solo los pedidos que <strong className="text-foreground/80">entraron en el período</strong>.
+                Las gestiones sobre pedidos de días anteriores (backlog) no aparecen acá — esas las cuenta el
+                cierre diario de cada operadora, por eso el cierre puede mostrar más confirmados que el embudo.
+              </p>
             </motion.div>
           )}
 
