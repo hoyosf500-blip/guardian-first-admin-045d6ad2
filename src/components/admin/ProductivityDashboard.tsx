@@ -51,6 +51,11 @@ interface Row {
   operator_id: string;
   display_name: string;
   confirmados: number;
+  /** Confirmados SOLO de pedidos que entraron en el período (mismo cohorte que
+   *  total_entrantes). Es el numerador correcto del aro "confirmación del día":
+   *  así nunca pasa de 100%. Opcional: si la RPC desplegada aún no lo devuelve,
+   *  el cliente cae a `confirmados` (crudo) y el tope de 100% protege la vista. */
+  confirmados_cohorte?: number;
   cancelados: number;
   noresp: number;
   novedades_resueltas: number;
@@ -396,7 +401,13 @@ export default function ProductivityDashboard() {
   // entró — NO ÷resueltos (eso es efectividad de cierre, va en el tooltip de cada
   // celda). Cobertura = lo GESTIONADO ÷ entró (¿trabajó todo o dejó pedidos?).
   const entrantes = rows[0]?.total_entrantes ?? 0;
-  const teamConf = rows.reduce((a, r) => a + r.confirmados, 0);
+  // Numerador del aro = confirmados DEL COHORTE (de los que entraron en el
+  // período), no todas las confirmaciones del día. Con la RPC vieja cae a
+  // `confirmados` crudo y el tope de 100% + la nota de backlog protegen la vista.
+  const teamConf = rows.reduce((a, r) => a + (r.confirmados_cohorte ?? r.confirmados), 0);
+  // Confirmaciones TOTALES del día (incluye backlog) — solo para la nota que
+  // explica cuando el equipo trabajó pedidos de días anteriores.
+  const teamConfTotal = rows.reduce((a, r) => a + r.confirmados, 0);
   const teamCanc = rows.reduce((a, r) => a + r.cancelados, 0);
   const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
   const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
@@ -408,7 +419,10 @@ export default function ProductivityDashboard() {
   // pintar un imposible "154%". El fix de fondo (numerador acotado al cohorte)
   // vive en la RPC operator_productivity_stats — ver prompt/SQL.
   const teamTasaDiaGauge = Math.min(100, teamTasaDia);
-  const trabajoBacklog = teamConf > entrantes;
+  // Pedidos de días anteriores que el equipo TAMBIÉN confirmó hoy (fuera del
+  // cohorte del día). Es trabajo real que el aro del día no cuenta — se muestra
+  // aparte como crédito al equipo, no como disculpa por pasar de 100%.
+  const confBacklog = Math.max(0, teamConfTotal - teamConf);
   // Meta POR OPERADORA = la meta del equipo repartida entre las que trabajaron.
   // La fila de cada una divide SUS confirmados por el inflow GLOBAL (la cola es
   // compartida, no hay inflow por-operadora), así que con 2+ operadoras que se
@@ -533,10 +547,10 @@ export default function ProductivityDashboard() {
                       <b>{teamConf}</b> / {entrantes}
                     </span>
                   </div>
-                  {trabajoBacklog && (
+                  {confBacklog > 0 && (
                     <p className="text-[11px] text-muted-foreground mb-1.5 leading-snug">
-                      El equipo confirmó más pedidos de los que entraron hoy: también trabajó
-                      pedidos de días anteriores. Por eso pasa del 100%.
+                      + {confBacklog} de días anteriores que el equipo también confirmó hoy
+                      (no cuentan en el aro del día).
                     </p>
                   )}
                   <div className="relative h-2 rounded-full bg-foreground/10 overflow-hidden">
