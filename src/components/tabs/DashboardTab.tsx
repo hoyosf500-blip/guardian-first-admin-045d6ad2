@@ -8,7 +8,7 @@ import { bogotaToday } from '@/lib/utils';
 import { greetingFor } from '@/lib/greeting';
 import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
 import { deriveDeliveryMaturity, isRatePreliminary } from '@/lib/logisticsRates';
-import { confRateBySample, CONF_TARGET_PCT, MATURITY_MIN_RESUELTOS } from '@/lib/confirmationRate';
+import { confRateBySample, confRateByCohort, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT, MATURITY_MIN_RESUELTOS } from '@/lib/confirmationRate';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -182,6 +182,78 @@ export default function DashboardTab() {
       });
     return () => { cancelado = true; };
   }, [isManagerOfActive, activeStoreId, rangoEquipo]);
+
+  // ─────────────────────────────────────────────────────────────
+  // CÓMO TERMINÓ EL DÍA — hoy y ayer, por operadora (pedido del dueño
+  // 2026-07-29: ver el cierre de cada trabajador sin ir a /admin → Reportes).
+  // Dos fuentes que ya usa esa pantalla:
+  //  - admin_operator_shifts_range → el CIERRE que envió cada operadora
+  //    (conf/canc/noresp/total + hora + notas). Es SU reporte del día completo,
+  //    backlog incluido — por eso su tasa (÷resueltos) puede decir 97% mientras
+  //    la "Confirmación del día" dice 78: ventanas distintas, ambas correctas.
+  //  - admin_daily_reports_range → totales del día de la tienda con ENTRANTES
+  //    → Confirmación del día (conf ÷ lo que entró, meta ~55%).
+  // ─────────────────────────────────────────────────────────────
+  interface CierreDia { operadora: string; hora: string | null; conf: number; canc: number; noresp: number; total: number; notas: string | null; }
+  interface DiaCierres { fecha: string; entrantes: number; conf: number; canc: number; noresp: number; cierres: CierreDia[]; }
+  const [diasCierres, setDiasCierres] = useState<DiaCierres[]>([]);
+  const [cierresEstado, setCierresEstado] = useState<'idle' | 'cargando' | 'ok' | 'error'>('idle');
+
+  useEffect(() => {
+    if (!isManagerOfActive || !activeStoreId) { setCierresEstado('idle'); return; }
+    let cancelado = false;
+    setCierresEstado('cargando');
+    const hoy = bogotaToday();
+    // Ayer en calendario Bogotá: restar un día al string de hoy (mediodía UTC
+    // para que el corrimiento de zona no cambie la fecha).
+    const d = new Date(`${hoy}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    const ayer = d.toISOString().split('T')[0];
+    type RpcCierres = (fn: string, p: Record<string, unknown>) => Promise<{
+      data: Array<Record<string, unknown>> | null;
+      error: { message: string } | null;
+    }>;
+    const rpcCierres = supabase.rpc.bind(supabase) as unknown as RpcCierres;
+    Promise.all([
+      rpcCierres('admin_daily_reports_range', { p_from: ayer, p_to: hoy }),
+      rpcCierres('admin_operator_shifts_range', { p_from: ayer, p_to: hoy }),
+    ]).then(([diasRes, shiftsRes]) => {
+      if (cancelado) return;
+      if (diasRes.error || shiftsRes.error || !Array.isArray(diasRes.data) || !Array.isArray(shiftsRes.data)) {
+        console.error('No se pudo leer los cierres de hoy/ayer:', diasRes.error?.message || shiftsRes.error?.message);
+        setDiasCierres([]);
+        setCierresEstado('error');
+        return;
+      }
+      const porFecha = new Map<string, DiaCierres>();
+      for (const f of [hoy, ayer]) porFecha.set(f, { fecha: f, entrantes: 0, conf: 0, canc: 0, noresp: 0, cierres: [] });
+      for (const r of diasRes.data) {
+        const dia = porFecha.get(String(r.fecha ?? '').slice(0, 10));
+        if (!dia) continue;
+        dia.entrantes = Number(r.entrantes) || 0;
+        dia.conf = Number(r.confirmados) || 0;
+        dia.canc = Number(r.cancelados) || 0;
+        dia.noresp = Number(r.noresp) || 0;
+      }
+      for (const r of shiftsRes.data) {
+        if (String(r.tipo) !== 'cierre') continue;
+        const dia = porFecha.get(String(r.fecha ?? '').slice(0, 10));
+        if (!dia) continue;
+        dia.cierres.push({
+          operadora: String(r.operadora ?? 'Sin nombre'),
+          hora: r.hora ? String(r.hora) : null,
+          conf: Number(r.confirmados) || 0,
+          canc: Number(r.cancelados) || 0,
+          noresp: Number(r.noresp) || 0,
+          total: Number(r.total_gestionados) || 0,
+          notas: r.notas ? String(r.notas) : null,
+        });
+      }
+      setDiasCierres([porFecha.get(hoy)!, porFecha.get(ayer)!]);
+      setCierresEstado('ok');
+    });
+    return () => { cancelado = true; };
+  }, [isManagerOfActive, activeStoreId]);
 
   // Audit M3: cancellation guards — evitan setState en componente desmontado.
   useEffect(() => {
@@ -1388,6 +1460,107 @@ export default function DashboardTab() {
                 <span className="font-mono">—</span> sin pedidos resueltos en los últimos {diasRangoEquipo} días (solo no respondió): no hay tasa que medir.
                 {' '}<span className="font-mono">·pr</span> preliminar: menos de {MATURITY_MIN_RESUELTOS} resueltos, la tasa aún no concluye.
               </p>
+            </motion.div>
+          )}
+
+          {/* Cómo terminó el día — el cierre de cada operadora, hoy y ayer,
+              con la Confirmación del día de la tienda al lado. Las dos tasas
+              conviven a propósito y el texto dice por qué difieren. */}
+          {verEquipo && (cierresEstado === 'ok' || cierresEstado === 'error') && (
+            <motion.div {...fadeUp(0.16)} className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d mb-5">
+              <div className="flex items-center gap-2 mb-1">
+                <CalendarIcon size={14} className="text-accent" aria-hidden="true" />
+                <h3 className="text-sm font-semibold text-foreground">Cómo terminó el día</h3>
+              </div>
+              <p className="text-[11px] text-muted-foreground mb-4 leading-relaxed">
+                El <strong className="text-foreground/80">cierre</strong> que envió cada operadora (todo su trabajo del día,
+                pedidos viejos incluidos; su tasa = confirmados ÷ los que decidieron) y la{' '}
+                <strong className="text-foreground/80">Confirmación del día</strong> de la tienda
+                (confirmados ÷ lo que ENTRÓ ese día, meta ~{CONF_DIA_TARGET_PCT}%). Miden cosas distintas — pueden no coincidir y ambas son correctas.
+              </p>
+
+              {cierresEstado === 'error' && (
+                <p className="text-xs text-danger">No se pudieron leer los cierres (revisá permisos de admin/manager). Los datos siguen en /admin → Reportes diarios.</p>
+              )}
+
+              {cierresEstado === 'ok' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {diasCierres.map((dia, i) => {
+                    const m = confRateByCohort(dia.conf, dia.canc, dia.entrantes);
+                    const tasaDia = m.tasaDia;
+                    const tasaTone = tasaDia == null
+                      ? 'text-muted-foreground'
+                      : tasaDia >= CONF_DIA_TARGET_PCT ? 'text-success' : tasaDia >= CONF_DIA_TARGET_PCT - 10 ? 'text-warning' : 'text-danger';
+                    return (
+                      <div key={dia.fecha} className="rounded-xl border border-border bg-surface/40 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-sm font-bold text-foreground">{i === 0 ? 'Hoy' : 'Ayer'}</span>
+                            <span className="text-[10px] text-muted-foreground">{formatDateES(dia.fecha)}</span>
+                          </div>
+                          <span
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2.5 py-0.5"
+                            title={`Confirmación del día: ${dia.conf} confirmados ÷ ${dia.entrantes} que entraron. Meta ~${CONF_DIA_TARGET_PCT}%.${i === 0 ? ' Día en curso — sube a medida que confirman.' : ''}`}
+                          >
+                            <span className="text-[10px] text-muted-foreground">Conf. del día</span>
+                            <span className={`text-[12px] font-bold tabular-nums ${tasaTone}`}>
+                              {tasaDia == null ? '—' : `${tasaDia}%`}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums mb-3">
+                          <span className="text-muted-foreground">{dia.entrantes} entraron</span>
+                          <span className="text-success">{dia.conf} conf</span>
+                          <span className="text-danger">{dia.canc} canc</span>
+                          <span className="text-muted-foreground">{dia.noresp} N/R</span>
+                        </div>
+
+                        {dia.cierres.length === 0 ? (
+                          <p className="text-[11px] text-muted-foreground">
+                            {i === 0
+                              ? 'Todavía nadie envió su cierre hoy — el avance en vivo está en el ranking de arriba.'
+                              : 'Nadie envió cierre ese día.'}
+                          </p>
+                        ) : (
+                          <ul className="divide-y divide-border/40">
+                            {dia.cierres.map((c, j) => {
+                              const t = confRateBySample(c.conf, c.canc);
+                              const tTone = t.tasa == null
+                                ? 'text-muted-foreground'
+                                : t.tasa >= CONF_TARGET_PCT ? 'text-success' : t.tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
+                              return (
+                                <li key={j} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5" title={c.notas ? `Notas del cierre: ${c.notas}` : undefined}>
+                                  <span className="min-w-0 truncate text-[11px] font-semibold text-foreground">{c.operadora}</span>
+                                  {c.hora && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                                      <Clock size={10} aria-hidden="true" /> {c.hora}
+                                    </span>
+                                  )}
+                                  <span className="ml-auto flex items-center gap-2 font-mono tabular-nums text-[11px]">
+                                    <span className="text-success">{c.conf}</span>
+                                    <span className="text-danger">{c.canc}</span>
+                                    <span className="text-muted-foreground">{c.noresp}</span>
+                                    <span className="text-foreground">{c.total} tot</span>
+                                    <span
+                                      className={`font-bold ${tTone}`}
+                                      title={t.tasa == null
+                                        ? 'Sin pedidos resueltos en el cierre — no hay tasa que medir.'
+                                        : `Tasa del cierre: ${c.conf} conf ÷ ${c.conf + c.canc} que decidieron. Incluye pedidos de días anteriores.`}
+                                    >
+                                      {t.tasa == null ? '—' : `${t.tasa}%`}
+                                    </span>
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </motion.div>
           )}
 
