@@ -18,6 +18,7 @@ import WorkList from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
+import SiguienteColaBanner from '@/components/SiguienteColaBanner';
 import ShopifyPendingPanel from '@/components/confirmar/ShopifyPendingPanel';
 import DropiSyncFailuresPanel from '@/components/confirmar/DropiSyncFailuresPanel';
 import { MetricsUpdateBanner } from '@/components/MetricsUpdateBanner';
@@ -546,6 +547,11 @@ export default function ConfirmarTab({ profile }: Props) {
           {showExcel && <ExcelUploader onFile={handleFile} />}
         </div>
       )}
+
+      {/* Guía entre colas: al terminar Confirmar, la lleva a Novedades →
+          Seguimiento con lo que falta. Se auto-oculta si aún le falta confirmar
+          o si es admin. */}
+      <SiguienteColaBanner />
 
       {excelLoaded && workQueue.length === 0 && (
         <div className="relative overflow-hidden flex flex-col items-center justify-center py-16 text-center rounded-3xl border border-border bg-card/40 shadow-card3d hairline-top" role="status" aria-live="polite">
