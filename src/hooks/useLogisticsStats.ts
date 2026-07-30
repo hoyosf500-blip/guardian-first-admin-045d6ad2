@@ -144,12 +144,14 @@ export function useLogisticsStats(
   // y cualquier UPDATE en orders dispara 3 invalidaciones.
   const disableRealtime = opts?.disableRealtime ?? false;
   useEffect(() => {
-    if (disableRealtime) return;
+    if (disableRealtime || !storeId) return;
     const channel = supabase
-      .channel(`logistics-rt-${fromDate}-${toDate}-${instanceId}`)
+      .channel(`logistics-rt-${storeId}-${fromDate}-${toDate}-${instanceId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'orders' },
+        // Filtro por tienda: además de evitar invalidaciones por el churn de
+        // otras tiendas, sin él los payloads de filas ajenas llegaban al socket.
+        { event: '*', schema: 'public', table: 'orders', filter: `store_id=eq.${storeId}` },
         () => {
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(() => {
@@ -167,7 +169,7 @@ export function useLogisticsStats(
       if (debounceRef.current) clearTimeout(debounceRef.current);
       void supabase.removeChannel(channel);
     };
-  }, [queryClient, fromDate, toDate, instanceId, disableRealtime]);
+  }, [queryClient, fromDate, toDate, instanceId, disableRealtime, storeId]);
 
   return {
     summary, carriers, cities, products,

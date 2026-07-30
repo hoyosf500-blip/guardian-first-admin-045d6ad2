@@ -177,15 +177,19 @@ export default function OrderDetailPage() {
   const { ask: askAi, get: getAi } = useAiInsight();
 
   useEffect(() => {
-    if (!externalId) return;
+    if (!externalId || !activeStoreId) return;
     setLoading(true);
     setLoadError(null);
 
     const load = async () => {
+      // Filtro de tienda SIEMPRE: sin él, un link viejo de la otra tienda (o de
+      // otro tenant) renderizaba ese pedido bajo la tienda activa y las
+      // gestiones se escribían con el store_id equivocado.
       const { data: orders, error } = await supabase
         .from('orders')
         .select('*')
         .eq('external_id', externalId)
+        .eq('store_id', activeStoreId)
         .limit(1);
 
       if (error) {
@@ -206,8 +210,11 @@ export default function OrderDetailPage() {
       // order_status_history aún no está en los tipos generados → cast puntual.
       const sbAny = supabase as unknown as SupabaseClient;
       const [tpRes, notesRes, orRes, statusRes, profilesRes] = await Promise.all([
-        supabase.from('touchpoints').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(100),
-        supabase.from('notes').select('*').eq('phone', o.phone).order('created_at', { ascending: false }).limit(50),
+        // Por TELÉFONO pero acotado a la tienda activa: el mismo cliente puede
+        // haber comprado en otra tienda de la plataforma y su historial de allá
+        // no puede aparecer acá (mismo criterio que useOrderNotes).
+        supabase.from('touchpoints').select('*').eq('phone', o.phone).eq('store_id', activeStoreId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('notes').select('*').eq('phone', o.phone).eq('store_id', activeStoreId).order('created_at', { ascending: false }).limit(50),
         supabase.from('order_results').select('*').eq('order_id', o.id).order('created_at', { ascending: false }).limit(50),
         sbAny.from('order_status_history').select('id, status, changed_at').eq('order_id', o.id).order('changed_at', { ascending: false }).limit(100),
         supabase.from('profiles').select('user_id, display_name'),
@@ -222,7 +229,7 @@ export default function OrderDetailPage() {
     };
 
     load();
-  }, [externalId]);
+  }, [externalId, activeStoreId]);
 
   // Capa 2 — auto-refresh per-pedido si el último movimiento es > 1h
   useEffect(() => {

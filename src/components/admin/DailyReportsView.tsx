@@ -10,6 +10,7 @@ import {
   Tooltip as RTooltip, ResponsiveContainer,
 } from 'recharts';
 import PresetDateRangePicker from '@/components/PresetDateRangePicker';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import { confRateByCohort, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
 import CancelledReasonsModal from '@/components/admin/CancelledReasonsModal';
 import { TiltCard, StatTile, GaugeRing } from '@/components/ui3d';
@@ -153,6 +154,9 @@ function deriveDayMetrics(conf: number, canc: number, entrantes: number): DayMet
 }
 
 export default function DailyReportsView() {
+  // Las RPCs resuelven la tienda server-side; el dep fuerza el refetch al
+  // cambiar de tienda para no dejar la tabla de la tienda anterior en pantalla.
+  const activeStoreId = useActiveStoreId();
   const today = useMemo(() => new Date(), []);
   const sevenAgo = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; }, []);
 
@@ -266,7 +270,10 @@ export default function DailyReportsView() {
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+    // activeStoreId es dep A PROPÓSITO: las RPCs resuelven la tienda server-side
+    // y sin él la tabla quedaba con los datos de la tienda anterior al cambiar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, activeStoreId]);
 
   useEffect(() => { void load(); }, [load]);
 

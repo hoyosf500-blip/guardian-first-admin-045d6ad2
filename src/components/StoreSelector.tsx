@@ -114,8 +114,11 @@ function CreateStoreDialog({
     if (name.trim().length < 2) { toast.error('Nombre muy corto'); return; }
     if (country.length !== 2) { toast.error('Country code debe ser 2 letras'); return; }
     setSaving(true);
+    // create_my_store (no la vieja create_store): valida país CO/EC y aplica el
+    // tope de UNA tienda propia por usuario no-admin — la RPC vieja no tenía
+    // ningún límite y quedó revocada.
     const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: string | null; error: { message: string } | null }>)(
-      'create_store',
+      'create_my_store',
       { p_name: name.trim(), p_country_code: country.toUpperCase() },
     );
     if (error || !data) {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import { ClipboardList, Download, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { TiltCard } from '@/components/ui3d';
@@ -31,20 +32,26 @@ interface ReportRow {
 }
 
 export default function ReportsTable() {
+  const activeStoreId = useActiveStoreId();
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadReports();
-  }, []);
+    if (!activeStoreId) return;
+    loadReports(activeStoreId);
+  }, [activeStoreId]);
 
-  async function loadReports() {
+  async function loadReports(storeId: string) {
     setLoading(true);
     const { data: profiles, error: profErr } = await supabase.from('profiles').select('user_id, display_name');
     if (profErr) console.error('Error loading profiles:', profErr.message);
+    // Filtro de tienda: para el admin global la RLS le muestra TODAS las
+    // tiendas — sin este .eq la tabla mezclaba aperturas/cierres de todos
+    // los tenants en una sola lista.
     const { data: reports, error: repErr } = await supabase
       .from('daily_reports')
       .select('operator_id, report_date, report_type, data, created_at')
+      .eq('store_id', storeId)
       .order('report_date', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(100);

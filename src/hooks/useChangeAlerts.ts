@@ -17,7 +17,9 @@ interface TabBadges {
   rescate: number;
 }
 
-const SESSION_KEY = 'changeAlerts:lastSeen';
+// Clave POR TIENDA: con la clave global, al cambiar de tienda se restaba el
+// baseline de la tienda A contra los conteos de la B → badges fantasma.
+const sessionKey = (storeId: string) => `changeAlerts:lastSeen:${storeId}`;
 
 interface LastSeen {
   novedades: number;
@@ -25,24 +27,35 @@ interface LastSeen {
   oficina: number;
 }
 
-function loadLastSeen(): LastSeen {
+const ZERO: LastSeen = { novedades: 0, devoluciones: 0, oficina: 0 };
+
+function loadLastSeen(storeId: string): LastSeen {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = sessionStorage.getItem(sessionKey(storeId));
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
-  return { novedades: 0, devoluciones: 0, oficina: 0 };
+  return { ...ZERO };
 }
 
-function saveLastSeen(s: LastSeen) {
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
+function saveLastSeen(storeId: string, s: LastSeen) {
+  sessionStorage.setItem(sessionKey(storeId), JSON.stringify(s));
 }
 
 export function useChangeAlerts(userId: string | undefined, storeId?: string | null) {
   const [badges, setBadges] = useState<TabBadges>({ seguimiento: 0, rescate: 0 });
   const [banner, setBanner] = useState<string | null>(null);
-  const lastSeen = useRef<LastSeen>(loadLastSeen());
-  const current = useRef<LastSeen>({ novedades: 0, devoluciones: 0, oficina: 0 });
+  const lastSeen = useRef<LastSeen>({ ...ZERO });
+  const current = useRef<LastSeen>({ ...ZERO });
   const initialised = useRef(false);
+
+  // Al cambiar de tienda: cargar SU baseline y limpiar lo de la anterior.
+  useEffect(() => {
+    lastSeen.current = storeId ? loadLastSeen(storeId) : { ...ZERO };
+    current.current = { ...ZERO };
+    initialised.current = false;
+    setBadges({ seguimiento: 0, rescate: 0 });
+    setBanner(null);
+  }, [storeId]);
 
   const poll = useCallback(async () => {
     if (!userId || !storeId) return;
@@ -70,7 +83,7 @@ export function useChangeAlerts(userId: string | undefined, storeId?: string | n
       // First poll: set baseline if nothing was stored
       if (lastSeen.current.novedades === 0 && lastSeen.current.devoluciones === 0 && lastSeen.current.oficina === 0) {
         lastSeen.current = { novedades: nov, devoluciones: dev, oficina: ofi };
-        saveLastSeen(lastSeen.current);
+        saveLastSeen(storeId, lastSeen.current);
       }
       initialised.current = true;
     }
@@ -109,9 +122,9 @@ export function useChangeAlerts(userId: string | undefined, storeId?: string | n
       lastSeen.current.devoluciones = current.current.devoluciones;
       lastSeen.current.oficina = current.current.oficina;
     }
-    saveLastSeen(lastSeen.current);
+    if (storeId) saveLastSeen(storeId, lastSeen.current);
     setBadges(prev => ({ ...prev, [tab]: 0 }));
-  }, []);
+  }, [storeId]);
 
   const dismissBanner = useCallback(() => setBanner(null), []);
 

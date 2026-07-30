@@ -264,6 +264,7 @@ export default function ProductivityDashboard() {
       const { count } = await supabase
         .from('order_results')
         .select('id', { count: 'exact', head: true })
+        .eq('store_id', activeStoreId ?? '')
         .gte('result_date', desde)
         .lte('result_date', hoy);
       setAccionesPeriodo(count ?? 0);
@@ -311,30 +312,34 @@ export default function ProductivityDashboard() {
     }
     setLoading(false);
     setRefreshing(false);
-  }, [range]);
+  }, [range, activeStoreId]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Realtime debounced 1s: cualquier cambio en orders/order_results/touchpoints
-  // dispara un refetch silencioso. Sin polling.
+  // Realtime debounced 1s: cambios en orders/order_results/touchpoints de LA
+  // TIENDA ACTIVA disparan un refetch silencioso. El filtro por store_id no es
+  // solo ruido: sin él, el payload completo de las filas de OTRAS tiendas
+  // (teléfonos, acciones) llegaba a este navegador por el socket.
   useEffect(() => {
+    if (!activeStoreId) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const debounced = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => load(true), 1000);
     };
+    const storeFilter = `store_id=eq.${activeStoreId}`;
     const channel = supabase
-      .channel('admin-productivity')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, debounced)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results' }, debounced)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints' }, debounced)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily' }, debounced)
+      .channel(`admin-productivity-${activeStoreId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: storeFilter }, debounced)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results', filter: storeFilter }, debounced)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: storeFilter }, debounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily', filter: storeFilter }, debounced)
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
-  }, [load]);
+  }, [load, activeStoreId]);
 
   // Cruce jornada ↔ productividad por operadora (para la alerta "sin confirmar"
   // en la tabla Confirmar). Si no hay fila de actividad, no se alerta.

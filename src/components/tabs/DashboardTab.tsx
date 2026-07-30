@@ -292,7 +292,7 @@ export default function DashboardTab() {
       if (!cancelled) setOperatorRanking(ranking);
     });
     return () => { cancelled = true; };
-  }, [user, counter]); // re-fetch when counter changes (user marked something)
+  }, [user, counter, activeStoreId]); // re-fetch al marcar algo Y al cambiar de tienda (la RPC resuelve scope server-side)
 
   // Load orders from DB for dashboard stats (filtrado por tienda activa)
   useEffect(() => {
@@ -662,19 +662,22 @@ export default function DashboardTab() {
       managed.map(o => [o.phone, o.nombre, o.producto, o.ciudad, o.result === 'conf' ? 'Confirmado' : o.result === 'canc' ? 'Cancelado' : 'No respondió', o.reason || '', String(o.valor)]));
   };
   const exportarHistorico = async () => {
-    if (!user) return;
+    if (!user || !activeStoreId) return;
     const since = new Date(); since.setDate(since.getDate() - period);
     const sinceStr = since.toISOString().split('T')[0];
     const { data, error } = await supabase.from('order_results').select('result_date, result_time, phone, result, reason, module')
-      .eq('operator_id', user.id).gte('result_date', sinceStr).order('result_date', { ascending: false });
+      .eq('operator_id', user.id).eq('store_id', activeStoreId).gte('result_date', sinceStr).order('result_date', { ascending: false });
     if (error || !data?.length) { toast.error(error ? 'Error' : 'Sin datos'); return; }
     downloadCsv(`historico_${sinceStr}.csv`, ['Fecha', 'Hora', 'Teléfono', 'Resultado', 'Razón', 'Módulo'],
       data.map(r => [r.result_date, r.result_time || '', r.phone, r.result === 'conf' ? 'Confirmado' : r.result === 'canc' ? 'Cancelado' : 'No respondió', r.reason || '', r.module]));
   };
   const handleCierre = async () => {
-    if (!user) return;
+    if (!user || !activeStoreId) return;
     const today = new Date().toISOString().split('T')[0];
-    const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre',
+    // store_id explícito: sin él el cierre cae al default de la columna (la
+    // tienda CO original) y el reporte de una operadora de otra tienda queda
+    // invisible para su propio admin.
+    const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre', store_id: activeStoreId,
       data: { confirmados: counter.conf, cancelados: counter.canc, no_respondio: counter.noresp, total_gestionados: total, tasa_confirmacion: tasa, pendientes_manana: pendLeft } });
     if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
     else toast.success('Cierre enviado correctamente');

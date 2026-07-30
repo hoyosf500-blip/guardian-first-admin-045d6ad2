@@ -169,9 +169,14 @@ export default function ConfirmarTab({ profile }: Props) {
         if (!raw.length) { toast.error('Excel vacío'); return; }
         const orders = parseExcelToOrders(raw);
         if (!orders.length) { toast.error('No se encontraron columnas de nombre/teléfono'); return; }
-        if (user) {
+        if (user && activeStoreId) {
+          // store_id explícito SIEMPRE: sin él la fila cae al default de la
+          // columna (la tienda CO original) y el pedido de otra tienda/tenant
+          // termina en la cola equivocada. Mismo incidente que el upsert del
+          // cron el 2026-07-21.
           const dbOrders = orders.map(o => ({
             external_id: o.externalId, uploaded_by: user.id, upload_date: today,
+            store_id: activeStoreId,
             nombre: o.nombre, phone: o.phone, ciudad: o.ciudad, producto: o.producto,
             estado: o.estado, fecha: o.fecha, fecha_conf: o.fechaConf, dias: o.dias,
             dias_conf: o.diasConf, valor: o.valor, flete: o.flete, costo_prod: o.costoProd,
@@ -193,7 +198,7 @@ export default function ConfirmarTab({ profile }: Props) {
       } catch (err: unknown) { toast.error('Error leyendo Excel: ' + (err instanceof Error ? err.message : 'Error desconocido')); }
     };
     reader.readAsArrayBuffer(file);
-  }, [user, today, setAllOrders, buildWorkQueue]);
+  }, [user, today, activeStoreId, setAllOrders, buildWorkQueue]);
 
   // Firma estable del conjunto de teléfonos de la cola. El efecto de abajo
   // depende de ESTO, no del array `workQueue`: una ráfaga de realtime que
