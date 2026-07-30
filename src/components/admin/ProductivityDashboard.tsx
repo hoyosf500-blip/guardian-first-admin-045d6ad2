@@ -401,6 +401,14 @@ export default function ProductivityDashboard() {
   const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
   const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
   const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
+  // Un aro de PORCENTAJE no puede pasar de 100%. El equipo puede confirmar MÁS
+  // pedidos hoy de los que entraron hoy cuando trabaja el backlog de días
+  // anteriores (teamConf cuenta TODA confirmación de hoy; entrantes solo el
+  // inflow del período). En ese caso mostramos 100% y lo decimos, en vez de
+  // pintar un imposible "154%". El fix de fondo (numerador acotado al cohorte)
+  // vive en la RPC operator_productivity_stats — ver prompt/SQL.
+  const teamTasaDiaGauge = Math.min(100, teamTasaDia);
+  const trabajoBacklog = teamConf > entrantes;
   // Meta POR OPERADORA = la meta del equipo repartida entre las que trabajaron.
   // La fila de cada una divide SUS confirmados por el inflow GLOBAL (la cola es
   // compartida, no hay inflow por-operadora), así que con 2+ operadoras que se
@@ -515,7 +523,7 @@ export default function ProductivityDashboard() {
                 </div>
 
                 <div className="flex justify-center py-4 tilt-layer-3">
-                  <GaugeRing value={teamTasaDia} label="del día" size={190} tone={heroTone} />
+                  <GaugeRing value={teamTasaDiaGauge} label="del día" size={190} tone={heroTone} />
                 </div>
 
                 <div className="tilt-layer-1">
@@ -525,6 +533,12 @@ export default function ProductivityDashboard() {
                       <b>{teamConf}</b> / {entrantes}
                     </span>
                   </div>
+                  {trabajoBacklog && (
+                    <p className="text-[11px] text-muted-foreground mb-1.5 leading-snug">
+                      El equipo confirmó más pedidos de los que entraron hoy: también trabajó
+                      pedidos de días anteriores. Por eso pasa del 100%.
+                    </p>
+                  )}
                   <div className="relative h-2 rounded-full bg-foreground/10 overflow-hidden">
                     <div
                       className="h-full rounded-full bg-accent-gradient transition-[width] duration-700"
