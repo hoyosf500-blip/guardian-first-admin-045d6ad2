@@ -2682,6 +2682,10 @@ export type Database = {
       cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
+      create_my_store: {
+        Args: { p_country_code?: string; p_name: string }
+        Returns: string
+      }
       create_store: {
         Args: { p_country_code: string; p_name: string }
         Returns: string
