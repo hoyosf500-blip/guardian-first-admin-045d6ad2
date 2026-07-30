@@ -1543,7 +1543,7 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
               {/* Gestión diaria — pool compartido: visible para cualquier operadora. */}
               {!managed && (
-                <SegActionButtons variant="list" onAction={(a) => onAction(o, a)} />
+                <SegActionButtons variant="list" onAction={(a) => onAction(o, a)} estado={o.estado} />
               )}
 
             </div>

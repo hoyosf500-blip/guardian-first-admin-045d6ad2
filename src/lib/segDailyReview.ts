@@ -12,7 +12,13 @@
  * Ver spec: docs/superpowers/specs/2026-05-26-seguimiento-revision-diaria-design.md
  */
 
-/** Métodos de gestión (lo que se despliega bajo "Gestioné hoy"). */
+/**
+ * Métodos de gestión (lo que se despliega bajo "Gestioné hoy").
+ * @deprecated 2026-07-30 — la botonera ya no usa esta lista fija: los métodos
+ * son POR ESTADO del pedido (src/lib/segMetodosEstado.ts, donde esta lista
+ * sigue viva como fallback METODOS_DEFAULT). Se conserva la export por si
+ * algún consumidor histórico la referencia.
+ */
 export const SEG_METHODS = [
   'Llamé',
   'WhatsApp',

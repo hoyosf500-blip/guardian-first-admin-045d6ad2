@@ -1,12 +1,19 @@
 import { useState } from 'react';
-import { CheckCircle2, Phone, MessageCircle, Truck, Home, RotateCcw, ChevronDown } from 'lucide-react';
+import {
+  CheckCircle2, Phone, MessageCircle, Truck, Home, RotateCcw, ChevronDown,
+  Send, Bell, PhoneOff, Building2, CalendarClock, PackageOpen,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { SEG_METHODS, SEG_CLOSERS } from '@/lib/segDailyReview';
+import { SEG_CLOSERS } from '@/lib/segDailyReview';
+import { metodosParaEstado } from '@/lib/segMetodosEstado';
 
 /**
  * Botonera simplificada de Seguimiento (reemplaza los 7 botones planos).
- * Un primario "Gestioné hoy" que despliega los métodos (Llamé / WhatsApp /
- * Reclamé transportadora / Cliente recoge) + cierre (Resuelto / Devolución).
+ * Un primario "Gestioné hoy" que despliega los métodos + cierre (Resuelto /
+ * Devolución). Los métodos son COHERENTES con el estado del pedido (prop
+ * `estado` → src/lib/segMetodosEstado.ts): en Guía generada lo primero es
+ * "Envié la guía"; en Reparto, "Avisé que llega hoy"; en Oficina, "Avisé: en
+ * oficina / Cliente recoge". Sin estado → los 4 de siempre.
  * Cada acción llama `onAction(<acción>)` — el consumidor la mapea al pedido y
  * registra el touchpoint. Ver SegActionButtons en CrmCallView y CrmTable.
  */
@@ -16,6 +23,13 @@ const METHOD_ICON: Record<string, typeof Phone> = {
   'WhatsApp': MessageCircle,
   'Reclamé transportadora': Truck,
   'Cliente recoge': Home,
+  'No contestó': PhoneOff,
+  'Envié la guía': Send,
+  'Avisé que está en proceso': PackageOpen,
+  'Avisé que va en camino': Bell,
+  'Avisé que llega hoy': Bell,
+  'Avisé: en oficina': Building2,
+  'Coordiné nueva entrega': CalendarClock,
 };
 
 interface SegActionButtonsProps {
@@ -23,11 +37,14 @@ interface SegActionButtonsProps {
   onAction: (action: string) => void;
   /** 'call' = vista de llamada (botones grandes); 'list' = card compacta. */
   variant?: 'call' | 'list';
+  /** Estado Dropi del pedido — decide QUÉ métodos se ofrecen y en qué orden. */
+  estado?: string | null;
 }
 
-export default function SegActionButtons({ onAction, variant = 'list' }: SegActionButtonsProps) {
+export default function SegActionButtons({ onAction, variant = 'list', estado }: SegActionButtonsProps) {
   const [showMethods, setShowMethods] = useState(false);
   const big = variant === 'call';
+  const metodos = metodosParaEstado(estado);
 
   const pick = (action: string) => {
     setShowMethods(false);
@@ -53,10 +70,11 @@ export default function SegActionButtons({ onAction, variant = 'list' }: SegActi
         <ChevronDown size={14} className={cn('transition-transform', showMethods && 'rotate-180')} aria-hidden="true" />
       </button>
 
-      {/* Métodos (cómo lo gestioné) */}
+      {/* Métodos (qué gestión hice) — los del ESTADO del pedido, el más
+          relevante primero. */}
       {showMethods && (
         <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-accent/25 bg-accent/5 p-1.5">
-          {SEG_METHODS.map(m => {
+          {metodos.map(m => {
             const Icon = METHOD_ICON[m] ?? CheckCircle2;
             return (
               <button

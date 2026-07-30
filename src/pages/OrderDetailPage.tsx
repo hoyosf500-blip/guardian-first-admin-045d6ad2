@@ -20,6 +20,7 @@ import { AuroraBackdrop, TiltCard } from '@/components/ui3d';
 import { buildTimeline, type TimelineStatusChange } from '@/lib/timelineBuilder';
 import { sanitizeAction } from '@/lib/sanitize';
 import { bogotaToday } from '@/lib/utils';
+import { metodosParaEstado } from '@/lib/segMetodosEstado';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import SlaAlertCard from '@/components/order-detail/SlaAlertCard';
 import CustomerHistoryCard from '@/components/order-detail/CustomerHistoryCard';
@@ -95,14 +96,14 @@ const COMMUNICATION_DEBOUNCE_MS = 30_000;
 
 // Botones de gestión de seguimiento. Cada uno registra un touchpoint `SEG: ...`
 // (la bitácora) → cuenta en productividad (operator_productivity_stats: seg_acciones
-// para cualquier 'SEG:%', seg_resueltos para los 4 strings exactos) y marca el
-// pedido como "tocado hoy" (mySegTouchedToday en OrderContext, vía realtime).
+// para cualquier 'SEG:%', seg_resueltos para los strings exactos de cierre) y marca
+// el pedido como "tocado hoy" (mySegTouchedToday en OrderContext, vía realtime).
 // 'SEG: Resuelto' y 'SEG: Devolución' (con acento) están en la lista de resueltos
 // de la RPC — NO cambiar esos textos sin actualizar la migración.
-const SEG_ACTIONS: { label: string; action: string; tone: 'neutral' | 'success' | 'warn' }[] = [
-  { label: 'Contactado', action: 'SEG: Contactado', tone: 'neutral' },
-  { label: 'No contestó', action: 'SEG: No contestó', tone: 'neutral' },
-  { label: 'Coordinó entrega', action: 'SEG: Coordinó entrega', tone: 'neutral' },
+// Los métodos de gestión son POR ESTADO (src/lib/segMetodosEstado.ts): en Guía
+// generada lo primero es "Envié la guía", en Reparto "Avisé que llega hoy", etc.
+// — la misma botonera coherente que CrmCallView/CrmTable. Los cierres van fijos.
+const SEG_CIERRES: { label: string; action: string; tone: 'success' | 'warn' }[] = [
   { label: 'Resuelto', action: 'SEG: Resuelto', tone: 'success' },
   { label: 'Devolución', action: 'SEG: Devolución', tone: 'warn' },
 ];
@@ -663,7 +664,14 @@ export default function OrderDetailPage() {
           <div className="pt-3 mt-1 border-t border-border/50">
             <p className="hud-label mb-2">Registrar gestión</p>
             <div className="inline-flex flex-wrap gap-2">
-              {SEG_ACTIONS.map((a) => (
+              {[
+                // Métodos según el ESTADO del pedido (lo más relevante primero)…
+                ...metodosParaEstado(order.estado).map((m) => ({
+                  label: m, action: `SEG: ${m}`, tone: 'neutral' as const,
+                })),
+                // …y los cierres fijos al final.
+                ...SEG_CIERRES,
+              ].map((a) => (
                 <button
                   key={a.action}
                   type="button"

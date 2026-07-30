@@ -1005,7 +1005,7 @@ export default function CrmCallView({
               </button>
             </div>
           ) : (
-            <SegActionButtons variant="call" onAction={handleAction} />
+            <SegActionButtons variant="call" onAction={handleAction} estado={o.estado} />
           )}
 
           {/* Notas y recordatorios — mismo componente que Confirmar/OrderDetail.
