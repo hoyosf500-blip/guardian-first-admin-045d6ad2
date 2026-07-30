@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperatorHeartbeat } from '@/hooks/useOperatorHeartbeat';
+import { useReportAppVersion } from '@/hooks/useReportAppVersion';
 import InactivityGuard from '@/components/InactivityGuard';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
@@ -11,7 +12,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign } from 'lucide-react';
+import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2 } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import SetupWizard from '@/components/SetupWizard';
@@ -44,6 +45,9 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/admin', icon: Settings, label: 'Admin', section: 'Sistema', managerOnly: true },
   { path: '/logistica', icon: Truck, label: 'Logística', section: 'Operación', managerOnly: true },
   ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', section: 'Finanzas', adminOnly: true } as NavItem] : []),
+  // Panel multi-inquilino: SOLO el admin global (dueño de la plataforma). Los
+  // owners terceros ni lo ven, y la DB los rechaza si entran por URL.
+  { path: '/plataforma', icon: Building2, label: 'Plataforma', section: 'Sistema', adminOnly: true },
 ];
 
 function LiveClock() {
@@ -74,6 +78,8 @@ function ProtectedLayoutInner() {
   // tiene sus propios gates: solo emite ping para no-admin con tienda activa.
   // Mantener acá (no en un sub-componente) para que viva toda la sesión.
   useOperatorHeartbeat();
+  // Sella qué versión del CRM tiene cargada esta pestaña → panel /plataforma.
+  useReportAppVersion();
 
   // Redención de invitación por link: si el usuario llegó por
   // /auth?invite=TOKEN, AuthPage guardó el token en localStorage. Apenas hay

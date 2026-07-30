@@ -25,6 +25,10 @@ const LogisticsPage = lazy(() => import("@/pages/LogisticsPage"));
 // externos NO se registra la ruta — un acceso directo a /cfo cae al 404.
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 const CfoPage = CFO_ENABLED ? lazy(() => import("@/pages/CfoPage")) : null;
+// Panel de plataforma (multi-inquilino): la ruta existe siempre, pero la página
+// rebota a /dashboard si el usuario no es admin GLOBAL y las RPC `platform_*`
+// tiran 42501 en la DB — el gate real está en la base, no acá.
+const PlataformaPage = lazy(() => import("@/pages/PlataformaPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const queryClient = new QueryClient({
@@ -79,6 +83,7 @@ const App = () => (
                   {CFO_ENABLED && CfoPage && (
                     <Route path="/cfo" element={route(<CfoPage />)} />
                   )}
+                  <Route path="/plataforma" element={route(<PlataformaPage />)} />
                   <Route path="/pedido/:externalId" element={route(<OrderDetailPage />)} />
                 </Route>
                 <Route path="*" element={<NotFound />} />
