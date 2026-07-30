@@ -17,6 +17,7 @@ import { ShoppingBag } from 'lucide-react';
 import { formatTimeBogota, formatDateTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorarioCompliance, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
 import { scheduleFromMinutes, DEFAULT_SCHEDULE } from '@/lib/inactivityWindow';
+import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { gestionesPorHora, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
 import { bogotaToday } from '@/lib/utils';
@@ -41,6 +42,18 @@ interface WorkedRow {
   first_event: string | null;
   last_event: string | null;
   blocks: unknown;
+}
+
+/** Fila de operator_inactivity_stats — avisos de inactividad de la operadora en
+ *  el período (cuántas veces se quedó +6 min quieta CON pedidos en cola, dentro
+ *  de su horario, y cuántos minutos sumó eso). Es la señal de "tiempo perdido"
+ *  que el dueño pidió ver. Se restauró tras quitarse el 18-jul (commit 5dd1db9). */
+interface InactivityRow {
+  operator_id: string;
+  display_name: string;
+  warnings_count: number;
+  total_lost_seconds: number;
+  last_warning_at: string | null;
 }
 
 // Sin '24h' rodante: las ventanas se alinean a día-calendario Bogotá (igual que
@@ -197,6 +210,9 @@ export default function ProductivityDashboard() {
   const [rows, setRows] = useState<Row[]>([]);
   const [activityRows, setActivityRows] = useState<ActivityRow[]>([]);
   const [workedRows, setWorkedRows] = useState<WorkedRow[]>([]);
+  const [inactivityRows, setInactivityRows] = useState<InactivityRow[]>([]);
+  // Operadora cuyo detalle de avisos está abierto (nombre → InactivityDetailModal).
+  const [inactivityDetail, setInactivityDetail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Antes solo console.error → la UI mostraba "Sin actividad" indistinguible
@@ -231,7 +247,7 @@ export default function ProductivityDashboard() {
     // _resolve_scope_store() (admin → su tienda activa, profiles.active_store_id).
     // No pasamos p_store_id: así NO dependemos de que la migration del parámetro
     // esté aplicada (evita el PGRST202 "function ... does not exist").
-    const [productivity, activity, worked] = await Promise.all([
+    const [productivity, activity, worked, inactivity] = await Promise.all([
       supabase.rpc('operator_productivity_stats' as never, { p_range: range } as never),
       // Jornada — heartbeat de entrada/salida (operator_activity_stats). Si la
       // migration no se aplicó, capturamos el PGRST202 silencioso y la sección
@@ -240,6 +256,10 @@ export default function ProductivityDashboard() {
       // Evidencia de trabajo (operator_worked_blocks): da primera/última acción
       // marcada, respaldo de entrada/salida cuando no hay heartbeat.
       supabase.rpc('operator_worked_blocks' as never, { p_range: range } as never),
+      // Avisos de inactividad (operator_inactivity_stats): cuántas veces cada
+      // operadora se quedó +6 min quieta CON cola, dentro de su horario. Es el
+      // "cuánto tiempo perdió" que pidió el dueño. Error silencioso como los otros.
+      supabase.rpc('operator_inactivity_stats' as never, { p_range: range } as never),
     ]);
     const { data, error: rpcErr } = productivity;
     if (rpcErr) {
@@ -315,6 +335,16 @@ export default function ProductivityDashboard() {
         console.warn('[productivity] worked rpc error', worked.error);
       }
     }
+    // Avisos de inactividad: mismo trato silencioso + limpieza. Si la RPC no está
+    // (o falla), la columna "Sin trabajar" cae a '—' y el resto sigue.
+    if (!inactivity.error) {
+      setInactivityRows((inactivity.data as InactivityRow[] | null) ?? []);
+    } else {
+      setInactivityRows([]);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[productivity] inactivity rpc error', inactivity.error);
+      }
+    }
     setLoading(false);
     setRefreshing(false);
   }, [range, activeStoreId]);
@@ -339,6 +369,8 @@ export default function ProductivityDashboard() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'order_results', filter: storeFilter }, debounced)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: storeFilter }, debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_activity_daily', filter: storeFilter }, debounced)
+      // Un aviso de inactividad nuevo aparece en vivo en la columna "Sin trabajar".
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operator_inactivity_warnings', filter: storeFilter }, debounced)
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
@@ -350,6 +382,7 @@ export default function ProductivityDashboard() {
   // en la tabla Confirmar). Si no hay fila de actividad, no se alerta.
   const activityByOp = new Map(activityRows.map(r => [r.operator_id, r]));
   const workedByOp = new Map(workedRows.map(r => [r.operator_id, r]));
+  const inactivityByOp = new Map(inactivityRows.map(r => [r.operator_id, r]));
   // Operadoras a mostrar en Jornada = las que aparecen por CUALQUIER señal:
   // trabajo real por evidencia (worked) Y/O heartbeat de CRM (activity). Una
   // operadora que trabajó por teléfono puede tener bloques de trabajo sin apenas
@@ -666,6 +699,13 @@ export default function ProductivityDashboard() {
                       <th className="text-right" title="Horas con evidencia de trabajo: bloques de pedidos marcados, cortando cuando pasan más de 15 minutos sin ninguna acción. OJO: es un PISO, no una medida exacta — una llamada larga que no termina en un clic no aparece acá.">
                         Trabajando
                       </th>
+                      {/* SIN TRABAJAR — avisos de inactividad. Cuántas veces la
+                          operadora se quedó +6 min quieta CON pedidos en cola,
+                          dentro de su horario. Es el "cuánto me pierde" del dueño.
+                          Clickeable → detalle por aviso. */}
+                      <th className="text-right" title="Avisos de inactividad: cuántas veces se quedó más de 6 minutos sin ninguna acción TENIENDO pedidos en cola, dentro de su horario. Debajo, el total de minutos. Tocá el número para ver cada aviso con su hora. OJO: un rato quieta puede ser una llamada — es una señal para revisar, no una condena.">
+                        Sin trabajar
+                      </th>
                       {/* MIN/INTENTO — sobre TODOS los intentos (incl. no
                           contestó), por decisión del dueño. */}
                       <th className="text-right" title="Promedio de minutos por pedido marcado = horas trabajando ÷ total de intentos (incluye los 'no contestó', que son rápidos). Sirve para comparar ritmo entre operadoras, no como estándar absoluto.">
@@ -820,6 +860,39 @@ export default function ProductivityDashboard() {
                             >
                               {workedSec == null || workedSec === 0 ? '—' : formatDurationHM(workedSec)}
                             </span>
+                          </td>
+                          {/* SIN TRABAJAR — avisos de inactividad (clickeable). */}
+                          <td className="text-right">
+                            {(() => {
+                              const inact = inactivityByOp.get(op.id);
+                              const avisos = inact ? Number(inact.warnings_count) || 0 : 0;
+                              if (avisos === 0) {
+                                return (
+                                  <span
+                                    className="font-mono tabular-nums text-xs font-bold text-success"
+                                    title="Sin avisos de inactividad en este período — no se quedó quieta con pedidos en cola."
+                                  >
+                                    0
+                                  </span>
+                                );
+                              }
+                              const perdidoMin = Math.round((Number(inact!.total_lost_seconds) || 0) / 60);
+                              const tone = avisos >= 3 ? 'danger' : 'warning';
+                              return (
+                                <button
+                                  onClick={() => setInactivityDetail(op.name)}
+                                  className="inline-flex flex-col items-end gap-0.5 cursor-pointer group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md px-1"
+                                  title={`${avisos} aviso(s) de inactividad · ${perdidoMin} min en total. Tocá para ver cada uno con su hora.`}
+                                >
+                                  <span className={`font-mono tabular-nums text-xs font-bold text-${tone} group-hover:underline`}>
+                                    {avisos} {avisos === 1 ? 'aviso' : 'avisos'}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                                    {perdidoMin} min
+                                  </span>
+                                </button>
+                              );
+                            })()}
                           </td>
                           {/* MIN/PEDIDO — trabajado ÷ TODOS los intentos. */}
                           <td className="text-right">
@@ -1020,7 +1093,8 @@ export default function ProductivityDashboard() {
             icon={CheckCircle2}
             note={
               entrantes > 0
-                ? `Entraron ${entrantes} → gestionó ${teamAtendidos} → contactó ${teamContactados} → confirmó ${teamConf} = ${teamTasaDia}% del día`
+                ? `Entraron ${entrantes} → confirmó ${teamConf} de ellos = ${teamTasaDiaGauge}% del día`
+                  + (confBacklog > 0 ? ` · + ${confBacklog} de días anteriores` : '')
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
@@ -1442,6 +1516,16 @@ export default function ProductivityDashboard() {
             </div>
           </div>
         </Section>
+      )}
+
+      {/* Detalle de avisos de inactividad de una operadora (abre desde la celda
+          "Sin trabajar" de la Jornada). Restaurado tras quitarse el 18-jul. */}
+      {inactivityDetail && (
+        <InactivityDetailModal
+          operadora={inactivityDetail}
+          range={range}
+          onClose={() => setInactivityDetail(null)}
+        />
       )}
     </div>
   );
