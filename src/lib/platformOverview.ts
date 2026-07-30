@@ -55,6 +55,21 @@ export interface SubscriptionState {
 
 const DIA_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Recorta a `YYYY-MM-DD` para poder pasarlo a `formatDateES`, que espera SOLO
+ * la fecha (le concatena 'T12:00:00'). La RPC devuelve dos formatos distintos:
+ * `created_at` es timestamptz (`2026-07-01T00:00:00+00:00`) y `paid_until` es
+ * date (`2026-07-01`). Pasarle el timestamptz crudo producía
+ * `...+00:00T12:00:00` → "Invalid Date" en pantalla (visto en producción).
+ * Devuelve null si no hay fecha, para que la UI diga algo en vez de imprimir
+ * basura.
+ */
+export function soloFecha(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const s = String(iso).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
 /** Días calendario entre hoy y una fecha `YYYY-MM-DD` (positivo = futuro). */
 function diasHasta(fechaISO: string, ahoraMs: number): number {
   const [y, m, d] = fechaISO.slice(0, 10).split('-').map(Number);

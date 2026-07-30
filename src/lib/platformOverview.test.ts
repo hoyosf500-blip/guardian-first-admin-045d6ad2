@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  subscriptionState, storeHealth, filterStores, AVISO_VENCIMIENTO_DIAS,
+  subscriptionState, storeHealth, filterStores, soloFecha, AVISO_VENCIMIENTO_DIAS,
   type PlatformStore,
 } from './platformOverview';
 
@@ -16,6 +16,24 @@ const base: PlatformStore = {
 };
 
 const con = (p: Partial<PlatformStore>): PlatformStore => ({ ...base, ...p });
+
+describe('soloFecha', () => {
+  it('recorta un timestamptz (created_at) — el bug "Invalid Date" en pantalla', () => {
+    expect(soloFecha('2026-07-01T00:00:00+00:00')).toBe('2026-07-01');
+    expect(soloFecha('2026-07-01T05:23:04.769679+00:00')).toBe('2026-07-01');
+  });
+
+  it('deja pasar una date ya limpia (paid_until)', () => {
+    expect(soloFecha('2026-09-15')).toBe('2026-09-15');
+  });
+
+  it('sin fecha o basura → null (la UI muestra guion, no "Invalid Date")', () => {
+    expect(soloFecha(null)).toBeNull();
+    expect(soloFecha(undefined)).toBeNull();
+    expect(soloFecha('')).toBeNull();
+    expect(soloFecha('no-es-fecha')).toBeNull();
+  });
+});
 
 describe('subscriptionState', () => {
   it('al día cuando falta más que la ventana de aviso', () => {

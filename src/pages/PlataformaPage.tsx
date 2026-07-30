@@ -10,8 +10,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatDateES } from '@/lib/orderUtils';
 import {
   type PlatformStore, type PlanKey, PLAN_LABEL,
-  subscriptionState, storeHealth, filterStores,
+  subscriptionState, storeHealth, filterStores, soloFecha,
 } from '@/lib/platformOverview';
+
+/** Fecha legible tolerando timestamptz o date; sin fecha → guion, nunca "Invalid Date". */
+const fecha = (iso: string | null | undefined): string => {
+  const f = soloFecha(iso);
+  return f ? formatDateES(f) : '—';
+};
 
 /**
  * Panel de PLATAFORMA — la vista del dueño de Guardian sobre sus inquilinos.
@@ -77,7 +83,7 @@ export default function PlataformaPage() {
       p_notes: store.sub_notes ?? null,
     });
     if (err) { toast.error(`No se pudo guardar: ${err.message}`); return; }
-    toast.success(`${store.store_name}: ${PLAN_LABEL[plan]}${paidUntil ? ` hasta ${formatDateES(paidUntil)}` : ''}`);
+    toast.success(`${store.store_name}: ${PLAN_LABEL[plan]}${paidUntil ? ` hasta ${fecha(paidUntil)}` : ''}`);
     setEditing(null);
     void cargar();
   };
@@ -185,7 +191,7 @@ export default function PlataformaPage() {
                       </span>
                     </div>
                     <p className="mt-1 text-[11px] text-muted-foreground truncate">
-                      {s.owner_name} · {s.owner_email} · desde {formatDateES(s.created_at)}
+                      {s.owner_name} · {s.owner_email} · desde {fecha(s.created_at)}
                     </p>
                   </div>
 
