@@ -1208,9 +1208,9 @@ export default function DashboardTab() {
               // ventana elegida (no la anterior), así que no hay con qué
               // comparar honestamente. Antes de inventar un delta, no hay chip:
               // la tendencia dentro del período ya la cuenta el sparkline.
-              { icon: CheckCircle2, label: 'Confirmados', value: tileConf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos quedaron confirmados. Es el MISMO número que ves en /admin → Productividad. El trabajo del día completo de cada operadora (incluye pedidos viejos) está en su cierre y en Confirmar.' : undefined },
-              { icon: XCircle, label: 'Cancelados', value: tileCanc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos terminaron cancelados.' : undefined },
-              { icon: PhoneOff, label: 'No respondió', value: tileNoresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos siguen sin contestar.' : undefined },
+              { icon: CheckCircle2, label: 'Confirmados', value: tileConf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'TODO lo que el equipo confirmó hoy (incluye pedidos viejos que estaban pendientes). Es el MISMO número que ves en Confirmar y en /admin → Productividad.' : undefined },
+              { icon: XCircle, label: 'Cancelados', value: tileCanc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'Pedidos que el equipo canceló hoy (de todo lo que trabajó).' : undefined },
+              { icon: PhoneOff, label: 'No respondió', value: tileNoresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'Clientes que no contestaron hoy y siguen sin cerrar.' : undefined },
               // La 4ª tarjeta SIGUE AL SELECTOR en modo Equipo: pedidos que
               // ENTRARON en la ventana (con "Hoy" mostraba 9056 = TODO el
               // histórico de la tienda, y el dueño lo leyó — con razón — como
@@ -1219,7 +1219,7 @@ export default function DashboardTab() {
               // En modo Yo no hay fuente de entrantes (la RPC es de managers):
               // se mantiene el universo cargado, rotulado como siempre.
               ...(verEquipo
-                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${statusBreakdown.pendientes} pendientes ahora`, title: 'Pedidos que ENTRARON y pasaron por la cola de confirmación en la ventana. Mismo denominador que la Confirmación del día de Productividad.' }]
+                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${statusBreakdown.pendientes} pendientes ahora`, title: 'Pedidos NUEVOS que entraron hoy (la demanda del día). Va aparte del %: el equipo también trabaja pedidos de días anteriores, por eso puede confirmar más de lo que entró.' }]
                 : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
             ].map((k) => (
               <StatTile
