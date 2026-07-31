@@ -9,6 +9,8 @@ import {
   hasDueReminder,
   isRetryReady,
   resumenSinRespuestaHoy,
+  COOLDOWN_MINUTES,
+  COOLDOWN_LABEL,
   DIAS_POR_CANCELAR,
   type ConfirmarQueueOrder,
 } from './confirmarQueue';
@@ -152,18 +154,34 @@ describe('splitCalientesVsViejos', () => {
   });
 });
 
-describe('cooldownHoursForAttempt (2h plano — regla del dueño)', () => {
-  it('todos los intentos → 2h (llamó 10 → vuelve 12 → 14)', () => {
-    expect(cooldownHoursForAttempt(1)).toBe(2);
-    expect(cooldownHoursForAttempt(2)).toBe(2);
-    expect(cooldownHoursForAttempt(3)).toBe(2);
-    expect(cooldownHoursForAttempt(4)).toBe(2);
+describe('cooldownHoursForAttempt (plano — regla del dueño)', () => {
+  const ESPERADO = COOLDOWN_MINUTES / 60;
+
+  it('el intervalo es el MISMO en todos los intentos (no hay escalera)', () => {
+    expect(cooldownHoursForAttempt(1)).toBe(ESPERADO);
+    expect(cooldownHoursForAttempt(2)).toBe(ESPERADO);
+    expect(cooldownHoursForAttempt(3)).toBe(ESPERADO);
+    expect(cooldownHoursForAttempt(4)).toBe(ESPERADO);
   });
-  it('robusto ante valores raros o ausentes (sigue 2h)', () => {
-    expect(cooldownHoursForAttempt(0)).toBe(2);
-    expect(cooldownHoursForAttempt(-3)).toBe(2);
-    expect(cooldownHoursForAttempt(NaN)).toBe(2);
-    expect(cooldownHoursForAttempt(undefined)).toBe(2);
+
+  it('robusto ante valores raros o ausentes', () => {
+    expect(cooldownHoursForAttempt(0)).toBe(ESPERADO);
+    expect(cooldownHoursForAttempt(-3)).toBe(ESPERADO);
+    expect(cooldownHoursForAttempt(NaN)).toBe(ESPERADO);
+    expect(cooldownHoursForAttempt(undefined)).toBe(ESPERADO);
+  });
+
+  // La regla de negocio, no el número: los 3 intentos tienen que caber en la
+  // jornada de 8 a 5. Si alguien sube el intervalo sin pensar en el horario,
+  // este test lo frena — con 90 min el último pedido que alcanza los 3 entra a
+  // las 14:00, y con 120 min a las 13:00.
+  it('con la jornada 8-17, los 3 intentos caben para quien entra hasta las 15:00', () => {
+    const ultimaEntradaQueAlcanza = 17 - 2 * (COOLDOWN_MINUTES / 60);
+    expect(ultimaEntradaQueAlcanza).toBeGreaterThanOrEqual(15);
+  });
+
+  it('el rótulo de pantalla concuerda con la regla', () => {
+    expect(COOLDOWN_LABEL).toBe('1 hora');
   });
 });
 
@@ -227,8 +245,8 @@ describe('resumenSinRespuestaHoy — los que "no aparecen" después de no contes
 
   it('separa listos de los que siguen enfriando', () => {
     const r = resumenSinRespuestaHoy([
-      f('111', 3),   // hace 3h → ya cumplió las 2h
-      f('222', 0.5), // hace 30 min → enfriando
+      f('111', 3),   // hace 3h → ya cumplió el enfriamiento
+      f('222', 0.5), // hace 30 min → todavía enfriando
     ], HOY, AHORA);
     expect(r).toMatchObject({ total: 2, listos: 1, enfriando: 1, agotados: 0 });
   });

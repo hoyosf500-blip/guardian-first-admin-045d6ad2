@@ -776,8 +776,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             });
 
             // resultMap: conf/canc siempre; noresp solo si alcanzó cap de hoy o
-            // sigue en cooldown. El cooldown es PLANO de 2h (regla del dueño):
-            // llamó 10 → vuelve a la cola 12 → 14, hasta 3 intentos (cooldownHoursForAttempt).
+            // sigue en cooldown. El cooldown es PLANO de 1 h (COOLDOWN_MINUTES,
+            // ajustado a la jornada 8-5): llamo 9 → vuelve 10 → 11, hasta 3.
             const resultMap = new Map<string, { result: string; reason: string }>();
             (data as ResultRow[]).forEach(r => {
               if (!isCallOutcome(r.result)) return;
@@ -800,7 +800,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             });
 
             // retryPhones: noresps de HOY con <3 intentos cuya última llamada ya
-            // cumplió el cooldown de 2h (ver arriba).
+            // cumplió el cooldown (ver arriba).
             const retryPhones = new Map<string, number>();
             todayNoresp.forEach((results, phone) => {
               const count = results.length;

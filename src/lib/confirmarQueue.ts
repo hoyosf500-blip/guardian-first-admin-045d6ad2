@@ -189,10 +189,10 @@ export function splitCalientesVsViejos<T extends ConfirmarQueueOrder>(
 // Reintentos N/R — cooldown PLANO de 2 h (regla del dueño, 2026-07-07).
 //
 // Regla operativa: si el cliente no contestó, se hacen hasta 3 intentos, uno
-// cada 2 horas. Ej.: llamó a las 10 → el pedido vuelve a la cola a las 12 →
-// vuelve a las 14 → y ahí se cierra el día (cap 3). Antes había una escalera
-// (25 min → 1 h → 2 h) que reintentaba el primero mucho antes; el dueño la
-// cambió por 2 h parejo (más predecible para el equipo).
+// cada HORA (ver COOLDOWN_MINUTES). Ej.: llamó a las 9 → vuelve a la cola a las
+// 10 → a las 11 → y ahí se cierra el día (cap 3). Fue 2 h hasta el 31-jul-2026:
+// con la jornada de 8 a 5, ese intervalo dejaba fuera de los 3 intentos a todo
+// pedido que entrara después de la 1 de la tarde.
 //
 // El CAP de intentos/día SIGUE en 3 (MAX_DAILY_ATTEMPTS) — NO subirlo: la RPC
 // `pending_retry_list` asume cap 3 y hay que quedar alineados (ver `concerns`).
@@ -209,11 +209,37 @@ export function splitCalientesVsViejos<T extends ConfirmarQueueOrder>(
  */
 export const MAX_DAILY_ATTEMPTS = 3;
 
+/**
+ * Minutos que espera un "no contestó" antes de volver a la cola.
+ *
+ * 60 min desde el 31-jul-2026. Sale de la jornada de 8 a 5 y de una cuenta:
+ * para que un cliente alcance sus 3 llamadas dentro del horario, la última
+ * tiene que caber antes de las 17:00. Con 60 min, el que entra a las 15:00
+ * todavía llega (15 → 16 → 17); con 90 el corte se adelanta a las 14:00 y con
+ * 120 a las 13:00. Medido sobre 2.599 clientes-día reales, eso es la
+ * diferencia entre que alcance el 61% o el 52%.
+ *
+ * NO es "llamar más rápido": el intervalo real que hace el equipo es de 3h30
+ * (mediana medida). Bajarlo solo ABRE la ventana antes; nadie llama antes de
+ * lo que puede. Y espaciar más tampoco protegía al cliente — lo que hacía era
+ * dejar llamadas del día sin usar.
+ *
+ * Si se cambia, cambia solo acá: los textos de pantalla y el panel de "no
+ * contestaron" leen `COOLDOWN_LABEL` y esta misma función.
+ */
+export const COOLDOWN_MINUTES = 60;
+
+/** Cómo se dice en pantalla. Derivado, para que nunca diga "2h" con la regla en 1. */
+export const COOLDOWN_LABEL: string =
+  COOLDOWN_MINUTES % 60 === 0
+    ? (COOLDOWN_MINUTES / 60 === 1 ? '1 hora' : `${COOLDOWN_MINUTES / 60} horas`)
+    : `${COOLDOWN_MINUTES} min`;
+
 /** Horas de cooldown antes de que un "no contestó" vuelva a la cola.
- *  Plano en 2 h para todos los intentos (llamó 10 → vuelve 12 → 14). El
- *  parámetro se mantiene por compatibilidad de firma con los call-sites. */
+ *  El parámetro se mantiene por compatibilidad de firma con los call-sites:
+ *  el intervalo es PLANO (no escalera) por decisión del dueño. */
 export function cooldownHoursForAttempt(_attemptNumber?: number): number {
-  return 2;
+  return COOLDOWN_MINUTES / 60;
 }
 
 /** Fila de `order_results` necesaria para el resumen de "sin respuesta". */

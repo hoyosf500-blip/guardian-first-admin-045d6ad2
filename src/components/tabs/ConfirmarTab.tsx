@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { isLockedByOther } from '@/lib/callQueueNav';
-import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
+import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL } from '@/lib/confirmarQueue';
 import { toast } from 'sonner';
 import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
@@ -316,7 +316,7 @@ export default function ConfirmarTab({ profile }: Props) {
     // por si el mapa de equipo todavía no cargó.
     //
     // EXCEPCIÓN: un pedido LISTO PARA REINTENTAR nunca se esconde. No contestó,
-    // pasaron las 2h y volvió a la cola justamente para que alguien lo llame de
+    // paso el enfriamiento y volvio a la cola justamente para que alguien lo llame de
     // nuevo; esconderlo por "ya lo llamaron" apaga el sistema de reintentos y
     // el cliente se queda sin las llamadas que le quedaban.
     const listoParaReintentar = !!o.retryCount && !o.result;
@@ -770,7 +770,7 @@ export default function ConfirmarTab({ profile }: Props) {
                       aparece en NINGUNA lista, así que el equipo cerraba el día
                       con decenas de llamadas del día sin usar creyendo que ya
                       no quedaba nada. Acá se ve a cuántos se puede llamar YA,
-                      cuántos están esperando las 2h (y cuándo vuelve el
+                      cuántos están esperando el enfriamiento (y cuándo vuelve el
                       primero) y cuántos agotaron sus 3 intentos. */}
                   {sinRespuestaHoy && sinRespuestaHoy.total > 0 && (
                     <div className="rounded-2xl border border-border bg-card/40 px-3.5 py-2.5 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -782,13 +782,13 @@ export default function ConfirmarTab({ profile }: Props) {
                         onClick={() => setFilter(filter === 'retry' ? 'pending' : 'retry')}
                         disabled={sinRespuestaHoy.listos === 0}
                         className="font-bold text-success disabled:opacity-50 disabled:cursor-default hover:underline cursor-pointer"
-                        title={sinRespuestaHoy.listos ? 'Ver los que ya se pueden llamar' : 'Ninguno cumplió todavía las 2 horas'}
+                        title={sinRespuestaHoy.listos ? 'Ver los que ya se pueden llamar' : `Ninguno cumplió todavía la espera de ${COOLDOWN_LABEL}`}
                       >
                         {sinRespuestaHoy.listos} para llamar ya
                       </button>
                       {sinRespuestaHoy.enfriando > 0 && (
                         <span className="text-warning font-semibold">
-                          {sinRespuestaHoy.enfriando} esperando las 2h
+                          {sinRespuestaHoy.enfriando} esperando {COOLDOWN_LABEL}
                           {sinRespuestaHoy.proximoEnMinutos != null && (
                             <span className="text-muted-foreground font-normal">
                               {' '}(el próximo en {sinRespuestaHoy.proximoEnMinutos} min)
