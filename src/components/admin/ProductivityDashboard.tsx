@@ -447,46 +447,27 @@ export default function ProductivityDashboard() {
   // dueño quiere ver ("cómo va el día") es teamTasaDia = confirmados ÷ lo que
   // entró — NO ÷resueltos (eso es efectividad de cierre, va en el tooltip de cada
   // celda). Cobertura = lo GESTIONADO ÷ entró (¿trabajó todo o dejó pedidos?).
-  const entrantes = rows[0]?.total_entrantes ?? 0;
-  // Numerador del aro = confirmados DEL COHORTE (de los que entraron en el
-  // período), no todas las confirmaciones del día. Con la RPC vieja cae a
-  // `confirmados` crudo y el tope de 100% + la nota de backlog protegen la vista.
-  const teamConf = rows.reduce((a, r) => a + (r.confirmados_cohorte ?? r.confirmados), 0);
-  // Confirmaciones TOTALES del día (incluye backlog) — solo para la nota que
-  // explica cuando el equipo trabajó pedidos de días anteriores.
-  const teamConfTotal = rows.reduce((a, r) => a + r.confirmados, 0);
-  const teamCanc = rows.reduce((a, r) => a + r.cancelados, 0);
-  const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0);
-  const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);
-  const teamTasaDia = entrantes > 0 ? Math.round((teamConf / entrantes) * 100) : 0;
-  // Un aro de PORCENTAJE no puede pasar de 100%. El equipo puede confirmar MÁS
-  // pedidos hoy de los que entraron hoy cuando trabaja el backlog de días
-  // anteriores (teamConf cuenta TODA confirmación de hoy; entrantes solo el
-  // inflow del período). En ese caso mostramos 100% y lo decimos, en vez de
-  // pintar un imposible "154%". El fix de fondo (numerador acotado al cohorte)
-  // vive en la RPC operator_productivity_stats — ver prompt/SQL.
+  // ── Números del DÍA a nivel EQUIPO ────────────────────────────────────────
+  // "Confirmación del día" = lo que el equipo CONFIRMÓ ÷ lo que TRABAJÓ hoy
+  // (gestionados = conf+canc+noresp, distintos). Es el número que el dueño quiere
+  // ver: refleja los 71 que confirmó DE VERDAD (incluye pedidos viejos que estaban
+  // pendientes), no solo los del cohorte que entró hoy. Denominador = trabajados,
+  // NO "entraron": el equipo confirma más de lo que entra cuando limpia backlog,
+  // así que ÷entraron daba un número más chico (26) que confundía al dueño.
+  const entrantes = rows[0]?.total_entrantes ?? 0;                        // demanda del día (contexto)
+  const teamConf = rows.reduce((a, r) => a + r.confirmados, 0);           // 71 — TODO lo confirmado hoy
+  const teamCanc = rows.reduce((a, r) => a + r.cancelados, 0);            // 1
+  const teamNoresp = rows.reduce((a, r) => a + r.noresp, 0);             // 35
+  const teamAtendidos = rows.reduce((a, r) => a + r.total_atendidos, 0);  // 107 — trabajados hoy
+  const teamContactados = rows.reduce((a, r) => a + r.confirmados + r.cancelados, 0); // 72 — contestaron
+  const teamSinTocar = Math.max(0, entrantes - teamAtendidos);           // demanda sin trabajar aún
+  const teamTasaDia = teamAtendidos > 0 ? Math.round((teamConf / teamAtendidos) * 100) : 0; // 66%
   const teamTasaDiaGauge = Math.min(100, teamTasaDia);
-  // Pedidos de días anteriores que el equipo TAMBIÉN confirmó hoy (fuera del
-  // cohorte del día). Es trabajo real que el aro del día no cuenta — se muestra
-  // aparte como crédito al equipo, no como disculpa por pasar de 100%.
-  const confBacklog = Math.max(0, teamConfTotal - teamConf);
-  // Meta POR OPERADORA = la meta del equipo repartida entre las que trabajaron.
-  // La fila de cada una divide SUS confirmados por el inflow GLOBAL (la cola es
-  // compartida, no hay inflow por-operadora), así que con 2+ operadoras que se
-  // reparten el día TODAS quedaban "en rojo" vs 55% aunque el equipo estuviera
-  // encima (auditoría 2026-07-07). Con 1 operadora activa no cambia nada.
-  const opsActivas = Math.max(1, rows.filter((r) => (r.total_atendidos ?? 0) > 0).length);
-  const metaPorOperadora = Math.max(1, Math.round(CONF_DIA_TARGET_PCT / opsActivas));
-  // Madurez del embudo del equipo — MISMA fuente y umbral que la fila TOTAL de la
-  // tabla (confRateByCohort). Solo se usa para rotular el hero como provisional:
-  // el número que se dibuja sigue siendo teamTasaDia, sin recalcular nada.
-  const cdHero = confRateByCohort(teamConf, teamCanc, entrantes);
-  const heroEnCurso = isToday && cdHero.inmaduro;
-  const heroTone = heroEnCurso || cdHero.tasaDia == null
+  const heroTone = teamAtendidos === 0
     ? 'brand'
-    : isBelowDailyTarget(teamTasaDia)
-      ? (teamTasaDia >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger')
-      : 'success';
+    : teamTasaDia >= CONF_DIA_TARGET_PCT
+      ? 'success'
+      : teamTasaDia >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger';
 
   return (
     <div className="space-y-5">
@@ -576,17 +557,9 @@ export default function ProductivityDashboard() {
                 className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between gap-3 tilt-layer-2">
-                  <div className="hud-label" title="Confirmados ÷ lo que ENTRÓ en el período.">
+                  <div className="hud-label" title="Confirmados ÷ lo que el equipo TRABAJÓ hoy (gestionados = contestaron + no contestaron). Refleja los que confirmó de verdad, incluidos pedidos viejos que estaban pendientes.">
                     Confirmación del día
                   </div>
-                  {heroEnCurso && (
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded-lg border border-border bg-muted/50 text-[10px] font-semibold text-muted-foreground whitespace-nowrap"
-                      title={`Día en curso (${cdHero.pctProcesado}% trabajado) — provisional.`}
-                    >
-                      · en curso
-                    </span>
-                  )}
                 </div>
 
                 <div className="flex justify-center py-4 tilt-layer-3">
@@ -595,17 +568,11 @@ export default function ProductivityDashboard() {
 
                 <div className="tilt-layer-1">
                   <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
-                    <span>Meta del día</span>
+                    <span>Confirmó de lo que trabajó</span>
                     <span className="font-mono tabular-nums text-foreground">
-                      <b>{teamConf}</b> / {entrantes}
+                      <b>{teamConf}</b> / {teamAtendidos}
                     </span>
                   </div>
-                  {confBacklog > 0 && (
-                    <p className="text-[11px] text-muted-foreground mb-1.5 leading-snug">
-                      + {confBacklog} de días anteriores que el equipo también confirmó hoy
-                      (no cuentan en el aro del día).
-                    </p>
-                  )}
                   <div className="relative h-2 rounded-full bg-foreground/10 overflow-hidden">
                     <div
                       className="h-full rounded-full bg-accent-gradient transition-[width] duration-700"
@@ -626,50 +593,44 @@ export default function ProductivityDashboard() {
                   el anterior — la caída se ve sin leer. */}
               <div className="md:col-span-7 grid grid-cols-1 min-[390px]:grid-cols-2 gap-4">
                 <StatTile
-                  icon={Inbox}
-                  label="Entraron"
-                  value={entrantes}
-                  tone="accent"
-                  title="Pedidos que ENTRARON en el período (inflow de la tienda). Todo el embudo se mide sobre estos."
-                />
-                <StatTile
                   icon={Users}
-                  label="Gestionó"
+                  label="Trabajó"
                   value={teamAtendidos}
                   tone="info"
-                  title="De los que ENTRARON en el período, cuántos gestionó el equipo. El trabajo sobre pedidos de días anteriores NO aparece acá — ese sí lo cuenta el cierre diario."
-                  extra={
-                    <span className="font-mono tabular-nums text-[11px] font-medium text-muted-foreground">
-                      {Math.max(0, entrantes - teamAtendidos)} sin tocar
-                    </span>
-                  }
+                  title="Pedidos que el equipo GESTIONÓ hoy (confirmó + canceló + no contestó), incluidos los de días anteriores. Es la base del % del día."
                 />
                 <StatTile
                   icon={PhoneCall}
-                  label="Contactó"
+                  label="Contestaron"
                   value={teamContactados}
                   tone="warning"
-                  title="De los que ENTRARON, cuántos contestaron y decidieron (confirmaron o cancelaron)."
+                  title="De los que trabajó, cuántos contestaron y decidieron (confirmaron o cancelaron). El resto no contestó."
                 />
                 <StatTile
                   icon={CheckCircle2}
                   label="Confirmó"
                   value={teamConf}
                   tone="success"
-                  title="De los que ENTRARON en el período, cuántos quedaron confirmados. OJO: no es todo lo que confirmó el equipo hoy — el cierre diario también cuenta confirmaciones de pedidos de días anteriores (backlog), por eso el cierre puede decir un número más alto. Los dos son correctos."
+                  title="TODO lo que el equipo confirmó hoy (incluye pedidos viejos que estaban pendientes). Es el mismo número que ves en Confirmar."
+                />
+                <StatTile
+                  icon={Inbox}
+                  label="Entraron hoy"
+                  value={entrantes}
+                  tone="accent"
+                  title="Pedidos nuevos que entraron hoy (la demanda del día). Va aparte del %: el equipo también trabaja pedidos de días anteriores, por eso puede confirmar más de lo que entró."
+                  extra={
+                    <span className="font-mono tabular-nums text-[11px] font-medium text-muted-foreground">
+                      {teamSinTocar} sin trabajar
+                    </span>
+                  }
                 />
               </div>
 
-              {/* Por qué el cierre de la operadora puede decir MÁS que este embudo:
-                  el cierre cuenta TODO su trabajo del día (incluye backlog de días
-                  anteriores); el embudo solo mira los pedidos que entraron en el
-                  período. Auditado 2026-07-29: cierre 75 conf vs embudo 65 — los
-                  11 de diferencia eran pedidos viejos. Sin este rótulo, el dueño
-                  leyó los dos números como contradicción. */}
               <p className="md:col-span-12 -mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                Este embudo mide solo los pedidos que <strong className="text-foreground/80">entraron en el período</strong>.
-                Las gestiones sobre pedidos de días anteriores (backlog) no aparecen acá — esas las cuenta el
-                cierre diario de cada operadora, por eso el cierre puede mostrar más confirmados que el embudo.
+                <strong className="text-foreground/80">Confirmación del día</strong> = de lo que el equipo
+                trabajó hoy ({teamAtendidos}), cuánto confirmó ({teamConf}) = {teamTasaDiaGauge}%. Incluye pedidos de
+                días anteriores que estaban pendientes, por eso puede confirmar más de lo que entró hoy.
               </p>
             </motion.div>
           )}
@@ -1083,19 +1044,17 @@ export default function ProductivityDashboard() {
                 </div>
                 <div className="hud-label mt-1.5">confirmados</div>
               </div>
-              {/* Segunda cifra = MISMO "% del día" de la tabla (confirmados del
-                  cohorte ÷ lo que entró), NO la tasa madura. Antes mostraba
-                  confRateBySample (conf÷resueltos) = 100% con 0 cancelaciones, y
-                  chocaba con el 58% de la fila de la misma operadora: dos números
-                  para la palabra "confirmación". Ahora coinciden. */}
+              {/* Segunda cifra = MISMO "% del día" de la tabla: lo que confirmó
+                  ÷ lo que trabajó (gestionados). Es el mismo criterio del aro del
+                  equipo, así el recuadro y la fila de la operadora coinciden. */}
               <div
                 className="shrink-0 text-right border-l border-accent/25 pl-3"
-                title="De los pedidos que ENTRARON hoy, qué parte quedó confirmada por esta operadora. Es el mismo número que su fila en la tabla — no la 'efectividad de cierre' (esa, de los que decidieron cuántos dijeron sí, está en el tooltip de cada celda)."
+                title="De lo que esta operadora TRABAJÓ hoy (gestionó), qué parte confirmó. Es el mismo número que su fila en la tabla."
               >
                 <div className="text-2xl font-bold leading-none text-foreground font-mono tabular-nums">
                   {(() => {
-                    const confCohorte = leader.confirmados_cohorte ?? leader.confirmados;
-                    const t = entrantes > 0 ? Math.min(100, Math.round((confCohorte / entrantes) * 100)) : null;
+                    const at = Number(leader.total_atendidos) || 0;
+                    const t = at > 0 ? Math.min(100, Math.round((leader.confirmados / at) * 100)) : null;
                     return t == null ? '—' : `${t}%`;
                   })()}
                 </div>
@@ -1159,8 +1118,7 @@ export default function ProductivityDashboard() {
             icon={CheckCircle2}
             note={
               entrantes > 0
-                ? `Entraron ${entrantes} → confirmó ${teamConf} de ellos = ${teamTasaDiaGauge}% del día`
-                  + (confBacklog > 0 ? ` · + ${confBacklog} de días anteriores` : '')
+                ? `Trabajó ${teamAtendidos} → confirmó ${teamConf} = ${teamTasaDiaGauge}% del día · entraron ${entrantes} hoy`
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
@@ -1325,32 +1283,17 @@ export default function ProductivityDashboard() {
                         // NO ÷resueltos. Es "cómo va el día" y no infla: los que no
                         // contestó / no tocó tiran la tasa abajo. La efectividad de
                         // cierre (÷resueltos, la vieja) queda en el tooltip.
-                        const cd = confRateByCohort(r.confirmados, r.cancelados, entrantes);
+                        // % del día = lo que confirmó ÷ lo que trabajó (gestionados),
+                        // igual que el aro del equipo. La efectividad de cierre
+                        // (÷ los que decidieron) queda en el tooltip.
                         const ef = confRateBySample(r.confirmados, r.cancelados);
-                        // El % del día usa los confirmados DEL COHORTE (de los que
-                        // entraron en el período), igual que el aro grande — así
-                        // nunca pasa de 100% ni contradice al hero. `cd`/`ef` (crudos)
-                        // se quedan para pctProcesado, madurez y la efectividad de
-                        // cierre del tooltip. Con la RPC vieja cae a `confirmados`.
-                        const confCohorte = r.confirmados_cohorte ?? r.confirmados;
-                        const tasaDiaCohorte = entrantes > 0 ? Math.min(100, Math.round((confCohorte / entrantes) * 100)) : null;
-                        const metaTip = opsActivas > 1
-                          ? ` Meta individual: ${metaPorOperadora}% (${CONF_DIA_TARGET_PCT}% del equipo ÷ ${opsActivas} operadoras activas).`
-                          : '';
+                        const atendidos = Number(r.total_atendidos) || 0;
+                        const tasaDia = atendidos > 0 ? Math.min(100, Math.round((r.confirmados / atendidos) * 100)) : null;
                         const tip = ef.tasa != null
-                          ? `Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que decidieron). ${cd.pctProcesado}% del día trabajado.${metaTip}`
-                          : `Sin pedidos resueltos aún.${metaTip}`;
-                        if (tasaDiaCohorte == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title={tip}>—</span>;
-                        // SOLO en 'today' (día vivo) y con < 90% trabajado → provisional
-                        // gris, NUNCA rojo: temprano en la jornada la tasa ÷inflow es baja
-                        // solo porque falta trabajar. En 7d/30d es una ventana ya cerrada
-                        // (la cola reciente pendiente es normal) → número firme vs meta.
-                        if (isToday && cd.inmaduro) return (
-                          <span className="font-mono tabular-nums text-xs text-muted-foreground" title={`Día en curso (${cd.pctProcesado}% trabajado) — provisional. ${tip}`}>
-                            {tasaDiaCohorte}% <span className="opacity-70">· en curso</span>
-                          </span>
-                        );
-                        return <span title={tip}><RateBar value={tasaDiaCohorte} target={metaPorOperadora} /></span>;
+                          ? `Confirmó ${r.confirmados} de ${atendidos} que trabajó = ${tasaDia}%. Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que contestaron).`
+                          : `Confirmó ${r.confirmados} de ${atendidos} que trabajó.`;
+                        if (tasaDia == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin pedidos trabajados aún.">—</span>;
+                        return <span title={tip}><RateBar value={tasaDia} target={CONF_DIA_TARGET_PCT} /></span>;
                       })()}</td>
                       {/* Clientes REALES por hora (conf+canc ÷ horas) — producción,
                           informativo (sin rojo: un día malo de no-contesta no es su culpa). */}
@@ -1420,18 +1363,12 @@ export default function ProductivityDashboard() {
                     const iphTeamTone = iphTeam == null ? 'muted-foreground' : ritmoTone(iphTeam, MIN_INTENTOS_POR_HORA) === 'muted' ? 'muted-foreground' : ritmoTone(iphTeam, MIN_INTENTOS_POR_HORA);
                     // Confirmación del día del EQUIPO = confirmados ÷ entrantes,
                     // con la misma madurez que las filas (día en curso → provisional).
-                    const cdTeam = confRateByCohort(totConf, totCanc, entrantes);
-                    // % del día del equipo = confirmados DEL COHORTE ÷ entrantes,
-                    // igual que el aro grande (≤100%). cdTeam (crudo) se queda para
-                    // la madurez "en curso" y pctProcesado.
-                    const totConfCohorte = rows.reduce((a, r) => a + (r.confirmados_cohorte ?? r.confirmados), 0);
-                    const tasaDiaTeamCohorte = entrantes > 0 ? Math.min(100, Math.round((totConfCohorte / entrantes) * 100)) : null;
-                    // "en curso" gris solo en 'today' (día vivo); en 7d/30d firme.
-                    const teamEnCurso = isToday && cdTeam.inmaduro;
-                    const diaTone = teamEnCurso ? 'muted-foreground'
-                      : tasaDiaTeamCohorte == null ? 'muted-foreground'
-                      : isBelowDailyTarget(tasaDiaTeamCohorte) ? (tasaDiaTeamCohorte >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger')
-                      : 'success';
+                    // % del día del equipo = confirmó ÷ trabajó (gestionados),
+                    // igual que el aro y las filas. Antes era ÷entrantes (cohorte).
+                    const tasaDiaTeam = totAt > 0 ? Math.min(100, Math.round((totConf / totAt) * 100)) : null;
+                    const diaToneTeam = tasaDiaTeam == null ? 'muted-foreground'
+                      : tasaDiaTeam >= CONF_DIA_TARGET_PCT ? 'success'
+                      : tasaDiaTeam >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger';
                     return (
                       <tr className="border-t-2 border-border bg-muted/30 font-bold">
                         <td></td>
@@ -1456,18 +1393,16 @@ export default function ProductivityDashboard() {
                               </span>
                             )}
                         </td>
-                        {/* Confirmación del día del equipo = confirmados ÷ entrantes vs meta ~55% */}
+                        {/* Confirmación del día del equipo = confirmó ÷ trabajó (gestionados) */}
                         <td className="text-right">
-                          {tasaDiaTeamCohorte == null
+                          {tasaDiaTeam == null
                             ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
                             : (
                               <span
-                                className={`font-mono tabular-nums text-sm text-${diaTone}`}
-                                title={teamEnCurso
-                                  ? `Día en curso (${cdTeam.pctProcesado}% trabajado) — provisional. Meta del día ~${CONF_DIA_TARGET_PCT}%.`
-                                  : `${totConfCohorte} confirmados de los ${entrantes} que entraron. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
+                                className={`font-mono tabular-nums text-sm text-${diaToneTeam}`}
+                                title={`${totConf} confirmados de los ${totAt} que el equipo trabajó hoy = ${tasaDiaTeam}%. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
                               >
-                                {tasaDiaTeamCohorte}%{teamEnCurso ? ' ·en curso' : ''}
+                                {tasaDiaTeam}%
                               </span>
                             )}
                         </td>

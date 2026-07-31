@@ -147,10 +147,11 @@ export default function DashboardTab() {
     conf: number; canc: number; noresp: number;
     novedades: number; segAcciones: number;
     // Para que el aro "Confirmación del día" del Dashboard dé EXACTAMENTE igual
-    // que el de Productividad: los dos deben salir de esta misma RPC.
-    // confCohorte = confirmados del cohorte de hoy; entrantes = inflow del período
-    // (mismo valor en todas las filas, se lee de la primera).
-    confCohorte: number; entrantes: number;
+    // que el de Productividad: los dos salen de esta misma RPC.
+    // confCohorte = confirmados del cohorte de hoy (ya no se usa en el aro);
+    // gestionados = total_atendidos (trabajados = conf+canc+noresp), denominador
+    // del % del día; entrantes = inflow del período (contexto).
+    confCohorte: number; gestionados: number; entrantes: number;
   }
   const rangoEquipo: 'today' | '7d' | '30d' = period >= 30 ? '30d' : period === 1 ? 'today' : '7d';
   const diasRangoEquipo = rangoEquipo === '30d' ? 30 : rangoEquipo === 'today' ? 1 : 7;
@@ -188,6 +189,7 @@ export default function DashboardTab() {
           // confirmados_cohorte puede venir undefined si la RPC desplegada es vieja
           // → cae a confirmados crudo (mismo fallback que Productividad).
           confCohorte: Number(f.confirmados_cohorte ?? f.confirmados) || 0,
+          gestionados: Number(f.total_atendidos) || 0,
           entrantes: Number(f.total_entrantes) || 0,
         })).sort((a, b) => b.conf - a.conf));
         setPorOperadoraEstado('ok');
@@ -761,27 +763,30 @@ export default function DashboardTab() {
   // población (incluye pedidos que entraron ya despachados) → Dashboard 65% vs
   // Productividad 60% para el mismo hoy. Fallback a la serie si el desglose por
   // operadora no cargó (p.ej. un viewer sin permiso de manager).
-  const prodEntrantes = porOperadora[0]?.entrantes ?? 0;
-  const prodConfCohorte = porOperadora.reduce((a, o) => a + o.confCohorte, 0);
-  const prodCanc = porOperadora.reduce((a, o) => a + o.canc, 0);
-  const prodNoresp = porOperadora.reduce((a, o) => a + o.noresp, 0);
+  // "Confirmación del día" del EQUIPO = lo que CONFIRMÓ ÷ lo que TRABAJÓ hoy
+  // (gestionados = conf+canc+noresp), MISMA fórmula y fuente que Productividad
+  // (operator_productivity_stats vía porOperadora) → los dos aros dan idéntico.
+  // Refleja los 71 que confirmó de verdad (incluye pedidos viejos), no solo el
+  // cohorte que entró hoy (que daba 26 y confundía al dueño).
+  const prodEntrantes = porOperadora[0]?.entrantes ?? 0;         // demanda del día (contexto)
+  const prodConf = porOperadora.reduce((a, o) => a + o.conf, 0);          // 71 (todo hoy)
+  const prodCanc = porOperadora.reduce((a, o) => a + o.canc, 0);          // 1
+  const prodNoresp = porOperadora.reduce((a, o) => a + o.noresp, 0);      // 35
+  const prodGestionados = porOperadora.reduce((a, o) => a + o.gestionados, 0); // 107 (trabajados)
+  const prodContactados = prodConf + prodCanc;                            // 72 (contestaron)
   // period !== 15: operator_productivity_stats no tiene ventana de 15 días (cae a
-  // 7d, ver rangoEquipo). En 15d usamos la serie para no mostrar 7 días rotulados
-  // como 15. En Hoy/7d/30d el rango coincide y damos igual que Productividad.
-  const usarProd = verEquipo && porOperadoraEstado === 'ok' && prodEntrantes > 0 && period !== 15;
-  const cdEntrantes = usarProd ? prodEntrantes : periodo.entrantes;
-  const cdConf = usarProd ? prodConfCohorte : periodo.conf;
-  const cdCanc = usarProd ? prodCanc : periodo.canc;
-  const cdEquipo = verEquipo ? confRateByCohort(cdConf, cdCanc, cdEntrantes) : null;
-  const usarDelDia = verEquipo && cdEntrantes > 0 && cdEquipo?.tasaDia != null;
-  // Tope 100%: si el equipo confirmó pedidos viejos además de los de hoy, el
-  // cohorte no debería pasar de 100, pero el aro nunca pinta un imposible.
-  const heroTasa = usarDelDia ? Math.min(100, cdEquipo!.tasaDia as number) : tasa;
-  // Valores de las tarjetas del embudo en modo Equipo: mismos que Productividad.
-  const tileConf = usarProd ? prodConfCohorte : periodo.conf;
+  // 7d). En 15d usamos la serie para no mostrar 7 días rotulados como 15. En
+  // Hoy/7d/30d el rango coincide y damos igual que Productividad.
+  const usarProd = verEquipo && porOperadoraEstado === 'ok' && prodGestionados > 0 && period !== 15;
+  const usarDelDia = verEquipo && usarProd;
+  const heroTasa = usarProd ? Math.min(100, Math.round((prodConf / prodGestionados) * 100)) : tasa;
+  // Tarjetas del embudo en modo Equipo: mismos números que Productividad.
+  const tileConf = usarProd ? prodConf : periodo.conf;
   const tileCanc = usarProd ? prodCanc : periodo.canc;
   const tileNoresp = usarProd ? prodNoresp : periodo.noresp;
   const tileEntraron = usarProd ? prodEntrantes : periodo.entrantes;
+  const tileGestionados = usarProd ? prodGestionados : (periodo.conf + periodo.canc + periodo.noresp);
+  const tileContactados = usarProd ? prodContactados : (periodo.conf + periodo.canc);
   // Cuando NO es "del día" (modo Yo, o Equipo sin inflow) el aro muestra la tasa
   // MADURA = ACEPTACIÓN (de los que contestaron, cuántos aceptaron). Se llama
   // "aceptación", NO "confirmación": el dueño decidió que "confirmación" es UNA
@@ -1033,7 +1038,7 @@ export default function DashboardTab() {
                 <div
                   className="hud-label"
                   title={verEquipo
-                    ? 'Confirmación del día del equipo: de los pedidos que ENTRARON en la ventana, cuántos ya quedaron confirmados. Es el MISMO número que ves en /admin → Productividad. (No confundir con la "aceptación" — de los que contestaron, cuántos dijeron sí —, que suele ser mucho más alta y es otra cosa.)'
+                    ? 'Confirmación del día del equipo: de lo que el equipo TRABAJÓ hoy (gestionados = contestaron + no contestaron), cuánto confirmó. Refleja TODO lo que confirmó hoy, incluidos pedidos viejos. Es el MISMO número que ves en /admin → Productividad y en Confirmar. (No confundir con la "aceptación" — de los que contestaron, cuántos dijeron sí —, que suele ser mucho más alta y es otra cosa.)'
                     : 'Aceptación personal: de los clientes que te CONTESTARON hoy, cuántos aceptaron el pedido (conf ÷ conf+canc, sin los que no contestaron). Es alta casi siempre. El rendimiento del día (de lo que entró, cuánto se confirmó) lo ves en /admin → Productividad.'}
                 >
                   {verEquipo ? (usarDelDia ? 'Confirmación del día' : 'Aceptación del equipo') : 'Aceptación personal'}
@@ -1128,15 +1133,13 @@ export default function DashboardTab() {
                         ? 'Sin medición · no se pudieron leer los datos del equipo'
                         : 'Sin medición · datos del equipo sin cargar'}
                   </div>
-                ) : usarDelDia && period === 1 && cdEquipo!.inmaduro ? (
-                  // Día en curso: la tasa del día sube a medida que confirman lo
-                  // que entró. Provisional en gris, NUNCA rojo — a las 10am un 30%
-                  // no es "mal", es que falta trabajar el día. Igual que Productividad.
-                  <div
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-muted/50 border border-border text-muted-foreground"
-                    title={`Día en curso: ${cdEquipo!.pctProcesado}% de lo que entró ya se trabajó. El número sube a medida que confirman. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
+                ) : usarDelDia ? (
+                  // Confirmación del día del EQUIPO = confirmó ÷ trabajó. Debajo del
+                  // aro: los conteos que lo arman, para que el 71 y el 107 se vean.
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}
+                    title={`Confirmó ${prodConf} de ${prodGestionados} que el equipo trabajó hoy = ${heroTasa}%. Meta del día ~${heroMeta}%.`}
                   >
-                    En curso · {cdEquipo!.pctProcesado}% del día trabajado
+                    {prodConf} de {prodGestionados} · {heroTasa >= heroMeta ? `en meta (${heroMeta}%)` : heroTasa >= heroMeta - 5 ? 'cerca de la meta' : 'bajo la meta'}
                   </div>
                 ) : (
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
