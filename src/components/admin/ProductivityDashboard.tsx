@@ -16,7 +16,7 @@ import { useShopifyPending } from '@/hooks/useShopifyPending';
 import { ShoppingBag } from 'lucide-react';
 import { formatTimeBogota, formatDateTimeBogota, formatDurationHM } from '@/lib/timeFormat';
 import { shouldAlertSinConfirmar, asWorkedBlocks, sumWorkedSeconds, computeHorarioCompliance, UMBRAL_DESCONECTADA_MIN } from '@/lib/jornadaMath';
-import { scheduleFromMinutes, DEFAULT_SCHEDULE } from '@/lib/inactivityWindow';
+import { scheduleFromMinutes, DEFAULT_SCHEDULE, bogotaSecondsOfDay } from '@/lib/inactivityWindow';
 import InactivityDetailModal from '@/components/admin/InactivityDetailModal';
 import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
@@ -772,6 +772,16 @@ export default function ProductivityDashboard() {
                       // ¿Cumplió el horario? Solo por-día; en 7d/30d cae a las horas del rango.
                       const comp = isToday ? computeHorarioCompliance({ turnoStart, turnoEnd, schedule }) : null;
                       const pct = comp?.cumplimientoPct ?? null;
+                      // HORAS EXTRA por EVIDENCIA DE TRABAJO, no por presencia. El
+                      // dueño lo pidió explícito: si dejó el CRM abierto y volvió 2h
+                      // después solo a cerrarlo, eso NO es trabajo. Por eso el extra
+                      // sale del ÚLTIMO PEDIDO MARCADO (w.last_event), no de la última
+                      // señal (que incluye la pestaña abierta ociosa). Solo cuenta si
+                      // marcó algo DESPUÉS del fin del horario pactado.
+                      const lastWorkEventMs = Date.parse(w?.last_event ?? '') || 0;
+                      const trabajoExtraMin = isToday && lastWorkEventMs > 0
+                        ? Math.max(0, Math.round((bogotaSecondsOfDay(new Date(lastWorkEventMs)) - schedule.workEndSec) / 60))
+                        : 0;
                       const cumpleTone = pct == null ? 'muted-foreground' : pct >= 90 ? 'success' : pct >= 70 ? 'warning' : 'danger';
                       // ¿Sigue en línea ahora? (última señal hace poco → no marca "salió antes").
                       const desconectadaMin = isToday && lastSignalMs > 0
@@ -841,15 +851,15 @@ export default function ProductivityDashboard() {
                                   <span className="text-[10px] text-muted-foreground tabular-nums">
                                     cubrió {formatDurationHM(comp!.cubiertoSec ?? 0)} de {formatDurationHM(comp!.horarioNetoSec)}
                                   </span>
-                                  {/* Horas extra: siguió activa DESPUÉS del fin del
-                                      horario. El % se topa en 100 (no infla), el extra
-                                      se muestra aparte como crédito. Pedido del dueño. */}
-                                  {(comp!.extraMin ?? 0) > 0 && (
+                                  {/* Horas extra por TRABAJO REAL (marcó pedidos
+                                      después del horario), no por dejar el CRM abierto.
+                                      El % se topa en 100; el extra se muestra aparte. */}
+                                  {trabajoExtraMin > 0 && (
                                     <span
                                       className="text-[10px] text-success tabular-nums font-semibold"
-                                      title={`Siguió activa ${formatDurationHM((comp!.extraMin ?? 0) * 60)} después del fin del horario.`}
+                                      title={`Marcó pedidos hasta ${formatDurationHM(trabajoExtraMin * 60)} después del fin del horario (trabajo real, no solo la pestaña abierta).`}
                                     >
-                                      +{formatDurationHM((comp!.extraMin ?? 0) * 60)} extra
+                                      +{formatDurationHM(trabajoExtraMin * 60)} trabajó
                                     </span>
                                   )}
                                 </div>
@@ -999,14 +1009,14 @@ export default function ProductivityDashboard() {
                                     {formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes
                                   </span>
                                 )}
-                                {/* Se quedó DESPUÉS del fin del horario (última señal
-                                    posterior al cierre pactado) → crédito, no falta. */}
-                                {isToday && comp && (comp.extraMin ?? 0) > 0 && (
+                                {/* Trabajó DESPUÉS del fin del horario (marcó pedidos,
+                                    no solo tuvo la pestaña abierta) → crédito real. */}
+                                {trabajoExtraMin > 0 && (
                                   <span
                                     className="inline-flex items-center rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success whitespace-nowrap"
-                                    title={`Siguió ${formatDurationHM((comp.extraMin ?? 0) * 60)} después del fin del horario.`}
+                                    title={`Marcó pedidos hasta ${formatDurationHM(trabajoExtraMin * 60)} después del fin del horario (trabajo real).`}
                                   >
-                                    {formatDurationHM((comp.extraMin ?? 0) * 60)} más
+                                    {formatDurationHM(trabajoExtraMin * 60)} más
                                   </span>
                                 )}
                               </span>
