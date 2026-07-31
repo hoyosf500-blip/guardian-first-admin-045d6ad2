@@ -12,6 +12,14 @@ import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { loadWaChannel, sendAndRecord, upsertConversation } from "../_shared/waChannel.ts";
 import { onlyDigits } from "../_shared/waTransport.ts";
 
+/** Fecha de HOY en Bogotá (UTC-5) como 'YYYY-MM-DD'. Sin esto el touchpoint cae
+ *  al default CURRENT_DATE del Postgres, que es UTC: todo lo enviado entre las
+ *  7pm y la medianoche queda fechado MAÑANA → el panel "En vivo" marca "Ausente"
+ *  a quien está trabajando y al otro día amanecen gestiones fantasma. */
+function bogotaHoy(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
+}
+
 function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -104,6 +112,7 @@ Deno.serve(async (req) => {
         phone,
         operator_id: user.id,
         action: `WHATSAPP: ${text.slice(0, 120)}`,
+        action_date: bogotaHoy(),
       });
     }
 

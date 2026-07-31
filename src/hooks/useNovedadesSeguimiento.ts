@@ -222,7 +222,11 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       // por datos que nunca se pudieron leer. Se expone el error y listo.
       const baseErr = tpRes.error || pendRes.error || memberRes.error;
       if (baseErr) {
-        setData({ ...EMPTY, loadError: baseErr.message });
+        // Se CONSERVA lo último que sí se pudo leer: resetear a EMPTY hacía que
+        // un blip a media mañana borrara "Gestionadas hoy: 14" y lo dejara en 0
+        // con aspecto de medición. Solo se marca el error para que la pantalla
+        // avise que el número está viejo.
+        setData((prev) => ({ ...prev, loadError: baseErr.message }));
         return;
       }
 

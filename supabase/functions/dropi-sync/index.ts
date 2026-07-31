@@ -212,6 +212,81 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   return mapDropiOrderToRow(o, userId, today, storeId);
 }
 
+// Ventana del restore = la MISMA que el retry del cron (result_date ≥ hoy−7d).
+const RESTORE_WINDOW_DAYS = 7;
+
+/**
+ * Re-aplica sobre `orders` la gestión LOCAL que el upsert de Dropi pudo pisar
+ * (Dropi puede seguir en "PENDIENTE CONFIRMACION" si el PUT falló o demora).
+ *
+ * Se resuelve en UNA sola pasada porque conf y canc compiten por el mismo
+ * pedido: con dos queries independientes el UPDATE de conf dejaba el pedido en
+ * PENDIENTE y el de canc ya no matcheaba su WHERE, así que una cancelación de
+ * las 11am perdía contra una confirmación de las 9am — y el retry del cron
+ * terminaba CONFIRMANDO en Dropi un pedido que el cliente rechazó (guía,
+ * despacho y devolución de ~$22k). Acá manda la gestión MÁS RECIENTE y cada
+ * pedido va a UN solo update. Espejo exacto de dropi-refresh-batch (está
+ * duplicado a propósito: `_shared/` no puede cambiar sin redeployar las 14
+ * funciones que lo importan).
+ *
+ * El WHERE estado='PENDIENTE CONFIRMACION' es el guard real: lo que Dropi ya
+ * refleja (PENDIENTE / CANCELADO) no se toca.
+ */
+async function restoreLocalGestiones(
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  storeId: string,
+): Promise<{ confCandidates: number; cancCandidates: number; error: string | null }> {
+  const windowFrom = new Date();
+  windowFrom.setUTCDate(windowFrom.getUTCDate() - RESTORE_WINDOW_DAYS);
+  const fromDate = windowFrom.toISOString().split("T")[0];
+
+  const { data: gestiones, error } = await sb
+    .from("order_results")
+    .select("order_id, result, created_at")
+    .eq("store_id", storeId)
+    .in("result", ["conf", "canc"])
+    .gte("result_date", fromDate)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return { confCandidates: 0, cancCandidates: 0, error: error.message || String(error) };
+  }
+
+  // Orden ascendente ⇒ el último set() por order_id es la gestión más reciente.
+  const winner = new Map<string, string>();
+  for (const r of (gestiones ?? []) as Array<{ order_id: string; result: string }>) {
+    winner.set(r.order_id, r.result);
+  }
+
+  const confIds: string[] = [];
+  const cancIds: string[] = [];
+  for (const [orderId, result] of winner) {
+    (result === "canc" ? cancIds : confIds).push(orderId);
+  }
+
+  // Los contadores son CANDIDATOS (gestiones evaluadas), no filas escritas.
+  for (let i = 0; i < confIds.length; i += 50) {
+    const { error: upErr } = await sb.from("orders").update({ estado: "PENDIENTE" })
+      .in("id", confIds.slice(i, i + 50))
+      .eq("store_id", storeId)
+      .eq("estado", "PENDIENTE CONFIRMACION");
+    if (upErr) {
+      return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: upErr.message || String(upErr) };
+    }
+  }
+  for (let i = 0; i < cancIds.length; i += 50) {
+    const { error: upErr } = await sb.from("orders").update({ estado: "CANCELADO" })
+      .in("id", cancIds.slice(i, i + 50))
+      .eq("store_id", storeId)
+      .eq("estado", "PENDIENTE CONFIRMACION");
+    if (upErr) {
+      return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: upErr.message || String(upErr) };
+    }
+  }
+  return { confCandidates: confIds.length, cancCandidates: cancIds.length, error: null };
+}
+
 Deno.serve(async (req: Request) => {
   const corsHeaders = getCorsHeaders(req);
 
@@ -419,6 +494,7 @@ Deno.serve(async (req: Request) => {
     const totalDuplicates = 0;
     let totalFromDropi = 0;
     let anyPartial = false;
+    let anyUpsertError: string | null = null;
 
     for (const chunk of chunks) {
       const { orders: dropiOrders, partial } = await fetchAllPages(cfg.base, cfg.apiKey, cfg.storeUrl, chunk.from, chunk.to, chunk.from);
@@ -441,7 +517,13 @@ Deno.serve(async (req: Request) => {
         );
 
         if (upsertError) {
+          // "Fallar en verde" (el mismo bug que congeló la billetera en julio):
+          // antes esto solo hacía console.error y al final se escribía un
+          // sync_logs status='success' con total_count>0 — que además activa el
+          // freshness-guard de arriba y BLOQUEA los reintentos manuales 10 min.
+          // Cero filas escritas y el sistema convenciendo de que todo anda.
           console.error("upsert_orders_from_dropi error:", upsertError);
+          anyUpsertError = upsertError.message || String(upsertError);
         } else {
           totalSynced += (changedCount as number) || 0;
         }
@@ -450,55 +532,13 @@ Deno.serve(async (req: Request) => {
       await sleep(RATE_LIMIT_MS);
     }
 
-    // Fix 8: usar fecha de Bogotá. Antes UTC dejaba fuera las confirmaciones
-    // hechas después de las 19:00 COL.
-    const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
-    const { data: confirmedToday } = await sb
-      .from("order_results")
-      .select("order_id")
-      .eq("result", "conf")
-      .eq("result_date", todayDate)
-      .eq("store_id", storeId);
-
-    if (confirmedToday && confirmedToday.length > 0) {
-      const confirmedIds = confirmedToday.map((r) => r.order_id);
-      for (let i = 0; i < confirmedIds.length; i += 50) {
-        const batch = confirmedIds.slice(i, i + 50);
-        await sb
-          .from("orders")
-          .update({ estado: "PENDIENTE" })
-          .in("id", batch)
-          .eq("store_id", storeId)
-          .eq("estado", "PENDIENTE CONFIRMACION");
-      }
-    }
-
-    // Restore SIMÉTRICO de CANCELACIONES (auditoría 2026-07-14): la Tanda D
-    // flipea estado='CANCELADO' optimista al marcar canc; si el push a Dropi
-    // falló, el upsert de arriba (que trae el pedido aún PENDIENTE en Dropi)
-    // revertía el CANCELADO local → el pedido cancelado REAPARECÍA en la cola de
-    // confirmación (la asesora lo re-llamaba). Re-aplicamos CANCELADO a las canc
-    // de hoy que el upsert haya revertido a PENDIENTE CONFIRMACION. (Las canc ya
-    // sincronizadas están CANCELADO en Dropi → el upsert las trae CANCELADO → el
-    // WHERE no las toca; solo re-cancela las que Dropi aún no reflejó.)
-    const { data: cancelledToday } = await sb
-      .from("order_results")
-      .select("order_id")
-      .eq("result", "canc")
-      .eq("result_date", todayDate)
-      .eq("store_id", storeId);
-
-    if (cancelledToday && cancelledToday.length > 0) {
-      const cancelledIds = cancelledToday.map((r) => r.order_id);
-      for (let i = 0; i < cancelledIds.length; i += 50) {
-        const batch = cancelledIds.slice(i, i + 50);
-        await sb
-          .from("orders")
-          .update({ estado: "CANCELADO" })
-          .in("id", batch)
-          .eq("store_id", storeId)
-          .eq("estado", "PENDIENTE CONFIRMACION");
-      }
+    // Restore de gestiones LOCALES (conf y canc juntas, ganando la más reciente
+    // — ver restoreLocalGestiones). Antes eran dos pasadas: la de conf corría
+    // primero y dejaba el pedido en PENDIENTE, así que una cancelación posterior
+    // ya no matcheaba su WHERE y el pedido volvía a la cola como confirmado.
+    const restore = await restoreLocalGestiones(sb, storeId);
+    if (restore.error) {
+      console.error("dropi-sync: restore de gestiones locales FALLÓ:", restore.error);
     }
 
     // Detectar y cancelar pedidos huérfanos: cuando Dropi edita un pedido,
@@ -520,24 +560,58 @@ Deno.serve(async (req: Request) => {
       console.warn('cancel_orphan_pending_orders exception:', err);
     }
 
-    // Log
+    // Log. status='error' si algún batch del upsert falló: con 'success' el
+    // freshness-guard (source dropi-cron/dropi + status success + total_count>0)
+    // suprimía los reintentos manuales 10 min y SyncFreshness quedaba verde con
+    // cero filas escritas. Mismo contrato que dropi-wallet-sync.
+    const upsertFailed = anyUpsertError !== null;
+    const restoreFailed = restore.error !== null;
+    const syncErrorMessage = upsertFailed
+      ? `upsert_orders_from_dropi: ${anyUpsertError}`
+      : restoreFailed
+        ? `restore de gestiones locales: ${restore.error}`
+        : null;
     await sb.from("sync_logs").insert({
       source: "dropi",
-      status: "success",
+      status: syncErrorMessage ? "error" : "success",
       synced_count: totalSynced,
       duplicates_count: totalDuplicates,
       total_count: totalFromDropi,
+      error_message: syncErrorMessage,
       triggered_by: user.id,
       store_id: storeId,
     });
 
+    if (upsertFailed) {
+      // 200 con ok:false + error (no 502): los call-sites leen `data.error` y
+      // supabase.functions.invoke colapsa cualquier non-2xx en el genérico
+      // "non-2xx status code", que esconde el motivo real.
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          synced: totalSynced,
+          duplicates: totalDuplicates,
+          total: totalFromDropi,
+          chunks: chunks.length,
+          partial: true,
+          error: syncErrorMessage,
+          message: `Dropi devolvió ${totalFromDropi} pedidos pero la base los RECHAZÓ (${anyUpsertError}). No se guardó nada nuevo.`,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     return new Response(
       JSON.stringify({
+        ok: true,
         synced: totalSynced,
         duplicates: totalDuplicates,
         total: totalFromDropi,
         chunks: chunks.length,
         partial: anyPartial || undefined,
+        // El restore no bloquea el sync (los pedidos SÍ se guardaron), pero un
+        // fallo ahí deja gestiones locales pisadas por el estado de Dropi.
+        restoreError: restore.error || undefined,
         message: anyPartial
           ? `${totalSynced} pedidos sincronizados (sync PARCIAL: el rango era muy grande y quedaron páginas sin traer — el sync automático completa el resto)`
           : `${totalSynced} pedidos sincronizados (${chunks.length} chunk${chunks.length > 1 ? "s" : ""})`,

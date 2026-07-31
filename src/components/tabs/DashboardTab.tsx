@@ -36,7 +36,10 @@ const fadeUp = (delay = 0) => ({
 });
 
 export default function DashboardTab() {
-  const { allOrders, counter, workQueue } = useOrders();
+  // `counter` = tienda entera (pool compartido); `myCounter` = solo lo que
+  // gestionó QUIEN ESTÁ MIRANDO. Todo lo que la operadora firma o lee como
+  // "su día" sale de myCounter — ver el bloque del cierre más abajo.
+  const { allOrders, counter, myCounter, workQueue } = useOrders();
   const { user, profile } = useAuth();
   const { activeStoreId, isManagerOfActive } = useStore();
   const [period, setPeriod] = useState(7);
@@ -521,14 +524,15 @@ export default function DashboardTab() {
     };
   }, [chartData]);
 
-  // Cifras de HOY que se MUESTRAN. Ojo: `counter` (personal) se sigue usando
-  // tal cual para el cierre de turno más abajo — ese reporte es de la operadora
-  // que lo firma y no puede cambiar según lo que esté mirando en pantalla.
+  // Cifras de HOY que se MUESTRAN. En modo "Yo" van las de la operadora
+  // (`myCounter`), NO el `counter` del contexto: ese pasó a ser store-wide
+  // (pool compartido de la cola), así que usarlo acá le mostraba a cada
+  // asesora el día ENTERO de la tienda como si fuera suyo.
   const hoy = useMemo(() => {
-    if (!verEquipo) return counter;
+    if (!verEquipo) return myCounter;
     const r = equipoDiario.find(e => e.fecha === hoyISO);
     return { conf: r?.conf ?? 0, canc: r?.canc ?? 0, noresp: r?.noresp ?? 0 };
-  }, [verEquipo, equipoDiario, hoyISO, counter]);
+  }, [verEquipo, equipoDiario, hoyISO, myCounter]);
 
   const total = hoy.conf + hoy.canc + hoy.noresp;
 
@@ -586,12 +590,13 @@ export default function DashboardTab() {
   // un número que sí se midió (y el chip avisa que no concluye); sin resueltos,
   // cualquier cifra en el aro es inventada — va "—".
   const sinResueltos = tasaInfo.tasa === null;
-  // Cierre de turno: SIEMPRE personal (counter), nunca el alcance en pantalla.
-  // El mensaje ya lista counter.conf/canc/noresp, pero la tasa y el total salían
-  // de `hoy`, que en modo Equipo es la tienda entera: el jefe recibía "Conf: 5 …
-  // Tasa: 78%" mezclando dos universos. Nullable para no firmar un 0% inventado.
-  const cierreInfo = confRateBySample(counter.conf, counter.canc);
-  const cierreTotal = counter.conf + counter.canc + counter.noresp;
+  // Cierre de turno: SIEMPRE personal (`myCounter`), nunca el alcance en pantalla
+  // y nunca el `counter` store-wide. El cierre se guarda en daily_reports FIRMADO
+  // con operator_id = quien lo manda: con los números del equipo, una tienda de 3
+  // asesoras dejaba 3 filas de 107 gestionados en un día de 107 (321), y el dueño
+  // no podía saber quién hizo qué. Nullable para no firmar un 0% inventado.
+  const cierreInfo = confRateBySample(myCounter.conf, myCounter.canc);
+  const cierreTotal = myCounter.conf + myCounter.canc + myCounter.noresp;
   const cierreTasaTexto = cierreInfo.tasa === null ? 'sin resueltos aún' : `${cierreInfo.tasa}%`;
   const pendLeft = workQueue.filter(o => !o.result).length;
   // Cuando NO se pudo leer al equipo, las cifras de arriba son ceros de relleno.
@@ -695,12 +700,12 @@ export default function DashboardTab() {
     // store_id explícito: sin él el cierre cae al default de la columna (la
     // tienda CO original) y el reporte de una operadora de otra tienda queda
     // invisible para su propio admin.
-    // Números del CIERRE = el universo del counter (lo gestionado HOY, mismo que
-    // muestra este panel) y la tasa OFICIAL conf÷gestionados — antes se guardaba
-    // `tasa` (que puede ser la aceptación personal o la del período del selector)
-    // y `total` de otro alcance: el histórico quedaba con cifras incomparables.
+    // Números del CIERRE = lo que gestionó HOY QUIEN FIRMA (myCounter) y la tasa
+    // OFICIAL conf÷gestionados — antes se guardaba `tasa` (que puede ser la
+    // aceptación personal o la del período del selector) y `total` de otro
+    // alcance: el histórico quedaba con cifras incomparables.
     const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre', store_id: activeStoreId,
-      data: { confirmados: counter.conf, cancelados: counter.canc, no_respondio: counter.noresp, total_gestionados: cierreTotal, tasa_confirmacion: cierreDiaPct ?? 0, pendientes_manana: pendLeft } });
+      data: { confirmados: myCounter.conf, cancelados: myCounter.canc, no_respondio: myCounter.noresp, total_gestionados: cierreTotal, tasa_confirmacion: cierreDiaPct ?? 0, pendientes_manana: pendLeft } });
     if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
     else toast.success('Cierre enviado correctamente');
   };
@@ -710,16 +715,16 @@ export default function DashboardTab() {
   // Confirmación del día = confirmados ÷ gestionados (71/107 = 66%), y el cierre
   // la LIDERA. El % sobre los que contestaron queda como dato secundario con
   // nombre propio ("cierre de llamada") para que nunca más se lea como la tasa.
-  const cierreDiaPct = cierreTotal > 0 ? Math.round((counter.conf / cierreTotal) * 100) : null;
-  const cierreDiaTexto = cierreDiaPct == null ? 'sin gestiones aún' : `${cierreDiaPct}% (${counter.conf} de ${cierreTotal})`;
+  const cierreDiaPct = cierreTotal > 0 ? Math.round((myCounter.conf / cierreTotal) * 100) : null;
+  const cierreDiaTexto = cierreDiaPct == null ? 'sin gestiones aún' : `${cierreDiaPct}% (${myCounter.conf} de ${cierreTotal})`;
   const copiarResumen = () => {
     void copyToClipboard(
-      `Cierre — ${formatDateES(hoyISO)}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTotal gestionado: ${cierreTotal}\n\n✅ CONFIRMACIÓN DEL DÍA: ${cierreDiaTexto} · meta ${CONF_TARGET_PCT}%\n(confirmados ÷ todo lo gestionado, pedidos nuevos y viejos)\n\nCierre de llamada (de los que contestaron): ${cierreTasaTexto}\nPendientes para mañana: ${pendLeft}`,
+      `Cierre — ${formatDateES(hoyISO)}\n\nConfirmados: ${myCounter.conf}\nCancelados: ${myCounter.canc}\nNo respondió: ${myCounter.noresp}\nTotal gestionado: ${cierreTotal}\n\n✅ CONFIRMACIÓN DEL DÍA: ${cierreDiaTexto} · meta ${CONF_TARGET_PCT}%\n(confirmados ÷ todo lo gestionado, pedidos nuevos y viejos)\n\nCierre de llamada (de los que contestaron): ${cierreTasaTexto}\nPendientes para mañana: ${pendLeft}`,
       'Copiado al portapapeles',
     );
   };
   const enviarWA = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(hoyISO)}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal gestionado: ${cierreTotal}\n\n✅ CONFIRMACIÓN DEL DÍA: ${cierreDiaTexto} · meta ${CONF_TARGET_PCT}%\n\nCierre de llamada (contestaron): ${cierreTasaTexto}\nPendientes: ${pendLeft}`)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(hoyISO)}\n\nConf: ${myCounter.conf} | Canc: ${myCounter.canc} | N/R: ${myCounter.noresp}\nTotal gestionado: ${cierreTotal}\n\n✅ CONFIRMACIÓN DEL DÍA: ${cierreDiaTexto} · meta ${CONF_TARGET_PCT}%\n\nCierre de llamada (contestaron): ${cierreTasaTexto}\nPendientes: ${pendLeft}`)}`, '_blank');
   };
 
   // Chart theming uses HSL CSS vars so dark/light modes adapt automatically.

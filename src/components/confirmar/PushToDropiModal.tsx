@@ -147,15 +147,23 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
   const input = 'w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30';
   const label = 'text-[10px] font-medium text-muted-foreground uppercase tracking-wider';
 
+  // Cerrar NO aborta el POST: la cadena de cotización puede tardar 20-30s y la
+  // orden se crea igual. Si la operadora cree que canceló y la crea a mano en el
+  // panel, el cliente termina con dos guías COD (el claim de idempotencia solo
+  // cubre el camino del CRM). Mismo criterio que OrderEditorDialog.
+  const requestClose = () => { if (submitting) return; onClose(); };
+
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50" onClick={requestClose}>
       <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
         onClick={e => e.stopPropagation()}
         className="w-full max-w-lg max-h-[88vh] overflow-y-auto rounded-3xl border border-border bg-card shadow-card3d-lg">
         <div className="sticky top-0 z-10 px-5 py-4 border-b border-border bg-card flex items-center gap-2">
           <Truck size={16} className="text-primary" />
           <h3 className="text-sm font-semibold text-foreground flex-1">Subir a Dropi {shopifyName && <span className="text-muted-foreground font-mono">· {shopifyName}</span>}</h3>
-          <button onClick={onClose} className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground"><X size={14} /></button>
+          <button onClick={requestClose} disabled={submitting}
+            title={submitting ? 'Creando en Dropi… no cierres esta ventana' : 'Cerrar'}
+            className="h-7 w-7 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"><X size={14} /></button>
         </div>
 
         {loading ? (
@@ -279,7 +287,7 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <span>
-                    Este teléfono ya tiene {dupBlock.length > 0 ? 'un pedido' : 'pedidos'} en Dropi:
+                    Este teléfono ya tiene {dupBlock.length === 1 ? 'un pedido' : 'pedidos'} en Dropi:
                     <span className="block mt-1 font-medium text-foreground">
                       {dupBlock.slice(0, 3).map(d => `#${d.external_id}${d.estado ? ` · ${d.estado}` : ''}${d.fecha ? ` · ${d.fecha}` : ''}`).join('   |   ')}
                       {dupBlock.length > 3 ? `  (+${dupBlock.length - 3})` : ''}
@@ -317,7 +325,12 @@ export default function PushToDropiModal({ storeId, shopifyOrderId, shopifyName,
             )}
 
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted/40">Cancelar</button>
+              {/* Durante el POST el botón deja de ofrecer una salida que no existe
+                  (cerrar no aborta nada) y dice qué está pasando. */}
+              <button onClick={requestClose} disabled={submitting}
+                className="h-9 px-4 rounded-lg border border-border text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-60 disabled:cursor-not-allowed">
+                {submitting ? 'Creando en Dropi… no cierres esta ventana' : 'Cancelar'}
+              </button>
               <button onClick={() => doConfirm()} disabled={submitting || !!blockedReason} title={blockedReason || undefined}
                 className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium flex items-center gap-2 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed">
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />} Confirmar y crear en Dropi

@@ -17,7 +17,8 @@
 //       token   -> header dropi-integration-key
 //   resp: { ok, status, data, target, duration_ms }
 //
-// NO guarda tokens: Guardian pasa el token en cada request. Auth = x-relay-secret.
+// NO guarda tokens: Guardian pasa el token en cada request. Auth = x-relay-secret
+// (solo header; el fallback ?secret= se elimino porque quedaba en los logs de Caddy).
 //
 // Endurecido 2026-07-16:
 //   * allowlist de host destino (solo dominios de Dropi)  -> mata SSRF / proxy abierto
@@ -64,6 +65,15 @@ async function egressIp(): Promise<string> {
 }
 egressIp(); // calentar cache al arrancar
 
+/** Comparacion en tiempo constante: no filtra por timing cuantos caracteres
+ *  del secreto acerto quien prueba. */
+function secretsMatch(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function log(o: Record<string, unknown>) {
   console.log(JSON.stringify({ t: new Date().toISOString(), ...o }));
 }
@@ -79,8 +89,10 @@ Deno.serve({ port: PORT, hostname: "0.0.0.0" }, async (req) => {
   }
 
   // --- Auth ---
-  const provided = req.headers.get("x-relay-secret") || url.searchParams.get("secret") || "";
-  if (!SECRET || provided !== SECRET) {
+  // SOLO header: Caddy escribe el URI completo (con query string) en sus access
+  // logs, asi que un ?secret= dejaria el RELAY_SECRET en texto plano en el VPS.
+  const provided = req.headers.get("x-relay-secret") || "";
+  if (!SECRET || !secretsMatch(provided, SECRET)) {
     log({ evt: "auth_fail" });
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }

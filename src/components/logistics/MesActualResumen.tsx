@@ -606,6 +606,22 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
       {/* Indicadores & Simulador de unit-economics (KPIs reales + what-if) */}
       <div className="border-t border-border px-5 py-5">
+        {pautaSinDato ? (
+          /* Mismo guard que el Neto Real de arriba: TODAS las utilidades del
+             simulador (por pedido, margen, what-if) restan pauta prorrateada, así
+             que con la lectura de pauta caída saldrían infladas en millones — y
+             encima contradiciendo al banner de la misma tarjeta. No se muestra
+             media verdad: o se lee la pauta o no hay simulador. */
+          <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 shadow-card3d flex items-start gap-2">
+            <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
+            <p className="text-[11px] text-warning leading-relaxed">
+              No se pudo leer tu <strong>Pauta diaria</strong> (error temporal), así que el{' '}
+              <strong>Simulador de unit-economics</strong> no se muestra: calcular la utilidad por
+              pedido con $0 de pauta daría un número inflado con el que no se puede decidir precio
+              ni producto. Tus registros están guardados — recargá la página.
+            </p>
+          </div>
+        ) : (
         <SimuladorUnitEconomics
           generadosSinCancel={generadosSinCancel}
           totalVendido={facturadoValor}
@@ -624,6 +640,7 @@ export default function MesActualResumen({ summary, filters }: Props) {
           fromDate={filters.fromDate}
           toDate={filters.toDate}
         />
+        )}
       </div>
     </section>
   );

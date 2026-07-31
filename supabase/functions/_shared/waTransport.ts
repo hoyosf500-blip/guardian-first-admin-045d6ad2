@@ -98,6 +98,21 @@ export function isLidJid(jid: unknown): boolean {
   return /@lid\b/i.test(String(jid ?? ""));
 }
 
+/** ¿El destino es un JID que NO contiene un teléfono real? Solo "@c.us" y
+ *  "@s.whatsapp.net" lo traen; un "@lid" (privacidad) o un "@g.us" (grupo) pasados
+ *  por onlyDigits quedan como dígitos BASURA y el envío sale "sent" en verde hacia
+ *  un número inexistente — la asesora cree que respondió y el cliente nunca recibe
+ *  nada. Los transportes que no saben hablarle a esos JID deben rechazarlos con
+ *  error VISIBLE. (WAHA sí entrega al "@lid" nativo: no usa este guard.) */
+export function isUnroutableJid(to: unknown): boolean {
+  const s = String(to ?? "");
+  if (!s.includes("@")) return false;
+  return !/@(c\.us|s\.whatsapp\.net)\b/i.test(s);
+}
+
+const UNROUTABLE_JID_ERROR =
+  "Contacto sin teléfono real (JID @lid): este proveedor no puede enviarle. Respondele desde el celular.";
+
 export interface WaTransportConfig {
   token: string;
   base?: string;
@@ -204,6 +219,7 @@ class WhapiTransport implements WaTransport {
   }
 
   async sendText(to: string, body: string): Promise<WaSendResult> {
+    if (isUnroutableJid(to)) return { ok: false, error: UNROUTABLE_JID_ERROR };
     const phone = onlyDigits(to);
     if (!phone) return { ok: false, error: "Teléfono inválido" };
     if (!this.token) return { ok: false, error: "Canal sin token configurado" };
@@ -369,6 +385,7 @@ class EvolutionTransport implements WaTransport {
   }
 
   async sendText(to: string, body: string): Promise<WaSendResult> {
+    if (isUnroutableJid(to)) return { ok: false, error: UNROUTABLE_JID_ERROR };
     const phone = onlyDigits(to);
     if (!phone) return { ok: false, error: "Teléfono inválido" };
     if (!this.token) return { ok: false, error: "Canal sin token (apikey) configurado" };

@@ -46,8 +46,14 @@ export default function TeamNowStrip() {
         </div>
         {team.status === 'ok' && (
           <p className="text-[11px] text-muted-foreground flex items-center gap-1.5 flex-wrap font-medium">
-            <span className="text-success font-semibold">{trabajando} trabajando</span>
-            {sinMarcar > 0 && <>· <span className="text-warning font-semibold">{sinMarcar} sin marcar</span></>}
+            {team.workEventsOk ? (
+              <>
+                <span className="text-success font-semibold">{trabajando} trabajando</span>
+                {sinMarcar > 0 && <>· <span className="text-warning font-semibold">{sinMarcar} sin marcar</span></>}
+              </>
+            ) : (
+              <span className="text-warning font-semibold">quién trabaja: sin dato</span>
+            )}
             {team.pendingConfirmar != null && <>· {team.pendingConfirmar} por confirmar</>}
             {team.pendingNovedades != null && team.pendingNovedades > 0 && <>· {team.pendingNovedades} novedades</>}
           </p>
@@ -67,6 +73,18 @@ export default function TeamNowStrip() {
         </div>
       )}
 
+      {/* Hueco de LECTURA, no de trabajo: sin las marcas de hoy TODO el equipo
+          cae a 'Ausente' / 'sin marcar'. Se avisa ARRIBA de la lista para que
+          nadie reclame por un estado que no se pudo medir. Los números del día
+          NO se ven afectados: salen de la RPC de productividad. */}
+      {team.status === 'ok' && !team.workEventsOk && (
+        <p className="text-xs text-warning flex items-start gap-2">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          No se pudo leer la actividad de hoy: los estados y la última acción de abajo están
+          incompletos — NO significa que no trabajaron. Los totales del día sí son reales.
+        </p>
+      )}
+
       {team.status === 'ok' && (
         team.operators.length === 0 ? (
           <p className="text-xs text-muted-foreground py-1">
@@ -76,7 +94,11 @@ export default function TeamNowStrip() {
           <ul className="space-y-1">
             {team.operators.map((op) => {
               const est = ESTADO[op.estado];
-              const ultima = op.ultimaAccion ? `${op.ultimaAccion} ${hace(op.lastWorkMin)}` : 'sin marcar hoy';
+              // Sin la lectura de gestiones, "sin marcar hoy" sería una
+              // afirmación que no se midió: se dice que falta el dato.
+              const ultima = op.ultimaAccion
+                ? `${op.ultimaAccion} ${hace(op.lastWorkMin)}`
+                : (team.workEventsOk ? 'sin marcar hoy' : 'sin dato de actividad');
               return (
                 <li
                   key={op.id}
@@ -93,7 +115,10 @@ export default function TeamNowStrip() {
                   <span className="text-sm font-semibold text-foreground truncate min-w-0 max-w-[10rem]" title={op.name}>
                     {op.name}
                   </span>
-                  <span className={`hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-semibold shrink-0 ${est.chip}`}>
+                  <span
+                    className={`hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-semibold shrink-0 ${est.chip} ${team.workEventsOk ? '' : 'opacity-50'}`}
+                    title={team.workEventsOk ? undefined : 'Estado incompleto: no se pudo leer la actividad de hoy'}
+                  >
                     {est.label}
                   </span>
                   <span className="flex items-center gap-1 text-[11px] text-muted-foreground min-w-0 flex-1 truncate">

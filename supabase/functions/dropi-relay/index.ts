@@ -30,6 +30,22 @@ const DROPI_HOSTS: Record<string, string> = {
   ES: "https://dropipro.com",
 };
 
+// Este relay es INBOUND: el secreto lo tiene un proyecto EXTERNO que no controlamos,
+// y presta la IP que Dropi tiene whitelisteada. Sin allowlist, un `endpoint` con `..`
+// se normaliza en el fetch y sale de /integrations/ hacia /api/* (billetera, myorders
+// web): el proxy de solo-lectura de órdenes se convierte en un proxy universal.
+const ALLOWED_ENDPOINTS = new Set(["orders/myorders"]);
+// Detalle de UNA orden: /integrations/orders/myorders/{id} — solo id numérico.
+const ALLOWED_ENDPOINT_RE = /^orders\/myorders\/\d+$/;
+
+function isAllowedEndpoint(endpoint: string): boolean {
+  if (!endpoint) return false;
+  // Rechazo explícito antes de mirar la lista: traversal, doble barra y escapes %2e/%2f.
+  if (/(\.\.|\/\/|%2e|%2f|\\)/i.test(endpoint)) return false;
+  if (endpoint.includes("?") || endpoint.includes("#")) return false;
+  return ALLOWED_ENDPOINTS.has(endpoint) || ALLOWED_ENDPOINT_RE.test(endpoint);
+}
+
 function json(body: unknown, status = 200, corsHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
@@ -115,7 +131,7 @@ Deno.serve(async (req: Request) => {
 
   const dropiToken = String(body.dropi_token || "").trim();
   const country = String(body.country || "CO").toUpperCase();
-  const endpoint = String(body.endpoint || "orders/myorders").replace(/^\/+/, "");
+  const endpoint = String(body.endpoint || "orders/myorders").trim().replace(/^\/+/, "").replace(/\/+$/, "");
   const page = Math.max(1, Number(body.page) || 1);
   const pageSize = Math.max(1, Math.min(100, Number(body.page_size) || 100));
   const dateFrom = body.date_from ? String(body.date_from) : "";
@@ -123,6 +139,13 @@ Deno.serve(async (req: Request) => {
 
   if (!dropiToken) {
     return json({ ok: false, error: "Falta dropi_token" }, 400, corsHeaders);
+  }
+
+  if (!isAllowedEndpoint(endpoint)) {
+    return json({
+      ok: false,
+      error: `Endpoint no permitido: ${endpoint}. Validos: orders/myorders o orders/myorders/{id}`,
+    }, 400, corsHeaders);
   }
 
   const base = DROPI_HOSTS[country];
@@ -227,11 +250,12 @@ Deno.serve(async (req: Request) => {
     let data: unknown = null;
     try { data = JSON.parse(text); } catch { data = text; }
 
+    // Sin preview del cuerpo: la respuesta de myorders trae nombre/telefono/direccion
+    // de clientes y los logs de edge functions viven fuera de la RLS.
     console.log("[dropi-relay] RES", {
       status,
       duration_ms: duration,
       length: text.length,
-      preview: text.slice(0, 200),
     });
 
     const ok = dropiRes.ok && (typeof data === "object" && data !== null && (data as Record<string, unknown>).isSuccess !== false);

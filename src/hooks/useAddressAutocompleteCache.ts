@@ -1,6 +1,7 @@
 // src/hooks/useAddressAutocompleteCache.ts
 import { supabase } from '@/integrations/supabase/client';
 import { addressNormalize } from '@/lib/addressNormalize';
+import { locationMatches } from '@/lib/locationGuard';
 
 interface Suggestion {
   description: string;
@@ -54,12 +55,30 @@ export async function storeAutocompleteCache(
     );
 }
 
-export async function lookupRecurrentCustomer(phone: string): Promise<RecurrentCustomerHit | null> {
+/**
+ * Última dirección geocodificada de un cliente recurrente, para ofrecer "misma
+ * dirección del pedido anterior".
+ *
+ * Dos candados, porque un click en ese banner cambia la dirección de despacho:
+ *  - `storeId` obligatorio: sin él, RLS devuelve los pedidos de TODAS las
+ *    tiendas del usuario y un pedido de EC podía recibir la dirección de CO.
+ *  - la ubicación del pedido viejo debe coincidir con la del actual
+ *    (`locationMatches`): un recomprador que se mudó de Neiva a Pitalito
+ *    recibiría el paquete a 200 km — devolución casi segura.
+ */
+export async function lookupRecurrentCustomer(
+  phone: string,
+  storeId: string | null | undefined,
+  ciudad?: string | null,
+  departamento?: string | null,
+): Promise<RecurrentCustomerHit | null> {
   if (!phone || phone.length < 10) return null;
+  if (!storeId) return null;
 
   const { data } = await supabase
     .from('orders')
-    .select('direccion, google_place_id, lat, lng, upload_date')
+    .select('direccion, google_place_id, lat, lng, upload_date, ciudad, departamento')
+    .eq('store_id', storeId)
     .eq('phone', phone)
     .not('google_place_id', 'is', null)
     .order('upload_date', { ascending: false })
@@ -67,5 +86,12 @@ export async function lookupRecurrentCustomer(phone: string): Promise<RecurrentC
     .maybeSingle();
 
   if (!data || !data.google_place_id) return null;
+
+  // Se compara contra la ciudad/depto DEL PEDIDO VIEJO; si ese pedido no los
+  // trae, se cae al texto de la dirección (que casi siempre los nombra).
+  const hitLocation = [data.ciudad, data.departamento].filter(Boolean).join(', ')
+    || data.direccion || '';
+  if (!locationMatches(hitLocation, ciudad, departamento)) return null;
+
   return data as RecurrentCustomerHit;
 }

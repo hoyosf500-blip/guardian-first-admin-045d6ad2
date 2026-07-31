@@ -6,7 +6,7 @@
 // finitas. Espejo conceptual de _shared/dropiStoreConfig.ts.
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { type AdReferral, getWaTransport, onlyDigits, type WaProvider, type WaTransport } from "./waTransport.ts";
+import { type AdReferral, getWaTransport, isLidJid, onlyDigits, type WaProvider, type WaTransport } from "./waTransport.ts";
 
 export interface LoadedWaChannel {
   channelId: string;
@@ -59,6 +59,12 @@ export async function findLinkedExternalId(
   storeId: string,
   phoneDigits: string,
 ): Promise<string | null> {
+  // Un "@lid" NO es un teléfono: sus ~15 dígitos son un identificador de privacidad
+  // y sus últimos 8 pueden COLISIONAR como substring con el teléfono de otra
+  // clienta → el hilo quedaría linkeado al pedido de otra persona y el bot le
+  // respondería con su estado, producto y datos (PII cruzada). Sin teléfono real
+  // no hay pedido asociado.
+  if (isLidJid(phoneDigits)) return null;
   const last8 = onlyDigits(phoneDigits).slice(-8);
   if (last8.length < 8) return null;
   const { data } = await sbAdmin
@@ -197,7 +203,16 @@ export async function recordInbound(
     .select("id")
     .single();
 
-  if (ins.error) throw new Error(`No se pudo registrar el mensaje entrante: ${ins.error.message}`);
+  if (ins.error) {
+    // 23505 sobre UNIQUE(store_id, wa_message_id): el gateway entregó el MISMO
+    // webhook dos veces en paralelo y la otra corrida ya lo guardó. Es la
+    // idempotencia funcionando, no un fallo: lanzar acá abortaba el lote entero
+    // (los mensajes siguientes del batch se perdían en silencio).
+    const isUnique = (ins.error as { code?: string }).code === "23505" ||
+      /duplicate key|unique/i.test(ins.error.message || "");
+    if (isUnique) return { inserted: false };
+    throw new Error(`No se pudo registrar el mensaje entrante: ${ins.error.message}`);
+  }
 
   await bumpConversation(sbAdmin, conversationId, { preview: body, direction: "in", incUnread: true });
 

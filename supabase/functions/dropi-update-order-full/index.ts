@@ -497,7 +497,14 @@ Deno.serve(async (req: Request) => {
       .from("orders")
       .update({
         nombre: fullName,
-        phone, ciudad, departamento, direccion,
+        // El teléfono va SOLO si vino, igual que en el payload a Dropi: escribirlo
+        // incondicional dejaba orders.phone en '' cuando el body llegaba sin él
+        // (un cliente viejo del editor, un retry truncado) mientras Dropi conservaba
+        // el número real. El teléfono es la llave del CRM — anti-duplicados Shopify,
+        // wa.me, match de touchpoints SEG, resolveLiveSibling — y la divergencia no
+        // se auto-repara porque la RPC de sync protege los campos locales.
+        ...(phone ? { phone } : {}),
+        ciudad, departamento, direccion,
         email: email || null,
         last_edit_sync_at: new Date().toISOString(),
         last_edited_by: user.id,

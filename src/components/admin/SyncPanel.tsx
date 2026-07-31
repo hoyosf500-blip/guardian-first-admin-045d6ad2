@@ -6,14 +6,19 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Progress } from '@/components/ui/progress';
 import { TiltCard } from '@/components/ui3d';
+import { bogotaToday } from '@/lib/utils';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
 export default function SyncPanel({ onSyncComplete }: { onSyncComplete?: () => void }) {
   const { activeStore, activeStoreId, isOwnerOfActive } = useStore();
   const [syncing, setSyncing] = useState(false);
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0]);
+  // Anclado a BOGOTÁ, no a UTC: con toISOString() ambos campos arrancaban con la
+  // fecha de MAÑANA entre las 19:00 y las 24:00 (justo cuando el dueño sincroniza
+  // a mano) y Dropi devolvía 0 para un día que todavía no existe — "0 pedidos
+  // sincronizados" en verde para un día que nunca se pidió.
+  const [fromDate, setFromDate] = useState(() => bogotaToday());
+  const [toDate, setToDate] = useState(() => bogotaToday());
   const [lastResult, setLastResult] = useState<{ synced: number; duplicates: number; total: number; chunks?: number } | null>(null);
 
   async function handleSync() {

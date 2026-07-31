@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Loader2, RefreshCw, TrendingUp, AlertTriangle, Trophy, Clock,
@@ -22,6 +22,7 @@ import TeamNowStrip from '@/components/admin/TeamNowStrip';
 import { useStoreSchedule } from '@/hooks/useStoreSchedule';
 import { gestionesPorHora, ritmoTone, MIN_INTENTOS_POR_HORA } from '@/lib/operatorThroughput';
 import { bogotaToday } from '@/lib/utils';
+import { isRpcMissing } from '@/lib/rpcError';
 
 interface ActivityRow {
   operator_id: string;
@@ -243,6 +244,10 @@ export default function ProductivityDashboard() {
   // Sin cierre se muestra vacío + etiqueta — decisión suya: prefiere ver quién
   // no cerró antes que un número estimado.
   const [closingByOp, setClosingByOp] = useState<Record<string, string>>({});
+  // La consulta de cierres FALLÓ (≠ "nadie cerró"). Sin esta distinción, un blip
+  // de red/RLS pintaba "sin cierre" a TODAS las operadoras como si fuera un dato
+  // medido — acusación falsa en la pantalla con la que el dueño evalúa al equipo.
+  const [closingError, setClosingError] = useState(false);
 
   // Fuga Shopify→Dropi: ventas que entraron a Shopify pero NUNCA pasaron a Dropi
   // (no entran al flujo de confirmación → plata que se pierde en silencio). Es
@@ -254,9 +259,42 @@ export default function ProductivityDashboard() {
   const { data: scheduleMin } = useStoreSchedule(activeStoreId);
   const schedule = scheduleMin ? scheduleFromMinutes(scheduleMin) : DEFAULT_SCHEDULE;
 
+  // Tienda de la corrida MÁS RECIENTE de load(). Las 4 RPCs de abajo resuelven
+  // su alcance server-side: una respuesta en vuelo de la tienda anterior NO se
+  // puede aterrizar bajo el encabezado de la nueva (mezclar países está
+  // prohibido) — mismo guard que useDataLoader.
+  const runStoreRef = useRef<string | null>(null);
+  // Última tienda para la que ya se confirmó profiles.active_store_id.
+  const scopeStoreRef = useRef<string | null>(null);
+
   const load = useCallback(async (silent = false) => {
+    const runStore = activeStoreId;
+    runStoreRef.current = runStore;
     if (!silent) setLoading(true);
     else setRefreshing(true);
+
+    // _resolve_scope_store() lee profiles.active_store_id, y StoreContext dispara
+    // ese UPDATE en un async que NO espera: al cambiar de tienda las RPCs podían
+    // contestar con los números de la tienda ANTERIOR bajo el encabezado de la
+    // nueva. Acá se confirma el scope ANTES de preguntar (una sola vez por
+    // tienda); si no se puede fijar, no se muestran números.
+    if (runStore && scopeStoreRef.current !== runStore) {
+      const { error: scopeErr } = await supabase.rpc('set_active_store' as never, { p_store_id: runStore } as never);
+      if (runStoreRef.current !== runStore) return;
+      // Si la RPC no está desplegada, degradamos como antes (best-effort): la
+      // pantalla en blanco sería peor que el riesgo que veníamos corriendo. Un
+      // error REAL (red, permisos) sí corta.
+      if (scopeErr && !isRpcMissing(scopeErr)) {
+        console.error('[productivity] set_active_store error', scopeErr);
+        setError('No se pudo fijar la tienda activa en el servidor. No mostramos números para no mezclar tiendas — reintentá.');
+        setRows([]); setActivityRows([]); setWorkedRows([]); setInactivityRows([]);
+        setAccionesPeriodo(null); setClosingByOp({}); setClosingError(false); setJornadaWarn(null);
+        setLoading(false); setRefreshing(false);
+        return;
+      }
+      scopeStoreRef.current = runStore;
+    }
+
     // El scope por tienda lo resuelve la RPC server-side vía
     // _resolve_scope_store() (admin → su tienda activa, profiles.active_store_id).
     // No pasamos p_store_id: así NO dependemos de que la migration del parámetro
@@ -275,6 +313,7 @@ export default function ProductivityDashboard() {
       // "cuánto tiempo perdió" que pidió el dueño. Error silencioso como los otros.
       supabase.rpc('operator_inactivity_stats' as never, { p_range: range } as never),
     ]);
+    if (runStoreRef.current !== runStore) return;
     const { data, error: rpcErr } = productivity;
     if (rpcErr) {
       console.error('[productivity] rpc error', rpcErr);
@@ -286,6 +325,7 @@ export default function ProductivityDashboard() {
       setRows(arr);
       setError(null);
     }
+    let cierresFallo = false;
     // Conteo CRUDO de acciones del período — sin excluir admins ni nada.
     //
     // Existe por un caso real (2026-07-20): el dueño marcó un pedido, la tabla
@@ -312,13 +352,14 @@ export default function ProductivityDashboard() {
       // marcó pedidos" — el cero falso que este contador vino a evitar. Con
       // null, el cartel cae al texto genérico que no afirma nada.
       setAccionesPeriodo(cntErr ? null : (count ?? 0));
+      if (runStoreRef.current !== runStore) return;
 
       // Cierres de turno del período. Nos quedamos con el MÁS RECIENTE por
       // operadora: en un rango de varios días la columna muestra el último.
       // Filtrado por tienda ACTIVA: un supervisor con membresía en CO y EC ve
       // por RLS los cierres de ambas — sin este filtro, su "SALIÓ" acá podía
       // ser el cierre del otro país (mezclar países está prohibido).
-      const { data: cierres } = await supabase
+      const { data: cierres, error: cierresErr } = await supabase
         .from('operator_daily_reports')
         .select('user_id, closing_at')
         .eq('store_id', activeStoreId ?? '')
@@ -326,15 +367,27 @@ export default function ProductivityDashboard() {
         .lte('report_date', hoy)
         .not('closing_at', 'is', null)
         .order('closing_at', { ascending: false });
-      const mapa: Record<string, string> = {};
-      for (const c of (cierres ?? []) as { user_id: string; closing_at: string }[]) {
-        if (!mapa[c.user_id]) mapa[c.user_id] = c.closing_at;
+      if (runStoreRef.current !== runStore) return;
+      // Mismo criterio que el contador de acciones de arriba: supabase-js no
+      // lanza en un SELECT fallido, y sin este check el mapa vacío hacía que la
+      // columna SALIÓ dijera "sin cierre" para TODAS — dato falso, no medición.
+      if (cierresErr) {
+        console.warn('[productivity] cierres query error', cierresErr);
+        cierresFallo = true;
+        setClosingByOp({});
+      } else {
+        const mapa: Record<string, string> = {};
+        for (const c of (cierres ?? []) as { user_id: string; closing_at: string }[]) {
+          if (!mapa[c.user_id]) mapa[c.user_id] = c.closing_at;
+        }
+        setClosingByOp(mapa);
       }
-      setClosingByOp(mapa);
     } catch {
       setAccionesPeriodo(null);
       setClosingByOp({});
+      cierresFallo = true;
     }
+    setClosingError(cierresFallo);
 
     // Jornada: error silencioso (la migration puede no estar) pero LIMPIANDO
     // el estado — antes se retenían las filas del range anterior y, si solo
@@ -375,6 +428,7 @@ export default function ProductivityDashboard() {
       activity.error ? 'actividad' : null,
       worked.error ? 'horas trabajadas' : null,
       inactivity.error ? 'inactividad' : null,
+      cierresFallo ? 'cierres de turno' : null,
     ].filter(Boolean);
     setJornadaWarn(fallosJornada.length
       ? `No se pudo leer: ${fallosJornada.join(', ')}. La Jornada puede salir incompleta — NO significa que no trabajaron.`
@@ -995,7 +1049,14 @@ export default function ProductivityDashboard() {
                               estima nada: se marca "sin cierre" — eligió ver quién
                               no cerró antes que un número inventado. */}
                           <td className="text-right">
-                            {cierreAt ? (
+                            {closingError ? (
+                              <span
+                                className="font-mono text-muted-foreground text-xs"
+                                title="No se pudo leer los cierres de turno. NO significa que no cerró."
+                              >
+                                —
+                              </span>
+                            ) : cierreAt ? (
                               <span className="inline-flex items-center justify-end gap-1.5 flex-wrap font-mono tabular-nums text-xs">
                                 <span className="inline-flex items-center gap-1 whitespace-nowrap text-foreground">
                                   <Clock size={11} className="text-muted-foreground" aria-hidden="true" />

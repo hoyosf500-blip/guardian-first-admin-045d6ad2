@@ -68,6 +68,35 @@ const pickupOverrideAppliedIds = new Set<string>();
 // sin Google) y corrige DB si difiere. Idempotente vía Set módulo-level.
 const staleGreenOverrideIds = new Set<string>();
 
+// Overlays que se ADUEÑAN del teclado. Radix le pone role="dialog" a Dialog
+// pero role="alertdialog" a AlertDialog: mirar solo el primero dejaba vivos los
+// atajos con el "¿Borrar esta nota?" abierto y una tecla 1 confirmaba —
+// despachando a Dropi— el pedido tapado por el overlay. role="menu" cubre los
+// dropdown de Radix. Todos se desmontan al cerrar, así que el selector solo
+// matchea overlays realmente abiertos.
+const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [aria-modal="true"]';
+
+/**
+ * ¿Puede correr un atajo de teclado AHORA? Pura y exportada para poder testear
+ * la regresión sin montar la pantalla entera (la usan CallView y CrmCallView —
+ * UNA sola definición: la copia divergente es cómo volvió el bug la vez pasada).
+ *
+ * Falla hacia "no hacer nada": ante cualquier overlay o campo de texto, la
+ * tecla no marca nada.
+ */
+export function hotkeysHabilitados(
+  activeElement: Element | null,
+  doc: Document | null = typeof document !== 'undefined' ? document : null,
+): boolean {
+  const el = activeElement as HTMLElement | null;
+  const tag = el?.tagName;
+  // Con un campo enfocado la tecla es TEXTO (notas, dirección, teléfono).
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return false;
+  if (!doc) return false;
+  if (doc.querySelector(OVERLAY_SELECTOR)) return false;
+  return true;
+}
+
 interface VipInfo {
   isVip: boolean;
   total: number;
@@ -901,16 +930,10 @@ export default function CallView({ items, alerts }: Props) {
     // No robarle teclas al navegador (Ctrl/Cmd/Alt) ni auto-repetir un
     // marcado con la tecla sostenida.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-    // Con un campo enfocado la tecla es TEXTO (notas, dirección, teléfono),
-    // no un marcado — guard por activeElement, no por foco del componente.
-    const el = document.activeElement as HTMLElement | null;
-    const tag = el?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
-    // Editor de orden abierto (o CUALQUIER diálogo Radix montado — chat de
-    // WhatsApp, popovers de validación): el overlay es dueño del teclado.
-    // Radix desmonta el contenido cerrado, así que el selector solo matchea
-    // overlays realmente abiertos. Falla hacia "no hacer nada" a propósito.
-    if (editorState || document.querySelector('[role="dialog"]')) return;
+    // Campo de texto enfocado o CUALQUIER overlay abierto (chat de WhatsApp,
+    // "¿Borrar esta nota?", editor): el dueño del teclado es el de arriba.
+    // El editor de orden se chequea aparte porque su estado vive acá.
+    if (editorState || !hotkeysHabilitados(document.activeElement)) return;
     const k = e.key;
     if (showCancelModal) {
       // Dentro del modal de cancelación: Esc cierra (mismo reset que el click

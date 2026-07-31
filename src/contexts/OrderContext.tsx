@@ -37,7 +37,20 @@ interface OrderState {
   // no existen — usar segData con filtros de segLists.ts.
   novedadesQueue: OrderData[];
   novedadesLoading: boolean;
+  /** Gestiones de HOY de TODA LA TIENDA (equipo). Es lo que rotula "Equipo hoy"
+   *  la CounterBar y lo que alimenta la barra de progreso de la cola compartida. */
   counter: Counter;
+  /** Gestiones de HOY de ESTA operadora (operator_id = yo), misma dedup por
+   *  order_id que `counter`.
+   *
+   *  Existen los DOS a propósito y no son intercambiables: `counter` es store-wide
+   *  desde que la cola pasó a ser pool compartido (evita el parpadeo
+   *  personal→equipo en la barra), pero todo lo que la operadora FIRMA — el cierre
+   *  de turno que se guarda en daily_reports con su operator_id, el resumen que
+   *  copia y el que manda por WhatsApp, y el tablero en modo "Yo" — tiene que
+   *  salir de acá. Con 3 operadoras, firmar `counter` guardaba 3 cierres con los
+   *  107 gestionados de la tienda cada uno (321 en un día de 107). */
+  myCounter: Counter;
   timerStart: number;
   loading: boolean;
   excelLoaded: boolean;
@@ -99,6 +112,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [allOrders, setAllOrdersState] = useState<OrderData[]>([]);
   const [workQueue, setWorkQueue] = useState<OrderData[]>([]);
   const [counter, setCounter] = useState<Counter>({ conf: 0, canc: 0, noresp: 0 });
+  const [myCounter, setMyCounter] = useState<Counter>({ conf: 0, canc: 0, noresp: 0 });
   const [timerStart, setTimerStart] = useState(0);
   const [loading] = useState(false);
   const [excelLoaded, setExcelLoaded] = useState(false);
@@ -136,6 +150,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // personal que "saltaba" al de equipo al llegar el recompute. Ahora la
   // siembra sale de la MISMA fuente store-wide con computeDailyCounter (misma
   // dedup por order_id): una sola población, cero parpadeo personal→equipo.
+  //
+  // La MISMA lectura sirve para el contador PERSONAL (`myCounter`): se trae
+  // operator_id y se computa dos veces sobre las mismas filas. Un segundo query
+  // filtrado por mí podría resolver en otro instante y dejar los dos contadores
+  // describiendo momentos distintos del día.
   useEffect(() => {
     if (!user || !activeStoreId) return;
     let cancelled = false;
@@ -143,20 +162,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const todayLocal = bogotaToday();
       const { data, error } = await supabase
         .from('order_results')
-        .select('order_id, result, result_date')
+        .select('order_id, result, result_date, operator_id')
         .eq('store_id', activeStoreId)
         .eq('result_date', todayLocal)
         // Solo llamadas reales — mismo filtro que el recompute (isCallOutcome).
         // Un día de tienda (~150 filas) queda lejos del tope de 1000 filas.
         .in('result', ['conf', 'canc', 'noresp']);
       if (cancelled || error || !data) return;
-      const next = computeDailyCounter(data as Parameters<typeof computeDailyCounter>[0], todayLocal);
+      const rows = data as Array<Parameters<typeof computeDailyCounter>[0][number] & { operator_id: string | null }>;
+      const next = computeDailyCounter(rows, todayLocal);
       // Idempotente: si el recompute de buildWorkQueue ya sembró los mismos
       // números, devolver `prev` evita un objeto nuevo (ctxValue memoizado).
       setCounter(prev => (
         prev.conf === next.conf && prev.canc === next.canc && prev.noresp === next.noresp
           ? prev
           : next
+      ));
+      const mine = computeDailyCounter(rows.filter(r => r.operator_id === user.id), todayLocal);
+      setMyCounter(prev => (
+        prev.conf === mine.conf && prev.canc === mine.canc && prev.noresp === mine.noresp
+          ? prev
+          : mine
       ));
     })();
     return () => { cancelled = true; };
@@ -318,6 +344,48 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     return pollWhenVisible(() => { void loadWorkQueue(); }, 30 * 60 * 1000, { runOnVisible: false });
   }, [user, activeStoreId, loadWorkQueue]);
 
+  // Set de Seguimiento del día (touchpoints SEG:* míos). touchpoints no tiene
+  // order_id: el match contra segData es por phone.
+  //
+  // Está extraído en su propia función porque necesita un camino de REINTENTO.
+  // El set de Confirmar se auto-cura solo (loadWorkQueue lo recarga en cada poll
+  // de 30 min y en cada evento realtime); este se cargaba UNA sola vez por
+  // [user, activeStoreId], así que un blip de red a las 8am dejaba
+  // `coverageSegError` en true toda la jornada: el tablero de Seguimiento
+  // mostraba como pendientes las tarjetas ya gestionadas y la asesora
+  // re-trabajaba pedidos, hasta que a alguien se le ocurriera recargar.
+  const loadSegCoverage = useCallback(async (): Promise<boolean> => {
+    if (!user || !activeStoreId) return false;
+    // Recalculada en cada intento, no capturada: un reintento que cruza la
+    // medianoche Bogotá tiene que leer el día NUEVO.
+    const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
+    const { data, error: segErr } = await supabase
+      .from('touchpoints')
+      .select('phone, action')
+      .eq('store_id', activeStoreId)
+      .eq('operator_id', user.id)
+      .ilike('action', 'SEG:%')
+      .gte('created_at', todayStartIso);
+    // "No se pudo leer" se marca, no se disfraza de cero.
+    if (segErr || !data) { setCoverageSegError(true); return false; }
+    setMySegTouchedToday(new Set((data as { phone: string }[]).map(r => r.phone)));
+    setCoverageSegError(false);
+    return true;
+  }, [user, activeStoreId]);
+
+  // Reintento con backoff mientras la lectura siga fallando (2s, 4s, 8s… tope
+  // 60s). Cuando entra bien, `coverageSegError` pasa a false y el effect se
+  // apaga solo; el intento vuelve a cero para el próximo fallo.
+  const [segRetryAttempt, setSegRetryAttempt] = useState(0);
+  useEffect(() => {
+    if (!coverageSegError || !user || !activeStoreId) return;
+    const delay = Math.min(60_000, 2000 * 2 ** segRetryAttempt);
+    const t = setTimeout(() => {
+      void loadSegCoverage().then(ok => { setSegRetryAttempt(n => (ok ? 0 : n + 1)); });
+    }, delay);
+    return () => clearTimeout(t);
+  }, [coverageSegError, segRetryAttempt, user, activeStoreId, loadSegCoverage]);
+
   // Cobertura del día (mySegTouchedToday inicial + realtime de los 2 sets).
   // Por qué un effect separado: estos sets son `myConfirmTouchedToday` y
   // `mySegTouchedToday`, no afectan al workQueue ni al counter, solo al chip
@@ -372,20 +440,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       });
 
     // Carga inicial del set de seguimiento (touchpoints SEG:* del día).
-    // touchpoints no tiene order_id, el match contra segData es por phone.
-    void supabase
-      .from('touchpoints')
-      .select('phone, action')
-      .eq('store_id', activeStoreId)
-      .eq('operator_id', user.id)
-      .ilike('action', 'SEG:%')
-      .gte('created_at', todayStartIso)
-      .then(({ data, error: segErr }) => {
-        // Igual que arriba: "no se pudo leer" se marca, no se disfraza de cero.
-        if (segErr || !data) { setCoverageSegError(true); return; }
-        setMySegTouchedToday(new Set((data as { phone: string }[]).map(r => r.phone)));
-        setCoverageSegError(false);
-      });
+    void loadSegCoverage();
 
     // Realtime: agregamos al set en cada INSERT mío. Filtro server-side por
     // operator_id (Realtime no soporta ILIKE), filtro de module/action lo
@@ -453,7 +508,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       clearInterval(dayCheck);
       void supabase.removeChannel(channel);
     };
-  }, [user, activeStoreId]);
+  }, [user, activeStoreId, loadSegCoverage]);
 
   // Prevents double-click race: tracks phones currently being processed by markResult.
   const markingInFlight = useRef(new Set<string>());
@@ -558,6 +613,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         result_time: string | null;
         result_date: string | null;
         created_at: string;
+        // Solo para partir el contador del día en equipo vs. personal (myCounter).
+        // No participa del cooldown ni del resultMap: la cola es pool compartido.
+        operator_id: string | null;
       };
       const fetchResultRows = async (): Promise<ResultRow[]> => {
         const PAGE_SIZE = 1000;
@@ -566,7 +624,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         let fromIdx = 0;
         for (;;) {
           const { data, error } = await supabase.from('order_results')
-            .select('order_id, phone, result, reason, result_time, result_date, created_at')
+            .select('order_id, phone, result, reason, result_time, result_date, created_at, operator_id')
             .eq('store_id', activeStoreId)
             // Solo resultados de llamada reales: las filas de auditoría
             // ('edicion_orden', 'cambio_transportadora') no afectan cooldown ni
@@ -699,6 +757,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
                 ? prev
                 : next;
             });
+            // Mismas filas, población distinta: lo que gestionó QUIEN ESTÁ MIRANDO.
+            // Es lo que firma el cierre de turno y lo que muestra el tablero en
+            // modo "Yo"; el de arriba es la tienda entera.
+            setMyCounter(prev => {
+              const mineRows = (data as ResultRow[]).filter(r => r.operator_id === user.id);
+              const next = computeDailyCounter(mineRows, todayLocal);
+              return (prev.conf === next.conf && prev.canc === next.canc && prev.noresp === next.noresp)
+                ? prev
+                : next;
+            });
           }
         })
         .catch(() => {
@@ -747,6 +815,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       setTimeout(() => checkMilestone(newTotal), 300);
       return next;
     });
+    // El que marca soy YO: el contador personal se mueve con el mismo delta que
+    // el de la tienda (y se revierte en los mismos puntos), si no el cierre de
+    // turno quedaría atrás hasta el próximo recompute.
+    setMyCounter(prev => ({
+      conf: prev.conf + (result === 'conf' ? 1 : 0),
+      canc: prev.canc + (result === 'canc' ? 1 : 0),
+      noresp: prev.noresp,
+    }));
     setLastMark({ order, result, reason });
 
     // M4: setter funcional para evitar stale closure. El `markResult`
@@ -795,6 +871,11 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         canc: Math.max(0, prev.canc - (result === 'canc' ? 1 : 0)),
         noresp: prev.noresp,
       }));
+      setMyCounter(prev => ({
+        conf: Math.max(0, prev.conf - (result === 'conf' ? 1 : 0)),
+        canc: Math.max(0, prev.canc - (result === 'canc' ? 1 : 0)),
+        noresp: prev.noresp,
+      }));
       markingInFlight.current.delete(order.dbId);
       toast.error(`Error guardando resultado: ${error.message}`);
       return;
@@ -815,6 +896,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // Revertir estado optimista del workQueue + counter
         setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
         setCounter(prev => ({ ...prev, conf: Math.max(0, prev.conf - 1) }));
+        setMyCounter(prev => ({ ...prev, conf: Math.max(0, prev.conf - 1) }));
         // CRÍTICO: liberar el lock antes de salir. Sin esto, el dbId queda
         // permanentemente en markingInFlight y la operadora no puede
         // reintentar la confirmación hasta recargar la página.
@@ -950,6 +1032,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         if (insertedResult?.id) await supabase.from('order_results').delete().eq('id', insertedResult.id);
         setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result: undefined, reason: undefined } : o));
         setCounter(prev => ({ ...prev, canc: Math.max(0, prev.canc - 1) }));
+        setMyCounter(prev => ({ ...prev, canc: Math.max(0, prev.canc - 1) }));
         markingInFlight.current.delete(order.dbId);
         toast.error(cancErr ? `Cancelación local falló: ${cancErr.message}` : 'Ese pedido ya fue gestionado por otra asesora', { id: toastId });
         return;
@@ -1083,6 +1166,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       canc: prev.canc - (result === 'canc' ? 1 : 0),
       noresp: prev.noresp - (result === 'noresp' ? 1 : 0),
     }));
+    // Deshacer es siempre sobre una marca propia (lastMark es de esta sesión).
+    setMyCounter(prev => ({
+      conf: Math.max(0, prev.conf - (result === 'conf' ? 1 : 0)),
+      canc: Math.max(0, prev.canc - (result === 'canc' ? 1 : 0)),
+      noresp: Math.max(0, prev.noresp - (result === 'noresp' ? 1 : 0)),
+    }));
 
     if (resultId) {
       await supabase.from('order_results').delete().eq('id', resultId);
@@ -1133,7 +1222,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
     segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
     novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
-    counter, timerStart,
+    counter, myCounter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
     myConfirmTouchedToday, mySegTouchedToday,
@@ -1143,7 +1232,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
     dataLoader.segLastUpdate, dataLoader.loadSegData,
     novedades.novedadesQueue, novedades.novedadesLoading,
-    counter, timerStart,
+    counter, myCounter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
     myConfirmTouchedToday, mySegTouchedToday,

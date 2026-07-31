@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { findSupersededPendingConfDetailed, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { detectDuplicatePairs } from '@/lib/duplicatePairs';
@@ -9,12 +9,11 @@ import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
-import { parseExcelToOrders, formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
+import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { isLockedByOther } from '@/lib/callQueueNav';
 import { toast } from 'sonner';
-import ExcelUploader from '@/components/ExcelUploader';
-import WorkList from '@/components/WorkList';
+import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
 import WorkFilters from '@/components/WorkFilters';
 import TasaMetaBanner from '@/components/TasaMetaBanner';
@@ -49,30 +48,15 @@ interface Props {
   onLogout: () => void;
 }
 
-// Días calendario REALES desde la fecha del pedido, recalculados en cada render
-// (misma lógica que WorkList.diasReales, que es con lo que se colorean las filas).
-// El campo `o.dias` se congela en la última sincronización: con el sync atrasado/
-// throttleado (caso Ecuador) un pedido viejo mostraba días de menos → los pills
-// d7/d46 contradecían el color de las filas. Fallback a `o.dias` si la fecha no parsea.
+// Los pills d7/d46 usan `diasReales` de WorkList — la MISMA función con la que
+// se colorean las filas. Antes había una copia acá y las dos derivaron.
+
 /** Entrada escalonada: la pantalla se arma de arriba abajo, igual que Logística. */
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.35, delay, ease: 'easeOut' as const },
 });
-
-function diasReales(o: OrderData): number {
-  try {
-    const d = parseDate(o.fecha);
-    if (d && !isNaN(d.getTime())) {
-      const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
-      if (diff >= 0) return diff;
-    }
-  } catch {
-    // ignore — caemos al fallback
-  }
-  return Math.max(0, o.dias ?? 0);
-}
 
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
@@ -92,7 +76,6 @@ export default function ConfirmarTab({ profile }: Props) {
   const [onlyUntouched, setOnlyUntouched] = useSessionState<boolean>('confirmar:onlyUntouched', false);
   const [syncing, setSyncing] = useState(false);
   const [autoLoading, setAutoLoading] = useState(false);
-  const [showExcel, setShowExcel] = useState(false);
   const [closing, setClosing] = useState(false);
   // Pedidos "progresados" (ya reales en Dropi) de los mismos teléfonos de la cola,
   // para detectar PENDIENTE CONFIRMACION duplicados/viejos y ocultarlos (ver abajo).
@@ -158,48 +141,12 @@ export default function ConfirmarTab({ profile }: Props) {
       });
   }, [user, excelLoaded, today, autoLoading, activeStoreId]);
 
-  const handleFile = useCallback(async (file: File) => {
-    toast.info('Procesando Excel...');
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const XLSX = await import('xlsx');
-        const wb = XLSX.read(e.target?.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[];
-        if (!raw.length) { toast.error('Excel vacío'); return; }
-        const orders = parseExcelToOrders(raw);
-        if (!orders.length) { toast.error('No se encontraron columnas de nombre/teléfono'); return; }
-        if (user && activeStoreId) {
-          // store_id explícito SIEMPRE: sin él la fila cae al default de la
-          // columna (la tienda CO original) y el pedido de otra tienda/tenant
-          // termina en la cola equivocada. Mismo incidente que el upsert del
-          // cron el 2026-07-21.
-          const dbOrders = orders.map(o => ({
-            external_id: o.externalId, uploaded_by: user.id, upload_date: today,
-            store_id: activeStoreId,
-            nombre: o.nombre, phone: o.phone, ciudad: o.ciudad, producto: o.producto,
-            estado: o.estado, fecha: o.fecha, fecha_conf: o.fechaConf, dias: o.dias,
-            dias_conf: o.diasConf, valor: o.valor, flete: o.flete, costo_prod: o.costoProd,
-            costo_dev: o.costoDev, cantidad: o.cantidad, direccion: o.direccion,
-            novedad: o.novedad, guia: o.guia, transportadora: o.transportadora,
-            tags: o.tags, departamento: o.departamento, tienda: o.tienda, novedad_sol: o.novedadSol,
-          }));
-          const { data, error } = await supabase.from('orders').upsert(dbOrders, { onConflict: 'external_id', ignoreDuplicates: false }).select('id');
-          if (error) { toast.error('Error guardando pedidos'); return; }
-          // Match returned IDs back to orders by insertion order (1:1).
-          // The old Map-by-phone approach silently clobbered dbId when two
-          // orders shared the same phone number (repeat customers).
-          if (data) data.forEach((d, i) => { if (i < orders.length) orders[i].dbId = d.id; });
-        }
-        setAllOrders(orders);
-        buildWorkQueue(orders);
-        setExcelLoaded(true);
-        toast.success(`${orders.length} pedidos cargados`);
-      } catch (err: unknown) { toast.error('Error leyendo Excel: ' + (err instanceof Error ? err.message : 'Error desconocido')); }
-    };
-    reader.readAsArrayBuffer(file);
-  }, [user, today, activeStoreId, setAllOrders, buildWorkQueue]);
+  // La carga manual por Excel se eliminó (2026-07-31, decisión del dueño). Los
+  // pedidos entran SOLO por la API de Dropi (cron cada 15 min + el botón de
+  // abajo). El upsert del Excel usaba onConflict:'external_id', que es UNIQUE
+  // GLOBAL entre tiendas: subir el archivo de Ecuador con Colombia activa le
+  // reescribía el store_id a las filas de la otra tienda — la mezcla de países
+  // que esta operación tiene PROHIBIDA (incidente 2026-07-21).
 
   // Firma estable del conjunto de teléfonos de la cola. El efecto de abajo
   // depende de ESTO, no del array `workQueue`: una ráfaga de realtime que
@@ -341,9 +288,8 @@ export default function ConfirmarTab({ profile }: Props) {
     if (isLockedByOther(o, user?.id ?? null, Date.now())) return false;
     // Toggle "Solo sin tocar" — los pedidos que ya marqué (cualquier result)
     // se ocultan. Útil cuando me quedan los noresp pendientes pero no quiero
-    // ver los que ya gestioné hoy. dbId puede ser undefined en pedidos
-    // recién subidos por Excel sin sincronizar — esos no caen en el set y se
-    // muestran (mejor mostrar que perder).
+    // ver los que ya gestioné hoy. Un pedido sin dbId no cae en el set y se
+    // muestra igual (mejor mostrar que perder).
     // Con coverageConfirmError el set está vacío/parcial (la query falló):
     // filtrar contra un set roto escondería/mostraría pedidos mal → el toggle
     // se ignora (y el checkbox se desactiva en el chip "Tu cola hoy").
@@ -445,7 +391,7 @@ export default function ConfirmarTab({ profile }: Props) {
               }}
               className="inline-flex h-9 items-center gap-1.5 px-3 rounded-xl bg-card/40 border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
-              Cambiar archivo
+              Recargar cola
             </button>
           )}
         </div>
@@ -482,14 +428,14 @@ export default function ConfirmarTab({ profile }: Props) {
       )}
 
       {/* SEGUNDO formulario de apertura, quitado junto con el del layout
-          (2026-07-19). Cuando no había Excel cargado, la asesora se topaba con
-          OTRO cuestionario antes de ver su cola — el mismo trámite, dos veces.
+          (2026-07-19). Con la cola sin cargar, la asesora se topaba con OTRO
+          cuestionario antes de verla — el mismo trámite, dos veces.
           `AperturaWizard` no se borra: queda en el repo por si el dueño quiere
           recuperar la carga manual de esos números, solo que ya no se monta. */}
 
+      {/* Pantalla vacía: UN solo camino. La cola se llena desde Dropi y nada más. */}
       {!autoLoading && !excelLoaded && (
         <div className="space-y-3">
-          {/* Dropi Sync Button */}
           <button
             onClick={async () => {
               if (!user) return;
@@ -537,17 +483,6 @@ export default function ConfirmarTab({ profile }: Props) {
               <div className="text-[10px] text-muted-foreground">Descarga automáticamente los pedidos del día</div>
             </div>
           </button>
-
-          <button
-            onClick={() => setShowExcel(!showExcel)}
-            className="w-full flex items-center justify-center gap-2 py-2 text-[10px] text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-          >
-            <div className="flex-1 h-px bg-border" />
-            <span>{showExcel ? 'Ocultar' : 'O sube manualmente'}</span>
-            <div className="flex-1 h-px bg-border" />
-          </button>
-
-          {showExcel && <ExcelUploader onFile={handleFile} />}
         </div>
       )}
 
@@ -566,7 +501,7 @@ export default function ConfirmarTab({ profile }: Props) {
           </div>
           <h3 className="relative text-base font-semibold text-foreground mb-1">No hay pedidos disponibles para confirmar</h3>
           <p className="relative text-sm text-muted-foreground max-w-md">
-            Espera al próximo sync con Dropi o sube un Excel manualmente.
+            Espera al próximo sync con Dropi o sincronizá vos misma desde el inicio.
           </p>
           <button
             onClick={() => { resetOrders(); setExcelLoaded(false); }}

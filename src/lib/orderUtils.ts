@@ -1,5 +1,6 @@
 import { COL_MAP, CARRIER_TRACK, CARRIER_TRACK_EC } from './constants';
 import { classifySegEstado } from './segStatus';
+import { bogotaToday } from './utils';
 
 /** Safely extract an error message from an unknown catch value */
 export function getErrorMessage(err: unknown): string {
@@ -230,11 +231,41 @@ export function parseDate(dateStr: string): Date | null {
   }
 }
 
+/** Offset de Bogotá/Ecuador respecto a UTC (ambos UTC-5, sin DST), en ms. */
+const BOGOTA_OFFSET_MS = 5 * 3600 * 1000;
+
+/**
+ * Medianoche del día BOGOTÁ vigente, expresada como ms UTC.
+ *
+ * `parseDate` ancla la fecha del pedido a MEDIANOCHE UTC, así que restar los dos
+ * anclajes da días CALENDARIO exactos. Sin esto la edad se calculaba sobre
+ * milisegundos transcurridos y el contador rodaba a las 00:00 UTC = 19:00
+ * Bogotá: entre las 7pm y la medianoche TODA la cola envejecía un día (un D6 se
+ * mostraba "D7+: cancelar" y volvía a D6 en la mañana) → ventas canceladas un
+ * día antes de agotar la ventana de rescate.
+ */
+function anclaHoyBogota(nowMs?: number): number {
+  if (nowMs === undefined) return Date.parse(bogotaToday());
+  const b = new Date(nowMs - BOGOTA_OFFSET_MS);
+  return Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
+}
+
+/**
+ * Edad del pedido en días CALENDARIO Bogotá (nunca negativa).
+ *
+ * Es el helper que deben usar TODAS las pantallas que pintan "hace Xd" o los
+ * chips D4-6 / D7+ (Confirmar, WorkList): con el cálculo por ms transcurridos
+ * cada vista rodaba a distinta hora y la lista contradecía al detalle.
+ */
+export function diasCalendarioBogota(dateStr: string | null | undefined, nowMs?: number): number {
+  const d = parseDate(dateStr || '');
+  if (!d) return 0;
+  return Math.max(0, Math.round((anclaHoyBogota(nowMs) - d.getTime()) / 86400000));
+}
+
 /** Calendar days since a date string */
 export function calcDias(dateStr: string): number {
-  const d = parseDate(dateStr);
-  if (!d) return 0;
-  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  return diasCalendarioBogota(dateStr);
 }
 
 /**
@@ -244,6 +275,10 @@ export function calcDias(dateStr: string): number {
  * default era el 1° del mes en curso → al cambiar de mes desaparecían de la vista).
  * Una fecha sin parsear devuelve `true` (no escondemos por las dudas: mejor mostrar
  * de más que perder un pedido vivo por un formato de fecha raro).
+ *
+ * La ventana se mide en días CALENDARIO Bogotá: con la resta cruda de ms cortaba
+ * a las 7pm (00:00 UTC) y los pedidos del borde entraban y salían de la vista
+ * cada noche.
  */
 export function isWithinLastDays(
   fecha: string | null | undefined,
@@ -252,11 +287,8 @@ export function isWithinLastDays(
 ): boolean {
   const d = parseDate(fecha || '');
   if (!d) return true;
-  return d.getTime() >= nowMs - days * 86400000;
+  return Math.round((anclaHoyBogota(nowMs) - d.getTime()) / 86400000) <= days;
 }
-
-/** Offset de Bogotá/Ecuador respecto a UTC (ambos UTC-5, sin DST), en ms. */
-const BOGOTA_OFFSET_MS = 5 * 3600 * 1000;
 
 /**
  * ¿Este pedido fue CERRADO (Resuelto/Devolución) por el equipo y por lo tanto NO
@@ -296,11 +328,17 @@ export function isClosedOutByCloser(
   // classifySegEstado (fuente que ya conoce CO+EC): solo se esconde si el estado
   // es TERMINAL — cualquier otro (incluidos los que Dropi invente mañana) se
   // trata como vivo. Mejor mostrar de más que ocultar un pedido en ruta.
+  //
+  // `procesamiento` (PENDIENTE / ALISTAMIENTO / EN BODEGA DROPI…) es la excepción:
+  // son pedidos SIN guía que la asesora sí cierra a mano ("Resuelto" tras pedir
+  // indemnización). Dejarlos fuera del cierre los devolvía al Kanban y al hero
+  // "Gestionados X de N" mientras la vista Lista sí los escondía — las dos
+  // vistas descuadraban a diario y la asesora re-gestionaba lo ya resuelto.
   if (estado) {
     const k = classifySegEstado(estado);
     const esTerminal = k === 'entregado' || k === 'devolucion' || k === 'devolucion_transito' ||
       k === 'indemnizada' || k === 'rechazado' || k === 'cancelado';
-    if (!esTerminal) return false;
+    if (!esTerminal && k !== 'procesamiento') return false;
   }
   const created = parseDate(fecha || '');
   if (!created) return false;
@@ -414,6 +452,27 @@ function getEcuadorianHolidays(year: number): Set<string> {
 }
 
 /**
+ * Calendario de festivos ya calculado, por `${país}:${año}`.
+ *
+ * calcBusinessDays se llama miles de veces por tecla del buscador de Seguimiento
+ * (entra en el comparator de un sort sobre cientos de pedidos): sin cache cada
+ * llamada reconstruía ~20 fechas + el cómputo de Pascua y el input "se tragaba"
+ * las letras en celulares de gama media. Los festivos de un año no cambian, así
+ * que el Set es inmutable y se puede compartir entre llamadas.
+ */
+const holidayCache = new Map<string, Set<string>>();
+
+function holidaysFor(cc: string, year: number): Set<string> {
+  const key = `${cc}:${year}`;
+  let cached = holidayCache.get(key);
+  if (!cached) {
+    cached = cc === 'EC' ? getEcuadorianHolidays(year) : getColombianHolidays(year);
+    holidayCache.set(key, cached);
+  }
+  return cached;
+}
+
+/**
  * Business days (Mon-Fri, excluding public holidays) between a date and today.
  *
  * `countryCode` elige el calendario de festivos (CO default, EC). Sin parámetro
@@ -430,15 +489,13 @@ export function calcBusinessDays(dateStr: string, countryCode?: string): number 
 
   if (start >= today) return 0;
 
-  // Collect holidays for relevant years (calendario del país de la tienda)
+  // Calendarios de los años que toca el rango (país de la tienda). Se toman del
+  // cache: son Sets inmutables compartidos, NO se mergean en uno nuevo.
   const cc = (countryCode || _activeTrackingCountry).toUpperCase();
-  const holidaysForYear = cc === 'EC' ? getEcuadorianHolidays : getColombianHolidays;
   const startYear = start.getUTCFullYear();
   const endYear = today.getUTCFullYear();
-  const allHolidays = new Set<string>();
-  for (let y = startYear; y <= endYear; y++) {
-    holidaysForYear(y).forEach((h) => allHolidays.add(h));
-  }
+  const yearSets: Set<string>[] = [];
+  for (let y = startYear; y <= endYear; y++) yearSets.push(holidaysFor(cc, y));
 
   const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -450,7 +507,7 @@ export function calcBusinessDays(dateStr: string, countryCode?: string): number 
     const dow = current.getUTCDay();
     if (dow !== 0 && dow !== 6) {
       const key = `${current.getUTCFullYear()}-${pad(current.getUTCMonth() + 1)}-${pad(current.getUTCDate())}`;
-      if (!allHolidays.has(key)) {
+      if (!yearSets.some((s) => s.has(key))) {
         count++;
       }
     }
@@ -621,15 +678,54 @@ export function getTrackingUrl(carrier: string, guia: string, countryCode?: stri
   return null;
 }
 
-export function normalizeColumns(rows: Record<string, unknown>[]): Record<string, unknown>[] {
-  if (!rows.length) return rows;
-  const srcKeys = Object.keys(rows[0]);
+/**
+ * Normaliza un encabezado de Excel antes de compararlo contra COL_MAP.
+ *
+ * El match crudo perdía la columna ENTERA sin avisar cuando el archivo traía un
+ * espacio final ("TELEFONO "), el NBSP que mete Excel al reeditar, o el BOM que
+ * queda pegado a la primera celda de un CSV: se importaban cientos de pedidos
+ * con teléfono vacío o valor $0 y el upload se veía exitoso.
+ * VIEJO:
+ * 'TELEFONO ' (espacio final al reeditar), 'TOTAL ' (NBSP que mete Excel) o
+ * '﻿ID' (BOM en la primera celda de un CSV): se importaban cientos de
+ * pedidos con teléfono vacío o valor $0 y el upload se veía exitoso.
+ */
+function normalizeHeader(h: string): string {
+  return (h ?? '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * Resuelve `columna estándar de COL_MAP → key REAL del archivo`. Devuelve la key
+ * original (no la normalizada) porque es con la que hay que leer cada celda.
+ */
+function resolveColumnMap(srcKeys: string[]): Record<string, string> {
+  const byNorm = new Map<string, string>();
+  for (const k of srcKeys) {
+    const nk = normalizeHeader(k);
+    // El primero gana: si el archivo trae 'TOTAL' y 'Total ', ambos apuntan a lo
+    // mismo y quedarse con el primero replica el orden del match viejo.
+    if (nk && !byNorm.has(nk)) byNorm.set(nk, k);
+  }
   const map: Record<string, string> = {};
   for (const [std, alts] of Object.entries(COL_MAP)) {
-    if (srcKeys.includes(std)) { map[std] = std; continue; }
-    const found = alts.find(a => srcKeys.includes(a));
-    if (found) map[std] = found;
+    const direct = byNorm.get(normalizeHeader(std));
+    if (direct) { map[std] = direct; continue; }
+    for (const alt of alts) {
+      const found = byNorm.get(normalizeHeader(alt));
+      if (found) { map[std] = found; break; }
+    }
   }
+  return map;
+}
+
+export function normalizeColumns(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  if (!rows.length) return rows;
+  const map = resolveColumnMap(Object.keys(rows[0]));
   return rows.map(r => {
     const nr = { ...r };
     for (const [std, src] of Object.entries(map)) {
@@ -651,9 +747,16 @@ export function normalizeColumns(rows: Record<string, unknown>[]): Record<string
  * Heurística de separadores (formatos CO y EC):
  *  - '.' y ',' juntos → el ÚLTIMO separador es el decimal ('4.734,53' → 4734.53;
  *    '1,234.56' → 1234.56).
- *  - Solo ',': una sola → decimal ('4734,53'); varias → miles ('1,234,567').
+ *  - Solo ',': varias → miles ('1,234,567'); UNA que agrupa exactamente 3
+ *    dígitos → miles, locale en-US ('79,900' → 79900); si no → decimal ('4734,53').
  *  - Solo '.': varios → miles ('1.234.567'); UNO que agrupa exactamente 3
  *    dígitos → miles, formato CO ('79.900' → 79900); si no → decimal ('4.99').
+ *
+ * Las dos ramas usan la MISMA regla del grupo de 3 a propósito: sin ella un Excel
+ * re-guardado con locale en-US mandaba '79,900' y quedaba en 79.9 pesos — la
+ * división por mil que este parser existe para eliminar. El costo aceptado es
+ * que un decimal de 3 cifras ('4,500' = 4.5) se lee como 4500; el formato de
+ * miles es órdenes de magnitud más frecuente en los archivos de Dropi.
  * Vacío/no numérico → 0 (mismo fallback que el parser viejo).
  */
 export function parseMoney(v: unknown): number {
@@ -674,7 +777,9 @@ export function parseMoney(v: unknown): number {
       : t.replace(/,/g, '');                    // '1,234.56' (anglo)
   } else if (lastComma !== -1) {
     const parts = t.split(',');
-    normalized = parts.length === 2 ? `${parts[0]}.${parts[1]}` : parts.join('');
+    const esMiles = parts.length > 2 ||
+      (parts.length === 2 && parts[1].length === 3 && parts[0].length > 0);
+    normalized = esMiles ? parts.join('') : `${parts[0]}.${parts[1]}`;
   } else if (lastDot !== -1) {
     const parts = t.split('.');
     const esMiles = parts.length > 2 ||
@@ -691,14 +796,7 @@ export function parseMoney(v: unknown): number {
 export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[] {
   const normalized = normalizeColumns(rows);
   if (!normalized.length) return [];
-  const headers = Object.keys(normalized[0]);
-  const map: Record<string, string> = {};
-  for (const key of Object.keys(COL_MAP)) {
-    if (headers.includes(key)) { map[key] = key; continue; }
-    for (const alt of COL_MAP[key]) {
-      if (headers.includes(alt.trim())) { map[key] = alt; break; }
-    }
-  }
+  const map = resolveColumnMap(Object.keys(normalized[0]));
   if (!map.NOMBRE && !map.TELEFONO) return [];
 
   return normalized.map((r, idx) => {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { OrderData, formatPhone, parseDate } from '@/lib/orderUtils';
-import { formatCOP } from '@/lib/utils';
+import { formatCOP, bogotaToday } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign } from 'lucide-react';
 import { TruncatedText } from '@/components/TruncatedText';
@@ -36,11 +36,20 @@ function timeAgo(dias: number): string {
 // 2 días seguía mostrando "hoy" (dias=0 viejo). Calcular desde `o.fecha` lo hace
 // siempre correcto sin depender de que el sync esté al día. Fallback a `o.dias`
 // si la fecha no parsea.
-function diasReales(o: OrderData): number {
+//
+// La resta es entre DOS anclajes de medianoche UTC: `parseDate` ancla la fecha
+// del pedido ahí y `bogotaToday()` devuelve 'YYYY-MM-DD' (que Date.parse lee
+// igual), así que el resultado son días de CALENDARIO Bogotá. Con `Date.now()`
+// el contador saltaba a las 00:00 UTC = 19:00 Bogotá: entre las 7pm y la
+// medianoche TODA la cola envejecía un día de más y un D6 entraba al chip
+// "D7+: cancelar" — pedidos cancelados un día antes de agotar la ventana.
+// Exportada porque ConfirmarTab pinta los mismos chips: dos copias de esta
+// función ya hicieron que un arreglo tocara una sola pantalla.
+export function diasReales(o: OrderData): number {
   try {
     const d = parseDate(o.fecha);
     if (d && !isNaN(d.getTime())) {
-      const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+      const diff = Math.round((Date.parse(bogotaToday()) - d.getTime()) / 86400000);
       if (diff >= 0) return diff;
     }
   } catch {

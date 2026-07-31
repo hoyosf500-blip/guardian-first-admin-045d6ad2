@@ -23,21 +23,36 @@ const DUP_OVERRIDE_KEY = (storeId: string) => `guardian.dupOverride:${storeId}`;
 const MISMATCH_FIXED_KEY = (storeId: string) => `guardian.mismatchFixed:${storeId}`;
 const BOGOTA = 'America/Bogota'; // UTC-5 — sirve para Colombia y Ecuador
 
+/** Lee un set persistido por tienda de localStorage + la clave legacy de
+ *  sessionStorage (así un deploy no borra lo marcado en la sesión en curso). */
+function loadPersistedSet(key: string): Set<string> {
+  const read = (store: Storage): string[] => {
+    try { return JSON.parse(store.getItem(key) || '[]'); }
+    catch { return []; }
+  };
+  return new Set([...read(localStorage), ...read(sessionStorage)]);
+}
+
+// `done` (incluye "Quitar del CRM" y "Ya lo metí") vive en localStorage, igual
+// que los overrides de duplicado y por la MISMA razón: un pedido cuyo teléfono
+// no matchea en el reconcile nunca reconcilia, así que en sessionStorage
+// amanecía otra vez en rojo cada mañana. La asesora repetía el triage hasta
+// que, apurada, dejaba una marca falsa en shopify_manual_marks o creaba un
+// pedido doble real. La limpieza de abajo (ids que ya no están pendientes)
+// mantiene el set acotado.
 function loadDone(storeId: string): Set<string> {
-  try { return new Set(JSON.parse(sessionStorage.getItem(DONE_KEY(storeId)) || '[]')); }
-  catch { return new Set(); }
+  return loadPersistedSet(DONE_KEY(storeId));
+}
+
+function saveDone(storeId: string, ids: Set<string>) {
+  try { localStorage.setItem(DONE_KEY(storeId), JSON.stringify([...ids])); } catch { /* noop */ }
 }
 
 // "No es duplicado" vive en localStorage (antes sessionStorage): si se
 // evaporaba al cerrar la pestaña, el mismo pedido amanecía BLOQUEADO otra vez
-// y la operadora sentía que "no deja subir". Se lee también la clave legacy de
-// sessionStorage para no perder overrides de la sesión en curso al deployar.
+// y la operadora sentía que "no deja subir".
 function loadOverrides(storeId: string): Set<string> {
-  const read = (store: Storage): string[] => {
-    try { return JSON.parse(store.getItem(DUP_OVERRIDE_KEY(storeId)) || '[]'); }
-    catch { return []; }
-  };
-  return new Set([...read(localStorage), ...read(sessionStorage)]);
+  return loadPersistedSet(DUP_OVERRIDE_KEY(storeId));
 }
 
 function loadMismatchFixed(storeId: string): Set<string> {
@@ -127,11 +142,20 @@ export default function ShopifyPendingPanel() {
 
   useEffect(() => {
     if (!activeStoreId) return;
-    // Refresca pendientes Y valor-distinto → el panel de mismatches se actualiza
-    // solo (un pedido corregido/cancelado en Dropi cae de la lista al re-sincar).
-    // COST-2 2026-07-10: 2 min → 15 min.
-    return pollWhenVisible(() => { void refetch(); void vmRefetch(); }, 15 * 60_000, { runOnVisible: false });
-  }, [activeStoreId, refetch, vmRefetch]);
+    // Solo la cola de pendientes (ventana corta) va a 15 min: es la que la
+    // asesora trabaja hoy. COST-2 2026-07-10: 2 min → 15 min.
+    return pollWhenVisible(() => { void refetch(); }, 15 * 60_000, { runOnVisible: false });
+  }, [activeStoreId, refetch]);
+
+  useEffect(() => {
+    if (!activeStoreId) return;
+    // La ventana de 30d (banner "fuera de ventana") es un backlog que se mueve
+    // por días, no por minutos: refrescarla al mismo ritmo que la cola duplicaba
+    // los golpes a shopify-reconcile → a la API de Shopify, cuyo rate limit
+    // comparte con el robot de auto-push (también cada 15 min). Con N asesoras
+    // con /confirmar abierto eso se multiplica por N.
+    return pollWhenVisible(() => { void vmRefetch(); }, 60 * 60_000, { runOnVisible: false });
+  }, [activeStoreId, vmRefetch]);
 
   const pending: ShopifyPendingItem[] = useMemo(() => data?.pending ?? [], [data]);
 
@@ -150,13 +174,16 @@ export default function ShopifyPendingPanel() {
   // lo sacamos del set para no inflar el "ya metidos".
   useEffect(() => {
     if (!activeStoreId || !data) return;
+    // Un reconcile fallido devuelve la lista vacía: podar con eso borraría TODO
+    // el triage guardado (ahora persistente) por un blip de red.
+    if (!data.ok) return;
     const pendingIds = new Set(pending.map(p => p.id));
     setDone(prev => {
       const next = new Set([...prev].filter(id => pendingIds.has(id)));
       // Idempotente: si no se removió nada, devolver `prev` para no crear un
       // Set nuevo en cada `data` (evita un re-render extra del panel).
       if (next.size === prev.size) return prev;
-      try { sessionStorage.setItem(DONE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      saveDone(activeStoreId, next);
       return next;
     });
   }, [data, pending, activeStoreId]);
@@ -165,7 +192,7 @@ export default function ShopifyPendingPanel() {
     if (!activeStoreId) return;
     setDone(prev => {
       const next = new Set(prev).add(id);
-      try { sessionStorage.setItem(DONE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      saveDone(activeStoreId, next);
       return next;
     });
   }, [activeStoreId]);
@@ -189,7 +216,9 @@ export default function ShopifyPendingPanel() {
     setDone(prev => {
       if (!prev.has(orderId)) return prev;
       const next = new Set(prev); next.delete(orderId);
-      try { sessionStorage.setItem(DONE_KEY(activeStoreId), JSON.stringify([...next])); } catch { /* noop */ }
+      // También limpia la clave legacy: si el id quedó ahí, al recargar volvería.
+      saveDone(activeStoreId, next);
+      try { sessionStorage.removeItem(DONE_KEY(activeStoreId)); } catch { /* noop */ }
       return next;
     });
     void refetch();

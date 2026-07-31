@@ -605,6 +605,17 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     }
   };
 
+  // Cerrar con cambios pendientes tira TODO lo tipeado (el efecto de apertura
+  // reconstruye el form desde el pedido), y acá lo tipeado suele ser una
+  // dirección que la asesora acaba de re-dictar con el cliente al teléfono. Un
+  // Esc de más, un click en el overlay o el "Cancelar" no pueden costar esa
+  // llamada, así que pasan todos por el mismo pedido de confirmación.
+  const requestClose = () => {
+    if (submitting) return; // no cerrar a mitad de la cadena de actualización
+    if (plan.length > 0 && !window.confirm('Tenés cambios sin guardar en este pedido. ¿Descartarlos?')) return;
+    onOpenChange(false);
+  };
+
   const productUnavailableNote = drafts
     ? null
     : quoteLoading
@@ -619,8 +630,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     <Dialog
       open={open}
       onOpenChange={(op) => {
-        // No cerrar a mitad de la cadena de actualización.
-        if (submitting && !op) return;
+        // Esc, click en el overlay y la X del header entran todos por acá.
+        if (!op) { requestClose(); return; }
         onOpenChange(op);
       }}
     >
@@ -773,7 +784,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
             )}
           </span>
           <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
+            <Button variant="ghost" onClick={requestClose} disabled={submitting}>
               Cancelar
             </Button>
             <Button

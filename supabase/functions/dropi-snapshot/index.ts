@@ -162,6 +162,17 @@ Deno.serve(async (req) => {
       }
 
       const data = await res.json().catch(() => ({}));
+      // Dropi responde 200 con {isSuccess:false} ante errores propios (query
+      // inválida, pageSize>100, mantenimiento). Tomarlo como fin-de-datos le
+      // devolvía a la auditoría de paridad un snapshot VACÍO marcado como
+      // completo: el modal concluía "Guardian está lleno de fantasmas" y ofrecía
+      // acciones destructivas sobre pedidos vivos en Dropi.
+      if ((data as Record<string, unknown>)?.isSuccess === false) {
+        return jsonResp({
+          error: `Dropi respondió isSuccess:false en página ${page}`,
+          dropiBody: String((data as Record<string, unknown>)?.message ?? "").slice(0, 200),
+        }, 502, CORS);
+      }
       const objs = Array.isArray((data as Record<string, unknown>)?.objects)
         ? (data as { objects: Record<string, unknown>[] }).objects
         : [];

@@ -64,6 +64,17 @@ async function fetchShopTimezone(domain: string, token: string): Promise<string>
   return "America/Bogota";
 }
 
+/** Estados que significan "ese pedido ya no existe en Dropi": emparejar contra
+ *  ellos esconde la fuga (el cliente pagó y nadie va a despachar). ARCHIVADO
+ *  GHOST se escribe CON ESPACIO (dropi-nightly-reconcile); la variante con guion
+ *  bajo aparece en filas históricas. CANCELADO NO va acá: una cancelación real
+ *  del cliente no es una fuga y marcarla como pendiente generaría falsos. */
+const ESTADOS_MUERTOS = new Set(["ARCHIVADO GHOST", "REEMPLAZADA"]);
+function esEstadoMuerto(estado: string): boolean {
+  const e = estado.toUpperCase().replace(/_/g, " ").trim();
+  return ESTADOS_MUERTOS.has(e);
+}
+
 function orderPhone(o: ShopifyOrder): string {
   return normalizePhone(
     o.phone || o.customer?.phone || o.shipping_address?.phone || o.billing_address?.phone || "",
@@ -187,6 +198,9 @@ Deno.serve(async (req: Request) => {
       const rows = (data || []) as { phone: string | null; created_at: string; valor: number | null; external_id: string | null; estado: string | null }[];
       for (const r of rows) {
         const k = normalizePhone(r.phone);
+        // Un pedido borrado/reemplazado en Dropi no puede "cubrir" la venta de
+        // Shopify: se deja fuera del cruce para que vuelva a salir como pendiente.
+        if (esEstadoMuerto(String(r.estado ?? ""))) continue;
         if (k) dropiList.push({
           tel: k, t: new Date(r.created_at).getTime(),
           valor: Number(r.valor) || 0, external_id: String(r.external_id ?? ""), estado: String(r.estado ?? ""),

@@ -5,11 +5,16 @@
 // Usa la Places API (New) — endpoints REST en places.googleapis.com.
 //
 // Input (POST body):
-//   { op: "autocomplete", input: string, ciudad?: string, sessionToken?: string }
-//   { op: "details",      place_id: string, sessionToken?: string }
+//   { op: "autocomplete", input: string, ciudad?: string, sessionToken?: string,
+//     store_id?: string, country_code?: "CO" | "EC" }
+//   { op: "details",      place_id: string, sessionToken?: string, store_id?: string }
+//
+// `country_code` (o el país de `store_id`) decide la región de Google: sin él
+// una tienda de Ecuador buscaría direcciones dentro de Colombia. Default 'CO'.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
 interface AutocompletePrediction {
   description: string;
@@ -29,16 +34,17 @@ async function autocomplete(
   input: string,
   ciudad: string | undefined,
   sessionToken: string | undefined,
+  countryCode: string,
 ): Promise<AutocompletePrediction[]> {
   const url = "https://places.googleapis.com/v1/places:autocomplete";
   const body: Record<string, unknown> = {
     input,
     languageCode: "es",
-    regionCode: "CO",
-    includedRegionCodes: ["CO"],
+    regionCode: countryCode,
+    includedRegionCodes: [countryCode],
   };
   if (sessionToken) body.sessionToken = sessionToken;
-  if (ciudad) body.locationBias = undefined; // No biasing por ciudad (ya restringimos a CO)
+  if (ciudad) body.locationBias = undefined; // No biasing por ciudad (ya restringimos al país)
 
   const res = await fetch(url, {
     method: "POST",
@@ -139,7 +145,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  let body: { op?: string; input?: string; ciudad?: string; place_id?: string; sessionToken?: string };
+  let body: { op?: string; input?: string; ciudad?: string; place_id?: string; sessionToken?: string; store_id?: string; country_code?: string; country?: string };
   try {
     body = await req.json();
   } catch {
@@ -148,6 +154,44 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  // La cuota de Google es UNA sola para toda la plataforma: estar logueado no
+  // alcanza para quemarla. Con store_id se exige membresía de ESA tienda; sin él
+  // (callers viejos) al menos pertenecer a alguna tienda.
+  const sbAdmin = createClient(sbUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const storeId = typeof body.store_id === "string" ? body.store_id.trim() : "";
+  if (storeId) {
+    if (!(await isStoreMember(sbAdmin, user.id, storeId))) {
+      return new Response(JSON.stringify({ error: "No sos miembro de esta tienda" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  } else {
+    const { data: memberships } = await sbAdmin
+      .from("store_members")
+      .select("store_id")
+      .eq("user_id", user.id)
+      .limit(1);
+    if (!memberships || memberships.length === 0) {
+      return new Response(JSON.stringify({ error: "Sin tiendas asignadas" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  // País de la búsqueda: explícito > el de la tienda > CO.
+  let countryCode = String(body.country_code || body.country || "").trim().toUpperCase();
+  if (!countryCode && storeId) {
+    const { data: store } = await sbAdmin
+      .from("stores")
+      .select("country_code")
+      .eq("id", storeId)
+      .maybeSingle();
+    countryCode = String(store?.country_code || "").trim().toUpperCase();
+  }
+  if (countryCode !== "CO" && countryCode !== "EC") countryCode = "CO";
 
   try {
     if (body.op === "autocomplete") {
@@ -159,16 +203,14 @@ Deno.serve(async (req) => {
         });
       }
       // Cap diario: cada autocomplete cuesta ~$0.00283.
-      const sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sb = createClient(sbUrl, sbServiceKey);
-      const { data: quotaOK } = await sb.rpc("consume_google_quota", { p_amount_usd: 0.003 });
+      const { data: quotaOK } = await sbAdmin.rpc("consume_google_quota", { p_amount_usd: 0.003 });
       if (!quotaOK) {
         return new Response(JSON.stringify({ predictions: [], cap_exceeded: true }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const predictions = await autocomplete(apiKey, input, body.ciudad, body.sessionToken);
+      const predictions = await autocomplete(apiKey, input, body.ciudad, body.sessionToken, countryCode);
       return new Response(JSON.stringify({ predictions }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -183,9 +225,7 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sb = createClient(sbUrl, sbServiceKey);
-      const { data: quotaOK } = await sb.rpc("consume_google_quota", { p_amount_usd: 0.005 });
+      const { data: quotaOK } = await sbAdmin.rpc("consume_google_quota", { p_amount_usd: 0.005 });
       if (!quotaOK) {
         return new Response(JSON.stringify({ result: null, cap_exceeded: true }), {
           status: 200,

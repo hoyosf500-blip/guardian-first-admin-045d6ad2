@@ -9,11 +9,20 @@ import { TiltCard } from '@/components/ui3d';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
-interface CfgRow {
-  dropi_api_key: string | null;
-  dropi_session_token: string | null;
-  dropi_store_url: string | null;
-  country_code: string;
+/** Lo ÚNICO que el navegador puede saber de las credenciales Dropi: banderas.
+ *  Ni la api_key (permanente), ni el session token, ni la clave del panel
+ *  bajan acá — se escriben por RPC y no se vuelven a leer. */
+interface DropiStatusRow {
+  configured: boolean;
+  has_api_key: boolean;
+  has_session_token: boolean;
+  has_login_password: boolean;
+  login_email: string | null;
+  store_url: string | null;
+  country_code: string | null;
+  session_refreshed_at: string | null;
+  /** `exp` del session token guardado (epoch s), decodificado server-side. */
+  session_exp: number | null;
 }
 
 /** Decodifica el `exp` (epoch en segundos) de un JWT sin verificar la firma.
@@ -61,11 +70,14 @@ export default function StoreCredentialsPanel() {
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [savingLogin, setSavingLogin] = useState(false);
   const [sessionRefreshedAt, setSessionRefreshedAt] = useState<string | null>(null);
-  const [loginColsMissing, setLoginColsMissing] = useState(false);
+  // No se pudo leer el estado de credenciales: se avisa, nunca se pinta como
+  // "sin credenciales" (un error de consulta no es un dato).
+  const [statusError, setStatusError] = useState<string | null>(null);
 
-  // saved snapshots (para detectar dirty)
-  const [savedApiKey, setSavedApiKey] = useState('');
-  const [savedSession, setSavedSession] = useState('');
+  // Banderas del server (reemplazan a los snapshots del secreto).
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [hasSessionToken, setHasSessionToken] = useState(false);
+  const [savedSessionExp, setSavedSessionExp] = useState<number | null>(null);
   const [savedUrl, setSavedUrl] = useState('');
   const [savedName, setSavedName] = useState('');
   const [savedLogo, setSavedLogo] = useState('');
@@ -112,26 +124,42 @@ export default function StoreCredentialsPanel() {
     brandDirtyRef.current = false;
   }, [activeStoreId]);
 
+  // Estado de Dropi por RPC (get_store_dropi_status). Antes eran dos SELECT
+  // directos que traían la api_key permanente, el session token y la clave del
+  // panel de Dropi al navegador — la key terminó en un volcado del DOM
+  // commiteado al repo. Ahora sólo vienen banderas, igual que Shopify.
   useEffect(() => {
     if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
     let cancelled = false;
     void (async () => {
       setLoading(true);
-      const { data } = await supabase
-        .from('store_dropi_config')
-        .select('dropi_api_key, dropi_session_token, dropi_store_url, country_code')
-        .eq('store_id', activeStoreId)
-        .maybeSingle<CfgRow>();
+      const { data, error } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ data: DropiStatusRow[] | null; error: { message: string } | null }>)(
+        'get_store_dropi_status', { p_store_id: activeStoreId },
+      );
       if (cancelled) return;
-      const ak = data?.dropi_api_key ?? '';
-      const st = data?.dropi_session_token ?? '';
-      const su = data?.dropi_store_url ?? '';
-      // Los snapshots "saved" SIEMPRE se refrescan (son la verdad del server y
-      // alimentan el cálculo de dirty); los campos editables solo se pisan si el
-      // usuario no está tipeando.
-      setSavedApiKey(ak); setSavedSession(st); setSavedUrl(su);
-      if (!credsDirtyRef.current) {
-        setApiKey(ak); setSessionToken(st); setStoreUrl(su);
+      if (error) {
+        setStatusError(error.message || 'No se pudo leer el estado de las credenciales');
+      } else {
+        setStatusError(null);
+        const row = Array.isArray(data) ? data[0] : null;
+        setHasApiKey(Boolean(row?.has_api_key));
+        setHasSessionToken(Boolean(row?.has_session_token));
+        setSavedSessionExp(row?.session_exp != null ? Number(row.session_exp) : null);
+        setSessionRefreshedAt(row?.session_refreshed_at ?? null);
+        setHasLoginPassword(Boolean(row?.has_login_password));
+        setSavedLoginEmail(row?.login_email ?? '');
+        setLoginPassword('');
+        const su = row?.store_url ?? '';
+        setSavedUrl(su);
+        // Los campos con secreto arrancan SIEMPRE vacíos (pegar uno nuevo es la
+        // única forma de cambiarlos); la URL y el email sí se muestran, pero no
+        // se pisan si el usuario está tipeando.
+        if (!credsDirtyRef.current) {
+          setApiKey(''); setSessionToken(''); setStoreUrl(su);
+          setLoginEmail(row?.login_email ?? '');
+        }
       }
       const nm = activeStore?.name ?? '';
       const lg = activeStore?.brand_logo_url ?? '';
@@ -143,39 +171,6 @@ export default function StoreCredentialsPanel() {
     })();
     return () => { cancelled = true; };
   }, [activeStoreId, isManagerOfActive, activeStore]);
-
-  // Login automático — query aparte y DEFENSIVA (mismo patrón que
-  // useStoreSchedule): si las columnas no existen todavía (migración
-  // 20260706120000 sin aplicar) el panel muestra el aviso y no rompe nada.
-  useEffect(() => {
-    if (!activeStoreId || !isManagerOfActive) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await supabase
-          .from('store_dropi_config')
-          .select('dropi_login_email, dropi_login_password, dropi_session_refreshed_at')
-          .eq('store_id', activeStoreId)
-          .maybeSingle();
-        if (cancelled) return;
-        if (res.error) { setLoginColsMissing(true); return; }
-        const d = res.data as {
-          dropi_login_email?: string | null;
-          dropi_login_password?: string | null;
-          dropi_session_refreshed_at?: string | null;
-        } | null;
-        setLoginColsMissing(false);
-        setLoginEmail(d?.dropi_login_email ?? '');
-        setSavedLoginEmail(d?.dropi_login_email ?? '');
-        setHasLoginPassword(Boolean(d?.dropi_login_password));
-        setLoginPassword('');
-        setSessionRefreshedAt(d?.dropi_session_refreshed_at ?? null);
-      } catch {
-        if (!cancelled) setLoginColsMissing(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [activeStoreId, isManagerOfActive]);
 
   // Estado de Shopify (configurado + dominio; el token NUNCA se trae al cliente).
   useEffect(() => {
@@ -222,12 +217,19 @@ export default function StoreCredentialsPanel() {
     );
     setSavingCreds(false);
     if (error) { toast.error('No se pudo guardar', { description: error.message }); return; }
-    setSavedApiKey(apiKey.trim());
-    setSavedSession(sessionToken.trim());
+    // El RPC conserva lo guardado cuando el campo va vacío, así que sólo
+    // marcamos "hay credencial" si de verdad se pegó una nueva.
+    if (apiKey.trim()) setHasApiKey(true);
+    if (sessionToken.trim()) {
+      setHasSessionToken(true);
+      setSavedSessionExp(decodeJwtExp(sessionToken.trim()));
+    }
     setSavedUrl(storeUrl.trim());
-    // Guardado OK: soltamos el "dirty" para que el refresh de abajo (que
-    // re-dispara el efecto de carga) refleje lo persistido sin considerarse
-    // un pisón sobre lo que el usuario estaba tipeando.
+    // Los inputs vuelven a quedar vacíos: el secreto ya está en la DB y no se
+    // relee. Soltamos el "dirty" para que el refresh de abajo (que re-dispara
+    // el efecto de carga) refleje lo persistido sin considerarse un pisón
+    // sobre lo que el usuario estaba tipeando.
+    setApiKey(''); setSessionToken('');
     credsDirtyRef.current = false;
     toast.success('Credenciales Dropi guardadas');
     await refresh();
@@ -405,17 +407,19 @@ export default function StoreCredentialsPanel() {
     );
   }
 
-  const credsDirty = apiKey !== savedApiKey || sessionToken !== savedSession || storeUrl !== savedUrl;
+  // Los campos de secreto arrancan vacíos: cualquier cosa tipeada ahí es un
+  // cambio (vacío = "dejá el que ya está guardado").
+  const credsDirty = apiKey.trim() !== '' || sessionToken.trim() !== '' || storeUrl !== savedUrl;
   const brandDirty = name !== savedName || logoUrl !== savedLogo;
 
   // Host de Dropi según el país de la tienda (para las instrucciones de la huella).
   const dropiHost = activeStore.country_code === 'EC' ? 'app.dropi.ec' : 'app.dropi.co';
   const apiDropiHost = activeStore.country_code === 'EC' ? 'api.dropi.ec' : 'api.dropi.co';
 
-  // Vencimiento REAL del token de sesión (decodificado del JWT). Le muestra al
-  // dueño cuánto le queda de vida al token de la huella y le avisa antes de que
-  // venza, así lo refresca a tiempo en vez de adivinar.
-  const sessionExp = sessionToken.trim() ? decodeJwtExp(sessionToken.trim()) : null;
+  // Vencimiento REAL del token de sesión. Del token GUARDADO lo calcula el
+  // server (no baja al cliente); si el dueño está pegando uno nuevo, se
+  // decodifica lo tipeado para que vea al instante qué le queda de vida.
+  const sessionExp = sessionToken.trim() ? decodeJwtExp(sessionToken.trim()) : savedSessionExp;
   const sessionExpired = sessionExp != null && sessionExp * 1000 < Date.now();
   const sessionHoursLeft = sessionExp != null
     ? Math.max(0, Math.round((sessionExp * 1000 - Date.now()) / 3_600_000))
@@ -439,6 +443,12 @@ export default function StoreCredentialsPanel() {
         </div>
 
         <div className="px-5 py-4 space-y-4">
+          {statusError && (
+            <div role="alert" className="rounded-2xl border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-warning">
+              No se pudo leer el estado de las credenciales ({statusError}). Los campos de abajo NO
+              reflejan lo guardado: no asumas que la tienda está sin conectar.
+            </div>
+          )}
           {/* API Key */}
           <div>
             <label className="hud-label" htmlFor="cred-dropi-api-key">API Key de Dropi (Bearer permanente)</label>
@@ -449,7 +459,8 @@ export default function StoreCredentialsPanel() {
                   type={showApi ? 'text' : 'password'}
                   value={apiKey}
                   onChange={e => { credsDirtyRef.current = true; setApiKey(e.target.value); }}
-                  placeholder="eyJ0eXAi..."
+                  autoComplete="off"
+                  placeholder={hasApiKey ? '•••••• (pegá una nueva para cambiarla)' : 'eyJ0eXAi...'}
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowApi(!showApi)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -468,7 +479,8 @@ export default function StoreCredentialsPanel() {
                   type={showSession ? 'text' : 'password'}
                   value={sessionToken}
                   onChange={e => { credsDirtyRef.current = true; setSessionToken(e.target.value); }}
-                  placeholder="eyJhbGci... (vence ~12-24h)"
+                  autoComplete="off"
+                  placeholder={hasSessionToken ? '•••••• (pegá uno nuevo para cambiarlo)' : 'eyJhbGci... (vence ~12-24h)'}
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowSession(!showSession)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -476,8 +488,8 @@ export default function StoreCredentialsPanel() {
                 </button>
               </div>
             </div>
-            {/* Vencimiento real del token (decodificado del JWT) */}
-            {sessionToken.trim() && (
+            {/* Vencimiento real del token (el guardado lo decodifica el server) */}
+            {(sessionToken.trim() || hasSessionToken) && (
               sessionExp == null ? (
                 <p className="mt-1 text-[11px] text-muted-foreground">No se pudo leer el vencimiento de este token.</p>
               ) : sessionExpired ? (
@@ -552,15 +564,10 @@ export default function StoreCredentialsPanel() {
                 Última renovación automática: {new Date(sessionRefreshedAt).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
               </p>
             )}
-            {loginColsMissing && (
-              <p className="mt-1 text-[11px] text-warning font-medium">
-                Requiere aplicar la migración SQL 20260706120000 (columnas de login en store_dropi_config).
-              </p>
-            )}
             <div className="mt-2 flex justify-end">
               <button
                 onClick={saveLogin}
-                disabled={savingLogin || loginColsMissing || (loginEmail.trim() === savedLoginEmail && !loginPassword)}
+                disabled={savingLogin || (loginEmail.trim() === savedLoginEmail && !loginPassword)}
                 className="h-8 px-3 btn-accent-3d rounded-xl text-xs font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {savingLogin ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
@@ -589,7 +596,7 @@ export default function StoreCredentialsPanel() {
               Ir a Dropi <ExternalLink size={11} />
             </a>
             <div className="flex gap-2">
-              {savedApiKey && (
+              {hasApiKey && (
                 <button onClick={testConnection} disabled={testing}
                   className="h-9 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50">
                   {testing ? <Loader2 size={12} className="animate-spin" /> : testResult === 'ok' ? <Wifi size={12} className="text-success" /> : testResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Wifi size={12} />}
@@ -603,9 +610,9 @@ export default function StoreCredentialsPanel() {
               </button>
             </div>
           </div>
-          {savedApiKey && (
+          {hasApiKey && (
             <div className="text-xs text-success flex items-center gap-1">
-              <CheckCircle2 size={12} /> Credenciales cargadas
+              <CheckCircle2 size={12} /> Credenciales cargadas{hasSessionToken ? ' (API key + token de sesión)' : ' (API key)'}
             </div>
           )}
           {testResult === 'fail' && testDetail && (

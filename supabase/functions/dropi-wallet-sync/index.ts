@@ -148,6 +148,44 @@ async function syncStore(
   limit: number,
   userId: string | null,
 ): Promise<SyncStoreResult> {
+  // El contrato del badge (useWalletSyncHealth) es "TODA corrida deja fila en
+  // sync_logs, éxito con 0 movimientos también". Los caminos de RETURN ya lo
+  // cumplen, pero los de THROW no: loadStoreConfig tira si la config está
+  // corrupta y el fetch del XLSX puede tirar por red. El catch del fan-out solo
+  // apila el error en una respuesta HTTP que pg_cron nadie lee → la billetera se
+  // congelaba sin que el badge marcara 'failing' (lección del 21-jul).
+  try {
+    return await syncStoreInner(sb, storeId, fromDate, toDate, dryRun, limit, userId);
+  } catch (e) {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    if (!dryRun) {
+      try {
+        await sb.from("sync_logs").insert({
+          source: "dropi-wallet-sync",
+          status: "error",
+          synced_count: 0,
+          total_count: 0,
+          error_message: `Excepción en syncStore: ${errMsg.slice(0, 500)}`,
+          triggered_by: userId,
+          store_id: storeId,
+        });
+      } catch (logErr) {
+        console.error(`[wallet] no se pudo escribir sync_logs (store ${storeId}):`, logErr);
+      }
+    }
+    return { store_id: storeId, ok: false, error: errMsg };
+  }
+}
+
+async function syncStoreInner(
+  sb: ReturnType<typeof createClient>,
+  storeId: string,
+  fromDate: string,
+  toDate: string,
+  dryRun: boolean,
+  limit: number,
+  userId: string | null,
+): Promise<SyncStoreResult> {
   const cfg = await loadStoreConfig(sb, storeId);
 
   // 2026-07-29: Dropi empezó a rechazar la api_key de INTEGRATIONS en
@@ -240,13 +278,24 @@ async function syncStore(
       user_id: String(dropiUserId),
       wallet_id: "0",
     });
-    const res = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json, text/plain, */*",
-        "x-authorization": `Bearer ${cand.token}`,
-      },
-    });
+    // Timeout duro: sin él, un hang de Dropi mata la función por wall-clock y la
+    // corrida no deja fila en sync_logs (el badge solo ve envejecimiento).
+    let res: Response;
+    try {
+      res = await fetch(`${cfg.base}${EXPORT_PATH}?${params.toString()}`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "x-authorization": `Bearer ${cand.token}`,
+        },
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      fallos.push(`red/timeout con ${cand.label}: ${msg.slice(0, 160)}`);
+      console.warn(`[wallet] exportexcel ${fallos[fallos.length - 1]}`);
+      break;
+    }
     if (res.ok) {
       xlsxRes = res;
       break;

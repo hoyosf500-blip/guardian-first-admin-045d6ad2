@@ -92,6 +92,16 @@ const TONE: Record<Tone, { dot: string; headBar: string; count: string; num: str
   muted: { dot: 'bg-muted-foreground/40', headBar: 'border-t-border-strong', count: 'bg-muted/40 text-muted-foreground border border-border', num: 'text-muted-foreground', numGlow: '' },
 };
 
+/**
+ * Tarjetas montadas de entrada por columna. El tablero es la vista POR DEFECTO
+ * de /seguimiento y montaba de un saque todas las de la ventana de 45 días: con
+ * ~700 pedidos activos son decenas de miles de nodos DOM (cada SegCard son ~40 +
+ * sus hooks + calcPriority/calcBusinessDays en render) → segundos de pantalla
+ * congelada al entrar en celular. La columna ya tiene scroll propio, así que 30
+ * cubren de sobra lo visible; el resto entra con "Ver más".
+ */
+const COLUMN_PAGE = 30;
+
 function statusAgeDays(o: OrderData): number {
   const base = (o.fechaConf || o.fecha || '').trim();
   if (base && base !== 'undefined') return calcBusinessDays(base);
@@ -445,6 +455,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: 
   // siempre en rango (sin clamp, sin flash off-by-one). Se monta con key={focusedKey}
   // en el padre, así el key de sesión es estable durante la vida del componente.
   const [focusedExtId, setFocusedExtId] = useSessionState<string | null>('seg:focusId:' + col.key, null);
+  const [visible, setVisible] = useState(COLUMN_PAGE);
   const selIdx = useMemo(() => {
     if (orders.length === 0) return 0;
     if (focusedExtId) {
@@ -456,6 +467,10 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: 
   const selRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const firstScrollRef = useRef(true);
+  // El pedido enfocado tiene que estar SIEMPRE montado: ↑/↓ puede llevar la
+  // selección más allá del tope y sin su tarjeta no hay scrollIntoView ni foco
+  // visible. Por eso el tope se corre con selIdx en vez de frenarlo.
+  const shown = Math.max(visible, selIdx + 5);
 
   // Ancla el foco al pedido que está en `idx` ahora (lo usan ↑/↓ y el click).
   const focusByIndex = (idx: number) => {
@@ -551,18 +566,31 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: 
           <div className="py-12 text-center text-sm text-muted-foreground">
             No hay pedidos en <strong className="text-foreground">{col.label}</strong> ahora mismo.
           </div>
-        ) : orders.map((o, i) => (
-          <SegCard
-            key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`}
-            o={o}
-            countryCode={countryCode}
-            tone={col.tone}
-            selected={i === selIdx}
-            cardRef={i === selIdx ? selRef : undefined}
-            touchedTodayPhones={touchedTodayPhones}
-            onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds } }); }}
-          />
-        ))}
+        ) : (
+          <>
+            {orders.slice(0, shown).map((o, i) => (
+              <SegCard
+                key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`}
+                o={o}
+                countryCode={countryCode}
+                tone={col.tone}
+                selected={i === selIdx}
+                cardRef={i === selIdx ? selRef : undefined}
+                touchedTodayPhones={touchedTodayPhones}
+                onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds } }); }}
+              />
+            ))}
+            {orders.length > shown && (
+              <button
+                type="button"
+                onClick={() => setVisible(shown + COLUMN_PAGE)}
+                className="w-full rounded-xl border border-border bg-card/40 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              >
+                Ver más (<span className="font-mono tabular-nums">{orders.length - shown}</span>)
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
@@ -628,6 +656,9 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // Columna enfocada (carpeta) PERSISTIDA → la operadora no pierde su carpeta al
   // entrar a un pedido y volver. null = tablero completo.
   const [focusedKey, setFocusedKey] = useSessionState<SegStatusKey | null>('seg:focusedKey', null);
+  // Cuántas tarjetas se muestran por columna (arranca en COLUMN_PAGE y sube con
+  // "Ver más"). No se persiste: cada entrada al tablero vuelve al tope barato.
+  const [colLimits, setColLimits] = useState<Record<string, number>>({});
 
   // Agrupa por columna una sola vez. Cada tarjeta se re-renderiza sola cuando
   // su OrderData cambia de referencia (smartMerge en el padre).
@@ -790,7 +821,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
               <Maximize2 size={13} className="text-muted-foreground/60 group-hover/h:text-accent transition-colors shrink-0 mt-0.5" aria-hidden="true" />
             </button>
             <ColumnBody colKey={col.key} scrollRefs={scrollRefs}>
-              {col.orders.map((o) => (
+              {col.orders.slice(0, colLimits[col.key] ?? COLUMN_PAGE).map((o) => (
                 <SegCard
                   key={o.dbId || `${o.phone}|${o.externalId}|${o.idx}`}
                   o={o}
@@ -800,6 +831,18 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds } })}
                 />
               ))}
+              {col.orders.length > (colLimits[col.key] ?? COLUMN_PAGE) && (
+                <button
+                  type="button"
+                  onClick={() => setColLimits((prev) => ({
+                    ...prev,
+                    [col.key]: (prev[col.key] ?? COLUMN_PAGE) + COLUMN_PAGE,
+                  }))}
+                  className="w-full rounded-xl border border-border bg-card/40 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                >
+                  Ver más (<span className="font-mono tabular-nums">{col.orders.length - (colLimits[col.key] ?? COLUMN_PAGE)}</span>)
+                </button>
+              )}
             </ColumnBody>
           </section>
           </Fragment>

@@ -17,6 +17,9 @@ import SegActionButtons from '@/components/SegActionButtons';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { ProductoTile } from '@/components/ProductoTile';
 import NotesPanel from '@/components/order-notes/NotesPanel';
+// Guard de atajos compartido con Confirmar: UNA sola definición a propósito —
+// cuando estaba duplicado se arregló una copia y el bug siguió en la otra.
+import { hotkeysHabilitados } from '@/components/CallView';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
@@ -614,14 +617,9 @@ export default function CrmCallView({
   hotkeysRef.current = (e: KeyboardEvent) => {
     // No robarle teclas al navegador ni auto-repetir con la tecla sostenida.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-    // Con un campo enfocado la tecla es TEXTO (notas, buscador), no un atajo.
-    const el = document.activeElement as HTMLElement | null;
-    const tag = el?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
-    // Cualquier diálogo Radix abierto (chat de WhatsApp, editor, popover de
-    // validación) es dueño del teclado — Radix desmonta el contenido cerrado,
-    // así que el selector solo matchea overlays realmente abiertos.
-    if (document.querySelector('[role="dialog"]')) return;
+    // Campo de texto enfocado (notas, buscador) o cualquier overlay abierto
+    // (chat de WhatsApp, "¿Borrar esta nota?", editor): la tecla no es un atajo.
+    if (!hotkeysHabilitados(document.activeElement)) return;
     const k = e.key;
     if (k === 'l' || k === 'L') {
       e.preventDefault();

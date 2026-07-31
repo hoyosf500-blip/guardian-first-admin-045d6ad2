@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -291,12 +292,14 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
               >
                 {o.externalId}
               </button>
-              <a
-                href={`/pedido/${o.externalId}`}
+              {/* Link del router: un <a href> a una ruta interna remonta la SPA
+                  y re-descarga Seguimiento/Novedades en cada consulta. */}
+              <Link
+                to={`/pedido/${o.externalId}`}
                 className="text-muted-foreground hover:text-accent hover:underline"
               >
                 Ver detalle
-              </a>
+              </Link>
             </div>
           )}
           {o.guia && (

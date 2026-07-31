@@ -58,11 +58,16 @@ export default function WaThreadView({
   // Barra de gestión (asignación + estado): solo en el inbox (el lanzador global
   // no pasa estos handlers) y solo en hilos existentes.
   const showManageBar = !!onSetStatus && !!onSetAssigned && !isNew;
-  const { messages, sending, send } = useWaThread(conversation.id || null, storeId, conversation.customer_phone);
+  const { messages, loadError, sending, send, reload } = useWaThread(conversation.id || null, storeId, conversation.customer_phone);
   const { items: quickReplies } = useWaQuickReplies(storeId);
   const [draft, setDraft] = useState('');
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  // ¿La asesora está pegada al fondo? Si scrolleó hacia arriba a leer, el chat NO
+  // debe arrastrarla abajo cuando entra un mensaje del cliente o de la IA
+  // (el realtime recarga el hilo entero en cada INSERT).
+  const stickToBottom = useRef(true);
 
   // Inserta una respuesta rápida en el borrador (la asesora puede editarla antes
   // de enviar). Si ya hay texto, la agrega en una línea nueva.
@@ -71,13 +76,24 @@ export default function WaThreadView({
     setShowQuickReplies(false);
   };
 
+  // Al abrir otro hilo se arranca pegado al fondo (mensajes más nuevos).
+  useEffect(() => { stickToBottom.current = true; }, [conversation.id]);
+
+  const onListScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
+
   useEffect(() => {
+    if (!stickToBottom.current) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
   const onSend = async () => {
     const text = draft.trim();
     if (!text || sending) return;
+    stickToBottom.current = true; // lo que YO escribo siempre se muestra
     const ok = await send(text);
     if (ok) {
       setDraft('');
@@ -198,13 +214,34 @@ export default function WaThreadView({
       )}
 
       {/* Mensajes */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-muted/10">
+      <div ref={listRef} onScroll={onListScroll} className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-muted/10">
+        {/* Un fallo de la query NO se pinta como "nunca hablamos con este cliente":
+            la asesora volvía a pedir la dirección/comprobante que el cliente ya
+            había mandado. Con mensajes ya cargados, franjita arriba; sin nada,
+            reemplaza el empty-state. */}
+        {loadError && (
+          <div className={cn(
+            'flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[11px] text-danger',
+            messages.length === 0 && 'flex-col text-center py-4',
+          )}>
+            <span className="font-semibold">No se pudo cargar el historial.</span>
+            <button
+              type="button"
+              onClick={() => void reload()}
+              className="shrink-0 inline-flex items-center gap-1 rounded-md border border-danger/40 px-2 py-1 font-semibold hover:bg-danger/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+            >
+              <RotateCcw size={11} /> Reintentar
+            </button>
+          </div>
+        )}
         {messages.length === 0 ? (
-          <p className="text-center text-xs text-muted-foreground py-8">
-            {isNew
-              ? 'Escribile el primer mensaje. Se envía desde el WhatsApp del negocio.'
-              : 'Sin mensajes en este hilo.'}
-          </p>
+          !loadError && (
+            <p className="text-center text-xs text-muted-foreground py-8">
+              {isNew
+                ? 'Escribile el primer mensaje. Se envía desde el WhatsApp del negocio.'
+                : 'Sin mensajes en este hilo.'}
+            </p>
+          )
         ) : (
           messages.map((m) => {
             const isOut = m.direction === 'out';

@@ -32,6 +32,10 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
     setNovedadesLoaded(false);
   }, [storeId]);
 
+  // Referencia siempre-fresca para poder relanzar desde dentro del propio load
+  // sin meter loadNovedades en sus propias deps.
+  const loadNovedadesRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
+
   const loadNovedades = useCallback(async (force = false) => {
     if (!user || !storeId) return;
     if (novedadesLoaded && !force) return;
@@ -51,6 +55,15 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
         .eq('store_id', storeId)
         .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
         .eq('novedad_sol', false);
+      // Guard multi-tienda (mismo patrón que useDataLoader): con red lenta la
+      // respuesta de la tienda ANTERIOR puede aterrizar después del reset y
+      // dejar novedades de CO bajo el encabezado de EC — mezclar países está
+      // prohibido. Peor: gestionar una de esas cards escribe el touchpoint con
+      // el store_id de la tienda NUEVA sobre un pedido de la vieja.
+      if (prevStoreRef.current !== storeId) {
+        window.setTimeout(() => void loadNovedadesRef.current(true), 0);
+        return;
+      }
       if (error) {
         toast.error('Error cargando novedades: ' + error.message);
         return;
@@ -64,6 +77,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       setNovedadesLoading(false);
     }
   }, [user, novedadesLoaded, storeId]);
+  loadNovedadesRef.current = loadNovedades;
 
   const resolveNovedad = useCallback(async (
     order: OrderData,

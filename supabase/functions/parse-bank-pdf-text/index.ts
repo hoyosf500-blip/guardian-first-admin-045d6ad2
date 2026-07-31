@@ -199,7 +199,15 @@ function parseMovements(text: string, metadata: Metadata, filename: string): Mov
     } else {
       m = movSimpleRe.exec(line);
       if (!m) continue;
-      [, fechaRaw, descripcion, montoRaw, valorCuotaRaw, saldoRaw] = m;
+      // Sin número de autorización (INTERESES CORRIENTES, ajustes) la fila suele
+      // traer SOLO dos montos: el del movimiento y el SALDO. Tomar el segundo
+      // como "valor cuota" infla la cuota mensual y esconde el saldo en el CFO.
+      const [, f, d, mo, segundo, tercero] = m;
+      fechaRaw = f;
+      descripcion = d;
+      montoRaw = mo;
+      valorCuotaRaw = tercero ? segundo : undefined;
+      saldoRaw = tercero || segundo;
     }
 
     const fecha = parseDate(fechaRaw!);

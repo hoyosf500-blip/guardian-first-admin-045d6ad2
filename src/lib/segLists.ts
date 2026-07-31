@@ -33,8 +33,10 @@ import { calcBusinessDays, parseDate } from './orderUtils';
  *    indem, no en pendientes_guia).
  *  - "pendientes_confirmacion" vive en /confirmar — no se filtra acá, es
  *    sólo un link visual.
- *  - "otros_estados" es el catch-all (excluye terminales: ENTREGADO/CANCELADO/
- *    DEVOLUCION/RECHAZADO/INDEMNIZADA).
+ *  - "otros_estados" es el catch-all.
+ *  - Los estados TERMINALES (entregado / devuelto / cancelado / borrado, con sus
+ *    variantes de EC y por transportadora) no caen en NINGUNA lista: el guard es
+ *    global, no del catch-all — ver `esTerminal` y el wrap de SEG_LISTS.
  */
 
 export type SegListSlug =
@@ -61,7 +63,21 @@ export interface SegListDef {
   externalRoute?: string;
 }
 
-const E = (s: string | null | undefined): string => (s || '').toUpperCase().trim();
+/**
+ * Normaliza el estado antes de compararlo: mayúsculas, `_`→espacio, espacios
+ * colapsados y SIN ACENTOS. Lo último no es cosmético: Ecuador manda
+ * "EN TRÁNSITO" con tilde, así que un match exacto contra 'EN TRANSITO' fallaba
+ * y el pedido terminaba en "Otros estados". Mismo criterio que
+ * `normalizeEstado` + `stripAccents` de estadoBuckets.
+ */
+const E = (s: string | null | undefined): string =>
+  (s || '')
+    .toUpperCase()
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
 
 const ESTADOS_TRANSITO_EXACT = new Set([
   'EN TRANSPORTE',
@@ -74,7 +90,6 @@ const ESTADOS_TRANSITO_EXACT = new Set([
   'ENTREGADA A CONEXIONES',
   'TELEMERCADEO',
   'REENVIO',
-  'REENVÍO',
   'EN BODEGA TRANSPORTADORA',
   'EN BODEGA DROPI',
   'EN BODEGA ORIGEN',
@@ -82,6 +97,14 @@ const ESTADOS_TRANSITO_EXACT = new Set([
   'RECOGIDO POR DROPI',
   'DESPACHADA',
   'EN ESPERA DE RUTA DOMESTICA',
+  // Tránsito REAL de Ecuador que el SQL desplegado ya mapea así (_estado_bucket,
+  // migrations 20260707*) y que acá caía en "Otros estados".
+  'EN TRANSITO',
+  'EN CAMINO',
+  'EN BODEGA',
+  'ZONA DE ENTREGA',
+  'DISTRIBUCION PARA ENTREGA',
+  'DISTRIBUCION A CLIENTE',
 ]);
 const matchTransito = (e: string): boolean => {
   if (ESTADOS_TRANSITO_EXACT.has(e)) return true;
@@ -102,7 +125,16 @@ const ESTADOS_REPARTO_NOVEDAD = [
   'NOVEDAD SOLUCIONADA',
 ];
 
-const ESTADOS_GUIA_GENERADA = ['GUIA_GENERADA', 'GUIA GENERADA', 'ADMITIDA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'];
+const ESTADOS_GUIA_GENERADA = ['GUIA GENERADA', 'ADMITIDA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'];
+
+// Tramo PRE-GUÍA: el pedido ya se confirmó pero la guía todavía no existe.
+// 'CONFIRMADO'/'GENERADO' son estados reales de ese tramo (estadoBuckets los
+// manda a `preparacion`): sin ellos acá, un pedido que el proveedor nunca
+// despachó envejecía invisible en "Otros estados" y nadie reclamaba la
+// indemnización a Dropi dentro de la ventana.
+const ESTADOS_PRE_GUIA = ['PENDIENTE', 'CONFIRMADO', 'GENERADO'];
+
+const sinGuia = (o: OrderData): boolean => !(o.guia && o.guia.trim());
 
 // FASE FINAL: cliente debe ir a recoger a oficina (alta prioridad).
 // Incluye "PARA RETIRO EN AGENCIA SERVIENTREGA" (EC) y "EN PUNTO DROOP" (CO).
@@ -110,22 +142,31 @@ const ESTADOS_OFICINA = (e: string): boolean =>
   e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') ||
   e.includes('EN PUNTO') || e.startsWith('PARA RETIRO') || e.startsWith('RETIRO');
 
-const ESTADOS_TERMINALES = [
+const ESTADOS_TERMINALES_EXACT = new Set([
   'ENTREGADO',
-  'CANCELADO',
+  'ENTREGADO A DESTINO', // EC
   'REEMPLAZADA', // Dropi soft-borra la orden vieja al editarla (create-with-edit + PUT)
-  'DEVOLUCION',
-  'DEVOLUCION EN TRANSITO',
-  'DEVUELTO',
-  'RECHAZADO',
   'INDEMNIZADA',
   // Pedido BORRADO en Dropi (lo escribe dropi-nightly-reconcile, CON ESPACIO —
-  // así se guarda en la DB; la variante con guion bajo se acepta por datos
-  // viejos en TS). NO es trabajo: sin esto caía en "otros_estados" y la
+  // así se guarda en la DB; la variante con guion bajo llega normalizada a
+  // espacio por E()). NO es trabajo: sin esto caía en "otros_estados" y la
   // operadora llamaba a clientes de pedidos que Dropi borró hace semanas.
   'ARCHIVADO GHOST',
-  'ARCHIVADO_GHOST',
-];
+]);
+
+// Terminales por CONTENIDO: espejo del filtro del server (NOT LIKE '%CANCEL%')
+// y del fallback de estadoBuckets. El match exacto se quedaba corto con las
+// variantes que Dropi inventa por transportadora ('CANCELADO POR TRANSPORTADORA',
+// 'DEVOLUCION A ORIGEN' de EC): pasaban el catch-all y quedaban clavadas para
+// siempre en la cola inflando el denominador "Gestionados X de N".
+const TERMINALES_PATTERNS = ['CANCEL', 'DEVOLUC', 'DEVUELT', 'RECHAZ'];
+
+/** ¿El pedido ya murió (entregado / devuelto / cancelado / borrado)? */
+const esTerminal = (e: string): boolean => {
+  if (!e) return false;
+  if (ESTADOS_TERMINALES_EXACT.has(e)) return true;
+  return TERMINALES_PATTERNS.some((p) => e.includes(p));
+};
 
 /**
  * Días hábiles desde la creación del pedido. Si la fecha es inválida o falta,
@@ -161,7 +202,7 @@ function diasSinMovimiento(o: OrderData): number {
   return diasDesdeCreacion(o);
 }
 
-export const SEG_LISTS: SegListDef[] = [
+const SEG_LIST_DEFS: SegListDef[] = [
   // ── Pre-embudo ──────────────────────────────────────────────────────────
   {
     slug: 'pendientes_confirmacion_2d',
@@ -227,8 +268,8 @@ export const SEG_LISTS: SegListDef[] = [
     slaDias: 4,
     tone: 'info',
     matches: (o) => {
-      if (E(o.estado) !== 'PENDIENTE') return false;
-      if (o.guia && o.guia.trim()) return false;
+      if (!ESTADOS_PRE_GUIA.includes(E(o.estado))) return false;
+      if (!sinGuia(o)) return false;
       // Disjoint con indem (>= 4d). Recientes caen acá.
       return diasDesdeCreacion(o) < 4;
     },
@@ -239,8 +280,8 @@ export const SEG_LISTS: SegListDef[] = [
     slaDias: 4,
     tone: 'danger',
     matches: (o) => {
-      if (E(o.estado) !== 'PENDIENTE') return false;
-      if (o.guia && o.guia.trim()) return false;
+      if (!ESTADOS_PRE_GUIA.includes(E(o.estado))) return false;
+      if (!sinGuia(o)) return false;
       return diasDesdeCreacion(o) >= 4;
     },
   },
@@ -254,9 +295,12 @@ export const SEG_LISTS: SegListDef[] = [
     matches: (o) => {
       const e = E(o.estado);
       if (!e) return false;
-      if (ESTADOS_TERMINALES.includes(e)) return false;
-      if (e === 'PENDIENTE') return false;
+      // Los terminales los corta el guard global (ver SEG_LISTS más abajo).
       if (e === 'PENDIENTE CONFIRMACION') return false;
+      // Pre-guía SIN guía ya vive en pendientes_guia / indem. CON guía cae acá:
+      // antes un PENDIENTE con guía no matcheaba NINGUNA lista y desaparecía de
+      // Seguimiento sin que nadie lo notara.
+      if (ESTADOS_PRE_GUIA.includes(e) && sinGuia(o)) return false;
       if (ESTADOS_GUIA_GENERADA.includes(e)) return false;
       if (matchTransito(e)) return false;
       if (ESTADOS_REPARTO_NOVEDAD.includes(e)) return false;
@@ -265,6 +309,17 @@ export const SEG_LISTS: SegListDef[] = [
     },
   },
 ];
+
+/**
+ * Guard TERMINAL aplicado a TODAS las listas, no solo al catch-all: las
+ * variantes de Ecuador ('ENTREGADO A DESTINO', 'DEVOLUCION A ORIGEN') matcheaban
+ * predicados de fase y, como el estado ya no vuelve a cambiar, el pedido quedaba
+ * clavado en la cola — la asesora llamaba a clientes que ya tenían el paquete.
+ */
+export const SEG_LISTS: SegListDef[] = SEG_LIST_DEFS.map((l) => ({
+  ...l,
+  matches: (o: OrderData) => !esTerminal(E(o.estado)) && l.matches(o),
+}));
 
 export function findSegList(slug: SegListSlug): SegListDef | undefined {
   return SEG_LISTS.find((l) => l.slug === slug);

@@ -7,6 +7,7 @@ import {
 } from '@/hooks/useAddressAutocompleteCache';
 import { parseGooglePlace } from '@/lib/parseGooglePlace';
 import { mapAddressKind } from '@/lib/mapAddressKind';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 
 export interface AddressUpdate {
   direccion: string;
@@ -37,9 +38,21 @@ interface Props {
 const DEBOUNCE_MS = 300;
 const MIN_CHARS = 3;
 
+/** La tienda activa, tolerante: este input también se monta fuera del
+ *  StoreProvider (tests, formularios sueltos). Sin tienda no hay banner de
+ *  cliente recurrente — mejor sin sugerencia que con una de otro país. */
+function useStoreIdTolerante(): string | null {
+  try {
+    return useActiveStoreId();
+  } catch {
+    return null;
+  }
+}
+
 export function AddressAutocomplete({
-  value, onChange, ciudad, customerPhone, disabled, placeholder,
+  value, onChange, ciudad, departamento, customerPhone, disabled, placeholder,
 }: Props) {
+  const storeId = useStoreIdTolerante();
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -50,13 +63,16 @@ export function AddressAutocomplete({
   const places = useGooglePlaces();
 
   useEffect(() => {
-    if (!customerPhone) return;
-    void lookupRecurrentCustomer(customerPhone).then((hit) => {
-      if (hit && hit.direccion !== value) {
-        setRecurrent({ direccion: hit.direccion, place_id: hit.google_place_id, lat: hit.lat, lng: hit.lng });
-      }
+    if (!customerPhone || !storeId) return;
+    void lookupRecurrentCustomer(customerPhone, storeId, ciudad, departamento).then((hit) => {
+      // Sin hit se LIMPIA: si el banner ya estaba puesto y cambia la ciudad (o
+      // la tienda), dejarlo colgado ofrecería la dirección del pedido viejo
+      // sobre un destino que ya no coincide.
+      setRecurrent(hit && hit.direccion !== value
+        ? { direccion: hit.direccion, place_id: hit.google_place_id, lat: hit.lat, lng: hit.lng }
+        : null);
     });
-  }, [customerPhone, value]);
+  }, [customerPhone, value, storeId, ciudad, departamento]);
 
   useEffect(() => { setQuery(value); }, [value]);
 

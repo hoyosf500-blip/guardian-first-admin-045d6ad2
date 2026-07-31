@@ -163,16 +163,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     setStoresError(false);
 
-    // Para tiendas donde soy owner, verificar si hay credenciales Dropi
+    // Para tiendas donde soy owner, verificar si hay credenciales Dropi.
+    // Sólo el BOOLEANO: la integration-key de Dropi es permanente (exp año
+    // 2126) y con ella se leen/crean/cancelan todos los pedidos de la cuenta —
+    // no puede bajar al navegador para calcular un Boolean(). El RPC
+    // (SECURITY DEFINER) devuelve la bandera y nada más.
     const ownerStoreIds = (memberships ?? [])
       .filter(m => m.role === 'owner').map(m => m.store_id);
     let dropiByStore = new Map<string, boolean>();
     if (ownerStoreIds.length > 0) {
-      const { data: cfgs } = await supabase
-        .from('store_dropi_config')
-        .select('store_id, dropi_api_key')
-        .in('store_id', ownerStoreIds);
-      dropiByStore = new Map((cfgs ?? []).map(c => [c.store_id, Boolean(c.dropi_api_key)]));
+      const { data: cfgs, error: cfgError } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>
+      ) => Promise<{ data: { store_id: string; has_api_key: boolean }[] | null; error: { message?: string } | null }>)(
+        'get_my_stores_dropi_status', {},
+      );
+      if (cfgError || !cfgs) {
+        // No se pudo saber: asumimos que SÍ hay credenciales. needsSetup manda
+        // al SetupWizard a pantalla completa, así que un fallo de red (o la
+        // migración 20260731100000 sin aplicar) no puede dejar al dueño
+        // encerrado en el asistente de alta. Si de verdad falta la clave, el
+        // panel de /admin lo dice.
+        console.warn('[StoreContext] get_my_stores_dropi_status falló:', cfgError);
+        dropiByStore = new Map(ownerStoreIds.map(id => [id, true]));
+      } else {
+        dropiByStore = new Map(cfgs.map(c => [c.store_id, Boolean(c.has_api_key)]));
+      }
     }
 
     // Rol por tienda: el MÁS FUERTE entre las membresías (owner > supervisor > operator).

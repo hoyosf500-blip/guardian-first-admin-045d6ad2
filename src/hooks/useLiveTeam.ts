@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useActiveStoreId } from '@/contexts/StoreContext';
+import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 
 /**
@@ -86,7 +86,7 @@ function accionTouchpoint(action: string): string {
 }
 
 export function useLiveTeam(): LiveTeam {
-  const storeId = useActiveStoreId();
+  const { activeStoreId: storeId, scopeSynced } = useStore();
   const [team, setTeam] = useState<LiveTeam>({
     operators: [], pendingConfirmar: null, pendingNovedades: null,
     presenceMouseOk: true, workEventsOk: true, status: 'loading', updatedAt: 0,
@@ -96,6 +96,11 @@ export function useLiveTeam(): LiveTeam {
 
   const load = useCallback(async () => {
     if (!storeId) return;
+    // Las dos RPCs de abajo resuelven la tienda SERVER-SIDE
+    // (_resolve_scope_store, sin p_store). Si el set_active_store no quedó
+    // sincronizado, devolverían las cifras de la tienda ANTERIOR bajo el
+    // nombre de la nueva — mostrar el país equivocado es peor que no mostrar.
+    if (!scopeSynced) { setTeam(t => ({ ...t, status: 'error', updatedAt: Date.now() })); return; }
     const myReq = ++reqRef.current;
     const nowMs = Date.now();
     const today = bogotaToday();
@@ -197,7 +202,7 @@ export function useLiveTeam(): LiveTeam {
       status: 'ok',
       updatedAt: nowMs,
     });
-  }, [storeId]);
+  }, [storeId, scopeSynced]);
 
   useEffect(() => {
     setTeam(t => ({ ...t, status: 'loading' }));

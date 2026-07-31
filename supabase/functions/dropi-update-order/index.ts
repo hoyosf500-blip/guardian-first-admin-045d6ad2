@@ -250,18 +250,15 @@ Deno.serve(async (req: Request) => {
     }
     const user: { id: string } = authUser;
 
-    // ---- Role check: solo admin u operator pueden tocar Dropi ----
+    // Roles GLOBALES: solo se usan para gatear el `probe` de admin. La autorización
+    // para tocar Dropi es la membresía POR TIENDA (isStoreMember, más abajo):
+    // `redeem_store_invite` solo inserta en store_members, así que exigir una fila
+    // en user_roles dejaba a toda operadora onboardeada por link con 403 en cada
+    // confirmación — el pedido quedaba PENDIENTE CONFIRMACION en Dropi.
     const { data: roles } = await sb
       .from("user_roles")
       .select("role")
       .eq("user_id", authUser.id);
-    const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
-    if (!allowed) {
-      return new Response(JSON.stringify({ error: "No tienes permiso para actualizar pedidos en Dropi" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     // ---- Parse body ----
     let body: Record<string, unknown> = {};

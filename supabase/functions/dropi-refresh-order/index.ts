@@ -14,7 +14,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
-import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
+import { mapDropiOrderToRow, extractStatusHistoryRows } from "../_shared/dropiOrderMapper.ts";
 
 interface RefreshBody {
   store_id?: string;
@@ -139,15 +139,69 @@ Deno.serve(async (req) => {
     const today = new Date().toISOString().split("T")[0];
     const dbRow = mapDropiOrderToRow(orderObj, user.id, today, storeId);
 
-    const { error: upsertErr } = await sbAdmin
+    // Fila local ANTES del upsert: hace falta para preservar fecha_conf (abajo) y
+    // para ingerir el historial sin un segundo select. Siempre por tienda —
+    // external_id es único global pero leer sin store_id cruzaría países.
+    const { data: localRow } = await sbAdmin
       .from("orders")
-      .upsert(dbRow, { onConflict: "external_id", ignoreDuplicates: false });
+      .select("id, fecha_conf")
+      .eq("store_id", storeId)
+      .eq("external_id", String(dbRow.external_id))
+      .maybeSingle();
+
+    // El GET de DETALLE puede venir SIN `history[]`; en ese caso deriveFechaConf
+    // cae al fallback updated_at y el próximo cron (que sí trae historial) la
+    // devuelve a la fecha real: la "Fecha confirmación" y los días de SLA saltan
+    // ida y vuelta bajo los pies de la asesora, con un evento realtime por flap.
+    // Si ya hay un sello guardado y este refresh no puede derivarlo del historial,
+    // se conserva el de la DB (la RPC escribe fecha_conf sin COALESCE).
+    const trajoHistorial = Array.isArray((orderObj as Record<string, unknown>).history)
+      && ((orderObj as { history: unknown[] }).history).length > 0;
+    const fechaConfLocal = (localRow as { fecha_conf?: string | null } | null)?.fecha_conf ?? null;
+    if (!trajoHistorial && fechaConfLocal) {
+      dbRow.fecha_conf = fechaConfLocal;
+    }
+
+    // RPC en vez de .upsert() crudo (mismo camino que dropi-refresh-batch): el
+    // crudo se salta las guardas de la RPC — UPDATE incondicional (evento
+    // realtime aunque nada cambió), re-estampa uploaded_by/upload_date, pisa el
+    // phone editado localmente y escribe productos_detalle=NULL borrando
+    // talla/color cuando el detalle viene sin orderdetails.
+    const { error: upsertErr } = await sbAdmin.rpc("upsert_orders_from_dropi", {
+      p_orders: [dbRow],
+    });
 
     if (upsertErr) {
       return jsonResp({
         error: `No se pudo guardar en DB: ${upsertErr.message}`,
         dbError: upsertErr.message,
       }, 500, corsHeaders);
+    }
+
+    // Historial real de Dropi → order_status_history (idempotente por
+    // dropi_history_id). Un fallo acá NO invalida el refresh del estado.
+    if (trajoHistorial) {
+      try {
+        let orderUuid = (localRow as { id?: string } | null)?.id ?? "";
+        if (!orderUuid) {
+          const { data: created } = await sbAdmin
+            .from("orders")
+            .select("id")
+            .eq("store_id", storeId)
+            .eq("external_id", String(dbRow.external_id))
+            .maybeSingle();
+          orderUuid = (created as { id?: string } | null)?.id ?? "";
+        }
+        const histRows = orderUuid ? extractStatusHistoryRows(orderObj, orderUuid, storeId) : [];
+        if (histRows.length > 0) {
+          const { error: histErr } = await sbAdmin
+            .from("order_status_history")
+            .upsert(histRows, { onConflict: "dropi_history_id", ignoreDuplicates: true });
+          if (histErr) console.warn(`dropi-refresh-order: historial no ingerido (${histErr.message})`);
+        }
+      } catch (hErr) {
+        console.warn(`dropi-refresh-order: error ingiriendo historial: ${hErr instanceof Error ? hErr.message : String(hErr)}`);
+      }
     }
 
     return jsonResp({

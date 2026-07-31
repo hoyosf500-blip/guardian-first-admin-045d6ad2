@@ -849,7 +849,17 @@ async function dropiGetOrderV2(
   if (cfg.storeUrl) headers["Origin"] = cfg.storeUrl;
   const res = await fetch(url, { method: "GET", headers });
   const rawText = await res.text();
-  console.log("[dropi-change-carrier] v2 detail", { url, status: res.status, body: rawText.slice(0, 300) });
+  // El detalle v2 trae client{name, phone, dir, email}: volcarlo al log dejaba
+  // datos personales de clientes fuera de la DB con RLS en CADA quote/apply.
+  // Solo se conserva el cuerpo cuando Dropi falló (ahí es un mensaje de error,
+  // no la ficha del cliente) — mismo criterio que el logBody:false de
+  // dropi-open-incidences.
+  console.log("[dropi-change-carrier] v2 detail", {
+    url,
+    status: res.status,
+    length: rawText.length,
+    ...(res.ok ? {} : { body: rawText.slice(0, 300) }),
+  });
   let body: Record<string, unknown> = {};
   try { body = rawText ? JSON.parse(rawText) : {}; } catch { body = { raw: rawText }; }
   const ok = res.ok && body.isSuccess !== false;

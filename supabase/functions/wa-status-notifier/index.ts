@@ -24,6 +24,15 @@ const MAX_SENDS_PER_RUN = 40; // pacing anti-baneo (gateway QR no oficial)
 const LOOKBACK_DAYS = 21; // solo pedidos movidos recientemente
 const ORDERS_PER_STORE = 600;
 
+// Tope de reintentos por transición. Sin él, una transición que falla siempre
+// (gateway QR desconectado) se reintentaba en CADA corrida (~78/día): filas
+// 'failed' inundando el hilo + riesgo real de spamear al cliente si el fallo era
+// un falso negativo (timeout con el mensaje SÍ entregado).
+const MAX_NOTIFY_ATTEMPTS = 3;
+// Espera mínima según cuántos intentos lleva: 0 → la corrida siguiente (~10 min),
+// 1 → 1h, 2 → 6h. Al 3º se da por perdida y se consume la transición.
+const RETRY_BACKOFF_MS = [0, 3_600_000, 6 * 3_600_000];
+
 // Follow-up por SILENCIO: si el bot le escribió a un cliente y este no respondió
 // en FOLLOWUP_SILENCE_HOURS (pero la conversación no es más vieja que
 // FOLLOWUP_MAX_AGE_HOURS), el bot manda UN recordatorio suave. Una sola vez por

@@ -91,6 +91,7 @@ async function fetchDropiRange(
   while (pages < MAX_PAGES) {
     const url = `${base}/integrations/orders/myorders?result_number=${PAGE_SIZE}&start=${start}&date_from=${from}&date_to=${to}${filterParam}&orderBy=id&orderDirection=desc`;
     let res: Response | null = null;
+    let data: Record<string, unknown> | null = null;
     for (let attempt = 0; attempt < 4; attempt++) {
       if (attempt > 0) await sleep(2000 * Math.pow(2, attempt - 1)); // 2s/4s/8s
       res = await fetch(url, {
@@ -100,7 +101,19 @@ async function fetchDropiRange(
           ...(origin ? { Origin: origin } : {}),
         },
       }).catch(() => null);
-      if (res?.ok) break;
+      if (res?.ok) {
+        data = await res.json().catch(() => null) as Record<string, unknown> | null;
+        if (data && data.isSuccess !== false) break;
+        // Dropi responde 200 con {isSuccess:false} ante un error de SU lado
+        // (mantenimiento, query inválida). Tomarlo como fin-de-datos dejaba
+        // `complete=true` con un pull VACÍO o truncado, y ese flag es justo el
+        // gate que habilita cancelar huérfanos en bloque y archivar GHOST
+        // pedidos vivos. Es una página FALLIDA: se reintenta, y si agota se
+        // corta con complete=false.
+        console.warn(`reconcile: 200 con isSuccess=false at start=${start} (intento ${attempt + 1}/4)`);
+        data = null;
+        continue;
+      }
       console.warn(`reconcile: HTTP ${res?.status ?? "fetch-fail"} at start=${start} (intento ${attempt + 1}/4)`);
       // Anti-throttle 2026-07-07: un 4xx definitivo (400/401/403/404 ≠ 429) no
       // se cura reintentando — cortar sin quemar 3 fetches + ~14s contra una
@@ -108,12 +121,11 @@ async function fetchDropiRange(
       // transitorios) sí se reintentan, igual que fetch-fail (res null).
       if (res && res.status >= 400 && res.status < 500 && res.status !== 429) break;
     }
-    if (!res?.ok) {
+    if (!res?.ok || !data) {
       console.warn(`reconcile: page start=${start} agotó reintentos (pull INCOMPLETO)`);
       break; // complete queda false
     }
-    const data = await res.json().catch(() => ({}));
-    const objs = Array.isArray(data?.objects) ? data.objects : [];
+    const objs = Array.isArray(data.objects) ? data.objects as Record<string, unknown>[] : [];
     out.push(...objs);
     pages++;
     if (objs.length < PAGE_SIZE) { complete = true; break; } // último page → pull completo
@@ -173,13 +185,36 @@ async function reconcileStore(
     fromD.setUTCDate(fromD.getUTCDate() - RECONCILE_DAYS_BACK);
     const from = fromD.toISOString().split("T")[0];
 
-    const { data: guardianRows } = await sb
-      .from("orders")
-      .select("id, external_id, estado, guia, transportadora, last_movement_at, created_at, fecha")
-      .eq("store_id", storeId)
-      .not("external_id", "is", null)
-      .gte("upload_date", from);
-    const guardianNonTerminal: GuardianRow[] = (guardianRows || []).filter((o: GuardianRow) => {
+    // PAGINADO OBLIGATORIO: PostgREST corta en 1000 filas por defecto y EC pasa
+    // los 2700 pedidos en 30 días — sin esto el "backstop diario" reconciliaba
+    // un subconjunto ARBITRARIO (~35%) y el resto quedaba con guías y estados
+    // congelados semanas, sin ninguna señal. El .order('id') es lo que hace
+    // determinista el rango entre páginas.
+    const guardianRows: GuardianRow[] = [];
+    for (let offset = 0; ; offset += GUARDIAN_PAGE_SIZE) {
+      const { data: page, error: pageErr } = await sb
+        .from("orders")
+        .select("id, external_id, estado, guia, transportadora, last_movement_at, created_at, fecha")
+        .eq("store_id", storeId)
+        .not("external_id", "is", null)
+        .gte("upload_date", from)
+        .order("id", { ascending: true })
+        .range(offset, offset + GUARDIAN_PAGE_SIZE - 1);
+      // Una página que falla deja el set INCOMPLETO, y sobre ese set se decide
+      // qué cancelar: cortar con error en vez de reconciliar a ciegas.
+      if (pageErr) throw new Error(`lectura de orders paginada falló en offset=${offset}: ${pageErr.message}`);
+      const rows = (page || []) as GuardianRow[];
+      guardianRows.push(...rows);
+      if (rows.length < GUARDIAN_PAGE_SIZE) break;
+      if (guardianRows.length >= GUARDIAN_MAX_ROWS) {
+        console.warn(`reconcile ${storeId}: tope de ${GUARDIAN_MAX_ROWS} filas alcanzado — set posiblemente incompleto`);
+        break;
+      }
+    }
+    // El filtro de terminales queda client-side (no en la query): un
+    // `.not('estado','in',(...))` descartaría además las filas con estado NULL
+    // —que SÍ hay que reconciliar— porque en SQL `NULL NOT IN (...)` es NULL.
+    const guardianNonTerminal: GuardianRow[] = guardianRows.filter((o: GuardianRow) => {
       const e = (o.estado || "").toUpperCase();
       return !TERMINAL_STATES.has(e);
     });
@@ -270,8 +305,12 @@ async function reconcileStore(
     // está en el pull" no prueba nada — sin este gate 4 pedidos <5M vivos en
     // Dropi entraban en ping-pong (nightly cancela ↔ cron restaura, 2 veces el
     // mismo día, ver cancelled_external_ids 19:12 y 20:01 del 2026-07-03).
-    if (!statusPull.complete && orphans.length > 0) {
-      console.warn(`reconcile ${storeId}: pull por status INCOMPLETO → ${orphans.length} huérfanos <5M NO se cancelan (fail-safe)`);
+    // El `orders.length > 0` es el MISMO guard que ya exige el barrido de
+    // borrados: un pull que volvió vacío no prueba que los huérfanos no existan
+    // en Dropi — prueba que no trajimos nada. Sin él, una noche rara (Dropi
+    // devolviendo 0 sin error) cancelaba en bloque todo lo no-terminal <5M.
+    if ((!statusPull.complete || statusPull.orders.length === 0) && orphans.length > 0) {
+      console.warn(`reconcile ${storeId}: pull por status no confiable (complete=${statusPull.complete}, n=${statusPull.orders.length}) → ${orphans.length} huérfanos <5M NO se cancelan (fail-safe)`);
       orphans.length = 0;
     }
     if (orphans.length > 0) {

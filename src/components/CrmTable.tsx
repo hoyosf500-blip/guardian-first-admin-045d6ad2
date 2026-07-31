@@ -251,6 +251,15 @@ const STALLED_LABEL_TO_MATCH: Record<string, (e: string) => boolean> = {
 };
 
 /**
+ * Tarjetas montadas de entrada por columna. Antes se montaban TODAS las de la
+ * ventana de 45 días de un saque (~40 nodos DOM cada una): con varios cientos de
+ * pedidos, segundos de pantalla congelada al entrar y scroll a tirones todo el
+ * turno en celulares de gama media. El scroll interno de la columna hace que 30
+ * cubran de sobra lo visible; el resto entra con "Ver más".
+ */
+const COLUMN_PAGE = 30;
+
+/**
  * Wrapper que preserva scrollTop por columna entre re-renders.
  * Si React remonta el contenedor (p. ej. tras smartMerge que cambió el array),
  * useLayoutEffect restaura la posición ANTES del paint, evitando el "salto al tope".
@@ -344,6 +353,9 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   // ha gestionado todavía (el bucket "fácil"). Ver src/lib/segOwnership.ts.
   const [ownerFilter, setOwnerFilter] = useSessionState<SegOwnerFilter>(`crmtable:${module}:ownerFilter`, 'all');
   const [view, setView] = useSessionState<'list' | 'call'>(`crmtable:${module}:view`, 'list');
+  // Cuántas tarjetas se muestran por columna (arranca en COLUMN_PAGE y sube con
+  // "Ver más"). No se persiste: cada entrada a la pantalla vuelve al tope barato.
+  const [colLimits, setColLimits] = useState<Record<string, number>>({});
   // Guard contra doble-click: trackea dbIds en vuelo en markAction.
   const markingInFlightRef = useRef<Set<string>>(new Set());
 
@@ -470,21 +482,28 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
 
     let cancelled = false;
 
+    // Lotes EN PARALELO: eran round-trips estrictamente seriales (con ~900
+    // pedidos en la lista, 9 esperas encadenadas en móvil = varios segundos en
+    // los que las tarjetas ya gestionadas se pintan como pendientes y la
+    // asesora puede volver a llamar a un cliente ya contactado).
+    // Ventana de 60 días: el snooze más largo dura 30 y los badges muestran los
+    // últimos toques — el histórico completo del teléfono no lo lee nadie.
     const fetchAllTouchpoints = async () => {
-      const allTp: Touchpoint[] = [];
-      for (let i = 0; i < phones.length; i += 100) {
-        if (cancelled) return allTp;
-        const batch = phones.slice(i, i + 100);
-        const { data: tp } = await supabase.from('touchpoints')
+      const chunks: string[][] = [];
+      for (let i = 0; i < phones.length; i += 100) chunks.push(phones.slice(i, i + 100));
+      const desdeIso = new Date(Date.now() - 60 * 86_400_000).toISOString();
+      const pages = await Promise.all(chunks.map(async batch => {
+        const { data: tp, error } = await supabase.from('touchpoints')
           .select('id, phone, action, action_date, action_time, operator_id, created_at')
           .in('phone', batch)
           .eq('store_id', activeStoreId)
+          .gte('created_at', desdeIso)
           .order('created_at', { ascending: false })
           .limit(20 * batch.length);
-        if (cancelled) return allTp;
-        if (tp) allTp.push(...(tp as Touchpoint[]));
-      }
-      return allTp;
+        if (error) console.warn('Error cargando touchpoints:', error.message);
+        return (tp ?? []) as Touchpoint[];
+      }));
+      return pages.flat();
     };
 
     fetchAllTouchpoints().then(allTp => {
@@ -606,7 +625,20 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       const label = isSegCloser(action) ? cleanSegAction(action) : 'Gestionado hoy';
       setResults(prev => ({ ...prev, [order.dbId!]: label }));
       const inserted = await recordGestion(order.phone, module, action);
-      if (inserted) setTouchpoints(prev => [inserted as Touchpoint, ...prev]);
+      if (!inserted) {
+        // useRecordGestion NUNCA lanza: devuelve null si faltó teléfono o si el
+        // INSERT no entró (RLS, red). Festejar igual dejaba la card oculta con
+        // toast verde y CERO touchpoint: el contador de la asesora no se movía
+        // y al recargar el pedido reaparecía. Mismo contrato que SegBoard.
+        setResults(prev => {
+          const next = { ...prev };
+          delete next[order.dbId!];
+          return next;
+        });
+        toast.error('No se pudo registrar. Reintentá.');
+        return;
+      }
+      setTouchpoints(prev => [inserted as Touchpoint, ...prev]);
       toast.success(action);
     } finally {
       markingInFlightRef.current.delete(order.dbId);
@@ -614,8 +646,23 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
   }, [module, recordGestion]);
 
 
+  // Edad en días hábiles PRECOMPUTADA una vez por pedido (decorate-sort-
+  // undecorate). getOrderStatusAgeDays llama a calcBusinessDays, que recorre el
+  // rango día a día armando el calendario de festivos; estaba dentro del
+  // comparator del sort de columnas, o sea 2 llamadas por comparación — miles
+  // por cada tecla del buscador (filtered → columns se recalculan con `search`).
+  const ageByOrder = useMemo(() => {
+    const m = new Map<OrderData, number>();
+    data.forEach(o => m.set(o, getOrderStatusAgeDays(o)));
+    return m;
+  }, [data]);
+  const ageOf = useCallback(
+    (o: OrderData) => ageByOrder.get(o) ?? getOrderStatusAgeDays(o),
+    [ageByOrder],
+  );
+
   const managedCount = useMemo(() => data.filter(o => o.dbId && results[o.dbId]).length, [data, results]);
-  const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2).length, [data]);
+  const delayedCount = useMemo(() => data.filter(order => !isExcludedFromDelay(order.estado) && ageOf(order) >= 2).length, [data, ageOf]);
 
   const filtered = useMemo(() => {
     let list = data;
@@ -634,7 +681,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       );
     }
     if (onlyDelayed) {
-      list = list.filter(order => !isExcludedFromDelay(order.estado) && getOrderStatusAgeDays(order) >= 2);
+      list = list.filter(order => !isExcludedFromDelay(order.estado) && ageOf(order) >= 2);
       // Further filter by stalled category if set
       if (stalledCategoryFilter && STALLED_LABEL_TO_MATCH[stalledCategoryFilter]) {
         const matchFn = STALLED_LABEL_TO_MATCH[stalledCategoryFilter];
@@ -655,7 +702,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       );
     }
     return list;
-  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, ownerFilter, phoneTouchpoints, user?.id, adminIds]);
+  }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, ownerFilter, phoneTouchpoints, user?.id, adminIds, ageOf]);
 
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
@@ -665,10 +712,10 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       groups[key].push(o);
     });
     for (const key of Object.keys(groups)) {
-      groups[key].sort((a, b) => getOrderStatusAgeDays(b) - getOrderStatusAgeDays(a));
+      groups[key].sort((a, b) => ageOf(b) - ageOf(a));
     }
     return groups;
-  }, [filtered]);
+  }, [filtered, ageOf]);
 
   // Count all data (not filtered) for pills
   const allCounts = useMemo(() => {
@@ -1031,7 +1078,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
 
                   {/* Column body */}
                   <ColumnBody columnKey={col.key} scrollPositionsRef={scrollPositionsRef}>
-                    {items.map((o, i) => (
+                    {items.slice(0, colLimits[col.key] ?? COLUMN_PAGE).map((o, i) => (
                       <OrderCard
                         key={o.dbId || o.externalId || `${o.phone}-${o.idx}`}
                         order={o}
@@ -1052,6 +1099,18 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         countryCode={countryCode}
                       />
                     ))}
+                    {items.length > (colLimits[col.key] ?? COLUMN_PAGE) && (
+                      <button
+                        type="button"
+                        onClick={() => setColLimits(prev => ({
+                          ...prev,
+                          [col.key]: (prev[col.key] ?? COLUMN_PAGE) + COLUMN_PAGE,
+                        }))}
+                        className="w-full rounded-xl border border-border bg-card/40 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                      >
+                        Ver más (<span className="font-mono tabular-nums">{items.length - (colLimits[col.key] ?? COLUMN_PAGE)}</span>)
+                      </button>
+                    )}
                   </ColumnBody>
                 </motion.div>
               );

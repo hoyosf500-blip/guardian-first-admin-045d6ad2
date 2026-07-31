@@ -63,6 +63,44 @@ function LiveClock() {
   );
 }
 
+/**
+ * La carga de tiendas FALLÓ (red/RLS). Va antes del branch "cero tiendas":
+ * sin esta pantalla, una operadora que recarga con WiFi malo veía el alta
+ * autoservicio "Creá tu tienda" — la seguía (era la única opción visible) y
+ * quedaba de dueña de una tienda fantasma, fuera de su cola real.
+ */
+function StoresErrorScreen({ onRetry, onSignOut }: { onRetry: () => Promise<void>; onSignOut: () => void }) {
+  const [retrying, setRetrying] = useState(false);
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card/40 p-6 text-center shadow-card3d" role="alert">
+        <div className="w-12 h-12 rounded-xl bg-danger/14 border border-danger/30 flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle size={22} className="text-danger" aria-hidden="true" />
+        </div>
+        <h1 className="text-base font-semibold text-foreground">No se pudieron cargar tus tiendas</h1>
+        <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+          Falló la conexión, no que no tengas tiendas. Revisá el internet y reintentá —
+          no crees una tienda nueva desde acá.
+        </p>
+        <button
+          onClick={() => { setRetrying(true); void onRetry().finally(() => setRetrying(false)); }}
+          disabled={retrying}
+          className="mt-5 w-full h-10 btn-accent-3d rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw size={14} className={retrying ? 'animate-spin' : ''} aria-hidden="true" />
+          {retrying ? 'Reintentando…' : 'Reintentar'}
+        </button>
+        <button
+          onClick={onSignOut}
+          className="mt-2 w-full h-9 rounded-xl border border-border bg-card/40 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Inner layout: tiene acceso a useStore() porque StoreProvider lo envuelve.
 function ProtectedLayoutInner() {
   const { user, profile, isAdmin, loading, signOut } = useAuth();
@@ -123,6 +161,12 @@ function ProtectedLayoutInner() {
   }
 
   if (!user) return <Navigate to="/auth" replace />;
+
+  // Un error de consulta JAMÁS se muestra como vacío: sólo stores.length===0
+  // SIN esta bandera es un vacío legítimo (ver StoreState.storesError).
+  if (store.storesError) {
+    return <StoresErrorScreen onRetry={() => store.refresh()} onSignOut={signOut} />;
+  }
 
   // El user no es miembro de ninguna tienda → alta autoservicio: crea la SUYA
   // y queda de owner (antes era un callejón "Sin tiendas asignadas" y las

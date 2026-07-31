@@ -163,6 +163,93 @@ describe('SEG_LISTS — catch-all y terminales', () => {
   });
 });
 
+describe('SEG_LISTS — estados de ECUADOR', () => {
+  // Los terminales de EC ('ENTREGADO A DESTINO', 'DEVOLUCION A ORIGEN') y las
+  // variantes por transportadora ('CANCELADO POR ...') matcheaban predicados de
+  // fase: como el estado ya no cambia más, el pedido quedaba clavado en la cola
+  // y la asesora llamaba a clientes que ya tenían el paquete.
+  const TERMINALES_EC = [
+    'ENTREGADO A DESTINO',
+    'DEVOLUCION A ORIGEN',
+    'DEVOLUCIÓN A ORIGEN',
+    'DEVUELTO',
+    'DEVUELTO A ORIGEN',
+    'CANCELADO POR TRANSPORTADORA',
+    'RECHAZADO POR EL CLIENTE',
+  ];
+
+  it('terminales EC no matchean NINGUNA lista', () => {
+    for (const estado of TERMINALES_EC) {
+      const o: OrderData = { ...baseOrder, estado, fecha: '', dias: 12 };
+      for (const lista of SEG_LISTS) {
+        expect(lista.matches(o), `${lista.slug} no debe matchear ${estado}`).toBe(false);
+      }
+    }
+  });
+
+  it('terminales EC no cuentan como trabajo accionable', () => {
+    expect(hasSeguimientoWork(TERMINALES_EC.map((estado) => ({ ...baseOrder, estado, dias: 12 })))).toBe(false);
+  });
+
+  it('tránsito EC (EN CAMINO / EN TRÁNSITO con tilde / EN BODEGA) cae en en_transito, no en otros', () => {
+    const transito = findSegList('en_transito')!;
+    const otros = findSegList('otros_estados')!;
+    for (const estado of ['EN CAMINO', 'EN TRANSITO', 'EN TRÁNSITO', 'EN BODEGA', 'ZONA DE ENTREGA', 'DISTRIBUCION PARA ENTREGA']) {
+      const o: OrderData = { ...baseOrder, estado, fecha: '', dias: 3 };
+      expect(transito.matches(o), `en_transito debe matchear ${estado}`).toBe(true);
+      expect(otros.matches(o), `otros_estados NO debe matchear ${estado}`).toBe(false);
+    }
+  });
+});
+
+describe('SEG_LISTS — tramo pre-guía (CONFIRMADO / GENERADO)', () => {
+  it('CONFIRMADO sin guía y 5d cae SOLO en indem_pendientes_guia_4d', () => {
+    const o: OrderData = { ...baseOrder, estado: 'CONFIRMADO', guia: '', fecha: '', dias: 5 };
+    const matched = SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug);
+    expect(matched).toEqual(['indem_pendientes_guia_4d']);
+  });
+
+  it('GENERADO sin guía y 1d cae SOLO en pendientes_guia (accionable)', () => {
+    const o: OrderData = { ...baseOrder, estado: 'GENERADO', guia: '', fecha: '', dias: 1 };
+    const matched = SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug);
+    expect(matched).toEqual(['pendientes_guia']);
+    expect(hasSeguimientoWork([o])).toBe(true);
+  });
+
+  it('CONFIRMADO CON guía ya no es "pendiente de guía" — queda visible en otros_estados', () => {
+    const o: OrderData = { ...baseOrder, estado: 'CONFIRMADO', guia: 'ABC123', fecha: '', dias: 5 };
+    const matched = SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug);
+    expect(matched).toEqual(['otros_estados']);
+  });
+
+  it('GUIA_GENERADA con guion bajo se normaliza a la lista de guía generada', () => {
+    const o: OrderData = { ...baseOrder, estado: 'GUIA_GENERADA', fecha: '', dias: 1 };
+    expect(findSegList('guia_generada')!.matches(o)).toBe(true);
+  });
+});
+
+describe('SEG_LISTS — las listas son DISJUNTAS', () => {
+  it('ningún estado cae en dos listas a la vez', () => {
+    const estados = [
+      'PENDIENTE', 'PENDIENTE CONFIRMACION', 'CONFIRMADO', 'GENERADO',
+      'GUIA GENERADA', 'ADMITIDA', 'ENTREGADO A TRANSPORTADORA',
+      'EN TRANSPORTE', 'EN TRANSITO', 'EN TRÁNSITO', 'EN CAMINO', 'EN BODEGA',
+      'EN RUTA A CENTRO LOGISTICO', 'ASIGNADO A GINTRACOM', 'ZONA DE ENTREGA',
+      'EN REPARTO', 'NOVEDAD', 'INTENTO DE ENTREGA',
+      'RECLAMAR EN OFICINA', 'PARA RETIRO EN AGENCIA SERVIENTREGA', 'EN PUNTO DROOP',
+      'ENTREGADO', 'ENTREGADO A DESTINO', 'DEVOLUCION A ORIGEN', 'CANCELADO',
+      'ESTADO_RARO_NUEVO',
+    ];
+    for (const estado of estados) {
+      for (const dias of [1, 6]) {
+        const o: OrderData = { ...baseOrder, estado, guia: '', fecha: '', dias };
+        const matched = SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug);
+        expect(matched.length, `${estado} (${dias}d) cayó en ${matched.join(' + ')}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
 describe('SEG_LISTS — días sin movimiento (lastMovementAt)', () => {
   const hoyIso = new Date().toISOString();
 

@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
 
 const DASHSCOPE_URL =
   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions";
@@ -85,13 +86,48 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const sb = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const body = await req.json();
+    const { action, context, store_id } = body as {
+      action: string;
+      context: string;
+      store_id?: string;
+    };
+
+    // La key de IA es UNA sola, de la plataforma: estar logueado no alcanza para
+    // gastarla. Con store_id se exige membresía de ESA tienda; sin él (callers
+    // viejos que aún no lo mandan) al menos se exige pertenecer a alguna tienda,
+    // para que una cuenta recién registrada no pueda usar el endpoint.
+    const storeId = typeof store_id === "string" ? store_id.trim() : "";
+    if (storeId) {
+      if (!(await isStoreMember(sb, authUser.id, storeId))) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "No sos miembro de esta tienda" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    } else {
+      const { data: memberships } = await sb
+        .from("store_members")
+        .select("store_id")
+        .eq("user_id", authUser.id)
+        .limit(1);
+      if (!memberships || memberships.length === 0) {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Sin tiendas asignadas" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     // Read API key: try env var first, then app_settings table
     let apiKey = Deno.env.get("DASHSCOPE_API_KEY") || "";
 
     if (!apiKey) {
-      const sbUrl = Deno.env.get("SUPABASE_URL")!;
-      const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sb = createClient(sbUrl, sbKey);
       const { data: setting } = await sb
         .from("app_settings")
         .select("value")
@@ -106,12 +142,6 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-
-    const body = await req.json();
-    const { action, context } = body as {
-      action: string;
-      context: string;
-    };
 
     const systemPrompt = SYSTEM_PROMPTS[action];
     if (!systemPrompt) {
