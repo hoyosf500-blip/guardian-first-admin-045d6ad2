@@ -123,6 +123,54 @@ export function mismaGestion(
   return true;
 }
 
+/** Fila de `touchpoints` (Seguimiento). No tiene order_id: la clave es el teléfono. */
+export interface FilaToque {
+  phone: string;
+  /** 'SEG: Envié la guía', 'SEG: No contestó', … */
+  action: string;
+  operator_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Lo mismo que `buildGestionPorPedido` pero para SEGUIMIENTO, donde la unidad
+ * es el TELÉFONO (la tabla `touchpoints` no guarda order_id — mismo criterio que
+ * `classifySegOwnershipFromTps` y que `mySegTouchedToday`).
+ *
+ * Las filas ya vienen filtradas por tienda, por `action ILIKE 'SEG:%'` y por el
+ * día de hoy: no se re-filtra acá para no duplicar el criterio en dos lugares.
+ * `ultimoResult` guarda el MÉTODO tal como lo eligió la asesora, sin el prefijo
+ * `SEG:` — es lo que se muestra ("Envié la guía"), no un código interno.
+ */
+export function buildGestionSegPorTelefono(
+  filas: FilaToque[] | null | undefined,
+): Map<string, GestionDelPedido> {
+  const mapa = new Map<string, GestionDelPedido>();
+  if (!filas || !filas.length) return mapa;
+
+  for (const f of filas) {
+    if (!f.phone) continue;
+    const metodo = f.action.replace(/^SEG:\s*/i, '').trim();
+    const previo = mapa.get(f.phone);
+    if (!previo) {
+      mapa.set(f.phone, {
+        intentos: 1,
+        ultimoAt: f.created_at,
+        ultimoPor: f.operator_id,
+        ultimoResult: metodo,
+      });
+      continue;
+    }
+    previo.intentos += 1;
+    if (ms(f.created_at) > ms(previo.ultimoAt)) {
+      previo.ultimoAt = f.created_at;
+      previo.ultimoPor = f.operator_id;
+      previo.ultimoResult = metodo;
+    }
+  }
+  return mapa;
+}
+
 /** Hora "14:35" del último intento, en horario de Bogotá. '' si no parsea. */
 export function horaDeIntento(iso: string): string {
   const t = Date.parse(iso);

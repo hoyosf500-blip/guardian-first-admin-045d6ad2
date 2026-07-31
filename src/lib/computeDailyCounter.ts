@@ -54,6 +54,52 @@ export function computeDailyCounter(rows: CounterRow[], todayLocal: string): Dai
   };
 }
 
+/** Fila con la persona que la registró. */
+export type CounterRowConOperador = CounterRow & { operator_id: string | null };
+
+export interface ResumenAsesora extends DailyCounter {
+  operatorId: string;
+  /** conf + canc + noresp — los pedidos que esa persona cerró hoy. */
+  total: number;
+}
+
+/**
+ * El mismo conteo del día, partido POR ASESORA.
+ *
+ * El dueño lo pidió así: "que yo pueda ver qué pedidos tocan" sin entrar a
+ * Productividad y sin preguntarle a nadie. Reusa `computeDailyCounter` fila por
+ * fila para que el número de cada asesora salga de la MISMA regla que el número
+ * del equipo — si algún día cambia la dedup, cambia para las dos a la vez.
+ *
+ * OJO con sumar: si Ana marcó "no contestó" y más tarde Sofía confirmó EL MISMO
+ * pedido, cada una registra su gestión y la suma da 2 mientras el equipo cuenta
+ * 1 pedido. Es correcto: son dos trabajos sobre un pedido. Por eso la pantalla
+ * lo rotula "hoy por asesora" y NO lo presenta como el desglose del total.
+ */
+export function computeDailyCounterByOperator(
+  rows: CounterRowConOperador[],
+  todayLocal: string,
+): ResumenAsesora[] {
+  const porOperador = new Map<string, CounterRowConOperador[]>();
+  for (const r of rows) {
+    if (!r.operator_id) continue;
+    const acc = porOperador.get(r.operator_id);
+    if (acc) acc.push(r);
+    else porOperador.set(r.operator_id, [r]);
+  }
+  const out: ResumenAsesora[] = [];
+  for (const [operatorId, filas] of porOperador) {
+    const c = computeDailyCounter(filas, todayLocal);
+    const total = c.conf + c.canc + c.noresp;
+    if (total === 0) continue; // sin trabajo hoy: no ocupa espacio en pantalla
+    out.push({ operatorId, ...c, total });
+  }
+  // Más trabajo primero; empate por id para que el orden sea estable entre
+  // renders (si no, las tarjetas bailan en cada refresh de realtime).
+  out.sort((a, b) => b.total - a.total || a.operatorId.localeCompare(b.operatorId));
+  return out;
+}
+
 // Aplica computeDailyCounter a varias fechas en una sola pasada. Usado por
 // DashboardTab para el chart histórico. Mantiene una sola fuente de verdad
 // para la dedup — si cambia la regla, cambia en computeDailyCounter y el

@@ -7,6 +7,7 @@ import { useShopifyValueMismatches } from '@/hooks/useShopifyPending';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
+import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
@@ -61,10 +62,12 @@ const fadeUp = (delay = 0) => ({
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, coverageConfirmError, markResult } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, resumenAsesorasHoy, coverageConfirmError, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
+  // Nombre de cada asesora para la franja "hoy por asesora" (cache compartido).
+  const { nameOf: nombreDeAsesora } = useOperatorNames();
   const [view, setView] = useSessionState<'list' | 'call'>('confirmar:view', 'list');
   const [filter, setFilter] = useSessionState<string>('confirmar:filter', 'pending');
   const [search, setSearch] = useSessionState<string>('confirmar:search', '');
@@ -631,6 +634,34 @@ export default function ConfirmarTab({ profile }: Props) {
                   />
                   {gestionCargada ? 'Solo los que nadie llamó' : 'Solo sin tocar'}
                 </label>
+                {/* Cómo va HOY cada asesora. Sale de las MISMAS filas que el
+                    contador del equipo (cero consultas nuevas) y lo ve TODO el
+                    mundo, no solo el dueño desde Productividad: la queja fue
+                    "para yo no tener que preguntarles". Se rotula "hoy por
+                    asesora" y no "desglose": si dos trabajaron el mismo pedido,
+                    cada una registra su gestión y la suma no da el total. */}
+                {resumenAsesorasHoy.length > 0 && (
+                  <div className="w-full flex flex-wrap items-center gap-1.5 pt-1 mt-1 border-t border-border/50">
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold mr-1">
+                      Hoy por asesora
+                    </span>
+                    {resumenAsesorasHoy.map((r) => (
+                      <span
+                        key={r.operatorId}
+                        title={`${nombreDeAsesora(r.operatorId)}: ${r.conf} confirmados · ${r.canc} cancelados · ${r.noresp} no contestaron`}
+                        className={`text-[11px] px-2 py-0.5 rounded-lg border inline-flex items-center gap-1.5 ${
+                          r.operatorId === user?.id
+                            ? 'bg-accent/10 border-accent/30 text-foreground font-semibold'
+                            : 'bg-card/50 border-border text-muted-foreground'
+                        }`}
+                      >
+                        <span className="truncate max-w-[110px]">{nombreDeAsesora(r.operatorId)}</span>
+                        <span className="font-mono tabular-nums font-bold">{r.total}</span>
+                        <span className="text-success font-mono tabular-nums" title="confirmados">✓{r.conf}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })()}

@@ -20,8 +20,8 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 // COST-3: ORDER_COLUMNS extraído a src/lib/orderColumns.ts para reutilizarse
 // en ConfirmarTab y CallView (antes hacían select('*')).
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
-import { computeDailyCounter } from '@/lib/computeDailyCounter';
-import { buildGestionPorPedido, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { computeDailyCounter, computeDailyCounterByOperator, type ResumenAsesora } from '@/lib/computeDailyCounter';
+import { buildGestionPorPedido, buildGestionSegPorTelefono, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -88,6 +88,14 @@ interface OrderState {
   /** ?Ya corrio al menos una lectura buena de ? Si es false,
    *  el mapa vacio NO significa "nadie llamo" — significa que no sabemos. */
   gestionCargada: boolean;
+  /** Igual que  pero para Seguimiento, donde la clave es el
+   *  TELEFONO (touchpoints no guarda order_id). Contraparte de equipo de
+   *  , que es personal. */
+  gestionSegPorTelefono: Map<string, GestionDelPedido>;
+  /** Como va HOY cada asesora (conf/canc/noresp), misma dedup que el contador
+   *  del equipo. Lo ven todos: el dueno para no preguntar, y el equipo para
+   *  saber como va la jornada sin entrar a Productividad. */
+  resumenAsesorasHoy: ResumenAsesora[];
   /** ¿Falló la ÚLTIMA lectura de los sets de cobertura del día?
    *
    *  Un Set vacío es AMBIGUO: puede significar "la operadora todavía no gestionó
@@ -140,6 +148,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [myConfirmTouchedToday, setMyConfirmTouchedToday] = useState<Set<string>>(new Set());
   const [gestionPorPedido, setGestionPorPedido] = useState<Map<string, GestionDelPedido>>(new Map());
   const [gestionCargada, setGestionCargada] = useState(false);
+  const [gestionSegPorTelefono, setGestionSegPorTelefono] = useState<Map<string, GestionDelPedido>>(new Map());
+  const [resumenAsesorasHoy, setResumenAsesorasHoy] = useState<ResumenAsesora[]>([]);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
   // ¿Se pudo LEER cada set de cobertura? Ver el doc del contrato en OrderState.
   // Booleans separados (no un objeto) a propósito: `ctxValue` está memoizado y un
@@ -376,16 +386,35 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Recalculada en cada intento, no capturada: un reintento que cruza la
     // medianoche Bogotá tiene que leer el día NUEVO.
     const todayStartIso = new Date(`${bogotaToday()}T00:00:00-05:00`).toISOString();
-    const { data, error: segErr } = await supabase
-      .from('touchpoints')
-      .select('phone, action')
-      .eq('store_id', activeStoreId)
-      .eq('operator_id', user.id)
-      .ilike('action', 'SEG:%')
-      .gte('created_at', todayStartIso);
-    // "No se pudo leer" se marca, no se disfraza de cero.
-    if (segErr || !data) { setCoverageSegError(true); return false; }
-    setMySegTouchedToday(new Set((data as { phone: string }[]).map(r => r.phone)));
+    // Sin `.eq('operator_id', user.id)`: la MISMA consulta sirve para las dos
+    // poblaciones (la mía y la del equipo) y se parte en memoria. Traer solo lo
+    // mío era la razón por la que el tablero de Seguimiento le mostraba a una
+    // asesora como "sin gestionar" un pedido que otra ya había trabajado esa
+    // mañana. Un día de una tienda son decenas de filas, pero se pagina igual:
+    // PostgREST corta en 1000 EN SILENCIO y un corte acá se vería como "nadie
+    // lo gestionó" — el error más caro posible en esta pantalla.
+    type TpRow = { phone: string; action: string; operator_id: string | null; created_at: string };
+    const PAGE = 1000;
+    const filas: TpRow[] = [];
+    for (let desde = 0; ; desde += PAGE) {
+      const { data, error: segErr } = await supabase
+        .from('touchpoints')
+        .select('phone, action, operator_id, created_at')
+        .eq('store_id', activeStoreId)
+        .ilike('action', 'SEG:%')
+        .gte('created_at', todayStartIso)
+        .order('created_at', { ascending: false })
+        .range(desde, desde + PAGE - 1);
+      // "No se pudo leer" se marca, no se disfraza de cero.
+      if (segErr || !data) { setCoverageSegError(true); return false; }
+      filas.push(...(data as TpRow[]));
+      if (data.length < PAGE || filas.length >= 10000) break;
+    }
+    setMySegTouchedToday(new Set(filas.filter(r => r.operator_id === user.id).map(r => r.phone)));
+    setGestionSegPorTelefono(prev => {
+      const next = buildGestionSegPorTelefono(filas);
+      return mismaGestion(prev, next) ? prev : next;
+    });
     setCoverageSegError(false);
     return true;
   }, [user, activeStoreId]);
@@ -788,6 +817,16 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // repetiria 20 llamadas. Solo despues de UNA lectura buena se puede
             // afirmar que el vacio es real.
             setGestionCargada(true);
+            // Mismas filas, tercera poblacion: como va cada asesora hoy.
+            // Comparacion por contenido para no re-renderizar la cola entera
+            // cuando los numeros no se movieron.
+            setResumenAsesorasHoy(prev => {
+              const next = computeDailyCounterByOperator(data as Parameters<typeof computeDailyCounterByOperator>[0], todayLocal);
+              const igual = prev.length === next.length && prev.every((p, i) =>
+                p.operatorId === next[i].operatorId && p.conf === next[i].conf
+                && p.canc === next[i].canc && p.noresp === next[i].noresp);
+              return igual ? prev : next;
+            });
             // Mismas filas, población distinta: lo que gestionó QUIEN ESTÁ MIRANDO.
             // Es lo que firma el cierre de turno y lo que muestra el tablero en
             // modo "Yo"; el de arriba es la tienda entera.
@@ -1256,7 +1295,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy,
     coverageError, coverageConfirmError, coverageSegError,
   }), [
     allOrders, workQueue,
@@ -1266,7 +1305,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy,
     coverageError, coverageConfirmError, coverageSegError,
   ]);
 

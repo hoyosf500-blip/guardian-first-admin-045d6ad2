@@ -9,6 +9,8 @@ import {
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
 import { metodosRapidosParaEstado } from '@/lib/segMetodosEstado';
+import { horaDeIntento, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
@@ -180,7 +182,7 @@ function freshnessDot(o: OrderData): { cls: string; ring: string; title: string 
   return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string> }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -203,7 +205,14 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // OTRO touchpoint (touchpoints no tiene constraint anti-dup), inflando las
   // métricas de productividad. El useState local se conserva como respuesta
   // inmediata al click, antes de que el realtime actualice el set.
-  const yaGestionada = !!gestionada || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
+  // Gestion del EQUIPO sobre este telefono hoy (quien, que metodo, a que hora).
+  const gEquipo = o.phone ? gestionEquipo?.get(o.phone) : undefined;
+  // Cuenta como gestionada si la trabajo CUALQUIERA, no solo yo. Antes solo
+  // miraba `touchedTodayPhones` (personal): a una asesora le seguia apareciendo
+  // como pendiente un pedido que otra ya habia trabajado esa manana, y volver a
+  // tocar el boton insertaba OTRO touchpoint (la tabla no tiene anti-duplicado)
+  // — doble contacto al cliente y metricas de productividad infladas.
+  const yaGestionada = !!gestionada || !!gEquipo || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
 
   // Acciones del tablero: registran el touchpoint (SEG: <acción>) para que el
   // contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca vía
@@ -445,10 +454,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         yaGestionada ? (
           <div
             className="mt-2.5 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-success/15 text-success border border-success/40 font-bold text-[13px] px-2"
-            title="Ya registraste una gestión de este pedido hoy"
+            title={gEquipo ? `${nombreDe ? nombreDe(gEquipo.ultimoPor) : "Una asesora"} lo gestionó hoy${horaDeIntento(gEquipo.ultimoAt) ? ` a las ${horaDeIntento(gEquipo.ultimoAt)}` : ""}` : "Ya registraste una gestión de este pedido hoy"}
           >
             <CheckCircle2 size={15} aria-hidden="true" />
-            <span className="truncate">{gestionada || 'Gestionado hoy'} ✓</span>
+            <span className="truncate">{gestionada || gEquipo?.ultimoResult || 'Gestionado hoy'}</span>
+            {gEquipo && (
+              <span className="text-[11px] font-semibold opacity-80 flex-shrink-0 truncate max-w-[45%]">
+                · {nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Asesora'}
+                {horaDeIntento(gEquipo.ultimoAt) ? ` ${horaDeIntento(gEquipo.ultimoAt)}` : ''}
+                {gEquipo.intentos > 1 ? ` ×${gEquipo.intentos}` : ''}
+              </span>
+            )}
           </div>
         ) : (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -510,7 +526,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; onBack: () => void }) {
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
   const t = TONE[col.tone];
@@ -644,6 +660,8 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: 
                 selected={i === selIdx}
                 cardRef={i === selIdx ? selRef : undefined}
                 touchedTodayPhones={touchedTodayPhones}
+                gestionEquipo={gestionEquipo}
+                nombreDe={nombreDe}
                 onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
             ))}
@@ -695,6 +713,9 @@ interface SegBoardProps {
    * de OrderContext, no solo cuando cambia el set.
    */
   touchedTodayPhones?: Set<string>;
+  /** Gestion del EQUIPO por telefono hoy (OrderContext.gestionSegPorTelefono).
+   *  Contraparte de equipo de `touchedTodayPhones`, que es personal. */
+  gestionEquipo?: Map<string, GestionDelPedido>;
   emptyTitle?: string;
   emptyDesc?: string;
   /**
@@ -706,7 +727,10 @@ interface SegBoardProps {
   celebratory?: boolean;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+  // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
+  // lectura de profiles por sesión (no una por tarjeta).
+  const { nameOf: nombreDe } = useOperatorNames();
   const navigate = useNavigate();
   // Se sella en el state junto a la carpeta: si la asesora cambia de tienda, la
   // ficha descarta los hermanos en vez de pasear pedidos de la otra tienda.
@@ -806,7 +830,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // generadas por estado sin mapear, y con sus pedidos.
     const focusedCol = columns.find((c) => c.key === focusedKey);
     if (focusedCol) {
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -950,6 +974,8 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   countryCode={countryCode}
                   tone={col.tone}
                   touchedTodayPhones={touchedTodayPhones}
+                  gestionEquipo={gestionEquipo}
+                  nombreDe={nombreDe}
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
                 />
               ))}

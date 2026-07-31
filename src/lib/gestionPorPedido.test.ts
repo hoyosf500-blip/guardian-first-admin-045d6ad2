@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildGestionPorPedido,
+  buildGestionSegPorTelefono,
   mismaGestion,
   horaDeIntento,
   type FilaIntento,
@@ -126,5 +127,41 @@ describe('horaDeIntento', () => {
 
   it('fecha corrupta devuelve cadena vacía en vez de "Invalid Date"', () => {
     expect(horaDeIntento('no-es-fecha')).toBe('');
+  });
+});
+
+describe('buildGestionSegPorTelefono — Seguimiento (la clave es el teléfono)', () => {
+  const toque = (p: Partial<import('./gestionPorPedido').FilaToque> = {}) => ({
+    phone: '0991234567',
+    action: 'SEG: Envié la guía',
+    operator_id: 'ana',
+    created_at: '2026-07-31T14:00:00Z',
+    ...p,
+  });
+
+  it('quita el prefijo SEG: y deja el método legible', () => {
+    const m = buildGestionSegPorTelefono([toque()]);
+    expect(m.get('0991234567')!.ultimoResult).toBe('Envié la guía');
+  });
+
+  it('agrupa por teléfono y cuenta las gestiones del equipo', () => {
+    const m = buildGestionSegPorTelefono([
+      toque({ operator_id: 'ana', created_at: '2026-07-31T14:00:00Z' }),
+      toque({ operator_id: 'sofia', created_at: '2026-07-31T17:00:00Z', action: 'SEG: No contestó' }),
+      toque({ phone: '0997654321' }),
+    ]);
+    expect(m.get('0991234567')!.intentos).toBe(2);
+    expect(m.get('0991234567')!.ultimoPor).toBe('sofia');
+    expect(m.get('0991234567')!.ultimoResult).toBe('No contestó');
+    expect(m.get('0997654321')!.intentos).toBe(1);
+  });
+
+  it('ignora filas sin teléfono (no se pueden atribuir a un pedido)', () => {
+    expect(buildGestionSegPorTelefono([toque({ phone: '' })]).size).toBe(0);
+  });
+
+  it('sin filas devuelve mapa vacío', () => {
+    expect(buildGestionSegPorTelefono([]).size).toBe(0);
+    expect(buildGestionSegPorTelefono(null).size).toBe(0);
   });
 });
