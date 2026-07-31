@@ -2150,6 +2150,7 @@ export type Database = {
           status: string
           store_id: string
           updated_at: string
+          webhook_secret: string | null
         }
         Insert: {
           created_at?: string
@@ -2163,6 +2164,7 @@ export type Database = {
           status?: string
           store_id: string
           updated_at?: string
+          webhook_secret?: string | null
         }
         Update: {
           created_at?: string
@@ -2176,6 +2178,7 @@ export type Database = {
           status?: string
           store_id?: string
           updated_at?: string
+          webhook_secret?: string | null
         }
         Relationships: [
           {
@@ -2411,10 +2414,12 @@ export type Database = {
       }
       wa_order_notifications: {
         Row: {
+          attempts: number
           created_at: string
           customer_phone: string | null
           external_id: string
           id: string
+          last_attempt_at: string | null
           last_bucket: string | null
           last_estado: string | null
           notified_at: string | null
@@ -2422,10 +2427,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attempts?: number
           created_at?: string
           customer_phone?: string | null
           external_id: string
           id?: string
+          last_attempt_at?: string | null
           last_bucket?: string | null
           last_estado?: string | null
           notified_at?: string | null
@@ -2433,10 +2440,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attempts?: number
           created_at?: string
           customer_phone?: string | null
           external_id?: string
           id?: string
+          last_attempt_at?: string | null
           last_bucket?: string | null
           last_estado?: string | null
           notified_at?: string | null
@@ -2770,6 +2779,11 @@ export type Database = {
       delete_store_ad_spend_daily: { Args: { p_id: string }; Returns: boolean }
       delete_wa_quick_reply: { Args: { p_id: string }; Returns: undefined }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
+      dropi_jwt_exp: { Args: { p_token: string }; Returns: number }
+      ensure_wa_channel_secret: {
+        Args: { p_rotate?: boolean; p_store_id: string }
+        Returns: string
+      }
       financial_summary: {
         Args: { p_from_date: string; p_to_date: string }
         Returns: Json
@@ -2816,6 +2830,27 @@ export type Database = {
           display_name: string
           noresp: number
           operator_id: string
+        }[]
+      }
+      get_my_stores_dropi_status: {
+        Args: never
+        Returns: {
+          has_api_key: boolean
+          store_id: string
+        }[]
+      }
+      get_store_dropi_status: {
+        Args: { p_store_id: string }
+        Returns: {
+          configured: boolean
+          country_code: string
+          has_api_key: boolean
+          has_login_password: boolean
+          has_session_token: boolean
+          login_email: string
+          session_exp: number
+          session_refreshed_at: string
+          store_url: string
         }[]
       }
       get_store_invite: {
