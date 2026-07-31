@@ -24,6 +24,9 @@
 export interface FilaIntento {
   order_id: string | null;
   result: string;
+  /** Lo que anotó la asesora al marcar (motivo de cancelación, qué pidió el
+   *  cliente…). Es el "¿y qué dijo?" que hoy obliga a abrir el pedido. */
+  reason?: string | null;
   result_date: string | null;
   created_at: string;
   operator_id: string | null;
@@ -38,6 +41,46 @@ export interface GestionDelPedido {
   ultimoPor: string | null;
   /** Resultado del último intento: 'conf' | 'canc' | 'noresp'. */
   ultimoResult: string;
+  /** Lo que quedó anotado de ESE intento — el motivo de la cancelación, lo que
+   *  pidió el cliente, etc. Es la respuesta a "¿y qué dijo?". `null` si la
+   *  asesora no escribió nada. */
+  ultimoMotivo: string | null;
+}
+
+/**
+ * Cómo se lee en pantalla un resultado de llamada. Se traduce acá y no en el
+ * componente para que Confirmar, Seguimiento y la ficha del pedido digan lo
+ * mismo — 'noresp' es código interno, la asesora lee "No contestó".
+ */
+export function etiquetaResultado(result: string): string {
+  if (result === 'conf') return 'Confirmó';
+  if (result === 'canc') return 'Canceló';
+  if (result === 'noresp') return 'No contestó';
+  // Seguimiento guarda el método tal cual ("Envié la guía"): ya es legible.
+  return result;
+}
+
+/**
+ * "hace 20 min" / "hace 3 h" / "ayer".
+ *
+ * La hora del reloj ("14:35") obliga a hacer la cuenta mentalmente y a las 9am
+ * no dice si fue hoy. Lo que la asesora necesita saber antes de volver a marcar
+ * un número es CUÁNTO HACE, no a qué hora fue.
+ *
+ * `ahoraMs` se inyecta para poder testear sin depender del reloj real.
+ */
+export function haceCuanto(iso: string, ahoraMs: number = Date.now()): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const min = Math.floor((ahoraMs - t) / 60_000);
+  // Un reloj adelantado en el equipo de la asesora daría "hace -3 min", que
+  // parece un error del sistema. Se trata como recién.
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  return dias === 1 ? 'ayer' : `hace ${dias} días`;
 }
 
 /**
@@ -81,6 +124,7 @@ export function buildGestionPorPedido(
         ultimoAt: f.created_at,
         ultimoPor: f.operator_id,
         ultimoResult: f.result,
+        ultimoMotivo: f.reason?.trim() || null,
       });
       continue;
     }
@@ -92,6 +136,7 @@ export function buildGestionPorPedido(
       previo.ultimoAt = f.created_at;
       previo.ultimoPor = f.operator_id;
       previo.ultimoResult = f.result;
+      previo.ultimoMotivo = f.reason?.trim() || null;
     }
   }
   return mapa;
@@ -119,6 +164,9 @@ export function mismaGestion(
     if (ga.ultimoAt !== gb.ultimoAt) return false;
     if (ga.ultimoResult !== gb.ultimoResult) return false;
     if (ga.ultimoPor !== gb.ultimoPor) return false;
+    // Sin esto, corregir el motivo de una llamada no se veía hasta recargar: el
+    // resto del registro es idéntico y el mapa se descartaba por "sin cambios".
+    if (ga.ultimoMotivo !== gb.ultimoMotivo) return false;
   }
   return true;
 }
@@ -158,6 +206,9 @@ export function buildGestionSegPorTelefono(
         ultimoAt: f.created_at,
         ultimoPor: f.operator_id,
         ultimoResult: metodo,
+        // touchpoints no guarda un campo de motivo: el método YA dice qué pasó
+        // ("Cliente recoge", "No contestó"). No se inventa nada acá.
+        ultimoMotivo: null,
       });
       continue;
     }

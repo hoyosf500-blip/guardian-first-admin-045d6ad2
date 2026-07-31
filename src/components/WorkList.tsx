@@ -4,7 +4,7 @@ import { formatCOP, bogotaToday } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign, PhoneOutgoing } from 'lucide-react';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
-import { horaDeIntento, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { haceCuanto, etiquetaResultado, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
@@ -148,6 +148,38 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestio
                 <span className="text-muted-foreground/60" aria-hidden="true">·</span>
                 <span className="flex-shrink-0">{timeAgo(dias)}</span>
               </div>
+              {/* Renglón de traspaso entre asesoras. Se lee como una frase:
+                "Ana llamó hace 20 min · No contestó · pidió llamar mañana".
+                Responde las tres preguntas que antes se hacían de viva voz —
+                quién, hace cuánto y qué pasó — sin abrir el pedido. El motivo
+                es LO QUE ESCRIBIÓ la asesora, no un resumen inventado. */}
+              {(() => {
+              const g = o.dbId ? gestionEquipo?.get(o.dbId) : undefined;
+              if (!g) return null;
+              const quien = nameOf(g.ultimoPor);
+              const cuando = haceCuanto(g.ultimoAt);
+              const queHizo = etiquetaResultado(g.ultimoResult);
+              return (
+                <div className="mt-1.5 pt-1.5 border-t border-border/40 flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+                  <PhoneOutgoing size={11} aria-hidden="true" className="flex-shrink-0 opacity-70" />
+                  <span className="font-semibold text-foreground/80 flex-shrink-0 truncate max-w-[110px]">{quien}</span>
+                    {cuando && <span className="flex-shrink-0">{cuando}</span>}
+                  <span className="opacity-40 flex-shrink-0">·</span>
+                  <span className="font-semibold flex-shrink-0">{queHizo}</span>
+                    {g.intentos > 1 && (
+                    <span className="flex-shrink-0 opacity-80" title={`${g.intentos} llamadas hoy`}>
+                      ({g.intentos} llamadas)
+                    </span>
+                  )}
+                    {g.ultimoMotivo && (
+                    <>
+                      <span className="opacity-40 flex-shrink-0">·</span>
+                      <span className="italic truncate min-w-0" title={g.ultimoMotivo}>{g.ultimoMotivo}</span>
+                    </>
+                  )}
+                </div>
+              );
+              })()}
             </div>
 
             {/* Right side: value + badge */}
@@ -230,28 +262,6 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestio
                   >
                     {due ? <Bell size={9} aria-hidden="true" /> : <MessageSquare size={9} aria-hidden="true" />}
                     {n.count}
-                  </span>
-                );
-              })()}
-              {/* Quién del EQUIPO lo llamó hoy. Antes este dato solo se veía
-                  ABRIENDO el pedido (AttemptHistory), así que en la lista no
-                  había forma de saber si una compañera ya lo había llamado —
-                  se preguntaba de viva voz o se llamaba dos veces al cliente. */}
-              {(() => {
-                const g = o.dbId ? gestionEquipo?.get(o.dbId) : undefined;
-                if (!g) return null;
-                const quien = nameOf(g.ultimoPor);
-                const hora = horaDeIntento(g.ultimoAt);
-                const veces = g.intentos > 1 ? ` ×${g.intentos}` : '';
-                return (
-                  <span
-                    title={`${quien} lo llamó ${g.intentos === 1 ? 'una vez' : `${g.intentos} veces`} hoy${hora ? ` · último a las ${hora}` : ''}`}
-                    aria-label={`Llamado por ${quien}, ${g.intentos} ${g.intentos === 1 ? 'vez' : 'veces'} hoy`}
-                    className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold bg-muted/50 text-muted-foreground border border-border inline-flex items-center gap-1 flex-shrink-0 max-w-[150px]"
-                  >
-                    <PhoneOutgoing size={9} aria-hidden="true" className="flex-shrink-0" />
-                    <span className="truncate">{quien}{veces}</span>
-                    {hora && <span className="font-mono tabular-nums opacity-70 flex-shrink-0">{hora}</span>}
                   </span>
                 );
               })()}

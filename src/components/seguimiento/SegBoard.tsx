@@ -9,7 +9,7 @@ import {
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
 import { metodosRapidosParaEstado } from '@/lib/segMetodosEstado';
-import { horaDeIntento, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
@@ -453,18 +453,20 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
       {(tone === 'warning' || tone === 'accent' || tone === 'info' || tone === 'neutral' || tone == null) && o.phone && (
         yaGestionada ? (
           <div
-            className="mt-2.5 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-success/15 text-success border border-success/40 font-bold text-[13px] px-2"
-            title={gEquipo ? `${nombreDe ? nombreDe(gEquipo.ultimoPor) : "Una asesora"} lo gestionó hoy${horaDeIntento(gEquipo.ultimoAt) ? ` a las ${horaDeIntento(gEquipo.ultimoAt)}` : ""}` : "Ya registraste una gestión de este pedido hoy"}
+            className="mt-2.5 w-full min-h-11 flex items-center gap-2 rounded-xl bg-success/15 text-success border border-success/40 font-bold text-[13px] px-2.5 py-1.5"
+            title={gEquipo ? `${nombreDe ? nombreDe(gEquipo.ultimoPor) : "Una asesora"} lo gestionó ${haceCuanto(gEquipo.ultimoAt) || "hoy"}: ${gEquipo.ultimoResult}` : "Ya registraste una gestión de este pedido hoy"}
           >
-            <CheckCircle2 size={15} aria-hidden="true" />
-            <span className="truncate">{gestionada || gEquipo?.ultimoResult || 'Gestionado hoy'}</span>
-            {gEquipo && (
-              <span className="text-[11px] font-semibold opacity-80 flex-shrink-0 truncate max-w-[45%]">
-                · {nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Asesora'}
-                {horaDeIntento(gEquipo.ultimoAt) ? ` ${horaDeIntento(gEquipo.ultimoAt)}` : ''}
-                {gEquipo.intentos > 1 ? ` ×${gEquipo.intentos}` : ''}
-              </span>
-            )}
+            <CheckCircle2 size={15} aria-hidden="true" className="flex-shrink-0" />
+            <div className="min-w-0 flex-1 text-left leading-tight">
+              <div className="truncate">{gestionada || gEquipo?.ultimoResult || 'Gestionado hoy'}</div>
+              {gEquipo && (
+                <div className="text-[11px] font-semibold opacity-80 truncate">
+                  {nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Asesora'}
+                  {haceCuanto(gEquipo.ultimoAt) ? ` · ${haceCuanto(gEquipo.ultimoAt)}` : ''}
+                  {gEquipo.intentos > 1 ? ` · ${gEquipo.intentos} gestiones` : ''}
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
