@@ -703,6 +703,15 @@ export default function ConfirmarTab({ profile }: Props) {
                   <span className="hud-label text-muted-foreground/70">
                     equipo · toda la tienda
                   </span>
+                  {/* Aclaración clave: este bloque cuenta TODO lo confirmado HOY,
+                      incluidos pedidos de días anteriores que estaban pendientes.
+                      El Dashboard y Productividad muestran "del día" (solo los que
+                      ENTRARON hoy) → ese número es MENOR. Los dos son correctos, y
+                      sin este rótulo el dueño los leía como contradicción. */}
+                  <span className="text-[10px] text-muted-foreground -mt-1 leading-snug">
+                    confirmados <strong className="text-foreground/80">hoy</strong> · incluye pedidos de días anteriores que estaban pendientes
+                    <span className="opacity-70"> (por eso es más que el "del día" del Dashboard)</span>
+                  </span>
                   <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-3 flex-1">
                     <StatTile icon={CheckCircle2} label="conf" value={counter.conf} tone="success" />
                     <StatTile icon={XCircle} label="canc" value={counter.canc} tone="danger" />

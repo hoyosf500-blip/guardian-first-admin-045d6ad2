@@ -737,11 +737,27 @@ export default function DashboardTab() {
   const CHART_GRID    = hsl('--border');
   const COLORS = [CHART_ACCENT, CHART_INFO, CHART_SUCCESS, CHART_DANGER, CHART_AI, CHART_CYAN, CHART_MUTED];
 
-  // Meta oficial del dueño = CONF_TARGET_PCT (85%), fuente única. Verde en meta;
-  // ámbar en la banda "cerca" (5 pts por debajo); rojo debajo de eso.
-  const tasaColor  = tasa >= CONF_TARGET_PCT ? 'text-success' : tasa >= CONF_TARGET_PCT - 5 ? 'text-warning' : 'text-danger';
-  const tasaStroke = tasa >= CONF_TARGET_PCT ? CHART_SUCCESS : tasa >= CONF_TARGET_PCT - 5 ? CHART_WARNING : CHART_DANGER;
-  const tasaBg     = tasa >= CONF_TARGET_PCT ? 'bg-success/10 border border-success/25' : tasa >= CONF_TARGET_PCT - 5 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
+  // ── Qué CONFIRMACIÓN muestra el aro del hero ──────────────────────────────
+  // En modo EQUIPO el dueño lee "cómo va HOY" = confirmados ÷ lo que ENTRÓ
+  // (confirmación DEL DÍA), la MISMA métrica que el aro de Productividad y la
+  // tendencia de abajo. Antes el aro mostraba la tasa MADURA (÷ resueltos, que
+  // con 0 cancelaciones da ~97%) y chocaba con el 69% de Productividad para el
+  // mismo "hoy" — el dueño lo reportó como confuso. La madura queda explicada
+  // en el tooltip. En modo YO no hay `entrantes` (la RPC de inflow es de
+  // managers) → se mantiene la tasa madura personal.
+  const cdEquipo = verEquipo ? confRateByCohort(periodo.conf, periodo.canc, periodo.entrantes) : null;
+  const usarDelDia = verEquipo && periodo.entrantes > 0 && cdEquipo?.tasaDia != null;
+  // Tope 100%: si el equipo confirmó pedidos viejos además de los de hoy, el
+  // cohorte no debería pasar de 100, pero el aro nunca pinta un imposible.
+  const heroTasa = usarDelDia ? Math.min(100, cdEquipo!.tasaDia as number) : tasa;
+  const heroLabel = usarDelDia ? (period === 1 ? 'del día' : 'del período') : 'confirmación';
+  const heroMeta = usarDelDia ? CONF_DIA_TARGET_PCT : CONF_TARGET_PCT;
+
+  // Meta según qué métrica muestra el aro: del día ~55%, madura 85%. Verde en
+  // meta; ámbar en la banda "cerca" (5 pts por debajo); rojo debajo de eso.
+  const tasaColor  = heroTasa >= heroMeta ? 'text-success' : heroTasa >= heroMeta - 5 ? 'text-warning' : 'text-danger';
+  const tasaStroke = heroTasa >= heroMeta ? CHART_SUCCESS : heroTasa >= heroMeta - 5 ? CHART_WARNING : CHART_DANGER;
+  const tasaBg     = heroTasa >= heroMeta ? 'bg-success/10 border border-success/25' : heroTasa >= heroMeta - 5 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
 
   // Píldora de tendencia. Se llamaba "badge" pero era texto suelto sin fondo ni
   // borde: en la card hero quedaba como contrapeso del rótulo "Tasa personal"
@@ -981,10 +997,10 @@ export default function DashboardTab() {
                 <div
                   className="hud-label"
                   title={verEquipo
-                    ? 'Tasa del equipo: confirmados de toda la tienda / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD.'
+                    ? 'Confirmación del día del equipo: de los pedidos que ENTRARON en la ventana, cuántos ya quedaron confirmados. Es el MISMO número que ves en /admin → Productividad. (No confundir con la "aceptación" — de los que contestaron, cuántos dijeron sí —, que suele ser mucho más alta y es otra cosa.)'
                     : 'Tasa personal: tus confirmados / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD. NO sobre el inflow total del día — eso lo ves en /admin → Productividad.'}
                 >
-                  {verEquipo ? 'Tasa del equipo' : 'Tasa personal'}
+                  {verEquipo ? (usarDelDia ? 'Confirmación del día' : 'Tasa del equipo') : 'Tasa personal'}
                 </div>
                 {/* Sin resueltos HOY no hay `current` que comparar: el delta
                     sería tan inventado como el que producía el `?? 0` de ayer. */}
@@ -994,7 +1010,7 @@ export default function DashboardTab() {
                     Esta pantalla solo carga la ventana elegida (no la anterior),
                     así que no hay con qué comparar sin inventar. La tendencia
                     dentro del período ya la cuenta el gráfico de abajo. */}
-                <TrendBadge current={tasa} previous={null} suffix="%" />
+                <TrendBadge current={heroTasa} previous={null} suffix="%" />
               </div>
 
               <div className="flex justify-center py-4 tilt-layer-3">
@@ -1012,7 +1028,7 @@ export default function DashboardTab() {
                       : 'Tasa de confirmación sin datos todavía'}
                   >
                     <span className="text-5xl font-bold text-muted-foreground leading-none">—</span>
-                    <span className="hud-label mt-3">confirmación</span>
+                    <span className="hud-label mt-3">{heroLabel}</span>
                     {/* Cuando la consulta del equipo falló, `hoy` son ceros de
                         relleno: decir "Sin pedidos resueltos hoy" sería afirmar
                         un hecho sobre la operación que NO se midió. Son dos
@@ -1026,7 +1042,7 @@ export default function DashboardTab() {
                     </span>
                   </div>
                 ) : (
-                  <GaugeRing value={tasa} label="confirmación" size={190} />
+                  <GaugeRing value={heroTasa} label={heroLabel} size={190} />
                 )}
               </div>
 
@@ -1065,7 +1081,7 @@ export default function DashboardTab() {
                 {/* Con menos de 5 resueltos NO se emite veredicto: decir "en
                     meta" con una sola gestión es darle estatus de conclusión a
                     un dato que no concluye nada. Se dice cuántas hay y ya. */}
-                {tasaSinBase ? (
+                {tasaSinBase && !usarDelDia ? (
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-muted/50 border border-border text-muted-foreground">
                     {/* Con la consulta del equipo caída, "0 gestiones resueltas
                         hoy" es una afirmación sobre la operación que nadie midió
@@ -1076,9 +1092,19 @@ export default function DashboardTab() {
                         ? 'Sin medición · no se pudieron leer los datos del equipo'
                         : 'Sin medición · datos del equipo sin cargar'}
                   </div>
+                ) : usarDelDia && period === 1 && cdEquipo!.inmaduro ? (
+                  // Día en curso: la tasa del día sube a medida que confirman lo
+                  // que entró. Provisional en gris, NUNCA rojo — a las 10am un 30%
+                  // no es "mal", es que falta trabajar el día. Igual que Productividad.
+                  <div
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-muted/50 border border-border text-muted-foreground"
+                    title={`Día en curso: ${cdEquipo!.pctProcesado}% de lo que entró ya se trabajó. El número sube a medida que confirman. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
+                  >
+                    En curso · {cdEquipo!.pctProcesado}% del día trabajado
+                  </div>
                 ) : (
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
-                    {tasa >= CONF_TARGET_PCT ? `En meta (${CONF_TARGET_PCT}%)` : tasa >= CONF_TARGET_PCT - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
+                    {heroTasa >= heroMeta ? `En meta (${heroMeta}%)` : heroTasa >= heroMeta - 5 ? 'Cerca de la meta' : 'Por debajo de la meta'}
                   </div>
                 )}
 
