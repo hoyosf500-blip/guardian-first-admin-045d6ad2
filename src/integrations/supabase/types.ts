@@ -1710,6 +1710,41 @@ export type Database = {
           },
         ]
       }
+      store_subscriptions: {
+        Row: {
+          notes: string | null
+          paid_until: string | null
+          plan: string
+          store_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          notes?: string | null
+          paid_until?: string | null
+          plan?: string
+          store_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          notes?: string | null
+          paid_until?: string | null
+          plan?: string
+          store_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_subscriptions_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stores: {
         Row: {
           brand_logo_url: string | null
@@ -1886,6 +1921,35 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "touchpoints_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_app_version: {
+        Row: {
+          seen_at: string
+          store_id: string | null
+          user_id: string
+          version: string
+        }
+        Insert: {
+          seen_at?: string
+          store_id?: string | null
+          user_id: string
+          version: string
+        }
+        Update: {
+          seen_at?: string
+          store_id?: string | null
+          user_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_app_version_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
@@ -3064,6 +3128,7 @@ export type Database = {
         Returns: {
           cancelados: number
           confirmados: number
+          confirmados_cohorte: number
           display_name: string
           intentos_noresp: number
           intentos_total: number
@@ -3182,6 +3247,43 @@ export type Database = {
           tarjeta: string
         }[]
       }
+      platform_set_store_status: {
+        Args: { p_status: string; p_store_id: string }
+        Returns: undefined
+      }
+      platform_set_subscription: {
+        Args: {
+          p_notes?: string
+          p_paid_until?: string
+          p_plan: string
+          p_store_id: string
+        }
+        Returns: undefined
+      }
+      platform_stores_overview: {
+        Args: never
+        Returns: {
+          app_versions: string
+          country_code: string
+          created_at: string
+          has_dropi_key: boolean
+          last_order_at: string
+          last_sync_at: string
+          last_sync_ok: boolean
+          members: number
+          orders_30d: number
+          owner_email: string
+          owner_name: string
+          paid_until: string
+          plan: string
+          status: string
+          store_id: string
+          store_name: string
+          sub_notes: string
+          wallet_sync_at: string
+          wallet_sync_ok: boolean
+        }[]
+      }
       product_profitability: {
         Args: { p_from_date: string; p_limit?: number; p_to_date: string }
         Returns: {
@@ -3221,6 +3323,10 @@ export type Database = {
       release_all_my_locks: { Args: never; Returns: number }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      report_app_version: {
+        Args: { p_store_id?: string; p_version: string }
+        Returns: undefined
+      }
       set_active_store: { Args: { p_store_id: string }; Returns: undefined }
       set_store_shopify_auto_push: {
         Args: { p_enabled: boolean; p_store_id: string }
