@@ -1,5 +1,6 @@
 import type { OrderData } from './orderUtils';
 import { calcBusinessDays, parseDate } from './orderUtils';
+import { classifySegEstado } from './segStatus';
 
 /**
  * "Listas SLA" estilo Boostec, ORGANIZADAS POR EMBUDO DE PRIORIDAD.
@@ -79,68 +80,23 @@ const E = (s: string | null | undefined): string =>
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '');
 
-const ESTADOS_TRANSITO_EXACT = new Set([
-  'EN TRANSPORTE',
-  'EN DESPACHO',
-  'EN TRASLADO NACIONAL',
-  'EN TERMINAL ORIGEN',
-  'EN TERMINAL DESTINO',
-  'EN DISTRIBUCION',
-  'EN REEXPEDICION',
-  'ENTREGADA A CONEXIONES',
-  'TELEMERCADEO',
-  'REENVIO',
-  'EN BODEGA TRANSPORTADORA',
-  'EN BODEGA DROPI',
-  'EN BODEGA ORIGEN',
-  'BODEGA DESTINO',
-  'RECOGIDO POR DROPI',
-  'DESPACHADA',
-  'EN ESPERA DE RUTA DOMESTICA',
-  // Tránsito REAL de Ecuador que el SQL desplegado ya mapea así (_estado_bucket,
-  // migrations 20260707*) y que acá caía en "Otros estados".
-  'EN TRANSITO',
-  'EN CAMINO',
-  'EN BODEGA',
-  'ZONA DE ENTREGA',
-  'DISTRIBUCION PARA ENTREGA',
-  'DISTRIBUCION A CLIENTE',
-]);
-const matchTransito = (e: string): boolean => {
-  if (ESTADOS_TRANSITO_EXACT.has(e)) return true;
-  // Variantes EC que Dropi inventa con sufijos: "EN RUTA A CENTRO LOGISTICO",
-  // "INGRESANDO OPERATIVO A", "ASIGNADO A <transportadora>".
-  if (e.startsWith('EN RUTA')) return true;
-  if (e.startsWith('INGRESANDO')) return true;
-  if (e.startsWith('ASIGNADO')) return true;
-  return false;
-};
-
-// FASE FINAL: pedido en mano del repartidor o intento de entrega fallido —
-// la atención del operador acá impacta directo en la entrega.
-const ESTADOS_REPARTO_NOVEDAD = [
-  'EN REPARTO',
-  'NOVEDAD',
-  'INTENTO DE ENTREGA',
-  'NOVEDAD SOLUCIONADA',
-];
-
-const ESTADOS_GUIA_GENERADA = ['GUIA GENERADA', 'ADMITIDA', 'PREPARADO PARA TRANSPORTADORA', 'ENTREGADO A TRANSPORTADORA'];
-
-// Tramo PRE-GUÍA: el pedido ya se confirmó pero la guía todavía no existe.
-// 'CONFIRMADO'/'GENERADO' son estados reales de ese tramo (estadoBuckets los
-// manda a `preparacion`): sin ellos acá, un pedido que el proveedor nunca
-// despachó envejecía invisible en "Otros estados" y nadie reclamaba la
-// indemnización a Dropi dentro de la ventana.
-const ESTADOS_PRE_GUIA = ['PENDIENTE', 'CONFIRMADO', 'GENERADO'];
+/**
+ * ⚠️ UN SOLO CLASIFICADOR PARA TODA LA PANTALLA.
+ *
+ * Estas listas tenían su propia copia de los matchers (`ESTADOS_TRANSITO_EXACT`,
+ * `ESTADOS_OFICINA`, …), paralela a la de `segStatus.ts` que usa el Tablero. Las
+ * dos copias se desincronizaron y el 31-jul-2026 se vio en producción: el mismo
+ * pedido en ZONA DE ENTREGA aparecía en "En tránsito" según la Lista (91) y en
+ * "En Reparto" según el Tablero (36), y 46 pedidos seguían amontonados en
+ * "Otros estados" aunque el Tablero ya sabía qué eran. El dueño lo dijo
+ * derecho: "quiero saber todos los estatus de todos mis pedidos, ¿qué es otro?".
+ *
+ * Ahora la fase la decide SIEMPRE `classifySegEstado`. Agregar un estado nuevo
+ * de Dropi se hace en UN solo archivo y las dos vistas se enteran juntas.
+ */
+const faseDe = (o: OrderData) => classifySegEstado(E(o.estado));
 
 const sinGuia = (o: OrderData): boolean => !(o.guia && o.guia.trim());
-
-// FASE FINAL: cliente debe ir a recoger a oficina (alta prioridad).
-// Incluye "PARA RETIRO EN AGENCIA SERVIENTREGA" (EC) y "EN PUNTO DROOP" (CO).
-const ESTADOS_OFICINA = (e: string): boolean =>
-  e.includes('OFICINA') || e.includes('RECLAME') || e.includes('RECLAMAR') ||
-  e.includes('EN PUNTO') || e.startsWith('PARA RETIRO') || e.startsWith('RETIRO');
 
 const ESTADOS_TERMINALES_EXACT = new Set([
   'ENTREGADO',
@@ -219,14 +175,18 @@ const SEG_LIST_DEFS: SegListDef[] = [
     label: 'En oficina (cliente recoge)',
     slaDias: 0,
     tone: 'warning',
-    matches: (o) => ESTADOS_OFICINA(E(o.estado)),
+    matches: (o) => faseDe(o) === 'oficina',
   },
   {
     slug: 'en_reparto_novedad',
     label: 'En reparto / Novedad cliente',
     slaDias: 0,
     tone: 'warning',
-    matches: (o) => ESTADOS_REPARTO_NOVEDAD.includes(E(o.estado)),
+    // 'reparto' incluye los estados EC de última milla (ZONA DE ENTREGA, EN
+    // DISTRIBUCION A CLIENTE): el paquete va camino a la puerta del cliente y
+    // hay que avisarle para que tenga el efectivo. Antes se monitoreaban como
+    // tránsito, o sea que 56 pedidos calientes no contaban como trabajo.
+    matches: (o) => ['reparto', 'novedad', 'novedad_sol'].includes(faseDe(o)),
   },
 
   // ── FASE MEDIA ──────────────────────────────────────────────────────────
@@ -235,17 +195,20 @@ const SEG_LIST_DEFS: SegListDef[] = [
     label: 'En tránsito',
     slaDias: 7,
     tone: 'info',
-    matches: (o) => matchTransito(E(o.estado)),
+    matches: (o) => faseDe(o) === 'transito',
   },
 
   // ── FASE INICIAL — guía generada ────────────────────────────────────────
+  // 'bodega_trans' (ADMITIDA / EN BODEGA TRANSPORTADORA) va acá y no en
+  // tránsito: la guía existe pero el paquete no se movió, que es exactamente
+  // lo que mide el reloj de indemnización.
   {
     slug: 'guia_generada',
     label: 'Guía generada',
     slaDias: 5,
     tone: 'info',
     matches: (o) => {
-      if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
+      if (!['guia', 'bodega_trans'].includes(faseDe(o))) return false;
       // Disjoint con indem (>= 5d). Pedido nuevo o reciente cae acá.
       return diasSinMovimiento(o) < 5;
     },
@@ -256,7 +219,7 @@ const SEG_LIST_DEFS: SegListDef[] = [
     slaDias: 5,
     tone: 'danger',
     matches: (o) => {
-      if (!ESTADOS_GUIA_GENERADA.includes(E(o.estado))) return false;
+      if (!['guia', 'bodega_trans'].includes(faseDe(o))) return false;
       return diasSinMovimiento(o) >= 5;
     },
   },
@@ -268,8 +231,7 @@ const SEG_LIST_DEFS: SegListDef[] = [
     slaDias: 4,
     tone: 'info',
     matches: (o) => {
-      if (!ESTADOS_PRE_GUIA.includes(E(o.estado))) return false;
-      if (!sinGuia(o)) return false;
+      if (faseDe(o) !== 'procesamiento' || !sinGuia(o)) return false;
       // Disjoint con indem (>= 4d). Recientes caen acá.
       return diasDesdeCreacion(o) < 4;
     },
@@ -280,13 +242,15 @@ const SEG_LIST_DEFS: SegListDef[] = [
     slaDias: 4,
     tone: 'danger',
     matches: (o) => {
-      if (!ESTADOS_PRE_GUIA.includes(E(o.estado))) return false;
-      if (!sinGuia(o)) return false;
+      if (faseDe(o) !== 'procesamiento' || !sinGuia(o)) return false;
       return diasDesdeCreacion(o) >= 4;
     },
   },
 
   // ── Catch-all ───────────────────────────────────────────────────────────
+  // Con el clasificador unificado esta lista queda casi vacía a propósito: si
+  // vuelve a crecer es que Dropi inventó un estado nuevo y hay que mapearlo en
+  // segStatus.ts (el Tablero lo muestra con nombre y volumen).
   {
     slug: 'otros_estados',
     label: 'Otros estados',
@@ -297,15 +261,12 @@ const SEG_LIST_DEFS: SegListDef[] = [
       if (!e) return false;
       // Los terminales los corta el guard global (ver SEG_LISTS más abajo).
       if (e === 'PENDIENTE CONFIRMACION') return false;
-      // Pre-guía SIN guía ya vive en pendientes_guia / indem. CON guía cae acá:
-      // antes un PENDIENTE con guía no matcheaba NINGUNA lista y desaparecía de
-      // Seguimiento sin que nadie lo notara.
-      if (ESTADOS_PRE_GUIA.includes(e) && sinGuia(o)) return false;
-      if (ESTADOS_GUIA_GENERADA.includes(e)) return false;
-      if (matchTransito(e)) return false;
-      if (ESTADOS_REPARTO_NOVEDAD.includes(e)) return false;
-      if (ESTADOS_OFICINA(e)) return false;
-      return true;
+      const fase = faseDe(o);
+      if (fase === 'otros') return true;
+      // Pre-guía CON guía: ya no es "pendiente de guía" pero tampoco sabemos en
+      // qué fase va. Cae acá para seguir VISIBLE — antes no matcheaba ninguna
+      // lista y el pedido desaparecía de Seguimiento sin que nadie lo notara.
+      return fase === 'procesamiento' && !sinGuia(o);
     },
   },
 ];

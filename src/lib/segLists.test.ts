@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { SEG_LISTS, findSegList, isValidSegListSlug, hasSeguimientoWork } from './segLists';
+import type { SegListSlug } from './segLists';
+import { classifySegEstado } from './segStatus';
 import type { OrderData } from './orderUtils';
 
 /**
@@ -194,10 +196,64 @@ describe('SEG_LISTS — estados de ECUADOR', () => {
   it('tránsito EC (EN CAMINO / EN TRÁNSITO con tilde / EN BODEGA) cae en en_transito, no en otros', () => {
     const transito = findSegList('en_transito')!;
     const otros = findSegList('otros_estados')!;
-    for (const estado of ['EN CAMINO', 'EN TRANSITO', 'EN TRÁNSITO', 'EN BODEGA', 'ZONA DE ENTREGA', 'DISTRIBUCION PARA ENTREGA']) {
+    for (const estado of ['EN CAMINO', 'EN TRANSITO', 'EN TRÁNSITO', 'EN BODEGA', 'DISTRIBUCION PARA ENTREGA']) {
       const o: OrderData = { ...baseOrder, estado, fecha: '', dias: 3 };
       expect(transito.matches(o), `en_transito debe matchear ${estado}`).toBe(true);
       expect(otros.matches(o), `otros_estados NO debe matchear ${estado}`).toBe(false);
+    }
+  });
+
+  // Los estados que el 31-jul-2026, con el CRM ya publicado, seguían cayendo en
+  // "Otros estados" (46 pedidos) aunque el Tablero ya sabía qué eran. Se leyeron
+  // de la pantalla en vivo de Rushmira Ecuador. Cada uno va a su lista de fase.
+  describe('los que quedaban en "Otros estados" con el clasificador viejo', () => {
+    it.each([
+      ['ZONA DE ENTREGA', 'en_reparto_novedad'],
+      ['EN DISTRIBUCIÓN A CLIENTE', 'en_reparto_novedad'],
+      ['POR RECOLECTAR', 'guia_generada'],
+      ['EN DISTRIBUCION PARA ENTREGA EN AGENCIA', 'en_oficina'],
+      ['INGRESO A CONFIRMACION', 'pendientes_guia'],
+    ])('%s cae SOLO en %s', (estado, slug) => {
+      const o: OrderData = { ...baseOrder, estado, guia: '', fecha: '', dias: 1 };
+      expect(SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug)).toEqual([slug]);
+    });
+
+    it('última milla EC cuenta como TRABAJO, no como monitoreo', () => {
+      // 56 pedidos en ZONA DE ENTREGA se monitoreaban como "en tránsito": el
+      // guard de inactividad creía que no había nada que hacer mientras el
+      // repartidor ya estaba en la calle con la plata del día.
+      expect(hasSeguimientoWork([{ ...baseOrder, estado: 'ZONA DE ENTREGA', dias: 1 }])).toBe(true);
+    });
+  });
+
+  // El Tablero y la Lista salen del MISMO clasificador (segStatus.ts). Si
+  // alguien vuelve a escribir matchers paralelos acá, este test lo delata: era
+  // el bug que hacía decir "91 en tránsito" arriba y "36" abajo.
+  it('Lista y Tablero coinciden: ninguna fase viva se queda sin lista', () => {
+    const porFase: Record<string, SegListSlug> = {
+      procesamiento: 'pendientes_guia',
+      guia: 'guia_generada',
+      bodega_trans: 'guia_generada',
+      transito: 'en_transito',
+      reparto: 'en_reparto_novedad',
+      novedad: 'en_reparto_novedad',
+      novedad_sol: 'en_reparto_novedad',
+      oficina: 'en_oficina',
+    };
+    const ejemplos: [string, string][] = [
+      ['PENDIENTE', 'procesamiento'],
+      ['GUIA GENERADA', 'guia'],
+      ['ADMITIDA', 'bodega_trans'],
+      ['EN TRANSPORTE', 'transito'],
+      ['EN REPARTO', 'reparto'],
+      ['NOVEDAD', 'novedad'],
+      ['NOVEDAD SOLUCIONADA', 'novedad_sol'],
+      ['RECLAMAR EN OFICINA', 'oficina'],
+    ];
+    for (const [estado, fase] of ejemplos) {
+      expect(classifySegEstado(estado), `${estado} debe clasificar como ${fase}`).toBe(fase);
+      const o: OrderData = { ...baseOrder, estado, guia: '', fecha: '', dias: 1 };
+      expect(SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug)).toEqual([porFase[fase]]);
     }
   });
 });

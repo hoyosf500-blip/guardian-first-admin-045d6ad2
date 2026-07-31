@@ -60,6 +60,12 @@ const PROCESAMIENTO_EXACT = new Set([
   'EN BODEGA DROPI',
   'RECOGIDO POR DROPI',
   'INGRESO A CONFIRMACION',
+  // Tramo pre-guía: el pedido ya se confirmó pero la guía todavía no existe.
+  // Vivían solo en segLists.ESTADOS_PRE_GUIA; al unificar el clasificador
+  // tienen que estar acá o el pedido cae en 'otros' y se pierde la alarma de
+  // indemnización por guía que nunca se generó.
+  'CONFIRMADO',
+  'GENERADO',
   // 'EN PUNTO DROOP' NO va acá: "droop" = drop point, un punto de retiro donde
   // el CLIENTE debe ir a recoger (igual que segLists.ESTADOS_OFICINA lo trata).
   // Tenerlo en procesamiento le escondía la urgencia a la operadora en el
@@ -93,6 +99,11 @@ const TRANSITO_EXACT = new Set([
   'EN ESPERA DE RUTA DOMESTICA',
   'BODEGA DESTINO',
   'EN BODEGA ORIGEN',
+  // Los dos que el SQL desplegado (_estado_bucket) ya trataba como tránsito y
+  // que solo vivían en segLists. Exactos a propósito: 'EN DISTRIBUCION PARA
+  // ENTREGA EN AGENCIA' NO es tránsito — es retiro del cliente (oficina).
+  'EN BODEGA',
+  'DISTRIBUCION PARA ENTREGA',
 ]);
 
 const REPARTO_EXACT = new Set([
