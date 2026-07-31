@@ -693,14 +693,19 @@ export default function DashboardTab() {
     if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
     else toast.success('Cierre enviado correctamente');
   };
+  // ⚠️ El rótulo "Tasa" a secas causó una disputa real (30-jul): el equipo mandó
+  // "Tasa: 99%" (= conf ÷ los que CONTESTARON) y el dueño lo leyó como LA
+  // confirmación del día (= conf ÷ los que ENTRARON, su métrica de pago, meta
+  // 85%). Nadie calculó mal — el nombre era ambiguo. Ahora el cierre dice
+  // explícitamente de qué es el %: nadie puede volver a leer 99% como "del día".
   const copiarResumen = () => {
     void copyToClipboard(
-      `Cierre — ${formatDateES(hoyISO)}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nTasa: ${cierreTasaTexto}\nPendientes: ${pendLeft}\nTotal: ${cierreTotal}`,
+      `Cierre — ${formatDateES(hoyISO)}\n\nConfirmados: ${counter.conf}\nCancelados: ${counter.canc}\nNo respondió: ${counter.noresp}\nCierre (de los que contestaron): ${cierreTasaTexto}\nPendientes: ${pendLeft}\nTotal gestionado: ${cierreTotal}\n\nOJO: este % NO es la Confirmación del día (esa se mide sobre lo que ENTRÓ y la ve el admin en el Dashboard).`,
       'Copiado al portapapeles',
     );
   };
   const enviarWA = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(hoyISO)}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal: ${cierreTotal} | Tasa: ${cierreTasaTexto}\nPendientes: ${pendLeft}`)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(`Cierre — ${formatDateES(hoyISO)}\n\nConf: ${counter.conf} | Canc: ${counter.canc} | N/R: ${counter.noresp}\nTotal gestionado: ${cierreTotal}\nCierre (de los que contestaron): ${cierreTasaTexto}\nPendientes: ${pendLeft}\n\nOJO: este % no es la Confirmación del día (esa se mide sobre lo que ENTRÓ).`)}`, '_blank');
   };
 
   // Chart theming uses HSL CSS vars so dark/light modes adapt automatically.
@@ -756,49 +761,50 @@ export default function DashboardTab() {
   // mismo "hoy" — el dueño lo reportó como confuso. La madura queda explicada
   // en el tooltip. En modo YO no hay `entrantes` (la RPC de inflow es de
   // managers) → se mantiene la tasa madura personal.
-  // Números "del día" del EQUIPO desde la MISMA fuente que Productividad
-  // (operator_productivity_stats vía porOperadora), para que el aro y las
-  // tarjetas del Dashboard den EXACTAMENTE lo mismo que /admin → Productividad.
-  // Antes salían de la serie diaria (admin_daily_reports_range), que cuenta otra
-  // población (incluye pedidos que entraron ya despachados) → Dashboard 65% vs
-  // Productividad 60% para el mismo hoy. Fallback a la serie si el desglose por
-  // operadora no cargó (p.ej. un viewer sin permiso de manager).
-  // "Confirmación del día" del EQUIPO = lo que CONFIRMÓ ÷ lo que TRABAJÓ hoy
-  // (gestionados = conf+canc+noresp), MISMA fórmula y fuente que Productividad
-  // (operator_productivity_stats vía porOperadora) → los dos aros dan idéntico.
-  // Refleja los 71 que confirmó de verdad (incluye pedidos viejos), no solo el
-  // cohorte que entró hoy (que daba 26 y confundía al dueño).
-  const prodEntrantes = porOperadora[0]?.entrantes ?? 0;         // demanda del día (contexto)
-  const prodConf = porOperadora.reduce((a, o) => a + o.conf, 0);          // 71 (todo hoy)
-  const prodCanc = porOperadora.reduce((a, o) => a + o.canc, 0);          // 1
-  const prodNoresp = porOperadora.reduce((a, o) => a + o.noresp, 0);      // 35
-  const prodGestionados = porOperadora.reduce((a, o) => a + o.gestionados, 0); // 107 (trabajados)
-  const prodContactados = prodConf + prodCanc;                            // 72 (contestaron)
-  // period !== 15: operator_productivity_stats no tiene ventana de 15 días (cae a
-  // 7d). En 15d usamos la serie para no mostrar 7 días rotulados como 15. En
-  // Hoy/7d/30d el rango coincide y damos igual que Productividad.
-  const usarProd = verEquipo && porOperadoraEstado === 'ok' && prodGestionados > 0 && period !== 15;
-  const usarDelDia = verEquipo && usarProd;
-  const heroTasa = usarProd ? Math.min(100, Math.round((prodConf / prodGestionados) * 100)) : tasa;
-  // Tarjetas del embudo en modo Equipo: mismos números que Productividad.
-  const tileConf = usarProd ? prodConf : periodo.conf;
-  const tileCanc = usarProd ? prodCanc : periodo.canc;
-  const tileNoresp = usarProd ? prodNoresp : periodo.noresp;
-  const tileEntraron = usarProd ? prodEntrantes : periodo.entrantes;
-  const tileGestionados = usarProd ? prodGestionados : (periodo.conf + periodo.canc + periodo.noresp);
-  const tileContactados = usarProd ? prodContactados : (periodo.conf + periodo.canc);
+  // ── "Confirmación del día" OFICIAL (definición FINAL del dueño, 30-jul) ──
+  // = de los pedidos que ENTRARON en la ventana, cuántos quedaron confirmados
+  // (con su desglose: cancelados / no contestó / pendientes). Es la tasa con la
+  // que paga al equipo — meta 85%, la misma vara que usan sus colegas COD.
+  // Fuente: admin_daily_reports_range (cohorte por created_at, EXCLUYE
+  // REEMPLAZADA — auditoría 30-jul: 54 de 106 filas del día eran ediciones de
+  // Dropi; sin esta exclusión el denominador se infla y la tasa sale más baja
+  // de lo real). Atribución por día de ENTRADA: un pedido de ayer confirmado
+  // hoy suma en AYER — por eso "hoy" está EN CURSO (sube mientras se trabaja su
+  // cola) y el número que se JUZGA es el de AYER, ya maduro (chip aparte).
+  // Lo que el equipo HIZO hoy (p.ej. 71 confirmaciones, backlog incluido) NO es
+  // esta tasa: va como nota y en detalle en Confirmar / Productividad.
+  const usarDelDia = verEquipo && periodo.entrantes > 0;
+  const heroTasa = usarDelDia ? Math.min(100, Math.round((periodo.conf / periodo.entrantes) * 100)) : tasa;
+  // Tarjetas del embudo: el DESENLACE del cohorte que entró en la ventana.
+  const tileConf = periodo.conf;
+  const tileCanc = periodo.canc;
+  const tileNoresp = periodo.noresp;
+  const tileEntraron = periodo.entrantes;
+  // Pendientes DEL COHORTE = entraron − (conf + canc + noresp): lo que aún no
+  // tiene desenlace de los que entraron en la ventana.
+  const cohortePend = Math.max(0, periodo.entrantes - periodo.conf - periodo.canc - periodo.noresp);
+  // AYER maduro — el número contra el que se paga (solo con selector en Hoy).
+  const ayerRow = verEquipo && period === 1 ? equipoDiario.find(e => e.fecha === shiftDiasISO(hoyISO, -1)) : null;
+  const ayerEntrantes = Number(ayerRow?.entrantes ?? 0) || 0;
+  const ayerConf = Number(ayerRow?.conf ?? 0) || 0;
+  const ayerTasa = ayerEntrantes > 0 ? Math.min(100, Math.round((ayerConf / ayerEntrantes) * 100)) : null;
+  // Trabajo EXTRA de hoy sobre pedidos de días anteriores (backlog): todas las
+  // confirmaciones hechas hoy (counter, por result_date) menos las del cohorte.
+  const confBacklogHoy = period === 1 && verEquipo ? Math.max(0, counter.conf - periodo.conf) : 0;
   // Cuando NO es "del día" (modo Yo, o Equipo sin inflow) el aro muestra la tasa
   // MADURA = ACEPTACIÓN (de los que contestaron, cuántos aceptaron). Se llama
   // "aceptación", NO "confirmación": el dueño decidió que "confirmación" es UNA
-  // sola cosa en todo el CRM (la del día). Así 97% no vuelve a competir con 69%.
+  // sola cosa en todo el CRM (la del día). Así 97% no vuelve a competir con 66%.
   const heroLabel = usarDelDia ? (period === 1 ? 'del día' : 'del período') : 'aceptación';
-  const heroMeta = usarDelDia ? CONF_DIA_TARGET_PCT : CONF_TARGET_PCT;
+  const heroMeta = CONF_TARGET_PCT; // 85% — la meta del dueño, cohorte o aceptación
+  // "Hoy" en curso: sin veredicto de color (gris) — a media tarde un 65% no es
+  // "mal", es que falta trabajar la cola. El veredicto vive en el chip de AYER.
+  const heroEnCurso = usarDelDia && period === 1;
 
-  // Meta según qué métrica muestra el aro: del día ~55%, madura 85%. Verde en
-  // meta; ámbar en la banda "cerca" (5 pts por debajo); rojo debajo de eso.
-  const tasaColor  = heroTasa >= heroMeta ? 'text-success' : heroTasa >= heroMeta - 5 ? 'text-warning' : 'text-danger';
+  // Verde en meta; ámbar en la banda "cerca" (5 pts); rojo debajo. En curso → gris.
+  const tasaColor  = heroEnCurso ? 'text-muted-foreground' : heroTasa >= heroMeta ? 'text-success' : heroTasa >= heroMeta - 5 ? 'text-warning' : 'text-danger';
   const tasaStroke = heroTasa >= heroMeta ? CHART_SUCCESS : heroTasa >= heroMeta - 5 ? CHART_WARNING : CHART_DANGER;
-  const tasaBg     = heroTasa >= heroMeta ? 'bg-success/10 border border-success/25' : heroTasa >= heroMeta - 5 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
+  const tasaBg     = heroEnCurso ? 'bg-muted/50 border border-border' : heroTasa >= heroMeta ? 'bg-success/10 border border-success/25' : heroTasa >= heroMeta - 5 ? 'bg-warning/10 border border-warning/25' : 'bg-danger/10 border border-danger/25';
 
   // Píldora de tendencia. Se llamaba "badge" pero era texto suelto sin fondo ni
   // borde: en la card hero quedaba como contrapeso del rótulo "Tasa personal"
@@ -1134,12 +1140,29 @@ export default function DashboardTab() {
                         : 'Sin medición · datos del equipo sin cargar'}
                   </div>
                 ) : usarDelDia ? (
-                  // Confirmación del día del EQUIPO = confirmó ÷ trabajó. Debajo del
-                  // aro: los conteos que lo arman, para que el 71 y el 107 se vean.
-                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}
-                    title={`Confirmó ${prodConf} de ${prodGestionados} que el equipo trabajó hoy = ${heroTasa}%. Meta del día ~${heroMeta}%.`}
-                  >
-                    {prodConf} de {prodGestionados} · {heroTasa >= heroMeta ? `en meta (${heroMeta}%)` : heroTasa >= heroMeta - 5 ? 'cerca de la meta' : 'bajo la meta'}
+                  // Tasa OFICIAL: de los que ENTRARON, cuántos confirmados. Hoy va
+                  // "en curso" (gris, sin veredicto); el juicio contra la meta 85%
+                  // vive en el chip de AYER, que ya maduró.
+                  <div className="space-y-1.5">
+                    <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}
+                      title={`De los ${tileEntraron} que entraron, ${tileConf} confirmados = ${heroTasa}%. ${heroEnCurso ? `EN CURSO: sube a medida que el equipo trabaja la cola del día (quedan ${cohortePend} sin desenlace). El número que se juzga contra la meta es el de AYER.` : `Meta ${heroMeta}%.`}`}
+                    >
+                      {tileConf} de {tileEntraron} que entraron{heroEnCurso ? ' · en curso' : heroTasa >= heroMeta ? ` · en meta (${heroMeta}%)` : heroTasa >= heroMeta - 5 ? ' · cerca de la meta' : ` · bajo la meta (${heroMeta}%)`}
+                    </div>
+                    {ayerTasa != null && (
+                      <div
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold tabular-nums ${ayerTasa >= heroMeta ? 'bg-success/10 border border-success/25 text-success' : ayerTasa >= heroMeta - 5 ? 'bg-warning/10 border border-warning/25 text-warning' : 'bg-danger/10 border border-danger/25 text-danger'}`}
+                        title={`AYER ya maduró: de los ${ayerEntrantes} que entraron, ${ayerConf} quedaron confirmados. Este es el número que se compara con la meta del ${heroMeta}% — el de hoy todavía sube.`}
+                      >
+                        Ayer: {ayerTasa}% ({ayerConf} de {ayerEntrantes}) {ayerTasa >= heroMeta ? '· en meta ✓' : `· meta ${heroMeta}%`}
+                      </div>
+                    )}
+                    {confBacklogHoy > 0 && (
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        Además, el equipo confirmó hoy <strong className="text-foreground/80">{confBacklogHoy}</strong> pedidos
+                        de días anteriores ({counter.conf} confirmaciones en total — el detalle está en Productividad).
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${tasaBg} ${tasaColor}`}>
@@ -1208,9 +1231,9 @@ export default function DashboardTab() {
               // ventana elegida (no la anterior), así que no hay con qué
               // comparar honestamente. Antes de inventar un delta, no hay chip:
               // la tendencia dentro del período ya la cuenta el sparkline.
-              { icon: CheckCircle2, label: 'Confirmados', value: tileConf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'TODO lo que el equipo confirmó hoy (incluye pedidos viejos que estaban pendientes). Es el MISMO número que ves en Confirmar y en /admin → Productividad.' : undefined },
-              { icon: XCircle, label: 'Cancelados', value: tileCanc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'Pedidos que el equipo canceló hoy (de todo lo que trabajó).' : undefined },
-              { icon: PhoneOff, label: 'No respondió', value: tileNoresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'Clientes que no contestaron hoy y siguen sin cerrar.' : undefined },
+              { icon: CheckCircle2, label: 'Confirmados', value: tileConf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos quedaron confirmados (sin importar si se confirmaron hoy o después — cada pedido cuenta en su día de entrada). Las confirmaciones de pedidos viejos hechas hoy van aparte, en la nota del aro.' : undefined },
+              { icon: XCircle, label: 'Cancelados', value: tileCanc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos terminaron cancelados.' : undefined },
+              { icon: PhoneOff, label: 'No respondió', value: tileNoresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos quedaron en "no contestó" (sin conf/canc posterior).' : undefined },
               // La 4ª tarjeta SIGUE AL SELECTOR en modo Equipo: pedidos que
               // ENTRARON en la ventana (con "Hoy" mostraba 9056 = TODO el
               // histórico de la tienda, y el dueño lo leyó — con razón — como
@@ -1219,7 +1242,7 @@ export default function DashboardTab() {
               // En modo Yo no hay fuente de entrantes (la RPC es de managers):
               // se mantiene el universo cargado, rotulado como siempre.
               ...(verEquipo
-                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${statusBreakdown.pendientes} pendientes ahora`, title: 'Pedidos NUEVOS que entraron hoy (la demanda del día). Va aparte del %: el equipo también trabaja pedidos de días anteriores, por eso puede confirmar más de lo que entró.' }]
+                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${cohortePend} del día sin desenlace`, title: 'Pedidos que ENTRARON en la ventana (sin las ediciones REEMPLAZADA de Dropi). El denominador de la Confirmación del día. Debajo: cuántos de estos aún no tienen desenlace (ni conf, ni canc, ni no-contestó).' }]
                 : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
             ].map((k) => (
               <StatTile

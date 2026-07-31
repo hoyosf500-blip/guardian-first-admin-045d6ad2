@@ -557,13 +557,13 @@ export default function ProductivityDashboard() {
                 className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between gap-3 tilt-layer-2">
-                  <div className="hud-label" title="Confirmados ÷ lo que el equipo TRABAJÓ hoy (gestionados = contestaron + no contestaron). Refleja los que confirmó de verdad, incluidos pedidos viejos que estaban pendientes.">
-                    Confirmación del día
+                  <div className="hud-label" title="Confirmados ÷ lo que el equipo TRABAJÓ (gestionados = contestaron + no contestaron), incluidos pedidos viejos que estaban pendientes. OJO: NO es la 'Confirmación del día' oficial del Dashboard (esa se mide sobre lo que ENTRÓ, meta 85%) — esta mide el rendimiento del TRABAJO hecho.">
+                    Confirmación del trabajo
                   </div>
                 </div>
 
                 <div className="flex justify-center py-4 tilt-layer-3">
-                  <GaugeRing value={teamTasaDiaGauge} label="del día" size={190} tone={heroTone} />
+                  <GaugeRing value={teamTasaDiaGauge} label="del trabajo" size={190} tone={heroTone} />
                 </div>
 
                 <div className="tilt-layer-1">
@@ -628,9 +628,11 @@ export default function ProductivityDashboard() {
               </div>
 
               <p className="md:col-span-12 -mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                <strong className="text-foreground/80">Confirmación del día</strong> = de lo que el equipo
+                <strong className="text-foreground/80">Confirmación del trabajo</strong> = de lo que el equipo
                 trabajó hoy ({teamAtendidos}), cuánto confirmó ({teamConf}) = {teamTasaDiaGauge}%. Incluye pedidos de
                 días anteriores que estaban pendientes, por eso puede confirmar más de lo que entró hoy.
+                La <strong className="text-foreground/80">Confirmación del día</strong> oficial (de los que ENTRARON,
+                meta 85%) está en el Dashboard.
               </p>
             </motion.div>
           )}
@@ -1118,7 +1120,7 @@ export default function ProductivityDashboard() {
             icon={CheckCircle2}
             note={
               entrantes > 0
-                ? `Trabajó ${teamAtendidos} → confirmó ${teamConf} = ${teamTasaDiaGauge}% del día · entraron ${entrantes} hoy`
+                ? `Trabajó ${teamAtendidos} → confirmó ${teamConf} = ${teamTasaDiaGauge}% del trabajo · entraron ${entrantes} hoy`
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
@@ -1135,7 +1137,7 @@ export default function ProductivityDashboard() {
               <span><strong className="text-foreground">Sin cerrar aún</strong>: sigue sin contestar — todavía nadie lo cerró</span>
               <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que trabajó</span>
               <span><strong className="text-foreground">Contactó</strong>: de los que ENTRARON hoy, a cuántos les habló (faltan = por contactar)</span>
-              <span><strong className="text-foreground">Confirmó del día</strong>: de los que ENTRARON hoy, cuántos quedaron confirmados · meta ~{CONF_DIA_TARGET_PCT}%</span>
+              <span><strong className="text-foreground">Confirmó</strong>: de los pedidos que TRABAJÓ, cuántos confirmó (la Confirmación del día oficial — de los que ENTRARON, meta 85% — está en el Dashboard)</span>
               <span><strong className="text-foreground">Clientes por hora</strong>: clientes reales atendidos por cada hora trabajada (producción)</span>
               <span><strong className="text-foreground">Llamadas por hora</strong>: cuántas veces marcó por cada hora, incl. las que no contestaron (esfuerzo) · 🔴 menos de {MIN_INTENTOS_POR_HORA}</span>
               <span className="opacity-70">gris "· en curso" = el día todavía no termina, número provisional</span>
@@ -1190,7 +1192,7 @@ export default function ProductivityDashboard() {
                       title="Confirmados ÷ lo que ENTRÓ en el período — cómo va el día. Meta ~55% (confirmar 85 de cada 100 que entran es imposible: los que no contestan bajan el techo). Gris '· en curso' = el día aún no se trabajó completo, no concluyente. La efectividad de cierre (÷ resueltos, meta 85%) está en el tooltip de cada celda."
                     >
                       <span className="block">Confirmó</span>
-                      <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">de lo que entró hoy</span>
+                      <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">de lo que trabajó</span>
                     </th>
                     <th
                       className="text-right"
