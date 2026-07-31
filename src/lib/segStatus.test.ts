@@ -7,6 +7,35 @@ import { classifySegEstado, matchOficina, matchTransito } from './segStatus';
 // tests blindan los estados EC reales que vimos en producción.
 
 describe('classifySegEstado', () => {
+  // Los seis estados que el 31-jul-2026 estaban SIN CLASIFICAR en el tablero en
+  // vivo de Rushmira Ecuador (238 pedidos entre todos). Se leyeron de la pantalla
+  // real, no se inventaron. Si Dropi les cambia el texto, este test lo delata.
+  describe('estados EC vistos en producción el 31-jul-2026', () => {
+    it.each([
+      ['ZONA DE ENTREGA', 'reparto'],
+      ['EN DISTRIBUCIÓN A CLIENTE', 'reparto'],
+      ['EN DISTRIBUCION A CLIENTE', 'reparto'],
+      ['POR RECOLECTAR', 'guia'],
+      ['EN DISTRIBUCION PARA ENTREGA EN AGENCIA', 'oficina'],
+      ['EN PROCESO DE DEVOLUCION', 'devolucion_transito'],
+      ['INGRESO A CONFIRMACION', 'procesamiento'],
+    ])('%s → %s', (estado, esperado) => {
+      expect(classifySegEstado(estado)).toBe(esperado);
+    });
+
+    it('NINGUNO cae ya en el cajón sin clasificar', () => {
+      for (const e of ['ZONA DE ENTREGA', 'POR RECOLECTAR', 'EN DISTRIBUCIÓN A CLIENTE',
+        'EN DISTRIBUCION PARA ENTREGA EN AGENCIA', 'EN PROCESO DE DEVOLUCION', 'INGRESO A CONFIRMACION']) {
+        expect(classifySegEstado(e)).not.toBe('otros');
+      }
+    });
+
+    it('"EN DISTRIBUCION" pelado sigue siendo tránsito', () => {
+      // El matcher de reparto es EXACTO justamente para no tragarse este.
+      expect(classifySegEstado('EN DISTRIBUCION')).toBe('transito');
+    });
+  });
+
   describe('procesamiento', () => {
     it.each([
       'PENDIENTE',

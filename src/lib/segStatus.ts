@@ -41,12 +41,25 @@ export type SegStatusKey =
 // Sin esto, todos los pedidos EC en fase tránsito caen en "Otros" y la
 // operadora ve una columna gigante sin priorización real.
 
+// ── Estados de Ecuador vistos EN PRODUCCIÓN el 31-jul-2026 ──
+// Se leyeron del tablero en vivo de Rushmira Ecuador, donde caían sin clasificar
+// (238 pedidos en total entre los seis). No son adivinanzas: son los rótulos
+// exactos que manda Dropi EC.
+//   ZONA DE ENTREGA (56) · EN DISTRIBUCIÓN A CLIENTE (16) → va en camino al
+//     cliente = En Reparto (avisarle que llega hoy).
+//   POR RECOLECTAR (16) → la guía existe pero la transportadora todavía no lo
+//     recogió = Guía Generada (y así entra a la alarma de "pendientes de guía",
+//     que es donde tiene que verse: llevaban 13 días quietos).
+//   EN DISTRIBUCION PARA ENTREGA EN AGENCIA (3) → lo recoge el cliente = Oficina.
+//   EN PROCESO DE DEVOLUCION (1) → Dev. en Tránsito.
+//   INGRESO A CONFIRMACION (1) → arranque del flujo = En Procesamiento.
 const PROCESAMIENTO_EXACT = new Set([
   'PENDIENTE',
   'EN PROCESAMIENTO',
   'ALISTAMIENTO',
   'EN BODEGA DROPI',
   'RECOGIDO POR DROPI',
+  'INGRESO A CONFIRMACION',
   // 'EN PUNTO DROOP' NO va acá: "droop" = drop point, un punto de retiro donde
   // el CLIENTE debe ir a recoger (igual que segLists.ESTADOS_OFICINA lo trata).
   // Tenerlo en procesamiento le escondía la urgencia a la operadora en el
@@ -59,6 +72,7 @@ const GUIA_EXACT = new Set([
   'GUIA_GENERADA',
   'PREPARADO PARA TRANSPORTADORA',
   'ENTREGADO A TRANSPORTADORA',
+  'POR RECOLECTAR',
 ]);
 
 const BODEGA_TRANS_EXACT = new Set([
@@ -86,6 +100,10 @@ const REPARTO_EXACT = new Set([
   'TELEMERCADEO',
   'REENVÍO',
   'REENVIO',
+  'ZONA DE ENTREGA',
+  // Exacto y no `startsWith('EN DISTRIBUCION')`: 'EN DISTRIBUCION' pelado es
+  // tránsito y 'EN DISTRIBUCION PARA ENTREGA EN AGENCIA' es oficina.
+  'EN DISTRIBUCION A CLIENTE',
 ]);
 
 /**
@@ -118,6 +136,10 @@ export const matchOficina = (e: string): boolean =>
   e.includes('RECLAME') ||
   e.includes('RECLAMAR') ||
   e.includes('EN PUNTO') ||
+  // Cualquier variante de "entrega en agencia": el paquete espera al CLIENTE en
+  // un punto, no va a su puerta. Cubre 'EN DISTRIBUCION PARA ENTREGA EN AGENCIA'
+  // y las de retiro que ya existían.
+  e.includes('AGENCIA') ||
   e.startsWith('PARA RETIRO') ||
   e.startsWith('RETIRO');
 
@@ -134,7 +156,7 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
   // SOLUCION APROBADA = variante EC de "novedad solucionada". Antes caía en
   // 'otros' (vista en consola Rushmira Ecuador 2026-05-28).
   { key: 'novedad_sol', match: (e) => e === 'NOVEDAD SOLUCIONADA' || e === 'SOLUCION APROBADA' },
-  { key: 'devolucion_transito', match: (e) => e === 'DEVOLUCION EN TRANSITO' },
+  { key: 'devolucion_transito', match: (e) => e === 'DEVOLUCION EN TRANSITO' || e === 'EN PROCESO DE DEVOLUCION' },
   { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
   { key: 'indemnizada', match: (e) => e.includes('INDEMNIZADA') },
   { key: 'entregado', match: (e) => e === 'ENTREGADO' },
