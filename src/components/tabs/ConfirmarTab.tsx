@@ -61,7 +61,7 @@ const fadeUp = (delay = 0) => ({
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, coverageConfirmError, markResult } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, coverageConfirmError, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
@@ -111,10 +111,20 @@ export default function ConfirmarTab({ profile }: Props) {
     if (excelLoaded || !user || autoLoading) return;
     if (!activeStoreId) return;
     setAutoLoading(true);
-    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    // Sin filtro de lock en el SERVIDOR (2026-07-31). Antes esta primera carga
+    // traía `.or(locked_by.is.null, locked_by.eq.yo, locked_at.lt.15min)`, y eso
+    // tenía dos problemas:
+    //   1. Un pedido con `locked_by` puesto pero `locked_at` NULL no cumplía
+    //      NINGUNA de las tres condiciones (en SQL, NULL < X no es verdadero) →
+    //      desaparecía de la cola de esa asesora PARA SIEMPRE, sin aviso.
+    //   2. `loadWorkQueue` (el refresh) nunca tuvo ese filtro: al arrancar se
+    //      veían menos pedidos que treinta segundos después. Dos caminos, dos
+    //      colas distintas.
+    // El anti-choque real lo hace `isLockedByOther` en el cliente, que además
+    // sabe soltar el pedido cuando el lock vence y trata el `locked_at` nulo
+    // como "sin lock" (mejor mostrar de más que perder una venta).
     supabase.from('orders').select(ORDER_COLUMNS).ilike('estado', 'PENDIENTE CONFIRMACION')
       .eq('store_id', activeStoreId)
-      .or(`locked_by.is.null,locked_by.eq.${user.id},locked_at.lt.${fifteenMinAgo}`)
       .then(({ data: dbOrders, error }) => {
         if (error) {
           console.error('Error loading orders:', error);
@@ -293,7 +303,15 @@ export default function ConfirmarTab({ profile }: Props) {
     // Con coverageConfirmError el set está vacío/parcial (la query falló):
     // filtrar contra un set roto escondería/mostraría pedidos mal → el toggle
     // se ignora (y el checkbox se desactiva en el chip "Tu cola hoy").
-    if (onlyUntouched && !coverageConfirmError && o.dbId && myConfirmTouchedToday.has(o.dbId)) return false;
+    // El toggle es de EQUIPO, no personal (cambio 2026-07-31, pedido del dueño:
+    // "para yo no tener que preguntarles si esos ya los llamaron"). Antes solo
+    // miraba `myConfirmTouchedToday`, así que a una asesora le seguían saliendo
+    // como "sin tocar" los pedidos que una compañera ya había llamado esa
+    // mañana — y se repetía la llamada al mismo cliente. `gestionPorPedido`
+    // incluye mis propias llamadas, pero se deja el set personal como respaldo
+    // por si el mapa de equipo todavía no cargó.
+    if (onlyUntouched && !coverageConfirmError && o.dbId
+      && (gestionPorPedido.has(o.dbId) || myConfirmTouchedToday.has(o.dbId))) return false;
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
@@ -322,7 +340,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, coverageConfirmError, user?.id]);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id]);
 
   // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
   // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente
@@ -528,6 +546,16 @@ export default function ConfirmarTab({ profile }: Props) {
             // aplicados). Antes se contaba sobre visibleQueue crudo → el chip
             // decía 8 pero la lista mostraba 5 y no bajaba (divergían).
             const sinTocarEnCola = filteredItems.filter(o => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
+            // Población de EQUIPO: de los que están a la vista, a cuántos ya
+            // llamó ALGUIEN hoy y a cuántos no los ha llamado nadie. Es la cifra
+            // que el dueño pedía para no tener que preguntar. `gestionCargada`
+            // separa "nadie llamó" (dato) de "todavía no leímos" (nada).
+            const equipoLlamo = gestionCargada
+              ? filteredItems.filter(o => o.dbId && gestionPorPedido.has(o.dbId)).length
+              : 0;
+            const nadieLlamo = gestionCargada
+              ? filteredItems.filter(o => !o.dbId || !gestionPorPedido.has(o.dbId)).length
+              : sinTocarEnCola;
             // Contrato de honestidad de OrderContext: coverageConfirmError=true
             // significa que la query de cobertura FALLÓ — el set no es "cero",
             // es DATO AUSENTE. Un 0 acá le diría a una asesora con 40 llamadas
@@ -575,9 +603,18 @@ export default function ConfirmarTab({ profile }: Props) {
                       Has llamado a <CountUp value={tocadosHoy} className="text-base font-bold text-foreground" />
                     </span>
                     <span className="opacity-50">·</span>
+                    {gestionCargada && (
+                      <>
+                        <span title="Cuenta las llamadas de TODO el equipo, no solo las tuyas">
+                          El equipo ya llamó a <CountUp value={equipoLlamo} className="text-base font-bold text-foreground" /> de esta lista
+                        </span>
+                        <span className="opacity-50">·</span>
+                      </>
+                    )}
                     <span>
-                      Te faltan <CountUp value={sinTocarEnCola} className={`text-base font-bold ${skin.num}`} /> sin tocar
-                      {sinTocarEnCola === 0 && <span className="text-success ml-1">✓</span>}
+                      Faltan <CountUp value={nadieLlamo} className={`text-base font-bold ${skin.num}`} />{' '}
+                      {gestionCargada ? 'que nadie llamó' : 'sin tocar'}
+                      {nadieLlamo === 0 && <span className="text-success ml-1">✓</span>}
                     </span>
                   </div>
                 )}
@@ -592,7 +629,7 @@ export default function ConfirmarTab({ profile }: Props) {
                     onChange={(e) => setOnlyUntouched(e.target.checked)}
                     className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer disabled:cursor-not-allowed"
                   />
-                  Solo sin tocar
+                  {gestionCargada ? 'Solo los que nadie llamó' : 'Solo sin tocar'}
                 </label>
               </div>
             );
@@ -950,7 +987,7 @@ export default function ConfirmarTab({ profile }: Props) {
           )}
 
           {view === 'list' ? (
-            <WorkList items={filteredItems} notesIndex={notesIndex} alerts={orderAlerts} onOpenCall={(idx) => {
+            <WorkList items={filteredItems} notesIndex={notesIndex} alerts={orderAlerts} gestionEquipo={gestionPorPedido} onOpenCall={(idx) => {
               // Abrir EL pedido clickeado, no el primer pendiente. CallView lee el
               // pedido activo de sessionStorage['confirmar:callOrderId'] en su
               // inicializador de useState al montarse. useSessionState persiste en

@@ -21,6 +21,7 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 // en ConfirmarTab y CallView (antes hacían select('*')).
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { computeDailyCounter } from '@/lib/computeDailyCounter';
+import { buildGestionPorPedido, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -73,6 +74,20 @@ interface OrderState {
    *    → identificamos por phone. Se cruza contra segData. */
   myConfirmTouchedToday: Set<string>;
   mySegTouchedToday: Set<string>;
+  /** Gestión del EQUIPO por pedido, hoy: quién llamó, cuántas veces y cuándo.
+   *
+   *  Es la contraparte de equipo de `myConfirmTouchedToday` (que es personal).
+   *  Sin esto, la asesora leía "Te faltan 33 sin tocar" y volvía a llamar a los
+   *  que una compañera ya había llamado esa mañana — para ELLA estaban sin
+   *  tocar. El dato ya existía en order_results pero solo se veía ABRIENDO el
+   *  pedido, así que en la práctica había que preguntarle al equipo.
+   *
+   *  Sale de las MISMAS filas que el cooldown (store-wide, 7 días): sin
+   *  consultas nuevas. La clave es `order_id` (= `OrderData.dbId`). */
+  gestionPorPedido: Map<string, GestionDelPedido>;
+  /** ?Ya corrio al menos una lectura buena de ? Si es false,
+   *  el mapa vacio NO significa "nadie llamo" — significa que no sabemos. */
+  gestionCargada: boolean;
   /** ¿Falló la ÚLTIMA lectura de los sets de cobertura del día?
    *
    *  Un Set vacío es AMBIGUO: puede significar "la operadora todavía no gestionó
@@ -123,6 +138,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // hoy" en ConfirmarTab y SeguimientoTab. No persiste entre sesiones porque
   // se recalcula del backend en cada loadWorkQueue/loadSegData.
   const [myConfirmTouchedToday, setMyConfirmTouchedToday] = useState<Set<string>>(new Set());
+  const [gestionPorPedido, setGestionPorPedido] = useState<Map<string, GestionDelPedido>>(new Map());
+  const [gestionCargada, setGestionCargada] = useState(false);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
   // ¿Se pudo LEER cada set de cobertura? Ver el doc del contrato en OrderState.
   // Booleans separados (no un objeto) a propósito: `ctxValue` está memoizado y un
@@ -757,6 +774,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
                 ? prev
                 : next;
             });
+            // Mismas filas otra vez: quién del EQUIPO llamó cada pedido hoy.
+            // `mismaGestion` conserva la referencia previa cuando nada cambió —
+            // si devolviéramos un Map nuevo en cada ráfaga de realtime,
+            // re-renderizaríamos la cola entera para pintar lo mismo.
+            setGestionPorPedido(prev => {
+              const next = buildGestionPorPedido(data as Parameters<typeof buildGestionPorPedido>[0], todayLocal);
+              return mismaGestion(prev, next) ? prev : next;
+            });
+            // Un mapa vacio es AMBIGUO: puede ser "nadie llamo nada todavia" o
+            // "la consulta nunca corrio". Sin esta bandera, un fallo en la
+            // primera carga haria decir "nadie llamo a estos 33" — y la asesora
+            // repetiria 20 llamadas. Solo despues de UNA lectura buena se puede
+            // afirmar que el vacio es real.
+            setGestionCargada(true);
             // Mismas filas, población distinta: lo que gestionó QUIEN ESTÁ MIRANDO.
             // Es lo que firma el cierre de turno y lo que muestra el tablero en
             // modo "Yo"; el de arriba es la tienda entera.
@@ -1225,7 +1256,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada,
     coverageError, coverageConfirmError, coverageSegError,
   }), [
     allOrders, workQueue,
@@ -1235,7 +1266,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada,
     coverageError, coverageConfirmError, coverageSegError,
   ]);
 

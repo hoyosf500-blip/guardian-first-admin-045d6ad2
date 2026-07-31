@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { OrderData, formatPhone, parseDate } from '@/lib/orderUtils';
 import { formatCOP, bogotaToday } from '@/lib/utils';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
-import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign, PhoneOutgoing } from 'lucide-react';
+import { useOperatorNames } from '@/hooks/useOperatorNames';
+import { horaDeIntento, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
@@ -22,6 +24,10 @@ interface Props {
   /** Alertas por pedido (duplicado en curso + sobreprecio vs Shopify) —
    *  las computa ConfirmarTab una sola vez para toda la cola. */
   alerts?: ConfirmarOrderAlerts;
+  /** Quién del EQUIPO llamó cada pedido HOY (de OrderContext.gestionPorPedido).
+   *  Lo ven todos igual — dueño y asesoras — para no repetir la llamada ni
+   *  tener que preguntar "¿ya llamaste estos?". */
+  gestionEquipo?: Map<string, GestionDelPedido>;
 }
 
 function timeAgo(dias: number): string {
@@ -58,8 +64,10 @@ export function diasReales(o: OrderData): number {
   return Math.max(0, o.dias ?? 0);
 }
 
-export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Props) {
+export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestionEquipo }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
+  // Cache módulo-level compartido: no dispara una consulta por fila.
+  const { nameOf } = useOperatorNames();
   const [editingOrder, setEditingOrder] = useState<OrderData | null>(null);
   // Editar desde la lista ahora SÍ refresca la fila al guardar (antes no pasaba
   // onSuccess y la lista quedaba vieja hasta el próximo sync).
@@ -222,6 +230,28 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts }: Prop
                   >
                     {due ? <Bell size={9} aria-hidden="true" /> : <MessageSquare size={9} aria-hidden="true" />}
                     {n.count}
+                  </span>
+                );
+              })()}
+              {/* Quién del EQUIPO lo llamó hoy. Antes este dato solo se veía
+                  ABRIENDO el pedido (AttemptHistory), así que en la lista no
+                  había forma de saber si una compañera ya lo había llamado —
+                  se preguntaba de viva voz o se llamaba dos veces al cliente. */}
+              {(() => {
+                const g = o.dbId ? gestionEquipo?.get(o.dbId) : undefined;
+                if (!g) return null;
+                const quien = nameOf(g.ultimoPor);
+                const hora = horaDeIntento(g.ultimoAt);
+                const veces = g.intentos > 1 ? ` ×${g.intentos}` : '';
+                return (
+                  <span
+                    title={`${quien} lo llamó ${g.intentos === 1 ? 'una vez' : `${g.intentos} veces`} hoy${hora ? ` · último a las ${hora}` : ''}`}
+                    aria-label={`Llamado por ${quien}, ${g.intentos} ${g.intentos === 1 ? 'vez' : 'veces'} hoy`}
+                    className="text-[10px] px-1.5 py-0.5 rounded-md font-semibold bg-muted/50 text-muted-foreground border border-border inline-flex items-center gap-1 flex-shrink-0 max-w-[150px]"
+                  >
+                    <PhoneOutgoing size={9} aria-hidden="true" className="flex-shrink-0" />
+                    <span className="truncate">{quien}{veces}</span>
+                    {hora && <span className="font-mono tabular-nums opacity-70 flex-shrink-0">{hora}</span>}
                   </span>
                 );
               })()}
