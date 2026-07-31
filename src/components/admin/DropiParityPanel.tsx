@@ -31,6 +31,11 @@ export default function DropiParityPanel() {
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<AuditRow[]>([]);
   const [health, setHealth] = useState<HealthRow | null>(null);
+  // Errores de LECTURA visibles: un fallo de la query NO es "sin api_key" ni
+  // "sin historial" — antes un blip de red hacía decir "Cargá la api_key"
+  // con la clave puesta, contradiciendo al panel de Credenciales de al lado.
+  const [cfgReadFailed, setCfgReadFailed] = useState(false);
+  const [histReadFailed, setHistReadFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeStoreId) return;
@@ -42,8 +47,10 @@ export default function DropiParityPanel() {
         .select('id, created_at, guardian_count, dropi_count, divergences_found, divergences_applied, missing_in_dropi, notes')
         .eq('store_id', activeStoreId).order('created_at', { ascending: false }).limit(5),
     ]);
-    setHealth(h.data as HealthRow | null);
-    setHistory((hist.data as AuditRow[]) || []);
+    setCfgReadFailed(Boolean(h.error));
+    setHistReadFailed(Boolean(hist.error));
+    setHealth(h.error ? null : (h.data as HealthRow | null));
+    setHistory(hist.error ? [] : ((hist.data as AuditRow[]) || []));
   }, [activeStoreId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -55,16 +62,20 @@ export default function DropiParityPanel() {
   // así que basta con tener api_key configurada (que es lo mínimo para que el
   // cron y health funcionen también).
   const canAudit = Boolean((health?.dropi_api_key || '').length > 0);
-  const healthStatus = health?.last_health_status || 'unknown';
+  // 'read_error' se distingue de 'unknown': "Sin chequear" es una fila leída
+  // con health null (nunca corrió el check); "No se pudo leer" es que la query
+  // falló y el estado real es desconocido.
+  const healthStatus = cfgReadFailed ? 'read_error' : (health?.last_health_status || 'unknown');
   // 'throttled' (nuevo, auditoría EC 2026-07-07): 429/503 transitorio de Dropi,
   // NO cuenta caída — ámbar "Throttle", no rojo. Antes caía al else gris.
   const healthColor = healthStatus === 'ok' ? 'success'
-    : healthStatus === 'degraded' || healthStatus === 'throttled' ? 'warning'
+    : healthStatus === 'degraded' || healthStatus === 'throttled' || healthStatus === 'read_error' ? 'warning'
     : healthStatus === 'down' ? 'destructive' : 'muted-foreground';
   const healthLabel = healthStatus === 'ok' ? 'Saludable'
     : healthStatus === 'degraded' ? 'Sin novedades 7d'
     : healthStatus === 'throttled' ? 'Throttle temporal'
     : healthStatus === 'down' ? 'Caído'
+    : healthStatus === 'read_error' ? 'No se pudo leer'
     : 'Sin chequear';
 
   return (
@@ -107,17 +118,41 @@ export default function DropiParityPanel() {
             <button
               onClick={() => setOpen(true)}
               disabled={!canAudit}
-              title={canAudit ? '' : 'Falta dropi_api_key en Credenciales Dropi'}
+              title={canAudit ? '' : cfgReadFailed ? 'No se pudo leer la configuración' : 'Falta dropi_api_key en Credenciales Dropi'}
               className="btn-accent-3d inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Search size={14} /> Auditar paridad ahora
             </button>
+            {/* Con la lectura caída NO decir "Cargá la api_key": la clave puede
+                estar puesta — lo que falló fue leerla. Instrucción falsa =
+                dueño dando vueltas entre dos paneles que se contradicen. */}
             {!canAudit && (
-              <span className="text-[11px] text-warning inline-flex items-center gap-1">
-                <AlertTriangle size={11} /> Cargá la api_key de Dropi para habilitar
-              </span>
+              cfgReadFailed ? (
+                <span className="text-[11px] text-warning inline-flex items-center gap-1.5">
+                  <AlertTriangle size={11} /> No se pudo leer la configuración —
+                  <button
+                    type="button"
+                    onClick={() => void load()}
+                    className="underline underline-offset-2 hover:text-foreground transition-colors"
+                  >
+                    reintentar
+                  </button>
+                </span>
+              ) : (
+                <span className="text-[11px] text-warning inline-flex items-center gap-1">
+                  <AlertTriangle size={11} /> Cargá la api_key de Dropi para habilitar
+                </span>
+              )
             )}
           </div>
+
+          {/* El historial ausente por fallo de lectura NO puede parecer "nunca
+              se auditó" — se avisa en vez de desaparecer en silencio. */}
+          {histReadFailed && (
+            <p className="text-[11px] text-warning inline-flex items-center gap-1">
+              <AlertTriangle size={11} /> No se pudo leer el historial de auditorías.
+            </p>
+          )}
 
           {history.length > 0 && (
             <div className="border border-border rounded-2xl overflow-x-auto shadow-card3d">

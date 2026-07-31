@@ -23,6 +23,7 @@ import {
   Tag,
   ChevronLeft,
   ChevronRight,
+  Hash,
   MessageSquare,
   Send,
   X,
@@ -114,6 +115,28 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
 
   const copyPhone = () => {
     void copyToClipboard(o.phone, `${o.phone} copiado`);
+  };
+
+  // El panel de novedades de Dropi lista por ID de pedido: copiarlo con un
+  // click es el puente del workflow manual CRM ↔ panel (mismo patrón que
+  // copyPhone).
+  const copyExternalId = () => {
+    if (o.externalId) void copyToClipboard(o.externalId, `ID ${o.externalId} copiado`);
+  };
+
+  // Contacto WhatsApp de 1 click — mismo fallback consciente que CallView:
+  // canal in-app si la tienda lo tiene; si no (ej. tienda sin canal
+  // registrado), wa.me externo + registro manual del contacto (openChat no
+  // corre, así que la gestión se anota acá). Sin esto, en tiendas sin canal el
+  // botón desaparecía y la operadora copiaba/pegaba el número por cada novedad.
+  const handleWhatsApp = () => {
+    if (waEnabled) {
+      // openChat ya registra el intento de contacto internamente.
+      void openChat({ phone: o.phone, name: o.nombre });
+    } else {
+      void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
+      window.open(`https://wa.me/${getWhatsAppPhone(o.phone, countryCode)}`, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const navCall = (dir: number) => {
@@ -227,15 +250,13 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             >
               <Phone size={10} aria-hidden="true" /> Llamar
             </a>
-            {waEnabled && (
-              <button
-                type="button"
-                onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-success border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
-              >
-                <MessageSquare size={10} aria-hidden="true" /> WhatsApp
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleWhatsApp}
+              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#25D366]/10 text-success border border-[#25D366]/25 hover:bg-[#25D366]/20 transition-colors"
+            >
+              <MessageSquare size={10} aria-hidden="true" /> WhatsApp
+            </button>
           </div>
           <div className="flex items-center gap-1.5">
             <MapPin size={12} aria-hidden="true" /> {o.ciudad || '—'}{o.departamento ? `, ${o.departamento}` : ''}
@@ -253,6 +274,29 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
             <div className="flex items-start gap-1.5 text-xs">
               <MapPin size={12} className="mt-0.5 text-muted-foreground/60" aria-hidden="true" />
               <span className="flex-1 text-muted-foreground">{o.direccion}</span>
+            </div>
+          )}
+          {/* ID Dropi visible + copiable + link al detalle: el workflow vigente
+              obliga a resolver cada novedad en el panel de Dropi (que lista por
+              ID de pedido) y volver acá a registrar — sin el ID a la vista la
+              operadora cruzaba los dos sistemas buscando por nombre, con
+              homónimos y tildes distintas. */}
+          {o.externalId && (
+            <div className="text-xs flex items-center gap-1.5 flex-wrap">
+              <Hash size={12} aria-hidden="true" /> ID Dropi:{' '}
+              <button
+                onClick={copyExternalId}
+                title="Copiar ID"
+                className="text-cyan font-mono tabular-nums hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded"
+              >
+                {o.externalId}
+              </button>
+              <a
+                href={`/pedido/${o.externalId}`}
+                className="text-muted-foreground hover:text-accent hover:underline"
+              >
+                Ver detalle
+              </a>
             </div>
           )}
           {o.guia && (
@@ -346,8 +390,13 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
                 <PhoneOff size={16} aria-hidden="true" /> Sin respuesta
               </button>
             </div>
+            {/* El modal de Devolución ya recordaba gestionar en Dropi; el botón
+                "Resuelta" — el más usado — no avisaba nada y la marca local NO
+                empuja a Dropi: sin este recordatorio la incidencia podía vencer
+                allá y el paquete devolverse solo. */}
             <p className="text-[10px] text-muted-foreground text-center">
-              "Sin respuesta" deja la novedad en la cola para reintentar.
+              Estos botones solo registran la gestión acá — resolvé la novedad en el panel de Dropi.
+              <br />"Sin respuesta" deja la novedad en la cola para reintentar.
             </p>
           </>
         )}

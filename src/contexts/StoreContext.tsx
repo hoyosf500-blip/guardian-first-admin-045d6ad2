@@ -38,6 +38,15 @@ interface StoreState {
    * del país equivocado como si fueran los buenos.
    */
   scopeSynced: boolean;
+  /**
+   * ¿Falló la CARGA de tiendas (red/RLS)? Distinto de "cero tiendas": un error
+   * de consulta jamás se muestra como vacío — sin esta bandera, un timeout de
+   * WiFi dejaba stores=[] y ProtectedLayout mandaba a una operadora CON tienda
+   * a la pantalla de alta autoservicio "Creá tu tienda" (podía crear una
+   * tienda fantasma). La UI debe ofrecer reintentar (refresh) en vez de tratar
+   * el vacío como real: solo stores.length===0 SIN esta bandera es un vacío legítimo.
+   */
+  storesError: boolean;
   setActiveStoreId: (id: string) => void;
   refresh: () => Promise<void>;
 }
@@ -88,6 +97,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Arranca en true para no mostrar el aviso durante la carga inicial: recién
   // se pone en false si una sincronización REAL falla.
   const [scopeSynced, setScopeSynced] = useState(true);
+  // Error de carga de tiendas — ver doc en StoreState.storesError.
+  const [storesError, setStoresError] = useState(false);
   // Solo bloqueamos la UI (loading=true) en la PRIMERA carga. Refreshes
   // posteriores (token refresh al volver de pestaña, etc.) NO deben bloquear,
   // o ProtectedLayout desmonta toda la app y la operadora pierde su lugar.
@@ -96,28 +107,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!user) {
       setStores([]); setActiveStoreIdState(null); setLoading(false);
+      setStoresError(false);
       hasLoadedRef.current = false;
       return;
     }
     if (!hasLoadedRef.current) setLoading(true);
 
-    // Membresías del user (RLS asegura que solo vea las suyas)
-    const { data: memberships } = await supabase
-      .from('store_members')
-      .select('store_id, role')
-      .eq('user_id', user.id);
+    // Membresías del user (RLS asegura que solo vea las suyas). OJO: un fallo
+    // de red acá NO es "cero membresías" — si se descarta `error`, la rama de
+    // abajo deja stores=[] y eso se lee como "no sos miembro de nada" (pantalla
+    // de alta autoservicio). Reintento con backoff DENTRO de refresh porque no
+    // vuelve a correr solo: su única dep es la identidad de `user`, estable a
+    // propósito (invariante single-app-mount).
+    let memberships: { store_id: string; role: string }[] | null = null;
+    for (let intento = 0; intento < 3; intento++) {
+      const { data, error } = await supabase
+        .from('store_members')
+        .select('store_id, role')
+        .eq('user_id', user.id);
+      if (!error) { memberships = data ?? []; break; }
+      console.warn(`[StoreContext] store_members falló (intento ${intento + 1}):`, error);
+      if (intento < 2) await new Promise(r => setTimeout(r, 500 * (intento + 1)));
+    }
+    if (memberships === null) {
+      // Error persistente: conservar stores/activeStoreId anteriores (mejor
+      // aproximación que un vacío falso) y marcar el error para que la UI
+      // avise y ofrezca reintentar. Se suelta loading para no colgar la app;
+      // hasLoadedRef queda como está (si nunca hubo carga buena, el próximo
+      // refresh vuelve a bloquear como primera carga).
+      setStoresError(true);
+      setLoading(false);
+      return;
+    }
 
-    const storeIds = (memberships ?? []).map(m => m.store_id);
+    const storeIds = memberships.map(m => m.store_id);
     if (storeIds.length === 0) {
+      // Query EXITOSA con cero filas: este sí es el vacío legítimo que
+      // habilita el alta autoservicio.
+      setStoresError(false);
       setStores([]); setActiveStoreIdState(null); setLoading(false);
       hasLoadedRef.current = true;
       return;
     }
 
-    const { data: storeRows } = await supabase
+    const { data: storeRows, error: storesQueryError } = await supabase
       .from('stores')
       .select('id, name, country_code, status, brand_logo_url')
       .in('id', storeIds);
+    if (storesQueryError) {
+      // Mismo criterio que arriba: error ≠ "cero tiendas". No pisar lo cargado.
+      console.warn('[StoreContext] stores falló:', storesQueryError);
+      setStoresError(true);
+      setLoading(false);
+      return;
+    }
+    setStoresError(false);
 
     // Para tiendas donde soy owner, verificar si hay credenciales Dropi
     const ownerStoreIds = (memberships ?? [])
@@ -227,7 +271,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <StoreContext.Provider value={{
       loading, stores, activeStoreId, activeStore, isOwnerOfActive, isManagerOfActive, needsSetup,
-      scopeSynced, setActiveStoreId, refresh,
+      scopeSynced, storesError, setActiveStoreId, refresh,
     }}>
       {children}
     </StoreContext.Provider>

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Moon, PhoneCall, PhoneOff, Package, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { confRateBySample, contactRate } from '@/lib/confirmationRate';
+import { confRateOficial, confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
 interface Props { open: boolean; onClose: () => void }
 
@@ -162,20 +162,19 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                     tone="orange"
                   />
                 </div>
-                {/* HALLAZGO 14: el cierre usaba `tasa_conf` del RPC (conf ÷
-                    gestionados, con noresp adentro) → daba un número DISTINTO al
-                    banner del día. Ahora la "% Confirmación" se calcula
-                    client-side con confRateBySample (MADURA: conf ÷ resueltos),
-                    la MISMA fórmula que TasaMetaBanner / Dashboard, así el cierre
-                    cuadra con el banner. `tasa_conf` del RPC se ignora. Aparte se
-                    muestra "Contacto" (contactabilidad = qué % de lo gestionado
-                    contestó) para no perder ese dato. */}
+                {/* MATEMÁTICA OFICIAL (decisión del dueño 30-jul): el cierre
+                    LIDERA con la Confirmación del día = conf ÷ GESTIONADOS
+                    (conf+canc+noresp), meta 85% — la misma de todo el CRM. El
+                    conf÷contestaron (~99%) queda como dato secundario rotulado
+                    "cierre de llamada": mostrarlo como "% confirmación" fue la
+                    causa de la disputa del "Tasa: 99%". */}
                 {(() => {
                   const conf = stats?.confirmados ?? 0;
                   const canc = stats?.cancelados ?? 0;
+                  const noresp = stats?.noresp ?? 0;
                   const atendidos = stats?.total ?? 0;
-                  const confMadura = confRateBySample(conf, canc).tasa;
-                  const contacto = contactRate(conf, canc, atendidos);
+                  const oficial = confRateOficial(conf, canc, noresp).tasa;
+                  const cierreLlamada = confRateBySample(conf, canc).tasa;
                   return (
                     <div className="flex items-center justify-between bg-surface border border-border rounded-lg px-3 py-2 text-xs">
                       <div className="flex items-center gap-2 text-muted-foreground">
@@ -184,16 +183,16 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                       <div className="flex items-center gap-3 font-mono font-semibold text-foreground">
                         <span>{atendidos}</span>
                         <span
-                          title="% Confirmación MADURA: confirmados ÷ (confirmados + cancelados). Los no-contesta NO cuentan acá. Misma fórmula que el banner del día."
+                          title={`Confirmación del día: ${conf} confirmados ÷ ${conf + canc + noresp} gestionados (incluye los "no contestó"). Meta ${CONF_TARGET_PCT}%. Es la MISMA tasa del Dashboard y Productividad.`}
                         >
-                          {confMadura == null ? '—' : `${confMadura}%`}
-                          <span className="text-muted-foreground font-normal"> confirmación</span>
+                          {oficial == null ? '—' : `${oficial}%`}
+                          <span className="text-muted-foreground font-normal"> confirmación del día</span>
                         </span>
                         <span
                           className="text-muted-foreground font-normal"
-                          title="Contacto: de lo que gestionaste, qué % contestó (confirmó o canceló, vs no respondió)."
+                          title="Cierre de llamada: de los que CONTESTARON, cuántos confirmaron. Suele ser alto — no es la confirmación del día."
                         >
-                          · {contacto}% contacto
+                          · {cierreLlamada == null ? '—' : `${cierreLlamada}%`} cierre de llamada
                         </span>
                       </div>
                     </div>

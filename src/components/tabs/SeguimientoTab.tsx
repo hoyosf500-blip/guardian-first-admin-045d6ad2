@@ -98,7 +98,11 @@ export default function SeguimientoTab() {
   // operator navigates between CRM tabs. Without the cache they'd see
   // "Cargando seguimiento..." and lose all filter/selection state every
   // time they switched tabs.
-  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday } = useOrders();
+  // `coverageSegError`: la lectura de "gestionados hoy" (touchpoints SEG:%)
+  // FALLÓ → mySegTouchedToday viene vacío pero NO significa "cero gestionados".
+  // Ver el contrato en OrderContext: flag true = dato AUSENTE, mostrar "—" en
+  // tono neutro, nunca un 0 que parezca medido.
+  const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, coverageSegError } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId } = useStore();
@@ -278,8 +282,14 @@ export default function SeguimientoTab() {
   // N" baja. El toggle "Ocultar gestionados" del contador lo controla.
   const boardData = useMemo(() => {
     if (!onlyUntouchedSeg) return displayData;
+    // Si la lectura de "gestionados hoy" falló, el set viene vacío y filtrar
+    // con él fingiría que nada se gestionó (los pedidos YA gestionados
+    // reaparecerían como pendientes "medidos"). Se muestra todo explícitamente
+    // y el hero avisa que no se pudo leer — la operadora sabe que puede estar
+    // viendo pedidos que ya tocó, en vez de creer que el sistema los midió.
+    if (coverageSegError) return displayData;
     return displayData.filter((o) => !o.phone || !mySegTouchedToday.has(o.phone));
-  }, [displayData, onlyUntouchedSeg, mySegTouchedToday]);
+  }, [displayData, onlyUntouchedSeg, mySegTouchedToday, coverageSegError]);
 
   // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay
   // pedidos en el feed pero todos están gestionados). Para mostrar un vacío
@@ -699,7 +709,39 @@ export default function SeguimientoTab() {
           const faltanGlow = tone === 'success' ? 'num-glow-success' : tone === 'danger' ? 'num-glow-danger' : '';
           return (
             <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-12 gap-4">
-              {heroVisible && (
+              {/* HONESTIDAD: si la query de touchpoints del día falló, "Gestionados
+                  0 de N" sería un cero inventado (la operadora leería "no
+                  trabajaste"). Se reemplaza el aro/contador por un "—" en tono
+                  NEUTRO (contrato de coverageSegError en OrderContext: no sabemos
+                  si está mal — no sabemos nada, así que nada de rojo) y se avisa
+                  que los pedidos ya gestionados pueden reaparecer en el tablero. */}
+              {heroVisible && coverageSegError && (
+                <TiltCard
+                  sheen
+                  wrapperClassName="md:col-span-7"
+                  className="relative bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full"
+                >
+                  <div className="flex items-start gap-4 tilt-layer-2">
+                    <span className="w-11 h-11 rounded-2xl bg-muted/60 border border-border text-muted-foreground flex items-center justify-center shrink-0" aria-hidden="true">
+                      <AlertTriangle size={20} />
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-4xl font-extrabold leading-none font-mono text-muted-foreground" aria-hidden="true">—</span>
+                        <span className="text-sm font-semibold text-foreground">No se pudieron leer tus gestiones de hoy</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Esto NO significa que no gestionaste nada: no se pudo leer la base. Hay{' '}
+                        <strong className="font-mono tabular-nums text-foreground">{total}</strong>{' '}
+                        {total === 1 ? 'pedido' : 'pedidos'} en la vista, pero no sabemos cuáles ya
+                        gestionaste — los que ya trabajaste hoy pueden aparecer de nuevo en el tablero.
+                        Recargá la página; si sigue igual, avisá.
+                      </p>
+                    </div>
+                  </div>
+                </TiltCard>
+              )}
+              {heroVisible && !coverageSegError && (
                 <TiltCard
                   sheen
                   brackets
@@ -1002,6 +1044,10 @@ export default function SeguimientoTab() {
           data={boardData}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}
+          // Para que "Gestioné hoy" sepa si el pedido YA se gestionó hoy: al
+          // destildar "Ocultar gestionados" las tarjetas vuelven, y sin este set
+          // el botón renacía como pendiente y permitía duplicar touchpoints.
+          touchedTodayPhones={mySegTouchedToday}
           celebratory={allManagedToday}
           emptyTitle={allManagedToday ? '¡Todo gestionado hoy! ✓' : undefined}
           emptyDesc={allManagedToday

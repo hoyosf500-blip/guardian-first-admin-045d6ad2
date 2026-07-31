@@ -28,6 +28,7 @@ import NotesPanel from '@/components/order-notes/NotesPanel';
 import { AddressAutocomplete } from '@/components/address/AddressAutocomplete';
 import { AddressFeedbackCard } from '@/components/address/AddressFeedbackCard';
 import { DespachoGateButton } from '@/components/address/DespachoGateButton';
+import { canConfirmOrder } from '@/lib/canConfirmOrder';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';
@@ -84,7 +85,7 @@ interface Props {
 export default function CallView({ items, alerts }: Props) {
   const { markResult, undoLast, lastMark, allOrders, setAllOrders, buildWorkQueue } = useOrders();
   const { user, isAdmin } = useAuth();
-  const { activeStore } = useStore();
+  const { activeStore, activeStoreId } = useStore();
   const countryCode = activeStore?.country_code;
   const { openChat, waEnabled } = useWaChat();
   const recordContacto = useRecordGestion();
@@ -198,12 +199,18 @@ export default function CallView({ items, alerts }: Props) {
 
   // VIP check: query order history for this phone (F4)
   useEffect(() => {
-    if (!o?.phone) { setVip(null); return; }
+    // Sin tienda activa NO se consulta: la RLS deja ver TODAS las tiendas de
+    // las que el usuario es miembro, y sin el filtro el historial mezclaba
+    // CO+EC (mezclar países está prohibido en esta operación). El badge VIP
+    // habilita "Confirmar sin llamar" — no puede decidirse con datos de otra
+    // tienda.
+    if (!o?.phone || !activeStoreId) { setVip(null); return; }
     let cancelled = false;
     supabase
       .from('orders')
       .select('estado')
       .eq('phone', o.phone)
+      .eq('store_id', activeStoreId)
       .then(({ data }) => {
         if (cancelled || !data) return;
         const total = data.length;
@@ -217,7 +224,7 @@ export default function CallView({ items, alerts }: Props) {
         });
       });
     return () => { cancelled = true; };
-  }, [o?.phone]);
+  }, [o?.phone, activeStoreId]);
 
   // Claim a lock on the current order; if held by someone else, skip forward.
   // BUG 3 fix: NO liberar el lock en cleanup. Cambiar de pestaña desmonta
@@ -690,7 +697,23 @@ export default function CallView({ items, alerts }: Props) {
   const lastMarkRef = useRef(lastMark);
   useEffect(() => { lastMarkRef.current = lastMark; }, [lastMark]);
 
+  // ATAJOS DE TECLADO (1/2/3 · L/W · ←/→): ~100 llamadas/día se marcaban a
+  // puro mouse con el teléfono en la otra mano. El listener se suscribe UNA
+  // sola vez y despacha al handler del render vigente vía ref (patrón "latest
+  // ref", mismo espíritu que lastMarkRef arriba) — así las teclas nunca actúan
+  // sobre closures viejas. El handler se asigna DESPUÉS del early-return (usa
+  // handleMark/navCall, que viven allá); con la cola vacía se anula para que
+  // una tecla no marque un pedido fantasma de un render anterior.
+  const hotkeysRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => hotkeysRef.current?.(e);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (!items.length || !o) {
+    // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).
+    hotkeysRef.current = null;
     return (
       <div className="text-center py-10 text-muted-foreground">
         <CheckCircle2 size={40} className="mx-auto mb-3 text-success" />
@@ -708,6 +731,43 @@ export default function CallView({ items, alerts }: Props) {
     : o.dias >= 4
       ? 'bg-warning/14 border-warning/30 text-warning'
       : 'bg-success/14 border-success/30 text-success';
+
+  // Gate de despacho COMPARTIDO por las TRES vías de confirmar: el botón
+  // "Confirmó" (DespachoGateButton), el atajo VIP "Confirmar sin llamar" y la
+  // tecla 1. El atajo VIP llamaba handleMark('conf') directo y se saltaba los
+  // dos gates DUROS que sobrevivieron al retiro del gate de dirección
+  // (teléfono válido + cédula si es Coordinadora) — un pedido Coordinadora
+  // sin cédula se despachaba con un click y la guía nacía con problema.
+  const despachoGate = {
+    // Validador-direcciones: usar visualDecision (que aplica los overrides
+    // client-side de pickup_office y stale-green ANTES de que el
+    // UPDATE+realtime corrija la fila en DB) — así el gate coincide con lo
+    // que ve la operadora en la card.
+    validation_decision: visualDecision,
+    telefonoValido: validarTelefono(o.phone, countryCode),
+    // includes, NO igualdad exacta: la transportadora viene verbatim de Dropi
+    // (distribution_company.name) y puede ser "COORDINADORA MERCANTIL",
+    // "Coordinadora S.A.", etc. Con !== 'coordinadora' el gate fallaba
+    // ABIERTO (dejaba despachar sin cédula) en toda variante de nombre.
+    // Coordinadora EXIGE cédula del destinatario.
+    documentoSiCoordinadora:
+      !(o.transportadora || '').toLowerCase().includes('coordinadora') ||
+      Boolean(o.documentoDestinatario),
+    isAdmin,
+    overrideChecked: addressOverride,
+  };
+
+  // Confirmación con gate para los caminos SIN botón dedicado (VIP + tecla 1):
+  // si el gate bloquea, el motivo se dice en un toast (el botón "Confirmó" lo
+  // dice en su tooltip) — nunca se confirma en silencio lo que está bloqueado.
+  const confirmThroughGate = () => {
+    const gateRes = canConfirmOrder(despachoGate);
+    if (!gateRes.canConfirm) {
+      toast.error(gateRes.reason ?? 'No se puede confirmar este pedido');
+      return;
+    }
+    void handleMark('conf');
+  };
 
   // Vuelta atrás de una confirmación de más — el mismo accidente que produce
   // el doble-click. `undoLast` ya existía en OrderContext (borra el
@@ -834,6 +894,75 @@ export default function CallView({ items, alerts }: Props) {
     }
   };
 
+  // Handler de atajos del render VIGENTE (ver hotkeysRef arriba del
+  // early-return). Asignación en render a propósito: cierra sobre el estado
+  // fresco de ESTE render, y el listener estable siempre llama al último.
+  hotkeysRef.current = (e: KeyboardEvent) => {
+    // No robarle teclas al navegador (Ctrl/Cmd/Alt) ni auto-repetir un
+    // marcado con la tecla sostenida.
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    // Con un campo enfocado la tecla es TEXTO (notas, dirección, teléfono),
+    // no un marcado — guard por activeElement, no por foco del componente.
+    const el = document.activeElement as HTMLElement | null;
+    const tag = el?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+    // Editor de orden abierto (o CUALQUIER diálogo Radix montado — chat de
+    // WhatsApp, popovers de validación): el overlay es dueño del teclado.
+    // Radix desmonta el contenido cerrado, así que el selector solo matchea
+    // overlays realmente abiertos. Falla hacia "no hacer nada" a propósito.
+    if (editorState || document.querySelector('[role="dialog"]')) return;
+    const k = e.key;
+    if (showCancelModal) {
+      // Dentro del modal de cancelación: Esc cierra (mismo reset que el click
+      // en el backdrop) y 1-9 eligen el motivo. "Otro" abre el campo de texto
+      // obligatorio, igual que el click — nunca cancela sin motivo escrito.
+      if (k === 'Escape') {
+        e.preventDefault();
+        setShowCancelModal(false);
+        setCancelOtroMode(false);
+        setCancelOtroText('');
+        return;
+      }
+      if (!cancelOtroMode && /^[1-9]$/.test(k) && !marking) {
+        const reason = CANCEL_REASONS[Number(k) - 1];
+        if (!reason) return;
+        e.preventDefault();
+        if (reason.trim().toLowerCase() === 'otro') setCancelOtroMode(true);
+        else void handleMark('canc', reason);
+      }
+      return;
+    }
+    if (k === '1') {
+      // Mismos gates duros y mismo candado anti doble-marcado que el botón.
+      if (marking || o.result) return;
+      e.preventDefault();
+      confirmThroughGate();
+    } else if (k === '2') {
+      if (marking || o.result) return;
+      e.preventDefault();
+      setShowCancelModal(true);
+    } else if (k === '3') {
+      if (marking || o.result) return;
+      e.preventDefault();
+      void handleMark('noresp');
+    } else if (k === 'l' || k === 'L') {
+      e.preventDefault();
+      // Mismo registro de gestión que el link "Llamar" — la tecla también
+      // cuenta como contacto.
+      void recordContacto(o.phone, 'LLAMADA', 'llamó');
+      window.location.href = `tel:+${waPhone}`;
+    } else if (k === 'w' || k === 'W') {
+      e.preventDefault();
+      handleWhatsApp();
+    } else if (k === 'ArrowLeft') {
+      e.preventDefault();
+      navCall(-1);
+    } else if (k === 'ArrowRight') {
+      e.preventDefault();
+      navCall(1);
+    }
+  };
+
   return (
     <>
       {/* UNA sola fila: el chip a la izquierda y, agrupados a la derecha, el
@@ -917,8 +1046,11 @@ export default function CallView({ items, alerts }: Props) {
                 CLIENTE VIP — <span className="font-mono tabular-nums">{vip.entregados}/{vip.total}</span> entregados (<span className="font-mono tabular-nums">{vip.efectividad}%</span>)
               </span>
             </div>
+            {/* El atajo VIP pasa por los MISMOS gates duros que "Confirmó"
+                (teléfono válido + cédula Coordinadora) — antes llamaba
+                handleMark('conf') directo y reabría el hueco del gate. */}
             <button
-              onClick={() => handleMark('conf')}
+              onClick={confirmThroughGate}
               disabled={marking}
               className="text-xs font-bold px-3 min-h-11 inline-flex items-center gap-1.5 justify-center rounded-xl bg-success/16 border border-success/40 text-success hover:bg-success/25 transition-colors whitespace-nowrap disabled:opacity-45 disabled:cursor-not-allowed"
             >
@@ -1025,6 +1157,7 @@ export default function CallView({ items, alerts }: Props) {
               className="ml-1 inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
             >
               <Phone size={14} aria-hidden="true" /> Llamar
+              <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">L</kbd>
             </a>
             <button
               type="button"
@@ -1033,6 +1166,7 @@ export default function CallView({ items, alerts }: Props) {
               className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 min-h-11 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
             >
               <MessageSquare size={14} aria-hidden="true" /> WhatsApp
+              <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
             </button>
           </div>
 
@@ -1245,19 +1379,20 @@ export default function CallView({ items, alerts }: Props) {
             movil aparecia ANTES de la direccion: veia "Confirmo" deshabilitado
             por el gate antes de ver el campo que tenia que arreglar.
             En lg vuelve debajo de la ficha, en la columna izquierda. */}
-        <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-        {/* Sticky action bar en mobile: los 3 botones quedan pegados al fondo
-            del viewport mientras la asesora scrollea DENTRO de la ficha.
-            En sm+ vuelve a layout inline (mt-4) porque la card cabe en pantalla.
-
-            OJO — desde que dirección y notas se movieron al rail derecho, en
-            móvil (1 columna) esos dos bloques van DEBAJO de esta barra, y el
-            sticky solo flota mientras su contenedor (la card) está en pantalla:
-            al bajar a la dirección, los botones se van con la card. En
-            escritorio no aplica (todo entra a la vez). Si se confirma que las
-            asesoras trabajan desde el celular, hay que sacar esta barra de la
-            card y ubicarla como fila 2 del grid, después del rail. */}
-        <div className="sm:static sticky bottom-0 z-30 sm:z-auto bg-card sm:bg-transparent -mx-6 sm:mx-0 px-6 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
+        {/* pb-32 en <sm: compensa la barra FIXED de abajo (fuera de flujo) para
+            que la dirección/notas del final de la página no queden tapadas al
+            scrollear hasta el fondo. */}
+        <div className="min-w-0 lg:col-start-1 lg:row-start-2 pb-32 sm:pb-0">
+        {/* Barra de decisión SIEMPRE visible en celular (las asesoras sí
+            trabajan desde el móvil — NovedadView/SegCounterBar ya lo
+            documentan). El `sticky bottom-0` anterior estaba MUERTO acá: su
+            contenedor de grid mide exactamente lo que mide la barra, así que
+            no tenía dónde "pegarse" y quedaba estática al fondo de la página —
+            2-3 pantallas abajo de la ficha (ficha → dirección → notas →
+            botones). `fixed` al viewport la despega del contenedor; el pb-32
+            del wrapper repone el espacio. En sm+ vuelve a layout inline
+            (static, mt-4) porque todo entra en pantalla. */}
+        <div className="sm:static fixed bottom-0 inset-x-0 z-30 sm:z-auto bg-card sm:bg-transparent px-6 sm:px-0 pt-3 sm:pt-0 mt-4 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:pb-0 border-t sm:border-t-0 border-border">
         {!o.result ? (
           <>
           {/* ATRIBUCIÓN HONESTA DEL "EN VUELO". `doMark` avanza al SIGUIENTE
@@ -1285,25 +1420,12 @@ export default function CallView({ items, alerts }: Props) {
                 (validación dirección + teléfono + documento Coordinadora +
                 override admin). Si el gate bloquea, el Button queda
                 deshabilitado y el tooltip explica la razón. */}
+            {/* El objeto del gate se extrajo a `despachoGate` (arriba) porque
+                ahora lo comparten el botón, el atajo VIP y la tecla 1 — tres
+                copias del mismo gate era exactamente la clase de duplicación
+                que dejó al VIP saltándose la cédula de Coordinadora. */}
             <DespachoGateButton
-              gate={{
-                // Validador-direcciones: usar visualDecision (que aplica los
-                // overrides client-side de pickup_office y stale-green ANTES
-                // de que el UPDATE+realtime corrija la fila en DB) — así el
-                // botón coincide con lo que ve la operadora en la card.
-                validation_decision: visualDecision,
-                telefonoValido: validarTelefono(o.phone, countryCode),
-                // includes, NO igualdad exacta: la transportadora viene verbatim
-                // de Dropi (distribution_company.name) y puede ser "COORDINADORA
-                // MERCANTIL", "Coordinadora S.A.", etc. Con !== 'coordinadora' el
-                // gate fallaba ABIERTO (dejaba despachar sin cédula) en toda
-                // variante de nombre. Coordinadora EXIGE cédula del destinatario.
-                documentoSiCoordinadora:
-                  !(o.transportadora || '').toLowerCase().includes('coordinadora') ||
-                  Boolean(o.documentoDestinatario),
-                isAdmin,
-                overrideChecked: addressOverride,
-              }}
+              gate={despachoGate}
               onConfirm={() => handleMark('conf')}
               // Ver markingRef: mientras el marcado viaja a Dropi el CTA se
               // apaga. Antes NO había forma de apagarlo (rama habilitada = un
@@ -1325,13 +1447,17 @@ export default function CallView({ items, alerts }: Props) {
             >
               <span className="inline-flex items-center justify-center gap-1.5">
                 <CheckCircle2 size={16} aria-hidden="true" /> Confirmó
+                {/* Hint de atajo: oculto en <sm (táctil, sin teclado). */}
+                <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">1</kbd>
               </span>
             </DespachoGateButton>
             <button onClick={() => setShowCancelModal(true)} disabled={marking} aria-label="Marcar como cancelado" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-danger/12 text-danger border border-danger/34 font-bold text-sm hover:bg-danger/20 active:scale-[0.97] transition-all disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100">
               <XCircle size={16} aria-hidden="true" /> Canceló
+              <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">2</kbd>
             </button>
             <button onClick={() => handleMark('noresp')} disabled={marking} aria-label="Marcar como no contestó" className="inline-flex items-center justify-center gap-1.5 py-4 rounded-2xl bg-card/40 border border-border text-muted-foreground font-bold text-sm hover:text-foreground hover:border-border-strong active:scale-[0.97] transition-all disabled:opacity-45 disabled:cursor-not-allowed disabled:active:scale-100">
               <PhoneOff size={16} aria-hidden="true" /> No contestó
+              <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">3</kbd>
             </button>
           </div>
           </>
@@ -1380,7 +1506,7 @@ export default function CallView({ items, alerts }: Props) {
             </h3>
             {!cancelOtroMode ? (
               <div className="grid gap-2">
-                {CANCEL_REASONS.map(reason => {
+                {CANCEL_REASONS.map((reason, i) => {
                   // "Otro" no cancela de una: abre un campo de texto obligatorio
                   // para que la operadora escriba el motivo real.
                   const isOtro = reason.trim().toLowerCase() === 'otro';
@@ -1389,8 +1515,13 @@ export default function CallView({ items, alerts }: Props) {
                       key={reason}
                       onClick={() => (isOtro ? setCancelOtroMode(true) : handleMark('canc', reason))}
                       disabled={marking}
-                      className="w-full text-left py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                      className="w-full text-left py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-45 disabled:cursor-not-allowed inline-flex items-center gap-2"
                     >
+                      {/* Hint del atajo: dentro del modal las teclas 1-9 eligen
+                          el motivo sin soltar el teléfono. Oculto en <sm. */}
+                      {i < 9 && (
+                        <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">{i + 1}</kbd>
+                      )}
                       {reason}
                     </button>
                   );

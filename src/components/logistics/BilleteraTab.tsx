@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Wallet, ArrowDown, ArrowUp, TrendingUp, ListOrdered } from 'lucide-react';
+import { ExternalLink, Wallet, ArrowDown, ArrowUp, TrendingUp, ListOrdered, AlertTriangle } from 'lucide-react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, Legend,
@@ -102,6 +102,29 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
         </TiltCard>
       </motion.div>
 
+      {/* Error REAL de lectura — principio de honestidad: un fallo de la query
+          NO puede pintarse como "$0 · Sin movimientos" (se lee como billetera
+          vacía medida). Mismo banner que FinanzasTab usa para su isError. */}
+      {movQ.isError && (
+        <motion.div
+          {...fadeUp(0.03)}
+          className="relative flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d"
+        >
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-danger/20 glow-danger">
+            <AlertTriangle size={18} className="text-danger" aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-xs font-semibold text-danger">
+              No se pudo leer la billetera — los totales NO son $0
+            </h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5 font-mono">
+              {(movQ.error as Error)?.message ?? 'Error desconocido'} · recargá o tocá Refrescar
+            </p>
+          </div>
+        </motion.div>
+      )}
+
       {/* KPIs — ahora el MISMO KpiCard de Finanzas, no una variante local */}
       <motion.div {...fadeUp(0.05)} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {movQ.isLoading ? (
@@ -110,6 +133,14 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
             <Skeleton className="h-[132px] rounded-2xl" />
             <Skeleton className="h-[132px] rounded-2xl" />
             <Skeleton className="h-[132px] rounded-2xl" />
+          </>
+        ) : movQ.isError ? (
+          <>
+            {/* "—", no COP(0): el dato no se leyó, no es un cero medido. */}
+            <KpiCard label="Total Entradas" value="—" icon={ArrowDown}   tone="neutral" hint="no se pudo leer" />
+            <KpiCard label="Total Salidas"  value="—" icon={ArrowUp}     tone="neutral" hint="no se pudo leer" />
+            <KpiCard label="Neto"           value="—" icon={TrendingUp}  tone="neutral" hint="no se pudo leer" />
+            <KpiCard label="Movimientos"    value="—" icon={ListOrdered} tone="neutral" hint="no se pudo leer" />
           </>
         ) : (
           <>
@@ -129,6 +160,13 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
           </h3>
           {seriesQ.isLoading ? (
             <Skeleton className="h-[280px] w-full" />
+          ) : seriesQ.isError ? (
+            /* Error ≠ vacío: "Sin movimientos" sobre una query caída sería un
+               cero falso (misma regla que los KPIs de arriba). */
+            <div className="flex items-center justify-center gap-2 h-[280px] text-danger text-sm">
+              <AlertTriangle size={15} aria-hidden="true" />
+              No se pudo leer la serie diaria — no es que no haya movimientos.
+            </div>
           ) : series.length === 0 ? (
             <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
               Sin movimientos en este rango
@@ -218,12 +256,21 @@ export default function BilleteraTab({ filters }: { filters: LogisticsFilters })
           </div>
 
           <div className="ml-auto font-mono tabular-nums text-[10px] text-muted-foreground">
-            {movQ.data?.total ?? 0} movimientos
+            {/* '—' en error: "0 movimientos" afirmaría un conteo que no se leyó. */}
+            {movQ.isError ? '—' : (movQ.data?.total ?? 0)} movimientos
           </div>
         </div>
 
         {movQ.isLoading ? (
           <Skeleton className="h-[400px] w-full" />
+        ) : movQ.isError ? (
+          /* La query FALLÓ: no mostrar "Sin movimientos" (eso significa que se
+             leyó y hay cero, que es otra cosa). El banner de arriba tiene el
+             detalle del error. */
+          <div className="flex items-center justify-center gap-2 h-[200px] text-danger text-sm">
+            <AlertTriangle size={15} aria-hidden="true" />
+            No se pudieron leer los movimientos — recargá o tocá Refrescar.
+          </div>
         ) : (movQ.data?.rows.length ?? 0) === 0 ? (
           <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">
             Sin movimientos para los filtros seleccionados

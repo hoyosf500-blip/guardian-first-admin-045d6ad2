@@ -582,7 +582,10 @@ export default function StoreCredentialsPanel() {
           </div>
 
           <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
-            <a href="https://app.dropi.co" target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+            {/* País-aware: con la tienda EC activa el link tiene que ir a
+                app.dropi.ec — mandarlo a app.dropi.co hacía sacar el token de la
+                cuenta del país equivocado (mezclar países está PROHIBIDO). */}
+            <a href={`https://${dropiHost}`} target="_blank" rel="noreferrer" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
               Ir a Dropi <ExternalLink size={11} />
             </a>
             <div className="flex gap-2">

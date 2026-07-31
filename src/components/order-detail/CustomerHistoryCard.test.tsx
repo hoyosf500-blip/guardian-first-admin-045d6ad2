@@ -17,40 +17,42 @@ vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
 }));
 
+// La tarjeta ahora exige tienda activa (el historial es store-scoped — fix del
+// bug de mezcla CO+EC, auditoría 30-jul). Se stubbea el hook, no el provider.
+vi.mock('@/contexts/StoreContext', () => ({
+  useActiveStoreId: () => 'store-test-1',
+}));
+
 const mockSelect = vi.fn();
 const mockEq = vi.fn();
 const mockNeq = vi.fn();
 const mockOrder = vi.fn();
 const mockLimit = vi.fn();
 
+// Stub encadenable: la query real ahora es
+//   .select().eq(store_id).eq(phone).neq(id).order(fecha).limit(20)   (historial)
+//   .select(count).eq(store_id).eq(phone)                              (conteo)
+// Cada método devuelve la misma cadena y `await` resuelve {data, count} — así el
+// stub no se rompe cada vez que se agrega un filtro.
+function makeChain() {
+  const chain: Record<string, unknown> = {};
+  const self = (fn: (...a: unknown[]) => void) => (...args: unknown[]) => { fn(...args); return chain; };
+  chain.select = self((...a) => mockSelect(...a));
+  chain.eq = self((...a) => mockEq(...a));
+  chain.neq = self((...a) => mockNeq(...a));
+  chain.order = self((...a) => mockOrder(...a));
+  chain.limit = self((...a) => mockLimit(...a));
+  // El conteo real INCLUYE el pedido actual (la query de count no lleva .neq);
+  // mockData es solo el historial → count = historial + 1.
+  (chain as { then?: unknown }).then = (resolve: (v: unknown) => unknown) =>
+    Promise.resolve({ data: mockData, count: Array.isArray(mockData) ? mockData.length + 1 : null }).then(resolve);
+  return chain;
+}
+
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
-    from: () => ({
-      select: (...args: unknown[]) => {
-        mockSelect(...args);
-        return {
-          eq: (...eqArgs: unknown[]) => {
-            mockEq(...eqArgs);
-            return {
-              neq: (...neqArgs: unknown[]) => {
-                mockNeq(...neqArgs);
-                return {
-                  order: (...orderArgs: unknown[]) => {
-                    mockOrder(...orderArgs);
-                    return {
-                      limit: (...limitArgs: unknown[]) => {
-                        mockLimit(...limitArgs);
-                        return Promise.resolve({ data: mockData });
-                      },
-                    };
-                  },
-                };
-              },
-            };
-          },
-        };
-      },
-    }),
+    from: () => makeChain(),
+    rpc: () => Promise.resolve({ data: null, error: null }),
   },
 }));
 

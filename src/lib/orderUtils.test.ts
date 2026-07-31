@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   dbToOrderData,
   parseDate,
   calcDias,
+  calcBusinessDays,
+  setTrackingCountry,
   isWithinLastDays,
   isClosedOutByCloser,
+  parseMoney,
   cleanPhone,
   formatPhone,
   getWhatsAppPhone,
@@ -157,6 +160,118 @@ describe('isClosedOutByCloser', () => {
     expect(isClosedOutByCloser(creado, cerrado, 'ENTREGADO')).toBe(true);
     // Sin estado (llamadas viejas de 2 args) → comportamiento intacto.
     expect(isClosedOutByCloser(creado, cerrado)).toBe(true);
+  });
+
+  it('reconoce estados EC y "GUIA GENERADA" con espacio como VIVOS (auditoría 2026-07-31)', () => {
+    // El guard viejo usaba isDespachado/isNovedad/isOficina (CO-céntricos): un
+    // pedido EC 'EN RUTA A CENTRO LOGISTICO' desaparecía del tablero de todas
+    // las asesoras cuando se cerraba un hermano del mismo teléfono.
+    const cerrado = bogotaStart + 3 * 86400000;
+    expect(isClosedOutByCloser(creado, cerrado, 'EN RUTA A CENTRO LOGISTICO')).toBe(false); // EC
+    expect(isClosedOutByCloser(creado, cerrado, 'INGRESANDO OPERATIVO A QUITO')).toBe(false); // EC
+    expect(isClosedOutByCloser(creado, cerrado, 'ASIGNADO A GINTRACOM')).toBe(false); // EC
+    expect(isClosedOutByCloser(creado, cerrado, 'PARA RETIRO EN AGENCIA SERVIENTREGA')).toBe(false); // EC
+    expect(isClosedOutByCloser(creado, cerrado, 'GUIA GENERADA')).toBe(false); // espacio (Dropi manda ambas)
+    expect(isClosedOutByCloser(creado, cerrado, 'GUIA_GENERADA')).toBe(false); // guion bajo
+    // Lógica invertida: solo estados TERMINALES se esconden; un estado que
+    // Dropi invente mañana cae en 'otros' y se trata como vivo (visible).
+    expect(isClosedOutByCloser(creado, cerrado, 'DEVOLUCION')).toBe(true);
+    expect(isClosedOutByCloser(creado, cerrado, 'CANCELADO')).toBe(true);
+    expect(isClosedOutByCloser(creado, cerrado, 'ESTADO_RARO_NUEVO')).toBe(false);
+  });
+});
+
+describe('parseMoney', () => {
+  it('formato CO con punto de miles: "$ 79.900" → 79900 (no 79.9)', () => {
+    // Regresión auditoría 2026-07-31: el parser viejo dividía por ~1.000 los
+    // montos formateados como moneda al re-guardar el Excel.
+    expect(parseMoney('$ 79.900')).toBe(79900);
+    expect(parseMoney('79.900')).toBe(79900);
+  });
+
+  it('formato CO con varios puntos: "$ 1.234.567" → 1234567 (no 1.234)', () => {
+    expect(parseMoney('$ 1.234.567')).toBe(1234567);
+    expect(parseMoney('1.234.567')).toBe(1234567);
+  });
+
+  it('formato EC con coma decimal: "4.734,53" → 4734.53', () => {
+    expect(parseMoney('4.734,53')).toBe(4734.53);
+    expect(parseMoney('$ 4.734,53')).toBe(4734.53);
+    expect(parseMoney('4734,53')).toBe(4734.53);
+  });
+
+  it('formato anglo: "1,234.56" → 1234.56 y "1,234,567" → 1234567', () => {
+    expect(parseMoney('1,234.56')).toBe(1234.56);
+    expect(parseMoney('1,234,567')).toBe(1234567);
+  });
+
+  it('decimales legítimos con punto NO se tratan como miles', () => {
+    expect(parseMoney('4.99')).toBe(4.99);   // USD EC
+    expect(parseMoney('150.5')).toBe(150.5);
+  });
+
+  it('números crudos y strings planos quedan intactos', () => {
+    expect(parseMoney(150000)).toBe(150000);
+    expect(parseMoney('150000')).toBe(150000);
+    expect(parseMoney(4.99)).toBe(4.99);
+  });
+
+  it('vacío / basura / null → 0 (mismo fallback que el parser viejo)', () => {
+    expect(parseMoney('')).toBe(0);
+    expect(parseMoney('N/A')).toBe(0);
+    expect(parseMoney(null)).toBe(0);
+    expect(parseMoney(undefined)).toBe(0);
+    expect(parseMoney(NaN)).toBe(0);
+  });
+});
+
+describe('calcBusinessDays por país (festivos CO vs EC)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    setTrackingCountry('CO'); // no filtrar estado module-level a otros tests
+  });
+
+  it('20-jul (festivo SOLO CO) no cuenta en CO pero SÍ en EC', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 22, 12))); // miércoles 22-jul-2026
+    // Desde el viernes 17-jul: sáb/dom no cuentan; lun 20 es festivo CO
+    // (Grito de Independencia) pero día laboral normal en Ecuador.
+    expect(calcBusinessDays('2026-07-17')).toBe(2);        // CO: mar 21 + mié 22
+    expect(calcBusinessDays('2026-07-17', 'EC')).toBe(3);  // EC: lun 20 + mar 21 + mié 22
+  });
+
+  it('10-ago (feriado SOLO EC) cuenta en CO pero no en EC', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 7, 12, 12))); // miércoles 12-ago-2026
+    // Desde el viernes 7-ago: lun 10 es Primer Grito de Independencia (EC).
+    expect(calcBusinessDays('2026-08-07')).toBe(3);        // CO: lun 10 + mar 11 + mié 12
+    expect(calcBusinessDays('2026-08-07', 'EC')).toBe(2);  // EC: mar 11 + mié 12
+  });
+
+  it('Carnaval EC 2026 (lun 16 / mar 17 feb) resta 2 días hábiles solo en EC', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 1, 19, 12))); // jueves 19-feb-2026
+    expect(calcBusinessDays('2026-02-13')).toBe(4);        // CO: lun-jue normales
+    expect(calcBusinessDays('2026-02-13', 'EC')).toBe(2);  // EC: solo mié 18 + jue 19
+  });
+
+  it('sin countryCode explícito hereda el país de la tienda activa (setTrackingCountry)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 6, 22, 12)));
+    setTrackingCountry('EC');
+    // Mismo cálculo del primer test pero SIN pasar el país: los call-sites de
+    // Seguimiento (segLists/CrmTable/SegBoard) heredan el calendario EC solos.
+    expect(calcBusinessDays('2026-07-17')).toBe(3);
+  });
+
+  it('festivos móviles CO (Semana Santa) se excluyen en fecha correcta', () => {
+    // El fmt viejo usaba getters LOCALES sobre fechas UTC-midnight: en un host
+    // UTC-5 los festivos móviles (Emiliani/Pascua) quedaban corridos un día y
+    // NO se excluían. Pascua 2026 = 5-abr → Jue Santo 2-abr, Vie Santo 3-abr.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 3, 7, 12))); // martes 7-abr-2026
+    expect(calcBusinessDays('2026-04-01')).toBe(2);       // CO: lun 6 + mar 7
+    expect(calcBusinessDays('2026-04-01', 'EC')).toBe(3); // EC: jue 2 (labora) + lun 6 + mar 7
   });
 });
 

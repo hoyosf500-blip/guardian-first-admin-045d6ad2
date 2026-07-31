@@ -38,15 +38,41 @@ export function useSegClosedPhones(storeId: string | null): Map<string, number> 
     let cancelled = false;
     void (async () => {
       const cutoffIso = new Date(Date.now() - CLOSER_LOOKBACK_DAYS * 86400000).toISOString();
-      const { data, error } = await supabase
-        .from('touchpoints')
-        .select('phone, action, created_at')
-        .eq('store_id', storeId)
-        .ilike('action', 'SEG:%')
-        .gte('created_at', cutoffIso);
-      if (cancelled || error || !data) return;
+      // Paginación: Supabase corta todo SELECT a ~1000 filas. Con ~40 gestiones
+      // SEG/día, 90 días superan ese tope y el corte (orden arbitrario sin
+      // ORDER BY) se comía justamente los cierres RECIENTES → pedidos que el
+      // equipo YA resolvió reaparecían como accionables y se volvía a llamar a
+      // clientes resueltos. Descendente a propósito: si algo se trunca (error a
+      // mitad de camino o HARD_LIMIT), se pierden cierres viejos e irrelevantes,
+      // nunca los nuevos.
+      const PAGE_SIZE = 1000;
+      const HARD_LIMIT = 10000;
+      type Tp = { phone: string; action: string; created_at: string };
+      const all: Tp[] = [];
+      let fromIdx = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('touchpoints')
+          .select('phone, action, created_at')
+          .eq('store_id', storeId)
+          .ilike('action', 'SEG:%')
+          .gte('created_at', cutoffIso)
+          .order('created_at', { ascending: false })
+          .range(fromIdx, fromIdx + PAGE_SIZE - 1);
+        if (cancelled) return;
+        if (error || !data) {
+          // Error a mitad de la paginación: nos quedamos con lo ya leído (las
+          // páginas más recientes) — un mapa parcial oculta MENOS de lo debido,
+          // nunca de más, y el realtime completa los cierres que sigan llegando.
+          console.warn('[useSegClosedPhones] error paginando touchpoints SEG:', error);
+          break;
+        }
+        all.push(...(data as Tp[]));
+        if (data.length < PAGE_SIZE || all.length >= HARD_LIMIT) break;
+        fromIdx += PAGE_SIZE;
+      }
       const map = new Map<string, number>();
-      for (const t of data as { phone: string; action: string; created_at: string }[]) {
+      for (const t of all) {
         if (!t.phone || !isSegCloser(t.action)) continue;
         const ms = new Date(t.created_at).getTime();
         const prev = map.get(t.phone);

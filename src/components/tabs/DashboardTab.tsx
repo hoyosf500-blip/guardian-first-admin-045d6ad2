@@ -8,7 +8,7 @@ import { bogotaToday } from '@/lib/utils';
 import { greetingFor } from '@/lib/greeting';
 import { computeDailyCounter, computeDailyCounterByDay } from '@/lib/computeDailyCounter';
 import { deriveDeliveryMaturity, isRatePreliminary } from '@/lib/logisticsRates';
-import { confRateBySample, confRateByCohort, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT, MATURITY_MIN_RESUELTOS } from '@/lib/confirmationRate';
+import { confRateOficial, confRateBySample, confRateByCohort, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT, MATURITY_MIN_RESUELTOS } from '@/lib/confirmationRate';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -282,11 +282,12 @@ export default function DashboardTab() {
       const ranking = (data as Array<{ operator_id: string; display_name: string; conf: number; canc: number; noresp: number }>)
         .map(r => {
           const total = Number(r.conf) + Number(r.canc) + Number(r.noresp);
-          // Tasa MADURA conf÷(conf+canc), igual que toda la app (no ÷total).
-          // Se conserva el null y el flag `inmaduro` que devuelve el helper: el
-          // `?? 0` que había acá los aplastaba y la tabla emitía un veredicto
-          // rojo sobre una medición que no existía.
-          const rate = confRateBySample(Number(r.conf), Number(r.canc));
+          // MATEMÁTICA OFICIAL: conf ÷ gestionados (conf+canc+noresp), meta 85%.
+          // El tooltip de la tabla siempre prometió esta fórmula pero la celda
+          // calculaba conf÷(conf+canc) (~99%) — auditoría 30-jul. Se conserva el
+          // null y el flag `inmaduro` del helper: un veredicto sobre medición
+          // inexistente no se emite.
+          const rate = confRateOficial(Number(r.conf), Number(r.canc), Number(r.noresp));
           return {
             operatorId: r.operator_id,
             name: r.display_name || 'Operador',
@@ -296,7 +297,7 @@ export default function DashboardTab() {
             total,
             tasa: rate.tasa,
             inmaduro: rate.inmaduro,
-            resueltos: rate.resueltos,
+            resueltos: rate.gestionados,
           };
         });
       ranking.sort((a, b) => b.total - a.total);
@@ -602,7 +603,10 @@ export default function DashboardTab() {
   // vez de inventar otra para que la barra de Confirmar y la del Dashboard no
   // puedan mostrarle números distintos a la misma operadora.
   const metaDia = (() => {
-    const goal = total + workQueue.length;
+    // pendLeft (sin resultado), NO workQueue.length: los "no contestó" siguen en
+    // la cola para reintento pero ya están en `total` — sumarlos de nuevo los
+    // contaba dos veces y la meta nunca llegaba a 100% (mismo fix que CounterBar).
+    const goal = total + pendLeft;
     return { goal, pct: goal > 0 ? Math.min(100, Math.round(total / goal * 100)) : 0 };
   })();
 
@@ -684,12 +688,19 @@ export default function DashboardTab() {
   };
   const handleCierre = async () => {
     if (!user || !activeStoreId) return;
-    const today = new Date().toISOString().split('T')[0];
+    // Fecha BOGOTÁ, no UTC: con new Date().toISOString() un cierre enviado
+    // después de las 7pm quedaba fechado MAÑANA y el reporte del día se perdía
+    // (auditoría 30-jul). hoyISO ya es bogotaToday().
+    const today = hoyISO;
     // store_id explícito: sin él el cierre cae al default de la columna (la
     // tienda CO original) y el reporte de una operadora de otra tienda queda
     // invisible para su propio admin.
+    // Números del CIERRE = el universo del counter (lo gestionado HOY, mismo que
+    // muestra este panel) y la tasa OFICIAL conf÷gestionados — antes se guardaba
+    // `tasa` (que puede ser la aceptación personal o la del período del selector)
+    // y `total` de otro alcance: el histórico quedaba con cifras incomparables.
     const { error } = await supabase.from('daily_reports').insert({ operator_id: user.id, report_date: today, report_type: 'cierre', store_id: activeStoreId,
-      data: { confirmados: counter.conf, cancelados: counter.canc, no_respondio: counter.noresp, total_gestionados: total, tasa_confirmacion: tasa, pendientes_manana: pendLeft } });
+      data: { confirmados: counter.conf, cancelados: counter.canc, no_respondio: counter.noresp, total_gestionados: cierreTotal, tasa_confirmacion: cierreDiaPct ?? 0, pendientes_manana: pendLeft } });
     if (error) toast.error(error.code === '23505' ? 'Ya enviaste el cierre de hoy' : 'Error');
     else toast.success('Cierre enviado correctamente');
   };
@@ -1057,7 +1068,12 @@ export default function DashboardTab() {
                     nadie midió, con el mismo peso visual que un 0% real. Va "—"
                     en tono neutro: no sabemos nada todavía, y eso no es un mal
                     resultado. Mismo patrón que el gauge de CustomerHistoryCard. */}
-                {sinResueltos ? (
+                {/* Con la matemática oficial (usarDelDia) el aro SÍ tiene dato
+                    aunque no haya conf/canc todavía (una mañana de puro N/R es
+                    66→0% MEDIDO, no ausencia) — sinResueltos solo apaga el aro
+                    en modo aceptación. Antes apagaba ambos y la pantalla se
+                    contradecía: aro "—" con el chip de abajo midiendo. */}
+                {sinResueltos && !usarDelDia ? (
                   <div
                     className="flex flex-col items-center justify-center rounded-full border border-dashed border-border bg-muted/20 text-center px-6"
                     style={{ width: 190, height: 190 }}
@@ -1217,7 +1233,7 @@ export default function DashboardTab() {
               // En modo Yo no hay fuente de entrantes (la RPC es de managers):
               // se mantiene el universo cargado, rotulado como siempre.
               ...(verEquipo
-                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${cohortePend} del día sin desenlace`, title: 'Pedidos que ENTRARON en la ventana (sin las ediciones REEMPLAZADA de Dropi). El denominador de la Confirmación del día. Debajo: cuántos de estos aún no tienen desenlace (ni conf, ni canc, ni no-contestó).' }]
+                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${cohortePend} del día sin desenlace`, title: 'Pedidos que ENTRARON en la ventana (sin las ediciones REEMPLAZADA de Dropi). Es la DEMANDA del día — contexto, NO el denominador de la Confirmación del día (esa divide por lo gestionado). Debajo: cuántos de estos aún no tienen desenlace.' }]
                 : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
             ].map((k) => (
               <StatTile
@@ -1478,9 +1494,9 @@ export default function DashboardTab() {
                       <th className="px-3 py-2.5 text-center hud-label font-normal">Total</th>
                       <th
                         className="px-3 py-2.5 text-center hud-label font-normal"
-                        title="Tasa personal de cada operadora: confirmados / lo gestionado (conf+canc+noresp). NO sobre el inflow total del día."
+                        title="Confirmación del día de cada operadora: confirmados ÷ lo gestionado (conf+canc+noresp). Meta 85%. La misma matemática de todo el CRM."
                       >
-                        Tasa pers.
+                        Conf. del día
                       </th>
                     </tr>
                   </thead>

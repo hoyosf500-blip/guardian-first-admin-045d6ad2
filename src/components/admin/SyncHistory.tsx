@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
-import { History, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
+import { History, CheckCircle2, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -24,6 +24,9 @@ export default function SyncHistory() {
   const { activeStoreId } = useStore();
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [loading, setLoading] = useState(true);
+  // Error de LECTURA visible: sin esto, una query caída mostraba "No hay
+  // sincronizaciones registradas" — un vacío falso que parece medido.
+  const [loadError, setLoadError] = useState(false);
 
   // Recarga al cambiar de tienda — el historial es POR TIENDA.
   useEffect(() => { loadLogs(); }, [activeStoreId]);
@@ -31,13 +34,14 @@ export default function SyncHistory() {
   async function loadLogs() {
     if (!activeStoreId) { setLogs([]); setLoading(false); return; }
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('sync_logs')
       .select('*')
       .eq('store_id', activeStoreId)
       .order('created_at', { ascending: false })
       .limit(20);
-    setLogs((data as SyncLog[]) || []);
+    setLoadError(Boolean(error));
+    setLogs(error ? [] : (data as SyncLog[]) || []);
     setLoading(false);
   }
 
@@ -85,12 +89,21 @@ export default function SyncHistory() {
         <div className="p-5 space-y-2">
           {[1, 2, 3].map(i => <div key={i} className="h-12 rounded-xl skeleton-shimmer" />)}
         </div>
+      ) : loadError ? (
+        <div className="m-4 rounded-xl border border-danger/30 bg-danger/8 px-4 py-3 text-sm text-danger">
+          No se pudo leer el historial. Esto NO significa que no haya sincronizaciones — reintentá con el botón de refrescar.
+        </div>
       ) : logs.length === 0 ? (
         <div className="p-8 text-center text-sm text-muted-foreground">No hay sincronizaciones registradas</div>
       ) : (
         <div className="p-3 space-y-2 max-h-80 overflow-y-auto">
           {logs.map(log => {
             const ok = log.status === 'success';
+            // 'warn' es el TERCER estado del contrato de sync_logs (cron zombie
+            // que corrió pero trajo 0, change-carrier con orden vieja quizás
+            // activa): NO es una caída. Pintarlo rojo "Error" mandaba a revisar
+            // credenciales cuando el diagnóstico correcto era otro.
+            const warn = log.status === 'warn';
             // Ancho relativo a la mejor corrida del historial visible. Sin techo
             // (o corrida con error) no se dibuja barra: no hay proporción que
             // mostrar y una barra vacía se leería como "trajo cero".
@@ -105,6 +118,10 @@ export default function SyncHistory() {
                       <div className="w-9 h-9 rounded-xl bg-success/14 border border-success/30 glow-success flex items-center justify-center flex-shrink-0" aria-hidden="true">
                         <CheckCircle2 size={16} className="text-success" />
                       </div>
+                    ) : warn ? (
+                      <div className="w-9 h-9 rounded-xl bg-warning/14 border border-warning/30 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                        <AlertTriangle size={16} className="text-warning" />
+                      </div>
                     ) : (
                       <div className="w-9 h-9 rounded-xl bg-danger/14 border border-danger/30 glow-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
                         <XCircle size={16} className="text-danger" />
@@ -112,7 +129,7 @@ export default function SyncHistory() {
                     )}
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-foreground font-mono tabular-nums">
-                        {ok ? `${log.synced_count} sincronizados` : 'Error'}
+                        {ok ? `${log.synced_count} sincronizados` : warn ? 'Advertencia' : 'Error'}
                       </div>
                       <div className="text-[10px] text-muted-foreground font-mono tabular-nums">
                         {format(new Date(log.created_at), "d MMM yyyy, HH:mm", { locale: es })}
@@ -127,7 +144,10 @@ export default function SyncHistory() {
                       )}
                     </div>
                     {log.error_message && (
-                      <div className="text-[10px] text-danger max-w-[200px] truncate">{log.error_message}</div>
+                      <div
+                        className={`text-[10px] ${warn ? 'text-warning' : 'text-danger'} max-w-[200px] truncate`}
+                        title={log.error_message}
+                      >{log.error_message}</div>
                     )}
                   </div>
                 </div>

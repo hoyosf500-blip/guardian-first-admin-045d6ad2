@@ -1,17 +1,21 @@
-// Fuente ÚNICA de verdad de la tasa de confirmación. Antes cada pantalla la
-// calculaba distinto (ProductivityDashboard ÷entrantes, banner personal
-// ÷(conf+canc+noresp), Reportes Diarios ÷(conf+canc)) → los números no cuadraban
-// y confundían al dueño. Toda la app usa AHORA la tasa MADURA:
+// Fuente ÚNICA de verdad de la tasa de confirmación.
 //
-//   tasa de confirmación = confirmados ÷ (confirmados + cancelados)
+// ⚖️ DECISIÓN FINAL DEL DUEÑO (30-jul-2026, tras la disputa del "Tasa: 99%"):
+// UNA sola matemática oficial en todo el CRM —
 //
-// Por qué madura (decisión de consultor, aceptada por el dueño):
-//   - Mide CALIDAD de venta: de los pedidos donde el cliente YA decidió, cuántos
-//     compraron. Es el estándar COD.
-//   - NO mete `noresp` en el denominador: los que no contestan son CONTACTABILIDAD
-//     (problema de datos/timing), métrica aparte — no ensucian la confirmación.
-//   - NO divide por `entrantes`: eso mezcla calidad con volumen del equipo. La
-//     COBERTURA (resueltos÷entrantes) es métrica de equipo, aparte.
+//   CONFIRMACIÓN DEL DÍA = confirmados ÷ GESTIONADOS (conf + canc + noresp)
+//   (ej. 71 ÷ 107 = 66%) · meta = CONF_TARGET_PCT (85%) · helper confRateOficial()
+//
+// Cuenta TODO lo confirmado en la ventana, sea el pedido nuevo o viejo, y el
+// denominador incluye a los que NO contestaron — porque también son ventas por
+// sacar. Es la tasa con la que el dueño PAGA al equipo.
+//
+// Las demás fórmulas SOBREVIVEN pero con nombre propio y rol secundario:
+//   - confRateBySample (conf ÷ conf+canc)  → "CIERRE DE LLAMADA" / "aceptación"
+//     (~99%): de los que contestaron, cuántos dijeron sí. NUNCA rotularla
+//     "confirmación" a secas — fue la causa de la disputa.
+//   - confRateByCohort.tasaDia (conf ÷ entró) → "DE LO QUE ENTRÓ" (informativo
+//     por fecha, ej. en "Cómo terminó el día"). Tampoco es LA confirmación.
 // Funciones puras, sin red, country-agnostic.
 
 /**
@@ -77,6 +81,39 @@ export interface CohortRate extends SampleRate {
 
 function round(n: number): number {
   return Math.round(n);
+}
+
+export interface OfficialRate {
+  /** confirmados ÷ gestionados (conf+canc+noresp), 0-100. null sin gestiones. */
+  tasa: number | null;
+  /** conf + canc + noresp — el denominador oficial. */
+  gestionados: number;
+  /** true con muy pocas gestiones → mostrar gris, no veredicto. */
+  inmaduro: boolean;
+}
+
+/**
+ * LA tasa oficial: CONFIRMACIÓN DEL DÍA = confirmados ÷ gestionados.
+ * Es la única fórmula que puede llamarse "confirmación" en la UI y la única que
+ * se compara contra CONF_TARGET_PCT (85%). Cualquier pantalla nueva que muestre
+ * confirmación DEBE usar este helper — no recalcular a mano ni usar
+ * confRateBySample (esa es el "cierre de llamada", otra cosa).
+ */
+export function confRateOficial(
+  conf: number,
+  canc: number,
+  noresp: number,
+  minGestionados: number = MATURITY_MIN_RESUELTOS,
+): OfficialRate {
+  const c = Math.max(0, conf || 0);
+  const x = Math.max(0, canc || 0);
+  const n = Math.max(0, noresp || 0);
+  const gestionados = c + x + n;
+  return {
+    tasa: gestionados > 0 ? round((c / gestionados) * 100) : null,
+    gestionados,
+    inmaduro: gestionados < minGestionados,
+  };
 }
 
 /**

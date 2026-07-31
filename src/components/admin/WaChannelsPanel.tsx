@@ -42,6 +42,10 @@ export default function WaChannelsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [channels, setChannels] = useState<ChannelStatus[]>([]);
+  // Error de LECTURA visible: si la RPC falla, NO afirmar "no tiene canal"
+  // (vacío falso) — el dueño re-registraría desde cero un canal que sí existe,
+  // pisando el token guardado.
+  const [loadError, setLoadError] = useState(false);
 
   const [provider, setProvider] = useState<'evolution' | 'whapi' | 'waha'>('evolution');
   const [base, setBase] = useState('');
@@ -53,10 +57,11 @@ export default function WaChannelsPanel() {
   const loadChannels = useCallback(async () => {
     if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
     setLoading(true);
-    const { data } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: ChannelStatus[] | null }>)(
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: ChannelStatus[] | null; error: { message?: string } | null }>)(
       'get_wa_channel_status', { p_store_id: activeStoreId },
     );
-    setChannels(Array.isArray(data) ? data : []);
+    setLoadError(Boolean(error));
+    setChannels(!error && Array.isArray(data) ? data : []);
     setLoading(false);
   }, [activeStoreId, isManagerOfActive]);
 
@@ -149,7 +154,11 @@ export default function WaChannelsPanel() {
       <div className="px-5 py-4 space-y-5">
         {/* Lista de canales */}
         <div className="space-y-2">
-          {channels.length === 0 ? (
+          {loadError ? (
+            <div className="rounded-lg border border-danger/30 bg-danger/8 px-4 py-3 text-xs text-danger">
+              No se pudo leer la configuración de canales. Esto NO significa que no haya canal — reintentá con "Refrescar" antes de registrar nada.
+            </div>
+          ) : channels.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border bg-background px-4 py-3 text-xs text-muted-foreground">
               Esta tienda no tiene ningún canal de WhatsApp todavía. Registrá uno abajo.
             </div>
@@ -188,10 +197,16 @@ export default function WaChannelsPanel() {
           </div>
         )}
 
-        {/* Form de alta (solo dueño) */}
+        {/* Form de alta (solo dueño). Con la lectura caída NO se muestra: el
+            estado real es desconocido y re-registrar "desde cero" pisaría el
+            canal existente. */}
         {!isOwnerOfActive ? (
           <div className="rounded-2xl border border-border bg-card/40 px-4 py-3 text-xs text-muted-foreground shadow-card3d hairline-top">
             Solo el <strong>dueño</strong> de la tienda puede registrar o editar el canal.
+          </div>
+        ) : loadError ? (
+          <div className="rounded-2xl border border-warning/30 bg-warning/8 px-4 py-3 text-xs text-warning shadow-card3d hairline-top">
+            Registro deshabilitado mientras no se pueda leer el estado del canal — refrescá primero.
           </div>
         ) : (
           <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-4 shadow-card3d hairline-top">

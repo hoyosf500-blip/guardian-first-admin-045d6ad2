@@ -14,7 +14,6 @@ describe('classifySegEstado', () => {
       'ALISTAMIENTO',
       'EN BODEGA DROPI',
       'RECOGIDO POR DROPI',
-      'EN PUNTO DROOP',
     ])('clasifica %s como procesamiento', (e) => {
       expect(classifySegEstado(e)).toBe('procesamiento');
     });
@@ -47,6 +46,10 @@ describe('classifySegEstado', () => {
     it.each([
       'RECLAME EN OFICINA',
       'EN OFICINA',
+      // "droop" = drop point (CO): punto de retiro donde el cliente recoge.
+      // Antes estaba en PROCESAMIENTO_EXACT y el Kanban le escondía la
+      // urgencia mientras el paquete vencía en el punto.
+      'EN PUNTO DROOP',
       // ── EC ────────────────────────────────────────────────────────────
       'PARA RETIRO EN AGENCIA',
       'PARA RETIRO EN OFICINA GUAYAQUIL',

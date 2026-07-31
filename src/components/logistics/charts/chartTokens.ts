@@ -73,13 +73,19 @@ export function fmtCompact(v: number): string {
 /** Format de fecha YYYY-MM-DD a "DD MMM" (es-CO). Maneja UTC para evitar offset. */
 export function fmtDay(s: string): string {
   const d = new Date(s + 'T00:00:00Z');
-  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+  // timeZone:'UTC' obligatorio: se parsea como medianoche UTC, así que renderizar
+  // en zona local (Bogotá/Guayaquil = UTC-5) corría el rótulo -1 día — el bucket
+  // del 15 salía "14 jul" y la MISMA serie del wallet mostraba dos fechas
+  // distintas según el chart (BilleteraTab vs CashFlowChart).
+  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
 
 /** Format de fecha YYYY-MM-DD a "DD/MM" (compacto para ejes con muchos ticks). */
 export function fmtDayShort(s: string): string {
-  const d = new Date(s);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  // Mismo bug de zona que fmtDay: new Date('YYYY-MM-DD') es medianoche UTC y los
+  // getters locales restaban un día en Bogotá. Parsear y leer TODO en UTC.
+  const d = new Date(s + 'T00:00:00Z');
+  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 /** Tone semantic → token CSS color. Útil para `<Bar fill={...}>`. */

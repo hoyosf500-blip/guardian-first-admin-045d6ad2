@@ -28,16 +28,30 @@ export function useWaThread(conversationId: string | null, storeId: string | nul
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  // Error de la carga del hilo. Sin esto, un fallo de red pintaba el chat como
+  // conversación VACÍA — indistinguible de "nunca hablamos con este cliente" —
+  // y la operadora volvía a pedir datos que el cliente ya había dado.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!conversationId) { setMessages([]); return; }
+    if (!conversationId) { setMessages([]); setLoadError(null); return; }
     setLoading(true);
-    const { data } = await sb
+    const { data, error } = await sb
       .from('wa_messages')
       .select(COLS)
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .limit(500);
+    if (error) {
+      // Conservar los mensajes ya cargados (si los hay): el historial previo
+      // sigue siendo mejor que un hilo en blanco. La UI puede mostrar el error
+      // y reintentar con reload().
+      console.warn('[useWaThread] error cargando hilo:', error);
+      setLoadError(error.message || 'No se pudo cargar el historial');
+      setLoading(false);
+      return;
+    }
+    setLoadError(null);
     setMessages((data as WaMessage[]) ?? []);
     setLoading(false);
   }, [conversationId]);
@@ -90,5 +104,5 @@ export function useWaThread(conversationId: string | null, storeId: string | nul
     }
   }, [conversationId, storeId, phone, load]);
 
-  return { messages, loading, sending, send, reload: load };
+  return { messages, loading, loadError, sending, send, reload: load };
 }

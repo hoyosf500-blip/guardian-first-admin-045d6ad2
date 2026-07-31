@@ -101,8 +101,11 @@ export default function ReportsTable() {
           no_respondio: d.no_respondio ?? 0,
           cancelados: canc,
           total_gestionados: total,
-          tasa_confirmacion: total > 0 ? Math.round((conf / total) * 100) : 0,
-          tasa_cancelados: total > 0 ? Math.round((canc / total) * 100) : 0,
+          // Sin gestionados NO hay tasa: null (la celda muestra "—"), nunca un
+          // 0% fabricado — antes un cierre con 0 gestionados salía "0%" rojo
+          // como si midiera algo, contra el principio de honestidad del CRM.
+          tasa_confirmacion: total > 0 ? Math.round((conf / total) * 100) : null,
+          tasa_cancelados: total > 0 ? Math.round((canc / total) * 100) : null,
           pendientes_manana: d.pendientes_manana ?? 0,
         };
       }
@@ -210,7 +213,11 @@ export default function ReportsTable() {
                       dueño (CONF_TARGET_PCT = 85%, fuente única). Verde en meta;
                       ámbar en la banda "cerca" (5 pts); rojo debajo. */}
                   <td className={`${cellBase} text-center`}>
-                    {r.tasa_confirmacion == null ? '' : (() => {
+                    {/* Cierre sin denominador → "—" honesto (no vacío ni 0%);
+                        las aperturas no tienen tasa y siguen en blanco. */}
+                    {r.tasa_confirmacion == null
+                      ? (r.tipo === 'cierre' ? <span className="text-muted-foreground">—</span> : '')
+                      : (() => {
                       const tone: keyof typeof TONE_TEXT = r.tasa_confirmacion >= CONF_TARGET_PCT
                         ? 'success'
                         : r.tasa_confirmacion >= CONF_TARGET_PCT - 5 ? 'warning' : 'danger';
@@ -236,9 +243,11 @@ export default function ReportsTable() {
                     })()}
                   </td>
                   <td className={`${cellBase} text-center ${
-                    r.tasa_cancelados != null && r.tasa_cancelados > 0 ? 'text-danger font-semibold' : ''
+                    r.tasa_cancelados != null && r.tasa_cancelados > 0 ? 'text-danger font-semibold' : 'text-muted-foreground'
                   }`}>
-                    {r.tasa_cancelados != null ? `${r.tasa_cancelados}%` : ''}
+                    {r.tasa_cancelados != null
+                      ? `${r.tasa_cancelados}%`
+                      : (r.tipo === 'cierre' ? '—' : '')}
                   </td>
                   <td className={`${cellBase} text-center`}>{r.pendientes_manana ?? ''}</td>
                 </tr>

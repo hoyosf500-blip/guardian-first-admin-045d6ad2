@@ -8,7 +8,6 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
-import ReportsTable from '@/components/admin/ReportsTable';
 import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import StoreInvitePanel from '@/components/admin/StoreInvitePanel';
 import ProductDropiMapPanel from '@/components/admin/ProductDropiMapPanel';
@@ -45,7 +44,6 @@ const TAB_PILL = [
 ].join(' ');
 
 interface Profile { user_id: string; display_name: string; roles: string[]; }
-interface DayReport { operator_name: string; report_date: string; data: Record<string, number>; }
 interface FailedSync { id: string; created_at: string; error_message: string | null; }
 
 export default function AdminTab() {
@@ -56,7 +54,6 @@ export default function AdminTab() {
   const { isAdmin } = useAuth();
   const { activeStoreId, isManagerOfActive } = useStore();
   const [operators, setOperators] = useState<Profile[]>([]);
-  const [reports, setReports] = useState<DayReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncKey, setSyncKey] = useState(0);
   const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
@@ -165,7 +162,7 @@ export default function AdminTab() {
 
   async function loadData() {
     setLoading(true);
-    if (!activeStoreId) { setOperators([]); setReports([]); setLoading(false); return; }
+    if (!activeStoreId) { setOperators([]); setLoading(false); return; }
 
     // Operadoras de la TIENDA ACTIVA (no usuarios globales): se leen de
     // store_members + profiles. Antes se listaban todos los profiles/user_roles
@@ -182,23 +179,16 @@ export default function AdminTab() {
       : { data: [] as { user_id: string; display_name: string }[] };
 
     const roleByUser = new Map((members ?? []).map(m => [m.user_id, m.role as string]));
-    const nameByUser = new Map((profiles ?? []).map(p => [p.user_id, p.display_name]));
     setOperators((profiles ?? []).map(p => ({
       user_id: p.user_id,
       display_name: p.display_name,
       roles: roleByUser.get(p.user_id) ? [roleByUser.get(p.user_id) as string] : [],
     })));
 
-    // Reportes de cierre — también por tienda.
-    const { data: reps } = await supabase.from('daily_reports')
-      .select('operator_id, report_date, report_type, data')
-      .eq('report_type', 'cierre')
-      .eq('store_id', activeStoreId)
-      .order('report_date', { ascending: false }).limit(20);
-    setReports((reps ?? []).map(r => ({
-      operator_name: nameByUser.get(r.operator_id) || 'Desconocido',
-      report_date: r.report_date, data: r.data as Record<string, number>,
-    })));
+    // (La query de daily_reports que vivía acá era código muerto: llenaba un
+    // estado `reports` que ningún JSX renderizaba — huérfano de un layout
+    // anterior — y su await alargaba el skeleton del tab en cada montaje.
+    // Los cierres se ven en la pestaña "Reportes diarios".)
     setLoading(false);
   }
 
@@ -433,7 +423,11 @@ export default function AdminTab() {
           </TiltCard>
           </motion.div>
 
-          <ReportsTable />
+          {/* ReportsTable (aperturas/cierres) se quitó de Configuración: era un
+              duplicado de la vista "Apertura y cierre por operadora" de la
+              pestaña "Reportes diarios" (con límite fijo y sin filtro de
+              fechas) — dos hogares para los mismos turnos hacían divergir lo
+              que veía el dueño. La pestaña Reportes es la única fuente. */}
         </div>
       )}
           </div>

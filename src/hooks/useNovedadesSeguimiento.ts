@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
+import { isWithinLastDays } from '@/lib/orderUtils';
 import {
   parseNovedadAction,
   classifyDeliveryOutcome,
@@ -102,6 +103,11 @@ export interface NovedadesSeguimientoData {
   /** Teléfonos con marca que quedaron fuera del universo, por tope o por lote
    *  que no se pudo leer (0 = análisis completo). */
   telefonosOmitidos: number;
+  /** Mensaje si alguna consulta base (marcas / pendientes / roster) falló.
+   *  Con esto ≠ null los contadores NO son mediciones: el componente debe
+   *  mostrar "no se pudo leer" en vez de ceros (principio de honestidad —
+   *  un 0 falso dispara reclamos injustos contra las operadoras). */
+  loadError: string | null;
 }
 
 const RANGE_DAYS: Record<SeguimientoRange, number> = { today: 0, '7d': 6, '30d': 29 };
@@ -126,7 +132,11 @@ interface OrderLite {
 
 const MIN_SAMPLE = 3; // mínimo de pedidos para rankear una transportadora/ciudad
 
-type PendOrder = Pick<OrderLite, 'id' | 'phone' | 'novedad' | 'last_movement_at' | 'estado' | 'transportadora' | 'ciudad'>;
+type PendOrder = Pick<OrderLite, 'id' | 'phone' | 'novedad' | 'last_movement_at' | 'estado' | 'transportadora' | 'ciudad'> & {
+  /** Fecha de creación del pedido — para aplicar la MISMA ventana de 60 días
+   *  que la pestaña Pendientes (NovedadesTab). */
+  fecha: string | null;
+};
 
 const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | 'loading'> = {
   pendientes: 0,
@@ -148,6 +158,7 @@ const EMPTY: Omit<NovedadesSeguimientoData, 'range' | 'setRange' | 'refresh' | '
   ciudadesProblematicas: [],
   muestraParcial: false,
   telefonosOmitidos: 0,
+  loadError: null,
 };
 
 /**
@@ -193,7 +204,7 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
           .order('created_at', { ascending: false }),
         supabase
           .from('orders')
-          .select('id, phone, novedad, last_movement_at, estado, transportadora, ciudad')
+          .select('id, phone, novedad, last_movement_at, estado, transportadora, ciudad, fecha')
           .eq('store_id', activeStoreId)
           .or(NOVEDAD_QUEUE_FILTER)
           .eq('novedad_sol', false),
@@ -205,8 +216,26 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
 
       if (seq !== seqRef.current) return; // una carga más nueva ganó
 
+      // HONESTIDAD: si alguna consulta base falló, NO convertir el fallo en
+      // arrays vacíos — "Gestionadas hoy: 0" y el badge rojo "0 hoy" con
+      // aspecto de medición real harían que el dueño reclame a las operadoras
+      // por datos que nunca se pudieron leer. Se expone el error y listo.
+      const baseErr = tpRes.error || pendRes.error || memberRes.error;
+      if (baseErr) {
+        setData({ ...EMPTY, loadError: baseErr.message });
+        return;
+      }
+
       const tps = (tpRes.data ?? []).filter((t) => parseNovedadAction(t.action).tipo != null);
-      const pend = (pendRes.data ?? []) as PendOrder[];
+      // MISMO universo que la pestaña Pendientes (NovedadesTab, ventana rodante
+      // de 60 días): sin este filtro, fantasmas viejos congelados en estado
+      // NOVEDAD (ya cerrados en Dropi, irresolubles) inflaban "En cola ahora"
+      // frente al conteo de la Tab y disparaban la alerta "0 hoy" contra
+      // operadoras que no tenían nada gestionable.
+      const NOVEDAD_WINDOW_DAYS = 60;
+      const pend = ((pendRes.data ?? []) as PendOrder[]).filter((p) =>
+        isWithinLastDays(p.fecha, NOVEDAD_WINDOW_DAYS),
+      );
       const memberIds = (memberRes.data ?? []).map((m) => m.user_id as string);
 
       // Teléfonos a enriquecer (de las marcas). Se traen TODOS, en lotes: estas
@@ -432,6 +461,7 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
         ciudadesProblematicas,
         muestraParcial: telefonosOmitidos > 0,
         telefonosOmitidos,
+        loadError: null,
       });
     } finally {
       if (seq === seqRef.current) setLoading(false);

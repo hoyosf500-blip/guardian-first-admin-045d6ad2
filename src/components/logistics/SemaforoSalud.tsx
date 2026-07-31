@@ -3,6 +3,7 @@ import { Activity, Package, Truck, Undo2, Percent, Megaphone, Coins } from 'luci
 import type { LucideIcon } from 'lucide-react';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
+import { isRpcMissing } from '@/lib/rpcError';
 import {
   evalIndicator,
   veredictoLabel,
@@ -168,6 +169,11 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
     () => sumAdSpend(adQuery.data ?? []).total,
     [adQuery.data],
   );
+  // Error REAL leyendo la pauta (RLS/500/red) ≠ "pauta sin registrar": con
+  // retry:false un solo fallo deja pautaTotal=0 el resto de la sesión, y el
+  // hint "Registrá tu pauta" acusaría al dueño de no cargar lo que sí cargó.
+  // Migration sin aplicar (isRpcMissing) sí es "feature no activa" → gris normal.
+  const pautaSinDato = adQuery.isError && !isRpcMissing(adQuery.error);
 
   const indicators = useMemo<Indicator[] | null>(() => {
     const f = finQuery.data;
@@ -262,7 +268,11 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           display: '—',
           color: 'gray',
           ref: 'Ref: ≤45%',
-          hint: 'Registrá tu pauta para ver esto.',
+          // Con error de lectura NO decir "registrá tu pauta": puede estar
+          // registrada y simplemente no se pudo leer.
+          hint: pautaSinDato
+            ? 'No se pudo leer tu pauta (error temporal) — recargá.'
+            : 'Registrá tu pauta para ver esto.',
           icon: Megaphone,
           raw: null,
           refValue: 45,
@@ -292,7 +302,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           display: '—',
           color: 'gray',
           ref: 'Ref: ≥2×',
-          hint: 'Registrá tu pauta para ver esto.',
+          hint: pautaSinDato
+            ? 'No se pudo leer tu pauta (error temporal) — recargá.'
+            : 'Registrá tu pauta para ver esto.',
           icon: Coins,
           raw: null,
           refValue: 2,
@@ -301,7 +313,7 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
     }
 
     return list;
-  }, [finQuery.data, pautaTotal]);
+  }, [finQuery.data, pautaTotal, pautaSinDato]);
 
   return (
     <div className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d hairline-top">
@@ -333,7 +345,20 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
             />
           ))}
         </div>
-      ) : finQuery.isError || !indicators ? (
+      ) : finQuery.isError ? (
+        // Error de LECTURA ≠ período sin ventas: colapsarlos en "Sin datos"
+        // hacía creer que se perdió el mes cuando solo falló financial_summary.
+        // Principio del CRM: un error de consulta nunca se presenta como
+        // "no hay datos". Mismo criterio que la rama isError de FinanzasTab.
+        <div className="rounded-2xl border border-danger/30 bg-danger/10 p-6 text-center text-sm">
+          <p className="font-semibold text-danger">
+            No se pudo leer el resumen financiero — el semáforo no se calculó.
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground font-mono">
+            {(finQuery.error as Error)?.message ?? 'Error desconocido'} · los datos del período NO se perdieron, recargá.
+          </p>
+        </div>
+      ) : !indicators ? (
         // bg-muted/20, no bg-card/40: el contenedor padre (línea 195) ya es
         // bg-card/40 y el mensaje quedaba sin contraste contra su fondo.
         <div className="rounded-2xl border border-border bg-muted/20 p-6 text-center text-sm text-muted-foreground">

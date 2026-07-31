@@ -67,6 +67,10 @@ export default function NovedadesTab() {
     return (
       o.nombre.toLowerCase().includes(s) ||
       o.phone.includes(s) ||
+      // El panel de novedades de Dropi lista por ID de pedido: sin match por
+      // externalId/guía la operadora no podía cruzar CRM ↔ panel con ese dato.
+      (o.externalId || '').toLowerCase().includes(s) ||
+      (o.guia || '').toLowerCase().includes(s) ||
       o.ciudad.toLowerCase().includes(s) ||
       (o.transportadora || '').toLowerCase().includes(s) ||
       (o.novedad || '').toLowerCase().includes(s)
@@ -113,8 +117,13 @@ export default function NovedadesTab() {
             </span>
             Novedades
           </h2>
+          {/* HONESTIDAD: los botones de la card solo MARCAN la gestión en el
+              CRM (useMarkNovedadResolved no empuja a Dropi). El copy viejo
+              prometía "resolución en vivo contra Dropi" y una operadora nueva
+              podía marcar "Resuelta" sin tocar el panel — la incidencia vencía
+              y el paquete se devolvía solo. */}
           <p className="text-sm text-muted-foreground">
-            Incidencias reportadas por transportadoras — resolución en vivo contra Dropi
+            Gestioná cada novedad en el panel de Dropi y registrá acá el resultado — marcar no resuelve en Dropi
           </p>
         </div>
         <div className="relative flex flex-wrap items-center gap-2 shrink-0">
@@ -234,7 +243,7 @@ export default function NovedadesTab() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, teléfono, ciudad, transportadora o novedad..."
+              placeholder="Buscar por nombre, teléfono, ID Dropi, guía, ciudad, transportadora o novedad..."
               className="w-full h-10 rounded-xl border border-border bg-background/60 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-colors"
             />
           </div>

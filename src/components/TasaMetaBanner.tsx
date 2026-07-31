@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useOrders } from '@/contexts/OrderContext';
 import { TrendingUp, TrendingDown, Target } from 'lucide-react';
-import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
+import { confRateOficial, confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 
 interface TasaRow {
   confirmados: number;
@@ -35,10 +35,13 @@ export default function TasaMetaBanner() {
 
   if (!data) return null;
 
-  // Tasa MADURA (conf ÷ resueltos), ignorando data.tasa_confirmacion del RPC
-  // (que era conf ÷ (conf+canc+noresp) — metía los no-contesta). Misma fórmula
-  // que ProductivityDashboard / Reportes Diarios. Ver src/lib/confirmationRate.ts.
-  const cr = confRateBySample(data.confirmados, data.cancelados);
+  // LA MATEMÁTICA OFICIAL (decisión del dueño 30-jul): confirmados ÷ GESTIONADOS
+  // (conf+canc+noresp), meta 85%. Antes este banner usaba conf÷(conf+canc) (~99%)
+  // y le decía "En meta" a la operadora mientras el Dashboard del dueño mostraba
+  // 66% — la disputa del "Tasa: 99%". El cierre de llamada (÷contestaron) queda
+  // como dato secundario en el tooltip, con su nombre.
+  const cr = confRateOficial(data.confirmados, data.cancelados, data.noresp);
+  const cierre = confRateBySample(data.confirmados, data.cancelados);
   const hasSample = !cr.inmaduro && cr.tasa != null;
   const tasa = cr.tasa ?? 0;
 
@@ -60,7 +63,9 @@ export default function TasaMetaBanner() {
     } else {
       bg = 'bg-destructive/10 text-destructive border-destructive/30';
       Icon = TrendingDown;
-      label = `Por debajo de la meta (${CONF_TARGET_PCT}%)`;
+      // La palanca real para subir esta tasa son los no-contesta (el cierre de
+      // los que contestan ya suele ser ~99%): el label se lo recuerda.
+      label = `Por debajo de la meta (${CONF_TARGET_PCT}%) — rescatá los "no contestó"`;
     }
   }
 
@@ -75,11 +80,11 @@ export default function TasaMetaBanner() {
           <span className="opacity-40">|</span>
           <span
             className="font-mono text-base font-semibold"
-            title={`Tasa personal MADURA: ${data.confirmados} confirmados ÷ ${data.confirmados + data.cancelados} resueltos (confirmados + cancelados). Los no-contesta NO cuentan acá.`}
+            title={`Confirmación del día (tuya): ${data.confirmados} confirmados ÷ ${cr.gestionados} gestionados (incluye los ${data.noresp} que no contestaron — también son ventas por sacar). Meta ${CONF_TARGET_PCT}%.${cierre.tasa != null ? ` Tu cierre de llamada (de los que contestaron): ${cierre.tasa}%.` : ''}`}
           >
             {tasa}%
           </span>
-          <span className="text-xs opacity-70">tasa personal · meta {CONF_TARGET_PCT}%</span>
+          <span className="text-xs opacity-70">confirmación del día · meta {CONF_TARGET_PCT}%</span>
         </div>
       </div>
       <span className="text-xs font-medium">{label}</span>

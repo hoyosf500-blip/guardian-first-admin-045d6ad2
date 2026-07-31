@@ -162,6 +162,18 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           }
           return;
         }
+        // Guard multi-tienda: si la tienda activa cambió con este fetch en
+        // vuelo (hasta 20 páginas, varios segundos), la respuesta es de la
+        // tienda ANTERIOR — aterrizarla pisaría el reset de arriba y mostraría
+        // pedidos de CO bajo el encabezado de EC (mezclar países está
+        // prohibido). Se descarta y se relanza para la tienda nueva, porque el
+        // load que disparó el cambio de tienda murió en el guard inFlightRef
+        // (el setTimeout corre después del finally, ya con inFlight=false).
+        // Mismo problema que resuelve el flag `cancelled` de useSegClosedPhones.
+        if (prevStoreRef.current !== storeId) {
+          window.setTimeout(() => loadSegDataRef.current(true), 0);
+          return;
+        }
         const rows = (data || []) as Row[];
         all.push(...rows);
         if (rows.length < PAGE_SIZE) break;

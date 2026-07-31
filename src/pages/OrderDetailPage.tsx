@@ -164,8 +164,10 @@ export default function OrderDetailPage() {
   const [notes, setNotes] = useState<NoteRow[]>([]);
 
   // Capa 2 — auto-refresh per-pedido cuando se abre uno no-terminal con
-  // last_movement_at > 1h. Una sola vez por sesión por external_id (silent: el
-  // realtime de orders refresca el UI cuando el upsert termina, sin toast).
+  // last_movement_at > 1h. Una sola vez por sesión por external_id (silent).
+  // OJO: esta página NO tiene realtime ni consume OrderContext — tras el
+  // upsert de la edge re-leemos la fila nosotros mismos en el effect de abajo;
+  // si no, la operadora seguiría viendo el estado viejo hasta salir y volver.
   const refreshedThisSession = useRef<Set<string>>(new Set());
 
   // Novedad resolution state (F3)
@@ -180,6 +182,20 @@ export default function OrderDetailPage() {
     if (!externalId || !activeStoreId) return;
     setLoading(true);
     setLoadError(null);
+    // Reset SIEMPRE al cambiar de pedido: si la carga nueva falla o no trae
+    // nada, el pedido ANTERIOR quedaba renderizado bajo la URL nueva y las
+    // gestiones (que usan order.phone) se escribían al cliente equivocado.
+    // Además, sin esto la pantalla de loadError era inalcanzable (el guard de
+    // render exige !order).
+    setOrder(null);
+    setTouchpoints([]);
+    setOrderResults([]);
+    setStatusChanges([]);
+    setNotes([]);
+
+    // Cancelación: navegar rápido entre hermanos (↑/↓) dejaba dos cargas en
+    // vuelo que podían resolverse fuera de orden y pintar el pedido equivocado.
+    let cancelled = false;
 
     const load = async () => {
       // Filtro de tienda SIEMPRE: sin él, un link viejo de la otra tienda (o de
@@ -191,6 +207,8 @@ export default function OrderDetailPage() {
         .eq('external_id', externalId)
         .eq('store_id', activeStoreId)
         .limit(1);
+
+      if (cancelled) return;
 
       if (error) {
         setLoadError(getErrorMessage(error));
@@ -206,10 +224,10 @@ export default function OrderDetailPage() {
       const o = orders[0] as OrderRow;
       setOrder(o);
 
-      // Load touchpoints, notes, order_results, status history & profiles in parallel.
+      // Load touchpoints, notes, order_results & status history in parallel.
       // order_status_history aún no está en los tipos generados → cast puntual.
       const sbAny = supabase as unknown as SupabaseClient;
-      const [tpRes, notesRes, orRes, statusRes, profilesRes] = await Promise.all([
+      const [tpRes, notesRes, orRes, statusRes] = await Promise.all([
         // Por TELÉFONO pero acotado a la tienda activa: el mismo cliente puede
         // haber comprado en otra tienda de la plataforma y su historial de allá
         // no puede aparecer acá (mismo criterio que useOrderNotes).
@@ -217,18 +235,41 @@ export default function OrderDetailPage() {
         supabase.from('notes').select('*').eq('phone', o.phone).eq('store_id', activeStoreId).order('created_at', { ascending: false }).limit(50),
         supabase.from('order_results').select('*').eq('order_id', o.id).order('created_at', { ascending: false }).limit(50),
         sbAny.from('order_status_history').select('id, status, changed_at').eq('order_id', o.id).order('changed_at', { ascending: false }).limit(100),
-        supabase.from('profiles').select('user_id, display_name'),
       ]);
+
+      if (cancelled) return;
 
       if (tpRes.data) setTouchpoints(tpRes.data as Touchpoint[]);
       if (notesRes.data) setNotes(notesRes.data as NoteRow[]);
       if (orRes.data) setOrderResults(orRes.data as OrderResultRow[]);
       if (statusRes.data) setStatusChanges(statusRes.data as TimelineStatusChange[]);
-      if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
+
+      // Solo los perfiles de quienes aparecen en el historial de ESTE pedido:
+      // bajar la tabla `profiles` completa dependía solo de la RLS y en el
+      // modelo SaaS expone los nombres de operadores de otros tenants (y el
+      // payload crece con cada tienda nueva).
+      const operatorIds = Array.from(new Set(
+        [
+          ...((tpRes.data as Touchpoint[] | null) ?? []).map((t) => t.operator_id),
+          ...((notesRes.data as NoteRow[] | null) ?? []).map((n) => n.operator_id),
+          ...((orRes.data as OrderResultRow[] | null) ?? []).map((r) => r.operator_id),
+        ].filter(Boolean),
+      ));
+      if (operatorIds.length) {
+        const profilesRes = await supabase
+          .from('profiles')
+          .select('user_id, display_name')
+          .in('user_id', operatorIds);
+        if (cancelled) return;
+        if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
+      } else {
+        setProfiles([]);
+      }
       setLoading(false);
     };
 
     load();
+    return () => { cancelled = true; };
   }, [externalId, activeStoreId]);
 
   // Capa 2 — auto-refresh per-pedido si el último movimiento es > 1h
@@ -242,7 +283,26 @@ export default function OrderDetailPage() {
     const ageHs = (Date.now() - new Date(lastMov).getTime()) / 3600000;
     if (ageHs < 1) return;
     refreshedThisSession.current.add(order.external_id);
-    void refreshOrder(activeStoreId, order.external_id, { silent: true });
+    const extId = order.external_id;
+    // El retorno del refresh no alcanza (trae solo estado/guía/transportadora y
+    // el upsert también toca last_movement_at, fecha_conf, novedad): usamos el
+    // ok como señal y re-leemos la fila completa — sin esto la edge corregía la
+    // base pero la pantalla seguía mostrando el estado viejo. No hay loop: el
+    // guard refreshedThisSession ya contiene el id cuando setOrder re-dispara
+    // este effect.
+    void (async () => {
+      const res = await refreshOrder(activeStoreId, extId, { silent: true });
+      if (!res.ok) return;
+      const { data } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('external_id', extId)
+        .eq('store_id', activeStoreId)
+        .limit(1);
+      if (!data?.length) return;
+      // Anti-carrera: si mientras tanto se navegó a otro hermano, no pisar.
+      setOrder(prev => (prev && prev.external_id === extId ? (data[0] as OrderRow) : prev));
+    })();
   }, [order?.external_id, order?.last_movement_at, order?.estado, order?.created_at, activeStoreId, refreshOrder]);
 
   // Navegación con teclado ↑/↓ entre hermanos (cuando se vino de una carpeta).
@@ -315,6 +375,12 @@ export default function OrderDetailPage() {
 
     if (!error && data) {
       setTouchpoints((prev) => [...(data as Touchpoint[]), ...prev]);
+    } else if (error) {
+      // La llamada igual sale (es un href tel:), pero la operadora tiene que
+      // enterarse de que NO quedó en la bitácora — alimenta productividad y
+      // "tocado hoy"; un fallo mudo es trabajo invisible (mismo patrón que
+      // logSegAction).
+      toast.error('No se pudo registrar la llamada en la bitácora', { description: error.message });
     }
   };
 
@@ -381,6 +447,12 @@ export default function OrderDetailPage() {
     }).select();
     if (tpData) setTouchpoints(prev => [...(tpData as Touchpoint[]), ...prev]);
 
+    // Para el rollback: preservar el estado previo real (p.ej. 'INTENTO DE
+    // ENTREGA') en vez de pisar con 'NOVEDAD' hard-coded — mismo fix que ya
+    // tiene useNovedades.rollbackNovedad; sin esto el matiz se perdía hasta el
+    // próximo sync y las listas SLA clasificaban mal el pedido.
+    const prevEstado = order.estado;
+
     // 2. Update local DB
     const { error: updateError } = await supabase
       .from('orders')
@@ -411,16 +483,16 @@ export default function OrderDetailPage() {
           const msg = res?.error?.message || data?.error || 'Error desconocido';
           toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
           // Rollback
-          await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.id);
-          setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: 'NOVEDAD' } : prev);
+          await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.id);
+          setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: prevEstado || 'NOVEDAD' } : prev);
         } else {
           toast.success('Novedad resuelta en Dropi', { id: toastId, duration: 2500 });
         }
       } catch (err: unknown) {
         const msg = getErrorMessage(err);
         toast.error(`Dropi red: ${msg}. Novedad revertida.`, { duration: 8000 });
-        await supabase.from('orders').update({ novedad_sol: false, estado: 'NOVEDAD' }).eq('id', order.id);
-        setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: 'NOVEDAD' } : prev);
+        await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.id);
+        setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: prevEstado || 'NOVEDAD' } : prev);
       }
     } else {
       toast.success('Novedad marcada como resuelta');

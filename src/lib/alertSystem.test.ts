@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { setCurrencyCountry } from './utils';
 import {
   getCarrierDeadline,
   getSegStage,
@@ -28,6 +29,29 @@ describe('getCarrierDeadline', () => {
   it('returns 7 as default for unknown carriers', () => {
     expect(getCarrierDeadline('DESCONOCIDA')).toBe(7);
     expect(getCarrierDeadline('')).toBe(7);
+  });
+
+  describe('tienda EC (plazos por país)', () => {
+    afterEach(() => setCurrencyCountry('CO'));
+
+    it('LAARCOURIER retiene 3 días en agencia', () => {
+      setCurrencyCountry('EC');
+      expect(getCarrierDeadline('LAARCOURIER')).toBe(3);
+      expect(getCarrierDeadline('LAAR COURIER')).toBe(3);
+    });
+
+    it('EC NO hereda plazos CO (falsa precisión) — cae al default 7', () => {
+      setCurrencyCountry('EC');
+      // COORDINADORA=15 es un SLA colombiano; en EC no aplica.
+      expect(getCarrierDeadline('COORDINADORA')).toBe(7);
+      expect(getCarrierDeadline('GINTRACOM')).toBe(7); // SLA real pendiente de confirmar
+    });
+
+    it('volver a CO restaura el mapa colombiano', () => {
+      setCurrencyCountry('EC');
+      setCurrencyCountry('CO');
+      expect(getCarrierDeadline('COORDINADORA')).toBe(15);
+    });
   });
 });
 
@@ -102,9 +126,17 @@ describe('getAlertLevel', () => {
     expect(result!.level).toBe('critical');
   });
 
-  it('falls back to dias when diasConf is 0', () => {
-    const result = getAlertLevel(0, 2, 'EN REPARTO', 'TCC');
-    // diasConf=0 means not > 0, so sinEscaneo falls back to dias=2
+  it('diasConf=0 ("se movió HOY") es válido — NO cae a dias (auditoría 2026-07-31)', () => {
+    // Regresión: un pedido creado hace 6 días que generó guía hoy salía como
+    // '⚫ 6d — Devolución casi segura' porque el 0 se descartaba por falsy y el
+    // badge se calculaba con la edad desde la CREACIÓN.
+    const result = getAlertLevel(0, 6, 'EN REPARTO', 'TCC');
+    expect(result!.sinEscaneo).toBe(0);
+    expect(result!.level).toBe('ok');
+  });
+
+  it('solo un diasConf NEGATIVO (sin fecha) cae al fallback dias', () => {
+    const result = getAlertLevel(-1, 2, 'EN REPARTO', 'TCC');
     expect(result!.sinEscaneo).toBe(2);
     expect(result!.level).toBe('alert');
   });
@@ -278,6 +310,20 @@ describe('calcPriority', () => {
     const cheap = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'TCC', valor: 30000 });
     const expensive = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'TCC', valor: 250000 });
     expect(expensive).toBeGreaterThan(cheap);
+  });
+
+  it('tienda EC: el bonus de valor usa umbrales USD (auditoría 2026-07-31)', () => {
+    // Con los umbrales fijos en COP, NINGÚN pedido EC (USD, ~$120 el grande)
+    // recibía bonus jamás — la cola de Seguimiento EC priorizaba ciega al valor.
+    setCurrencyCountry('EC');
+    try {
+      const grande = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'GINTRACOM', valor: 130 });
+      const chico = calcPriority({ diasConf: 2, dias: 2, estado: 'EN REPARTO', transportadora: 'GINTRACOM', valor: 18 });
+      expect(grande).toBeGreaterThan(chico);
+      expect(grande - chico).toBe(10); // >= 120 USD → bonus máximo
+    } finally {
+      setCurrencyCountry('CO');
+    }
   });
 
   it('adds rescue window bonus for expiring novedades', () => {

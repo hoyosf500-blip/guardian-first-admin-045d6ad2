@@ -239,6 +239,11 @@ export interface HorarioComplianceInput {
   turnoEnd: string | null | undefined;
   /** Horario de la tienda (segundos-del-día) — excluye almuerzo. */
   schedule: WorkSchedule;
+  /** `Date.now()` inyectado (determinístico en tests) — habilita el cálculo
+   *  PRORRATEADO del día EN CURSO. Opcional: sin él, los campos *Transcurrido
+   *  vuelven null y el comportamiento viejo no cambia. Solo tiene sentido en
+   *  range='today' (mismo contrato que el resto del módulo). */
+  nowMs?: number | null;
 }
 
 export interface HorarioCompliance {
@@ -256,12 +261,36 @@ export interface HorarioCompliance {
   tardeMin: number | null;
   /** Minutos que salió ANTES del fin del horario (0 si cumplió/se quedó). */
   tempranoMin: number | null;
+  /** Segundos del horario ya TRANSCURRIDO hasta `nowMs` (fin recortado a
+   *  min(ahora, fin de horario), almuerzo descontado solo en lo corrido).
+   *  = horarioNetoSec si el horario ya terminó. null si no se inyectó `nowMs`. */
+  horarioTranscurridoSec: number | null;
+  /** cubierto ÷ transcurrido, 0-100 — el "¿va al día?" mientras el horario
+   *  corre. Coincide con cumplimientoPct cuando el horario terminó. null sin
+   *  `nowMs`, sin ventana, o con el horario aún no empezado (transcurrido 0). */
+  cumplimientoPctTranscurrido: number | null;
 }
 
 /** Segundos netos del horario pactado (jornada − almuerzo, solo el solapamiento). */
 export function horarioNetoSeconds(s: WorkSchedule): number {
   const shift = Math.max(0, s.workEndSec - s.workStartSec);
   const lunch = Math.max(0, Math.min(s.lunchEndSec, s.workEndSec) - Math.max(s.lunchStartSec, s.workStartSec));
+  return Math.max(0, shift - lunch);
+}
+
+/**
+ * Segundos netos del horario ya TRANSCURRIDO hasta `nowSod` (segundo-del-día
+ * Bogotá): espejo exacto de horarioNetoSeconds pero con el fin recortado a
+ * min(ahora, fin de horario) y descontando solo el almuerzo ya corrido.
+ *
+ * Existe porque el dashboard se mira EN VIVO: medir "Cumplió horario" contra el
+ * día COMPLETO pintaba a una operadora puntual en rojo (~21%) toda la mañana y
+ * mostraba horas "fuera" que ni siquiera habían transcurrido.
+ */
+export function horarioNetoTranscurridoSec(s: WorkSchedule, nowSod: number): number {
+  const end = Math.min(s.workEndSec, Math.max(s.workStartSec, nowSod));
+  const shift = Math.max(0, end - s.workStartSec);
+  const lunch = Math.max(0, Math.min(s.lunchEndSec, end) - Math.max(s.lunchStartSec, s.workStartSec));
   return Math.max(0, shift - lunch);
 }
 
@@ -276,9 +305,14 @@ export function computeHorarioCompliance(input: HorarioComplianceInput): Horario
   const horarioNetoSec = horarioNetoSeconds(input.schedule);
   const entradaMs = parseTsMs(input.turnoStart);
   const salidaMs = parseTsMs(input.turnoEnd);
+  const horarioTranscurridoSec =
+    input.nowMs != null && Number.isFinite(input.nowMs)
+      ? horarioNetoTranscurridoSec(input.schedule, bogotaSecondsOfDay(new Date(input.nowMs)))
+      : null;
   const base: HorarioCompliance = {
     entradaMs, salidaMs, cubiertoSec: null, horarioNetoSec,
     cumplimientoPct: null, tardeMin: null, tempranoMin: null,
+    horarioTranscurridoSec, cumplimientoPctTranscurrido: null,
   };
   if (entradaMs == null || salidaMs == null || salidaMs <= entradaMs) return base;
 
@@ -287,6 +321,14 @@ export function computeHorarioCompliance(input: HorarioComplianceInput): Horario
   const cumplimientoPct = horarioNetoSec > 0
     ? Math.min(100, Math.round((cubiertoSec / horarioNetoSec) * 100))
     : null;
+  // % PRORRATEADO: cubierto ÷ horario transcurrido. Es el número honesto para
+  // un día EN CURSO (a las 10:30 una operadora puntual va 100%, no 21%); al
+  // terminar el horario, transcurrido = neto y coincide con cumplimientoPct.
+  // Cap a 100 por si la última señal viene con reloj adelantado vs `nowMs`.
+  const cumplimientoPctTranscurrido =
+    horarioTranscurridoSec != null && horarioTranscurridoSec > 0
+      ? Math.min(100, Math.round((cubiertoSec / horarioTranscurridoSec) * 100))
+      : null;
 
   // Tarde / temprano por segundo-del-día Bogotá vs el horario pactado.
   const entradaSod = bogotaSecondsOfDay(new Date(entradaMs));
@@ -294,5 +336,8 @@ export function computeHorarioCompliance(input: HorarioComplianceInput): Horario
   const tardeMin = Math.max(0, Math.round((entradaSod - input.schedule.workStartSec) / 60));
   const tempranoMin = Math.max(0, Math.round((input.schedule.workEndSec - salidaSod) / 60));
 
-  return { entradaMs, salidaMs, cubiertoSec, horarioNetoSec, cumplimientoPct, tardeMin, tempranoMin };
+  return {
+    entradaMs, salidaMs, cubiertoSec, horarioNetoSec, cumplimientoPct, tardeMin, tempranoMin,
+    horarioTranscurridoSec, cumplimientoPctTranscurrido,
+  };
 }

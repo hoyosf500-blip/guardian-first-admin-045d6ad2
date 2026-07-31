@@ -21,6 +21,7 @@ import SimuladorUnitEconomics from '@/components/logistics/SimuladorUnitEconomic
 import { useLogisticsCostBasis } from '@/hooks/useLogisticsCostBasis';
 import { useLogisticaMonthlyCosts } from '@/hooks/useLogisticaMonthlyCosts';
 import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
+import { isRpcMissing } from '@/lib/rpcError';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
 
@@ -119,12 +120,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
   // logistica_monthly_costs. Así lo diario alimenta el Neto Real SIN doble descuento
   // ni doble carga, y los meses históricos no pierden su pauta. Degrada a 0 si la
   // migration de pauta diaria no está aplicada.
-  const { data: adRows } = useStoreAdSpendRange(filters.fromDate, filters.toDate);
-  const pautaDiariaTotal = sumAdSpend(adRows ?? []).total;
+  const adQuery = useStoreAdSpendRange(filters.fromDate, filters.toDate);
+  const pautaDiariaTotal = sumAdSpend(adQuery.data ?? []).total;
   const pautaMensualGuardada =
     (monthlyCosts.data?.pauta_meta ?? 0) + (monthlyCosts.data?.pauta_tiktok ?? 0);
   const pautaFromDaily = pautaDiariaTotal > 0;
   const pautaEfectiva = pautaFromDaily ? pautaDiariaTotal : pautaMensualGuardada;
+  // Un error REAL leyendo la bitácora (RLS/500/red; retry:false, así que un solo
+  // fallo dura toda la sesión) NO es lo mismo que "pauta en $0": desde 2026-07
+  // los meses corrientes solo tienen pauta diaria, así que restar $0 en silencio
+  // infla el Neto Real en millones sin ninguna señal. Migration sin aplicar
+  // (isRpcMissing) sí degrada a 0 como siempre — ahí el fallback mensual
+  // guardado sigue siendo la fuente válida. Mismo principio que operativoSinDato.
+  const pautaSinDato = adQuery.isError && !isRpcMissing(adQuery.error);
 
   const title = rangeTitle(filters);
 
@@ -489,6 +497,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
                   No se pudo cargar el <strong>operativo del mes</strong>, así que el{' '}
                   <strong>Neto Real</strong> no se muestra: restarle pauta y admin a una base
                   que no se pudo medir daría una pérdida inventada. Recargá o tocá Sincronizar.
+                </p>
+              </div>
+            ) : pautaSinDato ? (
+              /* Caso espejo: el operativo SÍ se midió pero la pauta diaria no se
+                 pudo LEER. Mostrar el Neto Real restando $0 de pauta sería una
+                 ganancia inflada indistinguible de una medición — preferimos no
+                 mostrar la cifra y decir por qué (no es "pauta en cero"). */
+              <div className="rounded-2xl border border-warning/30 bg-warning/8 p-3.5 shadow-card3d flex items-start gap-2">
+                <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
+                <p className="text-[11px] text-warning leading-relaxed">
+                  No se pudo leer tu <strong>Pauta diaria</strong> (error temporal), así que el{' '}
+                  <strong>Neto Real</strong> no se muestra: restarle $0 de pauta al operativo
+                  daría una ganancia inflada. Tus registros están guardados — recargá la página.
                 </p>
               </div>
             ) : (

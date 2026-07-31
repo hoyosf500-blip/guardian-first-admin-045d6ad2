@@ -20,6 +20,10 @@ import { bogotaToday } from '@/lib/utils';
  * Honestidad: si la RPC principal falla → status 'error'. Si SOLO falla la de
  * presencia (mouse), no se pinta a todos como offline: la presencia igual se
  * deriva del trabajo, y `presenceMouseOk=false` avisa que falta el dato de mouse.
+ * Espejo para el trabajo: si fallan las consultas de order_results/touchpoints,
+ * `workEventsOk=false` avisa que "sin marcar hoy" puede ser un hueco de LECTURA
+ * y no un cero real (el estado queda derivado solo del mouse) — sin la bandera,
+ * un fallo de RLS/red dejaba a todo el equipo 'Ausente' con status 'ok'.
  */
 
 const EN_LINEA_MAX_MIN = 10;   // señal < 10 min = en línea
@@ -52,6 +56,9 @@ export interface LiveTeam {
   pendingNovedades: number | null;
   /** false = no se pudo leer el heartbeat de mouse (presencia solo por trabajo). */
   presenceMouseOk: boolean;
+  /** false = no se pudo leer la última acción (order_results/touchpoints):
+   *  "sin marcar hoy" puede ser hueco de lectura, NO un cero real. */
+  workEventsOk: boolean;
   status: 'loading' | 'ok' | 'error';
   updatedAt: number;
 }
@@ -61,7 +68,7 @@ interface ProdRow {
   confirmados: number; cancelados: number; noresp: number;
   seg_acciones: number; novedades_resueltas: number;
 }
-interface ActRow { operator_id: string; last_active_at: string | null; }
+interface ActRow { operator_id: string; display_name?: string | null; last_active_at: string | null; }
 
 function accionResultado(result: string): string {
   if (result === 'conf') return 'confirmó';
@@ -82,7 +89,7 @@ export function useLiveTeam(): LiveTeam {
   const storeId = useActiveStoreId();
   const [team, setTeam] = useState<LiveTeam>({
     operators: [], pendingConfirmar: null, pendingNovedades: null,
-    presenceMouseOk: true, status: 'loading', updatedAt: 0,
+    presenceMouseOk: true, workEventsOk: true, status: 'loading', updatedAt: 0,
   });
   // Descarta respuestas viejas (poll + realtime + cambio de tienda pueden pisarse).
   const reqRef = useRef(0);
@@ -115,7 +122,7 @@ export function useLiveTeam(): LiveTeam {
     const prodRows = (prod.data as ProdRow[] | null) ?? [];
     const actErr = Boolean(act.error);
     const actRows = actErr ? [] : ((act.data as ActRow[] | null) ?? []);
-    const mouseByOp = new Map(actRows.map(r => [r.operator_id, r.last_active_at]));
+    const actByOp = new Map(actRows.map(r => [r.operator_id, r]));
 
     // Último evento de trabajo por operadora (las filas vienen desc → la primera
     // que veo de cada quien es la más reciente).
@@ -134,27 +141,40 @@ export function useLiveTeam(): LiveTeam {
     const minsSince = (ms: number | null | undefined) =>
       ms != null && Number.isFinite(ms) ? Math.max(0, Math.floor((nowMs - ms) / 60000)) : null;
 
-    const operators: LiveOperator[] = prodRows.map(r => {
-      const confirmar = (Number(r.confirmados) || 0) + (Number(r.cancelados) || 0) + (Number(r.noresp) || 0);
-      const seguimiento = Number(r.seg_acciones) || 0;
-      const novedades = Number(r.novedades_resueltas) || 0;
-      const mouseIso = mouseByOp.get(r.operator_id) ?? null;
+    // Unión de fuentes: la RPC de productividad solo devuelve a quien YA marcó
+    // algo hoy. Una operadora presente (heartbeat) que aún no marcó NADA es
+    // exactamente el caso que 'presente sin marcar' debe atrapar — sin la unión
+    // era invisible en la franja y en los contadores del header.
+    const prodByOp = new Map(prodRows.map(r => [r.operator_id, r]));
+    const opIds = Array.from(new Set([
+      ...prodRows.map(r => r.operator_id),
+      ...actRows.map(r => r.operator_id),
+    ]));
+    const operators: LiveOperator[] = opIds.map(id => {
+      const r = prodByOp.get(id);
+      const confirmar = r ? (Number(r.confirmados) || 0) + (Number(r.cancelados) || 0) + (Number(r.noresp) || 0) : 0;
+      const seguimiento = r ? (Number(r.seg_acciones) || 0) : 0;
+      const novedades = r ? (Number(r.novedades_resueltas) || 0) : 0;
+      const mouseIso = actByOp.get(id)?.last_active_at ?? null;
       const mouseMin = minsSince(mouseIso ? Date.parse(mouseIso) : null);
-      const work = lastWork.get(r.operator_id);
+      const work = lastWork.get(id);
       const lastWorkMin = minsSince(work?.whenMs ?? null);
       // Señal más reciente entre mouse y trabajo.
       const candidates = [mouseMin, lastWorkMin].filter((x): x is number => x != null);
       const lastSignalMin = candidates.length ? Math.min(...candidates) : null;
       const enLinea = lastSignalMin != null && lastSignalMin < EN_LINEA_MAX_MIN;
-      // Estado de TRABAJO (no de mouse): trabajando si marcó hace poco; presente
-      // sin marcar si está en línea por mouse pero hace rato no marca; ausente.
+      // Estado de TRABAJO (no de mouse): trabajando = marcó hace <10 min, O
+      // marcó hace <20 min Y está en línea (entre dos llamadas largas es NORMAL
+      // pasar 10-19 min sin marcar — antes esa banda caía a 'ausente' con el
+      // mouse moviéndose, un estado contradictorio). Presente sin marcar = en
+      // línea por mouse pero sin marca hace 20+ (o nunca). Ausente = sin señal.
       let estado: WorkStatus;
       if (lastWorkMin != null && lastWorkMin < EN_LINEA_MAX_MIN) estado = 'trabajando';
-      else if (enLinea && (lastWorkMin == null || lastWorkMin >= SIN_MARCAR_MIN)) estado = 'presente_sin_marcar';
+      else if (enLinea) estado = lastWorkMin != null && lastWorkMin < SIN_MARCAR_MIN ? 'trabajando' : 'presente_sin_marcar';
       else estado = 'ausente';
       return {
-        id: r.operator_id,
-        name: r.display_name || 'Operador',
+        id,
+        name: r?.display_name || actByOp.get(id)?.display_name || 'Operador',
         confirmar, seguimiento, novedades,
         total: confirmar + seguimiento + novedades,
         lastSignalMin, lastWorkMin,
@@ -173,6 +193,7 @@ export function useLiveTeam(): LiveTeam {
       pendingConfirmar: confPend.error ? null : (confPend.count ?? 0),
       pendingNovedades: novPend.error ? null : (novPend.count ?? 0),
       presenceMouseOk: !actErr,
+      workEventsOk: !results.error && !tps.error,
       status: 'ok',
       updatedAt: nowMs,
     });

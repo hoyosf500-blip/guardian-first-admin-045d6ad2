@@ -1,4 +1,5 @@
 import { COL_MAP, CARRIER_TRACK, CARRIER_TRACK_EC } from './constants';
+import { classifySegEstado } from './segStatus';
 
 /** Safely extract an error message from an unknown catch value */
 export function getErrorMessage(err: unknown): string {
@@ -282,27 +283,33 @@ export function isClosedOutByCloser(
   estado?: string | null,
 ): boolean {
   if (closerMs === undefined) return false;
-  // NO esconder un pedido VIVO EN TRÁNSITO/GESTIÓN (despachado, novedad, oficina)
-  // por el cierre de OTRO pedido del mismo teléfono: es un envío DISTINTO que
-  // necesita seguimiento propio (auditoría 2026-07-14). El match del closer es
-  // por phone (touchpoints no tiene order_id), así que sin este guard un pedido
-  // EN REPARTO desaparecía del tablero de TODAS las asesoras cuando se cerraba
-  // un hermano del mismo teléfono → riesgo de entrega perdida sin seguimiento.
-  if (estado && (isDespachado(estado) || isNovedad(estado) || isOficina(estado))) return false;
+  // NO esconder un pedido VIVO por el cierre de OTRO pedido del mismo teléfono:
+  // es un envío DISTINTO que necesita seguimiento propio (auditoría 2026-07-14).
+  // El match del closer es por phone (touchpoints no tiene order_id), así que
+  // sin este guard un pedido EN REPARTO desaparecía del tablero de TODAS las
+  // asesoras cuando se cerraba un hermano del mismo teléfono → entrega perdida.
+  //
+  // El guard viejo usaba isDespachado/isNovedad/isOficina, que son CO-céntricos:
+  // no reconocían 'GUIA GENERADA' con espacio ni los estados EC ('EN RUTA A …',
+  // 'INGRESANDO …', 'PARA RETIRO EN AGENCIA …') → un pedido EC en plena ruta se
+  // escondía igual (auditoría 2026-07-31). Ahora la lógica está INVERTIDA sobre
+  // classifySegEstado (fuente que ya conoce CO+EC): solo se esconde si el estado
+  // es TERMINAL — cualquier otro (incluidos los que Dropi invente mañana) se
+  // trata como vivo. Mejor mostrar de más que ocultar un pedido en ruta.
+  if (estado) {
+    const k = classifySegEstado(estado);
+    const esTerminal = k === 'entregado' || k === 'devolucion' || k === 'devolucion_transito' ||
+      k === 'indemnizada' || k === 'rechazado' || k === 'cancelado';
+    if (!esTerminal) return false;
+  }
   const created = parseDate(fecha || '');
   if (!created) return false;
   return closerMs >= created.getTime() + BOGOTA_OFFSET_MS;
 }
 
-/**
- * Colombian public holidays (Ley Emiliani + fixed).
- * Returns holidays for a given year as "YYYY-MM-DD" strings.
- */
-function getColombianHolidays(year: number): Set<string> {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
-  // Easter calculation (Anonymous Gregorian algorithm)
+/** Domingo de Pascua (UTC) — Anonymous Gregorian algorithm. Lo comparten los
+ *  calendarios de festivos CO y EC (Semana Santa y Carnaval derivan de acá). */
+function calcEasterUTC(year: number): Date {
   const a = year % 19;
   const b = Math.floor(year / 100);
   const c = year % 100;
@@ -317,13 +324,26 @@ function getColombianHolidays(year: number): Set<string> {
   const m = Math.floor((a + 11 * h + 22 * l) / 451);
   const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
   const day = ((h + l - 7 * m + 114) % 31) + 1;
-  const easter = new Date(Date.UTC(year, month, day));
+  return new Date(Date.UTC(year, month, day));
+}
 
-  const addDays = (base: Date, n: number) => {
-    const d = new Date(base.getTime());
-    d.setUTCDate(d.getUTCDate() + n);
-    return d;
-  };
+const _padHoliday = (n: number) => String(n).padStart(2, '0');
+const _fmtHoliday = (d: Date) =>
+  `${d.getUTCFullYear()}-${_padHoliday(d.getUTCMonth() + 1)}-${_padHoliday(d.getUTCDate())}`;
+const _addDaysUTC = (base: Date, n: number) => {
+  const d = new Date(base.getTime());
+  d.setUTCDate(d.getUTCDate() + n);
+  return d;
+};
+
+/**
+ * Colombian public holidays (Ley Emiliani + fixed).
+ * Returns holidays for a given year as "YYYY-MM-DD" strings.
+ */
+function getColombianHolidays(year: number): Set<string> {
+  const fmt = _fmtHoliday;
+  const addDays = _addDaysUTC;
+  const easter = calcEasterUTC(year);
 
   // Move to next Monday (Ley Emiliani)
   const nextMonday = (d: Date) => {
@@ -362,8 +382,46 @@ function getColombianHolidays(year: number): Set<string> {
   return holidays;
 }
 
-/** Business days (Mon-Fri, excluding Colombian holidays) between a date and today. */
-export function calcBusinessDays(dateStr: string): number {
+/**
+ * Feriados nacionales de ECUADOR ("YYYY-MM-DD"). Antes la tienda EC corría con
+ * el calendario COLOMBIANO: el 20-jul/7-ago (solo CO) no contaban como hábiles
+ * aunque en EC se trabaja, y Carnaval/10-ago/9-oct/2-3-nov (solo EC) sí — las
+ * listas SLA de indemnización entraban un día antes o después de lo real.
+ *
+ * Fijos + móviles por Pascua (Carnaval = lun/mar 48/47 días antes; Viernes
+ * Santo). Los traslados a lunes/viernes de la Ley de Feriados EC (puentes) NO
+ * se modelan: margen de ±1 día solo en los años en que aplican, mucho menor que
+ * usar el calendario de otro país.
+ */
+function getEcuadorianHolidays(year: number): Set<string> {
+  const easter = calcEasterUTC(year);
+  const holidays = new Set<string>();
+
+  holidays.add(`${year}-01-01`); // Año Nuevo
+  holidays.add(`${year}-05-01`); // Día del Trabajo
+  holidays.add(`${year}-05-24`); // Batalla de Pichincha
+  holidays.add(`${year}-08-10`); // Primer Grito de Independencia
+  holidays.add(`${year}-10-09`); // Independencia de Guayaquil
+  holidays.add(`${year}-11-02`); // Día de los Difuntos
+  holidays.add(`${year}-11-03`); // Independencia de Cuenca
+  holidays.add(`${year}-12-25`); // Navidad
+
+  holidays.add(_fmtHoliday(_addDaysUTC(easter, -48))); // Lunes de Carnaval
+  holidays.add(_fmtHoliday(_addDaysUTC(easter, -47))); // Martes de Carnaval
+  holidays.add(_fmtHoliday(_addDaysUTC(easter, -2)));  // Viernes Santo
+
+  return holidays;
+}
+
+/**
+ * Business days (Mon-Fri, excluding public holidays) between a date and today.
+ *
+ * `countryCode` elige el calendario de festivos (CO default, EC). Sin parámetro
+ * explícito usa el país de la tienda activa (el mismo estado module-level que
+ * setea StoreContext vía `setTrackingCountry` — así segLists/CrmTable/SegBoard
+ * heredan el calendario correcto sin enhebrar el país por cada call-site).
+ */
+export function calcBusinessDays(dateStr: string, countryCode?: string): number {
   const start = parseDate(dateStr);
   if (!start) return 0;
 
@@ -372,12 +430,14 @@ export function calcBusinessDays(dateStr: string): number {
 
   if (start >= today) return 0;
 
-  // Collect holidays for relevant years
+  // Collect holidays for relevant years (calendario del país de la tienda)
+  const cc = (countryCode || _activeTrackingCountry).toUpperCase();
+  const holidaysForYear = cc === 'EC' ? getEcuadorianHolidays : getColombianHolidays;
   const startYear = start.getUTCFullYear();
   const endYear = today.getUTCFullYear();
   const allHolidays = new Set<string>();
   for (let y = startYear; y <= endYear; y++) {
-    getColombianHolidays(y).forEach((h) => allHolidays.add(h));
+    holidaysForYear(y).forEach((h) => allHolidays.add(h));
   }
 
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -505,6 +565,15 @@ export function isDespachado(estado: string): boolean {
   ].includes(s) || s.includes('DESPACHAD');
 }
 
+/**
+ * ⚠️ TRAMPA LATENTE — sin consumidores reales fuera de tests (auditoría
+ * 2026-07-31): clasifica 'GUIA GENERADA' (espacio) como confirmado mientras
+ * isDespachado clasifica 'GUIA_GENERADA' (guion bajo) como despachado — Dropi
+ * manda AMBAS escrituras del mismo estado. Antes de usarla en una métrica
+ * nueva, preferir normalizeEstado/bucketize de estadoBuckets.ts o
+ * classifySegEstado de segStatus.ts, que ya unifican las dos escrituras.
+ * No se borra porque OrderContext.tsx aún la importa (import muerto).
+ */
 export function isConfirmado(estado: string): boolean {
   const s = estado.toUpperCase();
   return ['PENDIENTE', 'ALISTAMIENTO', 'GUIA GENERADA', 'EN PROCESAMIENTO', 'EN BODEGA DROPI', 'RECOGIDO POR DROPI'].includes(s);
@@ -529,6 +598,8 @@ export function isDevolucion(estado: string): boolean {
 // que pasar el país en cada call-site. Lo setea StoreContext al cambiar de
 // tienda (patrón de estado a nivel módulo, igual que los overrides del
 // validador de direcciones). Default 'CO'.
+// También lo lee calcBusinessDays para elegir el calendario de festivos
+// (CO vs EC) cuando el call-site no pasa countryCode explícito.
 let _activeTrackingCountry = 'CO';
 export function setTrackingCountry(cc?: string | null): void {
   _activeTrackingCountry = (cc || 'CO').toUpperCase();
@@ -568,6 +639,55 @@ export function normalizeColumns(rows: Record<string, unknown>[]): Record<string
   });
 }
 
+/**
+ * Parsea un monto que puede venir como número o como TEXTO con formato local.
+ *
+ * El parser viejo (`parseFloat(s.replace(/[^0-9.]/g,''))`) destruía los montos
+ * cuando el Excel llegaba con las celdas formateadas como moneda (pasa al
+ * re-guardar el archivo): '$ 1.234.567' quedaba en 1.234 pesos — la operadora
+ * confirmaba leyendo un total absurdo y las métricas de valor se pulverizaban
+ * sin error visible.
+ *
+ * Heurística de separadores (formatos CO y EC):
+ *  - '.' y ',' juntos → el ÚLTIMO separador es el decimal ('4.734,53' → 4734.53;
+ *    '1,234.56' → 1234.56).
+ *  - Solo ',': una sola → decimal ('4734,53'); varias → miles ('1,234,567').
+ *  - Solo '.': varios → miles ('1.234.567'); UNO que agrupa exactamente 3
+ *    dígitos → miles, formato CO ('79.900' → 79900); si no → decimal ('4.99').
+ * Vacío/no numérico → 0 (mismo fallback que el parser viejo).
+ */
+export function parseMoney(v: unknown): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const raw = String(v ?? '').trim();
+  if (!raw) return 0;
+  // Fuera símbolo de moneda, espacios y letras; quedan dígitos y separadores.
+  const s = raw.replace(/[^0-9.,-]/g, '');
+  if (!s) return 0;
+  const neg = s.startsWith('-');
+  const t = s.replace(/-/g, '');
+  const lastDot = t.lastIndexOf('.');
+  const lastComma = t.lastIndexOf(',');
+  let normalized: string;
+  if (lastDot !== -1 && lastComma !== -1) {
+    normalized = lastComma > lastDot
+      ? t.replace(/\./g, '').replace(/,/g, '.') // '4.734,53' (CO/EC)
+      : t.replace(/,/g, '');                    // '1,234.56' (anglo)
+  } else if (lastComma !== -1) {
+    const parts = t.split(',');
+    normalized = parts.length === 2 ? `${parts[0]}.${parts[1]}` : parts.join('');
+  } else if (lastDot !== -1) {
+    const parts = t.split('.');
+    const esMiles = parts.length > 2 ||
+      (parts.length === 2 && parts[1].length === 3 && parts[0].length > 0);
+    normalized = esMiles ? parts.join('') : t;
+  } else {
+    normalized = t;
+  }
+  const n = parseFloat(normalized);
+  if (!Number.isFinite(n)) return 0;
+  return neg ? -n : n;
+}
+
 export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[] {
   const normalized = normalizeColumns(rows);
   if (!normalized.length) return [];
@@ -603,10 +723,12 @@ export function parseExcelToOrders(rows: Record<string, unknown>[]): OrderData[]
       fechaConf: String(r[map.FECHA_CONF] || ''),
       dias: calcDias(String(r[map.FECHA] || '')),
       diasConf: calcDias(String(r[map.FECHA_CONF] || '')),
-      valor: parseFloat(String(r[map.VALOR] || '0').replace(/[^0-9.]/g, '')) || 0,
-      flete: parseFloat(String(r[map.FLETE] || '0').replace(/[^0-9.]/g, '')) || 0,
-      costoProd: parseFloat(String(r[map.COSTO_PROD] || '0').replace(/[^0-9.]/g, '')) || 0,
-      costoDev: parseFloat(String(r[map.COSTO_DEV] || '0').replace(/[^0-9.]/g, '')) || 0,
+      // parseMoney respeta el formato local ('$ 1.234.567' / '4.734,53') — el
+      // replace viejo dividía los montos CO por ~1.000.000 (ver doc de parseMoney).
+      valor: parseMoney(r[map.VALOR]),
+      flete: parseMoney(r[map.FLETE]),
+      costoProd: parseMoney(r[map.COSTO_PROD]),
+      costoDev: parseMoney(r[map.COSTO_DEV]),
       cantidad: parseInt(String(r[map.CANTIDAD])) || 1,
       direccion: String(r[map.DIRECCION] || ''),
       novedad: String(r[map.NOVEDAD] || ''),

@@ -127,29 +127,37 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   //
   // Antes `counter` arrancaba en {0,0,0} y SOLO subía con las acciones de la
   // sesión actual del navegador: la asesora confirmaba 20 pedidos, refrescaba
-  // la página y el Dashboard y la CounterBar volvían a marcar 0. El número del
-  // cierre del día (que sí consulta este RPC) no cuadraba con lo que ella veía
-  // toda la jornada.
+  // la página y el Dashboard y la CounterBar volvían a marcar 0.
   //
-  // today_call_stats() devuelve lo de HOY para el operador autenticado, así que
-  // sembrarlo acá deja ambas vistas contando lo mismo. Se re-consulta al cambiar
-  // de tienda porque el RPC está scopeado por la tienda activa.
+  // Auditoría 2026-07-31: la siembra usaba today_call_stats(), que es PERSONAL
+  // (WHERE operator_id = auth.uid()), pero el recompute de buildWorkQueue lee
+  // order_results de TODA la tienda — un solo estado con dos poblaciones:
+  // CounterBar rotula "Equipo hoy" y el primer segundo mostraba un número
+  // personal que "saltaba" al de equipo al llegar el recompute. Ahora la
+  // siembra sale de la MISMA fuente store-wide con computeDailyCounter (misma
+  // dedup por order_id): una sola población, cero parpadeo personal→equipo.
   useEffect(() => {
     if (!user || !activeStoreId) return;
     let cancelled = false;
     void (async () => {
-      const { data, error } = await (supabase.rpc as unknown as (
-        fn: string,
-      ) => Promise<{ data: Array<{ confirmados: number; cancelados: number; noresp: number }> | null; error: unknown }>)(
-        'today_call_stats',
-      );
-      if (cancelled || error || !data?.[0]) return;
-      const s = data[0];
-      setCounter({
-        conf: Number(s.confirmados) || 0,
-        canc: Number(s.cancelados) || 0,
-        noresp: Number(s.noresp) || 0,
-      });
+      const todayLocal = bogotaToday();
+      const { data, error } = await supabase
+        .from('order_results')
+        .select('order_id, result, result_date')
+        .eq('store_id', activeStoreId)
+        .eq('result_date', todayLocal)
+        // Solo llamadas reales — mismo filtro que el recompute (isCallOutcome).
+        // Un día de tienda (~150 filas) queda lejos del tope de 1000 filas.
+        .in('result', ['conf', 'canc', 'noresp']);
+      if (cancelled || error || !data) return;
+      const next = computeDailyCounter(data as Parameters<typeof computeDailyCounter>[0], todayLocal);
+      // Idempotente: si el recompute de buildWorkQueue ya sembró los mismos
+      // números, devolver `prev` evita un objeto nuevo (ctxValue memoizado).
+      setCounter(prev => (
+        prev.conf === next.conf && prev.canc === next.canc && prev.noresp === next.noresp
+          ? prev
+          : next
+      ));
     })();
     return () => { cancelled = true; };
   }, [user, activeStoreId]);
@@ -188,6 +196,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .eq('store_id', activeStoreId)
       .eq('operator_id', user.id)
       .eq('module', 'confirmar')
+      // Solo llamadas REALES. OrderEditorDialog inserta filas de auditoría con
+      // module='confirmar' y result='edicion_orden': sin este filtro, editar un
+      // pedido ANTES de llamarlo (p. ej. "Corregir a $X" del chip DE MÁS) lo
+      // marcaba como "tocado hoy" y el toggle "Solo sin tocar" lo escondía de
+      // la cola sin que nadie lo llamara — venta perdida en silencio.
+      .in('result', ['conf', 'canc', 'noresp'])
       .gte('created_at', todayStartIso)
       .then(({ data: mine, error: mineErr }) => {
         if (mineErr || !mine) { setCoverageConfirmError(true); return; }
@@ -342,6 +356,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       .eq('store_id', activeStoreId)
       .eq('operator_id', user.id)
       .eq('module', 'confirmar')
+      // Igual que en loadWorkQueue: solo llamadas reales — las filas de
+      // auditoría (result='edicion_orden') no cuentan como "tocado hoy".
+      .in('result', ['conf', 'canc', 'noresp'])
       .gte('created_at', todayStartIso)
       .then(({ data: mine, error: mineErr }) => {
         // Mismo criterio que en loadWorkQueue: error ≠ vacío. Sin esta rama, una
@@ -385,8 +402,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           filter: `operator_id=eq.${user.id}`,
         },
         (payload) => {
-          const row = payload.new as { order_id?: string; module?: string; store_id?: string };
+          const row = payload.new as { order_id?: string; module?: string; store_id?: string; result?: string };
           if (row.module !== 'confirmar') return;
+          // Igual que las cargas iniciales: una fila de auditoría (edición de
+          // orden) NO es una llamada — no debe entrar al set de "tocados hoy".
+          // La fila llega completa en el payload, cero queries extra.
+          if (row.result !== 'conf' && row.result !== 'canc' && row.result !== 'noresp') return;
           if (row.store_id !== activeStoreId) return;
           if (!row.order_id) return;
           // Nuevo día → los sets se vacían; la fila de abajo (que ES de hoy)
@@ -520,11 +541,54 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // Pool compartido: el cooldown/conteo de intentos es POR TIENDA (todas
       // las operadoras), no por operadora. Así "3 llamadas/día" y "2h entre
       // intentos" se cuentan globalmente por pedido — sin doble llamada.
-      supabase.from('order_results')
-        .select('order_id, phone, result, reason, result_time, result_date, created_at')
-        .eq('store_id', activeStoreId)
-        .gte('result_date', sevenDaysAgo)
-        .then(({ data }) => {
+      //
+      // Paginación (auditoría 2026-07-31): Supabase corta todo SELECT a ~1000
+      // filas EN SILENCIO. Con ~100+ gestiones/día + reintentos noresp +
+      // auditoría, 7 días superan ese tope y, sin ORDER BY, Postgres devolvía
+      // 1000 filas arbitrarias — se perdían filas de HOY: pedidos ya marcados
+      // "no contestó" volvían a la cola antes del cooldown y el contador del
+      // día subcontaba. Mismo patrón .range() que loadSegData (useDataLoader),
+      // ordenado más-nuevo-primero para que, si el tope duro llegara a cortar,
+      // lo truncado sean filas VIEJAS (irrelevantes para cooldown/contador).
+      type ResultRow = {
+        order_id: string | null;
+        phone: string;
+        result: string;
+        reason: string | null;
+        result_time: string | null;
+        result_date: string | null;
+        created_at: string;
+      };
+      const fetchResultRows = async (): Promise<ResultRow[]> => {
+        const PAGE_SIZE = 1000;
+        const HARD_LIMIT = 10000;
+        const all: ResultRow[] = [];
+        let fromIdx = 0;
+        for (;;) {
+          const { data, error } = await supabase.from('order_results')
+            .select('order_id, phone, result, reason, result_time, result_date, created_at')
+            .eq('store_id', activeStoreId)
+            // Solo resultados de llamada reales: las filas de auditoría
+            // ('edicion_orden', 'cambio_transportadora') no afectan cooldown ni
+            // contador (isCallOutcome ya las ignoraba client-side) y solo
+            // quemaban presupuesto de filas de la paginación.
+            .in('result', ['conf', 'canc', 'noresp'])
+            .gte('result_date', sevenDaysAgo)
+            .order('created_at', { ascending: false })
+            .range(fromIdx, fromIdx + PAGE_SIZE - 1);
+          // Lanzar (no tragar): datos PARCIALES aplicados como overlay son
+          // peores que no aplicar nada — el .catch de abajo avisa y conserva
+          // el estado previo (carry-over de la fase síncrona).
+          if (error) throw error;
+          const page = (data || []) as ResultRow[];
+          all.push(...page);
+          if (page.length < PAGE_SIZE || all.length >= HARD_LIMIT) break;
+          fromIdx += PAGE_SIZE;
+        }
+        return all;
+      };
+      fetchResultRows()
+        .then((data) => {
           // Si llegó un buildWorkQueue más nuevo mientras el fetch corría,
           // descarta este resultado — el estado ya fue reemplazado por
           // datos más frescos.
@@ -541,16 +605,6 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // reintento ~0.4h, 2do 1h, 3ro 2h). El cap de 3 intentos/día SE
             // MANTIENE (alineado con la RPC pending_retry_list, que asume cap 3).
             const MAX_DAILY_ATTEMPTS = 3;
-
-            type ResultRow = {
-              order_id: string | null;
-              phone: string;
-              result: string;
-              reason: string | null;
-              result_time: string | null;
-              result_date: string | null;
-              created_at: string;
-            };
 
             // Noresps de HOY agrupados por phone
             const todayNoresp = new Map<string, ResultRow[]>();
@@ -646,6 +700,18 @@ export function OrderProvider({ children }: { children: ReactNode }) {
                 : next;
             });
           }
+        })
+        .catch(() => {
+          // Principio de honestidad: antes este error se tragaba mudo y TODOS
+          // los conf/canc/noresp del día volvían a verse "Pendiente" en la
+          // cola — la operadora re-llamaba clientes ya gestionados sin ningún
+          // aviso. No aplicamos overlay parcial (queda el carry-over previo) y
+          // avisamos. El próximo poll/evento realtime reintenta solo.
+          if (buildId !== lastBuildIdRef.current) return;
+          toast.error('No se pudieron cargar los resultados del día — la cola puede mostrar pedidos ya gestionados', {
+            id: 'work-queue-results-error', // sonner dedup por id → no se apilan
+            duration: 8000,
+          });
         });
     }
   }, [user, activeStoreId, dataLoader.setSegData]);

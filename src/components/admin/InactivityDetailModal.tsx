@@ -34,10 +34,16 @@ function fmtHora(ts: string | null) {
 
 export default function InactivityDetailModal({
   operadora,
+  operatorId,
   range,
   onClose,
 }: {
+  /** Solo para el TÍTULO del modal — la búsqueda va por `operatorId`. */
   operadora: string;
+  /** operator_id real: el MISMO id con el que la tabla contó los avisos.
+   *  Buscar por display_name rompía el vínculo celda→detalle con perfiles sin
+   *  nombre (fallback 'Sin nombre'), nombres editados u homónimas. */
+  operatorId?: string | null;
   range: Range;
   onClose: () => void;
 }) {
@@ -47,20 +53,36 @@ export default function InactivityDetailModal({
 
   useEffect(() => {
     let active = true;
-    void (async () => {
-      const { data, error: rpcErr } = await (supabase.rpc as unknown as (
+    // El cast va INLINE sobre supabase.rpc (no extraído a variable): asignarlo
+    // pierde el `this` del cliente (memoria rpc_supabase_binding_pattern).
+    const call = (args: { p_operadora: string; p_range: string; p_store_id: string | null; p_operator_id?: string }) =>
+      (supabase.rpc as unknown as (
         fn: 'admin_inactivity_details',
-        args: { p_operadora: string; p_range: string; p_store_id: string | null },
-      ) => Promise<{ data: InactivityDetail[] | null; error: { message?: string } | null }>)(
+        a: typeof args,
+      ) => Promise<{ data: InactivityDetail[] | null; error: { code?: string; message?: string } | null }>)(
         'admin_inactivity_details',
-        { p_operadora: operadora, p_range: range, p_store_id: storeId },
+        args,
       );
+    void (async () => {
+      // Preferimos buscar por operator_id (el id con el que se contaron los
+      // avisos). Si la RPC desplegada todavía no acepta p_operator_id
+      // (migration pendiente — regla #1: no reescribir la función a ciegas),
+      // PostgREST responde PGRST202 "function ... does not exist" → caemos al
+      // camino viejo por nombre para no dejar el modal muerto.
+      let resp = await call(
+        operatorId
+          ? { p_operadora: operadora, p_range: range, p_store_id: storeId, p_operator_id: operatorId }
+          : { p_operadora: operadora, p_range: range, p_store_id: storeId },
+      );
+      if (operatorId && resp.error && (resp.error.code === 'PGRST202' || /does not exist|p_operator_id/i.test(resp.error.message ?? ''))) {
+        resp = await call({ p_operadora: operadora, p_range: range, p_store_id: storeId });
+      }
       if (!active) return;
-      if (rpcErr) { setError(rpcErr.message ?? 'Error'); setRows([]); }
-      else { setRows(data ?? []); }
+      if (resp.error) { setError(resp.error.message ?? 'Error'); setRows([]); }
+      else { setRows(resp.data ?? []); }
     })();
     return () => { active = false; };
-  }, [operadora, range, storeId]);
+  }, [operadora, operatorId, range, storeId]);
 
   // Cerrar con Escape (estándar role="dialog").
   useEffect(() => {

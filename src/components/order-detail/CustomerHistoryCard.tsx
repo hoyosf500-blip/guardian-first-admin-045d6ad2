@@ -10,6 +10,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 import { TruncatedText } from '@/components/TruncatedText';
 import { useAiInsight } from '@/hooks/useAiInsight';
 import { calcBadge, estadoColor } from '@/lib/customerUtils';
@@ -297,6 +298,11 @@ const HISTORY_LIMIT = 20;
 
 export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Props) {
   const navigate = useNavigate();
+  // Tienda activa: el historial DEBE ser de ESTA tienda. Sin el filtro, un
+  // cliente con pedidos en CO y EC mezclaba países (prohibición #1) y, con
+  // socios en la plataforma, mostraba pedidos de OTROS dueños. El cruce
+  // multi-cuenta legítimo es el fingerprint de Dropi (RPC aparte, server-side).
+  const activeStoreId = useActiveStoreId();
   const [orders, setOrders] = useState<HistoryOrder[]>([]);
   // Conteo REAL de pedidos del cliente (el historial de abajo viene topado en 20 filas)
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -311,7 +317,9 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
   const [fpLoading, setFpLoading] = useState(false);
 
   useEffect(() => {
-    if (!currentPhone) {
+    // Sin tienda activa NO se consulta: una query sin store_id mezclaría
+    // tiendas/países (el bug crítico de la auditoría 30-jul).
+    if (!currentPhone || !activeStoreId) {
       setLoading(false);
       return;
     }
@@ -323,6 +331,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         supabase
           .from('orders')
           .select('id, external_id, nombre, estado, fecha, fecha_conf, valor, guia, novedad, novedad_sol, producto, transportadora, ciudad')
+          .eq('store_id', activeStoreId)
           .eq('phone', currentPhone)
           .neq('id', currentOrderId)
           .order('fecha', { ascending: false, nullsFirst: false })
@@ -332,6 +341,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
         supabase
           .from('orders')
           .select('id', { count: 'exact', head: true })
+          .eq('store_id', activeStoreId)
           .eq('phone', currentPhone),
       ]);
       if (cancelled) return;
@@ -350,7 +360,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [currentPhone, currentOrderId]);
+  }, [currentPhone, currentOrderId, activeStoreId]);
 
   // Fetch Dropi fingerprint (global cross-store data)
   useEffect(() => {

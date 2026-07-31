@@ -4,6 +4,7 @@
  */
 
 import { CARRIER_DEADLINES } from './constants';
+import { getCurrencyCountry } from './utils';
 export { CARRIER_DEADLINES };
 
 export type AlertLevel = 'ok' | 'watch' | 'alert' | 'critical' | 'lost';
@@ -24,8 +25,26 @@ export interface FreshnessInfo {
   label: string;
 }
 
+// Plazos de retiro en oficina de las transportadoras de ECUADOR. CARRIER_DEADLINES
+// (constants.ts) es solo CO: el countdown de EC siempre usaba el default 7, y
+// SERVIENTREGA EC heredaba por colisión de nombre el plazo de SERVIENTREGA
+// Colombia — la misma colisión que obligó a separar las tracking URLs por país.
+// Laar Courier retiene 3 días en agencia (auditoría 2026-07-31). GINTRACOM y
+// SERVIENTREGA EC quedan en el default 7 hasta confirmar su SLA real — no se
+// inventan plazos.
+const CARRIER_DEADLINES_EC: Record<string, number> = {
+  'LAARCOURIER': 3,
+  'LAAR COURIER': 3,
+  'LAAR': 3,
+};
+
 export function getCarrierDeadline(transportadora: string): number {
-  return CARRIER_DEADLINES[(transportadora || '').toUpperCase()] || 7;
+  const key = (transportadora || '').toUpperCase();
+  // País por el mismo estado module-level que setea StoreContext (patrón de
+  // formatCOP/getTrackingUrl): en EC NO se hereda el mapa CO — un plazo
+  // colombiano aplicado a una transportadora EC es falsa precisión.
+  if (getCurrencyCountry() === 'EC') return CARRIER_DEADLINES_EC[key] || 7;
+  return CARRIER_DEADLINES[key] || 7;
 }
 
 export function getSegStage(estado: string): string {
@@ -42,10 +61,13 @@ export function getSegStage(estado: string): string {
 export function getAlertLevel(diasConf: number, dias: number, estado: string, transportadora: string, novedad?: string): AlertInfo | null {
   const stage = getSegStage(estado);
 
-  const sinEscaneo = diasConf > 0 ? diasConf : dias;
-  // diasConf === 0 means "confirmed today" — valid, not missing. The old
-  // `!sinEscaneo` check treated 0 as falsy and returned null, silently
-  // excluding freshly confirmed orders from the alert system.
+  // diasConf === 0 es un valor VÁLIDO ("se movió/confirmó HOY" — el estado más
+  // sano posible), NO un faltante. El ternario viejo (`> 0`) lo tiraba y caía a
+  // `dias` (edad desde la CREACIÓN): un pedido de 6 días que generó guía hoy
+  // salía como '⚫ 6d — Devolución casi segura' y la operadora gastaba una
+  // llamada en un pedido perfecto. Solo un diasConf negativo (sin fecha) cae al
+  // fallback — mismo criterio que calcPriority y que el fix de needsAction.
+  const sinEscaneo = diasConf >= 0 ? diasConf : dias;
   if (sinEscaneo < 0) return null;
 
   // Office countdown
@@ -160,11 +182,16 @@ export function calcPriority(order: {
   else if (stage === 'devolucion') score += 20;
   else if (stage === 'transito') score += 5;
 
-  // High-value bonus (0–10 pts)
+  // High-value bonus (0–10 pts). Umbrales por MONEDA de la tienda activa: los
+  // fijos en COP dejaban a EC (USD) sin bonus jamás — un pedido de $120 USD
+  // (~500k COP) quedaba ordenado igual que uno de $18 (auditoría 2026-07-31).
   const val = Number(order.valor) || 0;
-  if (val >= 200000) score += 10;
-  else if (val >= 100000) score += 5;
-  else if (val >= 50000) score += 2;
+  const [valAlto, valMedio, valBase] = getCurrencyCountry() === 'EC'
+    ? [120, 60, 25]              // USD
+    : [200000, 100000, 50000];   // COP
+  if (val >= valAlto) score += 10;
+  else if (val >= valMedio) score += 5;
+  else if (val >= valBase) score += 2;
 
   // Novedad rescue window bonus
   if ((e === 'NOVEDAD' || e === 'INTENTO DE ENTREGA') && !order.novedadSol) {

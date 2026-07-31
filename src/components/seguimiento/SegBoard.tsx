@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
-  DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle,
+  DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
   ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
@@ -15,7 +15,7 @@ import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
 import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
-import { cn } from '@/lib/utils';
+import { cn, formatCOP } from '@/lib/utils';
 
 /**
  * SegBoard — tablero estilo Kommo para /seguimiento. Columnas por estado de
@@ -128,7 +128,7 @@ function freshnessDot(o: OrderData): { cls: string; ring: string; title: string 
   return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string> }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -142,6 +142,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const enVueloRef = useRef(false);
   const open = () => { if (onOpen) onOpen(); else if (o.externalId) navigate(`/pedido/${o.externalId}`); };
 
+  // Gestionado HOY según la FUENTE DE VERDAD (touchpoints del día, vía
+  // mySegTouchedToday del OrderContext) — no solo el useState de ESTA montada.
+  // Sin esto, al destildar "Ocultar gestionados" (o si se pierde el evento
+  // realtime) la tarjeta renacía con el botón pendiente y reclickear insertaba
+  // OTRO touchpoint (touchpoints no tiene constraint anti-dup), inflando las
+  // métricas de productividad. El useState local se conserva como respuesta
+  // inmediata al click, antes de que el realtime actualice el set.
+  const yaGestionada = gestionada || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
+
   // "Gestioné hoy" desde el tablero: registra el touchpoint (SEG: ...) para que
   // el contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca
   // vía el realtime de OrderContext (mySegTouchedToday). Antes NO existía en el
@@ -149,7 +158,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // el método puntual (Envié la guía, etc.) se elige en el detalle del pedido.
   const gestionar = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (enVueloRef.current || gestionada || !o.phone) return;
+    if (enVueloRef.current || yaGestionada || !o.phone) return;
     enVueloRef.current = true;
     setGestionando(true);
     const ok = await recordGestion(o.phone, 'SEG', 'Gestioné hoy');
@@ -250,8 +259,13 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           : <span className="text-[11px] text-muted-foreground font-mono mt-1 block">Sin ID</span>}
       </div>
 
-      {/* Producto · ciudad como subtítulo (en el mockup van juntos) */}
-      {(o.producto || o.ciudad) && (
+      {/* Producto · ciudad como subtítulo (en el mockup van juntos) + VALOR a
+          cobrar a la derecha: es lo primero que pregunta el cliente COD
+          ("¿cuánto pago?") y antes obligaba a abrir el detalle en cada llamada.
+          formatCOP ya es country-aware (COP entero / USD 2 decimales según la
+          tienda activa). Solo con valor > 0: acá el 0 suele ser dato ausente y
+          pintar "$0" como monto a cobrar sería un cero falso. */}
+      {(o.producto || o.ciudad || o.valor > 0) && (
         <div
           className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground min-w-0"
           title={[o.producto, o.ciudad].filter(Boolean).join(' · ')}
@@ -262,6 +276,14 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
             {o.producto && o.ciudad ? ' · ' : ''}
             {o.ciudad}
           </span>
+          {o.valor > 0 && (
+            <span
+              className="ml-auto shrink-0 font-mono tabular-nums font-semibold text-foreground"
+              title="Valor a cobrar al cliente"
+            >
+              {formatCOP(o.valor)}
+            </span>
+          )}
         </div>
       )}
 
@@ -289,16 +311,16 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           {o.transportadora ? <span className="font-medium text-foreground/80">{o.transportadora}</span> : 'Sin transportadora'}
           {o.guia ? <span className="font-mono tabular-nums"> · {o.guia}</span> : <span className="opacity-70"> · sin guía</span>}
         </div>
-        {/* Tres blancos táctiles dentro de una tarjeta que YA es clickeable: sin
+        {/* Blancos táctiles dentro de una tarjeta que YA es clickeable: sin
             separación real y con menos de 44px, un toque impreciso disparaba la
             acción vecina o navegaba al detalle. gap-2 + 44px mínimo cada uno.
-            El layout tolera 1, 2 o 3 botones: rastrear depende de que haya URL
-            de transportadora, y WhatsApp de waEnabled + teléfono normalizable.
+            El layout tolera 1 a 4 botones: rastrear depende de que haya URL
+            de transportadora, Llamar del teléfono normalizable, y WhatsApp de
+            waEnabled + teléfono.
 
             Jerarquía: WhatsApp es la acción REAL (es como se contacta al
-            cliente) y va tintado; rastrear y refrescar son secundarias y van
-            fantasma. Antes los tres pesaban igual y se comían medio ancho de la
-            tarjeta con el mismo gris. */}
+            cliente) y va tintado; rastrear, refrescar y llamar son secundarias
+            y van fantasma. */}
         <div className="flex items-center gap-2 shrink-0">
           {(trackUrl || carrierHome) && (
             <a
@@ -322,6 +344,23 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
+          {/* Llamar SIN gate de waEnabled: en una tienda sin canal de WhatsApp
+              esta era la ÚNICA forma de contactar y no existía — la operadora
+              abría el detalle en cada llamada. Mismo patrón que CrmTable:
+              tel:+ con el número normalizado por país + registro del intento de
+              contacto como LLAMADA (prefijo propio: NO cuenta como gestión ni
+              oculta la tarjeta — para eso está "Gestioné hoy"). */}
+          {waPhone && (
+            <a
+              href={'tel:+' + waPhone}
+              onClick={(e) => { e.stopPropagation(); void recordGestion(o.phone, 'LLAMADA', 'llamó'); }}
+              title="Llamar al cliente"
+              aria-label="Llamar al cliente"
+              className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-accent hover:bg-accent/10 transition-colors"
+            >
+              <Phone size={14} aria-hidden="true" />
+            </a>
+          )}
           {waEnabled && waPhone && (
             <button
               type="button"
@@ -347,17 +386,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         <button
           type="button"
           onClick={gestionar}
-          disabled={gestionando || gestionada}
-          title="Registrar que gestionaste este pedido hoy"
+          disabled={gestionando || yaGestionada}
+          title={yaGestionada ? 'Ya registraste una gestión de este pedido hoy' : 'Registrar que gestionaste este pedido hoy'}
           className={cn(
             'mt-2.5 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl font-bold text-[13px] transition-colors',
-            gestionada
+            yaGestionada
               ? 'bg-success/15 text-success border border-success/40 cursor-default'
               : 'bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-60',
           )}
         >
           <CheckCircle2 size={15} aria-hidden="true" />
-          {gestionada ? 'Gestionado ✓' : gestionando ? 'Registrando…' : 'Gestioné hoy'}
+          {yaGestionada ? 'Gestionado hoy ✓' : gestionando ? 'Registrando…' : 'Gestioné hoy'}
         </button>
       )}
     </div>
@@ -395,7 +434,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; onBack: () => void }) {
   const navigate = useNavigate();
   const t = TONE[col.tone];
   const orders = col.orders;
@@ -520,6 +559,7 @@ function FocusedColumn({ col, countryCode, onBack }: { col: ColumnDef & { orders
             tone={col.tone}
             selected={i === selIdx}
             cardRef={i === selIdx ? selRef : undefined}
+            touchedTodayPhones={touchedTodayPhones}
             onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds } }); }}
           />
         ))}
@@ -553,6 +593,13 @@ interface SegBoardProps {
   countryCode?: string | null;
   /** Filtro de la fila "resumen por estado" — si está, muestra solo esa columna. */
   statusFilter?: string | null;
+  /**
+   * Phones que ESTA operadora ya gestionó hoy (mySegTouchedToday del
+   * OrderContext). Baja como prop (no useOrders() en SegCard) a propósito:
+   * un context en la tarjeta re-renderizaría cientos de cards en CADA cambio
+   * de OrderContext, no solo cuando cambia el set.
+   */
+  touchedTodayPhones?: Set<string>;
   emptyTitle?: string;
   emptyDesc?: string;
   /**
@@ -564,7 +611,7 @@ interface SegBoardProps {
   celebratory?: boolean;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const navigate = useNavigate();
   // Scroll por columna persistido en sessionStorage → sobrevive el remount de
   // entrar/salir de un pedido (y los discards de tab). Se inicializa UNA sola vez
@@ -622,7 +669,7 @@ export default function SegBoard({ data, countryCode, statusFilter, celebratory 
     const def = BOARD_COLUMNS.find((c) => c.key === focusedKey);
     if (def) {
       const focusedCol = { ...def, orders: byColumn.get(focusedKey) ?? [] };
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -749,6 +796,7 @@ export default function SegBoard({ data, countryCode, statusFilter, celebratory 
                   o={o}
                   countryCode={countryCode}
                   tone={col.tone}
+                  touchedTodayPhones={touchedTodayPhones}
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds } })}
                 />
               ))}

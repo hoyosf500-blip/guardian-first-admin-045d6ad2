@@ -7,6 +7,7 @@ import {
   blockRangeLabel,
   computeHorarioCompliance,
   horarioNetoSeconds,
+  horarioNetoTranscurridoSec,
   UMBRAL_HUECO_MIN,
   UMBRAL_DESCONECTADA_MIN,
   UMBRAL_SIN_CONF_MIN,
@@ -343,5 +344,79 @@ describe('computeHorarioCompliance', () => {
     });
     expect(c.cubiertoSec).toBe(0);
     expect(c.cumplimientoPct).toBe(0);
+  });
+
+  it('sin nowMs → campos prorrateados null (comportamiento viejo intacto)', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:00:00Z',
+      turnoEnd: '2026-07-17T15:30:00Z',
+      schedule: DEFAULT_SCHEDULE,
+    });
+    expect(c.horarioTranscurridoSec).toBeNull();
+    expect(c.cumplimientoPctTranscurrido).toBeNull();
+  });
+
+  it('mañana temprano EN CURSO: puntual desde las 9, son las 10:30 → prorrateado 100% (NO rojo), aunque el % de día completo dé 21', () => {
+    // El bug real: a media mañana el dashboard EN VIVO pintaba ~21% rojo a una
+    // operadora presente y puntual, midiéndola contra las 7h del día entero.
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:00:00Z', // 9:00 Bogotá
+      turnoEnd: '2026-07-17T15:30:00Z',   // 10:30 — última señal, sigue activa
+      schedule: DEFAULT_SCHEDULE,
+      nowMs: Date.parse('2026-07-17T15:30:00Z'), // ahora = 10:30
+    });
+    expect(c.horarioTranscurridoSec).toBe(5400);        // 1h30 transcurridas
+    expect(c.cumplimientoPctTranscurrido).toBe(100);    // va al día
+    expect(c.cumplimientoPct).toBe(21);                 // el número que pintaba rojo
+  });
+
+  it('mañana EN CURSO con hueco: entró 9:00 pero la última señal fue 9:30 y son las 12:00 → prorrateado la delata', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:00:00Z', // 9:00
+      turnoEnd: '2026-07-17T14:30:00Z',   // 9:30 — se fue
+      schedule: DEFAULT_SCHEDULE,
+      nowMs: Date.parse('2026-07-17T17:00:00Z'), // ahora = 12:00
+    });
+    expect(c.horarioTranscurridoSec).toBe(3 * 3600);    // 9→12 sin almuerzo aún
+    expect(c.cubiertoSec).toBe(1800);
+    expect(c.cumplimientoPctTranscurrido).toBe(17);     // 30 min de 3h
+  });
+
+  it('día terminado: el prorrateado coincide con el % de día completo (misma definición al cierre)', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:15:00Z', // 9:15 (caso Mayra)
+      turnoEnd: '2026-07-17T21:02:00Z',   // 16:02
+      schedule: DEFAULT_SCHEDULE,
+      nowMs: Date.parse('2026-07-17T22:30:00Z'), // 17:30 — el horario ya terminó
+    });
+    expect(c.horarioTranscurridoSec).toBe(7 * 3600);    // = horarioNetoSec
+    expect(c.cumplimientoPctTranscurrido).toBe(83);
+    expect(c.cumplimientoPct).toBe(83);
+  });
+
+  it('antes de que empiece el horario: transcurrido 0 → prorrateado null (no se inventa un 0% rojo)', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T13:30:00Z', // 8:30 — llegó antes
+      turnoEnd: '2026-07-17T13:50:00Z',   // 8:50
+      schedule: DEFAULT_SCHEDULE,
+      nowMs: Date.parse('2026-07-17T13:50:00Z'), // ahora = 8:50
+    });
+    expect(c.horarioTranscurridoSec).toBe(0);
+    expect(c.cumplimientoPctTranscurrido).toBeNull();
+  });
+});
+
+describe('horarioNetoTranscurridoSec', () => {
+  it('antes del inicio → 0; después del fin → neto completo', () => {
+    expect(horarioNetoTranscurridoSec(DEFAULT_SCHEDULE, 8 * 3600)).toBe(0);
+    expect(horarioNetoTranscurridoSec(DEFAULT_SCHEDULE, 18 * 3600)).toBe(7 * 3600);
+  });
+
+  it('a media mañana → solo lo corrido (10:30 = 1h30)', () => {
+    expect(horarioNetoTranscurridoSec(DEFAULT_SCHEDULE, 10 * 3600 + 1800)).toBe(5400);
+  });
+
+  it('descuenta solo el almuerzo YA corrido (13:00 → 9-13 menos 30 min de almuerzo = 3h30)', () => {
+    expect(horarioNetoTranscurridoSec(DEFAULT_SCHEDULE, 13 * 3600)).toBe(12600);
   });
 });

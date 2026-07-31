@@ -526,7 +526,23 @@ export default function CrmCallView({
     cacheKey: previewDbId ?? 'noid',
   });
 
+  // ATAJOS DE TECLADO (L/W · ←/→) — mismo patrón "latest ref" que CallView
+  // (el bug de ProductoTile enseñó que arreglar una sola de dos pantallas
+  // gemelas hace reaparecer el problema). Acá NO hay teclas 1/2/3: la
+  // botonera de gestión es SegActionButtons (acciones de Seguimiento, otro
+  // componente), no la de Confirmó/Canceló/No contestó. El listener se
+  // suscribe una vez y despacha al handler del render vigente vía ref; con la
+  // lista vacía el ref se anula para no actuar sobre closures viejas.
+  const hotkeysRef = useRef<((e: KeyboardEvent) => void) | null>(null);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => hotkeysRef.current?.(e);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   if (!items.length) {
+    // Sin pedido en pantalla no hay atajos (ver hotkeysRef arriba).
+    hotkeysRef.current = null;
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 shadow-card3d px-6 py-16 text-center">
         <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-success/10">
@@ -590,6 +606,42 @@ export default function CrmCallView({
   const copyGuia = () => {
     if (!o.guia) return;
     void copyToClipboard(o.guia, 'Guía copiada');
+  };
+
+  // Handler de atajos del render VIGENTE (ver hotkeysRef arriba del
+  // early-return). Asignación en render a propósito: cierra sobre el estado
+  // fresco de ESTE render y el listener estable siempre llama al último.
+  hotkeysRef.current = (e: KeyboardEvent) => {
+    // No robarle teclas al navegador ni auto-repetir con la tecla sostenida.
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    // Con un campo enfocado la tecla es TEXTO (notas, buscador), no un atajo.
+    const el = document.activeElement as HTMLElement | null;
+    const tag = el?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+    // Cualquier diálogo Radix abierto (chat de WhatsApp, editor, popover de
+    // validación) es dueño del teclado — Radix desmonta el contenido cerrado,
+    // así que el selector solo matchea overlays realmente abiertos.
+    if (document.querySelector('[role="dialog"]')) return;
+    const k = e.key;
+    if (k === 'l' || k === 'L') {
+      e.preventDefault();
+      // Mismo registro de gestión que el link "Llamar" — la tecla también
+      // cuenta como contacto.
+      void recordContacto(o.phone, 'LLAMADA', 'llamó');
+      window.location.href = 'tel:+' + getWhatsAppPhone(o.phone, countryCode);
+    } else if (k === 'w' || k === 'W') {
+      // Solo con canal in-app configurado — es la única vía que esta vista
+      // renderiza (el fallback wa.me es de otras pantallas).
+      if (!waEnabled) return;
+      e.preventDefault();
+      void openChat({ phone: o.phone, name: o.nombre });
+    } else if (k === 'ArrowLeft') {
+      e.preventDefault();
+      navCall(-1);
+    } else if (k === 'ArrowRight') {
+      e.preventDefault();
+      navCall(1);
+    }
   };
 
   // Mismos cortes de siempre (5 / 3 / 2 días sin movimiento). Ahora el tono
@@ -743,6 +795,8 @@ export default function CrmCallView({
                 className="ml-1 inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-accent/25 to-accent/10 text-accent border border-accent/30 glow-accent hover:brightness-110 no-underline transition-all duration-200"
               >
                 <PhoneIcon size={12} aria-hidden="true" /> Llamar
+                {/* Hint de atajo: oculto en <sm (táctil, sin teclado). */}
+                <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">L</kbd>
               </a>
               {waEnabled && (
                 <button
@@ -751,6 +805,7 @@ export default function CrmCallView({
                   className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
                 >
                   <MessageSquare size={12} aria-hidden="true" /> WhatsApp
+                  <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
                 </button>
               )}
             </div>

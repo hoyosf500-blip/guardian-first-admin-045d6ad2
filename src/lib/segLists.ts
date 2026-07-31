@@ -119,6 +119,12 @@ const ESTADOS_TERMINALES = [
   'DEVUELTO',
   'RECHAZADO',
   'INDEMNIZADA',
+  // Pedido BORRADO en Dropi (lo escribe dropi-nightly-reconcile, CON ESPACIO —
+  // así se guarda en la DB; la variante con guion bajo se acepta por datos
+  // viejos en TS). NO es trabajo: sin esto caía en "otros_estados" y la
+  // operadora llamaba a clientes de pedidos que Dropi borró hace semanas.
+  'ARCHIVADO GHOST',
+  'ARCHIVADO_GHOST',
 ];
 
 /**

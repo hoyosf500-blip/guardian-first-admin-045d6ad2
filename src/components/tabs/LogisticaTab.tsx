@@ -314,6 +314,10 @@ function prevPeriod(filters: LogisticsFilters): LogisticsFilters {
   return {
     fromDate: localISODate(newFrom),
     toDate: localISODate(newTo),
+    // La ciudad viaja con el período: sin esto, Comparar enfrentaba la ciudad
+    // filtrada (A) contra la tienda ENTERA (B) y los deltas "Mejora/Empeora"
+    // salían de comparar poblaciones distintas.
+    ciudad: filters.ciudad,
   };
 }
 
@@ -442,11 +446,20 @@ export default function LogisticaTab() {
               {formatRange(filters)}
             </span>
           )}
-          {/* Filtro por ciudad — Combobox con búsqueda. Si está seleccionado,
-              todas las RPCs filtran por esa ciudad (usa p_ciudad). */}
+          {/* Filtro por ciudad — Combobox con búsqueda. Aplica a las RPCs
+              operativas (resumen/embudo, transportadoras, ciudades, productos,
+              trazabilidad) vía p_ciudad. NO aplica a la plata de Finanzas
+              (financial_summary/wallet/rentabilidad no reciben ciudad — esa tab
+              lo avisa con un banner) ni a Decisiones (comparativo entre
+              ciudades, ver comentario de esa tab). */}
           <CityFilter
             value={filters.ciudad}
-            onChange={(ciudad) => setFilters((f) => ({ ...f, ciudad }))}
+            onChange={(ciudad) => {
+              setFilters((f) => ({ ...f, ciudad }));
+              // Comparar debe enfrentar la MISMA población en A y B: si la
+              // ciudad cambia con el modo activo, B también la adopta.
+              setPeriodB((b) => ({ ...b, ciudad }));
+            }}
           />
 
           {/* Toggle modo comparación A vs B */}
@@ -503,11 +516,13 @@ export default function LogisticaTab() {
 
       {/* Modo comparación — vista alternativa que reemplaza hero+tabs */}
       {compareMode && (
+        // onPeriodBChange re-inyecta la ciudad igual que A: los presets del
+        // DateRangeFilter emiten solo fechas y B perdía la ciudad al primer clic.
         <ComparisonView
           periodA={filters}
           periodB={periodB}
           onPeriodAChange={(next) => setFilters((f) => ({ ...next, ciudad: f.ciudad }))}
-          onPeriodBChange={setPeriodB}
+          onPeriodBChange={(next) => setPeriodB((b) => ({ ...next, ciudad: b.ciudad }))}
         />
       )}
 
@@ -658,6 +673,23 @@ export default function LogisticaTab() {
               El análisis "cómo voy" del dueño (P&L mensual + ROAS + alertas)
               vive en /cfo, no acá. /logistica = datos crudos de la operación. */}
           <TabsContent value="finanzas" className="mt-4 space-y-6">
+            {/* Las RPCs de plata (financial_summary, wallet, product_profitability)
+                NO reciben p_ciudad: estas cifras son de TODA la tienda. Antes el
+                filtro de ciudad se ignoraba EN SILENCIO y "Ingresos $28M" parecía
+                ser solo de la ciudad filtrada. Hasta que las RPCs acepten ciudad,
+                el alcance se dice de frente. */}
+            {filters.ciudad && (
+              <div className="relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+                <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+                <div className="w-9 h-9 rounded-xl bg-warning/20 glow-warning flex items-center justify-center flex-shrink-0 text-warning">
+                  <Info size={17} aria-hidden="true" />
+                </div>
+                <p className="flex-1 min-w-0 text-xs font-semibold text-warning">
+                  El filtro de ciudad ({filters.ciudad}) no aplica a Finanzas: todas las
+                  cifras de esta sección son de TODA la tienda.
+                </p>
+              </div>
+            )}
             <section>
               <header className="flex items-center gap-2 mb-3">
                 <DollarSign size={14} className="text-accent" />

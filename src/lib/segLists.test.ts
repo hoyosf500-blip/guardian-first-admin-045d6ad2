@@ -149,6 +149,18 @@ describe('SEG_LISTS — catch-all y terminales', () => {
       }
     }
   });
+
+  it('ARCHIVADO GHOST (borrado en Dropi) NO es trabajo: no matchea ninguna lista, ni con espacio ni con guion bajo', () => {
+    // 'ARCHIVADO GHOST' (CON espacio) es lo que escribe dropi-nightly-reconcile
+    // en la DB; el guion bajo sobrevive en mapas TS viejos. Ninguna de las dos
+    // variantes puede caer en "otros_estados" — es un pedido que Dropi borró.
+    for (const estadoGhost of ['ARCHIVADO GHOST', 'ARCHIVADO_GHOST']) {
+      const o: OrderData = { ...baseOrder, estado: estadoGhost, fecha: '', dias: 10 };
+      for (const lista of SEG_LISTS) {
+        expect(lista.matches(o), `${lista.slug} no debe matchear ${estadoGhost}`).toBe(false);
+      }
+    }
+  });
 });
 
 describe('SEG_LISTS — días sin movimiento (lastMovementAt)', () => {
@@ -224,10 +236,11 @@ describe('hasSeguimientoWork — gate del guard de inactividad', () => {
     expect(hasSeguimientoWork([{ ...baseOrder, estado: 'GUIA GENERADA', dias: 1 }])).toBe(false);
   });
 
-  it('FALSE con solo terminales (entregado/devuelto)', () => {
+  it('FALSE con solo terminales (entregado/devuelto/archivado ghost)', () => {
     expect(hasSeguimientoWork([
       { ...baseOrder, estado: 'ENTREGADO' },
       { ...baseOrder, estado: 'DEVOLUCION' },
+      { ...baseOrder, estado: 'ARCHIVADO GHOST' },
     ])).toBe(false);
   });
 

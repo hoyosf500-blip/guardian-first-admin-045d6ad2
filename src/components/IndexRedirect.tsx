@@ -7,10 +7,15 @@ import { useStore } from '@/contexts/StoreContext';
  * primera tarea del día (Confirmar) en vez del Dashboard de gráficas — uno de
  * los puntos donde más "se perdían" al entrar.
  *
- * Managers/admin aterrizan en `/logistica` → Resumen ("Cómo voy este mes":
+ * Managers aterrizan en `/logistica` → Resumen ("Cómo voy este mes":
  * embudo por estado + conciliación del wallet). El viejo `/dashboard` solo
  * mostraba conteos de confirmación (cosa de operador) y no le servía al dueño;
  * sigue accesible desde el nav, pero ya no es el landing.
+ *
+ * El admin GLOBAL que NO es owner/supervisor de la tienda activa va a
+ * `/dashboard`: `/logistica` gatea solo por `isManagerOfActive` (LogisticsPage
+ * rebota a /dashboard y el nav tampoco le muestra el ítem), así que mandarlo
+ * ahí producía un doble redirect / → /logistica → /dashboard.
  *
  * Se renderiza dentro del outlet de ProtectedLayout, que ya bloqueó el render
  * mientras auth/store cargaban, así que `isManagerOfActive`/`isAdmin` ya son
@@ -19,6 +24,6 @@ import { useStore } from '@/contexts/StoreContext';
 export default function IndexRedirect() {
   const { isAdmin } = useAuth();
   const { isManagerOfActive } = useStore();
-  const target = isAdmin || isManagerOfActive ? '/logistica' : '/confirmar';
+  const target = isManagerOfActive ? '/logistica' : isAdmin ? '/dashboard' : '/confirmar';
   return <Navigate to={target} replace />;
 }

@@ -47,7 +47,11 @@ const PROCESAMIENTO_EXACT = new Set([
   'ALISTAMIENTO',
   'EN BODEGA DROPI',
   'RECOGIDO POR DROPI',
-  'EN PUNTO DROOP', // typo histórico de Dropi
+  // 'EN PUNTO DROOP' NO va acá: "droop" = drop point, un punto de retiro donde
+  // el CLIENTE debe ir a recoger (igual que segLists.ESTADOS_OFICINA lo trata).
+  // Tenerlo en procesamiento le escondía la urgencia a la operadora en el
+  // Kanban mientras el paquete vencía en el punto (auditoría 2026-07-31).
+  // Lo captura matchOficina vía `includes('EN PUNTO')`.
 ]);
 
 const GUIA_EXACT = new Set([

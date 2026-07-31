@@ -16,7 +16,7 @@
  */
 export function formatDurationHM(totalSeconds: number | null | undefined): string {
   if (totalSeconds == null || !Number.isFinite(totalSeconds) || totalSeconds <= 0) {
-    return totalSeconds === 0 ? '—' : '—';
+    return '—';
   }
   if (totalSeconds < 60) return '<1m';
   const totalMin = Math.floor(totalSeconds / 60);

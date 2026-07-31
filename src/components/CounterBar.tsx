@@ -1,26 +1,26 @@
 import { useOrders } from '@/contexts/OrderContext';
 import { CheckCircle2, XCircle, PhoneOff } from 'lucide-react';
-import { CONF_TARGET_PCT, confRateBySample } from '@/lib/confirmationRate';
+import { CONF_TARGET_PCT, confRateOficial } from '@/lib/confirmationRate';
 
 export default function CounterBar() {
   const { workQueue, counter } = useOrders();
   const total = counter.conf + counter.canc + counter.noresp;
-  // Denominador = lo gestionado HOY + lo que queda en cola. Antes era solo
-  // `workQueue.length`, que funcionaba mientras `counter` contaba únicamente
-  // la sesión actual. Desde que el contador se hidrata con lo real del día
-  // (OrderContext → today_call_stats), `total` incluye lo gestionado en
-  // sesiones anteriores y `workQueue.length` es solo lo que FALTA: la barra
-  // llegaba a mostrar "8 / 1". Sumar ambos da la carga real del día.
-  const goal = total + workQueue.length;
+  // Denominador = lo gestionado HOY + lo que queda SIN RESULTADO en la cola.
+  // Los "no contestó" siguen en la cola para reintento pero YA están contados en
+  // `total` — sumarlos de nuevo (workQueue.length completo) los contaba DOS veces
+  // y la barra jamás llegaba a 100% aunque no quedara nada por hacer
+  // (desmoralizante para la operadora, auditoría 30-jul).
+  const pendSinResultado = workQueue.filter(o => !o.result).length;
+  const goal = total + pendSinResultado;
   const pct = goal > 0 ? Math.min(100, Math.round(total / goal * 100)) : 0;
-  // Tasa de confirmación MADURA: conf ÷ (conf+canc), SIN noresp en el denominador
-  // (fuente única confirmationRate.ts). Antes se usaba conf÷(conf+canc+noresp),
-  // fórmula diluida obsoleta que pintaba rojo un día con muchos N/R aunque la
-  // confirmación real superara la meta. Solo decide el COLOR de la barra vs meta;
-  // el conteo crudo mostrado sigue siendo cobertura (total/goal).
-  // `tasa` viene null cuando NO hay resueltos (conf+canc = 0). null NO es 0%: es
-  // "todavía no hay con qué medir". Se conserva null a propósito — ver barTone.
-  const { tasa } = confRateBySample(counter.conf, counter.canc);
+  // LA MATEMÁTICA OFICIAL (decisión del dueño 30-jul): confirmados ÷ GESTIONADOS
+  // (conf+canc+noresp), meta 85%. Antes el color usaba conf÷(conf+canc) (~99%,
+  // el "cierre de llamada") y la barra se pintaba verde mientras el Dashboard
+  // decía 66% — la disputa del "Tasa: 99%". Solo decide el COLOR de la barra;
+  // el ancho sigue siendo cobertura (total/goal).
+  // `tasa` viene null sin gestiones. null NO es 0%: es "todavía no hay con qué
+  // medir". Se conserva null a propósito — ver barTone.
+  const { tasa } = confRateOficial(counter.conf, counter.canc, counter.noresp);
 
   if (workQueue.length === 0) return null;
 
@@ -86,8 +86,8 @@ export default function CounterBar() {
         // explica acá, incluido el caso "todavía no hay tasa". `aria-label` manda
         // sobre `title` para el nombre accesible, así que no se pisa nada.
         title={tasa === null
-          ? 'Sin confirmados ni cancelados todavía: aún no hay tasa de confirmación que medir'
-          : `Tasa de confirmación del equipo hoy: ${tasa}% (meta ${CONF_TARGET_PCT}%)`}
+          ? 'Sin gestiones todavía: aún no hay confirmación del día que medir'
+          : `Confirmación del día del equipo: ${tasa}% (${counter.conf} confirmados ÷ ${total} gestionados · meta ${CONF_TARGET_PCT}%). Incluye los "no contestó": también son ventas por sacar.`}
       >
         <div
           className={`h-full rounded-full ${barTone} transition-all duration-500 ease-out`}

@@ -77,7 +77,7 @@ function diasReales(o: OrderData): number {
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, markResult } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, coverageConfirmError, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
@@ -344,7 +344,10 @@ export default function ConfirmarTab({ profile }: Props) {
     // ver los que ya gestioné hoy. dbId puede ser undefined en pedidos
     // recién subidos por Excel sin sincronizar — esos no caen en el set y se
     // muestran (mejor mostrar que perder).
-    if (onlyUntouched && o.dbId && myConfirmTouchedToday.has(o.dbId)) return false;
+    // Con coverageConfirmError el set está vacío/parcial (la query falló):
+    // filtrar contra un set roto escondería/mostraría pedidos mal → el toggle
+    // se ignora (y el checkbox se desactiva en el chip "Tu cola hoy").
+    if (onlyUntouched && !coverageConfirmError && o.dbId && myConfirmTouchedToday.has(o.dbId)) return false;
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
@@ -373,7 +376,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, user?.id]);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, coverageConfirmError, user?.id]);
 
   // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
   // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente
@@ -550,8 +553,10 @@ export default function ConfirmarTab({ profile }: Props) {
 
       {/* Guía entre colas: al terminar Confirmar, la lleva a Novedades →
           Seguimiento con lo que falta. Se auto-oculta si aún le falta confirmar
-          o si es admin. */}
-      <SiguienteColaBanner />
+          o si es admin. Recibe supersededIds para que "terminé Confirmar" use
+          el MISMO criterio que el headline: un duplicado oculto sin cancelar
+          no debe bloquear el banner para siempre. */}
+      <SiguienteColaBanner supersededIds={supersededIds} />
 
       {excelLoaded && workQueue.length === 0 && (
         <div className="relative overflow-hidden flex flex-col items-center justify-center py-16 text-center rounded-3xl border border-border bg-card/40 shadow-card3d hairline-top" role="status" aria-live="polite">
@@ -588,11 +593,19 @@ export default function ConfirmarTab({ profile }: Props) {
             // aplicados). Antes se contaba sobre visibleQueue crudo → el chip
             // decía 8 pero la lista mostraba 5 y no bajaba (divergían).
             const sinTocarEnCola = filteredItems.filter(o => !o.dbId || !myConfirmTouchedToday.has(o.dbId)).length;
-            const tone = sinTocarEnCola === 0
-              ? 'success'
-              : sinTocarEnCola >= Math.max(1, Math.ceil(filteredItems.length / 2))
-                ? 'danger'
-                : 'warning';
+            // Contrato de honestidad de OrderContext: coverageConfirmError=true
+            // significa que la query de cobertura FALLÓ — el set no es "cero",
+            // es DATO AUSENTE. Un 0 acá le diría a una asesora con 40 llamadas
+            // "no llamaste a nadie". Se muestra "—" en tono NEUTRO (no rojo:
+            // no sabemos si algo está mal, no sabemos nada) y se desactiva el
+            // checkbox, porque filtrar con un set roto escondería pedidos mal.
+            const tone = coverageConfirmError
+              ? 'neutral'
+              : sinTocarEnCola === 0
+                ? 'success'
+                : sinTocarEnCola >= Math.max(1, Math.ceil(filteredItems.length / 2))
+                  ? 'danger'
+                  : 'warning';
             // Clases LITERALES por tono. La versión anterior armaba
             // `text-${tone}` en runtime: Tailwind escanea el texto del archivo,
             // así que esa clase nunca se generaba y la cifra clave del banner
@@ -601,7 +614,9 @@ export default function ConfirmarTab({ profile }: Props) {
               ? { bar: 'bg-success', box: 'border-success/30 bg-success/10', chip: 'bg-success/20 text-success glow-success', num: 'text-success' }
               : tone === 'warning'
                 ? { bar: 'bg-warning', box: 'border-warning/30 bg-warning/10', chip: 'bg-warning/20 text-warning glow-warning', num: 'text-warning' }
-                : { bar: 'bg-danger', box: 'border-danger/30 bg-danger/10', chip: 'bg-danger/20 text-danger glow-danger', num: 'text-danger' };
+                : tone === 'danger'
+                  ? { bar: 'bg-danger', box: 'border-danger/30 bg-danger/10', chip: 'bg-danger/20 text-danger glow-danger', num: 'text-danger' }
+                  : { bar: 'bg-muted-foreground/40', box: 'border-border bg-card/40', chip: 'bg-foreground/10 text-muted-foreground', num: 'text-muted-foreground' };
             return (
               <div className={`relative mb-3 rounded-2xl border ${skin.box} px-4 py-3 pl-5 shadow-card3d flex items-center flex-wrap gap-x-4 gap-y-2`}>
                 <span className={`absolute left-0 top-3 bottom-3 w-1 rounded-full ${skin.bar}`} aria-hidden="true" />
@@ -611,22 +626,36 @@ export default function ConfirmarTab({ profile }: Props) {
                 <div className="text-sm font-semibold text-foreground">
                   Tu cola hoy
                 </div>
-                <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <span>
-                    Has llamado a <CountUp value={tocadosHoy} className="text-base font-bold text-foreground" />
-                  </span>
-                  <span className="opacity-50">·</span>
-                  <span>
-                    Te faltan <CountUp value={sinTocarEnCola} className={`text-base font-bold ${skin.num}`} /> sin tocar
-                    {sinTocarEnCola === 0 && <span className="text-success ml-1">✓</span>}
-                  </span>
-                </div>
-                <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                {coverageConfirmError ? (
+                  <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span>
+                      Has llamado a <span className="text-base font-bold text-muted-foreground">—</span>
+                    </span>
+                    <span className="opacity-50">·</span>
+                    <span className="italic">no se pudo leer tu avance de hoy</span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span>
+                      Has llamado a <CountUp value={tocadosHoy} className="text-base font-bold text-foreground" />
+                    </span>
+                    <span className="opacity-50">·</span>
+                    <span>
+                      Te faltan <CountUp value={sinTocarEnCola} className={`text-base font-bold ${skin.num}`} /> sin tocar
+                      {sinTocarEnCola === 0 && <span className="text-success ml-1">✓</span>}
+                    </span>
+                  </div>
+                )}
+                <label
+                  className={`ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground select-none ${coverageConfirmError ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  title={coverageConfirmError ? 'Desactivado: no se pudo leer tu avance de hoy' : undefined}
+                >
                   <input
                     type="checkbox"
                     checked={onlyUntouched}
+                    disabled={coverageConfirmError}
                     onChange={(e) => setOnlyUntouched(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer"
+                    className="h-3.5 w-3.5 rounded border-border accent-accent cursor-pointer disabled:cursor-not-allowed"
                   />
                   Solo sin tocar
                 </label>
@@ -640,8 +669,15 @@ export default function ConfirmarTab({ profile }: Props) {
               final, separado por un border-l. Ahorra una fila en desktop y
               mantiene la misma jerarquía en mobile (wrap natural). */}
           {(() => {
-            const d7 = visibleQueue.filter(o => diasReales(o) >= 7 && !o.result).length;
-            const d46 = visibleQueue.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6 && !o.result; }).length;
+            // Misma base que el headline `pending`: sin los lockeados por otra
+            // asesora. Sobre visibleQueue crudo el chip contaba pedidos que la
+            // lista NO muestra ("1 cancelar (D7+)" imposible de encontrar) —
+            // la misma divergencia ya corregida en el chip "Tu cola hoy".
+            const accionables = visibleQueue.filter(
+              o => !o.result && !isLockedByOther(o, user?.id ?? null, Date.now()),
+            );
+            const d7 = accionables.filter(o => diasReales(o) >= 7).length;
+            const d46 = accionables.filter(o => { const d = diasReales(o); return d >= 4 && d <= 6; }).length;
             return (
               /* La tira plana de números en línea pasa a ser el bloque hero de
                  la pantalla: a la izquierda la cifra que manda —cuántos faltan
@@ -703,14 +739,15 @@ export default function ConfirmarTab({ profile }: Props) {
                   <span className="hud-label text-muted-foreground/70">
                     equipo · toda la tienda
                   </span>
-                  {/* Aclaración clave: este bloque cuenta TODO lo confirmado HOY,
-                      incluidos pedidos de días anteriores que estaban pendientes.
-                      El Dashboard y Productividad muestran "del día" (solo los que
-                      ENTRARON hoy) → ese número es MENOR. Los dos son correctos, y
-                      sin este rótulo el dueño los leía como contradicción. */}
+                  {/* Este bloque cuenta TODO lo confirmado HOY, incluidos pedidos
+                      de días anteriores que estaban pendientes. Desde la unificación
+                      del 30-jul (e6cd891, UNA sola matemática) el Dashboard y
+                      Productividad cuentan EXACTAMENTE lo mismo — el rótulo viejo
+                      anunciaba una diferencia que ya no existe y fabricaba la
+                      contradicción que quería prevenir. */}
                   <span className="text-[10px] text-muted-foreground -mt-1 leading-snug">
                     confirmados <strong className="text-foreground/80">hoy</strong> · incluye pedidos de días anteriores que estaban pendientes
-                    <span className="opacity-70"> (por eso es más que el "del día" del Dashboard)</span>
+                    <span className="opacity-70"> · es el mismo número del Dashboard y Productividad (una sola matemática)</span>
                   </span>
                   <div className="grid grid-cols-1 min-[390px]:grid-cols-2 gap-3 flex-1">
                     <StatTile icon={CheckCircle2} label="conf" value={counter.conf} tone="success" />

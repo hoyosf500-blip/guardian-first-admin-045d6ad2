@@ -115,6 +115,15 @@ const RANGE_LABELS: Record<Range, string> = {
   '30d': 'Últimos 30 días',
 };
 
+/** Etiquetas CORTAS de los botones del selector. Antes se renderizaba la clave
+ *  interna ('today'/'7d') — inglés técnico en la pantalla con la que el dueño
+ *  paga. Las largas de RANGE_LABELS quedan para el subtítulo. */
+const RANGE_BTN: Record<Range, string> = {
+  'today': 'Hoy',
+  '7d': '7 días',
+  '30d': '30 días',
+};
+
 const hsl = (v: string) => `hsl(var(${v}))`;
 const CHART_SUCCESS = hsl('--success');
 const CHART_DANGER = hsl('--danger');
@@ -212,8 +221,10 @@ export default function ProductivityDashboard() {
   const [activityRows, setActivityRows] = useState<ActivityRow[]>([]);
   const [workedRows, setWorkedRows] = useState<WorkedRow[]>([]);
   const [inactivityRows, setInactivityRows] = useState<InactivityRow[]>([]);
-  // Operadora cuyo detalle de avisos está abierto (nombre → InactivityDetailModal).
-  const [inactivityDetail, setInactivityDetail] = useState<string | null>(null);
+  // Operadora cuyo detalle de avisos está abierto. Va con el operator_id (no
+  // solo el nombre): la tabla contó los avisos por id, y buscar el detalle por
+  // display_name se rompía con perfiles sin nombre u homónimas.
+  const [inactivityDetail, setInactivityDetail] = useState<{ id: string; name: string } | null>(null);
   // Aviso visible si falló alguna consulta de Jornada (actividad/horas/inactividad).
   const [jornadaWarn, setJornadaWarn] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -289,19 +300,28 @@ export default function ProductivityDashboard() {
         ? hoy
         : new Date(Date.now() - (range === '7d' ? 6 : 29) * 86400000)
             .toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
-      const { count } = await supabase
+      const { count, error: cntErr } = await supabase
         .from('order_results')
         .select('id', { count: 'exact', head: true })
         .eq('store_id', activeStoreId ?? '')
         .gte('result_date', desde)
         .lte('result_date', hoy);
-      setAccionesPeriodo(count ?? 0);
+      // supabase-js NO lanza en un SELECT fallido (resuelve con error en el
+      // objeto), así que el try/catch no lo atrapa: sin este check un fallo de
+      // red/RLS se mostraba como "0 medido" y el estado vacío afirmaba "Nadie
+      // marcó pedidos" — el cero falso que este contador vino a evitar. Con
+      // null, el cartel cae al texto genérico que no afirma nada.
+      setAccionesPeriodo(cntErr ? null : (count ?? 0));
 
       // Cierres de turno del período. Nos quedamos con el MÁS RECIENTE por
       // operadora: en un rango de varios días la columna muestra el último.
+      // Filtrado por tienda ACTIVA: un supervisor con membresía en CO y EC ve
+      // por RLS los cierres de ambas — sin este filtro, su "SALIÓ" acá podía
+      // ser el cierre del otro país (mezclar países está prohibido).
       const { data: cierres } = await supabase
         .from('operator_daily_reports')
         .select('user_id, closing_at')
+        .eq('store_id', activeStoreId ?? '')
         .gte('report_date', desde)
         .lte('report_date', hoy)
         .not('closing_at', 'is', null)
@@ -500,7 +520,7 @@ export default function ProductivityDashboard() {
                     : 'font-medium border border-transparent text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                {r}
+                {RANGE_BTN[r]}
               </button>
             ))}
           </div>
@@ -557,7 +577,7 @@ export default function ProductivityDashboard() {
                 className="bg-card/40 border border-border rounded-3xl p-6 shadow-card3d-lg h-full flex flex-col justify-between"
               >
                 <div className="flex items-center justify-between gap-3 tilt-layer-2">
-                  <div className="hud-label" title="Confirmados ÷ lo que el equipo TRABAJÓ (gestionados = contestaron + no contestaron), incluidos pedidos viejos que estaban pendientes. OJO: NO es la 'Confirmación del día' oficial del Dashboard (esa se mide sobre lo que ENTRÓ, meta 85%) — esta mide el rendimiento del TRABAJO hecho.">
+                  <div className="hud-label" title="Confirmados ÷ lo que el equipo TRABAJÓ (gestionados = contestaron + no contestaron), incluidos pedidos viejos que estaban pendientes. Es la misma Confirmación del día del Dashboard y del cierre del equipo (una sola matemática, meta 85%).">
                     Confirmación del día
                   </div>
                 </div>
@@ -670,7 +690,7 @@ export default function ProductivityDashboard() {
                           sino horas trabajadas, y llamarla igual que en Hoy
                           hacía leer una cosa por otra. */}
                       <th className="text-right" title={isToday
-                        ? '¿Cuánto del horario pactado cubrió? = desde que entró hasta que salió, dentro del horario de la tienda, menos el almuerzo. NO se descuenta el estar quieta (una llamada no mueve el mouse).'
+                        ? '¿Cuánto del horario cubrió? = desde que entró hasta que salió, dentro del horario de la tienda, menos el almuerzo. Mientras el día corre se mide contra el horario TRANSCURRIDO (no se le cobra la tarde que aún no llega); al terminar, contra el horario completo. NO se descuenta el estar quieta (una llamada no mueve el mouse).'
                         : 'Suma de las horas con evidencia de trabajo (pedidos marcados) en todos los días del rango. NO es lo mismo que el tiempo conectada: eso está en la columna de al lado.'}>
                         {isToday ? 'Cumplió horario' : 'Horas trabajadas'}
                       </th>
@@ -732,8 +752,16 @@ export default function ProductivityDashboard() {
                       const turnoStart = Number.isFinite(firstSignalMs) ? new Date(firstSignalMs).toISOString() : null;
                       const turnoEnd = lastSignalMs > 0 ? new Date(lastSignalMs).toISOString() : null;
                       // ¿Cumplió el horario? Solo por-día; en 7d/30d cae a las horas del rango.
-                      const comp = isToday ? computeHorarioCompliance({ turnoStart, turnoEnd, schedule }) : null;
-                      const pct = comp?.cumplimientoPct ?? null;
+                      const comp = isToday ? computeHorarioCompliance({ turnoStart, turnoEnd, schedule, nowMs }) : null;
+                      // % PRORRATEADO al horario TRANSCURRIDO (min(ahora, fin de
+                      // horario)): este dashboard se mira EN VIVO y medir contra el
+                      // día COMPLETO pintaba a operadoras puntuales en rojo (~21%)
+                      // toda la mañana. Al terminar el horario, transcurrido = neto
+                      // y el número coincide con la definición de fin de día.
+                      const pct = comp?.cumplimientoPctTranscurrido ?? null;
+                      const transcurridoSec = comp?.horarioTranscurridoSec ?? comp?.horarioNetoSec ?? null;
+                      const horarioEnCurso = comp?.horarioTranscurridoSec != null
+                        && comp.horarioTranscurridoSec < comp.horarioNetoSec;
                       // HORAS EXTRA por EVIDENCIA DE TRABAJO, no por presencia. El
                       // dueño lo pidió explícito: si dejó el CRM abierto y volvió 2h
                       // después solo a cerrarlo, eso NO es trabajo. Por eso el extra
@@ -755,10 +783,12 @@ export default function ProductivityDashboard() {
                       // para una asesora telefónica es una fracción del tiempo
                       // que de verdad estuvo en el CRM.
                       const enCrmSec = a ? (Number(a.active_seconds) || 0) + (Number(a.idle_seconds) || 0) : null;
-                      // FUERA DEL CRM = horario pactado − tiempo con el CRM abierto.
-                      // Solo tiene sentido contra un horario, así que es por-día.
+                      // FUERA DEL CRM = horario TRANSCURRIDO − tiempo con el CRM
+                      // abierto. Contra el horario completo mostraba a media mañana
+                      // "5:30 fuera" de horas que ni siquiera habían pasado. Solo
+                      // tiene sentido contra un horario, así que es por-día.
                       const fueraSec = comp && enCrmSec != null
-                        ? Math.max(0, comp.horarioNetoSec - enCrmSec)
+                        ? Math.max(0, (comp.horarioTranscurridoSec ?? comp.horarioNetoSec) - enCrmSec)
                         : null;
                       // MIN/PEDIDO sobre TODOS los intentos (incl. "no contestó"),
                       // por decisión del dueño. Denominador desde la RPC de
@@ -773,6 +803,14 @@ export default function ProductivityDashboard() {
                       // SALIÓ = CIERRE DE TURNO. Sin cierre no se estima: se
                       // muestra vacío con etiqueta, para que se vea quién no cerró.
                       const cierreAt = closingByOp[op.id] ?? null;
+                      // "Cerró X antes" se mide desde el CIERRE DE TURNO real, NO
+                      // desde la última señal del CRM (comp.tempranoMin): puede
+                      // pasar su última hora al teléfono sin tocar el CRM y sellar
+                      // el cierre a las 17:01 — acusarla por la última señal era un
+                      // falso positivo (y dejar la pestaña abierta lo escondía).
+                      const cierreTempranoMin = isToday && cierreAt
+                        ? Math.max(0, Math.round((schedule.workEndSec - bogotaSecondsOfDay(new Date(cierreAt))) / 60))
+                        : 0;
                       return (
                         <tr key={op.id}>
                           <td>
@@ -806,12 +844,12 @@ export default function ProductivityDashboard() {
                                 <div className="inline-flex flex-col items-end gap-0.5">
                                   <span
                                     className={`font-mono tabular-nums font-bold text-sm text-${cumpleTone}`}
-                                    title={`Cubrió ${formatDurationHM(comp!.cubiertoSec ?? 0)} de ${formatDurationHM(comp!.horarioNetoSec)} de horario. NO se descuenta el estar quieta (puede estar en una llamada).`}
+                                    title={`Cubrió ${formatDurationHM(comp!.cubiertoSec ?? 0)} de ${formatDurationHM(transcurridoSec ?? comp!.horarioNetoSec)} de horario ${horarioEnCurso ? 'TRANSCURRIDO (el día sigue en curso — no se le cobra lo que aún no pasa)' : 'pactado'}. NO se descuenta el estar quieta (puede estar en una llamada).`}
                                   >
                                     {pct}%
                                   </span>
                                   <span className="text-[10px] text-muted-foreground tabular-nums">
-                                    cubrió {formatDurationHM(comp!.cubiertoSec ?? 0)} de {formatDurationHM(comp!.horarioNetoSec)}
+                                    cubrió {formatDurationHM(comp!.cubiertoSec ?? 0)} de {formatDurationHM(transcurridoSec ?? comp!.horarioNetoSec)}{horarioEnCurso ? ' · en curso' : ''}
                                   </span>
                                   {/* Horas extra por TRABAJO REAL (marcó pedidos
                                       después del horario), no por dejar el CRM abierto.
@@ -851,7 +889,7 @@ export default function ProductivityDashboard() {
                                 {fueraSec != null && fueraSec > 0 && (
                                   <span
                                     className="text-[10px] text-warning tabular-nums"
-                                    title="Parte del horario pactado en la que el CRM NO estuvo abierto (navegador cerrado, PC apagado o sin internet). No prueba que no trabajara — puede haber estado en Dropi o en el teléfono."
+                                    title="Parte del horario YA TRANSCURRIDO en la que el CRM NO estuvo abierto (navegador cerrado, PC apagado o sin internet). No cuenta horas que aún no pasan. No prueba que no trabajara — puede haber estado en Dropi o en el teléfono."
                                   >
                                     {formatDurationHM(fueraSec)} fuera
                                   </span>
@@ -889,7 +927,7 @@ export default function ProductivityDashboard() {
                               const tone = avisos >= 3 ? 'danger' : 'warning';
                               return (
                                 <button
-                                  onClick={() => setInactivityDetail(op.name)}
+                                  onClick={() => setInactivityDetail({ id: op.id, name: op.name })}
                                   className="inline-flex flex-col items-end gap-0.5 cursor-pointer group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md px-1"
                                   title={`${avisos} aviso(s) de inactividad · ${perdidoMin} min en total. Tocá para ver cada uno con su hora.`}
                                 >
@@ -963,12 +1001,12 @@ export default function ProductivityDashboard() {
                                   <Clock size={11} className="text-muted-foreground" aria-hidden="true" />
                                   {isToday ? formatTimeBogota(cierreAt) : formatDateTimeBogota(cierreAt)}
                                 </span>
-                                {isToday && comp && (comp.tempranoMin ?? 0) > 0 && (
+                                {cierreTempranoMin > 0 && (
                                   <span
                                     className="inline-flex items-center rounded-full border border-danger/30 bg-danger/10 px-2 py-0.5 text-[10px] font-bold text-danger whitespace-nowrap"
-                                    title={`Cerró ${formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes del fin del horario.`}
+                                    title={`Cerró el turno ${formatDurationHM(cierreTempranoMin * 60)} antes del fin del horario (medido desde su cierre real, no desde la última señal del CRM).`}
                                   >
-                                    {formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes
+                                    {formatDurationHM(cierreTempranoMin * 60)} antes
                                   </span>
                                 )}
                                 {/* Trabajó DESPUÉS del fin del horario (marcó pedidos,
@@ -1188,7 +1226,7 @@ export default function ProductivityDashboard() {
                     </th>
                     <th
                       className="text-right"
-                      title="Confirmados ÷ lo que ENTRÓ en el período — cómo va el día. Meta ~55% (confirmar 85 de cada 100 que entran es imposible: los que no contestan bajan el techo). Gris '· en curso' = el día aún no se trabajó completo, no concluyente. La efectividad de cierre (÷ resueltos, meta 85%) está en el tooltip de cada celda."
+                      title="Confirmados ÷ lo que TRABAJÓ (gestionados: contestaron + no contestaron, pedidos nuevos y viejos por igual) — la matemática única del CRM, la misma del Dashboard y del cierre. Meta 85%. Gris '· en curso' = el día aún no termina, número provisional. El cierre de llamada (÷ los que contestaron) está en el tooltip de cada celda."
                     >
                       <span className="block">Confirmó</span>
                       <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">de lo que trabajó</span>
@@ -1280,10 +1318,6 @@ export default function ProductivityDashboard() {
                         );
                       })()}</td>
                       <td className="text-right">{(() => {
-                        // "Confirmación del día" = confirmados ÷ lo que ENTRÓ (÷inflow),
-                        // NO ÷resueltos. Es "cómo va el día" y no infla: los que no
-                        // contestó / no tocó tiran la tasa abajo. La efectividad de
-                        // cierre (÷resueltos, la vieja) queda en el tooltip.
                         // % del día = lo que confirmó ÷ lo que trabajó (gestionados),
                         // igual que el aro del equipo. La efectividad de cierre
                         // (÷ los que decidieron) queda en el tooltip.
@@ -1362,8 +1396,6 @@ export default function ProductivityDashboard() {
                     const cphTeam = gestionesPorHora(totClientes, totWorked);
                     const iphTeam = gestionesPorHora(totIntentosMarcado, totWorked);
                     const iphTeamTone = iphTeam == null ? 'muted-foreground' : ritmoTone(iphTeam, MIN_INTENTOS_POR_HORA) === 'muted' ? 'muted-foreground' : ritmoTone(iphTeam, MIN_INTENTOS_POR_HORA);
-                    // Confirmación del día del EQUIPO = confirmados ÷ entrantes,
-                    // con la misma madurez que las filas (día en curso → provisional).
                     // % del día del equipo = confirmó ÷ trabajó (gestionados),
                     // igual que el aro y las filas. Antes era ÷entrantes (cohorte).
                     const tasaDiaTeam = totAt > 0 ? Math.min(100, Math.round((totConf / totAt) * 100)) : null;
@@ -1541,7 +1573,8 @@ export default function ProductivityDashboard() {
           "Sin trabajar" de la Jornada). Restaurado tras quitarse el 18-jul. */}
       {inactivityDetail && (
         <InactivityDetailModal
-          operadora={inactivityDetail}
+          operadora={inactivityDetail.name}
+          operatorId={inactivityDetail.id}
           range={range}
           onClose={() => setInactivityDetail(null)}
         />

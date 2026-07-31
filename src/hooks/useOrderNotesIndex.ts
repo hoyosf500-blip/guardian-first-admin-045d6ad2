@@ -38,7 +38,15 @@ export function useOrderNotesIndex(
       .select('order_id, remind_at')
       .eq('store_id', storeId)
       .in('order_id', ids);
-    if (error || !data) { setIndex(EMPTY_INDEX); return; }
+    if (error || !data) {
+      // Fallo transitorio (red/RLS/timeout) ≠ "ningún pedido tiene notas".
+      // Vaciar acá hacía desaparecer EN SILENCIO los badges y los RECORDATORIOS
+      // de todas las tarjetas (el hook refetchea por realtime e idsKey, así que
+      // un solo blip borraba un índice que ya estaba bien cargado). El índice
+      // anterior sigue siendo mejor aproximación que "nada".
+      console.warn('[useOrderNotesIndex] error cargando índice de notas; se conserva el anterior:', error);
+      return;
+    }
     const m: NoteIndex = new Map();
     for (const row of data as Array<{ order_id: string | null; remind_at: string | null }>) {
       if (!row.order_id) continue;
