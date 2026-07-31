@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
-import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, type AttemptRow } from '@/lib/attemptFormat';
+import { attemptLabel, attemptTone, attemptClock, attemptDaySuffix, intentosDeHoy, type AttemptRow } from '@/lib/attemptFormat';
+import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
+import { haceCuanto } from '@/lib/gestionPorPedido';
 import { bogotaToday } from '@/lib/utils';
 
 /** Nodo del timeline: relleno + halo del mismo tono. El halo (`glow-*`) es lo
@@ -42,14 +44,39 @@ export default function AttemptHistory({ attempts, loadError }: { attempts: Atte
   const shown = expanded ? attempts : attempts.slice(0, MAX_COLLAPSED);
   const hidden = attempts.length - shown.length;
 
+  // "Intentos previos (5)" contaba los 7 días y no respondía la pregunta que la
+  // asesora sí se hace antes de marcar: ¿cuántas llamadas le quedan HOY a este
+  // cliente? El tope diario es 3 y sale de la misma constante que usa el
+  // cooldown, así que el contador nunca puede desalinearse de la regla real.
+  const hoyN = intentosDeHoy(attempts, today);
+  const agotado = hoyN >= MAX_DAILY_ATTEMPTS;
+  const pielHoy = agotado
+    ? 'bg-danger/15 text-danger border-danger/35'
+    : hoyN > 0
+      ? 'bg-warning/15 text-warning border-warning/35'
+      : 'bg-muted/50 text-muted-foreground border-border';
+
   return (
     <div className="mb-3 rounded-2xl border border-border bg-card/40 px-3.5 py-3 shadow-card3d hairline-top">
-      <div className="hud-label flex items-center gap-2 mb-2.5 text-muted-foreground">
+      <div className="hud-label flex items-center gap-2 mb-2.5 text-muted-foreground flex-wrap">
         <span className="w-7 h-7 rounded-xl bg-muted/60 border border-border flex items-center justify-center flex-shrink-0" aria-hidden="true">
           <History size={13} />
         </span>
         Intentos previos ({attempts.length})
+        <span
+          className={`ml-auto text-[11px] font-bold px-2 py-0.5 rounded-lg border tabular-nums ${pielHoy}`}
+          title={agotado
+            ? `Ya se llamó ${MAX_DAILY_ATTEMPTS} veces hoy: el pedido vuelve a la cola mañana`
+            : `Quedan ${MAX_DAILY_ATTEMPTS - hoyN} llamada${MAX_DAILY_ATTEMPTS - hoyN === 1 ? '' : 's'} para hoy`}
+        >
+          Hoy {hoyN} de {MAX_DAILY_ATTEMPTS}
+        </span>
       </div>
+      {agotado && (
+        <p className="-mt-1 mb-2.5 text-[11px] text-danger font-semibold" role="status">
+          Ya son {MAX_DAILY_ATTEMPTS} llamadas hoy — vuelve a la cola mañana.
+        </p>
+      )}
       {/* La lista de intentos ES una secuencia en el tiempo, así que se dibuja
           como tal: un riel vertical con un nodo por intento, coloreado por su
           resultado. Los datos (quién, qué, cuándo) son exactamente los mismos;
@@ -63,20 +90,28 @@ export default function AttemptHistory({ attempts, loadError }: { attempts: Atte
         {shown.map((a, i) => {
           const clock = attemptClock(a);
           const day = attemptDaySuffix(a, today);
+          // "hace 20 min" solo para los de HOY: en uno de anteayer sería ruido
+          // (ya lo dice el sufijo "2 jul") y el reloj sigue siendo lo útil ahí.
+          const cuando = !day && a.created_at ? haceCuanto(a.created_at) : '';
           return (
             <li key={a.id || i} className="relative flex items-center gap-2 text-xs">
               <span
                 className={`absolute -left-5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 rounded-full ring-2 ring-card shrink-0 ${TONE_DOT[attemptTone(a.result)]}`}
                 aria-hidden="true"
               />
-              <span className="font-medium text-foreground truncate max-w-[120px]">{nameOf(a.operator_id)}</span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">{attemptLabel(a.result)}</span>
-              {a.result === 'canc' && a.reason && (
-                <span className="text-muted-foreground/80 italic truncate max-w-[120px]">({a.reason})</span>
+              <span className="font-medium text-foreground truncate max-w-[110px]">{nameOf(a.operator_id)}</span>
+              <span className="text-muted-foreground" aria-hidden="true">·</span>
+              <span className="text-muted-foreground shrink-0">{attemptLabel(a.result)}</span>
+              {/* El motivo se muestra en CUALQUIER resultado, no solo al cancelar:
+                  el "pidió llamar mañana" de un no-contestó es justo lo que la
+                  siguiente asesora necesita leer, y estaba oculto. */}
+              {a.reason && (
+                <span className="text-muted-foreground/80 italic truncate min-w-0" title={a.reason}>
+                  ({a.reason})
+                </span>
               )}
-              <span className="ml-auto text-muted-foreground/70 font-mono tabular-nums shrink-0">
-                {day ? `${day} ` : ''}{clock}
+              <span className="ml-auto text-muted-foreground/70 tabular-nums shrink-0">
+                {cuando || `${day ? `${day} ` : ''}${clock}`}
               </span>
             </li>
           );

@@ -13,6 +13,31 @@ export interface AttemptRow {
   created_at?: string | null;    // ISO (fallback)
 }
 
+/**
+ * Cuántas veces se llamó a ESTE pedido HOY.
+ *
+ * El tope diario es 3 (`MAX_DAILY_ATTEMPTS`) y hasta ahora la asesora no tenía
+ * cómo verlo: la ficha decía "Intentos previos (5)" contando los 7 días, así que
+ * no se sabía si al cliente le quedaban llamadas hoy o si ya se había agotado y
+ * el pedido iba a volver mañana. Son dos preguntas distintas y el número grande
+ * respondía la que nadie hace.
+ *
+ * Solo cuenta resultados de LLAMADA: las filas de auditoría (edición del pedido,
+ * cambio de transportadora) no gastan intento.
+ *
+ * `todayStr` = 'YYYY-MM-DD' de hoy (Bogotá). Se inyecta para poder testear.
+ */
+export function intentosDeHoy(rows: AttemptRow[] | null | undefined, todayStr: string): number {
+  if (!rows || !rows.length) return 0;
+  let n = 0;
+  for (const r of rows) {
+    if (r.result !== 'conf' && r.result !== 'canc' && r.result !== 'noresp') continue;
+    const fecha = r.result_date || (r.created_at ? r.created_at.slice(0, 10) : '');
+    if (fecha === todayStr) n += 1;
+  }
+  return n;
+}
+
 /** Etiqueta corta del resultado. Espeja timelineBuilder ("No respondió la llamada", etc.). */
 export function attemptLabel(result: string): string {
   switch (result) {

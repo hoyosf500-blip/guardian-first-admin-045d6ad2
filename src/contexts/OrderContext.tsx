@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { useStore } from './StoreContext';
 import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
-import { compareConfirmar, cooldownHoursForAttempt } from '@/lib/confirmarQueue';
+import { compareConfirmar, cooldownHoursForAttempt, MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -708,7 +708,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // escala por número de intento vía cooldownHoursForAttempt (1er
             // reintento ~0.4h, 2do 1h, 3ro 2h). El cap de 3 intentos/día SE
             // MANTIENE (alineado con la RPC pending_retry_list, que asume cap 3).
-            const MAX_DAILY_ATTEMPTS = 3;
+            // MAX_DAILY_ATTEMPTS ahora vive en confirmarQueue.ts: la ficha de
+            // llamada muestra "Hoy 2 de 3" y tiene que salir del MISMO numero
+            // que aplica el cooldown, o la pantalla prometeria un intento que
+            // el sistema no da.
 
             // Noresps de HOY agrupados por phone
             const todayNoresp = new Map<string, ResultRow[]>();

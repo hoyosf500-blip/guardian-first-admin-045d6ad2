@@ -198,6 +198,17 @@ export function splitCalientesVsViejos<T extends ConfirmarQueueOrder>(
 // `pending_retry_list` asume cap 3 y hay que quedar alineados (ver `concerns`).
 // —————————————————————————————————————————————————————————————————————————
 
+/**
+ * Tope de llamadas por pedido y por DÍA. Vivía como const suelta dentro de
+ * `buildWorkQueue` y la pantalla no lo sabía: la asesora no tenía forma de ver
+ * cuántos intentos le quedaban a un cliente hoy. Se exporta para que el
+ * contador "Hoy 2 de 3" y el cooldown salgan del MISMO número — si mañana el
+ * dueño lo sube a 4, se cambia acá y las dos cosas se enteran.
+ *
+ * NO subirlo sin mirar la RPC `pending_retry_list`, que asume cap 3.
+ */
+export const MAX_DAILY_ATTEMPTS = 3;
+
 /** Horas de cooldown antes de que un "no contestó" vuelva a la cola.
  *  Plano en 2 h para todos los intentos (llamó 10 → vuelve 12 → 14). El
  *  parámetro se mantiene por compatibilidad de firma con los call-sites. */

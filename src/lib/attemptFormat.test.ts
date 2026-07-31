@@ -4,6 +4,7 @@ import {
   attemptTone,
   attemptClock,
   attemptDaySuffix,
+  intentosDeHoy,
   type AttemptRow,
 } from './attemptFormat';
 
@@ -59,5 +60,47 @@ describe('attemptDaySuffix', () => {
   });
   it('sin fecha → vacío', () => {
     expect(attemptDaySuffix({ result: 'conf' }, TODAY)).toBe('');
+  });
+});
+
+describe('intentosDeHoy — "¿cuántas llamadas le quedan a este cliente hoy?"', () => {
+  const HOY = '2026-07-31';
+
+  it('cuenta solo las de HOY, no las de los 7 días', () => {
+    expect(intentosDeHoy([
+      { result: 'noresp', result_date: HOY },
+      { result: 'noresp', result_date: HOY },
+      { result: 'noresp', result_date: '2026-07-30' },
+      { result: 'conf', result_date: '2026-07-29' },
+    ], HOY)).toBe(2);
+  });
+
+  it('las filas de auditoría NO gastan intento', () => {
+    // Editar el pedido o cambiarle la transportadora no es haber llamado: si
+    // contaran, la pantalla diría "3 de 3" y la asesora dejaría de llamar a un
+    // cliente al que nadie marcó.
+    expect(intentosDeHoy([
+      { result: 'edicion_orden', result_date: HOY },
+      { result: 'cambio_transportadora', result_date: HOY },
+      { result: 'noresp', result_date: HOY },
+    ], HOY)).toBe(1);
+  });
+
+  it('usa created_at cuando no hay result_date', () => {
+    expect(intentosDeHoy([{ result: 'conf', created_at: '2026-07-31T14:00:00Z' }], HOY)).toBe(1);
+  });
+
+  it('sin intentos devuelve 0', () => {
+    expect(intentosDeHoy([], HOY)).toBe(0);
+    expect(intentosDeHoy(null, HOY)).toBe(0);
+    expect(intentosDeHoy(undefined, HOY)).toBe(0);
+  });
+
+  it('cuenta conf y canc además de noresp (todos gastan llamada)', () => {
+    expect(intentosDeHoy([
+      { result: 'noresp', result_date: HOY },
+      { result: 'canc', result_date: HOY },
+      { result: 'conf', result_date: HOY },
+    ], HOY)).toBe(3);
   });
 });

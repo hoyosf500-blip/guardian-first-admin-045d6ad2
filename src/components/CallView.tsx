@@ -21,6 +21,7 @@ import { ProductoTile } from '@/components/ProductoTile';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import AttemptHistory from '@/components/confirmar/AttemptHistory';
+import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import OrderLabels from '@/components/confirmar/OrderLabels';
 import { useOrderAttempts } from '@/hooks/useOrderAttempts';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
@@ -1014,7 +1015,7 @@ export default function CallView({ items, alerts }: Props) {
             <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-success" aria-hidden="true" />
             <RotateCcw size={14} className="text-success" />
             <span className="text-[11px] font-semibold text-success">
-              Luz verde ✓ — ya pasaron las 2h, volvé a llamar (intento {Number(o.retryCount) + 1}/3)
+              Luz verde ✓ — ya pasaron las 2h, volvé a llamar (intento {Number(o.retryCount) + 1}/{MAX_DAILY_ATTEMPTS})
             </span>
           </div>
         )}
