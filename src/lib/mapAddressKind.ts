@@ -1,7 +1,18 @@
 // src/lib/mapAddressKind.ts
 const PICKUP_PATTERNS = [
   /oficina[\s_-]*(inter[\s-]?rapidisimo|envia|coordinadora|tcc|domina|veloces|servientrega)/i,
-  /\bsucursal\b/i,
+  // "sucursal" PELADO no alcanza: en direcciones reales aparece como simple
+  // referencia ("junto a la sucursal del Banco Pichincha, casa 3") y eso es un
+  // domicilio. Marcarlo como retiro no es cosmético — CallView PERSISTE la
+  // decisión, así que el pedido queda rotulado "reclama en oficina" para
+  // siempre. Mismo criterio que ya se aplica a "centro comercial" más abajo:
+  // cuenta si abre la dirección, si viene con una transportadora, o junto a una
+  // palabra de recogida.
+  /^\s*sucursal\b/i,
+  /\bsucursal\b[^.]{0,30}\b(?:inter[\s-]?rapid|servientrega|envia|coordinadora|tcc|domina|veloces|gintracom|laar|dropi)\b/i,
+  /\b(?:inter[\s-]?rapid|servientrega|envia|coordinadora|tcc|domina|veloces|gintracom|laar|dropi)\b[^.]{0,30}\bsucursal\b/i,
+  /\b(?:recl(?:amo|ama|amar|amará)|recojo|recoge|retir\w*|oficina)\b[^.]{0,30}\bsucursal\b/i,
+  /\bsucursal\b[^.]{0,30}\b(?:recl(?:amo|ama|amar)|recojo|recoge|retir\w*)\b/i,
   /cliente[\s_-]*retira/i,
   /\bpunto[\s_-]*(dropi|drop)\b/i,
   /retiro[\s_-]*en[\s_-]*oficina/i,

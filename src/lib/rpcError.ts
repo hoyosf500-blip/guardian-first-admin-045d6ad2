@@ -21,12 +21,20 @@ interface RpcErrorLike {
   message?: string | null;
 }
 
-/** true SOLO si el error indica que la función/tabla no existe (PGRST202 /
- *  "could not find the function" / "does not exist" / 404 de PostgREST). */
+/** true SOLO si el error indica que la FUNCIÓN o la TABLA no existen (PGRST202 /
+ *  PGRST205 / 42883 / 42P01 / "could not find the function" / schema cache).
+ *
+ *  Una COLUMNA que no existe (42703) NO entra acá aunque el mensaje también
+ *  termine en "does not exist": eso es drift de esquema —una migración que no se
+ *  aplicó— y es justo el incidente de `orderColumns` que CLAUDE.md documenta.
+ *  Tragarlo como degradación deja la pantalla mostrando el fallback en silencio
+ *  mientras el SELECT real está roto para todos. Tiene que explotar y verse. */
 export function isRpcMissing(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const e = error as RpcErrorLike;
-  if (e.code === 'PGRST202' || e.code === 'PGRST205' || e.code === '42883') return true;
+  if (e.code === '42703') return false;
+  if (e.code === 'PGRST202' || e.code === 'PGRST205' || e.code === '42883' || e.code === '42P01') return true;
   const msg = String(e.message ?? '');
-  return /find the function|does not exist|schema cache|could not find/i.test(msg);
+  if (/column\b.*does not exist/i.test(msg)) return false;
+  return /find the function|schema cache|could not find|(function|relation|table)\b.*does not exist/i.test(msg);
 }

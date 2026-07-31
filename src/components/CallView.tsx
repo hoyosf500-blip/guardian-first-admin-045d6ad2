@@ -223,7 +223,7 @@ export default function CallView({ items, alerts }: Props) {
   // Fase 2a/2b: intentos previos del pedido (una sola query, compartida por el
   // historial de intentos Y el conteo de noresp que alimenta la etiqueta auto
   // "No contesta"). Hook antes del early-return para no violar reglas de hooks.
-  const { attempts } = useOrderAttempts(o?.dbId);
+  const { attempts, loadError: attemptsError } = useOrderAttempts(o?.dbId);
   const norespCount = attempts.filter(a => a.result === 'noresp').length;
 
   // VIP check: query order history for this phone (F4)
@@ -1059,7 +1059,7 @@ export default function CallView({ items, alerts }: Props) {
 
         {/* Fase 2a: historial de intentos por asesor (quién llamó, qué resultó, cuándo).
             Solo se muestra si hay intentos previos → no ensucia pedidos frescos. */}
-        <AttemptHistory attempts={attempts} />
+        <AttemptHistory attempts={attempts} loadError={attemptsError} />
         {vip?.isVip && !o.result && (
           <div className="relative flex items-center justify-between gap-2 mb-3 rounded-2xl bg-success/10 border border-success/25 px-3 py-2 pl-4 shadow-card3d">
             <span className="absolute left-0 top-2 bottom-2 w-1 rounded-full bg-success" aria-hidden="true" />

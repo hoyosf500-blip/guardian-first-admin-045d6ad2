@@ -13,17 +13,27 @@ import type { AttemptRow } from '@/lib/attemptFormat';
 export function useOrderAttempts(orderId?: string | null) {
   const [attempts, setAttempts] = useState<AttemptRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // "No se pudo leer" no es lo mismo que "nadie llamó todavía": con el error
+  // tragado, la ficha decía "sin intentos" y la asesora volvía a llamar a un
+  // cliente que su compañera ya había gestionado hace diez minutos.
+  const [loadError, setLoadError] = useState(false);
 
   const load = useCallback(async () => {
-    if (!orderId) { setAttempts([]); return; }
+    if (!orderId) { setAttempts([]); setLoadError(false); return; }
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('order_results')
       .select('id, result, reason, operator_id, result_time, result_date, created_at')
       .eq('order_id', orderId)
       .order('created_at', { ascending: false })
       .limit(20);
-    setAttempts((data || []) as AttemptRow[]);
+    if (error) {
+      console.warn('[useOrderAttempts] no se pudo leer el historial:', error.message);
+      setLoadError(true);
+    } else {
+      setLoadError(false);
+      setAttempts((data || []) as AttemptRow[]);
+    }
     setLoading(false);
   }, [orderId]);
 
@@ -42,5 +52,5 @@ export function useOrderAttempts(orderId?: string | null) {
     return () => { void supabase.removeChannel(ch); };
   }, [orderId, load]);
 
-  return { attempts, loading, reload: load };
+  return { attempts, loading, loadError, reload: load };
 }

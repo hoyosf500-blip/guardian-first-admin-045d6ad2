@@ -32,13 +32,19 @@ function mockRpc(row: Record<string, number> | null, error: unknown = null) {
   );
 }
 
-/** Mockea el fallback: from().select().eq().gte().lte() */
+/** Mockea el fallback: from().select().eq().gte().lte().order().range()
+ *  El fallback PAGINA (PostgREST corta en 1000 sin avisar), así que la cadena
+ *  sigue con order/range. Como `data` es más corta que la página, el loop del
+ *  hook corta en la primera vuelta. */
 function mockFallbackMovs(data: unknown[]) {
+  const paginado: Record<string, unknown> = {};
+  paginado.order = vi.fn(() => paginado);
+  paginado.range = vi.fn(() => Promise.resolve({ data, error: null }));
   const fromFn = vi.fn(() => ({
     select: vi.fn(() => ({
       eq: vi.fn(() => ({
         gte: vi.fn(() => ({
-          lte: vi.fn(() => Promise.resolve({ data, error: null })),
+          lte: vi.fn(() => paginado),
         })),
       })),
     })),

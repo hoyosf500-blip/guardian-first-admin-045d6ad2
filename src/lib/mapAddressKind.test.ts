@@ -17,6 +17,12 @@ describe('mapAddressKind', () => {
   it('rural por sector', () => expect(mapAddressKind('Sector La Loma')).toBe('rural'));
   it('pickup por oficina inter', () => expect(mapAddressKind('Oficina Interrapidísimo Cali')).toBe('pickup_office'));
   it('pickup por sucursal', () => expect(mapAddressKind('Sucursal Envía centro')).toBe('pickup_office'));
+  it('sucursal como REFERENCIA es domicilio, no retiro', () => {
+    // Direcciones reales de EC/CO usan la sucursal de un banco como punto de
+    // referencia. Marcarlas "reclama en oficina" se PERSISTE en el pedido.
+    expect(mapAddressKind('Av. Amazonas junto a la sucursal del Banco Pichincha, casa 3')).not.toBe('pickup_office');
+    expect(mapAddressKind('Calle 45 # 12-30, frente a la sucursal de Bancolombia')).toBe('urban');
+  });
   it('pickup por cliente retira', () => expect(mapAddressKind('Cliente retira en oficina')).toBe('pickup_office'));
   it('insensible a tildes', () => {
     expect(mapAddressKind('CARRERA 30')).toBe('urban');

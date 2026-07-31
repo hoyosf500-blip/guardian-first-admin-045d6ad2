@@ -26,6 +26,14 @@ describe('isRpcMissing', () => {
     expect(isRpcMissing({ message: 'network timeout' })).toBe(false);
   });
 
+  it('FALSE para una COLUMNA inexistente: es drift de esquema, no degradación', () => {
+    // El incidente de orderColumns: una migración sin aplicar rompe el SELECT de
+    // TODAS las pantallas de pedidos. Si esto se traga como "RPC ausente", la
+    // pantalla pinta el fallback y nadie se entera de que la query está rota.
+    expect(isRpcMissing({ code: '42703', message: 'column orders.suggested_address does not exist' })).toBe(false);
+    expect(isRpcMissing({ message: 'column "gestionados_cohorte" does not exist' })).toBe(false);
+  });
+
   it('FALSE para nullish / no-objeto (no confundir "sin error" con "RPC ausente")', () => {
     expect(isRpcMissing(null)).toBe(false);
     expect(isRpcMissing(undefined)).toBe(false);

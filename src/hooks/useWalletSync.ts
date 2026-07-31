@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useStore } from '@/contexts/StoreContext';
+import { bogotaToday } from '@/lib/utils';
 
 // Sync de billetera Dropi por TIENDA. Invoca `dropi-wallet-sync` con
 // `store_id` (multi-tenant). La edge function valida que el caller sea
@@ -28,14 +29,17 @@ export function useWalletSync() {
       if (!activeStoreId) {
         throw new Error('Sin tienda activa');
       }
-      const today = new Date();
-      const past = new Date();
-      past.setDate(past.getDate() - 30);
+      // Rango por defecto en calendario BOGOTÁ: con toISOString() (UTC) el sync
+      // disparado después de las 7pm pedía hasta "mañana" y desde un día que no
+      // correspondía, así que se perdían los movimientos de la última tarde.
+      const hoy = bogotaToday();
+      const desde = new Date(`${hoy}T00:00:00Z`);
+      desde.setUTCDate(desde.getUTCDate() - 30);
       const b = body ?? {};
       const payload = {
         store_id: activeStoreId,
-        from: b.from ?? past.toISOString().split('T')[0],
-        untill: b.untill ?? today.toISOString().split('T')[0],
+        from: b.from ?? desde.toISOString().slice(0, 10),
+        untill: b.untill ?? hoy,
         ...(b.limit ? { limit: b.limit } : {}),
         ...(b.dryRun ? { dryRun: true } : {}),
       };

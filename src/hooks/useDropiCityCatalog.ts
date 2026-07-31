@@ -21,12 +21,25 @@ export function useDropiCityCatalog(countryCode: string | null | undefined) {
     queryKey: ['dropi-city-catalog', cc],
     staleTime: 60 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('dropi_city_catalog')
-        .select('dept_norm, name')
-        .eq('country_code', cc);
-      if (error) throw error;
-      return groupDropiCatalog(data || []);
+      // Se pagina con orden estable: PostgREST corta en 1000 filas sin avisar y
+      // el catálogo de Dropi las pasa. Sin esto faltaban ciudades AL AZAR (las
+      // que quedaban fuera del corte) y el operador no podía elegir el destino
+      // del pedido — sin ningún mensaje que explicara por qué.
+      const PAGE = 1000;
+      const rows: { dept_norm: string; name: string }[] = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const { data, error } = await supabase
+          .from('dropi_city_catalog')
+          .select('dept_norm, name')
+          .eq('country_code', cc)
+          .order('dept_norm', { ascending: true })
+          .order('name', { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (error) throw error;
+        rows.push(...((data || []) as typeof rows));
+        if (!data || data.length < PAGE) break;
+      }
+      return groupDropiCatalog(rows);
     },
   });
   // El consumidor no debería tener que chequear undefined: ante loading/error

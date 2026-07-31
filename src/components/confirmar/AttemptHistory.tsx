@@ -20,10 +20,21 @@ const TONE_DOT: Record<string, string> = {
  * cada quién ("Roberto · no contestó · 14:30") y no repita trabajo, sin abrir la
  * página de detalle. No se muestra si no hay intentos previos (pedido fresco).
  */
-export default function AttemptHistory({ attempts }: { attempts: AttemptRow[] }) {
+export default function AttemptHistory({ attempts, loadError }: { attempts: AttemptRow[]; loadError?: boolean }) {
   const { nameOf } = useOperatorNames();
   const [expanded, setExpanded] = useState(false);
   const today = useMemo(() => bogotaToday(), []);
+
+  // Ausencia de intentos y fallo de lectura se ven IGUAL desde afuera, pero
+  // significan lo contrario: callar el error deja a la asesora creyendo que
+  // nadie llamó y repitiendo la llamada de su compañera.
+  if (loadError && !attempts.length) {
+    return (
+      <div className="mb-3 rounded-2xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[11px] text-warning" role="status">
+        No se pudo leer el historial de intentos — puede que ya la hayan llamado.
+      </div>
+    );
+  }
 
   if (!attempts.length) return null;
 

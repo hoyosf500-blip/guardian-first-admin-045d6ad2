@@ -161,14 +161,27 @@ export function useGananciaNetaDropi(from: string, to: string) {
       }
 
       // 2. Fallback: select directo (RPC no desplegado aún). Admin OK; socio → 0.
-      const { data: movs, error: selErr } = await supabase
-        .from('dropi_wallet_movements')
-        .select('categoria,monto,tipo')
-        .eq('store_id', storeId as string)
-        .gte('fecha', fromTs)
-        .lte('fecha', toTs);
-      if (selErr) throw selErr;
-      return aggregateMovements(movs || []);
+      //
+      // Se pagina a mano: PostgREST corta en 1000 filas por defecto y NO avisa.
+      // Ecuador acumula miles de movimientos por mes (el backfill de julio dejó
+      // 5.880), así que sin paginar la ganancia salía SUBCONTADA con cara de
+      // dato bueno — el error que menos se nota y más caro sale.
+      const PAGE = 1000;
+      const movs: { categoria: string; monto: number; tipo: string }[] = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const { data: page, error: selErr } = await supabase
+          .from('dropi_wallet_movements')
+          .select('categoria,monto,tipo')
+          .eq('store_id', storeId as string)
+          .gte('fecha', fromTs)
+          .lte('fecha', toTs)
+          .order('id', { ascending: true })
+          .range(offset, offset + PAGE - 1);
+        if (selErr) throw selErr;
+        movs.push(...((page || []) as typeof movs));
+        if (!page || page.length < PAGE) break;
+      }
+      return aggregateMovements(movs);
     },
     staleTime: 60_000,
     // Frescura: el hero "Cómo voy"/Finanzas se quedaba fotografiado al abrir la

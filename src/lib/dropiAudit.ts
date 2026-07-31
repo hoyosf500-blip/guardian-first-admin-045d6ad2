@@ -45,10 +45,17 @@ const ORPHAN_THRESHOLD = 5_000_000;
  *  vez de rotular una muestra como si fuera el total de la tienda. */
 export const GUARDIAN_SCAN_LIMIT = 2000;
 
-/** Estados terminales en Guardian — no necesitan auditarse (no van a cambiar). */
+/** Estados terminales en Guardian — no necesitan auditarse (no van a cambiar).
+ *
+ *  "ARCHIVADO GHOST" va CON ESPACIO: es lo que escribe `dropi-nightly-reconcile`
+ *  para un pedido borrado en Dropi. La variante con guion bajo solo existe en
+ *  mapas viejos de TS; con ella sola, los borrados no se excluían y reaparecían
+ *  en cada auditoría como "está en Guardian y no en Dropi" — divergencias
+ *  permanentes que nunca se pueden resolver. Se listan las dos. */
 const TERMINAL = [
   'PENDIENTE CONFIRMACION', 'ENTREGADO', 'CANCELADO', 'DEVOLUCION',
-  'DEVUELTO', 'ARCHIVADO_GHOST', 'ORDEN INDEMNIZADA', 'RECHAZADO',
+  'DEVUELTO', 'ARCHIVADO GHOST', 'ARCHIVADO_GHOST', 'ORDEN INDEMNIZADA',
+  'RECHAZADO',
 ];
 
 export interface GuardianScan {
