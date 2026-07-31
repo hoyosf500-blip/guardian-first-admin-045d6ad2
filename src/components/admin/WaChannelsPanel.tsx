@@ -53,8 +53,15 @@ export default function WaChannelsPanel() {
   const [instance, setInstance] = useState('');
   const [phone, setPhone] = useState('');
   const [copied, setCopied] = useState(false);
+  // Secreto del webhook de ESTA tienda. No se carga solo: se pide a demanda con
+  // el botón, así no queda en pantalla (ni en una captura) sin que lo pidan.
+  const [secret, setSecret] = useState<string | null>(null);
+  const [secretLoading, setSecretLoading] = useState(false);
 
   const loadChannels = useCallback(async () => {
+    // El secreto es de la tienda anterior: se olvida al cambiar de tienda para
+    // no mostrar el de una bajo el encabezado de otra.
+    setSecret(null);
     if (!activeStoreId || !isManagerOfActive) { setLoading(false); return; }
     setLoading(true);
     const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: ChannelStatus[] | null; error: { message?: string } | null }>)(
@@ -68,11 +75,35 @@ export default function WaChannelsPanel() {
   useEffect(() => { void loadChannels(); }, [loadChannels]);
 
   // Webhook que hay que configurar en el gateway (Evolution/Whapi) para ESTA tienda.
-  // El secreto NO se muestra (es server-side) — va como placeholder a reemplazar.
+  //
+  // El secreto es POR TIENDA (wa_channels.webhook_secret). Antes era uno global
+  // para toda la plataforma, y como hay que entregárselo a cada dueño, el dueño
+  // de una tienda podía POSTear al inbox de otra cambiando el ?store_id=. Hasta
+  // que el dueño genere el suyo, la URL muestra el placeholder del global.
   const supaUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || '';
   const webhookUrl = supaUrl && activeStoreId
-    ? `${supaUrl}/functions/v1/wa-webhook?secret=<WA_WEBHOOK_SECRET>&store_id=${activeStoreId}`
+    ? `${supaUrl}/functions/v1/wa-webhook?store_id=${activeStoreId}`
     : '';
+  const secretMostrado = secret || '<WA_WEBHOOK_SECRET>';
+
+  /** Devuelve el secreto de la tienda, generándolo la primera vez. `rotate`
+   *  emite uno nuevo: INVALIDA la URL vieja hasta reconfigurar el gateway. */
+  async function verSecreto(rotate: boolean) {
+    if (!activeStoreId) return;
+    setSecretLoading(true);
+    type RpcRes = { data: string | null; error: { message: string } | null };
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>)(
+      'ensure_wa_channel_secret',
+      { p_store_id: activeStoreId, p_rotate: rotate },
+    );
+    setSecretLoading(false);
+    if (error) {
+      toast.error('No se pudo obtener el secreto del webhook', { description: error.message });
+      return;
+    }
+    setSecret(data || null);
+    if (rotate) toast.warning('Secreto rotado — hay que actualizar la URL en el gateway o dejarás de recibir mensajes');
+  }
 
   // Evolution y WAHA son gateways "server propio" (URL + sesión/instancia + token).
   // Whapi es manejado (solo token). isServer agrupa los dos primeros para la UI.
@@ -111,6 +142,11 @@ export default function WaChannelsPanel() {
     void navigator.clipboard.writeText(webhookUrl).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 1500);
     });
+  }
+
+  function copySecreto() {
+    if (!secret) return;
+    void navigator.clipboard.writeText(secret).then(() => toast.success('Secreto copiado'));
   }
 
   if (!isManagerOfActive) {
@@ -193,7 +229,49 @@ export default function WaChannelsPanel() {
                 {copied ? <CheckCircle2 size={13} className="text-success" /> : <Copy size={13} />} {copied ? 'Copiado' : 'Copiar'}
               </button>
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">Reemplazá <code>&lt;WA_WEBHOOK_SECRET&gt;</code> por el secreto real (server-side). El <code>store_id</code> ya está puesto para esta tienda.</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              El <code>store_id</code> ya está puesto para esta tienda. El secreto va en el
+              header <code>x-wa-secret</code> — no en la URL, que queda escrita en los registros del servidor.
+            </p>
+
+            {/* Secreto por tienda: a demanda, nunca cargado solo. */}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <code className="flex-1 min-w-[12rem] text-[11px] text-foreground bg-background rounded px-2 py-1.5 border border-border break-all">
+                x-wa-secret: {secretMostrado}
+              </code>
+              {isOwnerOfActive && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void verSecreto(false)}
+                    disabled={secretLoading}
+                    className="h-8 px-2.5 rounded-lg border border-border text-xs flex items-center gap-1.5 hover:bg-background transition-colors shrink-0 disabled:opacity-50"
+                  >
+                    {secretLoading ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />} Ver secreto
+                  </button>
+                  {secret && (
+                    <>
+                      <button type="button" onClick={copySecreto} className="h-8 px-2.5 rounded-lg border border-border text-xs flex items-center gap-1.5 hover:bg-background transition-colors shrink-0">
+                        <Copy size={13} /> Copiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void verSecreto(true)}
+                        disabled={secretLoading}
+                        className="h-8 px-2.5 rounded-lg border border-warning/40 text-xs text-warning flex items-center gap-1.5 hover:bg-warning/10 transition-colors shrink-0 disabled:opacity-50"
+                      >
+                        <RefreshCw size={13} /> Rotar
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Este secreto es solo de <strong>{activeStore?.name}</strong>: con él, el gateway de otra
+              tienda no puede escribir en tu bandeja. Rotarlo invalida la URL vieja hasta que
+              reconfigures el gateway.
+            </p>
           </div>
         )}
 
