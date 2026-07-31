@@ -215,3 +215,98 @@ export const MAX_DAILY_ATTEMPTS = 3;
 export function cooldownHoursForAttempt(_attemptNumber?: number): number {
   return 2;
 }
+
+/** Fila de `order_results` necesaria para el resumen de "sin respuesta". */
+export interface FilaResultado {
+  order_id: string | null;
+  phone: string;
+  result: string;
+  result_date: string | null;
+  created_at: string;
+}
+
+export interface ResumenSinRespuesta {
+  /** Clientes que hoy no contestaron y cuyo pedido sigue abierto. */
+  total: number;
+  /** Ya cumplieron el enfriamiento: se pueden llamar AHORA. */
+  listos: number;
+  /** Esperando que pasen las 2 h. Vuelven solos a la cola. */
+  enfriando: number;
+  /** Usaron los 3 intentos del día: no vuelven hasta mañana. */
+  agotados: number;
+  /** Minutos que faltan para que vuelva el PRÓXIMO. null si no hay ninguno. */
+  proximoEnMinutos: number | null;
+  /** Cuántas llamadas del día quedan sin usar entre todos. Es la plata que se
+   *  pierde si nadie las hace antes de que termine la jornada. */
+  llamadasDisponibles: number;
+}
+
+/**
+ * "No contestaron 36 — ¿y ahora qué?"
+ *
+ * La pantalla mostraba el 36 y nada más, mientras la cola decía "1 por
+ * confirmar". El equipo daba el día por terminado con 35 clientes que todavía
+ * tenían llamadas disponibles, porque estaban ENFRIANDO (esperando las 2 h) y
+ * un pedido enfriando no se ve en ningún lado: no está en la cola ni en ninguna
+ * lista. Desaparecía sin decir cuándo volvía.
+ *
+ * Este resumen responde las tres preguntas de una: a cuántos puedo llamar YA,
+ * cuántos están esperando y cuándo vuelve el primero, y cuántos ya no tienen
+ * más intentos hoy.
+ *
+ * Agrupa por TELÉFONO, no por pedido: así es como el sistema aplica el tope de
+ * 3 (si un cliente tiene dos pedidos, las llamadas son a la misma persona). Es
+ * la misma regla que usa el cooldown en `buildWorkQueue` — si divergieran, este
+ * panel prometería llamadas que la cola nunca va a devolver.
+ *
+ * `ahoraMs` se inyecta para poder testear sin depender del reloj.
+ */
+export function resumenSinRespuestaHoy(
+  filas: FilaResultado[] | null | undefined,
+  hoyLocal: string,
+  ahoraMs: number,
+): ResumenSinRespuesta {
+  const vacio: ResumenSinRespuesta = {
+    total: 0, listos: 0, enfriando: 0, agotados: 0,
+    proximoEnMinutos: null, llamadasDisponibles: 0,
+  };
+  if (!filas || !filas.length) return vacio;
+
+  const deHoy = filas.filter((f) => f.result_date === hoyLocal);
+  // Pedidos que HOY terminaron en confirmado o cancelado: ya no son "sin
+  // respuesta" aunque antes no hubieran contestado.
+  const cerrados = new Set(
+    deHoy.filter((f) => (f.result === 'conf' || f.result === 'canc') && f.order_id)
+      .map((f) => f.order_id as string),
+  );
+
+  const porTelefono = new Map<string, number[]>();
+  for (const f of deHoy) {
+    if (f.result !== 'noresp' || !f.phone) continue;
+    if (f.order_id && cerrados.has(f.order_id)) continue;
+    const t = Date.parse(f.created_at);
+    if (!Number.isFinite(t)) continue;
+    const arr = porTelefono.get(f.phone);
+    if (arr) arr.push(t); else porTelefono.set(f.phone, [t]);
+  }
+  if (!porTelefono.size) return vacio;
+
+  const cooldownMs = cooldownHoursForAttempt() * 3600_000;
+  const out: ResumenSinRespuesta = { ...vacio, total: porTelefono.size };
+  let proximoMs = Infinity;
+
+  for (const intentos of porTelefono.values()) {
+    if (intentos.length >= MAX_DAILY_ATTEMPTS) { out.agotados += 1; continue; }
+    out.llamadasDisponibles += MAX_DAILY_ATTEMPTS - intentos.length;
+    const ultimo = Math.max(...intentos);
+    const falta = ultimo + cooldownMs - ahoraMs;
+    if (falta <= 0) {
+      out.listos += 1;
+    } else {
+      out.enfriando += 1;
+      if (falta < proximoMs) proximoMs = falta;
+    }
+  }
+  out.proximoEnMinutos = Number.isFinite(proximoMs) ? Math.ceil(proximoMs / 60_000) : null;
+  return out;
+}

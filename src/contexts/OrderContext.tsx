@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { useStore } from './StoreContext';
 import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
-import { compareConfirmar, cooldownHoursForAttempt, MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
+import { compareConfirmar, cooldownHoursForAttempt, MAX_DAILY_ATTEMPTS, resumenSinRespuestaHoy, type ResumenSinRespuesta } from '@/lib/confirmarQueue';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -96,6 +96,12 @@ interface OrderState {
    *  del equipo. Lo ven todos: el dueno para no preguntar, y el equipo para
    *  saber como va la jornada sin entrar a Productividad. */
   resumenAsesorasHoy: ResumenAsesora[];
+  /** Los que hoy NO contestaron: a cuantos se puede llamar YA, cuantos estan
+   *  enfriando y cuando vuelve el proximo, y cuantos agotaron sus 3 intentos.
+   *  Un pedido enfriando no aparece en NINGUNA lista: sin esto el equipo daba
+   *  el dia por cerrado con decenas de llamadas sin usar. null = todavia no se
+   *  leyo (no es "no hay"). */
+  sinRespuestaHoy: ResumenSinRespuesta | null;
   /** ¿Falló la ÚLTIMA lectura de los sets de cobertura del día?
    *
    *  Un Set vacío es AMBIGUO: puede significar "la operadora todavía no gestionó
@@ -150,6 +156,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [gestionCargada, setGestionCargada] = useState(false);
   const [gestionSegPorTelefono, setGestionSegPorTelefono] = useState<Map<string, GestionDelPedido>>(new Map());
   const [resumenAsesorasHoy, setResumenAsesorasHoy] = useState<ResumenAsesora[]>([]);
+  const [sinRespuestaHoy, setSinRespuestaHoy] = useState<ResumenSinRespuesta | null>(null);
 
   // Al CAMBIAR DE TIENDA hay que vaciar estas tres poblaciones antes de que
   // llegue la lectura de la tienda nueva. Sin esto quedaban colgadas las de la
@@ -162,6 +169,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setGestionPorPedido(new Map());
     setGestionSegPorTelefono(new Map());
     setResumenAsesorasHoy([]);
+    setSinRespuestaHoy(null);
     setGestionCargada(false);
   }, [activeStoreId]);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
@@ -865,6 +873,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // repetiria 20 llamadas. Solo despues de UNA lectura buena se puede
             // afirmar que el vacio es real.
             setGestionCargada(true);
+            // Mismas filas, cuarta poblacion: el estado de los "no contesto".
+            setSinRespuestaHoy(resumenSinRespuestaHoy(
+              data as Parameters<typeof resumenSinRespuestaHoy>[0], todayLocal, Date.now()));
             // Mismas filas, tercera poblacion: como va cada asesora hoy.
             // Comparacion por contenido para no re-renderizar la cola entera
             // cuando los numeros no se movieron.
@@ -1343,7 +1354,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy, sinRespuestaHoy,
     coverageError, coverageConfirmError, coverageSegError,
   }), [
     allOrders, workQueue,
@@ -1353,7 +1364,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     counter, myCounter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,
-    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy,
+    myConfirmTouchedToday, mySegTouchedToday, gestionPorPedido, gestionCargada, gestionSegPorTelefono, resumenAsesorasHoy, sinRespuestaHoy,
     coverageError, coverageConfirmError, coverageSegError,
   ]);
 

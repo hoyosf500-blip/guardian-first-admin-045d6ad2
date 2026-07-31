@@ -8,6 +8,7 @@ import {
   isFreshToday,
   hasDueReminder,
   isRetryReady,
+  resumenSinRespuestaHoy,
   DIAS_POR_CANCELAR,
   type ConfirmarQueueOrder,
 } from './confirmarQueue';
@@ -209,5 +210,73 @@ describe('helpers puros', () => {
 
   it('DIAS_POR_CANCELAR = 4', () => {
     expect(DIAS_POR_CANCELAR).toBe(4);
+  });
+});
+
+describe('resumenSinRespuestaHoy — los que "no aparecen" después de no contestar', () => {
+  const HOY = '2026-07-31';
+  const AHORA = Date.parse('2026-07-31T21:00:00Z'); // 16:00 Bogotá
+  const hace = (horas: number) => new Date(AHORA - horas * 3600000).toISOString();
+  const f = (phone: string, horasAtras: number, result = 'noresp', order_id = `o-${phone}`) =>
+    ({ order_id, phone, result, result_date: HOY, created_at: hace(horasAtras) });
+
+  it('sin filas devuelve todo en cero', () => {
+    expect(resumenSinRespuestaHoy([], HOY, AHORA).total).toBe(0);
+    expect(resumenSinRespuestaHoy(null, HOY, AHORA).total).toBe(0);
+  });
+
+  it('separa listos de los que siguen enfriando', () => {
+    const r = resumenSinRespuestaHoy([
+      f('111', 3),   // hace 3h → ya cumplió las 2h
+      f('222', 0.5), // hace 30 min → enfriando
+    ], HOY, AHORA);
+    expect(r).toMatchObject({ total: 2, listos: 1, enfriando: 1, agotados: 0 });
+  });
+
+  it('dice en cuántos minutos vuelve el PRÓXIMO', () => {
+    // El que llamaron hace 1.5h vuelve en 30 min; el de hace 0.5h en 90.
+    const r = resumenSinRespuestaHoy([f('111', 1.5), f('222', 0.5)], HOY, AHORA);
+    expect(r.proximoEnMinutos).toBe(30);
+  });
+
+  it('con 3 intentos queda AGOTADO y no promete llamadas', () => {
+    const r = resumenSinRespuestaHoy([f('111', 6), f('111', 4), f('111', 2)], HOY, AHORA);
+    expect(r).toMatchObject({ total: 1, agotados: 1, listos: 0, enfriando: 0, llamadasDisponibles: 0 });
+  });
+
+  it('cuenta las llamadas que quedan sin usar (1 intento → 2 disponibles)', () => {
+    const r = resumenSinRespuestaHoy([f('111', 3), f('222', 3), f('222', 1)], HOY, AHORA);
+    expect(r.llamadasDisponibles).toBe(3); // 111 le quedan 2, 222 le queda 1
+  });
+
+  it('agrupa por TELÉFONO igual que el tope del sistema, no por pedido', () => {
+    // Mismo cliente con dos pedidos: son llamadas a la MISMA persona. Contarlas
+    // por pedido diría "le quedan 2 a cada uno" y el sistema no las va a dar.
+    const r = resumenSinRespuestaHoy([
+      { order_id: 'A', phone: '111', result: 'noresp', result_date: HOY, created_at: hace(3) },
+      { order_id: 'B', phone: '111', result: 'noresp', result_date: HOY, created_at: hace(2) },
+    ], HOY, AHORA);
+    expect(r.total).toBe(1);
+    expect(r.llamadasDisponibles).toBe(1);
+  });
+
+  it('un pedido que DESPUÉS se confirmó ya no cuenta como sin respuesta', () => {
+    const r = resumenSinRespuestaHoy([
+      f('111', 3), { order_id: 'o-111', phone: '111', result: 'conf', result_date: HOY, created_at: hace(1) },
+    ], HOY, AHORA);
+    expect(r.total).toBe(0);
+  });
+
+  it('ignora los de días anteriores', () => {
+    expect(resumenSinRespuestaHoy([
+      { order_id: 'x', phone: '111', result: 'noresp', result_date: '2026-07-30', created_at: hace(30) },
+    ], HOY, AHORA).total).toBe(0);
+  });
+
+  it('una fecha corrupta no rompe el resumen', () => {
+    const r = resumenSinRespuestaHoy([
+      { order_id: 'x', phone: '111', result: 'noresp', result_date: HOY, created_at: 'no-es-fecha' },
+    ], HOY, AHORA);
+    expect(r.total).toBe(0);
   });
 });

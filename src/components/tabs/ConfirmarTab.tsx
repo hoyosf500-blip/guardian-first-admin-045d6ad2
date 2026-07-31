@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { isLockedByOther } from '@/lib/callQueueNav';
+import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { toast } from 'sonner';
 import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
@@ -62,7 +63,7 @@ const fadeUp = (delay = 0) => ({
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
   const { activeStoreId } = useStore();
-  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, resumenAsesorasHoy, coverageConfirmError, markResult } = useOrders();
+  const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, resumenAsesorasHoy, sinRespuestaHoy, coverageConfirmError, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
   // make them lose their place and filters.
@@ -764,6 +765,50 @@ export default function ConfirmarTab({ profile }: Props) {
                     <StatTile icon={PhoneOff} label="noresp" value={counter.noresp} tone="neutral" />
                     <StatTile icon={ClipboardCheck} label="gestionados" value={total} tone="accent" />
                   </div>
+                  {/* El desglose de los "no contestó". El número solo (36) no
+                      dice nada accionable, y peor: un pedido ENFRIANDO no
+                      aparece en NINGUNA lista, así que el equipo cerraba el día
+                      con decenas de llamadas del día sin usar creyendo que ya
+                      no quedaba nada. Acá se ve a cuántos se puede llamar YA,
+                      cuántos están esperando las 2h (y cuándo vuelve el
+                      primero) y cuántos agotaron sus 3 intentos. */}
+                  {sinRespuestaHoy && sinRespuestaHoy.total > 0 && (
+                    <div className="rounded-2xl border border-border bg-card/40 px-3.5 py-2.5 text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <span className="font-bold text-foreground">
+                        De los {sinRespuestaHoy.total} que no contestaron:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFilter(filter === 'retry' ? 'pending' : 'retry')}
+                        disabled={sinRespuestaHoy.listos === 0}
+                        className="font-bold text-success disabled:opacity-50 disabled:cursor-default hover:underline cursor-pointer"
+                        title={sinRespuestaHoy.listos ? 'Ver los que ya se pueden llamar' : 'Ninguno cumplió todavía las 2 horas'}
+                      >
+                        {sinRespuestaHoy.listos} para llamar ya
+                      </button>
+                      {sinRespuestaHoy.enfriando > 0 && (
+                        <span className="text-warning font-semibold">
+                          {sinRespuestaHoy.enfriando} esperando las 2h
+                          {sinRespuestaHoy.proximoEnMinutos != null && (
+                            <span className="text-muted-foreground font-normal">
+                              {' '}(el próximo en {sinRespuestaHoy.proximoEnMinutos} min)
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {sinRespuestaHoy.agotados > 0 && (
+                        <span className="text-muted-foreground">
+                          {sinRespuestaHoy.agotados} ya usaron sus {MAX_DAILY_ATTEMPTS}
+                        </span>
+                      )}
+                      {sinRespuestaHoy.llamadasDisponibles > 0 && (
+                        <span className="w-full text-muted-foreground">
+                          Quedan <strong className="text-foreground">{sinRespuestaHoy.llamadasDisponibles} llamadas</strong> del día sin usar.
+                          Si nadie las hace hoy, esos clientes se pierden el intento.
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );

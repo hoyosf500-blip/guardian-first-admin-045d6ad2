@@ -5,6 +5,7 @@ import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSyst
 import { CheckCircle2, XCircle, PhoneOff, RotateCcw, UserCog, MessageSquare, Bell, Copy, DollarSign, PhoneOutgoing } from 'lucide-react';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { haceCuanto, etiquetaResultado, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
@@ -166,7 +167,18 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestio
                     {cuando && <span className="flex-shrink-0">{cuando}</span>}
                   <span className="opacity-40 flex-shrink-0">·</span>
                   <span className="font-semibold flex-shrink-0">{queHizo}</span>
-                    {g.intentos > 1 && (
+                    {/* En los que no contestaron interesa el INTENTO, no el
+                      total: "intento 2 de 3" dice de un vistazo cuántas
+                      llamadas le quedan al cliente hoy. Antes había que abrir
+                      el pedido para saberlo. */}
+                  {g.ultimoResult === 'noresp' ? (
+                    <span
+                      className="flex-shrink-0 font-semibold text-warning"
+                      title={`Le queda${MAX_DAILY_ATTEMPTS - g.intentos === 1 ? '' : 'n'} ${Math.max(0, MAX_DAILY_ATTEMPTS - g.intentos)} llamada${MAX_DAILY_ATTEMPTS - g.intentos === 1 ? '' : 's'} hoy`}
+                    >
+                      intento {Math.min(g.intentos, MAX_DAILY_ATTEMPTS)} de {MAX_DAILY_ATTEMPTS}
+                    </span>
+                  ) : g.intentos > 1 && (
                     <span className="flex-shrink-0 opacity-80" title={`${g.intentos} llamadas hoy`}>
                       ({g.intentos} llamadas)
                     </span>
