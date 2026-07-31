@@ -10,7 +10,7 @@ import { TiltCard, StatTile, GaugeRing, CountUp } from '@/components/ui3d';
 import {
   CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
-import { confRateBySample, confRateByCohort, isBelowDailyTarget, CONF_TARGET_PCT, CONF_DIA_TARGET_PCT } from '@/lib/confirmationRate';
+import { confRateBySample, CONF_TARGET_PCT } from '@/lib/confirmationRate';
 import { useActiveStoreId } from '@/contexts/StoreContext';
 import { useShopifyPending } from '@/hooks/useShopifyPending';
 import { ShoppingBag } from 'lucide-react';
@@ -465,9 +465,9 @@ export default function ProductivityDashboard() {
   const teamTasaDiaGauge = Math.min(100, teamTasaDia);
   const heroTone = teamAtendidos === 0
     ? 'brand'
-    : teamTasaDia >= CONF_DIA_TARGET_PCT
+    : teamTasaDia >= CONF_TARGET_PCT
       ? 'success'
-      : teamTasaDia >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger';
+      : teamTasaDia >= CONF_TARGET_PCT - 5 ? 'warning' : 'danger';
 
   return (
     <div className="space-y-5">
@@ -558,12 +558,12 @@ export default function ProductivityDashboard() {
               >
                 <div className="flex items-center justify-between gap-3 tilt-layer-2">
                   <div className="hud-label" title="Confirmados ÷ lo que el equipo TRABAJÓ (gestionados = contestaron + no contestaron), incluidos pedidos viejos que estaban pendientes. OJO: NO es la 'Confirmación del día' oficial del Dashboard (esa se mide sobre lo que ENTRÓ, meta 85%) — esta mide el rendimiento del TRABAJO hecho.">
-                    Confirmación del trabajo
+                    Confirmación del día
                   </div>
                 </div>
 
                 <div className="flex justify-center py-4 tilt-layer-3">
-                  <GaugeRing value={teamTasaDiaGauge} label="del trabajo" size={190} tone={heroTone} />
+                  <GaugeRing value={teamTasaDiaGauge} label="del día" size={190} tone={heroTone} />
                 </div>
 
                 <div className="tilt-layer-1">
@@ -581,9 +581,9 @@ export default function ProductivityDashboard() {
                     />
                     <span
                       className="absolute top-0 bottom-0 w-px bg-foreground/40"
-                      style={{ left: `${CONF_DIA_TARGET_PCT}%` }}
+                      style={{ left: `${CONF_TARGET_PCT}%` }}
                       aria-hidden="true"
-                      title={`Meta del día ~${CONF_DIA_TARGET_PCT}%`}
+                      title={`Meta del día ~${CONF_TARGET_PCT}%`}
                     />
                   </div>
                 </div>
@@ -628,11 +628,10 @@ export default function ProductivityDashboard() {
               </div>
 
               <p className="md:col-span-12 -mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                <strong className="text-foreground/80">Confirmación del trabajo</strong> = de lo que el equipo
-                trabajó hoy ({teamAtendidos}), cuánto confirmó ({teamConf}) = {teamTasaDiaGauge}%. Incluye pedidos de
-                días anteriores que estaban pendientes, por eso puede confirmar más de lo que entró hoy.
-                La <strong className="text-foreground/80">Confirmación del día</strong> oficial (de los que ENTRARON,
-                meta 85%) está en el Dashboard.
+                <strong className="text-foreground/80">Confirmación del día</strong> = de lo que el equipo
+                gestionó hoy ({teamAtendidos}), cuánto confirmó ({teamConf}) = {teamTasaDiaGauge}% · meta {CONF_TARGET_PCT}%.
+                Cuenta TODO lo confirmado hoy, sea el pedido nuevo o viejo (una sola matemática — la misma del
+                Dashboard y del cierre del equipo). Para subirla, la palanca es recuperar los "no contestó".
               </p>
             </motion.div>
           )}
@@ -1120,7 +1119,7 @@ export default function ProductivityDashboard() {
             icon={CheckCircle2}
             note={
               entrantes > 0
-                ? `Trabajó ${teamAtendidos} → confirmó ${teamConf} = ${teamTasaDiaGauge}% del trabajo · entraron ${entrantes} hoy`
+                ? `Trabajó ${teamAtendidos} → confirmó ${teamConf} = ${teamTasaDiaGauge}% del día · entraron ${entrantes} hoy`
                 : 'Resultados del flujo de confirmación de pedidos'
             }
           >
@@ -1137,7 +1136,7 @@ export default function ProductivityDashboard() {
               <span><strong className="text-foreground">Sin cerrar aún</strong>: sigue sin contestar — todavía nadie lo cerró</span>
               <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que trabajó</span>
               <span><strong className="text-foreground">Contactó</strong>: de los que ENTRARON hoy, a cuántos les habló (faltan = por contactar)</span>
-              <span><strong className="text-foreground">Confirmó</strong>: de los pedidos que TRABAJÓ, cuántos confirmó (la Confirmación del día oficial — de los que ENTRARON, meta 85% — está en el Dashboard)</span>
+              <span><strong className="text-foreground">Confirmó</strong>: de los pedidos que gestionó, cuántos confirmó (nuevos y viejos por igual) · meta {CONF_TARGET_PCT}%</span>
               <span><strong className="text-foreground">Clientes por hora</strong>: clientes reales atendidos por cada hora trabajada (producción)</span>
               <span><strong className="text-foreground">Llamadas por hora</strong>: cuántas veces marcó por cada hora, incl. las que no contestaron (esfuerzo) · 🔴 menos de {MIN_INTENTOS_POR_HORA}</span>
               <span className="opacity-70">gris "· en curso" = el día todavía no termina, número provisional</span>
@@ -1295,7 +1294,7 @@ export default function ProductivityDashboard() {
                           ? `Confirmó ${r.confirmados} de ${atendidos} que trabajó = ${tasaDia}%. Efectividad de cierre: ${ef.tasa}% (${r.confirmados} de ${ef.resueltos} que contestaron).`
                           : `Confirmó ${r.confirmados} de ${atendidos} que trabajó.`;
                         if (tasaDia == null) return <span className="font-mono tabular-nums text-xs text-muted-foreground" title="Sin pedidos trabajados aún.">—</span>;
-                        return <span title={tip}><RateBar value={tasaDia} target={CONF_DIA_TARGET_PCT} /></span>;
+                        return <span title={tip}><RateBar value={tasaDia} target={CONF_TARGET_PCT} /></span>;
                       })()}</td>
                       {/* Clientes REALES por hora (conf+canc ÷ horas) — producción,
                           informativo (sin rojo: un día malo de no-contesta no es su culpa). */}
@@ -1369,8 +1368,8 @@ export default function ProductivityDashboard() {
                     // igual que el aro y las filas. Antes era ÷entrantes (cohorte).
                     const tasaDiaTeam = totAt > 0 ? Math.min(100, Math.round((totConf / totAt) * 100)) : null;
                     const diaToneTeam = tasaDiaTeam == null ? 'muted-foreground'
-                      : tasaDiaTeam >= CONF_DIA_TARGET_PCT ? 'success'
-                      : tasaDiaTeam >= CONF_DIA_TARGET_PCT - 5 ? 'warning' : 'danger';
+                      : tasaDiaTeam >= CONF_TARGET_PCT ? 'success'
+                      : tasaDiaTeam >= CONF_TARGET_PCT - 5 ? 'warning' : 'danger';
                     return (
                       <tr className="border-t-2 border-border bg-muted/30 font-bold">
                         <td></td>
@@ -1402,7 +1401,7 @@ export default function ProductivityDashboard() {
                             : (
                               <span
                                 className={`font-mono tabular-nums text-sm text-${diaToneTeam}`}
-                                title={`${totConf} confirmados de los ${totAt} que el equipo trabajó hoy = ${tasaDiaTeam}%. Meta del día ~${CONF_DIA_TARGET_PCT}%.`}
+                                title={`${totConf} confirmados de los ${totAt} que el equipo trabajó hoy = ${tasaDiaTeam}%. Meta del día ~${CONF_TARGET_PCT}%.`}
                               >
                                 {tasaDiaTeam}%
                               </span>
