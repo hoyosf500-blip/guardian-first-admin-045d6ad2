@@ -750,7 +750,11 @@ export default function DashboardTab() {
   // Tope 100%: si el equipo confirmó pedidos viejos además de los de hoy, el
   // cohorte no debería pasar de 100, pero el aro nunca pinta un imposible.
   const heroTasa = usarDelDia ? Math.min(100, cdEquipo!.tasaDia as number) : tasa;
-  const heroLabel = usarDelDia ? (period === 1 ? 'del día' : 'del período') : 'confirmación';
+  // Cuando NO es "del día" (modo Yo, o Equipo sin inflow) el aro muestra la tasa
+  // MADURA = ACEPTACIÓN (de los que contestaron, cuántos aceptaron). Se llama
+  // "aceptación", NO "confirmación": el dueño decidió que "confirmación" es UNA
+  // sola cosa en todo el CRM (la del día). Así 97% no vuelve a competir con 69%.
+  const heroLabel = usarDelDia ? (period === 1 ? 'del día' : 'del período') : 'aceptación';
   const heroMeta = usarDelDia ? CONF_DIA_TARGET_PCT : CONF_TARGET_PCT;
 
   // Meta según qué métrica muestra el aro: del día ~55%, madura 85%. Verde en
@@ -998,9 +1002,9 @@ export default function DashboardTab() {
                   className="hud-label"
                   title={verEquipo
                     ? 'Confirmación del día del equipo: de los pedidos que ENTRARON en la ventana, cuántos ya quedaron confirmados. Es el MISMO número que ves en /admin → Productividad. (No confundir con la "aceptación" — de los que contestaron, cuántos dijeron sí —, que suele ser mucho más alta y es otra cosa.)'
-                    : 'Tasa personal: tus confirmados / los que tuvieron respuesta hoy (conf+canc, SIN noresp). Es la confirmación madura estándar COD. NO sobre el inflow total del día — eso lo ves en /admin → Productividad.'}
+                    : 'Aceptación personal: de los clientes que te CONTESTARON hoy, cuántos aceptaron el pedido (conf ÷ conf+canc, sin los que no contestaron). Es alta casi siempre. El rendimiento del día (de lo que entró, cuánto se confirmó) lo ves en /admin → Productividad.'}
                 >
-                  {verEquipo ? (usarDelDia ? 'Confirmación del día' : 'Tasa del equipo') : 'Tasa personal'}
+                  {verEquipo ? (usarDelDia ? 'Confirmación del día' : 'Aceptación del equipo') : 'Aceptación personal'}
                 </div>
                 {/* Sin resueltos HOY no hay `current` que comparar: el delta
                     sería tan inventado como el que producía el `?? 0` de ayer. */}
@@ -1361,7 +1365,7 @@ export default function DashboardTab() {
                         <th className="px-3 py-2.5 text-center hud-label font-normal">Confirmó</th>
                         <th className="px-3 py-2.5 text-center hud-label font-normal">Canceló</th>
                         <th className="px-3 py-2.5 text-center hud-label font-normal">No respondió</th>
-                        <th className="px-3 py-2.5 text-center hud-label font-normal" title="Confirmados sobre lo que tuvo respuesta (confirmados + cancelados). No entra el «no respondió»: nadie decidió nada ahí.">Tasa</th>
+                        <th className="px-3 py-2.5 text-center hud-label font-normal" title="Aceptación: de los que CONTESTARON (confirmados + cancelados), cuántos aceptaron. NO entra el «no respondió». Suele ser alta. El rendimiento del día — de lo que ENTRÓ, cuánto se confirmó — está en /admin → Productividad.">Aceptación</th>
                         <th className="px-3 py-2.5 text-center hud-label font-normal" title="Novedades de transportadora que resolvió en el período.">Novedades</th>
                         <th className="px-3 py-2.5 text-center hud-label font-normal" title="Acciones registradas en Seguimiento (contacto con el cliente sobre pedidos ya despachados).">Seguimiento</th>
                       </tr>
