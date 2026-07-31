@@ -39,3 +39,10 @@ supabase/.temp/
 
 # Script de prueba sandbox Dropi (tiene credenciales — NO subir)
 scripts/dropi-sandbox-test.mjs
+
+# Volcados del DOM de pantallas del CRM: /admin muestra los inputs de
+# credenciales con su VALOR, así que un snapshot de esa página lleva dentro la
+# integration-key permanente de Dropi. Pasó: page-admin-snapshot.yml estuvo en
+# origin/main desde b93ddc5 (18-jul) con la clave de Ecuador en claro.
+*-snapshot.yml
+*-snapshot.yaml
