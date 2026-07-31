@@ -265,6 +265,33 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestio
                   </span>
                 );
               })()}
+              {/* ETIQUETA DE UN VISTAZO — va en el grupo de badges de la derecha,
+                  que es la zona que la asesora ya recorre con la vista al bajar
+                  por la lista. El renglón de abajo tiene el detalle (qué dijo el
+                  cliente); esto responde de un golpe "¿ya la llamaron y cómo
+                  salió?". El color ES el resultado: verde confirmó, rojo canceló,
+                  ámbar no contestó. Nunca color solo — el nombre siempre está. */}
+              {(() => {
+                const g = o.dbId ? gestionEquipo?.get(o.dbId) : undefined;
+                if (!g) return null;
+                const quien = nameOf(g.ultimoPor);
+                const piel = g.ultimoResult === 'conf'
+                  ? 'bg-success/15 text-success border-success/35'
+                  : g.ultimoResult === 'canc'
+                    ? 'bg-danger/15 text-danger border-danger/35'
+                    : 'bg-warning/15 text-warning border-warning/35';
+                return (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-md font-bold border inline-flex items-center gap-1 flex-shrink-0 max-w-[130px] ${piel}`}
+                    title={`${quien} · ${etiquetaResultado(g.ultimoResult)} · ${haceCuanto(g.ultimoAt) || 'hoy'}`}
+                    aria-label={`Ya gestionado por ${quien}: ${etiquetaResultado(g.ultimoResult)}, ${haceCuanto(g.ultimoAt)}`}
+                  >
+                    <PhoneOutgoing size={9} aria-hidden="true" className="flex-shrink-0" />
+                    <span className="truncate">{quien}</span>
+                    <span className="opacity-75 flex-shrink-0 font-semibold">{haceCuanto(g.ultimoAt)}</span>
+                  </span>
+                );
+              })()}
               {/* Retry badge */}
               {o.retryCount && !o.result && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold font-mono tabular-nums bg-attention/15 text-attention border border-attention/30 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Reintento ${o.retryCount} de 3`}>

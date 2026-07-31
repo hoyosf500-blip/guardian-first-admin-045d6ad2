@@ -306,6 +306,32 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         )}
       </div>
 
+      {/* ETIQUETA DE UN VISTAZO. Va ARRIBA, antes del nombre, porque la pregunta
+          "¿esta ya la trabajó alguien?" se responde recorriendo la columna con
+          la vista — no leyendo el pie de cada tarjeta. El pie (el cartel verde)
+          sigue estando y da el detalle; esto es la señal.
+          Verde = alguien ya la trabajó hoy. La ausencia de etiqueta = nadie. */}
+      {gEquipo && (() => {
+        // Verde solo si SE HABLÓ con el cliente. "No contestó" y "Volver a
+        // llamar" en verde dirían "resuelto" cuando el pedido sigue abierto —
+        // la asesora lo saltaría creyendo que ya está.
+        const seHablo = !/no contest|volver a llamar/i.test(gEquipo.ultimoResult);
+        return (
+          <div
+            className={cn(
+              'mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border',
+              seHablo
+                ? 'bg-success/15 text-success border-success/35'
+                : 'bg-warning/15 text-warning border-warning/35',
+            )}
+            title={`${nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Una asesora'} · ${gEquipo.ultimoResult} · ${haceCuanto(gEquipo.ultimoAt) || 'hoy'}`}
+          >
+            <CheckCircle2 size={10} aria-hidden="true" className="shrink-0" />
+            <span className="truncate">{nombreDe ? nombreDe(gEquipo.ultimoPor) : 'Asesora'}</span>
+            <span className="opacity-70 shrink-0 font-semibold">{haceCuanto(gEquipo.ultimoAt)}</span>
+          </div>
+        );
+      })()}
 
       {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
           quién llama, así que sube de tamaño y peso. El externalId baja a
