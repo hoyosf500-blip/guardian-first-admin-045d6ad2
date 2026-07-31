@@ -146,6 +146,11 @@ export default function DashboardTab() {
     id: string; nombre: string;
     conf: number; canc: number; noresp: number;
     novedades: number; segAcciones: number;
+    // Para que el aro "Confirmación del día" del Dashboard dé EXACTAMENTE igual
+    // que el de Productividad: los dos deben salir de esta misma RPC.
+    // confCohorte = confirmados del cohorte de hoy; entrantes = inflow del período
+    // (mismo valor en todas las filas, se lee de la primera).
+    confCohorte: number; entrantes: number;
   }
   const rangoEquipo: 'today' | '7d' | '30d' = period >= 30 ? '30d' : period === 1 ? 'today' : '7d';
   const diasRangoEquipo = rangoEquipo === '30d' ? 30 : rangoEquipo === 'today' ? 1 : 7;
@@ -180,6 +185,10 @@ export default function DashboardTab() {
           noresp: Number(f.noresp) || 0,
           novedades: Number(f.novedades_resueltas) || 0,
           segAcciones: Number(f.seg_acciones) || 0,
+          // confirmados_cohorte puede venir undefined si la RPC desplegada es vieja
+          // → cae a confirmados crudo (mismo fallback que Productividad).
+          confCohorte: Number(f.confirmados_cohorte ?? f.confirmados) || 0,
+          entrantes: Number(f.total_entrantes) || 0,
         })).sort((a, b) => b.conf - a.conf));
         setPorOperadoraEstado('ok');
       });
@@ -745,11 +754,34 @@ export default function DashboardTab() {
   // mismo "hoy" — el dueño lo reportó como confuso. La madura queda explicada
   // en el tooltip. En modo YO no hay `entrantes` (la RPC de inflow es de
   // managers) → se mantiene la tasa madura personal.
-  const cdEquipo = verEquipo ? confRateByCohort(periodo.conf, periodo.canc, periodo.entrantes) : null;
-  const usarDelDia = verEquipo && periodo.entrantes > 0 && cdEquipo?.tasaDia != null;
+  // Números "del día" del EQUIPO desde la MISMA fuente que Productividad
+  // (operator_productivity_stats vía porOperadora), para que el aro y las
+  // tarjetas del Dashboard den EXACTAMENTE lo mismo que /admin → Productividad.
+  // Antes salían de la serie diaria (admin_daily_reports_range), que cuenta otra
+  // población (incluye pedidos que entraron ya despachados) → Dashboard 65% vs
+  // Productividad 60% para el mismo hoy. Fallback a la serie si el desglose por
+  // operadora no cargó (p.ej. un viewer sin permiso de manager).
+  const prodEntrantes = porOperadora[0]?.entrantes ?? 0;
+  const prodConfCohorte = porOperadora.reduce((a, o) => a + o.confCohorte, 0);
+  const prodCanc = porOperadora.reduce((a, o) => a + o.canc, 0);
+  const prodNoresp = porOperadora.reduce((a, o) => a + o.noresp, 0);
+  // period !== 15: operator_productivity_stats no tiene ventana de 15 días (cae a
+  // 7d, ver rangoEquipo). En 15d usamos la serie para no mostrar 7 días rotulados
+  // como 15. En Hoy/7d/30d el rango coincide y damos igual que Productividad.
+  const usarProd = verEquipo && porOperadoraEstado === 'ok' && prodEntrantes > 0 && period !== 15;
+  const cdEntrantes = usarProd ? prodEntrantes : periodo.entrantes;
+  const cdConf = usarProd ? prodConfCohorte : periodo.conf;
+  const cdCanc = usarProd ? prodCanc : periodo.canc;
+  const cdEquipo = verEquipo ? confRateByCohort(cdConf, cdCanc, cdEntrantes) : null;
+  const usarDelDia = verEquipo && cdEntrantes > 0 && cdEquipo?.tasaDia != null;
   // Tope 100%: si el equipo confirmó pedidos viejos además de los de hoy, el
   // cohorte no debería pasar de 100, pero el aro nunca pinta un imposible.
   const heroTasa = usarDelDia ? Math.min(100, cdEquipo!.tasaDia as number) : tasa;
+  // Valores de las tarjetas del embudo en modo Equipo: mismos que Productividad.
+  const tileConf = usarProd ? prodConfCohorte : periodo.conf;
+  const tileCanc = usarProd ? prodCanc : periodo.canc;
+  const tileNoresp = usarProd ? prodNoresp : periodo.noresp;
+  const tileEntraron = usarProd ? prodEntrantes : periodo.entrantes;
   // Cuando NO es "del día" (modo Yo, o Equipo sin inflow) el aro muestra la tasa
   // MADURA = ACEPTACIÓN (de los que contestaron, cuántos aceptaron). Se llama
   // "aceptación", NO "confirmación": el dueño decidió que "confirmación" es UNA
@@ -1173,9 +1205,9 @@ export default function DashboardTab() {
               // ventana elegida (no la anterior), así que no hay con qué
               // comparar honestamente. Antes de inventar un delta, no hay chip:
               // la tendencia dentro del período ya la cuenta el sparkline.
-              { icon: CheckCircle2, label: 'Confirmados', value: periodo.conf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'Pedidos que ENTRARON en la ventana elegida y quedaron confirmados. El trabajo del día completo de cada operadora (incluye pedidos viejos) está en su cierre y en Confirmar.' : undefined },
-              { icon: XCircle, label: 'Cancelados', value: periodo.canc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos terminaron cancelados.' : undefined },
-              { icon: PhoneOff, label: 'No respondió', value: periodo.noresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos siguen sin contestar.' : undefined },
+              { icon: CheckCircle2, label: 'Confirmados', value: tileConf, prev: null, tone: 'success' as const, spark: period === 1 ? undefined : sparkData.conf, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos quedaron confirmados. Es el MISMO número que ves en /admin → Productividad. El trabajo del día completo de cada operadora (incluye pedidos viejos) está en su cierre y en Confirmar.' : undefined },
+              { icon: XCircle, label: 'Cancelados', value: tileCanc, prev: null, tone: 'danger' as const, spark: period === 1 ? undefined : sparkData.canc, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos terminaron cancelados.' : undefined },
+              { icon: PhoneOff, label: 'No respondió', value: tileNoresp, prev: null, tone: 'neutral' as const, spark: period === 1 ? undefined : sparkData.noresp, title: verEquipo ? 'De los que ENTRARON en la ventana, cuántos siguen sin contestar.' : undefined },
               // La 4ª tarjeta SIGUE AL SELECTOR en modo Equipo: pedidos que
               // ENTRARON en la ventana (con "Hoy" mostraba 9056 = TODO el
               // histórico de la tienda, y el dueño lo leyó — con razón — como
@@ -1184,7 +1216,7 @@ export default function DashboardTab() {
               // En modo Yo no hay fuente de entrantes (la RPC es de managers):
               // se mantiene el universo cargado, rotulado como siempre.
               ...(verEquipo
-                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: periodo.entrantes, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${statusBreakdown.pendientes} pendientes ahora`, title: 'Pedidos que entraron a la tienda en la ventana elegida (todos menos reemplazados).' }]
+                ? [{ icon: Package, label: period === 1 ? 'Entraron hoy' : `Entraron (${period}d)`, value: tileEntraron, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.entrantes, extra: `${statusBreakdown.pendientes} pendientes ahora`, title: 'Pedidos que ENTRARON y pasaron por la cola de confirmación en la ventana. Mismo denominador que la Confirmación del día de Productividad.' }]
                 : [{ icon: Package, label: totalEsUniverso ? 'Total pedidos' : 'Pedidos cargados', value: totalOrders, prev: null, tone: 'accent' as const, spark: period === 1 ? undefined : sparkData.total, extra: `${statusBreakdown.pendientes} pendientes`, title: undefined as string | undefined }]),
             ].map((k) => (
               <StatTile
