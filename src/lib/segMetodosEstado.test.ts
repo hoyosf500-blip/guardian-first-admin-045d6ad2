@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { metodosParaEstado, metodosRapidosParaEstado, METODOS_DEFAULT } from './segMetodosEstado';
+import { metodosParaEstado, metodosRapidosParaEstado, METODOS_DEFAULT, esContactoEfectivo } from './segMetodosEstado';
 import { SEG_CLOSERS, isSegCloser } from './segDailyReview';
 
 describe('metodosRapidosParaEstado (las 3 que van en la tarjeta del kanban)', () => {
@@ -90,5 +90,35 @@ describe('metodosParaEstado', () => {
       expect(isSegCloser(`SEG: ${m}`), m).toBe(false);
       expect(SEG_CLOSERS as readonly string[]).not.toContain(m);
     }
+  });
+});
+
+describe('esContactoEfectivo — evita que un cliente desaparezca del tablero', () => {
+  it('NO contestar no es contacto: la tarjeta tiene que seguir a la vista', () => {
+    // Bug del 31-jul: un "No contestó" de una asesora bloqueaba la tarjeta para
+    // TODO el equipo y —con "Ocultar gestionados" activado por defecto— la hacía
+    // desaparecer del tablero el resto del día. El cliente que no atendió a la
+    // primera se volvía invisible y nadie lo volvía a llamar.
+    expect(esContactoEfectivo('No contestó')).toBe(false);
+    expect(esContactoEfectivo('Volver a llamar')).toBe(false);
+  });
+
+  it('acepta las variantes reales que hay en la base (sin tilde, mayúsculas)', () => {
+    for (const v of ['No contesto', 'NO CONTESTÓ', 'no contestó', 'VOLVER A LLAMAR']) {
+      expect(esContactoEfectivo(v), v).toBe(false);
+    }
+  });
+
+  it('las gestiones donde SÍ se habló cuentan como atendidas', () => {
+    for (const v of ['Envié la guía', 'Cliente recoge', 'Avisé que va en camino',
+      'Coordinó entrega', 'Reclamé transportadora', 'Llamé', 'WhatsApp']) {
+      expect(esContactoEfectivo(v), v).toBe(true);
+    }
+  });
+
+  it('vacío o nulo NO cuenta como contacto (no bloquea nada)', () => {
+    expect(esContactoEfectivo('')).toBe(false);
+    expect(esContactoEfectivo(null)).toBe(false);
+    expect(esContactoEfectivo(undefined)).toBe(false);
   });
 });

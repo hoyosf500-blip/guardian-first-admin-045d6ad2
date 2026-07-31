@@ -313,7 +313,13 @@ export default function ConfirmarTab({ profile }: Props) {
     // mañana — y se repetía la llamada al mismo cliente. `gestionPorPedido`
     // incluye mis propias llamadas, pero se deja el set personal como respaldo
     // por si el mapa de equipo todavía no cargó.
-    if (onlyUntouched && !coverageConfirmError && o.dbId
+    //
+    // EXCEPCIÓN: un pedido LISTO PARA REINTENTAR nunca se esconde. No contestó,
+    // pasaron las 2h y volvió a la cola justamente para que alguien lo llame de
+    // nuevo; esconderlo por "ya lo llamaron" apaga el sistema de reintentos y
+    // el cliente se queda sin las llamadas que le quedaban.
+    const listoParaReintentar = !!o.retryCount && !o.result;
+    if (onlyUntouched && !coverageConfirmError && o.dbId && !listoParaReintentar
       && (gestionPorPedido.has(o.dbId) || myConfirmTouchedToday.has(o.dbId))) return false;
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;

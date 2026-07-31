@@ -12,6 +12,7 @@ import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import { TiltCard, CountUp, GaugeRing } from '@/components/ui3d';
 import SegBoard from '@/components/seguimiento/SegBoard';
+import { esContactoEfectivo } from '@/lib/segMetodosEstado';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
 import { Button } from '@/components/ui/button';
@@ -293,8 +294,16 @@ export default function SeguimientoTab() {
     // la trabajó una compañera: con "Ocultar gestionados" activo quedaba un
     // montón de tarjetas verdes a la vista que el interruptor prometía
     // esconder. El filtro tiene que usar la misma regla que la tarjeta.
-    return displayData.filter((o) =>
-      !o.phone || !(mySegTouchedToday.has(o.phone) || gestionSegPorTelefono.has(o.phone)));
+    // Del equipo solo esconde lo que fue CONTACTO REAL. Un "No contesto" de una
+    // companera deja la tarjeta a la vista: el pedido sigue necesitando trabajo
+    // y esconderlo lo volvia invisible para todas hasta el dia siguiente.
+    // Lo mio se sigue escondiendo igual que antes (ya lo trabaje).
+    return displayData.filter((o) => {
+      if (!o.phone) return true;
+      if (mySegTouchedToday.has(o.phone)) return false;
+      const g = gestionSegPorTelefono.get(o.phone);
+      return !(g && esContactoEfectivo(g.ultimoResult));
+    });
   }, [displayData, onlyUntouchedSeg, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
 
   // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay

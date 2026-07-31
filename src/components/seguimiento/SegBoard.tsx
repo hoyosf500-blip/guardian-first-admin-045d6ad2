@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
-import { metodosRapidosParaEstado } from '@/lib/segMetodosEstado';
+import { metodosRapidosParaEstado, esContactoEfectivo } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
@@ -212,7 +212,16 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // como pendiente un pedido que otra ya habia trabajado esa manana, y volver a
   // tocar el boton insertaba OTRO touchpoint (la tabla no tiene anti-duplicado)
   // — doble contacto al cliente y metricas de productividad infladas.
-  const yaGestionada = !!gestionada || !!gEquipo || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
+  // Una gestion del EQUIPO da la tarjeta por atendida SOLO si se hablo con el
+  // cliente. Un "No contesto" de una companera NO puede bloquearla: el pedido
+  // sigue necesitando trabajo y otra asesora tiene que poder reintentar.
+  // (Bug del 31-jul: bloqueaba para todas y —con "Ocultar gestionados", que
+  // viene activado— la tarjeta desaparecia del tablero de todo el equipo el
+  // resto del dia. El que no atendio a la primera se volvia invisible.)
+  // La gestion PROPIA sigue bloqueando siempre: acabo de registrarla y volver a
+  // tocar el boton insertaria un touchpoint duplicado.
+  const gEquipoEfectiva = !!gEquipo && esContactoEfectivo(gEquipo.ultimoResult);
+  const yaGestionada = !!gestionada || gEquipoEfectiva || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
 
   // Acciones del tablero: registran el touchpoint (SEG: <acción>) para que el
   // contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca vía
@@ -315,7 +324,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         // Verde solo si SE HABLÓ con el cliente. "No contestó" y "Volver a
         // llamar" en verde dirían "resuelto" cuando el pedido sigue abierto —
         // la asesora lo saltaría creyendo que ya está.
-        const seHablo = !/no contest|volver a llamar/i.test(gEquipo.ultimoResult);
+        const seHablo = esContactoEfectivo(gEquipo.ultimoResult);
         return (
           <div
             className={cn(

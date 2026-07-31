@@ -22,6 +22,31 @@
  */
 import { classifySegEstado, type SegStatusKey } from './segStatus';
 
+/**
+ * ¿Esa gestión significa que SE HABLÓ con el cliente?
+ *
+ * No todas cierran el asunto del día. "No contestó" y "Volver a llamar" son lo
+ * contrario: el pedido sigue necesitando trabajo. La diferencia es la que
+ * decide si una tarjeta se puede dar por atendida para TODO el equipo.
+ *
+ * Existe porque tratarlas igual salía carísimo (bug del 31-jul): un "No
+ * contestó" de Ana a las 9am bloqueaba la tarjeta para todas y —con "Ocultar
+ * gestionados", que viene activado por defecto— la hacía DESAPARECER del
+ * tablero de todo el equipo el resto del día. El cliente que no atendió a la
+ * primera se volvía invisible y nadie lo volvía a llamar.
+ *
+ * Compara sin tildes y sin importar mayúsculas: el texto llega de un
+ * touchpoint viejo o de la botonera nueva, y "No contestó"/"NO CONTESTO" son
+ * el mismo hecho.
+ */
+export function esContactoEfectivo(metodo: string | null | undefined): boolean {
+  if (!metodo) return false;
+  const m = metodo.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+  if (m.includes('NO CONTEST')) return false;
+  if (m.includes('VOLVER A LLAMAR')) return false;
+  return true;
+}
+
 /** Los 4 de siempre — fallback para estados sin juego propio (y compat). */
 export const METODOS_DEFAULT: readonly string[] = [
   'Llamé',
