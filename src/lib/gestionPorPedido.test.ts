@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildGestionPorPedido,
   buildGestionSegPorTelefono,
+  aplicarGestionEnVivo,
   mismaGestion,
   horaDeIntento,
   haceCuanto,
@@ -236,5 +237,50 @@ describe('el motivo — "¿y qué dijo el cliente?"', () => {
     expect(buildGestionPorPedido([fila({ reason: null })], HOY).get('ped-1')!.ultimoMotivo).toBeNull();
     expect(buildGestionPorPedido([fila({ reason: '   ' })], HOY).get('ped-1')!.ultimoMotivo).toBeNull();
     expect(buildGestionPorPedido([fila({})], HOY).get('ped-1')!.ultimoMotivo).toBeNull();
+  });
+});
+
+describe('aplicarGestionEnVivo — la gestión de una compañera entra sin recargar', () => {
+  const vacio = () => new Map<string, import('./gestionPorPedido').GestionDelPedido>();
+
+  it('agrega una gestión nueva', () => {
+    const m = aplicarGestionEnVivo(vacio(), 'ped-1', {
+      at: '2026-07-31T14:00:00Z', por: 'ana', result: 'noresp', motivo: 'no atendió',
+    });
+    expect(m.get('ped-1')).toMatchObject({
+      intentos: 1, ultimoPor: 'ana', ultimoResult: 'noresp', ultimoMotivo: 'no atendió',
+    });
+  });
+
+  it('suma sobre lo que ya había', () => {
+    let m = aplicarGestionEnVivo(vacio(), 'ped-1', { at: '2026-07-31T14:00:00Z', por: 'ana', result: 'noresp' });
+    m = aplicarGestionEnVivo(m, 'ped-1', { at: '2026-07-31T16:00:00Z', por: 'sofia', result: 'conf' });
+    expect(m.get('ped-1')).toMatchObject({ intentos: 2, ultimoPor: 'sofia', ultimoResult: 'conf' });
+  });
+
+  it('LA MISMA fila dos veces NO cuenta doble', () => {
+    // La relectura la trae y el evento de realtime la entrega aparte. Si contara
+    // dos veces, la pantalla diría "2 llamadas" donde hubo una — y la otra
+    // asesora dejaría de llamar a un cliente que todavía tenía intentos.
+    const uno = { at: '2026-07-31T14:00:00Z', por: 'ana', result: 'noresp' };
+    let m = aplicarGestionEnVivo(vacio(), 'ped-1', uno);
+    m = aplicarGestionEnVivo(m, 'ped-1', uno);
+    expect(m.get('ped-1')!.intentos).toBe(1);
+  });
+
+  it('si no cambia nada devuelve EL MISMO mapa (no re-renderiza la cola)', () => {
+    const uno = { at: '2026-07-31T14:00:00Z', por: 'ana', result: 'noresp' };
+    const m = aplicarGestionEnVivo(vacio(), 'ped-1', uno);
+    expect(aplicarGestionEnVivo(m, 'ped-1', uno)).toBe(m);
+  });
+
+  it('una clave vacía no ensucia el mapa', () => {
+    const m = vacio();
+    expect(aplicarGestionEnVivo(m, '', { at: 'x', por: 'ana', result: 'conf' })).toBe(m);
+  });
+
+  it('un motivo en blanco queda en null, no en cadena vacía', () => {
+    const m = aplicarGestionEnVivo(vacio(), 'p', { at: 'x', por: 'a', result: 'conf', motivo: '   ' });
+    expect(m.get('p')!.ultimoMotivo).toBeNull();
   });
 });

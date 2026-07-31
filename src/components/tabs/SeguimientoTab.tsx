@@ -288,8 +288,14 @@ export default function SeguimientoTab() {
     // y el hero avisa que no se pudo leer — la operadora sabe que puede estar
     // viendo pedidos que ya tocó, en vez de creer que el sistema los midió.
     if (coverageSegError) return displayData;
-    return displayData.filter((o) => !o.phone || !mySegTouchedToday.has(o.phone));
-  }, [displayData, onlyUntouchedSeg, mySegTouchedToday, coverageSegError]);
+    // Esconde lo que gestionó CUALQUIERA, no solo yo. Antes miraba nada más
+    // `mySegTouchedToday` mientras la tarjeta YA se pintaba como gestionada si
+    // la trabajó una compañera: con "Ocultar gestionados" activo quedaba un
+    // montón de tarjetas verdes a la vista que el interruptor prometía
+    // esconder. El filtro tiene que usar la misma regla que la tarjeta.
+    return displayData.filter((o) =>
+      !o.phone || !(mySegTouchedToday.has(o.phone) || gestionSegPorTelefono.has(o.phone)));
+  }, [displayData, onlyUntouchedSeg, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
 
   // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay
   // pedidos en el feed pero todos están gestionados). Para mostrar un vacío

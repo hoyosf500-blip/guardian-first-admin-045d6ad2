@@ -171,6 +171,41 @@ export function mismaGestion(
   return true;
 }
 
+/**
+ * Suma UNA gestión recién llegada por realtime al mapa que ya está en pantalla.
+ *
+ * El mapa se reconstruye entero en cada relectura, pero entre relecturas llegan
+ * eventos sueltos (una compañera marcó un pedido) y la pantalla tiene que
+ * moverse en el momento: de eso se trata la vista de equipo.
+ *
+ * IDEMPOTENTE a propósito. La misma fila puede llegar dos veces —la relectura
+ * la trae y el evento la entrega aparte— y sumar sin mirar mostraría
+ * "2 llamadas" donde hubo una. Ese número es justo el que la otra asesora usa
+ * para decidir si vuelve a marcar, así que inflarlo hace que deje de llamar a un
+ * cliente que todavía tenía intentos. `ultimoAt` (el `created_at` de la fila)
+ * identifica el evento.
+ *
+ * Devuelve el MISMO mapa si no hay nada que cambiar, para no re-renderizar.
+ */
+export function aplicarGestionEnVivo(
+  prev: Map<string, GestionDelPedido>,
+  clave: string,
+  gestion: { at: string; por: string | null; result: string; motivo?: string | null },
+): Map<string, GestionDelPedido> {
+  if (!clave) return prev;
+  const previo = prev.get(clave);
+  if (previo && previo.ultimoAt === gestion.at) return prev;
+  const next = new Map(prev);
+  next.set(clave, {
+    intentos: (previo?.intentos ?? 0) + 1,
+    ultimoAt: gestion.at,
+    ultimoPor: gestion.por,
+    ultimoResult: gestion.result,
+    ultimoMotivo: gestion.motivo?.trim() || null,
+  });
+  return next;
+}
+
 /** Fila de `touchpoints` (Seguimiento). No tiene order_id: la clave es el teléfono. */
 export interface FilaToque {
   phone: string;

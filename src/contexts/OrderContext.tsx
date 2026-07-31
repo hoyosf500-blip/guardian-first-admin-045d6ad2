@@ -21,7 +21,7 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 // en ConfirmarTab y CallView (antes hacían select('*')).
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { computeDailyCounter, computeDailyCounterByOperator, type ResumenAsesora } from '@/lib/computeDailyCounter';
-import { buildGestionPorPedido, buildGestionSegPorTelefono, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { buildGestionPorPedido, buildGestionSegPorTelefono, aplicarGestionEnVivo, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
 
 interface Counter { conf: number; canc: number; noresp: number; }
 
@@ -150,6 +150,20 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [gestionCargada, setGestionCargada] = useState(false);
   const [gestionSegPorTelefono, setGestionSegPorTelefono] = useState<Map<string, GestionDelPedido>>(new Map());
   const [resumenAsesorasHoy, setResumenAsesorasHoy] = useState<ResumenAsesora[]>([]);
+
+  // Al CAMBIAR DE TIENDA hay que vaciar estas tres poblaciones antes de que
+  // llegue la lectura de la tienda nueva. Sin esto quedaban colgadas las de la
+  // tienda anterior por unos segundos, y `resumenAsesorasHoy` es el peor caso:
+  // muestra NOMBRES, así que en Colombia se leían las asesoras de Ecuador con
+  // sus números. Mezclar tiendas en pantalla está prohibido en esta operación,
+  // aunque dure un segundo. `gestionCargada` vuelve a false para que mientras
+  // tanto la pantalla no afirme "nadie llamó a estos": no lo sabe todavía.
+  useEffect(() => {
+    setGestionPorPedido(new Map());
+    setGestionSegPorTelefono(new Map());
+    setResumenAsesorasHoy([]);
+    setGestionCargada(false);
+  }, [activeStoreId]);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
   // ¿Se pudo LEER cada set de cobertura? Ver el doc del contrato en OrderState.
   // Booleans separados (no un objeto) a propósito: `ctxValue` está memoizado y un
@@ -488,22 +502,35 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Carga inicial del set de seguimiento (touchpoints SEG:* del día).
     void loadSegCoverage();
 
-    // Realtime: agregamos al set en cada INSERT mío. Filtro server-side por
-    // operator_id (Realtime no soporta ILIKE), filtro de module/action lo
-    // hacemos client-side. Cero queries adicionales — la fila llega completa
-    // en el payload.
+    // Realtime por TIENDA, no por operadora (arreglo 2026-07-31).
+    //
+    // El filtro era `operator_id=eq.<yo>`: solo llegaban MIS inserts. Con eso,
+    // cuando Ana marcaba un pedido, la pantalla de Sofía NO se enteraba —
+    // justo lo contrario de para lo que se hizo la vista de equipo. En
+    // Seguimiento era peor: `gestionSegPorTelefono` solo se recarga en
+    // [user, activeStoreId], así que la gestión de una compañera no aparecía
+    // hasta recargar la página, y las dos podían contactar al mismo cliente.
+    //
+    // Ahora el filtro es por tienda y el handler parte las dos poblaciones:
+    // si la fila es mía actualiza además el set PERSONAL; el mapa de EQUIPO se
+    // actualiza siempre. Sigue sin costar consultas: la fila llega completa en
+    // el payload. (Realtime no soporta ILIKE, así que module/action se siguen
+    // filtrando en el cliente.)
     const channel = supabase
-      .channel(`my-coverage-${user.id}`)
+      .channel(`coverage-${activeStoreId}-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'order_results',
-          filter: `operator_id=eq.${user.id}`,
+          filter: `store_id=eq.${activeStoreId}`,
         },
         (payload) => {
-          const row = payload.new as { order_id?: string; module?: string; store_id?: string; result?: string };
+          const row = payload.new as {
+            order_id?: string; module?: string; store_id?: string; result?: string;
+            operator_id?: string | null; reason?: string | null; created_at?: string;
+          };
           if (row.module !== 'confirmar') return;
           // Igual que las cargas iniciales: una fila de auditoría (edición de
           // orden) NO es una llamada — no debe entrar al set de "tocados hoy".
@@ -514,6 +541,15 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           // Nuevo día → los sets se vacían; la fila de abajo (que ES de hoy)
           // se agrega sobre el set ya reseteado (setState funcional en orden).
           rolloverIfNeeded();
+          // Mapa de EQUIPO: se actualiza sea de quien sea la llamada.
+          setGestionPorPedido(prev => aplicarGestionEnVivo(prev, row.order_id!, {
+            at: row.created_at || new Date().toISOString(),
+            por: row.operator_id ?? null,
+            result: row.result!,
+            motivo: row.reason,
+          }));
+          // Set PERSONAL: solo si la llamada es mía.
+          if (row.operator_id !== user.id) return;
           setMyConfirmTouchedToday(prev => {
             if (prev.has(row.order_id!)) return prev;
             const next = new Set(prev);
@@ -528,14 +564,23 @@ export function OrderProvider({ children }: { children: ReactNode }) {
           event: 'INSERT',
           schema: 'public',
           table: 'touchpoints',
-          filter: `operator_id=eq.${user.id}`,
+          filter: `store_id=eq.${activeStoreId}`,
         },
         (payload) => {
-          const row = payload.new as { phone?: string; action?: string; store_id?: string };
+          const row = payload.new as {
+            phone?: string; action?: string; store_id?: string;
+            operator_id?: string | null; created_at?: string;
+          };
           if (!row.action?.startsWith('SEG:')) return;
           if (row.store_id !== activeStoreId) return;
           if (!row.phone) return;
           rolloverIfNeeded();
+          setGestionSegPorTelefono(prev => aplicarGestionEnVivo(prev, row.phone!, {
+            at: row.created_at || new Date().toISOString(),
+            por: row.operator_id ?? null,
+            result: row.action!.replace(/^SEG:\s*/i, '').trim(),
+          }));
+          if (row.operator_id !== user.id) return;
           setMySegTouchedToday(prev => {
             if (prev.has(row.phone!)) return prev;
             const next = new Set(prev);
