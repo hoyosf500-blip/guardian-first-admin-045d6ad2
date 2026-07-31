@@ -32,30 +32,72 @@ import { cn, formatCOP } from '@/lib/utils';
 
 type Tone = 'neutral' | 'info' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
 
-interface ColumnDef { key: SegStatusKey; label: string; icon: React.ReactNode; tone: Tone; }
+/**
+ * Una columna del tablero.
+ *
+ * `key` es string y no SegStatusKey porque las columnas de estados sin mapear se
+ * generan en vivo (una por estado real de Dropi, key `otros:<ESTADO>`). `baseKey`
+ * guarda el bucket del clasificador: es lo que miran LIVE_KEYS/CATCHALL_KEYS y el
+ * filtro por estado, así una columna generada sigue comportándose como su bucket.
+ */
+interface ColumnDef { key: string; baseKey: SegStatusKey; label: string; icon: React.ReactNode; tone: Tone; }
 
 // Orden de pipeline (izq → der), estilo embudo logístico. ESTE ORDEN NO SE
 // TOCA en un pase visual: las asesoras lo tienen memorizado y moverlo es
-// arquitectura de información, no dibujo. (Un pase anterior había subido
-// "Otros" al medio del embudo; se revirtió — ver CATCHALL_KEYS abajo, que
-// resuelve la misma preocupación sin reordenar nada.)
+// arquitectura de información, no dibujo.
+//
+// Ya NO hay columna "Otros". Era un cajón de 100+ pedidos que no decía nada:
+// "Otros" no es un estado, es la ausencia de uno. Los pedidos cuyo estado de
+// Dropi no cae en ninguna de estas fases reciben AHORA una columna propia,
+// generada en vivo y rotulada con el estado tal cual lo manda Dropi (ver
+// `columnasDeEstadosSinMapear`), así el dueño ve el estado exacto de cada
+// pedido y no una bolsa.
 const BOARD_COLUMNS: ColumnDef[] = [
-  { key: 'procesamiento', label: 'En Procesamiento', icon: <Package size={13} />, tone: 'neutral' },
-  { key: 'guia', label: 'Guía Generada', icon: <Tag size={13} />, tone: 'info' },
-  { key: 'bodega_trans', label: 'Bodega Transp.', icon: <Package size={13} />, tone: 'neutral' },
-  { key: 'transito', label: 'En Tránsito', icon: <Truck size={13} />, tone: 'info' },
-  { key: 'reparto', label: 'En Reparto', icon: <Truck size={13} />, tone: 'accent' },
-  { key: 'oficina', label: 'En Oficina', icon: <MapPin size={13} />, tone: 'warning' },
-  { key: 'novedad', label: 'Novedad', icon: <AlertTriangle size={13} />, tone: 'warning' },
-  { key: 'novedad_sol', label: 'Nov. Solucionada', icon: <CheckCircle size={13} />, tone: 'success' },
-  { key: 'entregado', label: 'Entregado', icon: <CheckCircle size={13} />, tone: 'success' },
-  { key: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={13} />, tone: 'danger' },
-  { key: 'devolucion_transito', label: 'Dev. en Tránsito', icon: <RotateCcw size={13} />, tone: 'danger' },
-  { key: 'devolucion', label: 'Devolución', icon: <RotateCcw size={13} />, tone: 'danger' },
-  { key: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={13} />, tone: 'muted' },
-  { key: 'cancelado', label: 'Cancelado', icon: <Layers size={13} />, tone: 'muted' },
-  { key: 'otros', label: 'Otros', icon: <Layers size={13} />, tone: 'muted' },
+  { key: 'procesamiento', baseKey: 'procesamiento', label: 'En Procesamiento', icon: <Package size={13} />, tone: 'neutral' },
+  { key: 'guia', baseKey: 'guia', label: 'Guía Generada', icon: <Tag size={13} />, tone: 'info' },
+  { key: 'bodega_trans', baseKey: 'bodega_trans', label: 'Bodega Transp.', icon: <Package size={13} />, tone: 'neutral' },
+  { key: 'transito', baseKey: 'transito', label: 'En Tránsito', icon: <Truck size={13} />, tone: 'info' },
+  { key: 'reparto', baseKey: 'reparto', label: 'En Reparto', icon: <Truck size={13} />, tone: 'accent' },
+  { key: 'oficina', baseKey: 'oficina', label: 'En Oficina', icon: <MapPin size={13} />, tone: 'warning' },
+  { key: 'novedad', baseKey: 'novedad', label: 'Novedad', icon: <AlertTriangle size={13} />, tone: 'warning' },
+  { key: 'novedad_sol', baseKey: 'novedad_sol', label: 'Nov. Solucionada', icon: <CheckCircle size={13} />, tone: 'success' },
+  { key: 'entregado', baseKey: 'entregado', label: 'Entregado', icon: <CheckCircle size={13} />, tone: 'success' },
+  { key: 'rechazado', baseKey: 'rechazado', label: 'Rechazado', icon: <AlertTriangle size={13} />, tone: 'danger' },
+  { key: 'devolucion_transito', baseKey: 'devolucion_transito', label: 'Dev. en Tránsito', icon: <RotateCcw size={13} />, tone: 'danger' },
+  { key: 'devolucion', baseKey: 'devolucion', label: 'Devolución', icon: <RotateCcw size={13} />, tone: 'danger' },
+  { key: 'indemnizada', baseKey: 'indemnizada', label: 'Indemnizada', icon: <DollarSign size={13} />, tone: 'muted' },
+  { key: 'cancelado', baseKey: 'cancelado', label: 'Cancelado', icon: <Layers size={13} />, tone: 'muted' },
 ];
+
+/**
+ * Una columna POR ESTADO real para todo lo que el clasificador no mapea.
+ *
+ * El rótulo es el `estado` tal cual viene de Dropi — no se traduce ni se
+ * embellece: es el dato crudo y el dueño necesita leer exactamente eso para
+ * decirnos a qué fase pertenece. Se ordenan por volumen (la más grande primero)
+ * porque es la que hay que mapear primero.
+ *
+ * Un pedido sin estado no se esconde: cae en "Sin estado en Dropi", que es un
+ * hecho a mirar (fila incompleta), no un pedido menos.
+ */
+function columnasDeEstadosSinMapear(sinMapear: OrderData[]): (ColumnDef & { orders: OrderData[] })[] {
+  const porEstado = new Map<string, OrderData[]>();
+  for (const o of sinMapear) {
+    const etiqueta = (o.estado || '').trim() || 'Sin estado en Dropi';
+    const arr = porEstado.get(etiqueta);
+    if (arr) arr.push(o); else porEstado.set(etiqueta, [o]);
+  }
+  return Array.from(porEstado.entries())
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([etiqueta, orders]) => ({
+      key: `otros:${etiqueta}`,
+      baseKey: 'otros' as SegStatusKey,
+      label: etiqueta,
+      icon: <Layers size={13} />,
+      tone: 'neutral' as Tone,
+      orders,
+    }));
+}
 
 /**
  * Fases donde TODAVÍA se puede hacer algo. Las que no están acá son terminales
@@ -69,12 +111,11 @@ const LIVE_KEYS = new Set<SegStatusKey>([
 ]);
 
 /**
- * "Otros" no es ni VIVA ni TERMINAL: es el catch-all de los estados que Dropi
- * inventa —sobre todo en EC— y por lo tanto la señal de que hay drift sin
- * mapear. Va al final del embudo, como siempre, pero NO se atenúa con el grupo
- * terminal: atenuar la única columna que avisa de un estado desconocido era
- * apagar justo la alarma. Queda angosta (no compite con las fases vivas) pero
- * a opacidad plena.
+ * Los estados sin mapear no son ni VIVOS ni TERMINALES: no sabemos qué son, y
+ * eso mismo es la señal de que hay drift de Dropi (sobre todo en EC). Van al
+ * final del embudo pero NO se atenúan con el grupo terminal: atenuar lo único
+ * que avisa de un estado desconocido era apagar justo la alarma. Quedan
+ * angostos (no compiten con las fases vivas) pero a opacidad plena.
  */
 const CATCHALL_KEYS = new Set<SegStatusKey>(['otros']);
 
@@ -197,7 +238,6 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const pConfig = PRIORITY_CONFIG[pLevel];
   const fresh = freshnessDot(o);
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
-  const esOtros = classifySegEstado(o.estado) === 'otros';
 
   return (
     <div
@@ -257,20 +297,6 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         )}
       </div>
 
-      {/* En "Otros" la columna no dice nada del pedido (es el cajón de los
-          estados que Dropi tiene y nosotros no mapeamos), así que el estado
-          CRUDO va en la tarjeta. Sin esto eran 109 pedidos indistinguibles.
-          Solo acá: en las demás columnas el encabezado ya lo dice. */}
-      {esOtros && o.estado && (
-        <div className="mt-2">
-          <span
-            className="inline-block max-w-full truncate text-[11px] font-semibold px-2 py-1 rounded-lg bg-muted/60 border border-border text-muted-foreground"
-            title={`Estado en Dropi: ${o.estado}`}
-          >
-            {o.estado}
-          </span>
-        </div>
-      )}
 
       {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
           quién llama, así que sube de tamaño y peso. El externalId baja a
@@ -699,7 +725,9 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   useEffect(() => () => saveBoardScroll(scrollRefs.current), []);
   // Columna enfocada (carpeta) PERSISTIDA → la operadora no pierde su carpeta al
   // entrar a un pedido y volver. null = tablero completo.
-  const [focusedKey, setFocusedKey] = useSessionState<SegStatusKey | null>('seg:focusedKey', null);
+  // string y no SegStatusKey: también se puede enfocar una columna generada por
+  // estado sin mapear (key `otros:<ESTADO>`).
+  const [focusedKey, setFocusedKey] = useSessionState<string | null>('seg:focusedKey', null);
   // Cuántas tarjetas se muestran por columna (arranca en COLUMN_PAGE y sube con
   // "Ver más"). No se persiste: cada entrada al tablero vuelve al tope barato.
   const [colLimits, setColLimits] = useState<Record<string, number>>({});
@@ -745,19 +773,14 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   }, [data]);
 
   const columns = useMemo(
-    () => BOARD_COLUMNS
-      .filter((c) => (statusFilter ? c.key === statusFilter : true))
-      .map((c) => ({
-        ...c,
-        // "Otros" es el cajón de los estados que NO tenemos mapeados: se ordena
-        // por el estado crudo para que los iguales queden juntos y la tarjeta
-        // muestra ese estado (ver el chip en SegCard). Antes eran 109 pedidos
-        // indistinguibles y no había forma de saber qué había adentro.
-        orders: c.key === 'otros'
-          ? [...(byColumn.get(c.key) ?? [])].sort((a, b) =>
-              String(a.estado || '').localeCompare(String(b.estado || ''), 'es'))
-          : byColumn.get(c.key) ?? [],
-      }))
+    () => [
+      ...BOARD_COLUMNS.map((c) => ({ ...c, orders: byColumn.get(c.baseKey) ?? [] })),
+      // Una columna por cada estado real que no cae en las fases de arriba.
+      ...columnasDeEstadosSinMapear(byColumn.get('otros') ?? []),
+    ]
+      // El filtro por estado acepta tanto la columna puntual como el bucket
+      // (tocar "Otros" en el resumen sigue mostrando TODOS los sin mapear).
+      .filter((c) => (statusFilter ? c.key === statusFilter || c.baseKey === statusFilter : true))
       .filter((c) => c.orders.length > 0),
     [byColumn, statusFilter],
   );
@@ -770,7 +793,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   useEffect(() => {
     if (focusCheckedRef.current) return;
     focusCheckedRef.current = true;
-    if (focusedKey && (byColumn.get(focusedKey)?.length ?? 0) === 0) setFocusedKey(null);
+    if (focusedKey && !columns.some((c) => c.key === focusedKey)) setFocusedKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -779,9 +802,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // existe, ignoramos y mostramos el tablero. `key={focusedKey}` remonta limpio
   // al cambiar de carpeta (así el selIdx persistido se inicializa por columna).
   if (focusedKey) {
-    const def = BOARD_COLUMNS.find((c) => c.key === focusedKey);
-    if (def) {
-      const focusedCol = { ...def, orders: byColumn.get(focusedKey) ?? [] };
+    // Se busca en `columns` (no en BOARD_COLUMNS): ahí ya están las columnas
+    // generadas por estado sin mapear, y con sus pedidos.
+    const focusedCol = columns.find((c) => c.key === focusedKey);
+    if (focusedCol) {
       return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} onBack={() => setFocusedKey(null)} />;
     }
   }
@@ -822,7 +846,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // Índice de la primera columna TERMINAL visible → ahí va el divisor "en juego
   // | cerrado". Se calcula sobre las columnas realmente pintadas (las vacías no
   // existen), así que si no hay ninguna terminal, no se dibuja divisor.
-  const firstTerminalIdx = columns.findIndex((c) => !LIVE_KEYS.has(c.key) && !CATCHALL_KEYS.has(c.key));
+  const firstTerminalIdx = columns.findIndex((c) => !LIVE_KEYS.has(c.baseKey) && !CATCHALL_KEYS.has(c.baseKey));
 
   return (
     <>
@@ -844,9 +868,9 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     >
       {columns.map((col, colIdx) => {
         const t = TONE[col.tone];
-        const isLive = LIVE_KEYS.has(col.key);
+        const isLive = LIVE_KEYS.has(col.baseKey);
         // El catch-all va angosto (como las terminales) pero SIN atenuar.
-        const isCatchall = CATCHALL_KEYS.has(col.key);
+        const isCatchall = CATCHALL_KEYS.has(col.baseKey);
         const siblingIds = col.orders.map((x) => String(x.externalId ?? '')).filter(Boolean);
         return (
           <Fragment key={col.key}>

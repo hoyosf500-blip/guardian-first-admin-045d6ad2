@@ -689,7 +689,17 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
       }
     }
     if (activeFilter) {
-      list = list.filter(o => classifyOrder(o.estado) === activeFilter);
+      // Los estados que el clasificador no mapea ya no van a una bolsa "Otros":
+      // el tablero y el resumen les dan una columna/tarjeta propia con la clave
+      // `otros:<ESTADO DE DROPI>`. Acá se compara contra el estado crudo para
+      // que ese filtro también funcione en la Lista; si no, tocar la tarjeta
+      // dejaba la tabla vacía sin explicar por qué.
+      if (activeFilter.startsWith('otros:')) {
+        const buscado = activeFilter.slice('otros:'.length);
+        list = list.filter(o => ((o.estado || '').trim() || 'Sin estado en Dropi') === buscado);
+      } else {
+        list = list.filter(o => classifyOrder(o.estado) === activeFilter);
+      }
     }
     // Propiedad por gestión real (touchpoints), no por asignación. 'all' no
     // filtra; 'mine'/'available' usan el bucket de segOwnership.

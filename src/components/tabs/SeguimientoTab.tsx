@@ -304,14 +304,23 @@ export default function SeguimientoTab() {
       entregado: 0, cancelado: 0, otros: 0,
       total: dedupedByDate.length,
     };
+    // Los estados que el clasificador NO mapea, contados uno por uno con su
+    // nombre real. Antes se sumaban todos a `otros` y ni siquiera había tarjeta
+    // para ese bucket: los pedidos desaparecían del resumen y las tarjetas no
+    // sumaban el total, sin ninguna explicación en pantalla.
+    const sinMapear = new Map<string, number>();
     dedupedByDate.forEach(o => {
       // classifySegEstado vive en src/lib/segStatus.ts — mismo clasificador
       // que CrmTable (sin esto, el resumen perdía estados EC y mostraba 3 cards
       // mientras el Kanban abajo mostraba 5+ columnas reales).
       const cat = classifySegEstado(o.estado);
       if (cat in s) (s as Record<string, number>)[cat]++;
+      if (cat === 'otros') {
+        const etiqueta = (o.estado || '').trim() || 'Sin estado en Dropi';
+        sinMapear.set(etiqueta, (sinMapear.get(etiqueta) ?? 0) + 1);
+      }
     });
-    return s;
+    return { ...s, sinMapear: Array.from(sinMapear.entries()).sort((a, b) => b[1] - a[1]) };
   }, [dedupedByDate]);
 
   // Chips en SINCRONÍA con la tabla: en vista Lista, CrmTable bufferiza los
@@ -443,6 +452,17 @@ export default function SeguimientoTab() {
     { key: 'indemnizada', label: 'Indemnizada', value: stats.indemnizada, icon: <DollarSign size={15} />, tone: 'muted' },
     { key: 'entregado', label: 'Entregado', value: stats.entregado, icon: <CheckCircle size={15} />, tone: 'success' },
     { key: 'cancelado', label: 'Cancelado', value: stats.cancelado, icon: <Layers size={15} />, tone: 'muted' },
+    // Una tarjeta POR ESTADO real para lo que no está mapeado, con su nombre de
+    // Dropi. Así las tarjetas suman el total y el dueño ve el estado exacto de
+    // todos sus pedidos, no una bolsa llamada "Otros". La `key` coincide con la
+    // de la columna del tablero, así el filtro sigue funcionando de un clic.
+    ...stats.sinMapear.map(([estado, value]) => ({
+      key: `otros:${estado}`,
+      label: estado,
+      value,
+      icon: <Layers size={15} />,
+      tone: 'neutral' as StatTone,
+    })),
   ];
 
   // Fullscreen loading only on the very first fetch. On subsequent refreshes
