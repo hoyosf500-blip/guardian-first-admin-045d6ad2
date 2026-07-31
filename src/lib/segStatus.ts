@@ -100,6 +100,11 @@ export const matchTransito = (e: string): boolean => {
   if (e.startsWith('EN RUTA')) return true;
   if (e.startsWith('INGRESANDO')) return true;
   if (e.startsWith('ASIGNADO')) return true;
+  // Las dos formas más obvias de "va en camino" no estaban: llegaban de EC y
+  // caían al cajón "Otros", que por eso era la columna más grande del tablero.
+  // Van como prefijo porque Dropi les cuelga destino atrás ("EN TRANSITO A UIO").
+  if (e.startsWith('EN TRANSITO')) return true;
+  if (e.startsWith('EN CAMINO')) return true;
   return false;
 };
 
@@ -153,7 +158,11 @@ const _unclassifiedSeen = new Set<string>();
  */
 export function classifySegEstado(estado: string): SegStatusKey {
   if (!estado) return 'otros';
-  const e = estado.toUpperCase().trim();
+  // Se quitan las TILDES antes de comparar: Dropi Ecuador manda "EN TRÁNSITO" y
+  // "DEVOLUCIÓN" acentuados y todos los matchers están escritos sin tilde, así
+  // que caían en 'otros' aunque la variante estuviera contemplada. Es el mismo
+  // NFD que ya usa el heurístico de direcciones.
+  const e = estado.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
   for (const m of SEG_STATUS_MATCHERS) {
     if (m.match(e)) return m.key;
   }

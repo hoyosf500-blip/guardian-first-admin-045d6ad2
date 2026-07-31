@@ -32,21 +32,32 @@ export const METODOS_DEFAULT: readonly string[] = [
 
 const METODOS_POR_BUCKET: Partial<Record<SegStatusKey, string[]>> = {
   // Aún no viaja: lo útil es avisar que el pedido va en camino de salir.
-  procesamiento: ['Avisé que está en proceso', 'No contestó', 'Llamé', 'WhatsApp'],
+  procesamiento: ['Avisé que está en proceso', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
   // Guía lista: mandarle la guía / número de rastreo al cliente.
-  guia: ['Envié la guía', 'No contestó', 'Llamé', 'WhatsApp'],
-  bodega_trans: ['Envié la guía', 'No contestó', 'Llamé', 'WhatsApp'],
-  transito: ['Avisé que va en camino', 'No contestó', 'Llamé', 'WhatsApp'],
+  guia: ['Envié la guía', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
+  bodega_trans: ['Envié la guía', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
+  transito: ['Avisé que va en camino', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
   // En reparto: avisar que llega HOY (que tenga el efectivo listo).
-  reparto: ['Avisé que llega hoy', 'No contestó', 'Reclamé transportadora', 'Llamé', 'WhatsApp'],
+  reparto: ['Avisé que llega hoy', 'No contestó', 'Volver a llamar', 'Reclamé transportadora', 'Llamé', 'WhatsApp'],
   // En oficina: avisar dónde está y confirmar que lo va a recoger.
-  oficina: ['Avisé: en oficina', 'Cliente recoge', 'No contestó', 'Reclamé transportadora', 'Llamé', 'WhatsApp'],
-  novedad: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Llamé', 'WhatsApp'],
-  novedad_sol: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Llamé', 'WhatsApp'],
-  rechazado: ['Llamé', 'Reclamé transportadora', 'No contestó', 'WhatsApp'],
+  oficina: ['Avisé: en oficina', 'Cliente recoge', 'No contestó', 'Volver a llamar', 'Reclamé transportadora', 'Llamé', 'WhatsApp'],
+  novedad: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
+  novedad_sol: ['Reclamé transportadora', 'Coordiné nueva entrega', 'No contestó', 'Volver a llamar', 'Llamé', 'WhatsApp'],
+  rechazado: ['Llamé', 'Reclamé transportadora', 'No contestó', 'Volver a llamar', 'WhatsApp'],
   devolucion_transito: ['Reclamé transportadora', 'Llamé', 'No contestó', 'WhatsApp'],
   devolucion: ['Reclamé transportadora', 'Llamé', 'No contestó', 'WhatsApp'],
 };
+
+/**
+ * Las 3 acciones que van EN LA TARJETA del kanban (el resto queda en la ficha).
+ * Tres y no más porque la tarjeta compite con otras 30 en pantalla: la primera
+ * es la del estado, y las dos que siguen son los desenlaces reales de la
+ * llamada. Se deriva de la misma lista para que tablero y ficha nunca ofrezcan
+ * cosas distintas para el mismo pedido.
+ */
+export function metodosRapidosParaEstado(estado: string | null | undefined): readonly string[] {
+  return metodosParaEstado(estado).slice(0, 3);
+}
 
 /**
  * Métodos de gestión para un pedido según su `estado` Dropi, la acción más

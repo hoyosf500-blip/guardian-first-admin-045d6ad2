@@ -19,7 +19,7 @@ import { ProductoTile } from '@/components/ProductoTile';
 import NotesPanel from '@/components/order-notes/NotesPanel';
 // Guard de atajos compartido con Confirmar: UNA sola definición a propósito —
 // cuando estaba duplicado se arregló una copia y el bug siguió en la otra.
-import { hotkeysHabilitados } from '@/components/CallView';
+import { hotkeysHabilitados } from '@/lib/hotkeys';
 import { heuristicValidate } from '@/lib/addressHeuristic';
 import { issuesToMissingFields } from '@/lib/issuesToMissingFields';
 import { buildWhatsAppMessage } from '@/lib/buildWhatsAppMessage';

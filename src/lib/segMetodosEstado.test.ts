@@ -1,6 +1,45 @@
 import { describe, it, expect } from 'vitest';
-import { metodosParaEstado, METODOS_DEFAULT } from './segMetodosEstado';
+import { metodosParaEstado, metodosRapidosParaEstado, METODOS_DEFAULT } from './segMetodosEstado';
 import { SEG_CLOSERS, isSegCloser } from './segDailyReview';
+
+describe('metodosRapidosParaEstado (las 3 que van en la tarjeta del kanban)', () => {
+  it('devuelve como máximo 3 y respeta el orden de relevancia del estado', () => {
+    const guia = metodosRapidosParaEstado('GUIA GENERADA');
+    expect(guia.length).toBeLessThanOrEqual(3);
+    expect(guia[0]).toBe('Envié la guía');
+    expect(guia).toContain('No contestó');
+  });
+
+  it('en oficina ofrece "Cliente recoge" SIN abrir la ficha', () => {
+    // El caso que motivó el cambio: el kanban tenía un único "Gestioné hoy"
+    // genérico y la asesora abría el detalle solo para decir que el cliente
+    // pasa a recogerlo.
+    expect(metodosRapidosParaEstado('RECLAME EN OFICINA')).toContain('Cliente recoge');
+  });
+
+  it('nunca ofrece un CIERRE desde la tarjeta', () => {
+    // Resuelto/Devolución cambian el desenlace del pedido: se eligen en la
+    // ficha, con el contexto delante, no de un clic en el tablero.
+    for (const estado of ['GUIA GENERADA', 'EN REPARTO', 'RECLAME EN OFICINA', 'NOVEDAD', 'EN TRANSITO']) {
+      for (const m of metodosRapidosParaEstado(estado)) {
+        expect(isSegCloser(`SEG: ${m}`)).toBe(false);
+      }
+    }
+  });
+
+  it('un estado desconocido igual da acciones (nunca deja la tarjeta muda)', () => {
+    expect(metodosRapidosParaEstado('ESTADO RARO DE DROPI').length).toBeGreaterThan(0);
+    expect(metodosRapidosParaEstado(null).length).toBeGreaterThan(0);
+  });
+
+  it('tránsito CON TILDE y "EN CAMINO" ya no caen al cajón de Otros', () => {
+    // Era la causa de que "Otros" fuera la columna más grande del tablero: los
+    // matchers están escritos sin tilde y Dropi EC manda "EN TRÁNSITO".
+    for (const estado of ['EN TRÁNSITO', 'EN TRANSITO', 'EN TRANSITO A UIO', 'EN CAMINO']) {
+      expect(metodosRapidosParaEstado(estado)[0]).toBe('Avisé que va en camino');
+    }
+  });
+});
 
 describe('metodosParaEstado', () => {
   it('guía generada: lo primero es enviar la guía al cliente', () => {

@@ -10,10 +10,11 @@ import { dbToOrderData, OrderData, getTrackingUrl, isPendiente, isNovedad, getEr
 import { formatCOP } from '@/lib/utils';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
+import { hotkeysHabilitados, esTeclaDeAtajo } from '@/lib/hotkeys';
 import {
   ArrowLeft, Copy, ExternalLink, MapPin, Truck, Tag, Phone, User,
   Package, Clock, Calendar, DollarSign, FileText, AlertTriangle, RefreshCw,
-  MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles, ChevronUp, ChevronDown,
+  MessageSquare, Send, PhoneCall, RotateCcw, Undo2, Sparkles, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AuroraBackdrop, TiltCard } from '@/components/ui3d';
@@ -133,13 +134,20 @@ export default function OrderDetailPage() {
   const { refresh: refreshOrder } = useRefreshOrder();
 
   // Navegación entre hermanos: la lista de external_ids de la carpeta de la que
-  // se vino (SegBoard la pasa por location.state), para ir al sig/ant con ↑/↓ sin
-  // volver al tablero.
+  // se vino (el tablero y la lista la pasan por location.state), para ir al
+  // sig/ant con ←/→ sin volver atrás.
+  //
+  // La carpeta se DESCARTA si es de otra tienda: el state sobrevive al cambio de
+  // tienda y al botón Atrás, así que sin esto una supervisora que pasa de EC a
+  // CO podía recorrer con las flechas 20 pedidos ecuatorianos que en Colombia
+  // no existen, viendo "Pedido no encontrado" en cada uno.
   const siblingIds = useMemo<string[]>(() => {
-    const s = location.state as { siblingIds?: string[] } | null;
+    const s = location.state as { siblingIds?: string[]; storeId?: string } | null;
+    if (s?.storeId && activeStoreId && s.storeId !== activeStoreId) return [];
     return Array.isArray(s?.siblingIds) ? s!.siblingIds.filter(Boolean) : [];
-  }, [location.state]);
+  }, [location.state, activeStoreId]);
   const sibIdx = useMemo(() => (externalId ? siblingIds.indexOf(externalId) : -1), [siblingIds, externalId]);
+  const puedeNavegar = siblingIds.length >= 2 && sibIdx >= 0;
   const goSibling = (delta: number) => {
     if (sibIdx < 0) return;
     const next = sibIdx + delta;
@@ -192,6 +200,15 @@ export default function OrderDetailPage() {
     setOrderResults([]);
     setStatusChanges([]);
     setNotes([]);
+    // El panel "Reprogramar" y su texto TAMBIÉN se limpian. La ficha no se
+    // desmonta al pasar de hermano (misma ruta, solo cambia el parámetro), así
+    // que sin esto el panel quedaba abierto con la solución escrita para el
+    // pedido ANTERIOR y ya enlazado al nuevo: enviarla resolvía en Dropi la
+    // novedad del pedido equivocado, y si el nuevo ni siquiera tenía novedad
+    // quedaba pisado a 'NOVEDAD SOLUCIONADA' en la base.
+    setShowReofferInput(false);
+    setSolutionText('');
+    setResolving(false);
 
     // Cancelación: navegar rápido entre hermanos (↑/↓) dejaba dos cargas en
     // vuelo que podían resolverse fuera de orden y pintar el pedido equivocado.
@@ -282,43 +299,77 @@ export default function OrderDetailPage() {
     if (!lastMov) return;
     const ageHs = (Date.now() - new Date(lastMov).getTime()) / 3600000;
     if (ageHs < 1) return;
-    refreshedThisSession.current.add(order.external_id);
     const extId = order.external_id;
+    // La tienda con la que se cargó ESTE pedido. Si la asesora cambia de tienda
+    // con la ficha abierta, el efecto correría con el pedido viejo y la tienda
+    // nueva: le pediríamos a la cuenta Dropi de Colombia un external_id de
+    // Ecuador. Mezclar países está prohibido — se corta antes de pedir nada.
+    const storeIdDelPedido = activeStoreId;
     // El retorno del refresh no alcanza (trae solo estado/guía/transportadora y
     // el upsert también toca last_movement_at, fecha_conf, novedad): usamos el
     // ok como señal y re-leemos la fila completa — sin esto la edge corregía la
     // base pero la pantalla seguía mostrando el estado viejo. No hay loop: el
     // guard refreshedThisSession ya contiene el id cuando setOrder re-dispara
     // este effect.
-    void (async () => {
-      const res = await refreshOrder(activeStoreId, extId, { silent: true });
-      if (!res.ok) return;
-      const { data } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('external_id', extId)
-        .eq('store_id', activeStoreId)
-        .limit(1);
-      if (!data?.length) return;
-      // Anti-carrera: si mientras tanto se navegó a otro hermano, no pisar.
-      setOrder(prev => (prev && prev.external_id === extId ? (data[0] as OrderRow) : prev));
-    })();
+    // Se espera 1,5 s antes de pedirle nada a Dropi: con las flechas ←/→ pasar
+    // 20 hermanos son 20 llamadas en 15 segundos, justo el patrón que ya provocó
+    // la cascada de 429 en Ecuador (y como el refresh es silencioso, nadie se
+    // enteraba). Así solo paga el pedido en el que la asesora se DETIENE; los
+    // que atraviesa de paso no cuestan nada. El id se marca dentro del timeout
+    // para que un pedido salteado siga siendo refrescable al volver.
+    const timer = setTimeout(() => {
+      refreshedThisSession.current.add(extId);
+      void (async () => {
+        const res = await refreshOrder(storeIdDelPedido, extId, { silent: true });
+        if (!res.ok) return;
+        const { data } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('external_id', extId)
+          .eq('store_id', storeIdDelPedido)
+          .limit(1);
+        if (!data?.length) return;
+        // Anti-carrera: si mientras tanto se navegó a otro hermano, no pisar.
+        setOrder(prev => (prev && prev.external_id === extId ? (data[0] as OrderRow) : prev));
+      })();
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [order?.external_id, order?.last_movement_at, order?.estado, order?.created_at, activeStoreId, refreshOrder]);
 
-  // Navegación con teclado ↑/↓ entre hermanos (cuando se vino de una carpeta).
+  // Atajos de la ficha: ←/→ para pasar al pedido anterior o siguiente de la
+  // MISMA carpeta, L para llamar y W para WhatsApp. La operadora entra a una
+  // lista ("Guía generada"), abre el primero y ya no vuelve a tocar el mouse.
+  //
+  // HORIZONTALES a propósito, y ya no ↑/↓: son las mismas de la vista Llamar
+  // (la mano las tiene aprendidas) y sobre todo NO le roban el scroll a una
+  // ficha que es larga. Con ↑/↓ capturadas, bajar para leer la dirección te
+  // sacaba al pedido siguiente y perdías el lugar.
   useEffect(() => {
-    if (siblingIds.length < 2 || sibIdx < 0) return;
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      const tag = el?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
-      if (e.key === 'ArrowUp') { e.preventDefault(); goSibling(-1); }
-      else if (e.key === 'ArrowDown') { e.preventDefault(); goSibling(1); }
+      if (!esTeclaDeAtajo(e)) return;
+      // Mismo guard que Confirmar y Seguimiento: con un diálogo abierto (editor,
+      // "¿borrar esta nota?", chat) o un campo enfocado, la tecla NO es un atajo.
+      if (!hotkeysHabilitados(document.activeElement)) return;
+      const k = e.key;
+      if (k === 'ArrowLeft') {
+        if (puedeNavegar) { e.preventDefault(); goSibling(-1); }
+      } else if (k === 'ArrowRight') {
+        if (puedeNavegar) { e.preventDefault(); goSibling(1); }
+      } else if ((k === 'l' || k === 'L') && order?.phone) {
+        e.preventDefault();
+        // Mismo registro en bitácora que el botón: la tecla también cuenta como
+        // contacto, si no la gestión se pierde de productividad.
+        void logCommunication('CALL', 'Llamada saliente');
+        window.location.href = 'tel:+' + getWhatsAppPhone(order.phone, countryCode);
+      } else if ((k === 'w' || k === 'W') && waEnabled && order?.phone) {
+        e.preventDefault();
+        void openChat({ phone: order.phone, name: order.nombre });
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sibIdx, siblingIds]);
+  }, [puedeNavegar, sibIdx, siblingIds, order?.phone, order?.nombre, countryCode, waEnabled]);
 
   // Map operator_id → display_name for the timeline
   const operatorNames = useMemo(() => {
@@ -346,6 +397,10 @@ export default function OrderDetailPage() {
     [order],
   );
 
+  // Espejo de `touchpoints` para leerlo desde closures largos (el atajo L).
+  const touchpointsRef = useRef<Touchpoint[]>([]);
+  touchpointsRef.current = touchpoints;
+
   /**
    * Registers a communication touchpoint (call/whatsapp) with debounce — avoids
    * spamming the bitácora if the operator accidentally clicks twice.
@@ -353,9 +408,14 @@ export default function OrderDetailPage() {
   const logCommunication = async (channel: 'CALL' | 'WHATSAPP', detail: string) => {
     if (!user || !order) return;
 
-    // Debounce: check the most recent touchpoint of the same channel for this phone
+    // Debounce: check the most recent touchpoint of the same channel for this phone.
+    // Se lee del REF, no del estado: el atajo de teclado captura esta función una
+    // sola vez (su effect no depende de `touchpoints`), así que con el estado
+    // directo el handler veía el array vacío para siempre y el debounce quedaba
+    // muerto SOLO para el teclado — tres L seguidas dejaban tres llamadas en la
+    // bitácora mientras el botón sí deduplicaba.
     const now = Date.now();
-    const recent = touchpoints.find(
+    const recent = touchpointsRef.current.find(
       (tp) => tp.action.startsWith(`${channel}:`) && (now - new Date(tp.created_at).getTime()) < COMMUNICATION_DEBOUNCE_MS,
     );
     if (recent) return; // skip, still within debounce window
@@ -452,6 +512,14 @@ export default function OrderDetailPage() {
     // tiene useNovedades.rollbackNovedad; sin esto el matiz se perdía hasta el
     // próximo sync y las listas SLA clasificaban mal el pedido.
     const prevEstado = order.estado;
+    // Anti-carrera: `dropi-resolve-incidence` tarda segundos y con las flechas
+    // ←/→ la asesora ya puede estar en OTRO pedido cuando vuelve la respuesta.
+    // Los setOrder de abajo solo aplican si en pantalla sigue el mismo pedido —
+    // mismo guard que el auto-refresh; sin esto el rollback pintaba el estado
+    // del pedido A sobre el pedido B.
+    const extIdEnCurso = order.external_id;
+    const aplicarSiSigueElMismo = (patch: Partial<OrderRow>) =>
+      setOrder(prev => (prev && prev.external_id === extIdEnCurso ? { ...prev, ...patch } : prev));
 
     // 2. Update local DB
     const { error: updateError } = await supabase
@@ -465,7 +533,7 @@ export default function OrderDetailPage() {
       return;
     }
 
-    setOrder(prev => prev ? { ...prev, novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' } : prev);
+    aplicarSiSigueElMismo({ novedad_sol: true, estado: 'NOVEDAD SOLUCIONADA' });
 
     // 3. Call Dropi Edge Function if there's an external ID
     if (order.external_id) {
@@ -484,7 +552,7 @@ export default function OrderDetailPage() {
           toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
           // Rollback
           await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.id);
-          setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: prevEstado || 'NOVEDAD' } : prev);
+          aplicarSiSigueElMismo({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' });
         } else {
           toast.success('Novedad resuelta en Dropi', { id: toastId, duration: 2500 });
         }
@@ -492,7 +560,7 @@ export default function OrderDetailPage() {
         const msg = getErrorMessage(err);
         toast.error(`Dropi red: ${msg}. Novedad revertida.`, { duration: 8000 });
         await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.id);
-        setOrder(prev => prev ? { ...prev, novedad_sol: false, estado: prevEstado || 'NOVEDAD' } : prev);
+        aplicarSiSigueElMismo({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' });
       }
     } else {
       toast.success('Novedad marcada como resuelta');
@@ -580,28 +648,35 @@ export default function OrderDetailPage() {
           <ArrowLeft size={18} />
         </button>
 
-        {/* Navegación entre pedidos de la misma carpeta (↑/↓) sin volver al tablero */}
-        {siblingIds.length > 1 && sibIdx >= 0 && (
+        {/* Navegación entre pedidos de la misma carpeta, sin volver al tablero.
+            El hint de teclas al lado NO es decorativo: el atajo existía hace
+            semanas y el equipo seguía clickeando porque no había forma de
+            enterarse. Se oculta en pantalla chica (táctil, sin teclado). */}
+        {puedeNavegar && (
           <div className="relative inline-flex items-center gap-1 rounded-xl border border-border bg-card/40 p-0.5" role="group" aria-label="Navegar pedidos de la carpeta">
             <button
               onClick={() => goSibling(-1)}
               disabled={sibIdx <= 0}
-              title="Pedido anterior (↑)"
+              title="Pedido anterior (flecha ←)"
               aria-label="Pedido anterior"
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <ChevronUp size={16} />
+              <ChevronLeft size={16} />
             </button>
             <span className="text-[11px] font-mono tabular-nums text-muted-foreground px-1">{sibIdx + 1}/{siblingIds.length}</span>
             <button
               onClick={() => goSibling(1)}
               disabled={sibIdx >= siblingIds.length - 1}
-              title="Pedido siguiente (↓)"
+              title="Pedido siguiente (flecha →)"
               aria-label="Pedido siguiente"
               className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <ChevronDown size={16} />
+              <ChevronRight size={16} />
             </button>
+            <span className="hidden sm:inline-flex items-center gap-1 pl-1.5 pr-1 text-[10px] text-muted-foreground" aria-hidden="true">
+              <kbd className="font-mono leading-none px-1.5 py-1 rounded-md border border-border bg-background">←</kbd>
+              <kbd className="font-mono leading-none px-1.5 py-1 rounded-md border border-border bg-background">→</kbd>
+            </span>
           </div>
         )}
         <div className="relative flex-1 min-w-0">
@@ -661,8 +736,10 @@ export default function OrderDetailPage() {
         )}
       </motion.header>
 
-      {/* Reoffer solution input (F3) */}
-      {showReofferInput && (
+      {/* Reoffer solution input (F3). Se exige `showNovedadShortcut` como
+          segundo cinturón: el panel solo tiene sentido si el pedido EN PANTALLA
+          sigue teniendo novedad abierta. */}
+      {showReofferInput && showNovedadShortcut && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
           className="relative bg-card/40 border border-border rounded-2xl p-4 pl-5 shadow-card3d flex flex-col gap-2">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-info" aria-hidden="true" />
@@ -726,6 +803,7 @@ export default function OrderDetailPage() {
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-success/14 border border-success/30 text-success text-sm font-semibold py-3 sm:py-2.5 hover:bg-success/20 hover:border-success/50 transition-colors duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-success focus-visible:outline-none"
               >
                 <MessageSquare size={14} aria-hidden="true" /> WhatsApp
+                <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
               </button>
             )}
             <a
@@ -735,6 +813,7 @@ export default function OrderDetailPage() {
               className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-card/40 border border-border text-foreground text-sm font-semibold py-3 sm:py-2.5 hover:bg-surface hover:border-border-strong transition-colors duration-200 no-underline cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             >
               <Phone size={14} aria-hidden="true" /> Llamar
+              <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">L</kbd>
             </a>
           </div>
 

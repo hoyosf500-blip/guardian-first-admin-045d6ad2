@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
-import { hotkeysHabilitados } from './CallView';
+import { hotkeysHabilitados } from '@/lib/hotkeys';
 import {
   AlertDialog,
   AlertDialogContent,

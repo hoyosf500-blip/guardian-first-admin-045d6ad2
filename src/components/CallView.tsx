@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
+import { hotkeysHabilitados } from '@/lib/hotkeys';
 import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2 } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
@@ -67,35 +68,6 @@ const pickupOverrideAppliedIds = new Set<string>();
 // se quedan stale. Este override re-evalúa con la heurística local (sin red,
 // sin Google) y corrige DB si difiere. Idempotente vía Set módulo-level.
 const staleGreenOverrideIds = new Set<string>();
-
-// Overlays que se ADUEÑAN del teclado. Radix le pone role="dialog" a Dialog
-// pero role="alertdialog" a AlertDialog: mirar solo el primero dejaba vivos los
-// atajos con el "¿Borrar esta nota?" abierto y una tecla 1 confirmaba —
-// despachando a Dropi— el pedido tapado por el overlay. role="menu" cubre los
-// dropdown de Radix. Todos se desmontan al cerrar, así que el selector solo
-// matchea overlays realmente abiertos.
-const OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [aria-modal="true"]';
-
-/**
- * ¿Puede correr un atajo de teclado AHORA? Pura y exportada para poder testear
- * la regresión sin montar la pantalla entera (la usan CallView y CrmCallView —
- * UNA sola definición: la copia divergente es cómo volvió el bug la vez pasada).
- *
- * Falla hacia "no hacer nada": ante cualquier overlay o campo de texto, la
- * tecla no marca nada.
- */
-export function hotkeysHabilitados(
-  activeElement: Element | null,
-  doc: Document | null = typeof document !== 'undefined' ? document : null,
-): boolean {
-  const el = activeElement as HTMLElement | null;
-  const tag = el?.tagName;
-  // Con un campo enfocado la tecla es TEXTO (notas, dirección, teléfono).
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return false;
-  if (!doc) return false;
-  if (doc.querySelector(OVERLAY_SELECTOR)) return false;
-  return true;
-}
 
 interface VipInfo {
   isVip: boolean;

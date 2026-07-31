@@ -174,6 +174,12 @@ export default function WelcomeGate({ children }: Props) {
             // role="dialog" porque no pide ninguna decisión.
             role="status"
             aria-live="polite"
+            // Tapa TODA la pantalla, así que mientras está visible los atajos de
+            // las pantallas de abajo no deben correr: `hotkeysHabilitados` mira
+            // aria-modal y con esto lo detecta sin tocar el role="status" que
+            // necesita el lector de pantalla. Sin esto, apretar L para sacarlo
+            // de encima llamaba a un cliente que nadie eligió.
+            aria-modal="true"
             onClick={cerrar}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

@@ -704,6 +704,8 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     return list;
   }, [data, search, onlyDelayed, activeFilter, showManaged, results, stalledCategoryFilter, ownerFilter, phoneTouchpoints, user?.id, adminIds, ageOf]);
 
+  const navigate = useNavigate();
+
   const columns = useMemo(() => {
     const groups: Record<string, OrderData[]> = {};
     STATUS_COLUMNS.forEach(c => { groups[c.key] = []; });
@@ -716,6 +718,24 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     }
     return groups;
   }, [filtered, ageOf]);
+
+  // Abrir la ficha llevándose la COLUMNA en la que está la tarjeta — no el
+  // tablero entero. Es la carpeta que la asesora tiene delante, en el mismo
+  // orden en que la ve, así que el "3/40" y las flechas ←/→ del detalle
+  // coinciden con la pantalla. (Mandar `filtered` plano hacía que → cayera en
+  // un ENTREGADO de otra columna.) Mismo criterio que SegBoard.
+  //
+  // El ref mantiene el callback estable: `columns` se recalcula con cada tecla
+  // del buscador y una identidad nueva re-renderizaría los ~30 OrderCard
+  // memoizados. La `colKey` que recibe es un string constante por columna.
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+  const openDetail = useCallback((externalId: string, colKey: string) => {
+    const siblingIds = (columnsRef.current[colKey] ?? [])
+      .map((x) => String(x.externalId ?? ''))
+      .filter(Boolean);
+    navigate(`/pedido/${externalId}`, { state: { siblingIds, storeId: activeStoreId } });
+  }, [navigate, activeStoreId]);
 
   // Count all data (not filtered) for pills
   const allCounts = useMemo(() => {
@@ -1097,6 +1117,8 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
                         statusColor={col.tone}
                         notesEntry={o.dbId ? notesIndex.get(o.dbId) : undefined}
                         countryCode={countryCode}
+                        onOpenDetail={openDetail}
+                        colKey={col.key}
                       />
                     ))}
                     {items.length > (colLimits[col.key] ?? COLUMN_PAGE) && (
@@ -1157,6 +1179,12 @@ interface OrderCardProps {
    *  `getTrackingUrl` resuelva URLs EC sin depender del estado a nivel módulo
    *  que se setea via useEffect (que en el primer paint todavía es 'CO'). */
   countryCode?: string | null;
+  /** Abre la ficha del pedido PASANDO como hermanos la COLUMNA de esta tarjeta,
+   *  para que ahí las flechas ←/→ sigan el orden que la asesora ve. Estable
+   *  (useCallback) — una identidad nueva por render rompería el memo. */
+  onOpenDetail: (externalId: string, colKey: string) => void;
+  /** Columna a la que pertenece la tarjeta. String constante: no rompe el memo. */
+  colKey: string;
 }
 
 // C5: React.memo. Antes cualquier setState de CrmTable (ej. setExpandedPhone,
@@ -1164,7 +1192,7 @@ interface OrderCardProps {
 // las columnas — con 500 pedidos eso es 500 renders sincrónicos por click,
 // con cálculos pesados (calcPriority, getAlertLevel) en cada uno. Memo evita
 // el render si las props del card no cambiaron.
-const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry, countryCode }: OrderCardProps) {
+const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggle, onAction, currentUserId, adminIds, touchpoints: tps, allTouchpoints: allTps, getOperatorName, index, statusColor, notesEntry, countryCode, onOpenDetail, colKey }: OrderCardProps) {
   // Propiedad por GESTIÓN REAL (touchpoints del módulo), no por assigned_to.
   // 'mine' = yo la gestioné · 'other' = solo otra operadora · 'available' = nadie.
   // NO bloquea acciones — cualquiera puede gestionar cualquier pedido; el bucket
@@ -1216,6 +1244,11 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
         className="px-3.5 pt-3.5 pb-3 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
         onClick={() => onToggle(o.phone)}
         onKeyDown={(e) => {
+          // Solo si la tecla viene de la tarjeta MISMA: el keydown del enlace
+          // del ID burbujea hasta acá y el preventDefault cancelaba el click
+          // sintético, así que tabular hasta el ID y apretar Enter expandía la
+          // tarjeta en vez de abrir la ficha.
+          if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             onToggle(o.phone);
@@ -1233,8 +1266,22 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               cssTruncate
               className="block text-[15px] font-bold text-foreground truncate leading-tight"
             />
+            {/* Se conserva el href real para que "abrir en pestaña nueva" y el
+                ctrl+clic sigan funcionando, pero el clic normal navega por el
+                router: el enlace crudo recargaba la app ENTERA (segundos de
+                espera por pedido) y además perdía la carpeta, así que en la
+                ficha no había hermanos y las flechas ←/→ no hacían nada. */}
             {o.externalId && (
-              <a href={`/pedido/${o.externalId}`} onClick={e => e.stopPropagation()} className="text-[11px] text-muted-foreground hover:text-accent hover:underline font-mono tabular-nums mt-1 block truncate">
+              <a
+                href={`/pedido/${o.externalId}`}
+                onClick={e => {
+                  e.stopPropagation();
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                  e.preventDefault();
+                  onOpenDetail(String(o.externalId), colKey);
+                }}
+                className="text-[11px] text-muted-foreground hover:text-accent hover:underline font-mono tabular-nums mt-1 block truncate"
+              >
                 {o.externalId}
               </a>
             )}

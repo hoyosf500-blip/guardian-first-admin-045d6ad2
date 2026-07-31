@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
+import { metodosRapidosParaEstado } from '@/lib/segMetodosEstado';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
@@ -144,7 +145,9 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const { activeStoreId } = useStore();
   const { openChat, waEnabled } = useWaChat();
   const recordGestion = useRecordGestion();
-  const [gestionada, setGestionada] = useState(false);
+  // Guarda la ACCIÓN elegida (no un booleano): la tarjeta confirma "Envié la
+  // guía ✓" en vez de un "listo" que no dice qué se hizo.
+  const [gestionada, setGestionada] = useState<string | null>(null);
   const [gestionando, setGestionando] = useState(false);
   // Guard SÍNCRONO contra doble-tap: el estado se actualiza en el próximo render,
   // así que dos clicks en el mismo frame verían gestionando=false los dos e
@@ -159,24 +162,28 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   // OTRO touchpoint (touchpoints no tiene constraint anti-dup), inflando las
   // métricas de productividad. El useState local se conserva como respuesta
   // inmediata al click, antes de que el realtime actualice el set.
-  const yaGestionada = gestionada || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
+  const yaGestionada = !!gestionada || (!!o.phone && !!touchedTodayPhones?.has(o.phone));
 
-  // "Gestioné hoy" desde el tablero: registra el touchpoint (SEG: ...) para que
-  // el contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca
-  // vía el realtime de OrderContext (mySegTouchedToday). Antes NO existía en el
-  // kanban: quien trabajaba desde acá no registraba nada. Genérico a propósito:
-  // el método puntual (Envié la guía, etc.) se elige en el detalle del pedido.
-  const gestionar = async (e: React.MouseEvent) => {
+  // Acciones del tablero: registran el touchpoint (SEG: <acción>) para que el
+  // contador se mueva y —con "ocultar gestionados"— la tarjeta desaparezca vía
+  // el realtime de OrderContext (mySegTouchedToday).
+  //
+  // Ya NO es un "Gestioné hoy" genérico: la acción dice QUÉ pasó, y sale del
+  // ESTADO del pedido (guía → "Envié la guía"; oficina → "Cliente recoge"…).
+  // El botón genérico obligaba a abrir la ficha para dejar constancia de lo que
+  // realmente ocurrió, así que en la práctica nadie lo hacía y la bitácora
+  // quedaba con 300 "Gestioné hoy" que no dicen nada.
+  const gestionar = async (e: React.MouseEvent, metodo: string) => {
     e.stopPropagation();
     if (enVueloRef.current || yaGestionada || !o.phone) return;
     enVueloRef.current = true;
     setGestionando(true);
-    const ok = await recordGestion(o.phone, 'SEG', 'Gestioné hoy');
+    const ok = await recordGestion(o.phone, 'SEG', metodo);
     setGestionando(false);
     enVueloRef.current = false;
     if (ok) {
-      setGestionada(true);
-      toast.success('Gestión registrada');
+      setGestionada(metodo);
+      toast.success(metodo);
     } else {
       toast.error('No se pudo registrar. Reintentá.');
     }
@@ -190,6 +197,7 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const pConfig = PRIORITY_CONFIG[pLevel];
   const fresh = freshnessDot(o);
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
+  const esOtros = classifySegEstado(o.estado) === 'otros';
 
   return (
     <div
@@ -248,6 +256,21 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           </span>
         )}
       </div>
+
+      {/* En "Otros" la columna no dice nada del pedido (es el cajón de los
+          estados que Dropi tiene y nosotros no mapeamos), así que el estado
+          CRUDO va en la tarjeta. Sin esto eran 109 pedidos indistinguibles.
+          Solo acá: en las demás columnas el encabezado ya lo dice. */}
+      {esOtros && o.estado && (
+        <div className="mt-2">
+          <span
+            className="inline-block max-w-full truncate text-[11px] font-semibold px-2 py-1 rounded-lg bg-muted/60 border border-border text-muted-foreground"
+            title={`Estado en Dropi: ${o.estado}`}
+          >
+            {o.estado}
+          </span>
+        </div>
+      )}
 
       {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
           quién llama, así que sube de tamaño y peso. El externalId baja a
@@ -388,26 +411,43 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         </div>
       </div>
 
-      {/* Acción principal: registrar la gestión SIN salir del tablero. Antes no
-          existía en el kanban → el trabajo desde acá no se contaba. Solo en
-          fases con trabajo (no en entregado/cancelado/devuelto). El método
-          puntual (Envié la guía, etc.) se elige en el detalle del pedido. */}
+      {/* Acciones del ESTADO, sin salir del tablero. La primera es la propia de
+          la fase (guía → "Envié la guía"; oficina → "Cliente recoge") y las dos
+          que siguen son los desenlaces reales de la llamada. Solo en fases con
+          trabajo: en entregado/cancelado/devuelto no hay nada que registrar. */}
       {(tone === 'warning' || tone === 'accent' || tone === 'info' || tone === 'neutral' || tone == null) && o.phone && (
-        <button
-          type="button"
-          onClick={gestionar}
-          disabled={gestionando || yaGestionada}
-          title={yaGestionada ? 'Ya registraste una gestión de este pedido hoy' : 'Registrar que gestionaste este pedido hoy'}
-          className={cn(
-            'mt-2.5 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl font-bold text-[13px] transition-colors',
-            yaGestionada
-              ? 'bg-success/15 text-success border border-success/40 cursor-default'
-              : 'bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-60',
-          )}
-        >
-          <CheckCircle2 size={15} aria-hidden="true" />
-          {yaGestionada ? 'Gestionado hoy ✓' : gestionando ? 'Registrando…' : 'Gestioné hoy'}
-        </button>
+        yaGestionada ? (
+          <div
+            className="mt-2.5 w-full min-h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-success/15 text-success border border-success/40 font-bold text-[13px] px-2"
+            title="Ya registraste una gestión de este pedido hoy"
+          >
+            <CheckCircle2 size={15} aria-hidden="true" />
+            <span className="truncate">{gestionada || 'Gestionado hoy'} ✓</span>
+          </div>
+        ) : (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {metodosRapidosParaEstado(o.estado).map((m, i) => (
+              <button
+                key={m}
+                type="button"
+                onClick={(e) => { void gestionar(e, m); }}
+                disabled={gestionando}
+                title={`Registrar: ${m}`}
+                className={cn(
+                  // La primera ocupa la fila entera (es la acción de la fase);
+                  // las otras dos se reparten la de abajo.
+                  'min-h-11 inline-flex items-center justify-center gap-1.5 rounded-xl font-bold text-[12px] px-2 transition-colors disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+                  i === 0
+                    ? 'w-full bg-accent text-accent-foreground hover:bg-accent/90 active:scale-[0.99]'
+                    : 'flex-1 min-w-[calc(50%-0.375rem)] bg-card/60 border border-border text-foreground hover:border-accent/50 hover:text-accent',
+                )}
+              >
+                {i === 0 && <CheckCircle2 size={14} aria-hidden="true" />}
+                <span className="truncate">{gestionando ? '…' : m}</span>
+              </button>
+            ))}
+          </div>
+        )
       )}
     </div>
   );
@@ -446,6 +486,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  */
 function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; onBack: () => void }) {
   const navigate = useNavigate();
+  const { activeStoreId } = useStore();
   const t = TONE[col.tone];
   const orders = col.orders;
   const siblingIds = useMemo(() => orders.map((x) => String(x.externalId ?? '')).filter(Boolean), [orders]);
@@ -577,7 +618,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, onBack }: { col: 
                 selected={i === selIdx}
                 cardRef={i === selIdx ? selRef : undefined}
                 touchedTodayPhones={touchedTodayPhones}
-                onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds } }); }}
+                onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
             ))}
             {orders.length > shown && (
@@ -641,6 +682,9 @@ interface SegBoardProps {
 
 export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   const navigate = useNavigate();
+  // Se sella en el state junto a la carpeta: si la asesora cambia de tienda, la
+  // ficha descarta los hermanos en vez de pasear pedidos de la otra tienda.
+  const { activeStoreId } = useStore();
   // Scroll por columna persistido en sessionStorage → sobrevive el remount de
   // entrar/salir de un pedido (y los discards de tab). Se inicializa UNA sola vez
   // desde lo guardado (init-once con ref-guard, para no re-parsear sessionStorage
@@ -660,6 +704,34 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // "Ver más"). No se persiste: cada entrada al tablero vuelve al tope barato.
   const [colLimits, setColLimits] = useState<Record<string, number>>({});
 
+  // Barra de desplazamiento ARRIBA además de la de abajo. Con 15 columnas la
+  // única forma de correr el tablero era bajar hasta el pie de la página a
+  // buscar la barra, mover, y volver a subir. La de arriba es un riel gemelo:
+  // mismo ancho de contenido, scroll sincronizado en los dos sentidos.
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const topBarRef = useRef<HTMLDivElement | null>(null);
+  const [anchoTablero, setAnchoTablero] = useState(0);
+  // El guard evita el ping-pong: mover una barra dispara el onScroll de la otra,
+  // que volvería a mover la primera y trabaría el arrastre.
+  const sincronizando = useRef(false);
+  const sincronizar = (origen: HTMLDivElement | null, destino: HTMLDivElement | null) => {
+    if (!origen || !destino || sincronizando.current) return;
+    sincronizando.current = true;
+    destino.scrollLeft = origen.scrollLeft;
+    requestAnimationFrame(() => { sincronizando.current = false; });
+  };
+
+  useLayoutEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+    const medir = () => setAnchoTablero(el.scrollWidth);
+    medir();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
   // Agrupa por columna una sola vez. Cada tarjeta se re-renderiza sola cuando
   // su OrderData cambia de referencia (smartMerge en el padre).
   const byColumn = useMemo(() => {
@@ -675,7 +747,17 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   const columns = useMemo(
     () => BOARD_COLUMNS
       .filter((c) => (statusFilter ? c.key === statusFilter : true))
-      .map((c) => ({ ...c, orders: byColumn.get(c.key) ?? [] }))
+      .map((c) => ({
+        ...c,
+        // "Otros" es el cajón de los estados que NO tenemos mapeados: se ordena
+        // por el estado crudo para que los iguales queden juntos y la tarjeta
+        // muestra ese estado (ver el chip en SegCard). Antes eran 109 pedidos
+        // indistinguibles y no había forma de saber qué había adentro.
+        orders: c.key === 'otros'
+          ? [...(byColumn.get(c.key) ?? [])].sort((a, b) =>
+              String(a.estado || '').localeCompare(String(b.estado || ''), 'es'))
+          : byColumn.get(c.key) ?? [],
+      }))
       .filter((c) => c.orders.length > 0),
     [byColumn, statusFilter],
   );
@@ -743,7 +825,23 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   const firstTerminalIdx = columns.findIndex((c) => !LIVE_KEYS.has(c.key) && !CATCHALL_KEYS.has(c.key));
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] snap-x items-start">
+    <>
+    {/* Riel gemelo: solo existe para tener barra ARRIBA. No lleva contenido
+        (un div del ancho del tablero) y queda fuera del árbol de accesibilidad
+        — el tablero de abajo es el que se anuncia. */}
+    <div
+      ref={topBarRef}
+      onScroll={() => sincronizar(topBarRef.current, boardRef.current)}
+      aria-hidden="true"
+      className="overflow-x-auto overflow-y-hidden [scrollbar-width:thin] -mx-1 px-1 mb-1.5"
+    >
+      <div style={{ width: anchoTablero || 1, height: 1 }} />
+    </div>
+    <div
+      ref={boardRef}
+      onScroll={() => sincronizar(boardRef.current, topBarRef.current)}
+      className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] snap-x items-start"
+    >
       {columns.map((col, colIdx) => {
         const t = TONE[col.tone];
         const isLive = LIVE_KEYS.has(col.key);
@@ -828,7 +926,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   countryCode={countryCode}
                   tone={col.tone}
                   touchedTodayPhones={touchedTodayPhones}
-                  onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds } })}
+                  onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
                 />
               ))}
               {col.orders.length > (colLimits[col.key] ?? COLUMN_PAGE) && (
@@ -849,5 +947,6 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
         );
       })}
     </div>
+    </>
   );
 }
