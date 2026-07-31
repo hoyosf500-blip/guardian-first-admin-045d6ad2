@@ -256,6 +256,10 @@ export interface HorarioCompliance {
   tardeMin: number | null;
   /** Minutos que salió ANTES del fin del horario (0 si cumplió/se quedó). */
   tempranoMin: number | null;
+  /** Minutos que se quedó DESPUÉS del fin del horario (horas extra; 0 si salió a
+   *  tiempo o antes). Sale de la última señal vs el fin del horario pactado. El
+   *  dueño lo pidió: "a veces se van/cierran más tarde, hay que tenerlo en cuenta". */
+  extraMin: number | null;
 }
 
 /** Segundos netos del horario pactado (jornada − almuerzo, solo el solapamiento). */
@@ -278,7 +282,7 @@ export function computeHorarioCompliance(input: HorarioComplianceInput): Horario
   const salidaMs = parseTsMs(input.turnoEnd);
   const base: HorarioCompliance = {
     entradaMs, salidaMs, cubiertoSec: null, horarioNetoSec,
-    cumplimientoPct: null, tardeMin: null, tempranoMin: null,
+    cumplimientoPct: null, tardeMin: null, tempranoMin: null, extraMin: null,
   };
   if (entradaMs == null || salidaMs == null || salidaMs <= entradaMs) return base;
 
@@ -293,6 +297,9 @@ export function computeHorarioCompliance(input: HorarioComplianceInput): Horario
   const salidaSod = bogotaSecondsOfDay(new Date(salidaMs));
   const tardeMin = Math.max(0, Math.round((entradaSod - input.schedule.workStartSec) / 60));
   const tempranoMin = Math.max(0, Math.round((input.schedule.workEndSec - salidaSod) / 60));
+  // Se quedó DESPUÉS del fin del horario: última señal − fin del horario. Es
+  // simétrico a tempranoMin; nunca ambos > 0 (o salió antes, o después, o justo).
+  const extraMin = Math.max(0, Math.round((salidaSod - input.schedule.workEndSec) / 60));
 
-  return { entradaMs, salidaMs, cubiertoSec, horarioNetoSec, cumplimientoPct, tardeMin, tempranoMin };
+  return { entradaMs, salidaMs, cubiertoSec, horarioNetoSec, cumplimientoPct, tardeMin, tempranoMin, extraMin };
 }

@@ -841,6 +841,17 @@ export default function ProductivityDashboard() {
                                   <span className="text-[10px] text-muted-foreground tabular-nums">
                                     cubrió {formatDurationHM(comp!.cubiertoSec ?? 0)} de {formatDurationHM(comp!.horarioNetoSec)}
                                   </span>
+                                  {/* Horas extra: siguió activa DESPUÉS del fin del
+                                      horario. El % se topa en 100 (no infla), el extra
+                                      se muestra aparte como crédito. Pedido del dueño. */}
+                                  {(comp!.extraMin ?? 0) > 0 && (
+                                    <span
+                                      className="text-[10px] text-success tabular-nums font-semibold"
+                                      title={`Siguió activa ${formatDurationHM((comp!.extraMin ?? 0) * 60)} después del fin del horario.`}
+                                    >
+                                      +{formatDurationHM((comp!.extraMin ?? 0) * 60)} extra
+                                    </span>
+                                  )}
                                 </div>
                               )
                             ) : (
@@ -988,6 +999,16 @@ export default function ProductivityDashboard() {
                                     {formatDurationHM((comp.tempranoMin ?? 0) * 60)} antes
                                   </span>
                                 )}
+                                {/* Se quedó DESPUÉS del fin del horario (última señal
+                                    posterior al cierre pactado) → crédito, no falta. */}
+                                {isToday && comp && (comp.extraMin ?? 0) > 0 && (
+                                  <span
+                                    className="inline-flex items-center rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success whitespace-nowrap"
+                                    title={`Siguió ${formatDurationHM((comp.extraMin ?? 0) * 60)} después del fin del horario.`}
+                                  >
+                                    {formatDurationHM((comp.extraMin ?? 0) * 60)} más
+                                  </span>
+                                )}
                               </span>
                             ) : enLinea ? (
                               <span
@@ -1052,14 +1073,23 @@ export default function ProductivityDashboard() {
                 </div>
                 <div className="hud-label mt-1.5">confirmados</div>
               </div>
-              <div className="shrink-0 text-right border-l border-accent/25 pl-3">
+              {/* Segunda cifra = MISMO "% del día" de la tabla (confirmados del
+                  cohorte ÷ lo que entró), NO la tasa madura. Antes mostraba
+                  confRateBySample (conf÷resueltos) = 100% con 0 cancelaciones, y
+                  chocaba con el 58% de la fila de la misma operadora: dos números
+                  para la palabra "confirmación". Ahora coinciden. */}
+              <div
+                className="shrink-0 text-right border-l border-accent/25 pl-3"
+                title="De los pedidos que ENTRARON hoy, qué parte quedó confirmada por esta operadora. Es el mismo número que su fila en la tabla — no la 'efectividad de cierre' (esa, de los que decidieron cuántos dijeron sí, está en el tooltip de cada celda)."
+              >
                 <div className="text-2xl font-bold leading-none text-foreground font-mono tabular-nums">
                   {(() => {
-                    const t = confRateBySample(leader.confirmados, leader.cancelados).tasa;
+                    const confCohorte = leader.confirmados_cohorte ?? leader.confirmados;
+                    const t = entrantes > 0 ? Math.min(100, Math.round((confCohorte / entrantes) * 100)) : null;
                     return t == null ? '—' : `${t}%`;
                   })()}
                 </div>
-                <div className="hud-label mt-1.5">confirmación</div>
+                <div className="hud-label mt-1.5">del día</div>
               </div>
             </motion.div>
           )}
@@ -1132,14 +1162,15 @@ export default function ProductivityDashboard() {
                 confirmaron) y Faltan dice cuántos pedidos del período NADIE
                 tocó todavía. */}
             <div className="px-4 py-2.5 border-b border-border/60 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
-              <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que gestionó</span>
-              <span><strong className="text-foreground">Intentos N/R</strong>: no contestaron al menos 1 vez (aunque después confirmó)</span>
-              <span><strong className="text-foreground">N/R abiertos</strong>: sigue sin contestar al cierre del período</span>
-              <span><strong className="text-foreground">Contactó del día</strong>: de lo que entró, a cuántos contactó · faltan = por contactar</span>
-              <span><strong className="text-foreground">Confirmación del día</strong>: confirmados ÷ lo que entró · meta ~{CONF_DIA_TARGET_PCT}%</span>
-              <span><strong className="text-foreground">Clientes/h</strong>: clientes reales (contestaron) ÷ horas trabajadas · producción</span>
-              <span><strong className="text-foreground">Intentos/h</strong>: TODAS las marcadas (incl. no-contestó) ÷ horas · esfuerzo · 🔴 debajo de {MIN_INTENTOS_POR_HORA}/h</span>
-              <span className="opacity-70">gris "· en curso" = el día aún no se trabajó completo, provisional</span>
+              <span><strong className="text-foreground">Conf. / Canc.</strong>: cuántos confirmó / canceló</span>
+              <span><strong className="text-foreground">No contestó</strong>: no le contestaron al menos 1 vez (aunque después sí confirmara)</span>
+              <span><strong className="text-foreground">Sin cerrar aún</strong>: sigue sin contestar — todavía nadie lo cerró</span>
+              <span><strong className="text-foreground">Atendidos</strong>: pedidos distintos que trabajó</span>
+              <span><strong className="text-foreground">Contactó</strong>: de los que ENTRARON hoy, a cuántos les habló (faltan = por contactar)</span>
+              <span><strong className="text-foreground">Confirmó del día</strong>: de los que ENTRARON hoy, cuántos quedaron confirmados · meta ~{CONF_DIA_TARGET_PCT}%</span>
+              <span><strong className="text-foreground">Clientes por hora</strong>: clientes reales atendidos por cada hora trabajada (producción)</span>
+              <span><strong className="text-foreground">Llamadas por hora</strong>: cuántas veces marcó por cada hora, incl. las que no contestaron (esfuerzo) · 🔴 menos de {MIN_INTENTOS_POR_HORA}</span>
+              <span className="opacity-70">gris "· en curso" = el día todavía no termina, número provisional</span>
             </div>
 
             {/* Alerta de FUGA Shopify→Dropi: ventas que nunca entraron al flujo de
@@ -1183,25 +1214,29 @@ export default function ProductivityDashboard() {
                       className="text-right"
                       title="De TODO lo que entró en el período, a cuántos logró contactar (contestaron: confirmaron o cancelaron). El resto son los que faltan por contactar (no contestaron + sin tocar). Sobre lo que entró, no sobre lo que atendió."
                     >
-                      Contactó del día
+                      <span className="block">Contactó</span>
+                      <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">de lo que entró hoy</span>
                     </th>
                     <th
                       className="text-right"
                       title="Confirmados ÷ lo que ENTRÓ en el período — cómo va el día. Meta ~55% (confirmar 85 de cada 100 que entran es imposible: los que no contestan bajan el techo). Gris '· en curso' = el día aún no se trabajó completo, no concluyente. La efectividad de cierre (÷ resueltos, meta 85%) está en el tooltip de cada celda."
                     >
-                      Confirmación del día
+                      <span className="block">Confirmó</span>
+                      <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">de lo que entró hoy</span>
                     </th>
                     <th
                       className="text-right"
                       title="Clientes REALES atendidos por hora trabajada (confirmados + cancelados ÷ horas). Es la PRODUCCIÓN real — los que sí contestaron. No cuenta los 'no contestó' (llamadas en frío, rápidas). Informativo: un día malo de no-contesta baja esto sin ser su culpa, por eso no se pinta rojo."
                     >
-                      Clientes/h
+                      <span className="block">Clientes / hora</span>
+                      <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">producción</span>
                     </th>
                     <th
                       className="text-right"
-                      title={`Intentos de marcado por hora trabajada (TODAS las llamadas, incl. 'no contestó'). Es el ESFUERZO: aunque no le contesten, si sigue marcando el número se mantiene alto. 🔴 solo si baja de ${MIN_INTENTOS_POR_HORA}/hora = casi no marca. '—' si trabajó menos de 30 min.`}
+                      title={`Cuántas veces marcó por cada hora trabajada (TODAS las llamadas, incl. 'no contestó'). Es el ESFUERZO: aunque no le contesten, si sigue marcando el número se mantiene alto. 🔴 solo si baja de ${MIN_INTENTOS_POR_HORA} por hora = casi no marca. '—' si trabajó menos de 30 min.`}
                     >
-                      Intentos/h
+                      <span className="block">Llamadas / hora</span>
+                      <span className="block text-[9px] font-normal normal-case text-muted-foreground/70">esfuerzo</span>
                     </th>
                   </tr>
                 </thead>
@@ -1318,8 +1353,8 @@ export default function ProductivityDashboard() {
                         }
                         return (
                           <span className="font-mono tabular-nums text-xs text-foreground"
-                            title={`${clientes} clientes atendidos (contestaron) ÷ ${formatDurationHM(worked)} trabajadas`}>
-                            {cph.toFixed(1)}/h
+                            title={`${clientes} clientes atendidos (contestaron) ÷ ${formatDurationHM(worked)} trabajadas = ${cph.toFixed(1)} clientes por hora`}>
+                            {cph.toFixed(1)}
                           </span>
                         );
                       })()}</td>
@@ -1335,8 +1370,8 @@ export default function ProductivityDashboard() {
                         const toneClass = tone === 'muted' ? 'text-muted-foreground' : `text-${tone}`;
                         return (
                           <span className={`font-mono tabular-nums text-xs font-semibold ${toneClass}`}
-                            title={`${intentos} intentos de marcado ÷ ${formatDurationHM(worked)} trabajadas. 🔴 debajo de ${MIN_INTENTOS_POR_HORA}/hora (casi no marca). Incluye los 'no contestó', así un día duro no te castiga.`}>
-                            {iph.toFixed(1)}/h
+                            title={`${intentos} veces que marcó ÷ ${formatDurationHM(worked)} trabajadas = ${iph.toFixed(1)} llamadas por hora. 🔴 debajo de ${MIN_INTENTOS_POR_HORA} por hora (casi no marca). Incluye los 'no contestó', así un día duro no te castiga.`}>
+                            {iph.toFixed(1)}
                           </span>
                         );
                       })()}</td>
@@ -1431,8 +1466,8 @@ export default function ProductivityDashboard() {
                           {cphTeam == null
                             ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
                             : <span className="font-mono tabular-nums text-sm text-foreground"
-                                title={`${totClientes} clientes atendidos del equipo ÷ ${formatDurationHM(totWorked)} trabajadas`}>
-                                {cphTeam.toFixed(1)}/h
+                                title={`${totClientes} clientes atendidos del equipo ÷ ${formatDurationHM(totWorked)} trabajadas = ${cphTeam.toFixed(1)} clientes por hora`}>
+                                {cphTeam.toFixed(1)}
                               </span>}
                         </td>
                         {/* Intentos/hora del equipo (esfuerzo, donde vive el 🔴). */}
@@ -1440,8 +1475,8 @@ export default function ProductivityDashboard() {
                           {iphTeam == null
                             ? <span className="font-mono tabular-nums text-xs text-muted-foreground">—</span>
                             : <span className={`font-mono tabular-nums text-sm font-semibold text-${iphTeamTone}`}
-                                title={`${totIntentosMarcado} intentos del equipo ÷ ${formatDurationHM(totWorked)} trabajadas. 🔴 debajo de ${MIN_INTENTOS_POR_HORA}/hora.`}>
-                                {iphTeam.toFixed(1)}/h
+                                title={`${totIntentosMarcado} veces que marcó el equipo ÷ ${formatDurationHM(totWorked)} trabajadas = ${iphTeam.toFixed(1)} llamadas por hora. 🔴 debajo de ${MIN_INTENTOS_POR_HORA} por hora.`}>
+                                {iphTeam.toFixed(1)}
                               </span>}
                         </td>
                       </tr>

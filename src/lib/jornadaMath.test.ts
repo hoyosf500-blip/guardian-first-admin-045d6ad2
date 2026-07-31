@@ -277,6 +277,19 @@ describe('computeHorarioCompliance', () => {
     expect(c.cumplimientoPct).toBe(100);
     expect(c.tardeMin).toBe(0);
     expect(c.tempranoMin).toBe(0);
+    expect(c.extraMin).toBe(0);
+  });
+
+  it('se quedó DESPUÉS del horario: salió 18:00 (1h después de las 17:00) → extra 60', () => {
+    const c = computeHorarioCompliance({
+      turnoStart: '2026-07-17T14:00:00Z', // 9:00 puntual
+      turnoEnd: '2026-07-17T23:00:00Z',   // 18:00 → 1h de más
+      schedule: DEFAULT_SCHEDULE,
+    });
+    expect(c.tempranoMin).toBe(0);
+    expect(c.extraMin).toBe(60);
+    // El % sigue topado a 100 (el extra no infla el cumplimiento, se muestra aparte).
+    expect(c.cumplimientoPct).toBe(100);
   });
 
   it('caso Mayra: entró 9:15 (15m tarde), salió 16:02 (58m antes) → 83%', () => {
@@ -311,6 +324,7 @@ describe('computeHorarioCompliance', () => {
     });
     expect(c.tardeMin).toBe(0);
     expect(c.tempranoMin).toBe(0);
+    expect(c.extraMin).toBe(30); // se quedó media hora después del fin
     expect(c.cumplimientoPct).toBe(100); // cubre todo el horario (topado a 100)
   });
 
