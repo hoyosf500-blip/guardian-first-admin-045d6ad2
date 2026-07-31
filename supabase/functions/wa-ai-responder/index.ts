@@ -424,6 +424,34 @@ async function resolveOrderForSender(
   }
 }
 
+/** DEBOUNCE por conversación: ¿entró un mensaje del cliente MÁS NUEVO que el que
+ *  disparó esta corrida? wa-webhook lanza UNA invocación por CADA mensaje, así que
+ *  una ráfaga típica de WhatsApp ("hola" / "mi pedido" / "soy María" en 5 seg)
+ *  generaba N corridas concurrentes = N respuestas cruzadas del bot (y N× tokens).
+ *  Regla: solo la corrida del mensaje más nuevo responde (las otras noop) → UNA
+ *  respuesta con el contexto completo. Ante error de la consulta devolvemos false:
+ *  peor un mensaje doble que el silencio. */
+async function hasNewerInbound(
+  sbAdmin: SupabaseClient,
+  conversationId: string,
+  triggerAtIso: string,
+): Promise<boolean> {
+  if (!triggerAtIso) return false;
+  try {
+    const { data } = await sbAdmin
+      .from("wa_messages")
+      .select("id")
+      .eq("conversation_id", conversationId)
+      .eq("direction", "in")
+      .gt("created_at", triggerAtIso)
+      .limit(1)
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
 // Mensaje determinista de respaldo: si el modelo devuelve vacío PERO tenemos el
 // pedido resuelto, igual le damos el estado real al cliente (nunca silencio).
 function fallbackFromOrder(o: OrderCtx): string {
@@ -489,6 +517,25 @@ Deno.serve(async (req) => {
     if (!conv.ai_enabled || conv.ai_state !== "auto") {
       await recordRun("noop", { output: `skip: ai_enabled=${conv.ai_enabled} ai_state=${conv.ai_state}` });
       return json({ ok: true, action: "noop" }, 200, corsHeaders);
+    }
+
+    // created_at del mensaje disparador (una sola lectura) para el debounce.
+    let triggerAt = "";
+    if (triggerMessageId) {
+      const trig = await sbAdmin
+        .from("wa_messages")
+        .select("created_at")
+        .eq("id", triggerMessageId)
+        .eq("conversation_id", conversationId)
+        .maybeSingle();
+      triggerAt = trig.data?.created_at ? String(trig.data.created_at) : "";
+    }
+
+    // Debounce ANTES del modelo: si ya hay un mensaje más nuevo, esta corrida
+    // sobra (ahorra la llamada al modelo; la corrida de ese mensaje contesta).
+    if (await hasNewerInbound(sbAdmin, conversationId, triggerAt)) {
+      await recordRun("noop", { output: "debounce: hay un mensaje más nuevo del cliente; responde la corrida de ese mensaje" });
+      return json({ ok: true, action: "noop", reason: "debounced" }, 200, corsHeaders);
     }
 
     // Historial (asc) para el transcript.
@@ -696,6 +743,20 @@ Deno.serve(async (req) => {
     // Respuesta del modelo. Si vino VACÍA pero tenemos el pedido, damos el estado
     // real con un mensaje determinista → JAMÁS silencio.
     const reply = textOut || fallbackFromOrder(order);
+
+    // Re-chequeo del debounce DESPUÉS del modelo (la ráfaga suele caer justo en
+    // los segundos que tarda la generación): si entró otro mensaje, esta
+    // respuesta quedó vieja/parcial → la descartamos y contesta la corrida del
+    // mensaje nuevo. NO se aplica al handoff (una escalación no se descarta).
+    if (await hasNewerInbound(sbAdmin, conversationId, triggerAt)) {
+      await recordRun("noop", {
+        model,
+        prompt_tokens: usage.input_tokens,
+        completion_tokens: usage.output_tokens,
+        output: "debounce post-modelo: llegó un mensaje más nuevo durante la generación",
+      });
+      return json({ ok: true, action: "noop", reason: "debounced" }, 200, corsHeaders);
+    }
 
     const sent = await sendAndRecord(sbAdmin, channel, {
       conversationId,

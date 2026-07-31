@@ -608,12 +608,17 @@ async function findDuplicatesServiceRole(
     .ilike("phone", `%${phoneNorm}`)
     .gte("created_at", since)
     .limit(50);
-  // ACTIVA = ni entregada ni cancelada (misma regla que shopify-auto-push).
+  // ACTIVA = ni entregada ni muerta (misma regla que isActiveDropiEstado en
+  // shopify-auto-push — si se cambia acá, cambiar allá).
   const isActive = (estado: string): boolean => {
     const e = String(estado || "").toUpperCase();
     if (!e) return true;
     if (/ENTREGAD/.test(e)) return false;   // entregada → recompra
     if (/CANCEL/.test(e)) return false;     // cancelada → muerta
+    // REEMPLAZADA (editado → Dropi recreó con otro id), ANULADO y "ARCHIVADO
+    // GHOST" (borrado en Dropi) también están MUERTAS: contarlas como vivas
+    // rebotaba recompras reales como 'duplicado' → venta perdida en silencio.
+    if (/REEMPLAZ|ANULAD|ARCHIVADO/.test(e)) return false;
     return true;                            // cualquier otro estatus → en curso = duplicado
   };
   return ((data || []) as Array<{ external_id: string; estado: string; phone: string }>)
@@ -836,6 +841,14 @@ Deno.serve(async (req: Request) => {
       throw e;
     }
 
+    // Redondeo de dinero según país: CO opera en COP (sin centavos → entero),
+    // pero EC opera en USD CON centavos: redondear $9.99 a $10 sobre-cobra al
+    // cliente en la entrega (y la saga Releasit mostró que cobrar de más, aunque
+    // sea poco, genera rechazos del COD). isCodOvercharge no atrapa centavos
+    // (tolerancia mínima 2), así que el redondeo tiene que ser correcto acá.
+    const roundMoney = (x: number): number =>
+      dropiCfg.countryCode === "EC" ? Math.round(x * 100) / 100 : Math.round(x);
+
     // ¿Ya fue subido? (idempotencia / aviso en preview)
     const { data: prior } = await sb
       .from("shopify_pushed_orders")
@@ -860,7 +873,7 @@ Deno.serve(async (req: Request) => {
     // id de Dropi → NO se mandan como producto: su valor se SUMA al COD que cobra
     // Dropi (ej. $40 producto + $2 envío = $42). `shipping` final se arma tras el
     // loop sumando shipping_lines + las líneas sin product_id (extrasTotal).
-    const shippingLinesTotal = Math.round(
+    const shippingLinesTotal = roundMoney(
       (ord.shipping_lines || []).reduce((s, l) => s + (Number(l?.price) || 0), 0),
     );
 
@@ -896,7 +909,7 @@ Deno.serve(async (req: Request) => {
       // (lo mayor) — Shopify a veces deja total_discount en 0 y el monto en allocations.
       const allocSum = (li.discount_allocations || []).reduce((s, a) => s + (Number(a?.amount) || 0), 0);
       const disc = Math.max(Number(li.total_discount || "0") || 0, allocSum);
-      const price = Math.round((gross - disc) / qty);
+      const price = roundMoney((gross - disc) / qty);
 
       // Línea SIN product_id = cargo extra (envío prioritario / upsell, ej.
       // "DESPACHO PRIORITARIO"). No tiene id de Dropi → no es un producto: su
@@ -938,7 +951,7 @@ Deno.serve(async (req: Request) => {
       productDiscountInfo.forEach((p, k) => {
         if (extras[k] > 0) {
           const newLineTotal = Math.max(0, p.gross - p.lineDiscount - extras[k]);
-          resolved[p.resolvedIdx].price = Math.round(newLineTotal / p.qty);
+          resolved[p.resolvedIdx].price = roundMoney(newLineTotal / p.qty);
         }
       });
     }
@@ -1103,7 +1116,8 @@ Deno.serve(async (req: Request) => {
     // producto y no tiene id). Para qty>1 se reparte por unidad.
     if (shipping > 0 && resolved.length > 0) {
       const first = resolved[0];
-      first.price += Math.round(shipping / Math.max(1, first.quantity));
+      // roundMoney: en EC (USD) el fold por unidad debe conservar los centavos.
+      first.price = roundMoney(first.price + shipping / Math.max(1, first.quantity));
     }
 
     // RED DE SEGURIDAD (definitiva): el COD a cobrar NUNCA debe superar el total real

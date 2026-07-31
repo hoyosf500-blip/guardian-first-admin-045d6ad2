@@ -6,6 +6,11 @@ import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { cancelOrderInDropi, dropiGetOrder, type CancelOrderResult } from "../_shared/dropiCancelOrder.ts";
 import { checkOrderLivenessWeb } from "../_shared/dropiOrderLiveness.ts";
 import { confirmLiveSibling, webConfirmFallback } from "../_shared/dropiConfirmOrder.ts";
+// deriveFechaConf: fecha_conf estable desde o.history[] (auditoría 2026-07-31).
+// Este archivo NO usa el mapper compartido completo (mapOrder propio, ver nota
+// en variantLabel), pero la derivación de fecha_conf SÍ se comparte: si cron y
+// refresh calcularan fechas distintas para el mismo pedido, flapearían entre sí.
+import { deriveFechaConf } from "../_shared/dropiOrderMapper.ts";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
@@ -399,8 +404,11 @@ function mapOrder(o: Record<string, unknown>, userId: string, today: string, sto
   const updatedAt = String(o.updated_at || "");
   const fecha = createdAt ? createdAt.split("T")[0] : today;
   const status = String(o.status || "PENDIENTE").toUpperCase();
-  const isPendConf = status === "PENDIENTE CONFIRMACION";
-  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : null;
+  // fecha_conf estable desde el historial (compartido con el mapper de _shared):
+  // antes era updated_at.split('T')[0] y la "Fecha confirmación" derivaba con
+  // CADA movimiento del pedido (el cron toca TODOS los pedidos cada 15 min —
+  // era el principal re-estampador). Ver deriveFechaConf en dropiOrderMapper.ts.
+  const fechaConf = deriveFechaConf(o, status, updatedAt);
 
   const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";
   const movements = (o.servientrega_movements as Array<Record<string, unknown>>) || [];
@@ -493,6 +501,15 @@ async function syncStore(
   // que corre primero y casi siempre trae ordenes nuevas -> enmascararia un
   // filter_date_by roto, el bug zombie del 21-28/05).
   let statusTotal = 0;
+  // PRIMER error de la RPC de upsert (patrón anyUpsertError del wallet-sync,
+  // auditoría 2026-07-31): si upsert_orders_from_dropi falla (migración a
+  // medias, RPC pisada por drift repo↔DB, permiso), antes solo iba a
+  // console.error y el caller logueaba 'success' verde con synced_count=0 —
+  // Dropi SÍ devolvía pedidos (statusTotal>0) así que ni la detección zombie
+  // saltaba, y el banner quedaba verde mientras NINGÚN pedido entraba al CRM.
+  // La misma clase de bug que congeló la billetera semanas (lección 21-jul:
+  // "corrió" y "funcionó" son dos preguntas distintas).
+  let upsertErrMsg: string | undefined;
 
   try {
     for (const pass of passes) {
@@ -500,7 +517,7 @@ async function syncStore(
       for (const chunk of chunks) {
         if (Date.now() > deadline) {
           console.warn(`[store ${store.store_id}] presupuesto agotado, corte parcial`);
-          return { synced, total, statusTotal, throttled: true };
+          return { synced, total, statusTotal, error: upsertErrMsg, throttled: true };
         }
         const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline, pass.stopBeforeCreated);
         total += dropiOrders.length;
@@ -516,6 +533,9 @@ async function syncStore(
           );
           if (upsertError) {
             console.error(`[store ${store.store_id}] upsert error:`, upsertError);
+            if (!upsertErrMsg) {
+              upsertErrMsg = `upsert_orders_from_dropi falló: ${String(upsertError.message ?? upsertError)}`;
+            }
           } else {
             synced += (changedCount as number) || 0;
           }
@@ -523,18 +543,22 @@ async function syncStore(
         await sleep(RATE_LIMIT_MS);
       }
     }
-    return { synced, total, statusTotal };
+    // upsertErrMsg (si hubo) viaja como error: el caller loguea 'error' con el
+    // mensaje real en vez de un 'success' verde con datos congelados.
+    return { synced, total, statusTotal, error: upsertErrMsg };
   } catch (err) {
     // 429 sostenido NO es un fallo: la tienda sincronizó lo que pudo y el próximo
     // tick reintenta. Se devuelve como throttled (parcial) para loguear 'success'
     // y NO pintar el banner de rojo. Cualquier otra excepción sí es error duro.
+    // OJO: un error de upsert previo SIEMPRE gana sobre el throttle — con la RPC
+    // rota nada se guarda aunque Dropi responda perfecto.
     if (err instanceof DropiRateLimitError) {
       console.warn(`[store ${store.store_id}] throttled por Dropi (429) — sync parcial: ${synced}/${total}`);
-      return { synced, total, statusTotal, throttled: true };
+      return { synced, total, statusTotal, error: upsertErrMsg, throttled: true };
     }
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[store ${store.store_id}] sync failed:`, msg);
-    return { synced, total, statusTotal, error: msg };
+    return { synced, total, statusTotal, error: upsertErrMsg ? `${upsertErrMsg} | ${msg}` : msg };
   }
 }
 

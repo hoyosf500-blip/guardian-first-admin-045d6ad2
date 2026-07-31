@@ -164,10 +164,24 @@ Deno.serve(async (req) => {
       if (objs.length === 0) break;
 
       const rows = objs.map((o) => mapDropiOrderToRow(o, user.id, today, storeId));
-      const { data: upData, error: upErr } = await sbAdmin
-        .from("orders")
-        .upsert(rows, { onConflict: "external_id", ignoreDuplicates: false })
-        .select("id, external_id");
+      // RPC upsert_orders_from_dropi (auditoría 2026-07-31) en vez del .upsert()
+      // crudo: el crudo se saltaba las TRES guardas de la RPC v6 — (1) WHERE IS
+      // DISTINCT FROM: el crudo UPDATEaba incondicionalmente hasta 2000 filas y
+      // disparaba un evento realtime por CADA una aunque nada cambió, en cada
+      // mount/auto-refresh de Seguimiento (el parpadeo que la RPC existe para
+      // evitar); (2) en conflicto la RPC NO toca uploaded_by/upload_date/phone —
+      // el crudo re-estampaba uploaded_by con quien montó Seguimiento, re-bumpeaba
+      // upload_date a hoy (engordando el set no-terminal del nightly-reconcile) y
+      // pisaba el phone editado localmente; (3) productos_detalle con COALESCE —
+      // el crudo escribía NULL y borraba talla/color si el listado venía sin
+      // orderdetails. Mismos batches de 50 que dropi-cron/dropi-sync.
+      let upErr: { message: string } | null = null;
+      for (let i = 0; i < rows.length; i += 50) {
+        const { error: rpcErr } = await sbAdmin.rpc("upsert_orders_from_dropi", {
+          p_orders: rows.slice(i, i + 50),
+        });
+        if (rpcErr) { upErr = rpcErr; break; }
+      }
       if (upErr) {
         if (refreshed > 0) { partial = true; break; }
         return jsonResp({ error: `No se pudo guardar en DB: ${upErr.message}`, refreshed }, 500, corsHeaders);
@@ -177,9 +191,16 @@ Deno.serve(async (req) => {
 
       // Ingerir el historial REAL de Dropi (o.history[]) en order_status_history.
       // Reconstruye el timeline completo del pedido. Necesita el uuid de orders.id
-      // → lo resolvemos del resultado del upsert (map external_id → id). Idempotente
+      // → la RPC no lo devuelve, así que se resuelve con un select por external_id
+      // (SIEMPRE filtrado por tienda: CO y EC jamás se mezclan). Idempotente
       // por dropi_history_id. Un fallo acá NO debe abortar el sync de estados.
       try {
+        const extIds = rows.map((r) => String(r.external_id ?? "")).filter(Boolean);
+        const { data: upData } = await sbAdmin
+          .from("orders")
+          .select("id, external_id")
+          .eq("store_id", storeId)
+          .in("external_id", extIds);
         const idByExt = new Map<string, string>();
         for (const r of (upData ?? []) as Array<{ id: string; external_id: string }>) {
           idByExt.set(String(r.external_id), r.id);
@@ -215,6 +236,53 @@ Deno.serve(async (req) => {
       pages++;
       if (pages >= MAX_PAGES) { partial = true; break; }
       await sleep(RATE_LIMIT_MS);
+    }
+
+    // ── Restore de gestiones LOCALES (auditoría 2026-07-31) ──────────────────
+    // El upsert de arriba trae el estado de DROPI, que puede seguir en
+    // "PENDIENTE CONFIRMACION" cuando la asesora YA confirmó/canceló acá y el
+    // PUT a Dropi falló o demora (429 constante en EC): sin este paso el pedido
+    // gestionado REAPARECÍA en /confirmar y la asesora re-llamaba a un cliente
+    // que ya le dijo que sí — y este refresh se auto-dispara cada 4 min al
+    // montar Seguimiento, no es un botón raro. Mismo par de UPDATEs que
+    // dropi-sync y dropi-cron corren tras cada upsert, filtrado por la tienda
+    // refrescada. Solo corre si se upserteó algo (si no, nada se pisó).
+    if (refreshed > 0) {
+      const todayBogota = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" }).format(new Date());
+      // conf de HOY + conf cuyo push a Dropi quedó failed/pending (atascado):
+      // ambas deben volver a PENDIENTE si el upsert las regresó a la cola.
+      const { data: confirmedToday } = await sbAdmin
+        .from("order_results").select("order_id")
+        .eq("result", "conf").eq("result_date", todayBogota).eq("store_id", storeId);
+      const { data: confirmedStuck } = await sbAdmin
+        .from("order_results").select("order_id")
+        .eq("result", "conf").in("dropi_sync_status", ["failed", "pending"]).eq("store_id", storeId);
+      const idsToRestore = new Set<string>();
+      for (const r of (confirmedToday ?? []) as Array<{ order_id: string }>) idsToRestore.add(r.order_id);
+      for (const r of (confirmedStuck ?? []) as Array<{ order_id: string }>) idsToRestore.add(r.order_id);
+      if (idsToRestore.size > 0) {
+        const confIds = Array.from(idsToRestore);
+        for (let i = 0; i < confIds.length; i += 50) {
+          await sbAdmin.from("orders").update({ estado: "PENDIENTE" })
+            .in("id", confIds.slice(i, i + 50))
+            .eq("store_id", storeId)
+            .eq("estado", "PENDIENTE CONFIRMACION");
+        }
+      }
+      // Cancelaciones de hoy: re-aplicar CANCELADO si el upsert las revirtió.
+      // Las ya reflejadas en Dropi vienen CANCELADO → el WHERE no las toca.
+      const { data: cancelledToday } = await sbAdmin
+        .from("order_results").select("order_id")
+        .eq("result", "canc").eq("result_date", todayBogota).eq("store_id", storeId);
+      if (cancelledToday && cancelledToday.length > 0) {
+        const cancIds = (cancelledToday as Array<{ order_id: string }>).map((r) => r.order_id);
+        for (let i = 0; i < cancIds.length; i += 50) {
+          await sbAdmin.from("orders").update({ estado: "CANCELADO" })
+            .in("id", cancIds.slice(i, i + 50))
+            .eq("store_id", storeId)
+            .eq("estado", "PENDIENTE CONFIRMACION");
+        }
+      }
     }
 
     return jsonResp({

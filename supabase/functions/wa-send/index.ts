@@ -58,9 +58,14 @@ Deno.serve(async (req) => {
   try {
     const channel = await loadWaChannel(sbAdmin, storeId);
 
-    // Resolver conversación + teléfono destino.
+    // Resolver conversación + teléfono destino. Si el destino ya es un JID
+    // (contacto LID: customer_phone = "<id>@lid", el teléfono real está OCULTO
+    // por diseño de WhatsApp) se pasa TAL CUAL al transporte — onlyDigits sobre
+    // un @lid da dígitos basura y el envío "salía" en verde a un número
+    // inexistente: el bot le llegaba al cliente y la humana no (auditoría 2026-07).
     let conversationId = String(payload.conversation_id || "").trim();
-    let phone = onlyDigits(payload.to || "");
+    const rawTo = String(payload.to || "").trim();
+    let phone = rawTo.includes("@") ? rawTo : onlyDigits(rawTo);
 
     if (conversationId) {
       const c = await sbAdmin
@@ -70,7 +75,8 @@ Deno.serve(async (req) => {
         .eq("store_id", storeId)
         .maybeSingle();
       if (!c.data) return json({ error: "Conversación no encontrada" }, 404, corsHeaders);
-      phone = onlyDigits(c.data.customer_phone);
+      const cp = String(c.data.customer_phone || "");
+      phone = cp.includes("@") ? cp : onlyDigits(cp);
     } else {
       if (!phone) return json({ error: "Falta 'to' o 'conversation_id'" }, 400, corsHeaders);
       const conv = await upsertConversation(sbAdmin, {
@@ -89,8 +95,10 @@ Deno.serve(async (req) => {
       operatorId: user.id,
     });
 
-    // Touchpoint para timeline + cobertura ("tu cola hoy"). Solo si se envió.
-    if (result.ok) {
+    // Touchpoint para timeline + cobertura ("tu cola hoy"). Solo si se envió, y
+    // NUNCA con un JID @lid: sus dígitos NO son un teléfono y contaminarían el
+    // match por phone (mySegTouchedToday / segOwnership).
+    if (result.ok && !phone.includes("@")) {
       await sbAdmin.from("touchpoints").insert({
         store_id: storeId,
         phone,

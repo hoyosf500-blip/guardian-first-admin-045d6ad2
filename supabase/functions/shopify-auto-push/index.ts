@@ -38,14 +38,22 @@ const SHOPIFY_LOOKBACK_DAYS = 3;       // ventana de pedidos Shopify a revisar
 const DROPI_LOOKBACK_DAYS = 60;        // ventana de `orders` para detectar una orden ACTIVA del mismo teléfono (cubre entregas lentas; más viejas = ghost)
 
 /** Una orden Dropi está ACTIVA (en curso) si NO está ENTREGADA ni muerta
- *  (cancelada/rechazada/anulada/reemplazada). Regla del dueño 2026-07-18: solo
+ *  (cancelada/anulada/reemplazada/archivada). Regla del dueño 2026-07-18: solo
  *  una orden ACTIVA bloquea una nueva subida (= duplicado); si su única orden ya
- *  está ENTREGADA, el cliente está RECOMPRANDO → sí se sube. */
+ *  está ENTREGADA, el cliente está RECOMPRANDO → sí se sube.
+ *  MISMA regla que findDuplicatesServiceRole (shopify-push-dropi) — si se cambia
+ *  acá, cambiar allá. RECHAZADO queda como "en curso" a propósito (puede ser un
+ *  estado transitorio de transportadora; pendiente decisión del dueño). */
 function isActiveDropiEstado(estado: string | null): boolean {
   const e = String(estado || "").toUpperCase();
   if (!e) return true;                       // sin estado → conservador (bloquea)
   if (/ENTREGAD/.test(e)) return false;      // entregada → recompra ok, se sube
   if (/CANCEL/.test(e)) return false;        // cancelada → muerta (ya se ignoraba)
+  // REEMPLAZADA (pedido editado → Dropi recrea con otro id), ANULADO y
+  // "ARCHIVADO GHOST" (borrado en Dropi, ~20% de pendientes EC viejos) también
+  // son órdenes MUERTAS: tratarlas como vivas bloqueaba 60 días la recompra
+  // real del cliente con etiqueta 'duplicado' → venta perdida en silencio.
+  if (/REEMPLAZ|ANULAD|ARCHIVADO/.test(e)) return false;
   return true;                               // cualquier otro estatus → en curso = duplicado
 }
 
@@ -148,9 +156,17 @@ async function processStore(
   // 3. Intentos previos (idempotencia + enfriamiento de 'error').
   const pushedByOrderId = new Map<string, PushedRecord>();
   {
+    // Solo importan los intentos dentro de la ventana de candidatos (3 días) +
+    // margen de 1 día: sin este filtro PostgREST corta en 1000 filas SIN orden
+    // garantizado y, con el histórico acumulado, el robot "olvidaría" intentos
+    // RECIENTES → re-seleccionaría pedidos ya subidos cada 15 min (rebotes 409
+    // que queman el cap de candidatos y pintan el badge en warn mintiendo).
+    // El order desc es doble seguro por si aun así se pasa de 1000.
     const { data } = await sb
       .from("shopify_pushed_orders").select("shopify_order_id, status, pushed_at")
-      .eq("store_id", storeId);
+      .eq("store_id", storeId)
+      .gte("pushed_at", new Date(Date.now() - (MAX_AGE_MS + 86400000)).toISOString())
+      .order("pushed_at", { ascending: false });
     for (const r of ((data || []) as { shopify_order_id: string; status: string; pushed_at: string }[])) {
       pushedByOrderId.set(String(r.shopify_order_id), {
         status: String(r.status || ""),

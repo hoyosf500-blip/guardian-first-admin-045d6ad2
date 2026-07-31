@@ -55,6 +55,76 @@ export function extractStatusHistoryRows(
   return rows;
 }
 
+// ── fecha_conf ESTABLE (auditoría 2026-07-31) ───────────────────────────────
+// Antes: fecha_conf = updated_at.split('T')[0] siempre que el estado no fuera
+// PENDIENTE CONFIRMACION. Como updated_at cambia con CADA movimiento, la
+// "Fecha confirmación" derivaba: un pedido confirmado el 1-jul y entregado el
+// 20-jul quedaba con fecha_conf=2026-07-20, y un CANCELADO directo quedaba
+// "confirmado" el día de la cancelación. OrderDetailPage la rotula como fecha
+// de confirmación y CrmTable/SegBoard la usan como base de SLA → los "días" de
+// una fila cambiaban bajo los pies de la asesora con cada movimiento.
+//
+// Ahora se deriva del historial REAL (`o.history[]`, el mismo que ingiere
+// order_status_history): la PRIMERA entrada que salió de la cola de
+// confirmación es LA fecha de confirmación, y es estable entre syncs (la
+// guardia IS DISTINCT FROM de la RPC deja de disparar realtime por este campo).
+//
+// ⚠️ Si NO viene historial se conserva el comportamiento previo (updated_at):
+// la RPC upsert_orders_from_dropi hace `fecha_conf = EXCLUDED.fecha_conf` SIN
+// COALESCE, así que mandar null acá BORRARÍA un sello legítimo ya guardado.
+// Mejor un valor aproximado estable-por-día que un null que destruye datos.
+
+/** Normaliza un status Dropi para comparar (mayúsculas, sin tildes,
+ *  `_` → espacio — el historial trae "GUIA_GENERADA" con guion bajo). */
+function normStatusForConf(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const PRE_CONF_RE = /^(PENDIENTE CONFIRMACION|POR CONFIRMAR)$/;
+const CANCELISH_RE = /CANCELAD|RECHAZAD|REEMPLAZAD|ANULAD/;
+
+/** Fecha de confirmación (YYYY-MM-DD) derivada del historial de Dropi.
+ *  `status` debe venir ya en mayúsculas; `updatedAt` es el fallback legacy. */
+export function deriveFechaConf(
+  o: Record<string, unknown>,
+  status: string,
+  updatedAt: string,
+): string | null {
+  // Sigue en la cola de confirmación → nunca se confirmó.
+  if (status === "PENDIENTE CONFIRMACION" || status === "POR CONFIRMAR") return null;
+
+  const hist = Array.isArray(o.history) ? (o.history as Array<Record<string, unknown>>) : [];
+  if (hist.length > 0) {
+    // Primera entrada post-cola (ni pre-confirmación ni cancelación): esa es
+    // la confirmación real. ISO strings comparan bien lexicográficamente.
+    let earliest: string | null = null;
+    for (const h of hist) {
+      const st = normStatusForConf(String(h?.status ?? ""));
+      const at = String(h?.created_at ?? "").trim();
+      if (!st || !at) continue;
+      if (PRE_CONF_RE.test(st) || CANCELISH_RE.test(st)) continue;
+      if (earliest === null || at < earliest) earliest = at;
+    }
+    if (earliest) return earliest.split("T")[0];
+    // Historial presente y SIN ninguna entrada post-confirmación:
+    //  - cancelado directo desde la cola → null honesto (jamás se confirmó;
+    //    también corrige el sello falso que dejó el comportamiento viejo);
+    //  - estado avanzado con historial incompleto → fallback legacy abajo
+    //    (nunca null: no arriesgamos borrar un sello legítimo).
+    if (CANCELISH_RE.test(normStatusForConf(status))) return null;
+  }
+
+  // Sin historial (o incompleto): comportamiento previo — aproximado pero
+  // nunca destruye un dato ya sellado vía la RPC sin COALESCE.
+  return updatedAt ? updatedAt.split("T")[0] : null;
+}
+
 /** Días calendario desde una fecha-string hasta hoy (server time). */
 export function calcDiasCal(dateStr: string): number {
   if (!dateStr) return 0;
@@ -147,10 +217,10 @@ export function mapDropiOrderToRow(
   const updatedAt = String(o.updated_at || "");
   const fecha = createdAt ? createdAt.split("T")[0] : today;
 
-  // Determine fecha_conf from updated_at if status changed from PENDIENTE CONFIRMACION
+  // fecha_conf estable desde el historial (ver deriveFechaConf arriba) — antes
+  // se re-estampaba con updated_at en cada sync y la fecha derivaba.
   const status = String(o.status || "PENDIENTE").toUpperCase();
-  const isPendConf = status === "PENDIENTE CONFIRMACION";
-  const fechaConf = !isPendConf && updatedAt ? updatedAt.split("T")[0] : null;
+  const fechaConf = deriveFechaConf(o, status, updatedAt);
 
   // Extract novedad from novedad_servientrega or servientrega_movements
   const novedadServ = o.novedad_servientrega ? String(o.novedad_servientrega) : "";

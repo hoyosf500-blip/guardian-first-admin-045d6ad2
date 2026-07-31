@@ -20,11 +20,13 @@
 //    Tells Dropi to return the package to the sender. No solution text
 //    required.
 //
-// Why integration-key instead of Bearer login
+// Credenciales (actualizado 2026-07-31)
 // --------------------------------------------
-// Same reason as dropi-update-order: the user's Dropi account has 2FA on,
-// so /api/login returns 403. The integration-key is a service token that
-// works for both /integrations reads and this incidence endpoint.
+// Cadena session token → re-login forzado → api_key (ver
+// dropiPostIncidenceChain): el endpoint es del plano /api/*, la misma clase
+// que el 29-jul dejó de aceptar la api_key en el wallet de un día para otro.
+// La api_key sigue funcionando acá HOY y queda como fallback probado (clave
+// para la cuenta CO, que tiene 2FA y no siempre tiene session token fresco).
 //
 // Invocation from frontend
 // ------------------------
@@ -40,7 +42,9 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+import { loadStoreConfig, isStoreMember, type StoreDropiConfig } from "../_shared/dropiStoreConfig.ts";
+import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
+import { dropiWebFetch, WebFallbackError } from "../_shared/dropiWebQuote.ts";
 
 const DROPI_INCIDENCE_PATH = "/api/orders/saveincidencesolution";
 const MAX_SOLUTION_LEN = 500;
@@ -155,6 +159,79 @@ async function dropiPostIncidence(
   return { ok, httpStatus: res.status, body, rawText };
 }
 
+// Cadena de credenciales para /api/* (patrón del wallet-sync, auditoría
+// 2026-07-31): saveincidencesolution vive en el plano /api/* — la MISMA clase
+// de endpoint que el 29-jul empezó a rechazar la api_key de un día para otro
+// ("Token not issued to this api", las dos cuentas a la misma hora). Hoy la
+// api_key todavía funciona acá, pero si Dropi extiende esa política el botón
+// de resolver novedades moriría sin aviso. Orden de intentos:
+//   1. session token web (auto-renovado por exp vía ensureFreshSessionToken —
+//      es el token que usa el propio panel de Dropi contra este endpoint),
+//   2. si Dropi rechaza un session "vigente" (puede revocar antes del exp),
+//      UN re-login forzado,
+//   3. api_key con dropi-integration-key (el camino probado que funciona hoy).
+// Solo un rechazo de AUTH (401/403) avanza la cadena: cualquier otro fallo es
+// la respuesta real de Dropi sobre la incidencia y se devuelve tal cual
+// (probar otra credencial no cambia nada y suma requests al throttle).
+// Sin session token configurado, va DIRECTO a la api_key — cero requests extra
+// (el caso CO con 2FA queda idéntico a como venía funcionando).
+async function dropiPostIncidenceChain(
+  sb: SB,
+  cfg: StoreDropiConfig,
+  payload: Record<string, unknown>,
+): Promise<DropiResult> {
+  let sessionToken = "";
+  try {
+    sessionToken = await ensureFreshSessionToken(sb, cfg);
+  } catch (e) {
+    console.warn("dropi-resolve-incidence: auto-login falló:", e instanceof Error ? e.message : String(e));
+  }
+
+  let renewedOnce = false;
+  let tok = sessionToken;
+  while (tok) {
+    try {
+      const { status, body, text } = await dropiWebFetch(
+        { base: cfg.base, sessionToken: tok, storeUrl: cfg.storeUrl },
+        DROPI_INCIDENCE_PATH,
+        { method: "POST", body: payload },
+      );
+      const bodyObj = (body ?? {}) as Record<string, unknown>;
+      const ok = status >= 200 && status < 300 && bodyObj.isSuccess !== false;
+      if (ok) return { ok: true, httpStatus: status, body: bodyObj, rawText: text };
+      if (status !== 401 && status !== 403) {
+        // Respuesta real de Dropi (incidencia ya cerrada, validación, etc.).
+        return { ok: false, httpStatus: status, body: bodyObj, rawText: text };
+      }
+      console.warn(`dropi-resolve-incidence: session token rechazado [${status}]`);
+    } catch (e) {
+      // dropiWebFetch convierte el 401 típico de token vencido (y el timeout)
+      // en WebFallbackError — mismo tratamiento que un rechazo de auth crudo.
+      if (!(e instanceof WebFallbackError)) throw e;
+      console.warn("dropi-resolve-incidence: session token inválido:", e.message);
+    }
+    if (renewedOnce) break;
+    renewedOnce = true;
+    try {
+      const forced = await ensureFreshSessionToken(sb, cfg, { force: true });
+      if (forced && forced !== tok) { tok = forced; continue; }
+    } catch (e) {
+      console.warn("dropi-resolve-incidence: re-login forzado falló:", e instanceof Error ? e.message : String(e));
+    }
+    break;
+  }
+
+  if (cfg.apiKey) {
+    return await dropiPostIncidence(cfg.base, cfg.apiKey, cfg.storeUrl, payload);
+  }
+  return {
+    ok: false,
+    httpStatus: 401,
+    body: { message: "Dropi rechazó el token de sesión y la tienda no tiene api_key de respaldo" },
+    rawText: "",
+  };
+}
+
 async function dropiSanityCheck(
   base: string,
   apiKey: string,
@@ -217,20 +294,13 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // H11: role check. Antes cualquier usuario autenticado (incluso
-    // cuentas recién creadas sin rol asignado, o cuentas deprovisioneadas
-    // pero todavía con sesión activa) podía empujar incidencias a Dropi.
-    const { data: roles } = await sb
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id);
-    const allowed = (roles || []).some((r: { role: string }) => r.role === "admin" || r.role === "operator");
-    if (!allowed) {
-      return new Response(
-        JSON.stringify({ error: "No tienes permiso para resolver novedades en Dropi" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+    // El viejo gate H11 por user_roles (capa GLOBAL de plataforma) se quitó
+    // (auditoría 2026-07-31): bloqueaba con 403 a owners/supervisors de tiendas
+    // invitadas por el flujo multitienda —que no tienen fila en user_roles—
+    // sobre SU propia tienda. El gate real es la MEMBRESÍA de la tienda del
+    // pedido (isStoreMember, abajo en cada camino), el mismo patrón que
+    // dropi-open-incidences y el resto de las edge multi-tienda. Una cuenta
+    // sin ninguna membresía sigue sin poder empujar nada.
 
     // ---- Parse body ----
     let body: Record<string, unknown> = {};
@@ -257,6 +327,14 @@ Deno.serve(async (req: Request) => {
       if (!storeId) {
         return new Response(JSON.stringify({ error: "Falta storeId para dryRun" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Sin el gate global de user_roles, la membresía es el ÚNICO gate: sin
+      // esto cualquier autenticado podría sondear credenciales de tiendas ajenas.
+      const isDryMember = await isStoreMember(sb, user.id, storeId);
+      if (!isDryMember) {
+        return new Response(JSON.stringify({ error: "No perteneces a esta tienda" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const cfg = await loadStoreConfig(sb, storeId);
@@ -310,9 +388,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const cfg = await loadStoreConfig(sb, local.storeId);
-    if (!cfg.apiKey) {
+    // Con la cadena de credenciales alcanza CUALQUIERA de las dos: session
+    // token (camino del panel) o api_key (fallback probado).
+    if (!cfg.apiKey && !cfg.sessionToken) {
       return new Response(
-        JSON.stringify({ error: "La tienda no tiene Clave API de Dropi configurada" }),
+        JSON.stringify({ error: "La tienda no tiene credenciales Dropi configuradas (Clave API o token de sesión)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
@@ -323,8 +403,8 @@ Deno.serve(async (req: Request) => {
         ? buildReofferBody(externalId, solution, local)
         : buildReturnBody(externalId);
 
-    // ---- Call Dropi ----
-    const res = await dropiPostIncidence(cfg.base, cfg.apiKey, cfg.storeUrl, payload);
+    // ---- Call Dropi (cadena session → re-login → api_key) ----
+    const res = await dropiPostIncidenceChain(sb, cfg, payload);
 
     if (!res.ok) {
       const errorMsg = `Dropi POST [${res.httpStatus}]: ${String(
@@ -338,6 +418,9 @@ Deno.serve(async (req: Request) => {
         duplicates_count: 0,
         total_count: 1,
         triggered_by: user.id,
+        // store_id: sin esto el log no se puede atribuir en multi-tienda
+        // (eran los únicos inserts del área sin tienda).
+        store_id: local.storeId,
         error_message: errorMsg,
       });
 
@@ -364,6 +447,7 @@ Deno.serve(async (req: Request) => {
       duplicates_count: 0,
       total_count: 1,
       triggered_by: user.id,
+      store_id: local.storeId,
     });
 
     return new Response(

@@ -150,19 +150,27 @@ async function findClientConversation(
   sbAdmin: SupabaseClient,
   storeId: string,
   phone: string,
-): Promise<{ id: string; aiState: string; warm: boolean } | null> {
+): Promise<{ id: string; aiState: string; aiEnabled: boolean; warm: boolean } | null> {
   const suf = phoneSuffix(phone);
   if (suf.length < 7) return null; // evita over-match con sufijos cortos
+  // ai_enabled TAMBIÉN se lee: es el kill switch por hilo del inbox. Sin él, el
+  // notifier no podía distinguir un apagado manual (ai_enabled=false con
+  // ai_state='auto') y re-encendía el bot en hilos que una persona tomó a mano.
   const { data: conv } = await sbAdmin
     .from("wa_conversations")
-    .select("id, ai_state")
+    .select("id, ai_state, ai_enabled")
     .eq("store_id", storeId)
     .ilike("customer_phone", `%${suf}%`)
     .order("last_message_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (!conv) return null;
-  return { id: String(conv.id), aiState: String(conv.ai_state || "auto"), warm: await hasInbound(sbAdmin, String(conv.id)) };
+  return {
+    id: String(conv.id),
+    aiState: String(conv.ai_state || "auto"),
+    aiEnabled: conv.ai_enabled !== false,
+    warm: await hasInbound(sbAdmin, String(conv.id)),
+  };
 }
 
 /** ¿La conversación tiene al menos un mensaje ENTRANTE? (= el cliente escribió). */
@@ -242,29 +250,48 @@ async function processStore(
     if (prev.last_bucket === bucket) continue; // sin cambio de bucket
 
     const bucketOn = notify.buckets?.[bucket] !== false; // default ON si no está
+
+    // Tope de la corrida alcanzado → NO consumir la transición: antes se avanzaba
+    // last_bucket igual y el aviso se perdía PARA SIEMPRE (ej. 1ª corrida de las
+    // 8am con 60 transiciones acumuladas de la noche: salían 40 y 20 se esfumaban).
+    // Dejándola intacta, la corrida siguiente (~10 min) la retoma. El seed de
+    // baseline de arriba SÍ sigue corriendo aunque haya tope (anti-blast).
+    if (bucketOn && state.sent >= MAX_SENDS_PER_RUN) continue;
+
     let didSend = false;
-    if (bucketOn && state.sent < MAX_SENDS_PER_RUN) {
+    // Skip intencional-PERMANENTE (bucket apagado por config, sin destino warm,
+    // hilo tomado/apagado por humano) → SÍ consume la transición para no
+    // reintentarla en cada corrida. Un fallo del gateway NO es permanente.
+    let skipPermanente = !bucketOn;
+    if (bucketOn) {
       try {
         // Resolver la conversación destino. Modo SOLO-WARM (default): solo si el
         // cliente YA escribió (conversación con inbound) → cero envíos en frío. Con
         // warmOnly:false vuelve al legacy (upsert crea la conversación y avisa a
-        // todos). Si no hay destino válido, NO mandamos (pero avanzamos el bucket
-        // abajo igual, así no reintenta en cada corrida).
+        // todos).
         let convId: string | null = null;
         let aiState = "auto";
+        let aiEnabled = true;
         if (warmOnly) {
           const c = await findClientConversation(sbAdmin, storeId, phone);
-          if (c && c.warm) { convId = c.id; aiState = c.aiState; }
+          if (c && c.warm) { convId = c.id; aiState = c.aiState; aiEnabled = c.aiEnabled; }
         } else {
           const conv = await upsertConversation(sbAdmin, {
             storeId, channelId: channel.channelId, phone, name: o.nombre ? String(o.nombre) : null,
+            // Alta con IA activa: el aviso en frío espera respuesta del cliente y
+            // el bot debe poder contestarla. Solo afecta la CREACIÓN — una
+            // conversación existente conserva su estado (apagado manual incluido).
+            enableAiOnCreate: true,
           });
           convId = conv.id;
           aiState = conv.aiState;
+          aiEnabled = conv.aiEnabled;
         }
-        // Si un humano TOMÓ/APAGÓ el hilo (ai_state='handed_off'), el bot NO manda
-        // proactivos NI se re-activa solo: lo maneja la persona.
-        if (convId && aiState !== "handed_off") {
+        // Si un humano TOMÓ el hilo (ai_state='handed_off') o APAGÓ el bot con el
+        // switch del inbox (ai_enabled=false), el bot NO manda proactivos NI se
+        // re-activa solo: lo maneja la persona. (Antes solo se respetaba
+        // handed_off y un update incondicional re-encendía la IA apagada a mano.)
+        if (convId && aiState !== "handed_off" && aiEnabled) {
           const tpl = (notify.templates?.[bucket] && String(notify.templates[bucket]).trim()) || DEFAULT_TEMPLATES[bucket];
           const body = render(tpl, o, agente, country);
           const res = await sendAndRecord(sbAdmin, channel, {
@@ -273,17 +300,21 @@ async function processStore(
             body,
             sender: "system",
           });
-          // Que el bot pueda RESPONDER si el cliente contesta (amigo siempre disponible).
-          await sbAdmin.from("wa_conversations")
-            .update({ ai_enabled: true, ai_state: "auto" })
-            .eq("id", convId);
           didSend = res.ok;
           if (res.ok) state.sent++;
+        } else {
+          skipPermanente = true; // sin destino warm / hilo en manos humanas
         }
       } catch (e) {
         console.error("[wa-status-notifier] send failed", extId, e instanceof Error ? e.message : e);
       }
     }
+
+    // Consumir la transición SOLO tras envío exitoso o skip intencional-permanente.
+    // didSend=false tras INTENTAR (gateway caído / res.ok=false / excepción) deja
+    // la transición viva → la próxima corrida reintenta (acotado natural: el
+    // pedido sale del lookback de 21 días o cambia de bucket).
+    if (!didSend && !skipPermanente) continue;
 
     const patch: Record<string, unknown> = {
       last_bucket: bucket,

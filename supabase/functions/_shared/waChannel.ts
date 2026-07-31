@@ -120,7 +120,32 @@ export async function upsertConversation(
     .select("id, ai_enabled, ai_state")
     .single();
 
-  if (inserted.error) throw new Error(`No se pudo crear la conversación: ${inserted.error.message}`);
+  if (inserted.error) {
+    // Carrera entre dos webhooks casi simultáneos del MISMO cliente NUEVO (texto
+    // + nota de voz): ambos pasan el select vacío y el segundo INSERT rebota en
+    // el UNIQUE(store_id, customer_phone) con 23505. Antes se lanzaba → el catch
+    // de wa-webhook devolvía 200 (a propósito, para que el gateway no re-loopee)
+    // y ese mensaje se PERDÍA para siempre (ni inbox ni bot). Ahora re-consultamos
+    // la conversación que ganó la carrera y seguimos con ella.
+    const isUnique = (inserted.error as { code?: string }).code === "23505" ||
+      /duplicate key|unique/i.test(inserted.error.message || "");
+    if (isUnique) {
+      const again = await sbAdmin
+        .from("wa_conversations")
+        .select("id, ai_enabled, ai_state")
+        .eq("store_id", storeId)
+        .eq("customer_phone", phone)
+        .maybeSingle();
+      if (again.data) {
+        return {
+          id: String(again.data.id),
+          aiEnabled: Boolean(again.data.ai_enabled),
+          aiState: String(again.data.ai_state),
+        };
+      }
+    }
+    throw new Error(`No se pudo crear la conversación: ${inserted.error.message}`);
+  }
   return {
     id: String(inserted.data.id),
     aiEnabled: Boolean(inserted.data.ai_enabled),

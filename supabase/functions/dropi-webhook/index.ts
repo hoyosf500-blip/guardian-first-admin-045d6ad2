@@ -24,6 +24,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
+// FUNNEL_RANK/normalizeStatus: el mismo orden del funnel que usa
+// dropi-update-order para verificar PUTs — acá alimenta el guard anti-retroceso.
+import { FUNNEL_RANK, normalizeStatus } from "../_shared/dropiConfirmOrder.ts";
 
 function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -96,6 +99,38 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (existing) {
+      // ── Guard anti-retroceso (auditoría 2026-07-31) ──────────────────────
+      // Dropi reintenta webhooks ante errores y los reintentos pueden llegar
+      // FUERA DE ORDEN. Dos protecciones ANTES del UPDATE:
+      //
+      // (a) REEMPLAZADA / ARCHIVADO GHOST son soft-deletes de GUARDIAN (pair-
+      //     resolver / nightly-reconcile), no estados de Dropi: una notificación
+      //     tardía sobre el stub NO debe resucitarlo a la cola ni contaminar las
+      //     métricas. Se ackea 200 para que Dropi no reintente en loop.
+      const curNorm = normalizeStatus(String(existing.estado ?? ""));
+      if (curNorm === "REEMPLAZADA" || curNorm === "ARCHIVADO GHOST") {
+        console.log("[dropi-webhook] ignorado: pedido soft-borrado en Guardian", externalId, curNorm);
+        return json({ ok: true, action: "ignored_soft_deleted", external_id: externalId }, 200, corsHeaders);
+      }
+      // (b) Un estado TERMINAL (ENTREGADO / DEVOLUCION, rank 8) no retrocede:
+      //     una notificación vieja re-encolada (GUIA GENERADA llegando 2h
+      //     después de ENTREGADO) regresaría el pedido en Seguimiento y lo
+      //     sacaría de entregados hasta el próximo cron — flapping intermitente.
+      //     OJO: solo se protege el rank terminal — un CANCELADO legítimo sobre
+      //     un pedido en curso SÍ aplica (su rank -1 en FUNNEL_RANK es un
+      //     artefacto de la verificación de PUTs, no un orden temporal).
+      if (status) {
+        const rankCur = FUNNEL_RANK[curNorm];
+        const rankNew = FUNNEL_RANK[normalizeStatus(status)];
+        if (
+          rankCur !== undefined && rankCur >= FUNNEL_RANK["ENTREGADO"] &&
+          rankNew !== undefined && rankNew < rankCur
+        ) {
+          console.log("[dropi-webhook] ignorado: notificación tardía", externalId, `${existing.estado} <- ${status}`);
+          return json({ ok: true, action: "ignored_stale_status", external_id: externalId, estado: existing.estado }, 200, corsHeaders);
+        }
+      }
+
       // UPDATE DIRIGIDO — solo lo que la notificación es autoridad de cambiar.
       // No tocamos valor/flete/costo_prod (el payload es parcial → serían 0).
       const patch: Record<string, unknown> = { last_movement_at: nowIso };
