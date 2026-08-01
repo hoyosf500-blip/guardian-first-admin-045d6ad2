@@ -622,7 +622,8 @@ export default function ConfirmarTab({ profile }: Props) {
                       </>
                     )}
                     <span>
-                      Faltan <CountUp value={nadieLlamo} className={`text-base font-bold ${skin.num}`} />{' '}
+                      {nadieLlamo === 1 ? 'Falta' : 'Faltan'}{' '}
+                      <CountUp value={nadieLlamo} className={`text-base font-bold ${skin.num}`} />{' '}
                       {gestionCargada ? 'que nadie llamó' : 'sin tocar'}
                       {nadieLlamo === 0 && <span className="text-success ml-1">✓</span>}
                     </span>
@@ -798,13 +799,17 @@ export default function ConfirmarTab({ profile }: Props) {
                       )}
                       {sinRespuestaHoy.agotados > 0 && (
                         <span className="text-muted-foreground">
-                          {sinRespuestaHoy.agotados} ya usaron sus {MAX_DAILY_ATTEMPTS}
+                          {sinRespuestaHoy.agotados} ya {sinRespuestaHoy.agotados === 1 ? 'usó' : 'usaron'} sus {MAX_DAILY_ATTEMPTS}
                         </span>
                       )}
                       {sinRespuestaHoy.llamadasDisponibles > 0 && (
                         <span className="w-full text-muted-foreground">
-                          Quedan <strong className="text-foreground">{sinRespuestaHoy.llamadasDisponibles} llamadas</strong> del día sin usar.
-                          Si nadie las hace hoy, esos clientes se pierden el intento.
+                          {sinRespuestaHoy.llamadasDisponibles === 1 ? 'Queda' : 'Quedan'}{' '}
+                          <strong className="text-foreground">
+                            {sinRespuestaHoy.llamadasDisponibles} {sinRespuestaHoy.llamadasDisponibles === 1 ? 'llamada' : 'llamadas'}
+                          </strong>{' '}
+                          del día sin usar. Si nadie {sinRespuestaHoy.llamadasDisponibles === 1 ? 'la hace' : 'las hace'} hoy,{' '}
+                          {sinRespuestaHoy.llamadasDisponibles === 1 ? 'ese cliente se pierde' : 'esos clientes se pierden'} el intento.
                         </span>
                       )}
                     </div>
