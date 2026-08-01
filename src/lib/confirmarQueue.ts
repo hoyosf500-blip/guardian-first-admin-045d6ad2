@@ -286,11 +286,20 @@ export interface ResumenSinRespuesta {
  * panel prometería llamadas que la cola nunca va a devolver.
  *
  * `ahoraMs` se inyecta para poder testear sin depender del reloj.
+ *
+ * `pedidosVivos` = los pedidos que SIGUEN pendientes de confirmar. Sin esta
+ * lista el resumen se guía solo por `order_results`, y ahí un pedido cancelado
+ * DIRECTO EN DROPI (o por la reconciliación nocturna) no deja ninguna fila: el
+ * panel lo seguía contando como "se puede llamar ya". Verificado en producción
+ * el 31-jul: decía 35 cuando la cola entregaba 31, y los 4 de diferencia
+ * estaban CANCELADOS. Se omite si no se pasa — no saber cuáles viven no es lo
+ * mismo que saber que murieron.
  */
 export function resumenSinRespuestaHoy(
   filas: FilaResultado[] | null | undefined,
   hoyLocal: string,
   ahoraMs: number,
+  pedidosVivos?: Set<string> | null,
 ): ResumenSinRespuesta {
   const vacio: ResumenSinRespuesta = {
     total: 0, listos: 0, enfriando: 0, agotados: 0,
@@ -310,6 +319,9 @@ export function resumenSinRespuestaHoy(
   for (const f of deHoy) {
     if (f.result !== 'noresp' || !f.phone) continue;
     if (f.order_id && cerrados.has(f.order_id)) continue;
+    // El pedido ya no está pendiente (lo cancelaron en Dropi, se despachó…):
+    // no hay a quién llamar, aunque hoy no haya contestado.
+    if (pedidosVivos && (!f.order_id || !pedidosVivos.has(f.order_id))) continue;
     const t = Date.parse(f.created_at);
     if (!Number.isFinite(t)) continue;
     const arr = porTelefono.get(f.phone);

@@ -10,6 +10,7 @@ import {
   isRetryReady,
   resumenSinRespuestaHoy,
   mismoResumen,
+  MAX_DAILY_ATTEMPTS,
   COOLDOWN_MINUTES,
   COOLDOWN_LABEL,
   DIAS_POR_CANCELAR,
@@ -296,6 +297,27 @@ describe('resumenSinRespuestaHoy — los que "no aparecen" después de no contes
     const r = resumenSinRespuestaHoy([
       { order_id: 'x', phone: '111', result: 'noresp', result_date: HOY, created_at: 'no-es-fecha' },
     ], HOY, AHORA);
+    expect(r.total).toBe(0);
+  });
+
+  // Caso REAL de Ecuador el 31-jul-2026: el panel decía "35 para llamar ya" y
+  // la cola entregaba 31. Los 4 de diferencia estaban CANCELADOS en Dropi —
+  // cancelación que no pasa por el CRM y por eso no deja fila en order_results.
+  // Sin la lista de pedidos vivos el resumen no tiene forma de enterarse.
+  it('no cuenta al que no contestó si su pedido ya está cancelado en Dropi', () => {
+    const filas = [f('111', 3), f('222', 3)];
+    // Sin saber cuáles viven, los cuenta a los dos (no inventa muertes).
+    expect(resumenSinRespuestaHoy(filas, HOY, AHORA).listos).toBe(2);
+    // Sabiendo que el pedido de '222' ya no está pendiente, solo queda uno.
+    const vivos = new Set(['o-111']);
+    const r = resumenSinRespuestaHoy(filas, HOY, AHORA, vivos);
+    expect(r.total).toBe(1);
+    expect(r.listos).toBe(1);
+    expect(r.llamadasDisponibles).toBe(MAX_DAILY_ATTEMPTS - 1);
+  });
+
+  it('una lista de vivos vacía deja el panel en cero, no lo ignora', () => {
+    const r = resumenSinRespuestaHoy([f('111', 3)], HOY, AHORA, new Set<string>());
     expect(r.total).toBe(0);
   });
 

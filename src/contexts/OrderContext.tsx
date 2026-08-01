@@ -164,6 +164,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // el último resultado, para comparar y no re-renderizar de gusto.
   const norespRowsRef = useRef<FilaResultado[] | null>(null);
   const sinRespuestaRef = useRef<ResumenSinRespuesta | null>(null);
+  // Qué pedidos siguen PENDIENTES. Sin esto el resumen contaba como "llamable"
+  // a un cliente cuyo pedido ya estaba CANCELADO en Dropi (esa cancelación no
+  // deja fila en order_results, así que por ahí es invisible).
+  const pedidosVivosRef = useRef<Set<string> | null>(null);
 
   // Al CAMBIAR DE TIENDA hay que vaciar estas tres poblaciones antes de que
   // llegue la lectura de la tienda nueva. Sin esto quedaban colgadas las de la
@@ -184,6 +188,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // panel y aunque dure un minuto.
     norespRowsRef.current = null;
     sinRespuestaRef.current = null;
+    pedidosVivosRef.current = null;
     setGestionCargada(false);
   }, [activeStoreId]);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
@@ -424,7 +429,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => {
       const filas = norespRowsRef.current;
       if (!filas) return;
-      const next = resumenSinRespuestaHoy(filas, bogotaToday(), Date.now());
+      const next = resumenSinRespuestaHoy(filas, bogotaToday(), Date.now(), pedidosVivosRef.current);
       const prev = sinRespuestaRef.current;
       if (mismoResumen(prev, next)) return;
       // Si alguien cruzó el enfriamiento, la COLA también tiene que enterarse.
@@ -536,6 +541,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       setSinRespuestaHoy(null);
       sinRespuestaRef.current = null;
       norespRowsRef.current = null;
+      pedidosVivosRef.current = null;
       // El mapa vuelve a estar vacío por FALTA DE DATOS, no por falta de
       // llamadas: hasta la próxima lectura la pantalla no puede afirmar
       // "a estos no los llamó nadie".
@@ -944,8 +950,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // Se guardan las filas para poder re-evaluar el enfriamiento contra
             // el reloj cada minuto (ver el ticker) sin re-consultar la base.
             norespRowsRef.current = data as FilaResultado[];
+            // Los que de verdad siguen esperando una llamada. `dedupPendientes`
+            // son los PENDIENTE CONFIRMACION de esta tienda; lo cancelado en
+            // Dropi ya no está acá y por eso deja de contarse.
+            pedidosVivosRef.current = new Set(
+              dedupPendientes.map(o => o.dbId).filter((id): id is string => !!id));
             const resumen = resumenSinRespuestaHoy(
-              data as Parameters<typeof resumenSinRespuestaHoy>[0], todayLocal, Date.now());
+              data as Parameters<typeof resumenSinRespuestaHoy>[0], todayLocal, Date.now(),
+              pedidosVivosRef.current);
             sinRespuestaRef.current = resumen;
             setSinRespuestaHoy(resumen);
             // Mismas filas, tercera poblacion: como va cada asesora hoy.
