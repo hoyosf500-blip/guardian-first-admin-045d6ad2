@@ -10,6 +10,7 @@ import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDat
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
 import { metodosRapidosParaEstado, esContactoEfectivo } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
+import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento } from '@/lib/segPulso';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { calcPriority, getPriorityLevel, PRIORITY_CONFIG } from '@/lib/alertSystem';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
@@ -107,10 +108,12 @@ function columnasDeEstadosSinMapear(sinMapear: OrderData[]): (ColumnDef & { orde
  * angosto al final: siguen enteras y clicables, pero dejan de pesar lo mismo
  * que "En Reparto", que es donde se decide la entrega.
  *
+ * Es el MISMO conjunto que usa el contador DETENIDOS de la tarjeta de arriba,
+ * así que se importa en vez de repetirse: eran dos listas idénticas escritas a
+ * mano en dos archivos, y el día que alguien agregara una fase a una sola, los
+ * puntos de las tarjetas y el número de arriba habrían empezado a discrepar.
  */
-const LIVE_KEYS = new Set<SegStatusKey>([
-  'procesamiento', 'guia', 'bodega_trans', 'transito', 'reparto', 'oficina', 'novedad', 'novedad_sol',
-]);
+const LIVE_KEYS = FASES_VIVAS;
 
 /**
  * Los estados sin mapear no son ni VIVOS ni TERMINALES: no sabemos qué son, y
@@ -152,14 +155,11 @@ function statusAgeDays(o: OrderData): number {
   return o.diasConf || o.dias || 0;
 }
 
-/** Horas desde el último movimiento real en Dropi (para el punto de frescura). */
-function hoursSinceMovement(o: OrderData): number | null {
-  const iso = o.lastMovementAt;
-  if (!iso) return null;
-  const d = parseDate(iso);
-  if (!d) return null;
-  return (Date.now() - d.getTime()) / 3_600_000;
-}
+/** Horas desde el último movimiento real en Dropi (para el punto de frescura).
+ *  Vive en `segPulso` desde el 1-ago-2026: lo comparte con el contador
+ *  DETENIDOS de la tarjeta de arriba. Tener dos copias de esta cuenta es cómo
+ *  los puntos y el número terminan diciendo cosas distintas. */
+const hoursSinceMovement = horasSinMovimiento;
 
 /**
  * Punto de frescura: hace cuánto se movió el pedido EN DROPI de verdad.
@@ -177,8 +177,20 @@ function hoursSinceMovement(o: OrderData): number | null {
 function freshnessDot(o: OrderData): { cls: string; ring: string; title: string } {
   const h = hoursSinceMovement(o);
   if (h == null) return { cls: 'bg-muted-foreground/40', ring: 'ring-muted-foreground/20', title: 'Sin fecha de último movimiento' };
+  // Un pedido que YA llegó a su desenlace no está "detenido": está terminado.
+  // Pintarlo en rojo por llevar diez días quieto es una alarma falsa sobre algo
+  // que nadie tiene que ir a destrabar. Además descuadraba la pantalla: el
+  // contador DETENIDOS de arriba (que sí excluye los terminales) decía 23
+  // mientras abajo había 25 puntos rojos — dos de ellos en "Cancelado".
+  if (!FASES_VIVAS.has(classifySegEstado(o.estado || ''))) {
+    return {
+      cls: 'bg-muted-foreground/40',
+      ring: 'ring-muted-foreground/20',
+      title: `Cerrado — último movimiento hace ${Math.floor(h / 24)} días`,
+    };
+  }
   if (h < 24) return { cls: 'bg-success glow-success', ring: 'ring-success/25', title: 'Movido en las últimas 24 h' };
-  if (h < 72) return { cls: 'bg-warning glow-warning', ring: 'ring-warning/25', title: `Sin moverse hace ${Math.floor(h / 24)}–${Math.ceil(h / 24)} días` };
+  if (h < HORAS_DETENIDO) return { cls: 'bg-warning glow-warning', ring: 'ring-warning/25', title: `Sin moverse hace ${Math.floor(h / 24)}–${Math.ceil(h / 24)} días` };
   return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
