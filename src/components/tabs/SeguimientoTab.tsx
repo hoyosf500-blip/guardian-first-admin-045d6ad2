@@ -12,7 +12,8 @@ import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import { TiltCard, CountUp, GaugeRing } from '@/components/ui3d';
 import SegBoard from '@/components/seguimiento/SegBoard';
-import { esContactoEfectivo } from '@/lib/segMetodosEstado';
+import { estaGestionadoHoy, contarGestionadosHoy, estaDetenido, asesorasEnSeguimientoHoy, HORAS_DETENIDO } from '@/lib/segPulso';
+import { useOperatorNames } from '@/hooks/useOperatorNames';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
 import { Button } from '@/components/ui/button';
@@ -107,6 +108,9 @@ export default function SeguimientoTab() {
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
   const { activeStore, activeStoreId } = useStore();
+  // Nombre de cada asesora para la tarjeta "el equipo hoy" (cache compartido:
+  // una sola lectura de profiles por sesión, no una por tarjeta).
+  const { nameOf: nombreDeAsesora } = useOperatorNames();
   const { refreshNow, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
   // Pedidos que el equipo ya CERRÓ (Resuelto/Devolución) → salen para siempre de
   // Seguimiento. Team-wide (set de phones de la tienda activa). Ver hook.
@@ -298,12 +302,7 @@ export default function SeguimientoTab() {
     // companera deja la tarjeta a la vista: el pedido sigue necesitando trabajo
     // y esconderlo lo volvia invisible para todas hasta el dia siguiente.
     // Lo mio se sigue escondiendo igual que antes (ya lo trabaje).
-    return displayData.filter((o) => {
-      if (!o.phone) return true;
-      if (mySegTouchedToday.has(o.phone)) return false;
-      const g = gestionSegPorTelefono.get(o.phone);
-      return !(g && esContactoEfectivo(g.ultimoResult));
-    });
+    return displayData.filter((o) => !estaGestionadoHoy(o.phone, mySegTouchedToday, gestionSegPorTelefono));
   }, [displayData, onlyUntouchedSeg, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
 
   // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay
@@ -729,8 +728,25 @@ export default function SeguimientoTab() {
           // Se conserva EXACTA la condición original (`total === 0` → sin hero):
           // no se inventa un estado vacío que afirme algo que no se midió.
           const heroVisible = total > 0;
-          const gestionados = feedBase.filter(o => o.phone && mySegTouchedToday.has(o.phone)).length;
+          // Gestionados por el EQUIPO, no solo por mí (arreglo 1-ago-2026).
+          //
+          // El tablero escondía las tarjetas que trabajó cualquiera, pero este
+          // contador solo sumaba las mías: las tarjetas desaparecían y el número
+          // seguía clavado en 222. Y para el dueño —que mira pero no gestiona—
+          // no bajaba NUNCA, por mucho que el equipo trabajara. Es lo que
+          // reportó: "no baja y sí se gestionan".
+          //
+          // Ahora sale de `estaGestionadoHoy`, la MISMA función que usa el
+          // filtro "Ocultar gestionados": tener dos definiciones de "gestionado"
+          // en una pantalla fue justamente lo que causó el bug.
+          const gestionados = contarGestionadosHoy(feedBase, mySegTouchedToday, gestionSegPorTelefono);
           const faltan = Math.max(0, total - gestionados);
+          // Los que se están pudriendo, y quién los está trabajando. Se miden
+          // sobre `feedBase` —la misma población del hero— y no sobre todo lo
+          // cargado: las dos tarjetas son vecinas y con alcances distintos se
+          // leían como la misma métrica que "no cuadraba".
+          const detenidos = feedBase.filter((o) => estaDetenido(o)).length;
+          const asesorasHoy = asesorasEnSeguimientoHoy(feedBase, gestionSegPorTelefono);
           const pct = total > 0 ? Math.round((gestionados / total) * 100) : 0;
           const done = faltan === 0;
           const tone = done
@@ -842,8 +858,14 @@ export default function SeguimientoTab() {
                 className="bg-card/40 border border-border rounded-2xl p-5 shadow-card3d h-full"
               >
                 <div className="flex items-start justify-between gap-2 tilt-layer-2">
-                  <span className="w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 bg-accent/14 border-accent/30 text-accent glow-accent">
-                    <Package size={17} aria-hidden="true" />
+                  <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${
+                    detenidos > 0
+                      ? 'bg-danger/14 border-danger/30 text-danger glow-danger'
+                      : 'bg-success/14 border-success/30 text-success glow-success'
+                  }`}>
+                    {detenidos > 0
+                      ? <AlertTriangle size={17} aria-hidden="true" />
+                      : <Package size={17} aria-hidden="true" />}
                   </span>
                   {(dateFrom || dateTo) && stats.total !== segData.length && (
                     <span className="text-[11px] font-medium text-muted-foreground font-mono tabular-nums">
@@ -851,18 +873,68 @@ export default function SeguimientoTab() {
                     </span>
                   )}
                 </div>
-                {/* Cifra deliberadamente MÁS CHICA que la del hero. Las dos son
-                    grandes, adyacentes y de alcance distinto: el hero cuenta la
-                    LISTA SLA activa (feedBase) y este Total cuenta todo lo
-                    cargado (dedupedByDate). A igual peso tipográfico se leían
-                    como la misma métrica y "no cuadraban". El hero es el
-                    protagonista; este es contexto. */}
-                <div className="text-2xl font-bold leading-none mt-3 text-accent tilt-layer-3">
-                  <CountUp value={stats.total} />
+                {/* DETENIDOS reemplaza al viejo "Total" (1-ago-2026).
+                    Ese Total repetía el mismo 222 del hero y del chip "Todas" —
+                    tres veces el mismo número y ninguna respuesta nueva. El
+                    paquete que no se mueve hace días es el que termina en
+                    devolución, y hasta ahora solo existía como puntito de color
+                    dentro de cada tarjeta: para contarlos había que recorrer 15
+                    columnas a ojo. El total no se pierde: baja a la línea de
+                    contexto de abajo, que es su peso real. */}
+                <div className={`text-2xl font-bold leading-none mt-3 tilt-layer-3 ${detenidos > 0 ? 'text-danger' : 'text-success'}`}>
+                  <CountUp value={detenidos} />
                 </div>
-                <div className="hud-label text-subtle mt-2 tilt-layer-1">Total</div>
-                {(hiddenStaleCount > 0 || hiddenSupersededCount > 0 || hiddenClosedCount > 0) && (
-                  <div className="mt-3 pt-3 border-t border-border/50 flex flex-col gap-1 tilt-layer-1">
+                <div
+                  className="hud-label text-subtle mt-2 tilt-layer-1"
+                  title={`Pedidos en juego que llevan ${Math.round(HORAS_DETENIDO / 24)} días o más sin moverse en Dropi. Los entregados, cancelados y devueltos no cuentan: ya llegaron a su desenlace.`}
+                >
+                  {detenidos === 1 ? 'Detenido' : 'Detenidos'} · +{Math.round(HORAS_DETENIDO / 24)} días quieto{detenidos === 1 ? '' : 's'}
+                </div>
+
+                {/* EL EQUIPO HOY. La otra pregunta que la pantalla no contestaba.
+                    El 31-jul Ecuador registró UNA gestión en todo el día con 229
+                    pedidos en la calle y no había forma de verlo desde acá: el
+                    dueño se enteró porque se lo contaron. Un cero explícito es
+                    justamente la señal. */}
+                <div className="mt-3 pt-3 border-t border-border/50 tilt-layer-1">
+                  <div className="flex items-baseline gap-1.5 flex-wrap text-xs">
+                    <span className="text-muted-foreground">Gestionó el equipo hoy:</span>
+                    <strong className={`font-mono tabular-nums ${gestionados > 0 ? 'text-foreground' : 'text-warning'}`}>
+                      {gestionados}
+                    </strong>
+                    <span className="text-muted-foreground">de {total}</span>
+                  </div>
+                  {asesorasHoy.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {asesorasHoy.map((a) => (
+                        <span
+                          key={a.operatorId}
+                          title={`${nombreDeAsesora(a.operatorId)} trabajó ${a.pedidos} ${a.pedidos === 1 ? 'pedido' : 'pedidos'} hoy`}
+                          className="text-[11px] px-2 py-0.5 rounded-lg border bg-card/50 border-border text-muted-foreground inline-flex items-center gap-1.5"
+                        >
+                          <span className="truncate max-w-[110px]">{nombreDeAsesora(a.operatorId)}</span>
+                          <span className="font-mono tabular-nums font-bold text-foreground">{a.pedidos}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-[11px] text-warning leading-relaxed">
+                      Nadie ha tocado Seguimiento hoy.
+                    </p>
+                  )}
+                </div>
+
+                {/* El total baja acá. No desapareció: dejó de ser titular —
+                    como titular repetía el número del hero y el del chip
+                    "Todas". Como contexto sigue explicando, junto a las tres
+                    notas de abajo, por qué la cuenta no cuadra con Dropi. */}
+                <div className="mt-3 pt-3 border-t border-border/50 flex flex-col gap-1 tilt-layer-1">
+                  <span
+                    className="text-[11px] text-muted-foreground font-mono tabular-nums"
+                    title="Todos los pedidos cargados en la vista actual (con los filtros de fecha aplicados). El número grande de la izquierda cuenta solo la lista de trabajo activa."
+                  >
+                    · {stats.total} cargados en total
+                  </span>
                     {hiddenStaleCount > 0 && (
                       <span
                         className="text-[11px] text-muted-foreground font-mono tabular-nums"
@@ -888,7 +960,6 @@ export default function SeguimientoTab() {
                       </span>
                     )}
                   </div>
-                )}
               </TiltCard>
             </motion.div>
           );
