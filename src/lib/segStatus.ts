@@ -134,6 +134,16 @@ export const matchTransito = (e: string): boolean => {
   // Van como prefijo porque Dropi les cuelga destino atrás ("EN TRANSITO A UIO").
   if (e.startsWith('EN TRANSITO')) return true;
   if (e.startsWith('EN CAMINO')) return true;
+  // Cualquier "EN BODEGA <algo>" que haya llegado hasta acá es tránsito.
+  // Es SEGURO como prefijo porque los tres casos que NO son tránsito se
+  // resuelven ANTES en SEG_STATUS_MATCHERS: 'EN BODEGA DROPI' (procesamiento) y
+  // 'EN BODEGA TRANSPORTADORA' (bodega_trans). Ver el test de precedencia.
+  //
+  // Se pasó de lista exacta a prefijo el 1-ago-2026: el set tenía 'BODEGA
+  // DESTINO' sin el "EN", y Colombia manda 'EN BODEGA DESTINO'. Esos pedidos se
+  // iban a una columna suelta y, peor, quedaban fuera de las listas SLA — que
+  // filtran por `fase === 'transito'`, así que ninguna alarma de demora los veía.
+  if (e.startsWith('EN BODEGA')) return true;
   return false;
 };
 
@@ -185,6 +195,20 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
 const _unclassifiedSeen = new Set<string>();
 
 /**
+ * Estados que caen en `otros` A PROPÓSITO y por eso NO deben avisar.
+ *
+ * `PENDIENTE CONFIRMACION` no es una fase de Seguimiento — es la cola de
+ * Confirmar (51 pedidos entre las dos tiendas al 1-ago-2026). Tiene su propia
+ * lista SLA ("Pendientes de confirmación +2 días") que enlaza a /confirmar, así
+ * que meterlo en una fase del tablero sería duplicarlo en dos pantallas.
+ *
+ * Se lo exime del aviso porque el aviso existe para cazar variantes NUEVAS de
+ * Dropi: si grita todos los días por uno que ya conocemos, deja de mirarse y el
+ * día que aparezca una de verdad va a pasar de largo entre el ruido.
+ */
+const OTROS_ESPERADOS = new Set(['PENDIENTE CONFIRMACION']);
+
+/**
  * Clasifica un `estado` de Dropi en una `SegStatusKey`. Acepta cualquier casing
  * (uppercasea internamente). Estados desconocidos caen en `'otros'` y emiten un
  * `console.warn` la primera vez que aparecen.
@@ -199,7 +223,7 @@ export function classifySegEstado(estado: string): SegStatusKey {
   for (const m of SEG_STATUS_MATCHERS) {
     if (m.match(e)) return m.key;
   }
-  if (!_unclassifiedSeen.has(e)) {
+  if (!OTROS_ESPERADOS.has(e) && !_unclassifiedSeen.has(e)) {
     _unclassifiedSeen.add(e);
     console.warn(`[segStatus] Estado sin clasificar: "${e}" → cae en 'otros'. Si Dropi agregó esta variante, agregarla a SEG_STATUS_MATCHERS.`);
   }
