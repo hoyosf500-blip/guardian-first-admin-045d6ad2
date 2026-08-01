@@ -22,6 +22,21 @@ import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 1500;
 const RECONCILE_DAYS_BACK = 30;
+
+// Paginado del lado de GUARDIAN (PostgREST), que es OTRO límite distinto al de
+// arriba: `PAGE_SIZE` es de la API de Dropi, que rechaza result_number > 100.
+// PostgREST corta en 1000 por defecto, así que 1000 es una página entera.
+//
+// Estas dos constantes se USABAN sin estar declaradas desde el 31-jul-2026
+// (commit dbadf0d, que agregó el paginado): la función reventaba con
+// "GUARDIAN_PAGE_SIZE is not defined" apenas llegaba al bucle, en las dos
+// tiendas. Falló la noche del 1-ago y la agarró el badge de /logistica.
+const GUARDIAN_PAGE_SIZE = 1000;
+// Tope de seguridad contra un bucle desbocado. Ecuador ronda los 2.700 pedidos
+// en 30 días, así que 20.000 deja muchísimo aire y sigue estando acotado. Si se
+// alcanza, la función lo AVISA por consola en vez de callarse: el set quedaría
+// incompleto y sobre él se decide qué cancelar.
+const GUARDIAN_MAX_ROWS = 20000;
 const TERMINAL_STATES = new Set([
   "ENTREGADO", "CANCELADO", "DEVOLUCION", "DEVUELTO",
   "DEVOLUCIÓN", "ENTREGADA", "CANCELADA",
