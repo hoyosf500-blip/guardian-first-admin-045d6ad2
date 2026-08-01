@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SEG_LISTS, findSegList, isValidSegListSlug, hasSeguimientoWork } from './segLists';
+import { SEG_LISTS, findSegList, isValidSegListSlug, hasSeguimientoWork, seMuestraComoChip, ACTIONABLE_SEG_SLUGS } from './segLists';
 import type { SegListSlug } from './segLists';
 import { classifySegEstado } from './segStatus';
 import type { OrderData } from './orderUtils';
@@ -55,17 +55,40 @@ const baseOrder: OrderData = {
 };
 
 describe('SEG_LISTS — definición (embudo por prioridad)', () => {
-  it('exporta exactamente 9 listas', () => {
-    expect(SEG_LISTS).toHaveLength(9);
+  it('exporta exactamente 10 listas', () => {
+    expect(SEG_LISTS).toHaveLength(10);
   });
 
-  it('orden: confirmación → final (oficina/reparto) → medio → inicial → otros', () => {
+  it('orden: confirmación → detenidos → final (oficina/reparto) → medio → inicial → otros', () => {
     const slugs = SEG_LISTS.map((l) => l.slug);
     expect(slugs[0]).toBe('pendientes_confirmacion_2d');
-    expect(slugs[1]).toBe('en_oficina');
-    expect(slugs[2]).toBe('en_reparto_novedad');
-    expect(slugs[3]).toBe('en_transito');
+    // Los detenidos van arriba: son los que se están pudriendo, sin importar
+    // en qué fase estén.
+    expect(slugs[1]).toBe('detenidos_3d');
+    expect(slugs[2]).toBe('en_oficina');
+    expect(slugs[3]).toBe('en_reparto_novedad');
+    expect(slugs[4]).toBe('en_transito');
     expect(slugs[slugs.length - 1]).toBe('otros_estados');
+  });
+
+  // El dueño lo señaló con un círculo rojo: "En tránsito 72" en el chip y
+  // "72 EN TRÁNSITO" en la columna de abajo. Las que espejan una columna dejan
+  // de dibujarse, pero su lógica sigue viva para el guard de inactividad.
+  it('solo se dibujan como chip las listas que el Tablero NO puede decir', () => {
+    const visibles = SEG_LISTS.filter(seMuestraComoChip).map((l) => l.slug);
+    expect(visibles).toEqual([
+      'pendientes_confirmacion_2d',
+      'detenidos_3d',
+      'indem_guia_generada_5d',
+      'indem_pendientes_guia_4d',
+    ]);
+  });
+
+  it('las ocultas siguen existiendo — el guard de inactividad las necesita', () => {
+    for (const slug of ['en_oficina', 'en_reparto_novedad', 'pendientes_guia'] as const) {
+      expect(findSegList(slug)).toBeDefined();
+      expect(ACTIONABLE_SEG_SLUGS).toContain(slug);
+    }
   });
 
   it('pendientes_confirmacion_2d tiene externalRoute /confirmar y nunca matchea', () => {
@@ -285,7 +308,32 @@ describe('SEG_LISTS — tramo pre-guía (CONFIRMADO / GENERADO)', () => {
 });
 
 describe('SEG_LISTS — las listas son DISJUNTAS', () => {
-  it('ningún estado cae en dos listas a la vez', () => {
+  // Las listas de FASE se reparten el trabajo sin pisarse: si un pedido cayera
+  // en dos, dos asesoras lo trabajarían por separado creyendo cada una que era
+  // suyo. `detenidos_3d` queda fuera de esta regla a propósito (ver abajo).
+  const LISTAS_DE_FASE = SEG_LISTS.filter((l) => l.slug !== 'detenidos_3d');
+
+  // `detenidos_3d` mira el RELOJ, no la fase, así que ATRAVIESA las columnas —
+  // esa es exactamente su razón de existir y por eso no puede ser disjunta.
+  // Esta prueba fija el cruce: si dejara de darse, la lista habría perdido el
+  // sentido. (Antes la prueba de disyunción "pasaba" con esta lista incluida
+  // solo porque todos sus pedidos de ejemplo iban sin `lastMovementAt`, con lo
+  // cual nunca la ejercitaba: daba tranquilidad falsa.)
+  it('detenidos_3d SÍ se cruza con la lista de su fase — es su razón de ser', () => {
+    const hace5dias = new Date(Date.now() - 5 * 86400000).toISOString();
+    const parado: OrderData = { ...baseOrder, estado: 'EN REPARTO', guia: 'G1', fecha: '', dias: 6, lastMovementAt: hace5dias };
+    const matched = SEG_LISTS.filter((l) => l.matches(parado)).map((l) => l.slug);
+    expect(matched).toContain('detenidos_3d');
+    expect(matched).toContain('en_reparto_novedad');
+  });
+
+  it('un pedido CANCELADO parado hace días no entra en detenidos', () => {
+    const hace9dias = new Date(Date.now() - 9 * 86400000).toISOString();
+    const cerrado: OrderData = { ...baseOrder, estado: 'CANCELADO', fecha: '', dias: 12, lastMovementAt: hace9dias };
+    expect(findSegList('detenidos_3d')!.matches(cerrado)).toBe(false);
+  });
+
+  it('ningún estado cae en dos listas de fase a la vez', () => {
     const estados = [
       'PENDIENTE', 'PENDIENTE CONFIRMACION', 'CONFIRMADO', 'GENERADO',
       'GUIA GENERADA', 'ADMITIDA', 'ENTREGADO A TRANSPORTADORA',
@@ -299,7 +347,7 @@ describe('SEG_LISTS — las listas son DISJUNTAS', () => {
     for (const estado of estados) {
       for (const dias of [1, 6]) {
         const o: OrderData = { ...baseOrder, estado, guia: '', fecha: '', dias };
-        const matched = SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug);
+        const matched = LISTAS_DE_FASE.filter((l) => l.matches(o)).map((l) => l.slug);
         expect(matched.length, `${estado} (${dias}d) cayó en ${matched.join(' + ')}`).toBeLessThanOrEqual(1);
       }
     }

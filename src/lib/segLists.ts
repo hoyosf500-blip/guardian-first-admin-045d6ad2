@@ -1,6 +1,7 @@
 import type { OrderData } from './orderUtils';
 import { calcBusinessDays, parseDate } from './orderUtils';
 import { classifySegEstado } from './segStatus';
+import { estaDetenido } from './segPulso';
 
 /**
  * "Listas SLA" estilo Boostec, ORGANIZADAS POR EMBUDO DE PRIORIDAD.
@@ -42,6 +43,7 @@ import { classifySegEstado } from './segStatus';
 
 export type SegListSlug =
   | 'pendientes_confirmacion_2d'
+  | 'detenidos_3d'
   | 'en_oficina'
   | 'en_reparto_novedad'
   | 'en_transito'
@@ -158,6 +160,35 @@ function diasSinMovimiento(o: OrderData): number {
   return diasDesdeCreacion(o);
 }
 
+/**
+ * Listas que NO se dibujan como chip porque el Tablero ya las muestra.
+ *
+ * El dueño lo marcó con un círculo rojo sobre la pantalla: "En tránsito 72" en
+ * el chip y "72 EN TRÁNSITO" en la columna, veinte centímetros más abajo. Lo
+ * mismo con "En oficina 35". Son filtros de fase pura, y para eso la columna ya
+ * tiene su botón de enfocar, que además deja recorrerla de a un pedido.
+ *
+ * La definición NO se borra: `ACTIONABLE_SEG_SLUGS` las usa para decidir si hay
+ * trabajo pendiente en Seguimiento (guard de inactividad). Borrarlas haría creer
+ * al sistema que no hay nada que hacer mientras 35 clientes esperan en una
+ * oficina. Lo que se quita es el CHIP, no la lógica.
+ *
+ * Lo que queda a la vista es lo que el Tablero NO puede decir: qué está VENCIDO.
+ */
+const ESPEJAN_EL_TABLERO: ReadonlySet<string> = new Set([
+  'en_oficina',          // = columna "En Oficina"
+  'en_transito',         // = columna "En Tránsito"
+  'en_reparto_novedad',  // = columnas "En Reparto" + "Novedad" + "Nov. Solucionada"
+  'guia_generada',       // = columna "Guía Generada" menos su indem
+  'pendientes_guia',     // = columna "En Procesamiento" menos su indem
+  'otros_estados',       // = las columnas de estados sin mapear, que ya salen con su nombre
+]);
+
+/** ¿Esta lista merece un chip propio, o el Tablero ya la está diciendo? */
+export function seMuestraComoChip(l: { slug: string }): boolean {
+  return !ESPEJAN_EL_TABLERO.has(l.slug);
+}
+
 const SEG_LIST_DEFS: SegListDef[] = [
   // ── Pre-embudo ──────────────────────────────────────────────────────────
   {
@@ -167,6 +198,21 @@ const SEG_LIST_DEFS: SegListDef[] = [
     tone: 'warning',
     externalRoute: '/confirmar',
     matches: () => false, // vive en /confirmar — esta lista solo es link
+  },
+
+  // ── LO QUE SE ESTÁ PUDRIENDO ────────────────────────────────────────────
+  // Única lista que NO mira la fase sino el RELOJ: agarra el pedido quieto sin
+  // importar en qué columna esté. Por eso no la puede decir el Tablero, que
+  // está organizado justamente por fase — un detenido en Reparto y otro en
+  // Oficina viven en columnas distintas y nadie los ve juntos.
+  // Los terminales quedan fuera (`estaDetenido` lo resuelve): un cancelado
+  // quieto hace diez días no está trabado, está terminado.
+  {
+    slug: 'detenidos_3d',
+    label: 'Detenidos (+3 días sin moverse)',
+    slaDias: 3,
+    tone: 'danger',
+    matches: (o) => estaDetenido(o),
   },
 
   // ── FASE FINAL (alta prioridad — pedido a punto de entregarse) ──────────
@@ -301,6 +347,10 @@ export function isValidSegListSlug(s: string | null | undefined): s is SegListSl
  * en Seguimiento (si además Confirmar y Novedades están vacíos).
  */
 export const ACTIONABLE_SEG_SLUGS: SegListSlug[] = [
+  // Un pedido quieto hace 3+ días es trabajo pendiente por definición: alguien
+  // tiene que llamar a la transportadora. Va acá aunque no se dibuje como chip
+  // en las mismas condiciones que las otras.
+  'detenidos_3d',
   'en_oficina',
   'en_reparto_novedad',
   'indem_guia_generada_5d',

@@ -339,9 +339,13 @@ El bot "renta el caño, no el cerebro": el inbox + la IA viven en Guardian; el t
 
 ### Listas SLA en `/seguimiento` (`src/lib/segLists.ts`)
 
-Selector de 8 listas pre-clasificadas estilo Boostec. Cada lista tiene un predicado puro `(o: OrderData) => boolean` que combina `estado` + `días hábiles desde creación` (vía `calcBusinessDays`). Listas son **disjuntas** — una orden NO puede aparecer en 2 a la vez (ej. `pendientes_guia_2d` requiere `dias >= 2 AND < 4`, `indem_pendientes_guia_4d` requiere `dias >= 4`).
+Selector de listas pre-clasificadas estilo Boostec. Cada lista tiene un predicado puro `(o: OrderData) => boolean` que combina `estado` + `días hábiles desde creación` (vía `calcBusinessDays`). Las listas de FASE son **disjuntas** — una orden NO puede aparecer en 2 a la vez (ej. `pendientes_guia` requiere `dias < 4`, `indem_pendientes_guia_4d` requiere `dias >= 4`).
 
-Slugs: `pendientes_confirmacion_2d` (link a `/confirmar`), `pendientes_guia_2d`, `indem_pendientes_guia_4d`, `guia_generada_2d`, `indem_guia_generada_5d`, `reclamar_oficina_4d`, `en_proceso_7d`, `otros_estados`.
+**`detenidos_3d` es la excepción deliberada** (1-ago-2026): mira el RELOJ (`estaDetenido` de `segPulso.ts`, +72 h sin `last_movement_at`), no la fase, así que ATRAVIESA las columnas — un pedido parado en Reparto sale en su fase Y en detenidos. Es su razón de ser: el tablero está organizado por fase y un detenido en Reparto y otro en Oficina viven en columnas distintas, así que nadie los ve juntos. Excluye los terminales (un CANCELADO quieto no está trabado, está terminado).
+
+**No todas las listas se dibujan como chip.** `seMuestraComoChip()` oculta las que ESPEJAN una columna del tablero (`en_oficina`, `en_transito`, `en_reparto_novedad`, `guia_generada`, `pendientes_guia`, `otros_estados`) — el dueño lo señaló: "En tránsito 72" en el chip y "72 EN TRÁNSITO" en la columna de abajo era el mismo dato dos veces. **Su definición NO se borra**: `ACTIONABLE_SEG_SLUGS` las usa para el guard de inactividad, y borrarlas haría creer al sistema que no hay trabajo mientras 35 clientes esperan en una oficina. Visibles quedan solo las que el tablero no puede decir: qué está vencido o parado.
+
+Slugs: `pendientes_confirmacion_2d` (link a `/confirmar`), `detenidos_3d`, `en_oficina`, `en_reparto_novedad`, `en_transito`, `guia_generada`, `indem_guia_generada_5d`, `pendientes_guia`, `indem_pendientes_guia_4d`, `otros_estados`.
 
 Si `OrderData.fecha` está malformada, `diasDesdeCreacion()` cae a `o.dias` como fallback (try/catch).
 

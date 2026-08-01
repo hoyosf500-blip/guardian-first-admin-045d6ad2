@@ -27,6 +27,7 @@ import {
   type SegListSlug,
   findSegList,
   isValidSegListSlug,
+  seMuestraComoChip,
 } from '@/lib/segLists';
 import { classifySegEstado } from '@/lib/segStatus';
 import { findSupersededInSeg } from '@/lib/duplicateOrders';
@@ -941,6 +942,13 @@ export default function SeguimientoTab() {
               )}>{chipsBase.length}</span>
             </button>
             {SEG_LISTS
+              // Fuera las que ESPEJAN el Tablero: "En tránsito 72" arriba y
+              // "72 EN TRÁNSITO" en la columna de abajo era el mismo dato dos
+              // veces. Lo que queda son las listas que el Tablero NO puede
+              // decir, porque está organizado por fase y estas miran el RELOJ:
+              // qué está vencido y qué lleva días sin moverse. La lógica de las
+              // ocultas sigue viva — la usa el guard de inactividad.
+              .filter(seMuestraComoChip)
               .filter((l) => l.externalRoute || (listCounts[l.slug] ?? 0) > 0)
               .map((l) => {
                 const active = listaSlug === l.slug;
