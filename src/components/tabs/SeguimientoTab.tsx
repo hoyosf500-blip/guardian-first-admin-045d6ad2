@@ -127,7 +127,9 @@ export default function SeguimientoTab() {
   // Resumen por estado (las 14 tarjetas) colapsado por defecto. La forma
   // principal de priorizar pasó a ser las listas SLA (chips arriba); estas
   // tarjetas quedan como vista secundaria opcional.
-  const [showStatusSummary, setShowStatusSummary] = useSessionState<boolean>('seg:showStatusSummary', false);
+  // (Se eliminó `showStatusSummary`: era el desplegable "Ver resumen por
+  // estado". En Tablero repetía las columnas y en Lista el filtro pasó a ser
+  // una fila de chips siempre visible, así que ya no hay nada que colapsar.)
   // Owns the status filter so the stat cards act as the single source of truth
   // (no duplicate pill row below).
   const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
@@ -385,69 +387,9 @@ export default function SeguimientoTab() {
    * only apply where they carry real meaning (success/warning/danger).
    */
   type StatTone = 'neutral' | 'accent' | 'warning' | 'danger' | 'success' | 'muted';
-  /**
-   * Cada tono usa tokens semánticos del DS (success/danger/warning/
-   * accent) — coherentes con dark/light mode automático. El active
-   * state suma ring + bg tonal sin sombras pesadas (look más limpio).
-   *
-   * El chip de ícono usa la fórmula INVARIABLE del lenguaje del Dashboard
-   * (fondo /14 · borde /30 · texto pleno · clase glow-<tono>), que es la firma
-   * visual de todo KPI de la app. Antes cada tono llevaba su propio alpha
-   * (accent/15, warning/12, muted/40) y ningún chip tenía glow: el resumen por
-   * estado parecía de otra aplicación que el resto del CRM.
-   *
-   * `numGlow` solo se declara donde index.css define el token
-   * (accent/success/danger). Para warning/neutral/muted va vacío en vez de
-   * inventar una clase que no existe.
-   */
-  const STAT_TONE: Record<StatTone, {
-    iconBg: string; iconText: string; glow: string;
-    numberColor: string; numGlow: string; cardHover: string;
-    activeRing: string; activeBg: string;
-  }> = {
-    neutral: {
-      iconBg: 'bg-muted/60 border-border', iconText: 'text-muted-foreground', glow: '',
-      numberColor: 'text-foreground', numGlow: '',
-      cardHover: 'hover:border-border-strong hover:bg-muted/20',
-      activeRing: 'ring-2 ring-accent/60 border-accent/60',
-      activeBg: 'bg-accent/5',
-    },
-    accent: {
-      iconBg: 'bg-accent/14 border-accent/30', iconText: 'text-accent', glow: 'glow-accent',
-      numberColor: 'text-accent', numGlow: 'num-glow-accent',
-      cardHover: 'hover:border-accent/40 hover:bg-accent/8',
-      activeRing: 'ring-2 ring-accent border-accent',
-      activeBg: 'bg-accent/12',
-    },
-    warning: {
-      iconBg: 'bg-warning/14 border-warning/30', iconText: 'text-warning', glow: 'glow-warning',
-      numberColor: 'text-warning', numGlow: '',
-      cardHover: 'hover:border-warning/40 hover:bg-warning/5',
-      activeRing: 'ring-2 ring-warning/70 border-warning/70',
-      activeBg: 'bg-warning/10',
-    },
-    danger: {
-      iconBg: 'bg-danger/14 border-danger/30', iconText: 'text-danger', glow: 'glow-danger',
-      numberColor: 'text-danger', numGlow: 'num-glow-danger',
-      cardHover: 'hover:border-danger/40 hover:bg-danger/5',
-      activeRing: 'ring-2 ring-danger/70 border-danger/70',
-      activeBg: 'bg-danger/10',
-    },
-    success: {
-      iconBg: 'bg-success/14 border-success/30', iconText: 'text-success', glow: 'glow-success',
-      numberColor: 'text-success', numGlow: 'num-glow-success',
-      cardHover: 'hover:border-success/40 hover:bg-success/5',
-      activeRing: 'ring-2 ring-success/70 border-success/70',
-      activeBg: 'bg-success/10',
-    },
-    muted: {
-      iconBg: 'bg-muted/60 border-border', iconText: 'text-muted-foreground', glow: '',
-      numberColor: 'text-muted-foreground', numGlow: '',
-      cardHover: 'hover:border-border-strong hover:text-foreground',
-      activeRing: 'ring-2 ring-border-strong border-border-strong',
-      activeBg: 'bg-muted/30',
-    },
-  };
+  // (El mapa de tonos STAT_TONE se elimino el 1-ago-2026 junto con las 14
+  // tarjetas del resumen por estado: ~60 lineas de estilos de un componente
+  // que ya no existe. El filtro por estado ahora son chips en la vista Lista.)
 
   // `key` matches CrmTable.STATUS_COLUMNS[*].key so clicking a card drives the
   // table filter without translation.
@@ -1046,66 +988,53 @@ export default function SeguimientoTab() {
           </div>
         </motion.div>
 
-        {/* Resumen por estado — vista SECUNDARIA, colapsada por defecto. Las
-            listas de trabajo (arriba) son la forma principal de priorizar;
-            estas tarjetas quedan como desglose opcional por estado. Siguen
-            siendo filtros clicables al expandirse. */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowStatusSummary(v => !v)}
-            aria-expanded={showStatusSummary}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-card/40 border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-          >
-            <ChevronDown size={13} className={cn("transition-transform", showStatusSummary && "rotate-180")} aria-hidden="true" />
-            {showStatusSummary ? 'Ocultar resumen por estado' : 'Ver resumen por estado'}
-            {statusFilter && !showStatusSummary && (
-              <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent">filtro activo</span>
-            )}
-          </button>
-        </div>
-        {showStatusSummary && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2">
-          {statCards.filter(c => c.value > 0).map((card, i) => {
-            const t = STAT_TONE[card.tone];
-            const isActive = statusFilter === card.key;
-            return (
-              <motion.button
-                key={card.key}
+        {/* Filtro por estado — dos vistas, dos tratamientos (1-ago-2026).
+            Antes eran 14 tarjetas grandes, y en TABLERO decían exactamente lo
+            mismo que las columnas de veinte centímetros más abajo: mismos
+            nombres, mismos números, mismos colores. Puro ruido encima del
+            trabajo real.
+            · TABLERO: no va. Las columnas SON el resumen por estado, y además
+              se filtran solas al enfocar una. Solo queda la salida si venías
+              con un filtro puesto desde Lista — sin eso el tablero se queda con
+              una sola columna y sin forma visible de volver, que es una trampa.
+            · LISTA: sí va, porque ahí no hay columnas que lo muestren. Pero
+              como fila de chips: la misma información en una línea. */}
+        {viewMode === 'board' ? (
+          statusFilter && (
+            <div>
+              <button
                 type="button"
-                aria-pressed={isActive}
-                aria-label={`Filtrar por ${card.label}: ${card.value} pedidos`}
-                onClick={() => setStatusFilter(isActive ? null : card.key)}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 + i * 0.04, duration: 0.25 }}
-                whileTap={{ scale: 0.97 }}
-                className={`group relative bg-card/40 border rounded-2xl p-4 flex flex-col items-start shadow-card3d hairline-top transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background text-left ${
-                  isActive
-                    ? `${t.activeRing} ${t.activeBg}`
-                    : `border-border ${t.cardHover}`
-                }`}
+                onClick={() => setStatusFilter(null)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-accent/10 border border-accent/30 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/15 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
               >
-                {/* Anatomía de StatTile: chip de ícono 36px con la fórmula de
-                    glow del lenguaje · cifra contando en el color del tono ·
-                    rótulo BAJO la cifra (nunca encima). Antes era chip plano +
-                    número estático centrado: la misma información dibujada sin
-                    ninguna de las señales del Dashboard. */}
-                <span className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-110 ${t.iconBg} ${t.iconText} ${t.glow}`}>
-                  {card.icon}
-                </span>
-                <span className={`font-mono text-[26px] font-bold leading-none tabular-nums mt-3 ${t.numberColor} ${t.numGlow}`}>
-                  <CountUp value={card.value} />
-                </span>
-                <span className={`hud-label leading-tight mt-2 ${
-                  isActive ? t.numberColor : 'text-subtle'
-                }`}>
-                  {card.label}
-                </span>
-              </motion.button>
-            );
-          })}
-        </div>
+                Mostrando solo {statCards.find((c) => c.key === statusFilter)?.label ?? statusFilter}
+                <span aria-hidden="true">·</span> Ver todas ✕
+              </button>
+            </div>
+          )
+        ) : (
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por estado">
+            {statCards.filter((c) => c.value > 0).map((card) => {
+              const isActive = statusFilter === card.key;
+              return (
+                <button
+                  key={card.key}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-label={`Filtrar por ${card.label}: ${card.value} pedidos`}
+                  onClick={() => setStatusFilter(isActive ? null : card.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
+                    isActive
+                      ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
+                      : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                  }`}
+                >
+                  <span className="truncate max-w-[150px]">{card.label}</span>
+                  <span className="font-mono tabular-nums font-bold">{card.value}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 
