@@ -753,6 +753,32 @@
 
 .scroll-hint { scrollbar-width: thin; }
 
+/* Riel de arrastre — la barra de arriba del tablero de Seguimiento.
+   A diferencia del resto de las barras (6 px, deliberadamente discretas), esta
+   NO acompaña a un contenido: es un control, su única razón de existir es que
+   la asesora la agarre y corra las 15 columnas. Con 6 px hay que apuntar, y
+   errarle significa hacer clic en el tablero. 12 px con el pulgar más marcado
+   se agarra al primer intento.
+   El `pointer: coarse` es para el táctil, donde el dedo no apunta a 12 px. */
+.rail-scroll { scrollbar-width: auto; }
+.rail-scroll::-webkit-scrollbar { height: 12px; }
+.rail-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-strong) / 0.85);
+  border-radius: 999px;
+  /* El borde transparente adelgaza el pulgar SIN achicar el área de clic:
+     se ve fino, se agarra grueso. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.rail-scroll::-webkit-scrollbar-thumb:hover,
+.rail-scroll::-webkit-scrollbar-thumb:active {
+  background: hsl(var(--accent));
+  background-clip: content-box;
+}
+@media (pointer: coarse) {
+  .rail-scroll::-webkit-scrollbar { height: 16px; }
+}
+
 /* ─────────────────────────────────────────────────────────────
    COMPATIBILIDAD DE TEMA CLARO — superficies traslúcidas
    ─────────────────────────────────────────────────────────────

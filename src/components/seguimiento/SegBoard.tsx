@@ -800,26 +800,48 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   const boardRef = useRef<HTMLDivElement | null>(null);
   const topBarRef = useRef<HTMLDivElement | null>(null);
   const [anchoTablero, setAnchoTablero] = useState(0);
-  // El guard evita el ping-pong: mover una barra dispara el onScroll de la otra,
-  // que volvería a mover la primera y trabaría el arrastre.
-  const sincronizando = useRef(false);
+  // Sincroniza los dos rieles. Es IDEMPOTENTE a propósito: si el destino ya
+  // está donde debe, no se escribe nada, así que el onScroll de rebote no
+  // dispara otra escritura y la cadena se corta sola.
+  //
+  // Antes había un candado que se soltaba con requestAnimationFrame. No servía
+  // para lo que decía: el rebote del navegador llega DESPUÉS de ese cuadro, así
+  // que nunca lo tapaba — y mientras tanto sí se comía los eventos de scroll del
+  // cuadro en curso. Al arrastrar, el riel se saltaba posiciones y volvía atrás.
+  // Eso era el "se traba".
+  //
+  // La tolerancia de medio píxel evita el temblor cuando el navegador devuelve
+  // un scrollLeft fraccionario (pantallas con escalado de Windows): sin ella los
+  // dos rieles se corrigen mutuamente para siempre por 0,3 px.
   const sincronizar = (origen: HTMLDivElement | null, destino: HTMLDivElement | null) => {
-    if (!origen || !destino || sincronizando.current) return;
-    sincronizando.current = true;
-    destino.scrollLeft = origen.scrollLeft;
-    requestAnimationFrame(() => { sincronizando.current = false; });
+    if (!origen || !destino) return;
+    if (Math.abs(destino.scrollLeft - origen.scrollLeft) > 0.5) {
+      destino.scrollLeft = origen.scrollLeft;
+    }
   };
 
   useLayoutEffect(() => {
     const el = boardRef.current;
     if (!el) return;
-    const medir = () => setAnchoTablero(el.scrollWidth);
+    // Idempotente: sin esto cada medición guarda estado nuevo, que re-renderiza,
+    // que vuelve a medir. Y como este efecto NO tenía lista de dependencias,
+    // corría en cada render: creaba y destruía un ResizeObserver por render,
+    // justo mientras la asesora arrastraba.
+    const medir = () => setAnchoTablero((prev) => {
+      const w = el.scrollWidth;
+      return Math.abs(prev - w) > 1 ? w : prev;
+    });
     medir();
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(medir);
     ro.observe(el);
+    // El riel de arriba mide el CONTENIDO (scrollWidth), pero ResizeObserver
+    // vigila la CAJA — y la del tablero no cambia cuando aparece una columna
+    // nueva. Por eso se observan también los hijos: si no, el riel se queda con
+    // el ancho viejo y deja columnas fuera de su alcance.
+    for (const hijo of Array.from(el.children)) ro.observe(hijo);
     return () => ro.disconnect();
-  });
+  }, [data]);
 
   // Agrupa por columna una sola vez. Cada tarjeta se re-renderiza sola cuando
   // su OrderData cambia de referencia (smartMerge en el padre).
@@ -918,14 +940,20 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
       ref={topBarRef}
       onScroll={() => sincronizar(topBarRef.current, boardRef.current)}
       aria-hidden="true"
-      className="overflow-x-auto overflow-y-hidden [scrollbar-width:thin] -mx-1 px-1 mb-1.5"
+      className="rail-scroll overflow-x-auto overflow-y-hidden -mx-1 px-1 mb-1.5"
     >
       <div style={{ width: anchoTablero || 1, height: 1 }} />
     </div>
+    {/* Sin `snap-x` (quitado 1-ago-2026). El imán a la columna peleaba contra el
+        arrastre: se corría el riel, el tablero se iba solo al borde de la columna
+        más cercana, y ese salto rebotaba al riel de arriba moviéndole el pulgar
+        debajo del dedo. Es el "pasa una y se traba" que reportó el dueño. Un
+        tablero de 15 columnas se recorre libre; el imán servía para hojear de a
+        una, que no es como se usa. */}
     <div
       ref={boardRef}
       onScroll={() => sincronizar(boardRef.current, topBarRef.current)}
-      className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] snap-x items-start"
+      className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] items-start"
     >
       {columns.map((col, colIdx) => {
         const t = TONE[col.tone];
@@ -951,7 +979,9 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
             // angostas, atenuadas y sin realce. Antes "En Reparto" —donde se
             // decide la entrega— medía exactamente lo mismo que "Cancelado".
             className={cn(
-              'snap-start shrink-0 flex flex-col gap-2.5 rounded-2xl border bg-card/40 transition-colors',
+              // Sin `snap-start`: es la otra mitad del imán que trababa el
+              // arrastre (ver el comentario del contenedor).
+              'shrink-0 flex flex-col gap-2.5 rounded-2xl border bg-card/40 transition-colors',
               // La jerarquía sale del ANCHO y la ELEVACIÓN, no de atenuar.
               // "Devolución", "Dev. en Tránsito" y "Entregado" son terminales
               // pero se LEEN (análisis de devoluciones): bajarles la opacidad
