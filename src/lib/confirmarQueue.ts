@@ -186,7 +186,7 @@ export function splitCalientesVsViejos<T extends ConfirmarQueueOrder>(
 }
 
 // —————————————————————————————————————————————————————————————————————————
-// Reintentos N/R — cooldown PLANO de 2 h (regla del dueño, 2026-07-07).
+// Reintentos N/R — cooldown PLANO de 1 h (regla del dueño; 2 h hasta 31-jul-2026).
 //
 // Regla operativa: si el cliente no contestó, se hacen hasta 3 intentos, uno
 // cada HORA (ver COOLDOWN_MINUTES). Ej.: llamó a las 9 → vuelve a la cola a las
@@ -256,7 +256,7 @@ export interface ResumenSinRespuesta {
   total: number;
   /** Ya cumplieron el enfriamiento: se pueden llamar AHORA. */
   listos: number;
-  /** Esperando que pasen las 2 h. Vuelven solos a la cola. */
+  /** Esperando a que se cumpla el enfriamiento. Vuelven solos a la cola. */
   enfriando: number;
   /** Usaron los 3 intentos del día: no vuelven hasta mañana. */
   agotados: number;
@@ -272,7 +272,7 @@ export interface ResumenSinRespuesta {
  *
  * La pantalla mostraba el 36 y nada más, mientras la cola decía "1 por
  * confirmar". El equipo daba el día por terminado con 35 clientes que todavía
- * tenían llamadas disponibles, porque estaban ENFRIANDO (esperando las 2 h) y
+ * tenían llamadas disponibles, porque estaban ENFRIANDO (esperando el turno) y
  * un pedido enfriando no se ve en ningún lado: no está en la cola ni en ninguna
  * lista. Desaparecía sin decir cuándo volvía.
  *
@@ -335,4 +335,27 @@ export function resumenSinRespuestaHoy(
   }
   out.proximoEnMinutos = Number.isFinite(proximoMs) ? Math.ceil(proximoMs / 60_000) : null;
   return out;
+}
+
+/**
+ * ¿Los dos resúmenes dicen lo mismo?
+ *
+ * Este resumen se recalcula cada minuto contra el reloj (el "vuelve en 12 min"
+ * tiene que bajar a 11). Como `resumenSinRespuestaHoy` devuelve un objeto nuevo
+ * siempre, sin esta comparación cada tick cambiaría la referencia del contexto y
+ * re-renderizaría la cola entera 1.440 veces al día para pintar los mismos
+ * números.
+ */
+export function mismoResumen(
+  a: ResumenSinRespuesta | null,
+  b: ResumenSinRespuesta | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.total === b.total
+    && a.listos === b.listos
+    && a.enfriando === b.enfriando
+    && a.agotados === b.agotados
+    && a.proximoEnMinutos === b.proximoEnMinutos
+    && a.llamadasDisponibles === b.llamadasDisponibles;
 }

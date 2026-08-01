@@ -9,6 +9,7 @@ import {
   hasDueReminder,
   isRetryReady,
   resumenSinRespuestaHoy,
+  mismoResumen,
   COOLDOWN_MINUTES,
   COOLDOWN_LABEL,
   DIAS_POR_CANCELAR,
@@ -296,5 +297,48 @@ describe('resumenSinRespuestaHoy — los que "no aparecen" después de no contes
       { order_id: 'x', phone: '111', result: 'noresp', result_date: HOY, created_at: 'no-es-fecha' },
     ], HOY, AHORA);
     expect(r.total).toBe(0);
+  });
+
+  // Por qué existe el ticker de 60s en OrderContext: este resumen cambia SOLO
+  // porque pasa el tiempo, sin que nadie toque nada. Calculado una única vez al
+  // cargar, el cartel "el próximo en 12 min" seguía diciendo 12 media hora
+  // después y "para llamar ya" no crecía nunca.
+  it('con el paso del tiempo un "enfriando" se vuelve "listo" sin filas nuevas', () => {
+    const filas = [f('111', 0.5)]; // llamado hace 30 min
+    const ahora = resumenSinRespuestaHoy(filas, HOY, AHORA);
+    expect(ahora.enfriando).toBe(1);
+    expect(ahora.listos).toBe(0);
+    expect(ahora.proximoEnMinutos).toBe(30);
+
+    // Media hora más tarde, LAS MISMAS filas ya dicen otra cosa.
+    const luego = resumenSinRespuestaHoy(filas, HOY, AHORA + 31 * 60_000);
+    expect(luego.enfriando).toBe(0);
+    expect(luego.listos).toBe(1);
+    expect(luego.proximoEnMinutos).toBeNull();
+  });
+});
+
+describe('mismoResumen — no re-renderizar la cola 1.440 veces al día', () => {
+  const base = {
+    total: 5, listos: 2, enfriando: 3, agotados: 0,
+    proximoEnMinutos: 12, llamadasDisponibles: 9,
+  };
+
+  it('dos resúmenes idénticos son iguales aunque sean objetos distintos', () => {
+    expect(mismoResumen(base, { ...base })).toBe(true);
+  });
+
+  it('detecta el cambio de la cuenta regresiva', () => {
+    expect(mismoResumen(base, { ...base, proximoEnMinutos: 11 })).toBe(false);
+  });
+
+  it('detecta que alguien cruzó el enfriamiento', () => {
+    expect(mismoResumen(base, { ...base, listos: 3, enfriando: 2 })).toBe(false);
+  });
+
+  it('null contra un resumen real NO es igual — es el primer dato', () => {
+    expect(mismoResumen(null, base)).toBe(false);
+    expect(mismoResumen(base, null)).toBe(false);
+    expect(mismoResumen(null, null)).toBe(true);
   });
 });

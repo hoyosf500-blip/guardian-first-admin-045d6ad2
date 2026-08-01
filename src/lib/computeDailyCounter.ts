@@ -8,7 +8,7 @@
 //     a `conf` y NO suma a `noresp`.
 //
 // Antes el counter sumaba +1 por fila cruda → la operadora veía noresp
-// inflado por reintentos del cooldown 2h, divergente del panel admin.
+// inflado por los reintentos del cooldown, divergente del panel admin.
 
 export type CounterRow = {
   order_id: string | null;

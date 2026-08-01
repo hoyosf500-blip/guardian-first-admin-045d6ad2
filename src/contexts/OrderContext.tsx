@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
 import { useStore } from './StoreContext';
 import { OrderData, dbToOrderData, isPendiente, isDespachado, isConfirmado } from '@/lib/orderUtils';
-import { compareConfirmar, cooldownHoursForAttempt, MAX_DAILY_ATTEMPTS, resumenSinRespuestaHoy, type ResumenSinRespuesta } from '@/lib/confirmarQueue';
+import { compareConfirmar, cooldownHoursForAttempt, MAX_DAILY_ATTEMPTS, resumenSinRespuestaHoy, mismoResumen, type ResumenSinRespuesta, type FilaResultado } from '@/lib/confirmarQueue';
 import { pollWhenVisible } from '@/lib/pollWhenVisible';
 import { bogotaToday } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -85,12 +85,12 @@ interface OrderState {
    *  Sale de las MISMAS filas que el cooldown (store-wide, 7 días): sin
    *  consultas nuevas. La clave es `order_id` (= `OrderData.dbId`). */
   gestionPorPedido: Map<string, GestionDelPedido>;
-  /** ?Ya corrio al menos una lectura buena de ? Si es false,
-   *  el mapa vacio NO significa "nadie llamo" — significa que no sabemos. */
+  /** ¿Ya corrió al menos una lectura buena de `order_results`? Si es false,
+   *  el mapa vacío NO significa "nadie llamó" — significa que no sabemos. */
   gestionCargada: boolean;
-  /** Igual que  pero para Seguimiento, donde la clave es el
-   *  TELEFONO (touchpoints no guarda order_id). Contraparte de equipo de
-   *  , que es personal. */
+  /** Igual que `gestionPorPedido` pero para Seguimiento, donde la clave es el
+   *  TELÉFONO (touchpoints no guarda order_id). Contraparte de equipo de
+   *  `mySegTouchedToday`, que es personal. */
   gestionSegPorTelefono: Map<string, GestionDelPedido>;
   /** Como va HOY cada asesora (conf/canc/noresp), misma dedup que el contador
    *  del equipo. Lo ven todos: el dueno para no preguntar, y el equipo para
@@ -157,6 +157,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [gestionSegPorTelefono, setGestionSegPorTelefono] = useState<Map<string, GestionDelPedido>>(new Map());
   const [resumenAsesorasHoy, setResumenAsesorasHoy] = useState<ResumenAsesora[]>([]);
   const [sinRespuestaHoy, setSinRespuestaHoy] = useState<ResumenSinRespuesta | null>(null);
+  // El resumen de "no contestaron" es lo ÚNICO de esta pantalla que cambia solo
+  // con el paso del tiempo: un pedido pasa de "enfriando" a "listo" sin que
+  // nadie toque nada. Por eso se guardan las filas crudas — para poder
+  // recalcularlo cada minuto contra el reloj sin volver a consultar la base — y
+  // el último resultado, para comparar y no re-renderizar de gusto.
+  const norespRowsRef = useRef<FilaResultado[] | null>(null);
+  const sinRespuestaRef = useRef<ResumenSinRespuesta | null>(null);
 
   // Al CAMBIAR DE TIENDA hay que vaciar estas tres poblaciones antes de que
   // llegue la lectura de la tienda nueva. Sin esto quedaban colgadas las de la
@@ -170,6 +177,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setGestionSegPorTelefono(new Map());
     setResumenAsesorasHoy([]);
     setSinRespuestaHoy(null);
+    // Los refs también: el ticker recalcula cada minuto sobre `norespRowsRef`,
+    // así que dejarlo con las filas de la tienda anterior haría que Colombia
+    // mostrara el panel de "no contestaron" de Ecuador hasta la próxima
+    // lectura. Mezclar tiendas está prohibido en esta operación, aunque sea un
+    // panel y aunque dure un minuto.
+    norespRowsRef.current = null;
+    sinRespuestaRef.current = null;
     setGestionCargada(false);
   }, [activeStoreId]);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
@@ -393,6 +407,37 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     return pollWhenVisible(() => { void loadWorkQueue(); }, 30 * 60 * 1000, { runOnVisible: false });
   }, [user, activeStoreId, loadWorkQueue]);
 
+  // El panel de "no contestaron", contra el reloj (arreglo 31-jul).
+  //
+  // Todo lo demás de esta pantalla cambia porque ALGUIEN hace algo, y para eso
+  // está el realtime. El enfriamiento no: un pedido pasa de "esperando" a "se
+  // puede llamar ya" solo porque pasó el tiempo. Como el resumen se calculaba
+  // una única vez dentro de loadWorkQueue, el cartel "el próximo en 12 min"
+  // seguía diciendo 12 media hora después, y "3 para llamar ya" no crecía.
+  // Justo al final del día —cuando nadie marca nada, no hay realtime y el poll
+  // es de 30 min— era cuando más mentía, que es exactamente cuando el panel
+  // existe para decidir si quedan llamadas por hacer.
+  //
+  // Se recalcula sobre las filas YA leídas: cero consultas nuevas.
+  useEffect(() => {
+    if (!user || !activeStoreId) return;
+    const id = setInterval(() => {
+      const filas = norespRowsRef.current;
+      if (!filas) return;
+      const next = resumenSinRespuestaHoy(filas, bogotaToday(), Date.now());
+      const prev = sinRespuestaRef.current;
+      if (mismoResumen(prev, next)) return;
+      // Si alguien cruzó el enfriamiento, la COLA también tiene que enterarse.
+      // `retryCount` se calcula en el mismo loadWorkQueue, así que sin esto el
+      // panel diría "3 para llamar ya" y el filtro de reintentos mostraría 0 —
+      // prometer una llamada que la cola no entrega es peor que no avisar.
+      if (prev && next.listos > prev.listos) void refreshFnsRef.current.loadWorkQueue();
+      sinRespuestaRef.current = next;
+      setSinRespuestaHoy(next);
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [user, activeStoreId]);
+
   // Set de Seguimiento del día (touchpoints SEG:* míos). touchpoints no tiene
   // order_id: el match contra segData es por phone.
   //
@@ -477,6 +522,24 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       coverageDayRef.current = day;
       setMyConfirmTouchedToday(new Set());
       setMySegTouchedToday(new Set());
+      // Las poblaciones de EQUIPO también son "de hoy" y también tienen que
+      // vaciarse al cruzar la medianoche. Faltaban acá (bug del 31-jul): a las
+      // 00:01 la cola seguía mostrando "Ana · No contestó · ayer" sobre pedidos
+      // que nadie había llamado ese día, y peor — `aplicarGestionEnVivo` suma
+      // sobre lo que encuentra, así que la PRIMERA llamada del día nuevo se
+      // pintaba "intento 3 de 3" y la asesora dejaba de marcar a un cliente que
+      // tenía sus tres intentos intactos. Se curaba solo, pero recién en el
+      // siguiente loadWorkQueue: hasta 30 minutos después (el poll es de 30 min).
+      setGestionPorPedido(new Map());
+      setGestionSegPorTelefono(new Map());
+      setResumenAsesorasHoy([]);
+      setSinRespuestaHoy(null);
+      sinRespuestaRef.current = null;
+      norespRowsRef.current = null;
+      // El mapa vuelve a estar vacío por FALTA DE DATOS, no por falta de
+      // llamadas: hasta la próxima lectura la pantalla no puede afirmar
+      // "a estos no los llamó nadie".
+      setGestionCargada(false);
       return true;
     };
 
@@ -693,8 +756,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
       // Pool compartido: el cooldown/conteo de intentos es POR TIENDA (todas
-      // las operadoras), no por operadora. Así "3 llamadas/día" y "2h entre
-      // intentos" se cuentan globalmente por pedido — sin doble llamada.
+      // las operadoras), no por operadora. Así el tope de llamadas del día y la
+      // espera entre intentos se cuentan globalmente por pedido — sin doble
+      // llamada. Los números viven en confirmarQueue.ts, no acá.
       //
       // Paginación (auditoría 2026-07-31): Supabase corta todo SELECT a ~1000
       // filas EN SILENCIO. Con ~100+ gestiones/día + reintentos noresp +
@@ -757,10 +821,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // counter de "no respondió".
             const isCallOutcome = (r: string) => r === 'conf' || r === 'canc' || r === 'noresp';
             const todayLocal = bogotaToday();
-            // Hallazgo "N/R escalera": el cooldown ya NO es plano de 2h. Ahora
-            // escala por número de intento vía cooldownHoursForAttempt (1er
-            // reintento ~0.4h, 2do 1h, 3ro 2h). El cap de 3 intentos/día SE
-            // MANTIENE (alineado con la RPC pending_retry_list, que asume cap 3).
+            // El cooldown es PLANO: `cooldownHoursForAttempt` devuelve lo mismo
+            // sea el 1er o el 3er reintento (COOLDOWN_MINUTES, hoy 60 min). El
+            // parámetro `todayCount` que se le pasa abajo sobrevive solo por
+            // compatibilidad de firma. Este comentario decía lo contrario —
+            // describía una escalera (0.4h → 1h → 2h) que se quitó por decisión
+            // del dueño y que ya no existe en el código. El cap de 3 intentos/día
+            // SÍ se mantiene (alineado con la RPC pending_retry_list, que asume 3).
             // MAX_DAILY_ATTEMPTS ahora vive en confirmarQueue.ts: la ficha de
             // llamada muestra "Hoy 2 de 3" y tiene que salir del MISMO numero
             // que aplica el cooldown, o la pantalla prometeria un intento que
@@ -843,7 +910,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // Contador solo de HOY para que cuadre con TasaMetaBanner y la meta
             // diaria. Dedup por order_id (espeja RPC operator_productivity_stats
             // v20260505184140): si la operadora marca "no contestó" 3 veces el
-            // mismo pedido por el cooldown 2h, cuenta como 1; y si después
+            // mismo pedido por el cooldown, cuenta como 1; y si después
             // confirma, ese pedido suma a conf y NO a noresp. Lógica
             // compartida en computeDailyCounter para que CounterBar y panel
             // admin nunca diverjan.
@@ -874,8 +941,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
             // afirmar que el vacio es real.
             setGestionCargada(true);
             // Mismas filas, cuarta poblacion: el estado de los "no contesto".
-            setSinRespuestaHoy(resumenSinRespuestaHoy(
-              data as Parameters<typeof resumenSinRespuestaHoy>[0], todayLocal, Date.now()));
+            // Se guardan las filas para poder re-evaluar el enfriamiento contra
+            // el reloj cada minuto (ver el ticker) sin re-consultar la base.
+            norespRowsRef.current = data as FilaResultado[];
+            const resumen = resumenSinRespuestaHoy(
+              data as Parameters<typeof resumenSinRespuestaHoy>[0], todayLocal, Date.now());
+            sinRespuestaRef.current = resumen;
+            setSinRespuestaHoy(resumen);
             // Mismas filas, tercera poblacion: como va cada asesora hoy.
             // Comparacion por contenido para no re-renderizar la cola entera
             // cuando los numeros no se movieron.
@@ -930,8 +1002,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setWorkQueue(prev => prev.map(o => o.dbId === order.dbId ? { ...o, result, reason } : o));
     setCounter(prev => {
       // noresp NO se incrementa optimísticamente: si la operadora marca
-      // "no contestó" 2 veces sobre el mismo pedido (separadas por 2h
-      // de cooldown), el +1 ingenuo lo contaba doble. Dejamos que el
+      // "no contestó" 2 veces sobre el mismo pedido (separadas por el
+      // cooldown), el +1 ingenuo lo contaba doble. Dejamos que el
       // recompute por realtime (~100ms después del INSERT) lo refleje
       // ya deduplicado por order_id. UX no requiere feedback instantáneo
       // para noresp (no impacta meta).
