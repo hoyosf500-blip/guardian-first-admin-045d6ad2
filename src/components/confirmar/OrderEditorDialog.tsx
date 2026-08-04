@@ -9,7 +9,7 @@ import { formatCOP } from '@/lib/utils';
 import { parseValorInput } from '@/lib/orderAlerts';
 import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditStep } from '@/lib/orderEditPlan';
 import { parseInvoke } from '@/lib/parseInvoke';
-import { cotizacionDesfasada } from '@/lib/destinoCotizado';
+import { cotizacionDesfasada, mismoDestino } from '@/lib/destinoCotizado';
 import CustomerForm, { buildCustomerInitial, customerDirty, type CustomerFormState } from '@/components/confirmar/CustomerForm';
 import CarrierPicker, { type CarrierOption } from '@/components/confirmar/CarrierPicker';
 import ProductLinesEditor, { draftToLine, type LineDraft } from '@/components/confirmar/ProductLinesEditor';
@@ -247,6 +247,20 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
   // si no, calla — ver `cotizacionDesfasada`.
   const destDesfasado = !quoteLoading && !!options?.length
     && cotizacionDesfasada(quotedDest?.cityName, form.ciudad);
+
+  // El caso que este aviso NO cubría, y que se descubrió tratando de verificar
+  // un despliegue (4-ago-2026): la edge function VIEJA no manda `dest`, así que
+  // `cotizacionDesfasada` calla — correcto, no puede afirmar nada. Pero esa
+  // misma versión vieja TAMBIÉN ignora la ciudad que se le manda y cotiza
+  // siempre la guardada. O sea que el peor caso —cotizar la ciudad equivocada—
+  // era justo el único que pasaba sin decir una palabra.
+  //
+  // Acá sí se puede afirmar: si la ciudad de pantalla es distinta de la
+  // guardada y el servidor no informa para cuál cotizó, la lista es de la
+  // vieja. No hace falta comparar nada: la versión que responde no sabe hacerlo.
+  const servidorDesactualizado = !quoteLoading && !!options?.length
+    && quotedDest == null
+    && !mismoDestino(order.ciudad || '', form.ciudad);
 
   // ---- Flags de cambios ----
   const clientDirty = customerDirty(initial, form);
@@ -791,6 +805,17 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
                       <strong>{form.ciudad.trim()}</strong>. No elijas transportadora todavía:
                       tocá <strong>Reintentar</strong> acá arriba. Si sigue igual, avisá — la
                       función de cotización quedó sin actualizar.
+                    </div>
+                  )}
+                  {/* El servidor respondió sin decir para qué ciudad cotizó: es
+                      la versión vieja, que además ignora la ciudad nueva. Acá no
+                      hay nada que reintentar — hay que redesplegar. */}
+                  {servidorDesactualizado && !destDesfasado && (
+                    <div className="mb-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-warning" role="alert">
+                      Cambiaste la ciudad a <strong>{form.ciudad.trim()}</strong>, pero el
+                      servidor sigue cotizando <strong>{order.ciudad}</strong>. No elijas
+                      transportadora: Dropi va a rechazar el guardado. Avisá que hay que
+                      actualizar la función de cotización.
                     </div>
                   )}
                   <CarrierPicker
