@@ -9,6 +9,7 @@ import { formatCOP } from '@/lib/utils';
 import { parseValorInput } from '@/lib/orderAlerts';
 import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditStep } from '@/lib/orderEditPlan';
 import { parseInvoke } from '@/lib/parseInvoke';
+import { cotizacionDesfasada } from '@/lib/destinoCotizado';
 import CustomerForm, { buildCustomerInitial, customerDirty, type CustomerFormState } from '@/components/confirmar/CustomerForm';
 import CarrierPicker, { type CarrierOption } from '@/components/confirmar/CarrierPicker';
 import ProductLinesEditor, { draftToLine, type LineDraft } from '@/components/confirmar/ProductLinesEditor';
@@ -44,6 +45,9 @@ interface QuoteResponse {
   options?: CarrierOption[];
   lines?: QuoteLineResp[];
   total?: number;
+  /** Ciudad para la que Dropi cotizó, ya resuelta contra su catálogo. Ausente
+   *  en versiones viejas de la edge function (ver el aviso de desfase). */
+  dest?: { cityName: string; stateName: string };
   dropiBody?: unknown;
 }
 
@@ -119,11 +123,18 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
   const [drafts, setDrafts] = useState<LineDraft[] | null>(null);
   /** true = el quote respondió pero SIN líneas (función vieja deployada). */
   const [quoteHadNoLines, setQuoteHadNoLines] = useState(false);
+  /** Ciudad para la que se cotizó, según la resolvió Dropi. `null` si la
+   *  función desplegada todavía no la devuelve (versión vieja). */
+  const [quotedDest, setQuotedDest] = useState<{ cityName: string; stateName: string } | null>(null);
 
   const [selectedCarrier, setSelectedCarrier] = useState<CarrierOption | null>(null);
   const [overrideRaw, setOverrideRaw] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [requoting, setRequoting] = useState(false);
+
+  // Ciudad/provincia que se está cotizando. Se leen por ref para que
+  // `fetchQuote` no se recree en cada tecleo (y no reviva efectos).
+  const destRef = useRef<{ ciudad: string; departamento: string }>({ ciudad: '', departamento: '' });
 
   const fetchQuote = useCallback(async (withLines?: EditableLine[]) => {
     if (!order.externalId) return;
@@ -134,6 +145,12 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         body: {
           externalId: order.externalId,
           mode: 'quote',
+          // La ciudad/provincia DE PANTALLA, no la guardada. Sin esto el back
+          // cotizaba siempre la ciudad vieja del pedido: al cambiarla en el
+          // editor, la operadora elegía una transportadora de la lista
+          // equivocada y Dropi rechazaba el guardado.
+          city: destRef.current.ciudad,
+          state: destRef.current.departamento,
           ...(withLines ? { lines: withLines.map(l => ({ dropiId: l.dropiId, quantity: l.quantity, price: l.price })) } : {}),
         },
       });
@@ -147,6 +164,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       }
       setQuoteError(null);
       setOptions(d.options || []);
+      setQuotedDest(d.dest ?? null);
       if (!withLines) {
         // Carga inicial: armar los drafts editables desde las líneas del quote.
         const lines = Array.isArray(d.lines) ? d.lines : null;
@@ -189,9 +207,46 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     setQuoteHadNoLines(false);
     setQuoteError(null);
     setOptions(null);
+    setQuotedDest(null);
+    destRef.current = { ciudad: init.ciudad, departamento: init.departamento };
     if (rightEnabled) void fetchQuote();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, order.externalId]);
+
+  // RECOTIZAR AL CAMBIAR EL DESTINO (arreglo 1-ago-2026).
+  //
+  // El quote corría UNA sola vez, al abrir. Si después la operadora cambiaba la
+  // ciudad o la provincia en los desplegables, la lista de transportadoras
+  // seguía siendo la de la ciudad ANTERIOR: elegía una de esa lista, guardaba, y
+  // Dropi rechazaba el pedido ("LAARCOURIER no cotiza envíos a BOMBOLÍ") aunque
+  // en pantalla dijera SANTO DOMINGO. La operadora no tenía cómo saberlo.
+  //
+  // Se espera a que termine de tipear/elegir (700 ms) para no disparar una
+  // cotización por tecla — en EC la ciudad es texto libre.
+  useEffect(() => {
+    if (!open || !rightEnabled) return;
+    const ciudad = form.ciudad.trim();
+    const departamento = form.departamento.trim();
+    if (!ciudad || !departamento) return;
+    // Mismo destino que el ya cotizado: nada que hacer.
+    if (ciudad === destRef.current.ciudad && departamento === destRef.current.departamento) return;
+    const t = setTimeout(() => {
+      destRef.current = { ciudad, departamento };
+      // La transportadora elegida pertenece a la ciudad vieja: se suelta ANTES
+      // de recotizar. Dejarla puesta es lo que hacía que se guardara una
+      // transportadora que no cubre el destino nuevo.
+      setSelectedCarrier(null);
+      void fetchQuote();
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, rightEnabled, form.ciudad, form.departamento]);
+
+  // ¿La lista de transportadoras que se está mostrando es de OTRA ciudad?
+  // Solo puede saberse si la edge function devolvió `dest` (versión nueva);
+  // si no, calla — ver `cotizacionDesfasada`.
+  const destDesfasado = !quoteLoading && !!options?.length
+    && cotizacionDesfasada(quotedDest?.cityName, form.ciudad);
 
   // ---- Flags de cambios ----
   const clientDirty = customerDirty(initial, form);
@@ -713,6 +768,19 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
                       Transportadora
                     </h3>
                   </header>
+                  {/* Red de seguridad: si la cotización NO corresponde a la
+                      ciudad que está en pantalla, se avisa en vez de dejar
+                      elegir una transportadora que Dropi va a rechazar al
+                      guardar. Pasa cuando esta edge function todavía no se
+                      redesplegó y sigue cotizando la ciudad guardada. */}
+                  {destDesfasado && (
+                    <div className="mb-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] text-warning" role="alert">
+                      Estas tarifas son para <strong>{quotedDest?.cityName}</strong>, no para{' '}
+                      <strong>{form.ciudad.trim()}</strong>. No elijas transportadora todavía:
+                      tocá <strong>Reintentar</strong> acá arriba. Si sigue igual, avisá — la
+                      función de cotización quedó sin actualizar.
+                    </div>
+                  )}
                   <CarrierPicker
                     options={options}
                     loading={quoteLoading}

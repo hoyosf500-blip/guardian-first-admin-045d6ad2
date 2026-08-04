@@ -1256,11 +1256,19 @@ Deno.serve(async (req: Request) => {
       //    El fallback vivo LANZA con errores reales (token vencido/red) en vez de
       //    devolver null — no confundir con "sin cobertura".
       const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      // DESTINO A COTIZAR: la ciudad que la operadora tiene EN PANTALLA, no la
+      // guardada. Antes salía siempre de `orderRow` y por eso, al cambiar la
+      // ciudad en el editor, se seguía cotizando la VIEJA: la operadora elegía
+      // una transportadora de esa lista, guardaba, y Dropi rechazaba el pedido
+      // ("LAARCOURIER no cotiza envíos a BOMBOLÍ") aunque en pantalla dijera
+      // SANTO DOMINGO. Reportado en producción el 1-ago-2026.
+      // Si el cliente no manda override (versión vieja del front), se conserva
+      // el comportamiento anterior — no se rompe nada.
+      const cityQ = String(body.city ?? orderRow.ciudad ?? "").trim() || String(orderRow.ciudad || "");
+      const stateQ = String(body.state ?? orderRow.departamento ?? "").trim() || String(orderRow.departamento || "");
       let destCity;
       try {
-        destCity = await resolveDestCity(
-          sbAdmin, cfg, cfg.countryCode, String(orderRow.ciudad || ""), String(orderRow.departamento || ""),
-        );
+        destCity = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, cityQ, stateQ);
       } catch (e) {
         if (e instanceof WebFallbackError) {
           return jsonOk({ ok: false, code: "dropi_error", error: e.message });
@@ -1271,8 +1279,8 @@ Deno.serve(async (req: Request) => {
         return jsonOk({
           ok: false,
           code: "sin_cobertura_dropi",
-          error: noCoverageMessage(String(orderRow.ciudad || ""), String(orderRow.departamento || "")),
-          city: String(orderRow.ciudad || ""), state: String(orderRow.departamento || ""),
+          error: noCoverageMessage(cityQ, stateQ),
+          city: cityQ, state: stateQ,
         });
       }
 
@@ -1283,8 +1291,8 @@ Deno.serve(async (req: Request) => {
       try {
         const ctx = await quoteCarriers(cfg, {
           country,
-          city: String(orderRow.ciudad || ""),
-          state: String(orderRow.departamento || ""),
+          city: cityQ,
+          state: stateQ,
           destCity,
           lines,
           total,
@@ -1293,6 +1301,12 @@ Deno.serve(async (req: Request) => {
           ok: true,
           current: String(orderRow.transportadora || ""),
           options: ctx.options,
+          // PARA QUÉ CIUDAD se cotizó, resuelta contra el catálogo de Dropi.
+          // El editor la compara con la que tiene en pantalla: si no coinciden
+          // (p. ej. esta función todavía no se redesplegó y sigue cotizando la
+          // ciudad vieja), avisa en vez de dejar elegir una transportadora que
+          // Dropi va a rechazar al guardar. Clientes viejos lo ignoran.
+          dest: { cityName: ctx.dest.cityName, stateName: ctx.dest.stateName },
           // Editor unificado: líneas usadas para cotizar (dropiId/quantity/price/
           // name) + total — el diálogo pinta el editor de producto con la MISMA
           // llamada que ya hacía para cotizar. Clientes viejos las ignoran.
