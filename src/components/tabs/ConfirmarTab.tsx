@@ -105,6 +105,14 @@ export default function ConfirmarTab({ profile }: Props) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Tienda vigente, para que un fetch en vuelo sepa que ya no le corresponde
+  // aterrizar. Va DECLARADO ANTES del efecto de carga a propósito: dentro de un
+  // mismo commit los efectos corren en orden, así que cuando arranca el fetch
+  // el ref ya tiene la tienda buena. Al revés, la primera página se cancelaría
+  // sola contra un ref viejo y la cola arrancaría vacía.
+  const storeVigenteRef = useRef<string | null>(activeStoreId);
+  useEffect(() => { storeVigenteRef.current = activeStoreId; }, [activeStoreId]);
+
   // Auto-load orders from DB on mount if not already loaded. Uses a strict
   // eq() match on PENDIENTE CONFIRMACION instead of ilike('%PENDIENTE%') —
   // the old filter also matched "PENDIENTE" (locally confirmed) and
@@ -131,8 +139,21 @@ export default function ConfirmarTab({ profile }: Props) {
     // Misma función que usa `loadWorkQueue` (OrderContext): antes eran dos
     // queries escritas aparte y ninguna paginaba — PostgREST corta en ~1000
     // filas sin avisar y los pendientes de más no los veía nadie.
-    fetchPendientesDeConfirmar(activeStoreId)
+    // Guard de tienda: el paginado puede tardar varios segundos y la asesora
+    // puede cambiar de tienda mientras tanto. Aterrizar la respuesta vieja
+    // llenaría la cola con pedidos de Colombia bajo el encabezado de Ecuador —
+    // y llamar a uno de esos escribe la gestión con el store_id equivocado.
+    // Mezclar países está prohibido en esta operación.
+    //
+    // Con un flag + cleanup del efecto NO se puede: `autoLoading` está en las
+    // deps y se setea acá arriba, así que el efecto se relanza en el acto, el
+    // cleanup marcaría cancelado y la carga inicial no aterrizaría NUNCA. Por
+    // eso el guard mira un ref con la tienda vigente, no el ciclo del efecto.
+    const storeDeEstaCarga = activeStoreId;
+    const esDeOtraTienda = () => storeVigenteRef.current !== storeDeEstaCarga;
+    fetchPendientesDeConfirmar(storeDeEstaCarga, esDeOtraTienda)
       .then(({ filas: dbOrders, error, truncado }) => {
+        if (esDeOtraTienda()) return;
         if (error) {
           console.error('Error loading orders:', error);
           toast.error('Error cargando pedidos: ' + error);
@@ -152,6 +173,7 @@ export default function ConfirmarTab({ profile }: Props) {
         setExcelLoaded(true);
         setAutoLoading(false);
       }, (err: unknown) => {
+        if (esDeOtraTienda()) return;
         const msg = err instanceof Error ? err.message : String(err);
         console.error('Network error loading orders:', err);
         toast.error('Error de red: ' + msg);

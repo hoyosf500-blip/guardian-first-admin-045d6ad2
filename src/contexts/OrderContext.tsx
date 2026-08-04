@@ -169,6 +169,21 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   // a un cliente cuyo pedido ya estaba CANCELADO en Dropi (esa cancelación no
   // deja fila en order_results, así que por ahí es invisible).
   const pedidosVivosRef = useRef<Set<string> | null>(null);
+  /**
+   * Tienda a la que corresponde lo que se está mostrando AHORA.
+   *
+   * `loadWorkQueue` era el único de los tres cargadores sin guard de tienda
+   * (`useDataLoader` y `useNovedades` sí lo tienen). Si la asesora cambia de
+   * tienda con un fetch en vuelo, la respuesta vieja llenaba la cola de
+   * Confirmar con pedidos de Colombia bajo el encabezado de Ecuador — y llamar
+   * a uno de esos escribe la gestión con el store_id de la tienda NUEVA sobre
+   * un pedido de la vieja. Mezclar países está prohibido en esta operación.
+   *
+   * Antes la ventana era un solo viaje al servidor; desde que la cola pagina
+   * (para no cortarse en mil filas) puede durar varios segundos, así que el
+   * guard dejó de ser opcional.
+   */
+  const storeVigenteRef = useRef<string | null>(activeStoreId);
 
   // Al CAMBIAR DE TIENDA hay que vaciar estas tres poblaciones antes de que
   // llegue la lectura de la tienda nueva. Sin esto quedaban colgadas las de la
@@ -191,6 +206,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     sinRespuestaRef.current = null;
     pedidosVivosRef.current = null;
     setGestionCargada(false);
+    // Tienda VIGENTE, para que un fetch en vuelo sepa que ya no le corresponde
+    // aterrizar. Ver el guard de `loadWorkQueue`.
+    storeVigenteRef.current = activeStoreId;
   }, [activeStoreId]);
   const [mySegTouchedToday, setMySegTouchedToday] = useState<Set<string>>(new Set());
   // ¿Se pudo LEER cada set de cobertura? Ver el doc del contrato en OrderState.
@@ -265,7 +283,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Paginado: PostgREST corta en ~1000 filas SIN avisar. Con la cola por
     // encima de mil, los pendientes sobrantes desaparecían de la pantalla y
     // nadie los llamaba — sin ningún síntoma visible. Ver `paginarQuery`.
-    const { filas: dbOrders, error, truncado } = await fetchPendientesDeConfirmar(activeStoreId);
+    const { filas: dbOrders, error, truncado } = await fetchPendientesDeConfirmar(
+      activeStoreId,
+      // Corta el paginado apenas cambia la tienda (ver `storeVigenteRef`).
+      () => storeVigenteRef.current !== activeStoreId,
+    );
+    // Y otra vez al aterrizar: `cancelado` se mira ENTRE páginas, así que la
+    // última puede llegar justo después del cambio.
+    if (storeVigenteRef.current !== activeStoreId) return;
     if (error) return;
     if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
     const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
