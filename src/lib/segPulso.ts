@@ -71,7 +71,14 @@ export function horasSinMovimiento(o: OrderData, ahoraMs: number = Date.now()): 
  * servir para decidir.
  */
 export function estaDetenido(o: OrderData, ahoraMs: number = Date.now()): boolean {
-  if (!FASES_VIVAS.has(classifySegEstado(o.estado || ''))) return false;
+  // 'otros' —un estado que Dropi invente y que el clasificador todavía no
+  // conoce— cuenta como VIVO. El guard estaba escrito al revés (todo lo que no
+  // es fase viva se descarta), así que un rótulo nuevo desaparecía del contador:
+  // 40 pedidos parados diez días daban DETENIDOS 0. Un pedido en estado
+  // desconocido es exactamente el que hay que ir a mirar, no el que hay que
+  // esconder. Es el caso de los 238 pedidos EC sin clasificar de julio.
+  const fase = classifySegEstado(o.estado || '');
+  if (fase !== 'otros' && !FASES_VIVAS.has(fase)) return false;
   const h = horasSinMovimiento(o, ahoraMs);
   return h != null && h >= HORAS_DETENIDO;
 }

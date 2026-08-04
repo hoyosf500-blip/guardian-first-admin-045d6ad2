@@ -47,9 +47,25 @@ export function esContactoEfectivo(metodo: string | null | undefined): boolean {
   return true;
 }
 
-/** Los 4 de siempre — fallback para estados sin juego propio (y compat). */
+/**
+ * Fallback para estados sin juego propio — incluidos los que Dropi invente
+ * mañana, que caen en 'otros'.
+ *
+ * "No contestó" y "Volver a llamar" NO estaban acá (auditoría 4-ago-2026), y su
+ * ausencia hacía desaparecer clientes: son los DOS únicos desenlaces que
+ * `esContactoEfectivo` trata como "sigue pendiente". Sin ellos, la asesora que
+ * llamaba y no le contestaban solo podía tocar "Llamé" — que cuenta como
+ * contacto efectivo, marca la tarjeta como gestionada para TODO el equipo y,
+ * con "Ocultar gestionados" (que viene activado), la esconde el resto del día.
+ * Nadie volvía a llamar a ese cliente y el paquete se iba a devolución.
+ *
+ * Los buckets conocidos ya los traían; el hueco era justo el del estado
+ * desconocido, que es donde menos se puede dar por bueno un desenlace.
+ */
 export const METODOS_DEFAULT: readonly string[] = [
   'Llamé',
+  'No contestó',
+  'Volver a llamar',
   'WhatsApp',
   'Reclamé transportadora',
   'Cliente recoge',

@@ -182,7 +182,15 @@ function freshnessDot(o: OrderData): { cls: string; ring: string; title: string 
   // que nadie tiene que ir a destrabar. Además descuadraba la pantalla: el
   // contador DETENIDOS de arriba (que sí excluye los terminales) decía 23
   // mientras abajo había 25 puntos rojos — dos de ellos en "Cancelado".
-  if (!FASES_VIVAS.has(classifySegEstado(o.estado || ''))) {
+  // Solo se declara "cerrado" lo que se SABE cerrado. Un estado que Dropi
+  // invente mañana cae en 'otros', que no está en FASES_VIVAS — y con el guard
+  // escrito al revés (todo lo que no es fase viva = cerrado) esas tarjetas se
+  // pintaban grises diciendo "Cerrado", o sea afirmando que el pedido terminó,
+  // cuando en realidad nadie sabe dónde está. Justo el caso de los 238 pedidos
+  // EC sin clasificar de julio. Ahora 'otros' sigue el camino normal y puede
+  // ponerse rojo: mejor una alarma sobre algo desconocido que un falso "ya está".
+  const fase = classifySegEstado(o.estado || '');
+  if (fase !== 'otros' && !FASES_VIVAS.has(fase)) {
     return {
       cls: 'bg-muted-foreground/40',
       ring: 'ring-muted-foreground/20',

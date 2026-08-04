@@ -29,6 +29,8 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<PendingRow[]>([]);
   const [stats, setStats] = useState<TodayStats | null>(null);
+  /** ¿Se pudo LEER el resumen del día? Ver el comentario de `load`. */
+  const [statsError, setStatsError] = useState(false);
   const [step, setStep] = useState(1);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -40,8 +42,18 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
       (supabase.rpc as unknown as (fn: string) => Promise<{ data: TodayStats[] | null; error: unknown }>)('today_call_stats'),
     ]);
     if (!pendingRes.error && pendingRes.data) setPending(pendingRes.data);
-    if (!statsRes.error && statsRes.data && statsRes.data[0]) {
+    // Fallar la lectura y no haber trabajado se veían IGUAL (auditoría
+    // 4-ago-2026): con el error descartado, `stats` quedaba en null y la
+    // pantalla imprimía `stats?.confirmados ?? 0` — o sea "Confirmados 0 ·
+    // Total gestionados 0 · —% de confirmación" con toda la cara de dato
+    // medido. La asesora cierra su turno leyendo que no hizo nada.
+    // Ahora el error se distingue y la pantalla lo dice.
+    if (statsRes.error || !statsRes.data || !statsRes.data[0]) {
+      setStats(null);
+      setStatsError(true);
+    } else {
       const s = statsRes.data[0];
+      setStatsError(false);
       setStats({
         confirmados: Number(s.confirmados) || 0,
         cancelados: Number(s.cancelados) || 0,
@@ -139,9 +151,20 @@ export default function ClosingReportDialog({ open, onClose }: Props) {
                     </div>
                   </div>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  Todos estos números los calcula el sistema automáticamente — no se editan.
-                </p>
+                {statsError ? (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+                  >
+                    No se pudo leer tu resumen del día. Los números de abajo están en cero
+                    porque <strong>no se pudieron consultar</strong>, no porque no hayas
+                    trabajado. Cerrá el turno igual —tu gestión ya quedó guardada— y avisá.
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Todos estos números los calcula el sistema automáticamente — no se editan.
+                  </p>
+                )}
                 <div className="grid grid-cols-3 gap-2">
                   <StatCard
                     icon={<CheckCircle2 size={14} className="text-green" />}

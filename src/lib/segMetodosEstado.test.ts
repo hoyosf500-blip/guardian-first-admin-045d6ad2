@@ -122,3 +122,25 @@ describe('esContactoEfectivo — evita que un cliente desaparezca del tablero', 
     expect(esContactoEfectivo(undefined)).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sin "No contestó" en el juego por defecto, la asesora que llamaba a un cliente
+// de un estado desconocido solo podía tocar "Llamé" — que cuenta como contacto
+// efectivo, esconde la tarjeta para TODO el equipo el resto del día, y deja al
+// cliente sin que nadie lo vuelva a llamar.
+describe('METODOS_DEFAULT — el estado desconocido también necesita salida', () => {
+  it('ofrece los dos desenlaces que dejan el pedido pendiente', () => {
+    expect(METODOS_DEFAULT).toContain('No contestó');
+    expect(METODOS_DEFAULT).toContain('Volver a llamar');
+  });
+
+  it('esos dos NO cuentan como contacto efectivo (no esconden la tarjeta)', () => {
+    expect(esContactoEfectivo('No contestó')).toBe(false);
+    expect(esContactoEfectivo('Volver a llamar')).toBe(false);
+  });
+
+  // El fallback tiene que servir para un estado que todavía no existe.
+  it('un estado inventado por Dropi recibe un juego que incluye "No contestó"', () => {
+    expect(metodosParaEstado('EN GESTION DE ENTREGA')).toContain('No contestó');
+  });
+});

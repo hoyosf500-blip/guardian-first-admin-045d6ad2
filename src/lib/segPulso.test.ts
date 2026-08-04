@@ -142,3 +142,30 @@ describe('asesorasEnSeguimientoHoy', () => {
     expect(asesorasEnSeguimientoHoy([pedido({})], null)).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Un estado que Dropi invente cae en 'otros'. El guard estaba escrito al revés
+// —"todo lo que no es fase viva se descarta"— así que un rótulo nuevo salía del
+// contador: 40 pedidos parados diez días daban DETENIDOS 0, y su tarjeta se
+// pintaba gris diciendo "Cerrado". Es el caso de los 238 pedidos EC sin
+// clasificar de julio. El pedido en estado desconocido es justo el que hay que
+// ir a mirar, no el que hay que esconder.
+describe('estado desconocido: se alarma, no se da por cerrado', () => {
+  it('un estado que el clasificador no conoce SÍ puede estar detenido', () => {
+    const o = pedido({ estado: 'EN GESTION DE ENTREGA', lastMovementAt: haceHoras(HORAS_DETENIDO + 5) });
+    expect(estaDetenido(o, AHORA)).toBe(true);
+  });
+
+  it('pero si se movió recién, no lo marca', () => {
+    const o = pedido({ estado: 'EN GESTION DE ENTREGA', lastMovementAt: haceHoras(3) });
+    expect(estaDetenido(o, AHORA)).toBe(false);
+  });
+
+  // La otra mitad del contrato: los terminales SÍ se siguen descartando. Sin
+  // esto el arreglo se pasaría de largo y un ENTREGADO viejo volvería a contar.
+  it('los terminales siguen fuera', () => {
+    for (const estado of ['ENTREGADO', 'CANCELADO', 'DEVOLUCION', 'REEMPLAZADA']) {
+      expect(estaDetenido(pedido({ estado, lastMovementAt: haceHoras(500) }), AHORA)).toBe(false);
+    }
+  });
+});
