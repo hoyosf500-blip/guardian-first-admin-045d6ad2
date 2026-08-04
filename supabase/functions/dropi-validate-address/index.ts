@@ -388,7 +388,7 @@ Deno.serve(async (req) => {
 
   // Si la heurística falla rotundamente, no llamamos APIs externas
   if (heuristicScore < 40) {
-    const invalidStatus: "invalid" = "invalid";
+    const invalidStatus = "invalid" as const;
     await sb
       .from("address_validations")
       .upsert({

@@ -21,6 +21,16 @@ import { join } from 'path';
  * bajo, que es la forma de las constantes de este repo: las palabras sueltas en
  * mayúscula ("PENDIENTE", "PUT") viven dentro de regex y de textos, y darían
  * falsos positivos.
+ *
+ * DESDE EL 4-AGO-2026 LA GUARDIA PRINCIPAL ES EL LINT, no esta prueba.
+ * `eslint.config.js` prende `no-undef` para `supabase/functions/**` — cubre
+ * MÁS que esto (cualquier identificador, no solo SNAKE_CASE) y sin analizador
+ * hecho a mano. La regla estaba apagada porque typescript-eslint asume que tsc
+ * hace ese trabajo; en las edge functions tsc no corre nunca, y ese supuesto
+ * era justamente el agujero.
+ *
+ * Esta prueba se queda como red de respaldo: si alguien apaga la regla, el
+ * agujero no vuelve a abrirse en silencio.
  */
 
 const RAIZ = 'supabase/functions';
