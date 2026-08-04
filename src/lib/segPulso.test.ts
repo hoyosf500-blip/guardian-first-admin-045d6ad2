@@ -87,6 +87,33 @@ describe('estaDetenido — el paquete que se está pudriendo', () => {
     expect(horasSinMovimiento(pedido({ lastMovementAt: null }), AHORA)).toBeNull();
     expect(horasSinMovimiento(pedido({ lastMovementAt: 'no-es-fecha' }), AHORA)).toBeNull();
   });
+
+  // La cuenta se hacía con `parseDate`, que ancla a MEDIANOCHE UTC y con eso
+  // TIRA LA HORA. Un pedido movido a las 20:00 se contaba como movido a las
+  // 00:00: 20 h de quietud inventadas, siempre para el mismo lado.
+  //
+  // Los tests de arriba no lo cazaban porque usan márgenes anchos (73 h y 2 h);
+  // el error de hasta 24 h no alcanzaba a cruzar el umbral. Este caso está
+  // parado JUSTO en la zona donde sí lo cruza.
+  it('mide desde la HORA real del movimiento, no desde la medianoche', () => {
+    // 2026-07-29 20:00Z → 2026-08-01 15:00Z son 67 h reales: NO llega al umbral.
+    // Anclando a medianoche daban 87 h y el pedido se declaraba detenido.
+    const o = pedido({ lastMovementAt: '2026-07-29T20:00:00Z' });
+    expect(horasSinMovimiento(o, AHORA)).toBe(67);
+    expect(estaDetenido(o, AHORA)).toBe(false);
+  });
+
+  it('conserva la hora también con offset (lo que manda Postgres)', () => {
+    // Mismo instante escrito en hora Bogotá: 15:00-05:00 = 20:00Z.
+    const o = pedido({ lastMovementAt: '2026-07-29T15:00:00-05:00' });
+    expect(horasSinMovimiento(o, AHORA)).toBe(67);
+  });
+
+  // La fecha sin hora sigue valiendo: perder la hora es mejor que perder el
+  // pedido. Solo que ahí la medianoche ES el dato, no una suposición.
+  it('una fecha suelta (sin hora) sigue contando desde su medianoche', () => {
+    expect(horasSinMovimiento(pedido({ lastMovementAt: '2026-08-01' }), AHORA)).toBe(15);
+  });
 });
 
 describe('asesorasEnSeguimientoHoy', () => {

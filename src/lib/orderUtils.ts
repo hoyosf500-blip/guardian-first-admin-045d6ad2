@@ -685,10 +685,11 @@ export function getTrackingUrl(carrier: string, guia: string, countryCode?: stri
  * espacio final ("TELEFONO "), el NBSP que mete Excel al reeditar, o el BOM que
  * queda pegado a la primera celda de un CSV: se importaban cientos de pedidos
  * con teléfono vacío o valor $0 y el upload se veía exitoso.
- * VIEJO:
- * 'TELEFONO ' (espacio final al reeditar), 'TOTAL ' (NBSP que mete Excel) o
- * '﻿ID' (BOM en la primera celda de un CSV): se importaban cientos de
- * pedidos con teléfono vacío o valor $0 y el upload se veía exitoso.
+ *
+ * Los tres caracteres van nombrados y NO literales: escritos crudos son
+ * invisibles en el editor y hacen fallar el lint por espacio irregular.
+ * Se quitan en este orden: BOM (\uFEFF) al principio, NBSP (\u00A0) a espacio
+ * normal, espacios repetidos a uno solo, y recorte de las puntas.
  */
 function normalizeHeader(h: string): string {
   return (h ?? '')

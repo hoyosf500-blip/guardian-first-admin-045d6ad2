@@ -20,6 +20,7 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 // COST-3: ORDER_COLUMNS extraído a src/lib/orderColumns.ts para reutilizarse
 // en ConfirmarTab y CallView (antes hacían select('*')).
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
+import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { computeDailyCounter, computeDailyCounterByOperator, type ResumenAsesora } from '@/lib/computeDailyCounter';
 import { buildGestionPorPedido, buildGestionSegPorTelefono, aplicarGestionEnVivo, mismaGestion, type GestionDelPedido } from '@/lib/gestionPorPedido';
 
@@ -261,13 +262,13 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     // Pool compartido: TODAS las operadoras ven TODOS los pendientes de la
     // tienda (sin lock por operadora). La coordinación es por el cooldown
     // compartido (abajo en buildWorkQueue) + la etiqueta de gestión, no por bloqueo.
-    const { data: dbOrders, error } = await supabase
-      .from('orders')
-      .select(ORDER_COLUMNS)
-      .eq('store_id', activeStoreId)
-      .ilike('estado', 'PENDIENTE CONFIRMACION');
-    if (error || !dbOrders) return;
-    const orders = (dbOrders as unknown as import('@/lib/orderUtils').DbOrderRow[]).map((o, idx) => dbToOrderData(o, idx));
+    // Paginado: PostgREST corta en ~1000 filas SIN avisar. Con la cola por
+    // encima de mil, los pendientes sobrantes desaparecían de la pantalla y
+    // nadie los llamaba — sin ningún síntoma visible. Ver `paginarQuery`.
+    const { filas: dbOrders, error, truncado } = await fetchPendientesDeConfirmar(activeStoreId);
+    if (error) return;
+    if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
+    const orders = dbOrders.map((o, idx) => dbToOrderData(o, idx));
     // smartMerge (no reemplazo directo): en un refresh de realtime que trae los
     // MISMOS datos, devuelve el array previo intacto → `allOrders` no cambia de
     // referencia → `ctxValue` no cambia → NINGÚN consumer de useOrders()

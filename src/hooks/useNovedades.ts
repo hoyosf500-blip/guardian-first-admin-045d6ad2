@@ -4,6 +4,7 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
+import { paginarQuery, type Paginable } from '@/lib/paginarQuery';
 import { bogotaToday } from '@/lib/utils';
 import { POLL_INTERVAL_MS } from '@/lib/constants';
 import { toast } from 'sonner';
@@ -49,12 +50,24 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       // traigan validation_decision, address_kind, suggested_customer_message,
       // lat/lng, etc. (mismas que Confirmar/Seguimiento). Antes el string local
       // omitía esos campos y los badges de validación nunca aparecían.
-      const { data, error } = await supabase
-        .from('orders')
-        .select(ORDER_COLUMNS)
-        .eq('store_id', storeId)
-        .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
-        .eq('novedad_sol', false);
+      // Paginado: PostgREST corta en ~1000 filas SIN avisar. Las novedades no
+      // tienen techo natural —se acumulan hasta que alguien las resuelve— así
+      // que pasado el tope las de más quedaban invisibles y sin gestionar.
+      // `cancelado` corta el paginado apenas cambia la tienda: seguir trayendo
+      // páginas de la anterior mezclaría Colombia con Ecuador.
+      type Row = Parameters<typeof dbToOrderData>[0];
+      const { filas, error, truncado } = await paginarQuery<Row>(
+        () =>
+          supabase
+            .from('orders')
+            .select(ORDER_COLUMNS)
+            .eq('store_id', storeId)
+            .or('estado.ilike.%NOVEDAD%,estado.ilike.%INTENTO DE ENTREGA%')
+            .eq('novedad_sol', false)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true }) as unknown as Paginable<Row>,
+        { cancelado: () => prevStoreRef.current !== storeId },
+      );
       // Guard multi-tienda (mismo patrón que useDataLoader): con red lenta la
       // respuesta de la tienda ANTERIOR puede aterrizar después del reset y
       // dejar novedades de CO bajo el encabezado de EC — mezclar países está
@@ -65,11 +78,11 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
         return;
       }
       if (error) {
-        toast.error('Error cargando novedades: ' + error.message);
+        toast.error('Error cargando novedades: ' + error);
         return;
       }
-      type Row = Parameters<typeof dbToOrderData>[0];
-      const orders = ((data || []) as Row[]).map((o, idx) => dbToOrderData(o, idx));
+      if (truncado) toast.warning('Hay tantas novedades que no caben todas en pantalla. Avisá para subir el tope.');
+      const orders = filas.map((o, idx) => dbToOrderData(o, idx));
       orders.sort((a, b) => b.dias - a.dias);
       setNovedadesQueue(orders);
       setNovedadesLoaded(true);

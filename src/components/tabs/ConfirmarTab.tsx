@@ -12,6 +12,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
+import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { isLockedByOther } from '@/lib/callQueueNav';
 import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL } from '@/lib/confirmarQueue';
 import { toast } from 'sonner';
@@ -127,17 +128,20 @@ export default function ConfirmarTab({ profile }: Props) {
     // El anti-choque real lo hace `isLockedByOther` en el cliente, que además
     // sabe soltar el pedido cuando el lock vence y trata el `locked_at` nulo
     // como "sin lock" (mejor mostrar de más que perder una venta).
-    supabase.from('orders').select(ORDER_COLUMNS).ilike('estado', 'PENDIENTE CONFIRMACION')
-      .eq('store_id', activeStoreId)
-      .then(({ data: dbOrders, error }) => {
+    // Misma función que usa `loadWorkQueue` (OrderContext): antes eran dos
+    // queries escritas aparte y ninguna paginaba — PostgREST corta en ~1000
+    // filas sin avisar y los pendientes de más no los veía nadie.
+    fetchPendientesDeConfirmar(activeStoreId)
+      .then(({ filas: dbOrders, error, truncado }) => {
         if (error) {
           console.error('Error loading orders:', error);
-          toast.error('Error cargando pedidos: ' + error.message);
+          toast.error('Error cargando pedidos: ' + error);
           setAutoLoading(false);
           return;
         }
-        if (dbOrders && dbOrders.length > 0) {
-          const orders = (dbOrders as unknown as Parameters<typeof dbToOrderData>[0][]).map((o, idx) => dbToOrderData(o, idx));
+        if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
+        if (dbOrders.length > 0) {
+          const orders = dbOrders.map((o, idx) => dbToOrderData(o as Parameters<typeof dbToOrderData>[0], idx));
           setAllOrders(orders);
           buildWorkQueue(orders);
         }
@@ -475,11 +479,13 @@ export default function ConfirmarTab({ profile }: Props) {
                 });
                 if (error) throw error;
                 if (data?.synced > 0 || data?.total > 0) {
-                  const { data: dbOrders } = await supabase.from('orders')
-                    .select(ORDER_COLUMNS)
-                    .eq('store_id', activeStoreId)
-                    .eq('estado', 'PENDIENTE CONFIRMACION');
-                  if (dbOrders && dbOrders.length > 0) {
+                  // Esta recarga filtraba con `eq` mientras la carga inicial y
+                  // `loadWorkQueue` filtraban con `ilike`: un estado guardado con
+                  // otra caja aparecía o desaparecía según por dónde se llegara.
+                  // Ahora las tres son la MISMA función, y pagina.
+                  const { filas: dbOrders, truncado } = await fetchPendientesDeConfirmar(activeStoreId);
+                  if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
+                  if (dbOrders.length > 0) {
                     const orders = dbOrders.map((o, idx) => dbToOrderData(o as never, idx));
                     setAllOrders(orders);
                     buildWorkQueue(orders);

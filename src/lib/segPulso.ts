@@ -35,13 +35,30 @@ export const FASES_VIVAS: ReadonlySet<SegStatusKey> = new Set<SegStatusKey>([
  *  cuenta de arriba y los puntos de abajo nunca digan cosas distintas. */
 export const HORAS_DETENIDO = 72;
 
-/** Horas desde el último movimiento real en Dropi. `null` si no hay fecha. */
+/**
+ * Horas desde el último movimiento real en Dropi. `null` si no hay fecha.
+ *
+ * NO usar `parseDate` acá. `parseDate` ancla a MEDIANOCHE UTC a propósito —
+ * es lo correcto para contar días CALENDARIO, que es para lo que existe— pero
+ * con eso TIRA LA HORA. `last_movement_at` es un timestamp con hora real: un
+ * pedido movido ayer a las 18:00 se contaba como movido a las 00:00, o sea 18 h
+ * de quietud inventadas. Hasta 24 h de más, y siempre para el mismo lado.
+ *
+ * Se notaba en dos lugares a la vez: el punto de la tarjeta se ponía rojo casi
+ * un día antes de tiempo, y DETENIDOS contaba pedidos parados hace 50 h como si
+ * llevaran 72. El número que el dueño mira para decidir a quién apurar venía
+ * inflado. `CrmCallView` ya medía bien (usa el timestamp crudo) — eran dos
+ * definiciones de la misma cuenta, y la de la pantalla era la equivocada.
+ */
 export function horasSinMovimiento(o: OrderData, ahoraMs: number = Date.now()): number | null {
   const iso = o.lastMovementAt;
   if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (Number.isFinite(ms)) return (ahoraMs - ms) / 3_600_000;
+  // Formato raro (no ISO): al menos el día. Perder la hora es mejor que perder
+  // el pedido — sin esto una fecha con otro formato lo mandaba a "no sé".
   const d = parseDate(iso);
-  if (!d) return null;
-  return (ahoraMs - d.getTime()) / 3_600_000;
+  return d ? (ahoraMs - d.getTime()) / 3_600_000 : null;
 }
 
 /**
