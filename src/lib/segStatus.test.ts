@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifySegEstado, matchOficina, matchTransito } from './segStatus';
+import { classifySegEstado, matchOficina, matchTransito, esNovedadResuelta } from './segStatus';
 
 // Regression: SeguimientoTab antes tenía su propio clasificador que no
 // reconocía variantes EC → pedidos EC caían en 'otros' y el resumen mostraba
@@ -153,5 +153,41 @@ describe('matchers exportados (consumidos por STALLED_LABEL_TO_MATCH en CrmTable
   it('matchOficina rechaza estados que no son oficina', () => {
     expect(matchOficina('EN TRANSPORTE')).toBe(false);
     expect(matchOficina('ENTREGADO')).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La cola de Novedades pesca con `estado ilike '%NOVEDAD%'`, red ancha a
+// propósito. Pero esa red también atrapa NOVEDAD SOLUCIONADA — lo contrario de
+// lo que busca. Lo único que lo sacaba era la bandera `novedad_sol`, que NO
+// sale del estado sino de Dropi (`issue_solved_by_operator`): si la novedad la
+// cerró la transportadora y no la operadora, el pedido se quedaba en la cola
+// para siempre, mientras Seguimiento lo mostraba en "Nov. Solucionada".
+describe('esNovedadResuelta — sacar de la cola lo que ya se resolvió', () => {
+  it('reconoce las dos escrituras, incluida la de Ecuador', () => {
+    expect(esNovedadResuelta('NOVEDAD SOLUCIONADA')).toBe(true);
+    expect(esNovedadResuelta('SOLUCION APROBADA')).toBe(true);
+    // Dropi EC manda las tildes; el clasificador las quita antes de comparar.
+    expect(esNovedadResuelta('SOLUCIÓN APROBADA')).toBe(true);
+    expect(esNovedadResuelta('novedad solucionada')).toBe(true);
+  });
+
+  it('NO saca una novedad que sigue pendiente', () => {
+    expect(esNovedadResuelta('NOVEDAD')).toBe(false);
+    expect(esNovedadResuelta('INTENTO DE ENTREGA')).toBe(false);
+  });
+
+  // El matcher de `novedad` es EXACTO, así que quedarse solo con él descartaría
+  // las variantes — justo el error que la red ancha del SQL evita. Por eso se
+  // filtra por lo que se SABE resuelto, no por lo que se sabe pendiente.
+  it('deja pasar una variante desconocida en vez de tragársela', () => {
+    expect(esNovedadResuelta('NOVEDAD PENDIENTE')).toBe(false);
+    expect(esNovedadResuelta('NOVEDAD EN RUTA')).toBe(false);
+  });
+
+  it('sin estado no afirma que esté resuelta', () => {
+    expect(esNovedadResuelta('')).toBe(false);
+    expect(esNovedadResuelta(null)).toBe(false);
+    expect(esNovedadResuelta(undefined)).toBe(false);
   });
 });

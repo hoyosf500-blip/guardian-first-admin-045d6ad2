@@ -229,3 +229,31 @@ export function classifySegEstado(estado: string): SegStatusKey {
   }
   return 'otros';
 }
+
+/**
+ * ¿El estado dice que la novedad YA se resolvió?
+ *
+ * La cola de Novedades pesca con `estado ilike '%NOVEDAD%'` — una red ancha a
+ * propósito, porque Dropi usa variantes y un `.in()` estricto dejaba pedidos
+ * afuera. Pero esa red también atrapa **NOVEDAD SOLUCIONADA**, que es lo
+ * contrario de lo que la cola busca.
+ *
+ * Lo único que lo sacaba era `novedad_sol`, que NO sale del estado: el mapper lo
+ * calcula de las banderas de Dropi (`issue_solved_by_operator`). Cuando la
+ * novedad la cierra la transportadora en vez de la operadora, esa bandera queda
+ * en false y el pedido se queda en la cola PARA SIEMPRE — nadie lo saca, porque
+ * ya no hay nada que gestionar.
+ *
+ * Peor que el ruido: las dos pantallas se contradicen sobre el MISMO pedido.
+ * Seguimiento lo muestra en "Nov. Solucionada" y Novedades lo pide gestionar.
+ *
+ * Pega sobre todo en Ecuador, que usa `SOLUCION APROBADA` además de
+ * `NOVEDAD SOLUCIONADA` (variante vista en la consola de Dropi EC).
+ *
+ * Se filtra por lo que se SABE resuelto, no por lo que se sabe pendiente: el
+ * matcher de `novedad` es exacto, así que quedarse solo con él descartaría una
+ * variante como "NOVEDAD PENDIENTE" — justo el error que la red ancha evita.
+ */
+export function esNovedadResuelta(estado: string | null | undefined): boolean {
+  return classifySegEstado(estado || '') === 'novedad_sol';
+}

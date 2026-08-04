@@ -13,6 +13,7 @@ import {
   DeliveryOutcome,
 } from '@/lib/novedadGestion';
 import { classifyNovedad, Culpa } from '@/lib/novedadTaxonomy';
+import { esNovedadResuelta } from '@/lib/segStatus';
 
 export type SeguimientoRange = 'today' | '7d' | '30d';
 
@@ -237,8 +238,11 @@ export function useNovedadesSeguimiento(): NovedadesSeguimientoData {
       // frente al conteo de la Tab y disparaban la alerta "0 hoy" contra
       // operadoras que no tenían nada gestionable.
       const NOVEDAD_WINDOW_DAYS = 60;
+      // `%NOVEDAD%` también atrapa NOVEDAD SOLUCIONADA / SOLUCION APROBADA (la
+      // variante de Ecuador): ya resueltas, pero contadas como pendientes acá.
+      // Mismo criterio que la cola de Novedades — ver `esNovedadResuelta`.
       const pend = ((pendRes.data ?? []) as PendOrder[]).filter((p) =>
-        isWithinLastDays(p.fecha, NOVEDAD_WINDOW_DAYS),
+        !esNovedadResuelta(p.estado) && isWithinLastDays(p.fecha, NOVEDAD_WINDOW_DAYS),
       );
       const memberIds = (memberRes.data ?? []).map((m) => m.user_id as string);
 

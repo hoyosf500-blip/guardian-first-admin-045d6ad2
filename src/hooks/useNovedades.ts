@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderData, dbToOrderData } from '@/lib/orderUtils';
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { paginarQuery, type Paginable } from '@/lib/paginarQuery';
+import { esNovedadResuelta } from '@/lib/segStatus';
 import { bogotaToday } from '@/lib/utils';
 import { POLL_INTERVAL_MS } from '@/lib/constants';
 import { toast } from 'sonner';
@@ -82,7 +83,14 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
         return;
       }
       if (truncado) toast.warning('Hay tantas novedades que no caben todas en pantalla. Avisá para subir el tope.');
-      const orders = filas.map((o, idx) => dbToOrderData(o, idx));
+      // `%NOVEDAD%` también atrapa NOVEDAD SOLUCIONADA / SOLUCION APROBADA (la
+      // variante de Ecuador). Sacarlas acá y no en el SQL a propósito: la red
+      // ancha es la que evita perder variantes como "NOVEDAD PENDIENTE".
+      // Ver `esNovedadResuelta` — Seguimiento ya las muestra como resueltas y
+      // las dos pantallas se contradecían sobre el mismo pedido.
+      const orders = filas
+        .filter((o) => !esNovedadResuelta((o as { estado?: string | null }).estado))
+        .map((o, idx) => dbToOrderData(o, idx));
       orders.sort((a, b) => b.dias - a.dias);
       setNovedadesQueue(orders);
       setNovedadesLoaded(true);
