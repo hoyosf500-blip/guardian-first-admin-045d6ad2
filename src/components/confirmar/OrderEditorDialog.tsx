@@ -389,6 +389,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const d = await parseInvoke<{
       ok?: boolean; error?: string; code?: string; noChange?: boolean;
       dropiAccepted?: boolean; dbError?: string; dropiHttpStatus?: number; dropiBody?: unknown;
+      /** Dropi aceptó el PUT pero conservó la ciudad/provincia vieja. */
+      destStale?: boolean; warning?: string;
     }>(data, error);
     // Criterio ESTRICTO (mismo que conf/canc): éxito solo con ok:true explícito.
     const failed = d?.ok !== true ||
@@ -417,6 +419,16 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
         });
       }
       return false;
+    }
+    // Dropi aceptó el PUT pero se quedó con la ciudad/provincia vieja. NO es un
+    // fallo de la edición (el resto sí entró), pero la operadora TIENE que
+    // enterarse: si sigue y asigna transportadora, Dropi la va a rechazar
+    // cotizando la ciudad vieja, y el mensaje de ese rechazo no explica por qué.
+    if (d?.destStale && d?.warning) {
+      await settleAudit(auditId, 'synced', `Edición OK, pero Dropi conservó el destino viejo: ${d.warning}`);
+      toast.warning(d.warning, { duration: 15000 });
+      setInitial({ ...form });
+      return true;
     }
     await settleAudit(auditId, 'synced', d?.noChange ? 'Sin cambios que empujar a Dropi' : undefined);
     // Baseline reset: si un paso posterior falla, el retry no re-manda los datos.

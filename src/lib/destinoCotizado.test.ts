@@ -59,3 +59,36 @@ describe('cotizacionDesfasada — cuándo avisar', () => {
     expect(cotizacionDesfasada('QUITO', '')).toBe(false);
   });
 });
+
+// El backend tiene su propia copia (`supabase/functions/_shared/destinoMatch.ts`)
+// porque las edge functions son Deno y no pueden importar de `src/`. Con el CRM
+// avisando "esta cotización es de otra ciudad" con una regla y el servidor
+// decidiendo "la ciudad no se aplicó" con otra, la pantalla y Dropi se
+// contradirían. Esta prueba las mantiene atadas.
+describe('la copia del backend se comporta IGUAL que la del CRM', () => {
+  const CASOS: Array<[string, string]> = [
+    ['SANTO DOMINGO DE LOS COLORADOS', 'Santo Domingo'],
+    ['BOMBOLI', 'SANTO DOMINGO'],
+    ['BOMBOLÍ', 'BOMBOLI'],
+    ['QUITO DC', 'Quito'],
+    ['GUAYAQUIL', 'QUITO'],
+    ['SAN LORENZO', 'SAN CRISTOBAL'],
+    ['', 'QUITO'],
+    ['QUITO', ''],
+    ['  quito   d.c.  ', 'QUITO DC'],
+  ];
+
+  it('mismoDestino da el mismo veredicto en las dos', async () => {
+    const edge = await import('../../supabase/functions/_shared/destinoMatch.ts');
+    for (const [a, b] of CASOS) {
+      expect(edge.mismoDestino(a, b), `"${a}" vs "${b}"`).toBe(mismoDestino(a, b));
+    }
+  });
+
+  it('normDestino normaliza igual en las dos', async () => {
+    const edge = await import('../../supabase/functions/_shared/destinoMatch.ts');
+    for (const [a] of CASOS) {
+      expect(edge.normDestino(a), `"${a}"`).toBe(normDestino(a));
+    }
+  });
+});

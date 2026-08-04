@@ -37,6 +37,7 @@ import { resolveLiveSibling, retargetLocalOrder } from "../_shared/dropiConfirmO
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { dropiWebFetch, WebFallbackError, normUp } from "../_shared/dropiWebQuote.ts";
 import { dropiGetOrderV2Detail } from "../_shared/dropiOrderLiveness.ts";
+import { mismoDestino } from "../_shared/destinoMatch.ts";
 
 interface EditPayload {
   externalId: string;
@@ -381,6 +382,7 @@ Deno.serve(async (req: Request) => {
               //    Si se lee la dirección y NO coincide, el PUT no aplicó de
               //    verdad; si no se puede leer, criterio leniente.
               let v2Mismatch = false;
+              let v2MismatchQue = "la dirección vieja";
               try {
                 const v2 = await dropiGetOrderV2Detail(cfg, externalId);
                 if (v2.ok) {
@@ -388,6 +390,23 @@ Deno.serve(async (req: Request) => {
                   const client = (data?.client ?? {}) as Record<string, unknown>;
                   const v2dir = String(data?.dir || client?.dir || "").trim();
                   if (v2dir && normUp(v2dir) !== normUp(direccion)) v2Mismatch = true;
+                  // CIUDAD Y PROVINCIA, no solo la calle (agregado 1-ago-2026).
+                  // Dropi puede aceptar el PUT y quedarse con la ciudad vieja;
+                  // como acá solo se miraba `dir`, la verificación pasaba, se
+                  // daba por aplicado, y recién fallaba el paso siguiente
+                  // ("LAARCOURIER no cotiza envíos a BOMBOLÍ") con SANTO
+                  // DOMINGO en pantalla. La operadora no tenía forma de saber
+                  // que la ciudad no había entrado.
+                  const v2city = String(client?.city ?? data?.city ?? "").trim();
+                  const v2state = String(client?.state ?? data?.state ?? "").trim();
+                  if (!v2Mismatch && v2city && !mismoDestino(v2city, ciudad)) {
+                    v2Mismatch = true;
+                    v2MismatchQue = `la ciudad vieja (${v2city})`;
+                  }
+                  if (!v2Mismatch && v2state && !mismoDestino(v2state, departamento)) {
+                    v2Mismatch = true;
+                    v2MismatchQue = `la provincia vieja (${v2state})`;
+                  }
                 }
               } catch (e) {
                 console.error("[dropi-update-order-full] verify v2 del fallback web lanzó:", e);
@@ -396,7 +415,7 @@ Deno.serve(async (req: Request) => {
                 fallbackVia = "web";
                 fallbackStatus = putStatus;
               } else {
-                fallbackDetail = `PUT web [${putStatus}] aceptado pero el detalle v2 sigue mostrando la dirección vieja`;
+                fallbackDetail = `PUT web [${putStatus}] aceptado pero el detalle v2 sigue mostrando ${v2MismatchQue}`;
               }
             } else if (stubSignal) {
               // 4) El canal web delata un STUB (la compra fue forwardeada a
@@ -548,7 +567,42 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    return jsonOk({ ok: true, externalId, dropiHttpStatus: dropi.httpStatus });
+    // ¿DROPI SE QUEDÓ CON LA CIUDAD VIEJA? (verificación agregada 1-ago-2026)
+    //
+    // El PUT de integración devolvía 200 y acá se daba por hecho que había
+    // aplicado TODO. Pero Dropi puede aceptar el cambio de calle y NO mover la
+    // ciudad — y entonces el paso siguiente (transportadora) falla con
+    // "LAARCOURIER no cotiza envíos a BOMBOLÍ" mientras la pantalla muestra
+    // SANTO DOMINGO. La operadora no tenía forma de entender qué pasó.
+    //
+    // No se bloquea la edición: los datos locales quedan como la operadora los
+    // dejó y se DEVUELVE UN AVISO para que sepa que ese campo hay que tocarlo
+    // en el panel de Dropi. Si la lectura falla, se calla — no saber no es lo
+    // mismo que saber que está mal.
+    let destWarning: string | undefined;
+    try {
+      const v2 = await dropiGetOrderV2Detail(cfg, externalId);
+      if (v2.ok) {
+        const data = (v2.body.data ?? v2.body.objects ?? v2.body) as Record<string, unknown>;
+        const client = (data?.client ?? {}) as Record<string, unknown>;
+        const v2city = String(client?.city ?? data?.city ?? "").trim();
+        const v2state = String(client?.state ?? data?.state ?? "").trim();
+        if (v2city && !mismoDestino(v2city, ciudad)) {
+          destWarning = `Dropi NO aceptó el cambio de ciudad: sigue en "${v2city}". Cambiala en el panel de Dropi antes de asignar transportadora.`;
+        } else if (v2state && !mismoDestino(v2state, departamento)) {
+          destWarning = `Dropi NO aceptó el cambio de provincia: sigue en "${v2state}". Cambiala en el panel de Dropi antes de asignar transportadora.`;
+        }
+      }
+    } catch (e) {
+      console.error("[dropi-update-order-full] verificación de ciudad lanzó:", e);
+    }
+
+    return jsonOk({
+      ok: true,
+      externalId,
+      dropiHttpStatus: dropi.httpStatus,
+      ...(destWarning ? { warning: destWarning, destStale: true } : {}),
+    });
   } catch (err) {
     console.error("dropi-update-order-full error:", err);
     const msg = err instanceof Error ? err.message : "Error interno";
