@@ -10,6 +10,7 @@ import { parseValorInput } from '@/lib/orderAlerts';
 import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditStep } from '@/lib/orderEditPlan';
 import { parseInvoke } from '@/lib/parseInvoke';
 import { cotizacionDesfasada, mismoDestino } from '@/lib/destinoCotizado';
+import { debeSembrarLineas } from '@/lib/sembrarLineas';
 import CustomerForm, { buildCustomerInitial, customerDirty, type CustomerFormState } from '@/components/confirmar/CustomerForm';
 import CarrierPicker, { type CarrierOption } from '@/components/confirmar/CarrierPicker';
 import ProductLinesEditor, { draftToLine, type LineDraft } from '@/components/confirmar/ProductLinesEditor';
@@ -121,6 +122,11 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [options, setOptions] = useState<CarrierOption[] | null>(null);
   const [drafts, setDrafts] = useState<LineDraft[] | null>(null);
+  /** Espejo de `drafts` para leerlo dentro de `fetchQuote` sin meterlo en sus
+   *  deps (está memoizado en [order.externalId] justamente para no revivir
+   *  efectos en cada tecleo). Ver el guard de siembra en `fetchQuote`. */
+  const draftsRef = useRef<LineDraft[] | null>(null);
+  draftsRef.current = drafts;
   /** true = el quote respondió pero SIN líneas (función vieja deployada). */
   const [quoteHadNoLines, setQuoteHadNoLines] = useState(false);
   /** Ciudad para la que se cotizó, según la resolvió Dropi. `null` si la
@@ -136,7 +142,17 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
   // `fetchQuote` no se recree en cada tecleo (y no reviva efectos).
   const destRef = useRef<{ ciudad: string; departamento: string }>({ ciudad: '', departamento: '' });
 
-  const fetchQuote = useCallback(async (withLines?: EditableLine[]) => {
+  /**
+   * @param sembrarLineas Reconstruir las líneas editables con lo que devuelve
+   *   Dropi. Solo la carga inicial. Va en `false` por defecto A PROPOSITO: antes
+   *   la siembra dependía de "no me pasaron líneas", y CUALQUIER recotización
+   *   sin líneas —cambiar la ciudad, tocar "Reintentar"— pisaba lo que la
+   *   asesora acababa de tipear. Perdía cantidades y precios EN SILENCIO, con
+   *   el botón habilitado y el toast verde de "sincronizado con Dropi": la
+   *   asesora se enteraba cuando el mensajero cobraba otra cosa. Con el default
+   *   cerrado, un caller nuevo no puede volver a borrar trabajo por olvido.
+   */
+  const fetchQuote = useCallback(async (withLines?: EditableLine[], sembrarLineas = false) => {
     if (!order.externalId) return;
     if (withLines) setRequoting(true);
     else { setQuoteLoading(true); setQuoteError(null); setOptions(null); }
@@ -165,8 +181,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       setQuoteError(null);
       setOptions(d.options || []);
       setQuotedDest(d.dest ?? null);
-      if (!withLines) {
-        // Carga inicial: armar los drafts editables desde las líneas del quote.
+      // La regla vive en `debeSembrarLineas` (pura, con test): decidir esto mal
+      // borra el trabajo de la asesora sin dejar rastro, así que no puede
+      // quedar como una condición suelta adentro de un componente.
+      if (debeSembrarLineas(sembrarLineas, draftsRef.current)) {
         const lines = Array.isArray(d.lines) ? d.lines : null;
         if (lines && lines.length > 0) {
           setDrafts(lines.map((l) => {
@@ -209,7 +227,10 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     setOptions(null);
     setQuotedDest(null);
     destRef.current = { ciudad: init.ciudad, departamento: init.departamento };
-    if (rightEnabled) void fetchQuote();
+    // ÚNICO lugar que siembra las líneas: acá el diálogo recién se abre y no hay
+    // nada tipeado que perder. Las demás recotizaciones (cambio de ciudad,
+    // "Reintentar") conservan lo que la asesora venía editando.
+    if (rightEnabled) void fetchQuote(undefined, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, order.externalId]);
 
