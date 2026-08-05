@@ -137,6 +137,24 @@ Deno.serve(async (req) => {
     });
   }
 
+  // ⛔ SEGUNDO CANDADO, CERRADO POR DEFECTO (4-ago-2026).
+  //
+  // Esta función es un proxy PURO a Google: cada llamada que entra es plata que
+  // sale. El interruptor del navegador no alcanza — durante más de dos meses el
+  // dueño creyó que Google estaba apagado mientras se seguía pagando, porque el
+  // flag del cliente cortaba unos caminos y no otros.
+  //
+  // Ahora el gasto se decide en el SERVIDOR: `GOOGLE_ENABLED` no existe como
+  // secreto, así que esto está apagado. Prenderlo es un acto deliberado
+  // (ponerlo en `true` en los secretos de Supabase), no un efecto secundario de
+  // un Publish. Acá sí se corta con error: no hay nada gratis a lo que degradar.
+  if ((Deno.env.get("GOOGLE_ENABLED") || "").toLowerCase() !== "true") {
+    return new Response(
+      JSON.stringify({ error: "Google está desactivado en este proyecto (GOOGLE_ENABLED)", disabled: true }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
   const apiKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "GOOGLE_MAPS_API_KEY no configurada" }), {

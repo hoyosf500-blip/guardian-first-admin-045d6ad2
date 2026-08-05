@@ -14,6 +14,27 @@
 // cache_key: la misma dirección en Colombia y Ecuador NO puede compartir
 // veredicto cacheado. Default 'CO'.
 
+// ⛔ SEGUNDO CANDADO, CERRADO POR DEFECTO (4-ago-2026).
+//
+// El 22-may el dueño apagó Google desde el CRM. Durante MAS DE DOS MESES siguió
+// pagándose igual: el flag del navegador cortaba dos caminos pero no el tercero
+// (`useAddressValidation`, que usa el badge de dirección). El papel decía
+// apagado y el código decía prendido, y nadie podía verlo desde adentro.
+//
+// La lección es que un interruptor en el navegador es un PEDIDO, no un candado:
+// cualquier Publish, cualquier prompt a Lovable, cualquier archivo nuevo que
+// llame a esta función vuelve a abrir la canilla, y la factura llega un mes
+// después.
+//
+// Por eso el gasto ahora se decide EN EL SERVIDOR y está cerrado salvo que
+// alguien lo abra a mano. `GOOGLE_ENABLED` NO existe como secreto hoy, así que
+// esto queda apagado. Para volver a prenderlo hay que ponerlo en `true` en los
+// secretos de Supabase — un acto deliberado, no un efecto secundario.
+//
+// Ojo: esto NO reemplaza borrar la clave. Mientras `GOOGLE_MAPS_API_KEY` exista,
+// la única garantía dura de que nadie pueda gastar es que la clave no esté.
+const GOOGLE_ENABLED = (Deno.env.get("GOOGLE_ENABLED") || "").toLowerCase() === "true";
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { isStoreMember } from "../_shared/dropiStoreConfig.ts";
@@ -132,6 +153,11 @@ async function googleValidateAddress(
   departamento: string,
   countryCode: string,
 ): Promise<GoogleValidationResult | null> {
+  // Apagado => se comporta igual que "no hay clave": devuelve null y el
+  // llamador cae a Nominatim + heurística, que son gratis. Es a propósito que
+  // NO tire error: la función tiene que seguir sirviendo, solo que sin gastar.
+  if (!GOOGLE_ENABLED) return null;
+
   const apiKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
   if (!apiKey) return null;
 
@@ -420,7 +446,12 @@ Deno.serve(async (req) => {
   let suggested_address: string | null = null;
 
   // Cap diario server-side: gate antes del fetch a Google.
-  const { data: quotaOK } = await sb.rpc("consume_google_quota", { p_amount_usd: 0.005 });
+  // Con Google apagado no se consume cuota: descontar del cap diario por una
+  // llamada que no gasta un centavo dejaría el contador mintiendo, y el día que
+  // se vuelva a prender el cap ya estaría comido sin que nadie sepa por qué.
+  const { data: quotaOK } = GOOGLE_ENABLED
+    ? await sb.rpc("consume_google_quota", { p_amount_usd: 0.005 })
+    : { data: true };
   if (!quotaOK) {
     return new Response(JSON.stringify({
       ok: true,
