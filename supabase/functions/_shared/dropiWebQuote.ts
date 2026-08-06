@@ -154,6 +154,8 @@ export interface WebProductInfo {
   price: number;
   productType: string;
   supplierId: string | null;
+  /** Ver `QuoteLine.variationId`. */
+  variationId?: number | null;
 }
 
 /** Línea de pedido para cotizar. `productType`/`supplierId` se completan en PASO A. */
@@ -161,6 +163,19 @@ export interface QuoteLine {
   dropiId: number;
   quantity: number;
   price: number;
+  /** Talla/color concreta. OBLIGATORIA para productos `type: "VARIABLE"`.
+   *
+   *  Medido contra Dropi el 6-ago-2026: crear un producto variable sin ella
+   *  devuelve **"El producto X es variable, por lo tanto debe indicar una
+   *  variación"** y NO crea nada. Como el recrear no la mandaba, editar o
+   *  cambiarle la transportadora a un pedido con tallas fallaba SIEMPRE —
+   *  el 84,6% de los pedidos de Colombia (708 de 837 desde junio: Sneakers
+   *  2801, modelo 6066, la colección Skechers). En Ecuador es el 1,1%, y por
+   *  eso allá "funcionaba todo".
+   *
+   *  Va opcional: en un producto simple queda `undefined` y NO se emite al
+   *  payload, así los pedidos que hoy funcionan viajan exactamente igual. */
+  variationId?: number | null;
 }
 
 /** Ciudad destino ya resuelta por el caller (desde `dropi_city_catalog`).
@@ -199,6 +214,7 @@ export async function fetchWebProductInfo(
   dropiId: number,
   quantity: number,
   price: number,
+  variationId?: number | null,
 ): Promise<WebProductInfo> {
   let productType = "SIMPLE";
   let supplierId: string | null = null;
@@ -218,7 +234,21 @@ export async function fetchWebProductInfo(
     if (e instanceof WebFallbackError && e.status === 422) throw e;
     console.error("[dropi-web] PASO A falló para producto", dropiId, e);
   }
-  return { dropiId, quantity, price, productType, supplierId };
+  return { dropiId, quantity, price, productType, supplierId, variationId: variationId ?? null };
+}
+
+/** Entrada de `products[]` para cotizar y para crear. Fuente ÚNICA del shape:
+ *  la cotización y la creación tienen que mandar exactamente lo mismo o Dropi
+ *  responde "las existencias han variado mientras cotizabas".
+ *
+ *  `variation_id` solo se emite cuando existe: en un producto simple el objeto
+ *  queda idéntico al de siempre. */
+export function productEntry(p: WebProductInfo): Record<string, unknown> {
+  const e: Record<string, unknown> = {
+    id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
+  };
+  if (p.variationId) e.variation_id = p.variationId;
+  return e;
 }
 
 /** PASO C — origen/bodega para un producto dado.
@@ -280,9 +310,7 @@ export async function cotizaEnvioOptions(
     EnvioConCobro: true,
     ValorDeclarado: args.total,
     insurance: false,
-    products: args.products.map((p) => ({
-      id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
-    })),
+    products: args.products.map(productEntry),
     warehouse: args.warehouse,
     warehouse_id: args.warehouseId,
     zip_code: "",
@@ -356,7 +384,7 @@ export async function quoteCarriers(
   // PASO A — info de cada producto (supplier_id + type).
   const products: WebProductInfo[] = [];
   for (const l of lines) {
-    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price));
+    products.push(await fetchWebProductInfo(cfg, Number(l.dropiId), l.quantity, l.price, l.variationId));
   }
   const primary = products[0]; // el primer producto manda para el cálculo de origen.
 

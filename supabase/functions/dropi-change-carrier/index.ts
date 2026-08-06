@@ -50,6 +50,7 @@ import {
   dropiWebFetch,
   decodeJwtSub,
   normUp,
+  productEntry,
   WebFallbackError,
   type QuoteLine,
 } from "../_shared/dropiWebQuote.ts";
@@ -100,14 +101,17 @@ function sanitizeLinesOverride(
   existing: LineDetail[],
 ): LineDetail[] | null {
   if (!Array.isArray(raw) || raw.length !== existing.length) return null;
-  const byId = new Map(existing.map((l) => [l.dropiId, l]));
   const out: LineDetail[] = [];
-  const seen = new Set<number>();
-  for (const r of raw) {
-    const id = Number(r?.dropiId);
-    const orig = byId.get(id);
-    if (!orig || seen.has(id)) return null;
-    seen.add(id);
+  // POR POSICIÓN, no por dropiId. El índice por id que había acá rechazaba el
+  // override entero cuando dos líneas compartían producto —dos tallas del mismo
+  // zapato llegan con el MISMO dropiId, porque la variante viaja aparte—, así
+  // que el botón "Recotizar" del editor se caía al silencio en esos pedidos y
+  // recotizaba con las cantidades viejas. El editor manda las líneas en el
+  // mismo orden en que las recibió, y el guard de longitud lo asegura.
+  for (let i = 0; i < raw.length; i++) {
+    const r = raw[i];
+    const orig = existing[i];
+    if (!orig || Number(r?.dropiId) !== orig.dropiId) return null;
     const quantity = Number(r?.quantity);
     const price = Number(r?.price);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000) return null;
@@ -909,7 +913,13 @@ function parseOrderLines(body: Record<string, unknown>): LineDetail[] {
     const quantity = Number(d.quantity ?? 1) || 1;
     const price = Number(d.price ?? product.sale_price ?? product.price ?? 0) || 0;
     const name = String(product.name ?? d.name ?? "").trim() || undefined;
-    lines.push({ dropiId, quantity, price, ...(name ? { name } : {}) });
+    // La variante (talla/color) viaja APARTE del producto y hasta el 6-ago-2026
+    // se descartaba acá. Sin ella, recrear un producto variable devuelve "El
+    // producto X es variable, por lo tanto debe indicar una variación" y no
+    // crea nada: el 84,6% de los pedidos de Colombia no se podían editar.
+    const variation = (d.variation ?? {}) as Record<string, unknown>;
+    const variationId = Number(d.variation_id ?? variation.id ?? 0) || null;
+    lines.push({ dropiId, quantity, price, variationId, ...(name ? { name } : {}) });
   }
   return lines;
 }
@@ -925,7 +935,11 @@ function parseV2Lines(body: Record<string, unknown>): LineDetail[] {
     const quantity = Number(p.quantity ?? 1) || 1;
     const price = Number(p.price ?? p.sale_price ?? 0) || 0;
     const name = String(p.name ?? "").trim() || undefined;
-    lines.push({ dropiId, quantity, price, ...(name ? { name } : {}) });
+    // Misma variante que en `parseOrderLines`: este camino es el fallback para
+    // los pedidos de bot, y si pierde la talla el recreate falla igual.
+    const v2var = (p.variation ?? {}) as Record<string, unknown>;
+    const variationId = Number(p.variation_id ?? v2var.id ?? 0) || null;
+    lines.push({ dropiId, quantity, price, variationId, ...(name ? { name } : {}) });
   }
   return lines;
 }
@@ -1861,9 +1875,9 @@ Deno.serve(async (req: Request) => {
         supplier_id: ctxV.supplierId,
         type: "FINAL_ORDER",
         rate_type: clientV.rateType || "CON RECAUDO",
-        products: ctxV.products.map((p) => ({
-          id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
-        })),
+        // `productEntry` emite `variation_id` cuando la línea la tiene. Sin eso,
+        // recrear un producto variable devolvía "debe indicar una variación".
+        products: ctxV.products.map(productEntry),
         distributionCompany: { id: chosen.id, name: chosen.name },
         // Paridad con el create web QUE FUNCIONA (shopify-push createOrderViaWeb).
         type_service: chosen.typeService || "normal",
@@ -2232,9 +2246,7 @@ Deno.serve(async (req: Request) => {
         supplier_id: ctxE.supplierId,
         type: "FINAL_ORDER",
         rate_type: clientE.rateType || "CON RECAUDO",
-        products: ctxE.products.map((p) => ({
-          id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
-        })),
+        products: ctxE.products.map(productEntry),
         distributionCompany: { id: chosenE.id, name: chosenE.name },
         // Paridad con el create web QUE FUNCIONA (shopify-push createOrderViaWeb):
         // type_service real cotizado (no "normal" hardcodeado), shipping_amount de
@@ -2542,9 +2554,7 @@ Deno.serve(async (req: Request) => {
       supplier_id: supplierId,
       type: "FINAL_ORDER",
       rate_type: client.rateType || "CON RECAUDO",
-      products: products.map((p) => ({
-        id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType,
-      })),
+      products: products.map(productEntry),
       distributionCompany: { id: chosenA.id, name: chosenA.name },
       // Paridad con el create web QUE FUNCIONA (shopify-push createOrderViaWeb).
       type_service: chosenA.typeService || "normal",
