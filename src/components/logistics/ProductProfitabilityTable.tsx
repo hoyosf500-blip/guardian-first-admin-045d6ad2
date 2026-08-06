@@ -261,7 +261,12 @@ export default function ProductProfitabilityTable({ filters }: Props) {
                 <th className="px-3 py-2.5 text-right hud-label font-normal text-info">Tránsito</th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal text-danger">Devuelt.</th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal">Cancel.</th>
-                <th className="px-3 py-2.5 text-right hud-label font-normal">Tasa entr.</th>
+                <th
+                  className="px-3 py-2.5 text-right hud-label font-normal"
+                  title="Entregados ÷ concluidos. OJO: acá los rechazos del cliente cuentan como devolución, así que un producto con rechazos sale un poco más bajo que en la tab Productos. Los conteos de al lado sí son exactos."
+                >
+                  Tasa entr.
+                </th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal">Ticket prom.</th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal">Ingresos</th>
                 <th className="px-3 py-2.5 text-right hud-label font-normal">Costos</th>
@@ -274,8 +279,18 @@ export default function ProductProfitabilityTable({ filters }: Props) {
               {sortedRows.map((row) => {
                 const tone = marginTone(row);
                 const totalCostos = row.costo_prod_entregados + row.flete_inicial_entregados + row.costo_devolucion_total;
-                // Tasa de entrega MADURA (÷ entregados+devueltos), consistente con
-                // el resto de logística. El margen/utilidad ya van sobre entregados.
+                // Tasa de entrega madura (÷ concluidos), PERO no es idéntica a la de
+                // la tab Productos, y el comentario que había acá afirmaba que sí.
+                //
+                // `product_profitability` mete los RECHAZOS dentro de `devueltos` y no
+                // devuelve la columna `rechazados` por separado (a diferencia de
+                // `logistics_by_product`, que sí), así que desde el cliente no hay
+                // forma de sacarlos del denominador. Un producto con rechazos se ve
+                // PEOR acá que en Productos — mismo producto, dos números.
+                //
+                // No se disimula con un redondeo: la columna lo dice en su tooltip.
+                // El arreglo de fondo es agregarle `rechazados` a la RPC, y eso exige
+                // leer antes la versión DESPLEGADA (el repo va atrás — regla #1).
                 const tasaEntregaMadura = deriveDeliveryMaturity(row.entregados, row.devueltos, row.total_pedidos).tasaEntregaMadura;
                 return (
                   <tr key={row.producto} className={`border-b border-border/50 last:border-0 transition-colors duration-200 ${TONE_BG[tone]}`}>
