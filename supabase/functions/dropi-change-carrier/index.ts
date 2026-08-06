@@ -1487,23 +1487,64 @@ Deno.serve(async (req: Request) => {
         warehouses_selected_id: ctx.origin.warehouseId,
       });
 
+      // MATRIZ DE FORMAS. Se probaron tres deploys de a una suposición por vez y
+      // cada rechazo de Dropi dijo algo distinto. Esto prueba TODAS las formas
+      // conocidas en una sola corrida, cotizando y creando con la misma, y para
+      // en la primera que Dropi acepte.
+      //
+      // La forma "control" es EXACTAMENTE la que manda el recrear hoy, sin
+      // variante. Es la más importante de todas: si el control TAMBIÉN falla,
+      // entonces "las existencias han variado" no tiene nada que ver con las
+      // variantes y toda esta prueba está mal planteada. Sin ese control, tres
+      // corridas fallidas se leerían como "Dropi rechaza variation_id" y sería
+      // una conclusión inventada.
+      const base = (p: { dropiId: number; quantity: number; price: number; productType: string }) =>
+        ({ id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price, type: p.productType });
+      const FORMAS: Array<{ nombre: string; arma: (p: Parameters<typeof base>[0]) => Record<string, unknown> }> = [
+        { nombre: "control (lo que manda el recrear hoy, sin variante)", arma: (p) => base(p) },
+        { nombre: "id=producto + variation_id=variante nueva", arma: (p) => ({ ...base(p), variation_id: pedida }) },
+        { nombre: "id=producto + variation_id=variante ACTUAL", arma: (p) => ({ ...base(p), variation_id: variacionActual }) },
+        { nombre: "id=VARIANTE (uid=producto)", arma: (p) => ({ ...base(p), id: pedida }) },
+        { nombre: "uid=VARIANTE + variation_id", arma: (p) => ({ ...base(p), uid: pedida, variation_id: pedida }) },
+      ];
+      // Una sola transportadora por forma: la que el pedido base ya usa está
+      // probada para esa ruta con recaudo, así una forma no se descarta por un
+      // problema de cobertura que no tiene nada que ver.
+      const carrier = candidatas[0];
+
       let nuevoId = "";
       let usada = "";
-      const rechazos: Array<{ transportadora: string; motivo: string }> = [];
-      for (const c of candidatas) {
-        const post = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: armarBody(c) });
+      let formaGanadora = "";
+      const intentos: Array<{ forma: string; cotizo: boolean; motivo: string }> = [];
+      for (const f of FORMAS) {
+        const prods = ctx.products.map((p) => f.arma(p));
+        // Cotizar con la MISMA forma: Dropi compara lo creado contra lo cotizado.
+        const cotF = await dropiWebFetch(cfg, `/api/orders/cotizaEnvioTransportadoraV2`, {
+          method: "POST",
+          body: { ...cotizaBody, products: prods },
+        });
+        const cotOk = Array.isArray(cotF.body?.objects) &&
+          (cotF.body.objects as Record<string, unknown>[]).some((o) => !o?.error);
+        const post = await dropiWebFetch(cfg, `/api/orders/myorders`, {
+          method: "POST",
+          body: { ...armarBody(carrier), products: prods },
+        });
         const id = String((post.body?.objects as Record<string, unknown>)?.id ?? post.body?.id ?? "");
-        if (id) { nuevoId = id; usada = c.name; break; }
-        rechazos.push({
-          transportadora: c.name,
+        if (id) { nuevoId = id; usada = carrier.name; formaGanadora = f.nombre; break; }
+        intentos.push({
+          forma: f.nombre,
+          cotizo: cotOk,
           motivo: String(post.body?.message || post.body?.error || `HTTP ${post.status}`).slice(0, 220),
         });
       }
       if (!nuevoId) {
         return jsonOk({
           ok: false, paso: "crear",
-          error: "Dropi rechazó la orden de prueba con TODAS las transportadoras.",
-          rechazos, tipoProducto, pedida,
+          error: "Dropi rechazó la orden de prueba con TODAS las formas de payload.",
+          // Si el control falla igual que las demás, el problema NO son las
+          // variantes: es el create suelto, y hay que replantear la prueba.
+          intentos, transportadora: carrier.name, tipoProducto,
+          variacion_pedida: pedida, variacion_actual: variacionActual,
         });
       }
 
@@ -1540,10 +1581,8 @@ Deno.serve(async (req: Request) => {
         variacion_obtenida: obtenida,
         etiqueta_pedida: etiqueta(vars.find((v) => Number(v.id) === pedida) ?? {}),
         transportadora_usada: usada,
-        // Transportadoras que la COTIZACIÓN ofrece y el CREATE rechaza. No es
-        // ruido de la prueba: es lo que le pasa a la asesora cuando elige la
-        // más barata de la lista y Dropi no la acepta para esa ciudad.
-        transportadoras_rechazadas: rechazos,
+        forma_que_funciono: formaGanadora,
+        formas_rechazadas: intentos,
         orden_de_prueba: nuevoId,
         cancelada,
         cancel_detalle: cancelDetalle,
