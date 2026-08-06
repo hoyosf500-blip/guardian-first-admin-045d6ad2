@@ -195,9 +195,15 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           setDrafts(lines.map((l) => {
             const price = Number(l.price) || 0;
             const quantity = Number(l.quantity) || 1;
+            const name = l.name ? String(l.name) : undefined;
+            const norm = (s?: string) => String(s ?? '').trim().toLowerCase();
+            const match = name
+              ? (detalleRef.current || []).find((d) => norm(d.nombre) === norm(name))
+              : undefined;
             return {
               dropiId: Number(l.dropiId),
-              name: l.name ? String(l.name) : undefined,
+              name,
+              variante: match?.variante?.trim() || undefined,
               quantity,
               priceRaw: String(price),
               basePrice: price,
