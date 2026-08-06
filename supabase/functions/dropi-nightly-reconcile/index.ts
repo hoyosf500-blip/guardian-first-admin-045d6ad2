@@ -18,6 +18,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { dropiHostFor } from "../_shared/dropiHosts.ts";
 import { mapDropiOrderToRow } from "../_shared/dropiOrderMapper.ts";
+import {
+  planRepesca, decidirArchivado, REPESCA_FROZEN_DAYS, type RepescaRow,
+} from "../_shared/reconcileRepesca.ts";
 
 const PAGE_SIZE = 100;
 const RATE_LIMIT_MS = 1500;
@@ -191,7 +194,14 @@ async function reconcileStore(
 ): Promise<{
   divergent: number; applied: number; orphanCancelled: number; deletedCancelled: number;
   deletedCheckComplete: boolean | null; dropiCreatedCount: number | null;
-  cancelledIds: { orphans: string[]; deleted: string[] }; error?: string;
+  cancelledIds: { orphans: string[]; deleted: string[] };
+  /** Fantasmas rezagados (fuera de la ventana de 30d) archivados esta corrida. */
+  repescaArchivados: number;
+  /** Qué decidió la repesca y por qué. `null` = no había rezagados que mirar.
+   *  Se guarda aparte del contador: "0 archivados porque el barrido vino
+   *  truncado" y "0 archivados porque no había fantasmas" son cosas distintas. */
+  repescaMotivo: string | null;
+  error?: string;
 }> {
   try {
     const today = new Date();
@@ -387,12 +397,89 @@ async function reconcileStore(
       }
     }
 
-    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds };
+    // ── REPESCA de rezagados ──────────────────────────────────────────────
+    // Todo lo de arriba solo mira los últimos RECONCILE_DAYS_BACK días, y el
+    // guard `fechaEnVentana` exige que el pedido caiga DENTRO de esa ventana. El
+    // guard es correcto (evitó cancelar 24 pedidos CO buenos en la 1ra corrida),
+    // pero deja un agujero permanente: un fantasma que no se detecta en sus
+    // primeros 30 días NO se detecta nunca, y cada día se aleja más.
+    //
+    // Medido el 2026-08-05: 76 pedidos no-terminales congelados fuera de la
+    // ventana en las dos tiendas — 49 PENDIENTE en CO por $5.376.049 desde el 15
+    // de abril, y en EC hasta pedidos de noviembre de 2025. De los 11 de julio de
+    // EC se verificó uno por uno contra la API: los 11 responden "esta guía no
+    // existe en nuestro sistema".
+    //
+    // Se barre UN mes por corrida, el más viejo primero (ver reconcileRepesca.ts):
+    // la deuda se salda de a un mes por noche sin darle otro barrido entero al
+    // rate-limit de EC, y una vez saldada no dispara ni un request.
+    let repescaArchivados = 0;
+    let repescaMotivo: string | null = null;
+    try {
+      const ventanaInicio = from; // los de adentro ya los cubre el barrido de arriba
+      const congeladoAntes = new Date(Date.now() - REPESCA_FROZEN_DAYS * 86400000).toISOString();
+      const { data: rezagados, error: rezErr } = await sb
+        .from("orders")
+        .select("id, external_id, estado, fecha, created_at, last_movement_at")
+        .eq("store_id", storeId)
+        .not("external_id", "is", null)
+        .lt("fecha", ventanaInicio)
+        .or(`last_movement_at.is.null,last_movement_at.lt.${congeladoAntes}`)
+        .order("fecha", { ascending: true })
+        .limit(GUARDIAN_PAGE_SIZE);
+      if (rezErr) throw new Error(`lectura de rezagados falló: ${rezErr.message}`);
+
+      // El filtro de terminales va client-side por el mismo motivo que arriba:
+      // un `.not('estado','in',...)` descartaría también las filas con estado NULL.
+      const noTerminales = (rezagados || []).filter(
+        (r) => !TERMINAL_STATES.has(String(r.estado || "").toUpperCase()),
+      );
+      const plan = planRepesca(noTerminales as RepescaRow[], {
+        ahoraMs: Date.now(),
+        minAgeMs: EXISTENCE_CHECK_MIN_AGE_MS,
+      });
+
+      if (plan) {
+        await sleep(5000); // aire para el rate-limit, igual que entre los otros pulls
+        const pull = await fetchDropiRange(
+          base, apiKey, storeUrl, plan.from, plan.to, "FECHA DE CREADO",
+          plan.from, plan.stopBeforeId,
+        );
+        const decision = decidirArchivado(plan, {
+          ids: new Set(pull.orders.map((o) => String((o as { id: unknown }).id))),
+          complete: pull.complete,
+          total: pull.orders.length,
+        });
+        repescaMotivo = decision.motivo;
+        for (let i = 0; i < decision.archivar.length; i += 50) {
+          const batch = decision.archivar.slice(i, i + 50);
+          // 'ARCHIVADO GHOST' CON ESPACIO — es la escritura que `_estado_bucket`
+          // manda al bucket 'borrado'. Con guion bajo NO se excluye y el fantasma
+          // vuelve a contaminar los KPIs (misma trampa que la línea 378).
+          const { error } = await sb.from("orders")
+            .update({ estado: "ARCHIVADO GHOST" })
+            .in("id", batch.map((g) => g.id));
+          if (!error) {
+            repescaArchivados += batch.length;
+            cancelledIds.deleted.push(...batch.map((g) => String(g.external_id)));
+          }
+        }
+        console.log(`reconcile ${storeId}: repesca ${plan.yearMonth} — ${repescaMotivo} · quedan ${plan.mesesRestantes} mes(es) rezagados`);
+      }
+    } catch (err) {
+      // La repesca es un extra: si falla, la reconciliación de la ventana normal
+      // ya se aplicó y no se pierde. Se registra y se sigue.
+      repescaMotivo = `repesca falló: ${err instanceof Error ? err.message : String(err)}`;
+      console.warn(`reconcile ${storeId}: ${repescaMotivo}`);
+    }
+
+    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds, repescaArchivados, repescaMotivo };
   } catch (err) {
     return {
       divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0,
       deletedCheckComplete: null, dropiCreatedCount: null,
       cancelledIds: { orphans: [], deleted: [] },
+      repescaArchivados: 0, repescaMotivo: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -456,7 +543,9 @@ Deno.serve(async (req) => {
       applied_count: r.applied,
       // orphan_cancelled agrega ambos tipos de limpieza (pre-backfill + borrados
       // en Dropi); el desglose exacto va en cancelled_external_ids.
-      orphan_cancelled: r.orphanCancelled + r.deletedCancelled,
+      // La repesca archiva por el MISMO motivo (borrado en Dropi), así que suma
+      // acá: si no, el contador diría 0 en una noche que sí limpió rezagados.
+      orphan_cancelled: r.orphanCancelled + r.deletedCancelled + r.repescaArchivados,
       error_message: r.error || null,
     };
     const { error: logErr } = await sb.from("nightly_reconcile_results").insert({
@@ -472,7 +561,7 @@ Deno.serve(async (req) => {
       await sb.from("nightly_reconcile_results").insert(baseLog);
     }
     summary.push({ store_id: cfg.store_id, ...r });
-    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled} checkComplete=${r.deletedCheckComplete}`);
+    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled} repesca=${r.repescaArchivados} checkComplete=${r.deletedCheckComplete}${r.repescaMotivo ? ` | ${r.repescaMotivo}` : ""}`);
   }
 
   return new Response(JSON.stringify({ ok: true, summary }), {
