@@ -198,7 +198,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
             const name = l.name ? String(l.name) : undefined;
             const norm = (s?: string) => String(s ?? '').trim().toLowerCase();
             const match = name
-              ? (detalleRef.current || []).find((d) => norm(d.nombre) === norm(name))
+              ? (detalleRef.current || []).find((pd) => norm(pd.nombre) === norm(name))
               : undefined;
             return {
               dropiId: Number(l.dropiId),
