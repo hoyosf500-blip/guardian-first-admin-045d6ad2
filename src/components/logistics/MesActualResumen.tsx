@@ -21,6 +21,7 @@ import SimuladorUnitEconomics from '@/components/logistics/SimuladorUnitEconomic
 import { useLogisticsCostBasis } from '@/hooks/useLogisticsCostBasis';
 import { useLogisticaMonthlyCosts } from '@/hooks/useLogisticaMonthlyCosts';
 import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
+import { deriveDeliveryMaturity, isRatePreliminary } from '@/lib/logisticsRates';
 import { isRpcMissing } from '@/lib/rpcError';
 import { useStore } from '@/contexts/StoreContext';
 import { formatCOP } from '@/lib/utils';
@@ -151,8 +152,6 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const canceladoCount = resumen.buckets.find((b) => b.key === 'cancelado')?.count ?? 0;
   const entregadoCount = resumen.buckets.find((b) => b.key === 'entregado')?.count ?? 0;
   const generadosSinCancel = full?.generadosSinCancel ?? Math.max(0, resumen.generadoTotal - canceladoCount);
-  const pctCompletado = full?.pctCompletado
-    ?? (generadosSinCancel > 0 ? (entregadoCount / generadosSinCancel) * 100 : 0);
   const unidadesVendidas = full?.unidadesVendidas ?? null;
   const totalVendido = full?.totalVendido ?? null;
 
@@ -210,6 +209,32 @@ export default function MesActualResumen({ summary, filters }: Props) {
     (a, k) => a + (resumen.buckets.find((b) => b.key === k)?.valor ?? 0), 0,
   );
   const facturadoValor = totalVendido ?? Math.max(0, resumen.valorGenerado - resumen.valorCancelado);
+
+  // TASA DE ENTREGA MADURA — entregados ÷ (entregados + devueltos), medida SOLO
+  // sobre lo que ya salió a la calle (`despachadosCount`).
+  //
+  // Antes acá iba la tasa CRUDA (`entregados ÷ generados sin cancelar`), que mete
+  // en el denominador pedidos que todavía van en camino y pedidos que ni siquiera
+  // se despacharon. En un mes en curso eso hunde la cifra por construcción: con
+  // media operación en la calle el tile marcaba ~55% y se lee "entregamos mal"
+  // cuando de lo que YA se resolvió puede estar entregando 80%. Es exactamente el
+  // sesgo que hizo que julio de Ecuador se leyera peor de lo que fue: 143 pedidos
+  // seguían despachados y sin desenlace al cierre del mes.
+  //
+  // Es la MISMA tasa que ya usan Transportadoras, Ciudades, Productos, Geografía y
+  // Comparación (logisticsRates.ts). Esta pantalla —la que mira el dueño— era la
+  // única que seguía cruda, así que el mismo mes daba dos números distintos según
+  // en qué pestaña se lo mirara.
+  //
+  // Los rechazos salen del denominador (el cliente rechazó, no falló la entrega)
+  // pero SÍ cuentan como concluidos para medir la madurez del cohorte.
+  const entregaMaturity = deriveDeliveryMaturity(
+    entregadoCount,
+    devueltoCount + rechazadoCount,
+    despachadosCount,
+    rechazadoCount,
+  );
+  const entregaPrelim = isRatePreliminary(entregaMaturity);
 
   // Detector de estados nuevos de Dropi sin clasificar: las barras `otros` del
   // desglose real (full) son estados que ningún bucket conoce. Si aparece alguno,
@@ -318,17 +343,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
           tone="accent"
           hint="solo despachado (sin pend./prep./rechazo) · = Dropi"
         />
-        {/* El hint es 0/0 cuando no hay pedidos sin cancelar: `pctOf` devuelve 0
-            y el tile decía "0% completado", que se lee como "no entregamos
-            nada" cuando en realidad no hay denominador. */}
+        {/* Sin NINGÚN pedido concluido no hay tasa que mostrar: un "0%" ahí sería
+            0/0, no una medición, y se lee como "no entregamos nada". Y mientras
+            el cohorte esté inmaduro (poco de lo despachado ya resuelto) la cifra
+            va en gris con "prelim.": es una tasa que todavía se va a mover, no un
+            veredicto sobre el mes. */}
         <KpiCard
           label="Entregados"
           value={entregadoCount.toLocaleString('es-CO')}
           icon={CheckCircle2}
-          tone="success"
-          hint={generadosSinCancel > 0
-            ? `${pctCompletado.toFixed(0)}% completado`
-            : '— sin base para el %'}
+          tone={entregaMaturity.tasaEntregaMadura == null || entregaPrelim ? 'neutral' : 'success'}
+          hint={entregaMaturity.tasaEntregaMadura == null
+            ? '— ninguno concluido todavía'
+            : `${entregaMaturity.tasaEntregaMadura}% de entrega · ${entregaMaturity.resueltos} concluidos de ${despachadosCount} despachados${entregaPrelim ? ' · prelim.' : ''}`}
         />
         {/* OPERATIVO_BASE — ver const operativoBase arriba: cohorte de pedido
             (reconcilia con la "Utilidad Total" de Dropi), con fallback al wallet. */}

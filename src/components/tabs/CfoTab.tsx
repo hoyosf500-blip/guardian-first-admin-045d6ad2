@@ -31,6 +31,7 @@ import WalletSyncBadge from '@/components/wallet/WalletSyncBadge';
 import WalletSyncButton from '@/components/wallet/WalletSyncButton';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
 import { useStore } from '@/contexts/StoreContext';
+import { deriveDeliveryMaturity, isRatePreliminary } from '@/lib/logisticsRates';
 import { TiltCard, GaugeRing, Sparkline, RankRow, AuroraBackdrop } from '@/components/ui3d';
 import {
   CHART_TOOLTIP_STYLE, CHART_GRID_PROPS, CHART_BAR_CURSOR, fmtCompact,
@@ -121,7 +122,17 @@ interface CfoSnapshot {
   total_entregadas: number | null;
   total_devueltas: number | null;
   total_cancelados: number | null;
+  /** Tasa de entrega MADURA (entregadas ÷ concluidas). `null` = ninguna concluida
+   *  todavía. Es la que se muestra y sobre la que se emiten los veredictos. */
   tasa_entrega: number | null;
+  /** La vieja tasa ÷ total del mes. Se conserva para diagnóstico: mete en el
+   *  denominador los pedidos que siguen en la calle, así que NO se opina sobre ella. */
+  tasa_cruda: number | null;
+  /** Cohorte inmaduro o muestra chica → la tasa se va a mover: se muestra en gris
+   *  y no dispara alertas. */
+  tasa_prelim: boolean;
+  /** Pedidos con desenlace final (denominador real de `tasa_entrega`). */
+  tasa_concluidas: number | null;
   utilidad_bruta: number | null;
   ingresos_brutos: number | null;
   ads_meta: number;
@@ -229,14 +240,35 @@ function useCfoSnapshot(yearMonth: string): CfoSnapshot {
   // alerta "Efectividad baja: 0% (umbral 55%)" en un mes donde no hubo un solo
   // pedido que medir. Con pedidos en el período un 0% SÍ es real y sigue en rojo.
   const tasa_raw = fin?.tasa_entrega_pct ?? logSummary?.tasa_entrega ?? null;
-  const tasa_entrega = total_ordenes === 0 ? null : tasa_raw;
+  const tasa_cruda = total_ordenes === 0 ? null : tasa_raw;
+
+  // TASA MADURA (entregadas ÷ concluidas) para los VEREDICTOS. La cruda divide
+  // por TODAS las órdenes del mes, incluidas las que siguen en la calle: en un
+  // mes en curso arranca cerca de 0 y sube sola a medida que llegan los pedidos.
+  // Contra un umbral fijo de 55% eso significaba que el CFO abría en ROJO
+  // ("Efectividad baja") los primeros ~20 días de TODOS los meses, sin que nada
+  // estuviera mal. Una alarma que siempre suena deja de ser una alarma.
+  // Mismo cálculo que /logistica (logisticsRates.ts) — así las dos pantallas
+  // dejan de dar dos efectividades distintas del mismo mes.
+  const _entregadas = fin?.total_entregadas ?? logSummary?.entregados ?? null;
+  const _devueltas = fin?.total_devueltas ?? logSummary?.devueltos ?? null;
+  const entregaMaturity =
+    _entregadas != null && _devueltas != null && total_ordenes != null && total_ordenes > 0
+      ? deriveDeliveryMaturity(_entregadas, _devueltas, total_ordenes)
+      : null;
+  // La tasa que se MUESTRA y sobre la que se opina es la madura. `null` cuando
+  // todavía no concluyó ningún pedido: sin desenlaces no hay efectividad que medir.
+  const tasa_entrega = entregaMaturity?.tasaEntregaMadura ?? null;
 
   return {
+    tasa_cruda,
+    tasa_prelim: entregaMaturity ? isRatePreliminary(entregaMaturity) : false,
+    tasa_concluidas: entregaMaturity?.resueltos ?? null,
     loading,
     hasFinError, hasInputsError, ads_error, tarjeta_error, errorMessage,
     total_ordenes,
-    total_entregadas: fin?.total_entregadas ?? logSummary?.entregados ?? null,
-    total_devueltas: fin?.total_devueltas ?? logSummary?.devueltos ?? null,
+    total_entregadas: _entregadas,
+    total_devueltas: _devueltas,
     total_cancelados: fin?.total_cancelados ?? null,
     tasa_entrega,
     utilidad_bruta, ingresos_brutos,
@@ -408,8 +440,10 @@ export default function CfoTab() {
     if (curr.utilidad_neta != null && curr.utilidad_neta < 0) {
       out.push({ tone: 'danger', text: `Utilidad neta negativa: ${formatCOP(curr.utilidad_neta)}` });
     }
-    if (curr.tasa_entrega != null && curr.tasa_entrega < 55) {
-      out.push({ tone: 'danger', text: `Efectividad baja: ${fmtPct(curr.tasa_entrega)} (umbral 55%)` });
+    // Sobre una tasa PRELIMINAR no se opina: con la mayoría del mes todavía en
+    // la calle, un 40% no dice que se entregue mal, dice que falta que lleguen.
+    if (!curr.tasa_prelim && curr.tasa_entrega != null && curr.tasa_entrega < 55) {
+      out.push({ tone: 'danger', text: `Efectividad baja: ${fmtPct(curr.tasa_entrega)} sobre ${curr.tasa_concluidas} pedidos concluidos (umbral 55%)` });
     }
     if (curr.ads_total > 0 && curr.roas != null && curr.roas < 2.5) {
       out.push({ tone: 'danger', text: `ROAS bajo: ${curr.roas.toFixed(2)}x (umbral 2.5x)` });
@@ -420,7 +454,7 @@ export default function CfoTab() {
     ) {
       out.push({ tone: 'danger', text: `Wallet < 1 mes de costos fijos (${formatCOP(curr.wallet_saldo)})` });
     }
-    if (curr.tasa_entrega != null && curr.tasa_entrega >= 55 && curr.tasa_entrega < 65) {
+    if (!curr.tasa_prelim && curr.tasa_entrega != null && curr.tasa_entrega >= 55 && curr.tasa_entrega < 65) {
       out.push({ tone: 'warning', text: `Efectividad: ${fmtPct(curr.tasa_entrega)} — apuntar a ≥65%` });
     }
     if (curr.ads_total > 0 && curr.roas != null && curr.roas >= 2.5 && curr.roas < 3.5) {
@@ -485,7 +519,9 @@ export default function CfoTab() {
   }, [curr, walletHealth.data, inputsQuery.data, adSpendForCurrent.data]);
 
   const utilTone = utilidadTone(curr.utilidad_neta);
-  const efTone = efectividadTone(curr.tasa_entrega);
+  // Preliminar → gris. Pintar de rojo una tasa que todavía se va a mover es
+  // emitir un veredicto sobre un mes que no terminó de llegar.
+  const efTone = curr.tasa_prelim ? 'muted' : efectividadTone(curr.tasa_entrega);
   const rTone = roasTone(curr.roas);
   const wTone = walletTone(curr.wallet_saldo, curr.costos_fijos);
 
@@ -638,7 +674,13 @@ export default function CfoTab() {
                   : { Icon: Minus, tone: 'text-muted-foreground', label: '—' }
               }
               loading={curr.loading}
-              subtitle={curr.tasa_entrega == null ? 'Sin datos del período' : undefined}
+              subtitle={
+                curr.tasa_entrega == null
+                  ? 'Sin pedidos concluidos todavía'
+                  : curr.tasa_prelim
+                    ? `Preliminar · ${curr.tasa_concluidas} concluidos de ${curr.total_ordenes}`
+                    : `Sobre ${curr.tasa_concluidas} pedidos concluidos`
+              }
             />
 
             <div className="md:col-span-4 grid grid-cols-1 min-[390px]:grid-cols-2 md:grid-cols-1 gap-4">

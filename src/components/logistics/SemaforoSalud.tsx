@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useFinancialSummary } from '@/hooks/useFinancialSummary';
 import { useStoreAdSpendRange, sumAdSpend } from '@/hooks/useStoreAdSpend';
 import { isRpcMissing } from '@/lib/rpcError';
+import { useStore } from '@/contexts/StoreContext';
 import {
   evalIndicator,
   veredictoLabel,
@@ -159,6 +160,12 @@ function Cell({ ind }: { ind: Indicator }) {
 }
 
 export default function SemaforoSalud({ from, to }: { from: string; to: string }) {
+  // Los 6 umbrales de abajo están calibrados con datos de e-commerce COD de
+  // COLOMBIA. En Ecuador el flete pesa distinto sobre un ticket en dólares, así
+  // que los mismos cortes pintan rojo donde la operación puede estar sana. No se
+  // inventan umbrales para EC (no los tenemos medidos): se dice de dónde salen.
+  const { activeStore } = useStore();
+  const esEcuador = activeStore?.country_code === 'EC';
   const finQuery = useFinancialSummary(from, to);
   // Pauta del período: misma fuente que "Cómo voy" (tabla store_ad_spend_daily,
   // store-scoped). Sumamos todas las filas del rango (Meta + TikTok + otros).
@@ -372,8 +379,14 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
             ))}
           </div>
           <p className="mt-4 text-[11px] text-muted-foreground leading-snug">
-            Referencias tomadas de estándares de e-commerce COD (costo ≤38%, flete ≤20%,
-            devoluciones ≤3%, margen ≥45%).
+            Referencias tomadas de estándares de e-commerce COD <strong className="text-foreground">de Colombia</strong>{' '}
+            (costo ≤38%, flete ≤20%, devoluciones ≤3%, margen ≥45%).
+            {esEcuador && (
+              <>
+                {' '}Esta tienda es de <strong className="text-foreground">Ecuador</strong>: la estructura de
+                fletes y el ticket promedio son distintos, así que los colores acá son una guía, no un veredicto.
+              </>
+            )}
           </p>
         </>
       )}
