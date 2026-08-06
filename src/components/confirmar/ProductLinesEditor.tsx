@@ -106,17 +106,20 @@ export default function ProductLinesEditor({
               <span className="text-sm font-semibold truncate">
                 {d.name || productoFallback || `Producto ${d.dropiId}`}
               </span>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                {d.variante && (
-                  /* Variante (talla/color) tal cual la guardó Dropi. Solo
-                     lectura y sin uppercase: es dato, no rótulo. */
-                  <span className="text-[10px] text-muted-foreground bg-muted border border-border rounded-md px-1.5 py-0.5">
-                    {d.variante}
-                  </span>
-                )}
-                <span className="text-[10px] font-mono tabular-nums text-muted-foreground bg-muted border border-border rounded-md px-1.5 py-0.5">ID {d.dropiId}</span>
-              </div>
+              <span className="text-[10px] font-mono tabular-nums text-muted-foreground bg-muted border border-border rounded-md px-1.5 py-0.5 flex-shrink-0">ID {d.dropiId}</span>
             </div>
+            {/* La variante NO puede ser un chip gris apretado contra el ID.
+                La asesora la lee EN VOZ ALTA por teléfono ("¿la 38 negra?"): si
+                se pierde entre el nombre truncado y el número de producto, no
+                la pregunta y el pedido sale con la talla que no era. Por eso va
+                en su propio renglón, con rótulo y en color de texto normal.
+                Sin uppercase: es un dato de Dropi, no un rótulo. */}
+            {d.variante && (
+              <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent/[0.07] px-2.5 py-1.5">
+                <span className={`${LABEL_CLS} flex-shrink-0`}>Variante</span>
+                <span className="text-sm font-semibold text-foreground truncate">{d.variante}</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label htmlFor={`price-${d.dropiId}`} className={LABEL_CLS}>Precio de venta</Label>

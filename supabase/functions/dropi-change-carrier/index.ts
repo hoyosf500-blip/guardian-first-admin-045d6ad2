@@ -1591,6 +1591,14 @@ Deno.serve(async (req: Request) => {
           external_id: newIdV,
           valor: newValor,
           transportadora: chosen.name,
+          // El flete de la transportadora ELEGIDA. Sin esto la fila se quedaba
+          // con el flete de la anterior hasta que el cron la resincronizara —
+          // hasta 15 minutos mostrando que un envío cuesta $43.070 cuando se
+          // acaba de pasar a uno de $19.556. Es el mismo número que se le manda
+          // a Dropi al crear (`shipping_amount`) y el mismo campo que escribe
+          // el sync (`dropiOrderMapper.ts:285`), así que no introduce una
+          // segunda verdad.
+          flete: chosen.shippingAmount,
           // W5b: evidencia de "edición aplicada" para el panel de auditorías.
           last_edit_sync_at: new Date().toISOString(),
           last_edited_by: user.id,
@@ -1952,6 +1960,9 @@ Deno.serve(async (req: Request) => {
           external_id: newIdE,
           transportadora: chosenE.name,
           valor: totalE,
+          // Ver la nota de `flete` en apply_value: el flete nuevo ya está acá y
+          // no persistirlo dejaba el costo viejo a la vista.
+          flete: chosenE.shippingAmount,
           cantidad: linesE.reduce((s, l) => s + (l.quantity || 1), 0),
           // W5b: evidencia de "edición aplicada" para el panel de auditorías.
           last_edit_sync_at: new Date().toISOString(),
@@ -2259,6 +2270,10 @@ Deno.serve(async (req: Request) => {
       .update({
         external_id: newExternalId,
         transportadora: chosenA.name,
+        // Ver la nota de `flete` en apply_value. Este es el camino MÁS usado
+        // (cambiar transportadora sin tocar el pedido), y era el que más
+        // seguido dejaba a la vista el flete de la transportadora anterior.
+        flete: chosenA.shippingAmount,
         // W5b: evidencia de "edición aplicada" para el panel de auditorías.
         last_edit_sync_at: new Date().toISOString(),
         last_edited_by: user.id,
