@@ -28,6 +28,7 @@ import LogisticsErrorState from '@/components/logistics/LogisticsErrorState';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import BilleteraTab from '@/components/logistics/BilleteraTab';
 import FinanzasTab from '@/components/logistics/FinanzasTab';
+import BalanceTab from '@/components/logistics/BalanceTab';
 import MesActualResumen from '@/components/logistics/MesActualResumen';
 import StoreAdSpendPanel from '@/components/logistics/StoreAdSpendPanel';
 import SemaforoSalud from '@/components/logistics/SemaforoSalud';
@@ -38,7 +39,7 @@ import {
   CHART_LINE_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
 import { AuroraBackdrop } from '@/components/ui3d';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Layers } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Layers, Scale } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -557,6 +558,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="decisiones" className={TAB_PILL}><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad" className={TAB_PILL}><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
               <TabsTrigger value="finanzas" className={TAB_PILL}><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
+              <TabsTrigger value="balance" className={TAB_PILL}><Scale size={13} className="mr-1.5" /> Balance</TabsTrigger>
             </TabsList>
           </div>
 
@@ -724,6 +726,14 @@ export default function LogisticaTab() {
               </header>
               <ProductProfitabilityTable filters={filters} />
             </section>
+          </TabsContent>
+
+          {/* Balance — el "cómo vamos" de la sociedad: utilidad mes a mes y la
+              conciliación de la plata que sale de la billetera contra lo que se
+              rindió con comprobante. Reemplaza el Excel que había que armar a
+              mano. NO recibe `filters.ciudad`: la plata es de toda la tienda. */}
+          <TabsContent value="balance" className="mt-4 space-y-5">
+            <BalanceTab fromDate={filters.fromDate} toDate={filters.toDate} />
           </TabsContent>
         </Tabs>
         </motion.div>
