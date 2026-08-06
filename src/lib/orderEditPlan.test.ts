@@ -124,3 +124,35 @@ describe('deriveTotal + roundMoneyClient', () => {
     expect(deriveTotal([], null, 'CO', 59900)).toBe(59900);
   });
 });
+
+describe('linesDirty con líneas repetidas (pedido 84894623)', () => {
+  // Dos líneas del mismo zapato en colores distintos comparten el `dropiId`
+  // porque parseOrderLines descarta variation_id. El índice por id que había
+  // antes se quedaba solo con la última, y la primera se comparaba contra los
+  // valores de la otra: un cambio real podía leerse "sin cambios" y no llegar
+  // a Dropi.
+  const QUOTED = [
+    { dropiId: 2181473, quantity: 1, price: 109900 },
+    { dropiId: 2181473, quantity: 1, price: 99900 },
+  ];
+
+  it('detecta el cambio en la PRIMERA de dos líneas con el mismo id', () => {
+    const editado = [
+      { dropiId: 2181473, quantity: 2, price: 109900 },
+      { dropiId: 2181473, quantity: 1, price: 99900 },
+    ];
+    expect(linesDirty(QUOTED, editado)).toBe(true);
+  });
+
+  it('detecta el cambio de precio en la SEGUNDA', () => {
+    const editado = [
+      { dropiId: 2181473, quantity: 1, price: 109900 },
+      { dropiId: 2181473, quantity: 1, price: 89900 },
+    ];
+    expect(linesDirty(QUOTED, editado)).toBe(true);
+  });
+
+  it('sin cambios sigue diciendo que no hay cambios', () => {
+    expect(linesDirty(QUOTED, QUOTED.map(l => ({ ...l })))).toBe(false);
+  });
+});

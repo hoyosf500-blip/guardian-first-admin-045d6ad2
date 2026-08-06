@@ -60,13 +60,25 @@ export interface EditableLine {
 }
 
 /** ¿La operadora tocó cantidad o precio de alguna línea? Compara contra las
- *  líneas que devolvió el quote (mismo set de dropiIds por diseño de la UI). */
+ *  líneas que devolvió el quote.
+ *
+ *  Compara POR POSICIÓN, no por `dropiId`. El índice por id que había acá
+ *  colapsaba las líneas repetidas: `parseOrderLines` toma `product.id` y
+ *  descarta `variation_id`, así que dos líneas del mismo zapato en tallas
+ *  distintas llegan con el MISMO dropiId (pedido 84894623: "NEGRO X BLANCO /
+ *  37" y "GRIS / 37"). El Map se quedaba solo con la última, y la primera se
+ *  comparaba contra los valores de la otra — un cambio real podía leerse como
+ *  "sin cambios" y no llegar a Dropi.
+ *
+ *  La UI nunca agrega ni quita líneas (solo edita cantidad y precio), así que
+ *  las posiciones siempre se corresponden; el guard de longitud lo garantiza. */
 export function linesDirty(quoted: EditableLine[], edited: EditableLine[]): boolean {
   if (quoted.length !== edited.length) return true;
-  const byId = new Map(quoted.map(l => [l.dropiId, l]));
-  for (const e of edited) {
-    const q = byId.get(e.dropiId);
-    if (!q) return true;
+  for (let i = 0; i < edited.length; i++) {
+    const q = quoted[i];
+    const e = edited[i];
+    if (!q || !e) return true;
+    if (q.dropiId !== e.dropiId) return true;
     if (q.quantity !== e.quantity) return true;
     if (Math.abs(q.price - e.price) > 0.001) return true;
   }

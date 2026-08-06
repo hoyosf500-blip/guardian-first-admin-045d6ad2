@@ -33,14 +33,23 @@ const norm = (s?: string): string => String(s ?? '').trim().toLowerCase();
 const mismoPrecio = (a: number, b: number): boolean => Math.abs(a - b) < 0.01;
 
 /**
- * Devuelve `dropiId → variante` solo para las líneas que se pueden identificar
- * SIN AMBIGÜEDAD. Las que no, quedan fuera del mapa (y por lo tanto sin chip).
+ * Devuelve un arreglo alineado POR POSICIÓN con `lineas`: `out[i]` es la
+ * variante de `lineas[i]`, o `undefined` si no se pudo identificar sin
+ * ambigüedad.
+ *
+ * ⚠️ Alineado por POSICIÓN y no por `dropiId` a propósito. `parseOrderLines`
+ * (dropi-change-carrier) toma `product.id` y descarta `variation_id`, así que
+ * dos líneas del mismo zapato en tallas distintas llegan con el MISMO dropiId
+ * — verificado en el pedido 84894623, que tiene "NEGRO X BLANCO / 37" y
+ * "GRIS / 37". Un mapa por dropiId le habría puesto la misma talla a las dos.
  */
 export function asignarVariantes(
   lineas: LineaCotizada[],
   detalle: OrderLineDetail[] | null | undefined,
-): Map<number, string> {
-  const out = new Map<number, string>();
+): Array<string | undefined> {
+  const out: Array<string | undefined> = Array.isArray(lineas)
+    ? new Array(lineas.length).fill(undefined)
+    : [];
   if (!Array.isArray(lineas) || !Array.isArray(detalle) || detalle.length === 0) return out;
 
   // Índices de `detalle` agrupados por nombre. Las entradas sin variante no
@@ -58,7 +67,8 @@ export function asignarVariantes(
   // Una entrada de detalle no se le puede adjudicar a dos líneas distintas.
   const usados = new Set<number>();
 
-  for (const linea of lineas) {
+  for (let pos = 0; pos < lineas.length; pos++) {
+    const linea = lineas[pos];
     const k = norm(linea?.name);
     if (!k) continue;
     const libres = (porNombre.get(k) ?? []).filter((i) => !usados.has(i));
@@ -69,7 +79,7 @@ export function asignarVariantes(
     // idénticas del mismo producto deben mostrar las dos su variante.
     const variantes = new Set(libres.map((i) => detalle[i].variante.trim()));
     if (variantes.size === 1) {
-      out.set(linea.dropiId, detalle[libres[0]].variante.trim());
+      out[pos] = detalle[libres[0]].variante.trim();
       continue;
     }
 
@@ -86,7 +96,7 @@ export function asignarVariantes(
     if (cand.length !== 1) continue;
 
     usados.add(cand[0]);
-    out.set(linea.dropiId, detalle[cand[0]].variante.trim());
+    out[pos] = detalle[cand[0]].variante.trim();
   }
 
   return out;

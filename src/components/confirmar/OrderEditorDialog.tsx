@@ -205,10 +205,11 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           // asesora le confirmaba talla 38 a quien pidió la 40. `asignarVariantes`
           // desempata por precio y cantidad, y ante la duda no asigna nada.
           const variantes = asignarVariantes(normalizadas, detalleRef.current);
-          setDrafts(normalizadas.map((l) => ({
+          setDrafts(normalizadas.map((l, i) => ({
+            lineKey: i,
             dropiId: l.dropiId,
             name: l.name,
-            variante: variantes.get(l.dropiId),
+            variante: variantes[i],
             quantity: l.quantity,
             priceRaw: String(l.price),
             basePrice: l.price,
@@ -869,9 +870,12 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
                   drafts={drafts}
                   loading={quoteLoading}
                   unavailableNote={productUnavailableNote}
-                  onPatch={(dropiId, patch) => {
+                  onPatch={(lineKey, patch) => {
+                    // Por POSICIÓN, no por dropiId: dos líneas del mismo zapato
+                    // en tallas distintas comparten el id, y editarle el precio
+                    // a una se lo cambiaba a las dos (pedido 84894623).
                     setDrafts(prev => prev
-                      ? prev.map(d => (d.dropiId === dropiId ? { ...d, ...patch } : d))
+                      ? prev.map(d => (d.lineKey === lineKey ? { ...d, ...patch } : d))
                       : prev);
                   }}
                   overrideRaw={overrideRaw}

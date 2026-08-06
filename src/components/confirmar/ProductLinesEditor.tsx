@@ -14,6 +14,12 @@ import { Package, Loader2, RefreshCw, Info } from 'lucide-react';
 /** Borrador editable de una línea. `priceRaw` es el texto tal como lo tipea la
  *  operadora ("26,99" / "59.900"); base* = lo que devolvió el quote (Dropi). */
 export interface LineDraft {
+  /** Posición de la línea en el pedido. Es la clave REAL: `dropiId` no lo es,
+   *  porque `parseOrderLines` descarta `variation_id` y dos líneas del mismo
+   *  zapato en tallas distintas llegan con el mismo id (pedido 84894623:
+   *  "NEGRO X BLANCO / 37" y "GRIS / 37"). Con la clave vieja, editarle el
+   *  precio a una se lo cambiaba a las dos, y los dos <input> compartían id. */
+  lineKey: number;
   dropiId: number;
   name?: string;
   /** Variante tal como la manda Dropi ("38 / Negro"). Solo lectura. */
@@ -46,7 +52,7 @@ interface Props {
   loading: boolean;
   /** Motivo por el que NO se pueden editar líneas (quote falló / función vieja). */
   unavailableNote: string | null;
-  onPatch: (dropiId: number, patch: Partial<Pick<LineDraft, 'quantity' | 'priceRaw'>>) => void;
+  onPatch: (lineKey: number, patch: Partial<Pick<LineDraft, 'quantity' | 'priceRaw'>>) => void;
   /** Override manual del total a recaudar ('' = derivado de las líneas). */
   overrideRaw: string;
   onOverrideRaw: (s: string) => void;
@@ -99,7 +105,7 @@ export default function ProductLinesEditor({
         const line = draftToLine(d);
         const priceInvalid = d.priceRaw.trim() !== '' && parseValorInput(d.priceRaw) == null;
         return (
-          <div key={d.dropiId} className="rounded-xl border border-border bg-card p-3 space-y-2.5 shadow-card3d hairline-top">
+          <div key={d.lineKey} className="rounded-xl border border-border bg-card p-3 space-y-2.5 shadow-card3d hairline-top">
             <div className="flex items-center justify-between gap-2">
               {/* Sin .hud-label: el nombre del producto viene de Dropi y esa
                   clase lo mayusculizaría, o sea reescribiría el dato. */}
@@ -122,20 +128,20 @@ export default function ProductLinesEditor({
             )}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label htmlFor={`price-${d.dropiId}`} className={LABEL_CLS}>Precio de venta</Label>
+                <Label htmlFor={`price-${d.lineKey}`} className={LABEL_CLS}>Precio de venta</Label>
                 <Input
-                  id={`price-${d.dropiId}`}
+                  id={`price-${d.lineKey}`}
                   inputMode="decimal"
                   value={d.priceRaw}
-                  onChange={e => onPatch(d.dropiId, { priceRaw: e.target.value })}
+                  onChange={e => onPatch(d.lineKey, { priceRaw: e.target.value })}
                   className={`font-mono tabular-nums ${priceInvalid ? 'border-destructive' : ''}`}
                 />
                 {priceInvalid && <p className="text-[10px] text-destructive">Número inválido</p>}
               </div>
               <div className="space-y-1">
-                <Label htmlFor={`qty-${d.dropiId}`} className={LABEL_CLS}>Cantidad</Label>
+                <Label htmlFor={`qty-${d.lineKey}`} className={LABEL_CLS}>Cantidad</Label>
                 <Input
-                  id={`qty-${d.dropiId}`}
+                  id={`qty-${d.lineKey}`}
                   type="number"
                   min={1}
                   max={1000}
@@ -144,7 +150,7 @@ export default function ProductLinesEditor({
                   className="font-mono tabular-nums"
                   onChange={e => {
                     const n = Math.floor(Number(e.target.value));
-                    if (Number.isFinite(n) && n >= 1 && n <= 1000) onPatch(d.dropiId, { quantity: n });
+                    if (Number.isFinite(n) && n >= 1 && n <= 1000) onPatch(d.lineKey, { quantity: n });
                   }}
                 />
               </div>
