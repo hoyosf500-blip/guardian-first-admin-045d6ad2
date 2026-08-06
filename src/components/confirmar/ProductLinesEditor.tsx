@@ -16,6 +16,8 @@ import { Package, Loader2, RefreshCw, Info } from 'lucide-react';
 export interface LineDraft {
   dropiId: number;
   name?: string;
+  /** Variante tal como la manda Dropi ("38 / Negro"). Solo lectura. */
+  variante?: string;
   quantity: number;
   priceRaw: string;
   basePrice: number;
@@ -104,7 +106,16 @@ export default function ProductLinesEditor({
               <span className="text-sm font-semibold truncate">
                 {d.name || productoFallback || `Producto ${d.dropiId}`}
               </span>
-              <span className="text-[10px] font-mono tabular-nums text-muted-foreground bg-muted border border-border rounded-md px-1.5 py-0.5 flex-shrink-0">ID {d.dropiId}</span>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {d.variante && (
+                  /* Variante (talla/color) tal cual la guardó Dropi. Solo
+                     lectura y sin uppercase: es dato, no rótulo. */
+                  <span className="text-[10px] text-muted-foreground bg-muted border border-border rounded-md px-1.5 py-0.5">
+                    {d.variante}
+                  </span>
+                )}
+                <span className="text-[10px] font-mono tabular-nums text-muted-foreground bg-muted border border-border rounded-md px-1.5 py-0.5">ID {d.dropiId}</span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">

@@ -127,6 +127,11 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
    *  efectos en cada tecleo). Ver el guard de siembra en `fetchQuote`. */
   const draftsRef = useRef<LineDraft[] | null>(null);
   draftsRef.current = drafts;
+  /** Variantes ya guardadas (orders.productos_detalle) para mostrarlas junto a
+   *  cada línea. Solo lectura: si no matchea por nombre se deja vacía — nunca
+   *  se infiere una talla. Va por ref para no meterse en las deps del quote. */
+  const detalleRef = useRef(order.productosDetalle);
+  detalleRef.current = order.productosDetalle;
   /** true = el quote respondió pero SIN líneas (función vieja deployada). */
   const [quoteHadNoLines, setQuoteHadNoLines] = useState(false);
   /** Ciudad para la que se cotizó, según la resolvió Dropi. `null` si la
@@ -190,9 +195,15 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
           setDrafts(lines.map((l) => {
             const price = Number(l.price) || 0;
             const quantity = Number(l.quantity) || 1;
+            const name = l.name ? String(l.name) : undefined;
+            const norm = (s?: string) => String(s ?? '').trim().toLowerCase();
+            const match = name
+              ? (detalleRef.current || []).find((pd) => norm(pd.nombre) === norm(name))
+              : undefined;
             return {
               dropiId: Number(l.dropiId),
-              name: l.name ? String(l.name) : undefined,
+              name,
+              variante: match?.variante?.trim() || undefined,
               quantity,
               priceRaw: String(price),
               basePrice: price,
