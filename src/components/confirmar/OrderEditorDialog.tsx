@@ -127,6 +127,11 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
    *  efectos en cada tecleo). Ver el guard de siembra en `fetchQuote`. */
   const draftsRef = useRef<LineDraft[] | null>(null);
   draftsRef.current = drafts;
+  /** Variantes ya guardadas (orders.productos_detalle) para mostrarlas junto a
+   *  cada línea. Solo lectura: si no matchea por nombre se deja vacía — nunca
+   *  se infiere una talla. Va por ref para no meterse en las deps del quote. */
+  const detalleRef = useRef(order.productosDetalle);
+  detalleRef.current = order.productosDetalle;
   /** true = el quote respondió pero SIN líneas (función vieja deployada). */
   const [quoteHadNoLines, setQuoteHadNoLines] = useState(false);
   /** Ciudad para la que se cotizó, según la resolvió Dropi. `null` si la
