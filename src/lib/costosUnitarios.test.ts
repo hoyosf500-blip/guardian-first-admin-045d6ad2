@@ -48,19 +48,20 @@ describe('costos unitarios — Colombia julio 2026', () => {
     expect(Math.abs(r.multiplicador! - inversoDeLaTasa)).toBeLessThan(0.02);
   });
 
-  it('NO da por bueno el cargo de devolución con la billetera incompleta', () => {
-    // 19 cargos registrados sobre 64 devoluciones = 30% de cobertura. El promedio
-    // existe pero no es confiable, y el costo total por devolución no se emite.
+  it('NO da por bueno el cargo mientras Dropi no termine de facturar', () => {
+    // 19 devoluciones cobradas sobre 64 = 30% de cobertura. El promedio existe
+    // pero es una PARTE, no un total: el costo real todavía va a subir.
+    expect(r.devolucionesCobradas).toBe(19);
     expect(r.coberturaCargo).toBeCloseTo(19 / 64, 3);
     expect(r.coberturaCargo).toBeLessThan(COBERTURA_CARGO_MINIMA);
     expect(r.cargoDevolucionConfiable).toBe(false);
     expect(r.costoTotalPorDevolucion).toBeNull();
-    // El promedio se calcula igual (la UI lo muestra atenuado con su cobertura),
+    // El promedio se calcula igual (la UI lo muestra con su cobertura al lado),
     // pero nadie puede confundirlo con una medición cerrada.
     expect(Math.round(r.cargoPorDevolucion!)).toBe(19_724);
   });
 
-  it('con la billetera completa SÍ emite el costo total por devolución', () => {
+  it('con Dropi ya facturado SÍ emite el costo total por devolución', () => {
     const completo = { ...CO_JULIO, devoluciones_con_cargo: 64, cargo_devolucion_total: 64 * 22_000 };
     const c = calcularCostosUnitarios(completo)!;
     expect(c.cargoDevolucionConfiable).toBe(true);
@@ -88,6 +89,51 @@ describe('costos unitarios — Colombia julio 2026', () => {
 
   it('el costo de conseguir cada venta entregada', () => {
     expect(Math.round(r.costoPorVenta!)).toBe(36_364); // 8.000.000 ÷ 220
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ecuador julio 2026 — cifras VERIFICADAS contra la API de Dropi el 2026-08-06.
+// Se bajaron los 721 movimientos del mes: 39 cargos de devolución emitidos, y
+// Guardian tenía esos mismos. La cobertura baja NO era pérdida de datos, era que
+// Dropi cobra el cargo cuando el paquete vuelve al origen — semanas después.
+// Este caso existe para que nadie vuelva a leer "cobertura baja" como "bug".
+const EC_JULIO: CostosCrudos = {
+  entregados: 514,
+  devueltos: 234,
+  ingresos_entregados: 15_413_86 / 100 * 10, // ~$15.413,86
+  cogs_entregados: 0,
+  flete_entregados: 3_541_46 / 100,   // 514 × $6,89
+  flete_devueltos: 1_596_43 / 100,    // los que se pagaron y volvieron
+  cargo_devolucion_total: 199.68,     // 39 × $5,12
+  devoluciones_con_cargo: 39,
+  pauta_periodo: 2_828,
+};
+
+describe('Ecuador julio 2026 — la cobertura baja NO es un bug', () => {
+  const r = calcularCostosUnitarios(EC_JULIO)!;
+
+  it('39 de 234 cobradas: es facturación pendiente, no datos perdidos', () => {
+    expect(r.devolucionesCobradas).toBe(39);
+    expect(Math.round(r.coberturaCargo * 100)).toBe(17);
+    expect(r.cargoDevolucionConfiable).toBe(false);
+    // Y por eso NO se emite un costo por devolución que sería parcial.
+    expect(r.costoTotalPorDevolucion).toBeNull();
+  });
+
+  it('la ley del multiplicador también se cumple en Ecuador', () => {
+    expect(r.tasaEntrega).toBeCloseTo(68.7, 1);
+    expect(r.multiplicador).toBeCloseTo(1.45, 2);
+    const inversoDeLaTasa = 1 / (r.tasaEntrega! / 100);
+    expect(Math.abs(r.multiplicador! - inversoDeLaTasa)).toBeLessThan(0.02);
+  });
+
+  it('el flete real por entrega es 45% más alto que el facturado', () => {
+    // Una décima de tolerancia: los insumos se reconstruyeron desde los totales
+    // redondeados del reporte, no desde los centavos crudos de la base.
+    expect(r.fletePorEntrega).toBeCloseTo(6.89, 2);
+    expect(r.fleteRealPorEntrega).toBeCloseTo(10.0, 1);
+    expect(r.fleteRealPorEntrega! - r.fletePorEntrega!).toBeCloseTo(3.1, 1);
   });
 });
 

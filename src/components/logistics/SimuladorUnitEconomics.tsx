@@ -256,14 +256,13 @@ export default function SimuladorUnitEconomics({
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
               El <strong className="text-foreground">costo por devolución</strong> de acá abajo trae
-              solo el flete perdido: el cargo que Dropi cobra aparte está en la billetera y solo
-              aparece en{' '}
+              solo el flete perdido. Dropi cobra su cargo cuando el paquete vuelve al origen, y del
+              período todavía facturó{' '}
               <strong className="text-foreground">
-                {Math.round((costosUnit?.coberturaCargo ?? 0) * (costosUnit?.devueltos ?? 0))} de{' '}
-                {costosUnit?.devueltos ?? 0}
+                {costosUnit?.devolucionesCobradas ?? 0} de {costosUnit?.devueltos ?? 0}
               </strong>{' '}
-              devoluciones del período. La utilidad que ves es <strong className="text-foreground">optimista</strong>{' '}
-              hasta que se sincronice la billetera. Podés tipear el cargo a mano en “Costo devol.”.
+              devoluciones. La utilidad que ves es <strong className="text-foreground">optimista</strong>:
+              cuando Dropi termine de facturar va a bajar. Podés tipear el cargo a mano en “Costo devol.”.
             </p>
           </div>
         )}

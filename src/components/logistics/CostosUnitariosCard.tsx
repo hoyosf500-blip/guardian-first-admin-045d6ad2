@@ -141,14 +141,15 @@ export default function CostosUnitariosCard({ fromDate, toDate, ciudad }: Props)
           <div className="mt-2 rounded-xl border border-warning/30 bg-warning/8 p-3 flex items-start gap-2">
             <AlertTriangle size={13} className="text-warning shrink-0 mt-0.5" />
             <p className="text-[11px] text-warning leading-relaxed">
-              No se puede calcular todavía: la billetera tiene el cargo de solo{' '}
-              <strong>{Math.round(c.coberturaCargo * c.devueltos)} de {c.devueltos} devoluciones</strong>{' '}
-              del período ({Math.round(c.coberturaCargo * 100)}%).
+              Todavía no se puede cerrar: Dropi cobra este cargo cuando el paquete vuelve al origen,
+              semanas después, y del período solo facturó{' '}
+              <strong>{c.devolucionesCobradas} de {c.devueltos} devoluciones</strong>{' '}
+              ({Math.round(c.coberturaCargo * 100)}%).
               {c.cargoPorDevolucion != null && (
-                <> Sobre esa muestra el cargo promedia {formatCOP(c.cargoPorDevolucion)}, pero con
-                tan pocos casos ese número se mueve mucho de un mes a otro.</>
+                <> Sobre las cobradas promedia {formatCOP(c.cargoPorDevolucion)}.</>
               )}{' '}
-              Hay que sincronizar la billetera para cerrarlo.
+              <strong>No falta información: falta que Dropi facture.</strong> Cuando lo haga, el costo
+              real de este período va a <strong>subir</strong>, no a bajar.
             </p>
           </div>
         )}

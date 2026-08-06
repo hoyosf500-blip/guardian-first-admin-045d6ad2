@@ -18,12 +18,17 @@
  * controla la tasa de entrega. En julio el flete nominal SUBIÓ $1.362 y el costo
  * real por entrega igual BAJÓ $1.945, solo porque la entrega pasó de 69% a 77,5%.
  *
- * CONFIABILIDAD DEL CARGO DE DEVOLUCIÓN
- * El cargo que Dropi cobra aparte del flete vive en la billetera. Si la billetera
- * está incompleta —el caso de Colombia, con ~1 de cada 10 cargos— el promedio es
- * ruido con cara de dato. Por eso `cargoDevolucionConfiable` es parte del
- * resultado y no un detalle de la UI: quien muestre la cifra tiene que poder
- * decir sobre cuántos casos se midió.
+ * EL CARGO DE DEVOLUCIÓN LLEGA TARDE, Y ESO NO ES UN ERROR
+ * Dropi cobra el cargo cuando el paquete vuelve físicamente al origen, semanas
+ * después de que el pedido se marcó devuelto. Verificado bajando los 721
+ * movimientos de julio 2026 (EC) desde la API: de 234 devoluciones había 39
+ * cargos emitidos, y Guardian tenía esos mismos 39. No faltaban datos — faltaba
+ * que Dropi facturara.
+ *
+ * Por eso `cargoDevolucionConfiable` viaja en el resultado y no es un detalle de
+ * presentación: con cobertura baja el promedio es una PARTE, no un total, y la
+ * lectura correcta es "este costo todavía va a subir", no "se perdió información".
+ * Quien muestre la cifra tiene que poder decir sobre cuántas devoluciones se midió.
  */
 
 /** Fila cruda del RPC `costos_unitarios`. */
@@ -39,7 +44,9 @@ export interface CostosCrudos {
   pauta_periodo: number;
 }
 
-/** Cobertura mínima (cargos medidos ÷ devoluciones) para creerle al promedio. */
+/** Cobertura mínima (devoluciones ya cobradas ÷ devoluciones) para creerle al
+ *  promedio. Por debajo de esto Dropi todavía no facturó lo suficiente como para
+ *  que la muestra represente al período. */
 export const COBERTURA_CARGO_MINIMA = 0.6;
 
 export interface CostosUnitarios {
@@ -61,9 +68,12 @@ export interface CostosUnitarios {
 
   /** Cargo promedio por devolución, según la billetera. `null` si no hay datos. */
   cargoPorDevolucion: number | null;
-  /** Fracción de devoluciones con su cargo registrado (0-1). */
+  /** Fracción de devoluciones del período que Dropi YA cobró (0-1). */
   coberturaCargo: number;
-  /** `false` → la billetera está incompleta: mostrar la cifra atenuada o no mostrarla. */
+  /** Cuántas devoluciones del período ya tienen su cargo facturado. */
+  devolucionesCobradas: number;
+  /** `false` → Dropi todavía no facturó lo suficiente: el promedio es una parte,
+   *  no un total, y el costo real de este período todavía va a subir. */
   cargoDevolucionConfiable: boolean;
   /** flete + cargo. Lo que cuesta cada pedido que se devuelve. `null` sin cargo fiable. */
   costoTotalPorDevolucion: number | null;
@@ -105,8 +115,8 @@ export function calcularCostosUnitarios(c: CostosCrudos | null | undefined): Cos
 
   const conCargo = Math.max(0, c.devoluciones_con_cargo || 0);
   const cargoPorDevolucion = div(Math.max(0, c.cargo_devolucion_total || 0), conCargo);
-  // Cobertura sobre las devoluciones REALES, no sobre los cargos encontrados: el
-  // punto es cuántas quedaron sin registrar.
+  // Cobertura sobre las devoluciones REALES del período, no sobre los cargos
+  // encontrados: el punto es cuántas le falta cobrar a Dropi todavía.
   const coberturaCargo = devueltos > 0 ? Math.min(1, conCargo / devueltos) : 0;
   const cargoDevolucionConfiable =
     cargoPorDevolucion != null && devueltos > 0 && coberturaCargo >= COBERTURA_CARGO_MINIMA;
@@ -148,6 +158,7 @@ export function calcularCostosUnitarios(c: CostosCrudos | null | undefined): Cos
     fletePerdido: fleteDev,
     cargoPorDevolucion,
     coberturaCargo,
+    devolucionesCobradas: conCargo,
     cargoDevolucionConfiable,
     costoTotalPorDevolucion,
     ticketPromedio,

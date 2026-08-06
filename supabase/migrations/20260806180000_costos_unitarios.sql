@@ -15,15 +15,18 @@
 --      pedido no llega. No está en `orders`: vive en la billetera como
 --      `categoria='costo_devolucion'`.
 --
--- EL HALLAZGO QUE ESTA FUNCIÓN TIENE QUE DEJAR VER
--- En Colombia la billetera tiene ~1 de cada 10 cargos de devolución que deberían
--- existir (mayo: 54 devoluciones contra 5 cargos; junio: 79 contra 4; julio: 64
--- contra 19). Un AVG sobre esa muestra da un número que parece medido y no lo
--- está — el promedio saltaba de $19.724 a $43.582 entre meses contiguos.
+-- POR QUÉ DEVUELVE `devoluciones_con_cargo`
+-- El cargo se factura semanas después de la devolución, así que en cualquier mes
+-- reciente hay devoluciones todavía sin cobrar. Verificado contra la API de Dropi
+-- (julio 2026, EC): de 234 devoluciones solo 39 tenían su cargo emitido, y los 39
+-- estaban los 39 en Guardian — no faltaban datos, faltaba que Dropi facturara.
 --
--- Por eso la función devuelve `devoluciones_con_cargo` al lado del promedio: la
--- UI puede decir "basado en 19 de 64" y atenuar la cifra, en vez de presentar
--- ruido con cara de dato. Es el mismo principio que la tasa preliminar.
+-- Un AVG sobre esa fracción parece medido y no lo está. Por eso la función
+-- devuelve el conteo al lado del promedio: la UI puede decir "39 de 234 ya
+-- cobradas" y atenuar la cifra, en vez de presentar una parte con cara de total.
+-- Mismo principio que la tasa preliminar. Y la lectura correcta cuando la
+-- cobertura es baja NO es "se perdieron datos" sino "este costo todavía va a
+-- subir".
 --
 -- NO se toca `logistics_cost_basis` ni ninguna función existente: esto es una
 -- función NUEVA (regla #1 — el repo va atrás de lo desplegado).
@@ -72,14 +75,33 @@ BEGIN
       AND public._estado_bucket(o.estado) <> 'borrado'
   ),
   cargos AS (
-    -- El cargo de devolución NO tiene fecha de pedido: se cobra cuando Dropi lo
-    -- procesa. Se filtra por fecha de MOVIMIENTO, que es cuando salió la plata.
+    -- ATRIBUCIÓN POR COHORTE DE PEDIDO, no por fecha de movimiento.
+    --
+    -- Dropi cobra el cargo de devolución cuando el paquete vuelve físicamente al
+    -- origen, semanas después de que el pedido se marcó devuelto. Filtrar por
+    -- fecha del MOVIMIENTO y compararlo contra devoluciones por fecha del PEDIDO
+    -- mezcla dos poblaciones distintas: en julio 2026 (EC) daba 40 cargos contra
+    -- 234 devoluciones, y eso se leía como "a la billetera le faltan 9 de cada
+    -- 10 cargos" cuando la billetera estaba perfecta — se verificó bajando los
+    -- 721 movimientos del mes desde la API de Dropi: 39 cargos, los mismos.
+    -- Dropi simplemente todavía no había facturado el resto.
+    --
+    -- Con el JOIN por `related_order_id` la cobertura pasa a significar lo que
+    -- tiene que significar: de las devoluciones DE ESTE PERÍODO, cuántas ya
+    -- fueron cobradas. Sigue siendo baja en meses recientes, pero ahora eso dice
+    -- "falta que Dropi facture" (el costo real va a SUBIR) y no "se perdieron
+    -- datos". Misma atribución que operativo_mes_cohorte.
     SELECT COALESCE(SUM(w.monto), 0)::numeric AS total,
            COUNT(*)::bigint                   AS n
     FROM public.dropi_wallet_movements w
+    JOIN public.orders o
+      ON o.external_id = w.related_order_id
+     AND o.store_id    = w.store_id
     WHERE w.store_id = v_store
       AND w.categoria = 'costo_devolucion'
-      AND w.fecha::date BETWEEN p_from_date AND p_to_date
+      AND o.fecha ~ '^\d{4}-\d{2}-\d{2}$'
+      AND o.fecha::date BETWEEN p_from_date AND p_to_date
+      AND (p_ciudad IS NULL OR o.ciudad = p_ciudad)
   ),
   ads AS (
     SELECT COALESCE(SUM(amount), 0)::numeric AS total
