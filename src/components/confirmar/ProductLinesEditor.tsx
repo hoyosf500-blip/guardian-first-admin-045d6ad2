@@ -16,6 +16,8 @@ import { Package, Loader2, RefreshCw, Info } from 'lucide-react';
 export interface LineDraft {
   dropiId: number;
   name?: string;
+  /** Variante tal como la manda Dropi ("38 / Negro"). Solo lectura. */
+  variante?: string;
   quantity: number;
   priceRaw: string;
   basePrice: number;
