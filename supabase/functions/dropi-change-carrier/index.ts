@@ -67,7 +67,10 @@ interface ChangeCarrierBody {
   externalId?: string;
   /** "variants" es SOLO LECTURA: devuelve la forma cruda de las variantes
    *  (talla/color) del pedido y del producto, sin tocar nada. */
-  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "cancel" | "debug" | "variants";
+  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "cancel" | "debug" | "variants" | "variant_probe";
+  /** mode "variant_probe": variante concreta a probar. Sin esto elige una
+   *  distinta a la del pedido base, con stock. */
+  probeVariationId?: number | string;
   /** mode "cancel": motivo de la cancelación (va en reasonComment del PUT a Dropi). */
   reason?: string;
   distributionCompanyId?: number | string;
@@ -1314,6 +1317,157 @@ Deno.serve(async (req: Request) => {
         claves_pedido: Object.keys(objs),
         lineas,
         productos,
+      });
+    }
+
+    // ================= MODE: VARIANT_PROBE (crea y cancela) =================
+    //
+    // Contesta UNA pregunta que no se puede contestar leyendo: ¿el create WEB
+    // (`POST /api/orders/myorders`, el que usa el recrear) respeta el campo
+    // `variation_id` dentro de `products[]`?
+    //
+    // Se sabe que el create de INTEGRACIONES lo respeta — `shopify-push-dropi`
+    // lo manda desde siempre. Pero el recrear usa el otro endpoint y hoy manda
+    // `{id, uid, quantity, price, type}` sin la variante. Agregar el campo a
+    // ciegas es la misma apuesta que se hizo con `distribution_company_id`, que
+    // Dropi rechazó; y si esta falla, rompe el cambio de transportadora, que
+    // hoy funciona.
+    //
+    // POR QUÉ ES SEGURA:
+    //   · NO toca el pedido de origen. Solo le copia ciudad y producto.
+    //   · Crea una orden SUELTA (sin is_edit_order / id_old_order), así no
+    //     reemplaza ni cancela nada existente.
+    //   · Datos de cliente de prueba, marcados en el nombre y en las notas.
+    //   · Pide a propósito una variante DISTINTA a la del pedido de origen: si
+    //     Dropi ignora el campo, la orden nueva sale con otra y se nota. Un
+    //     "salió igual" no probaría nada.
+    //   · La cancela ella misma al terminar. Si la cancelación falla, lo dice
+    //     con `REVISAR_EN_DROPI` y el id — nunca deja una orden viva en
+    //     silencio.
+    if (body.mode === "variant_probe") {
+      try {
+        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+      } catch (e) {
+        if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
+        throw e;
+      }
+
+      const ord = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+      if (!ord.ok) return jsonOk({ ok: false, error: `No pude leer el pedido base [${ord.httpStatus}].` });
+      const objs = ((ord.body as Record<string, unknown>)?.objects ?? {}) as Record<string, unknown>;
+      const det = (Array.isArray(objs.orderdetails) ? objs.orderdetails : []) as Record<string, unknown>[];
+      const l0 = det[0];
+      if (!l0) return jsonOk({ ok: false, error: "El pedido base no tiene líneas." });
+      const prod = (l0.product ?? {}) as Record<string, unknown>;
+      const productId = Number(prod.id ?? l0.product_id);
+      const variacionActual = Number(l0.variation_id ?? 0) || null;
+      const precio = Number(l0.price ?? prod.sale_price ?? 0) || 0;
+      const tipoProducto = String(prod.type ?? "SIMPLE");
+
+      // Catálogo → elegir una variante DISTINTA (y con stock, para que un
+      // rechazo por inventario no se confunda con "ignoró el campo").
+      const { body: pb } = await dropiWebFetch(
+        cfg, `/api/products/productlist/v1/show/?id=${productId}`, { method: "GET" },
+      );
+      const pobj = ((pb as Record<string, unknown>)?.objects ??
+        (pb as Record<string, unknown>)?.data ?? {}) as Record<string, unknown>;
+      const vars = (Array.isArray(pobj.variations) ? pobj.variations : []) as Record<string, unknown>[];
+      const etiqueta = (v: Record<string, unknown>) =>
+        (Array.isArray(v.attribute_values) ? v.attribute_values as Record<string, unknown>[] : [])
+          .map((a) => String(a?.value ?? "")).filter(Boolean).join(" / ");
+      const pedida = Number(body.probeVariationId) ||
+        Number(vars.find((v) => Number(v.id) !== variacionActual && Number(v.stock ?? 0) > 0)?.id) || 0;
+      if (!pedida) {
+        return jsonOk({ ok: false, error: "El producto no tiene otra variante con stock para probar.", variacionActual });
+      }
+
+      // Contexto de envío copiado del pedido base (ciudad real = ruta con cobertura).
+      const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const cityQ = String(orderRow.ciudad || objs.city || "");
+      const stateQ = String(orderRow.departamento || objs.state || "");
+      const destCity = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, cityQ, stateQ);
+      if (!destCity) return jsonOk({ ok: false, error: noCoverageMessage(cityQ, stateQ) });
+      const ctx = await quoteCarriers(cfg, {
+        country, city: cityQ, state: stateQ, destCity,
+        lines: [{ dropiId: productId, quantity: 1, price: precio }],
+        total: precio,
+      });
+      const elegida = ctx.options[0];
+      if (!elegida) return jsonOk({ ok: false, error: "Ninguna transportadora cotizó esta ruta." });
+
+      const MARCA = "PRUEBA GUARDIAN - NO DESPACHAR - CANCELAR";
+      const orderBody: Record<string, unknown> = {
+        name: "PRUEBA", surname: "GUARDIAN",
+        dir: "PRUEBA TECNICA - CANCELAR", country,
+        state: ctx.dest.stateName, city: ctx.dest.cityName,
+        phone: "3000000000", client_email: "",
+        notes: MARCA,
+        payment_method_id: 1,
+        user_id: decodeJwtSub(cfg.sessionToken) || "",
+        supplier_id: ctx.supplierId,
+        type: "FINAL_ORDER",
+        rate_type: "CON RECAUDO",
+        // EL PUNTO DE TODA LA PRUEBA: el mismo shape del recrear MÁS variation_id.
+        products: ctx.products.map((p) => ({
+          id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price,
+          type: p.productType, variation_id: pedida,
+        })),
+        distributionCompany: { id: elegida.id, name: elegida.name },
+        type_service: elegida.typeService || "normal",
+        shipping_amount: elegida.shippingAmount,
+        zip_code: null, colonia: "", shop_id: null, dni: "", dni_type: null,
+        insurance: false, shalom_data: null,
+        warehouses_selected_id: ctx.origin.warehouseId,
+      };
+
+      const post = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: orderBody });
+      const nuevoId = String(
+        (post.body?.objects as Record<string, unknown>)?.id ?? post.body?.id ?? "",
+      );
+      if (!nuevoId) {
+        return jsonOk({
+          ok: false, paso: "crear", httpStatus: post.status,
+          error: "Dropi no creó la orden de prueba (o no devolvió id).",
+          detalle: post.body, tipoProducto, pedida,
+        });
+      }
+
+      // Verificar QUÉ variante quedó.
+      const check = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, nuevoId);
+      const cobj = ((check.body as Record<string, unknown>)?.objects ?? {}) as Record<string, unknown>;
+      const cdet = (Array.isArray(cobj.orderdetails) ? cobj.orderdetails : []) as Record<string, unknown>[];
+      const obtenida = Number(cdet[0]?.variation_id ?? 0) || null;
+
+      // Cancelar SIEMPRE, pase lo que pase con la verificación.
+      let cancelada = false;
+      let cancelDetalle = "";
+      try {
+        const put = await dropiWebFetch(
+          cfg, `/api/orders/myorders/${encodeURIComponent(nuevoId)}`,
+          { method: "PUT", body: { status: "CANCELADO", reasonComment: MARCA } },
+        );
+        cancelada = put.status >= 200 && put.status < 300;
+        cancelDetalle = `HTTP ${put.status}`;
+      } catch (e) {
+        cancelDetalle = e instanceof Error ? e.message : String(e);
+      }
+
+      return jsonOk({
+        ok: true,
+        veredicto: obtenida === pedida
+          ? "RESPETA variation_id"
+          : obtenida == null
+            ? "no pude leer la variante de la orden creada"
+            : "IGNORA variation_id (puso otra)",
+        tipoProducto,
+        variacion_del_pedido_base: variacionActual,
+        variacion_pedida: pedida,
+        variacion_obtenida: obtenida,
+        etiqueta_pedida: etiqueta(vars.find((v) => Number(v.id) === pedida) ?? {}),
+        orden_de_prueba: nuevoId,
+        cancelada,
+        cancel_detalle: cancelDetalle,
+        aviso: cancelada ? null : `REVISAR_EN_DROPI: la orden ${nuevoId} quedó SIN cancelar.`,
       });
     }
 
