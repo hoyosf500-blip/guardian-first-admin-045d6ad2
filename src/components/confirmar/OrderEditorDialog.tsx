@@ -11,6 +11,7 @@ import { buildUpdatePlan, linesDirty, deriveTotal, type EditableLine, type EditS
 import { parseInvoke } from '@/lib/parseInvoke';
 import { cotizacionDesfasada, mismoDestino } from '@/lib/destinoCotizado';
 import { debeSembrarLineas } from '@/lib/sembrarLineas';
+import { asignarVariantes } from '@/lib/asignarVariantes';
 import CustomerForm, { buildCustomerInitial, customerDirty, type CustomerFormState } from '@/components/confirmar/CustomerForm';
 import CarrierPicker, { type CarrierOption } from '@/components/confirmar/CarrierPicker';
 import ProductLinesEditor, { draftToLine, type LineDraft } from '@/components/confirmar/ProductLinesEditor';
@@ -192,24 +193,27 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       if (debeSembrarLineas(sembrarLineas, draftsRef.current)) {
         const lines = Array.isArray(d.lines) ? d.lines : null;
         if (lines && lines.length > 0) {
-          setDrafts(lines.map((l) => {
-            const price = Number(l.price) || 0;
-            const quantity = Number(l.quantity) || 1;
-            const name = l.name ? String(l.name) : undefined;
-            const norm = (s?: string) => String(s ?? '').trim().toLowerCase();
-            const match = name
-              ? (detalleRef.current || []).find((pd) => norm(pd.nombre) === norm(name))
-              : undefined;
-            return {
-              dropiId: Number(l.dropiId),
-              name,
-              variante: match?.variante?.trim() || undefined,
-              quantity,
-              priceRaw: String(price),
-              basePrice: price,
-              baseQuantity: quantity,
-            };
+          const normalizadas = lines.map((l) => ({
+            dropiId: Number(l.dropiId),
+            name: l.name ? String(l.name) : undefined,
+            quantity: Number(l.quantity) || 1,
+            price: Number(l.price) || 0,
           }));
+          // El cruce NO puede ser un `find` por nombre: con dos líneas del
+          // mismo zapato en tallas distintas, Dropi manda el nombre repetido y
+          // las dos se quedaban con la variante de la primera — o sea, la
+          // asesora le confirmaba talla 38 a quien pidió la 40. `asignarVariantes`
+          // desempata por precio y cantidad, y ante la duda no asigna nada.
+          const variantes = asignarVariantes(normalizadas, detalleRef.current);
+          setDrafts(normalizadas.map((l) => ({
+            dropiId: l.dropiId,
+            name: l.name,
+            variante: variantes.get(l.dropiId),
+            quantity: l.quantity,
+            priceRaw: String(l.price),
+            basePrice: l.price,
+            baseQuantity: l.quantity,
+          })));
           setQuoteHadNoLines(false);
         } else {
           setDrafts(null);
