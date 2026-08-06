@@ -62,8 +62,13 @@ const ESTADO_COLORS: Record<string, string> = {
   'Novedad':             'hsl(var(--warning))',
   'Rechazada':           'hsl(var(--danger) / 0.6)',
   'En preparacion':      'hsl(var(--ai))',
-  'Cancelada':           'hsl(var(--muted-foreground))',
-  'Otro':                'hsl(var(--muted-foreground))',
+  // 'Pendiente' es una tajada NUEVA (migración 20260806000000): antes la RPC la
+  // fundía con 'En preparacion', mezclando "nunca salió" con "tiene guía y está
+  // por salir". Mismos tonos que el embudo de MesActualResumen (TONE_BAR), para
+  // que el mismo estado no cambie de color entre las dos vistas del Resumen.
+  'Pendiente':           'hsl(var(--muted-foreground))',
+  'Cancelada':           'hsl(var(--muted-foreground) / 0.6)',
+  'Otro':                'hsl(var(--muted-foreground) / 0.4)',
 };
 
 const STACK_COLORS: Record<string, string> = {
