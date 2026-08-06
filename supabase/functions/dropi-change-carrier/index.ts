@@ -65,7 +65,9 @@ import { settleAuditRow, deriveSettleFromPayload } from "../_shared/settleAudit.
 
 interface ChangeCarrierBody {
   externalId?: string;
-  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "cancel" | "debug";
+  /** "variants" es SOLO LECTURA: devuelve la forma cruda de las variantes
+   *  (talla/color) del pedido y del producto, sin tocar nada. */
+  mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "cancel" | "debug" | "variants";
   /** mode "cancel": motivo de la cancelación (va en reasonComment del PUT a Dropi). */
   reason?: string;
   distributionCompanyId?: number | string;
@@ -1209,6 +1211,110 @@ Deno.serve(async (req: Request) => {
         reason: String(body.reason || ""),
       });
       return jsonOk(result as unknown as Record<string, unknown>);
+    }
+
+    // ==================== MODE: VARIANTS (SOLO LECTURA) ====================
+    //
+    // Diagnóstico para poder ofrecer "cambiar la talla/color" desde el editor.
+    // NO escribe nada: ni en Dropi ni en la base. Solo lee y devuelve la FORMA
+    // cruda de los datos, para no tener que adivinarla.
+    //
+    // Por qué se mira antes de programar: si le pego mal al nombre del campo,
+    // esto NO falla ruidosamente — le cambia la talla al pedido de un cliente y
+    // nadie se entera hasta que vuelve como devolución. Es el mismo callejón de
+    // `distribution_company_id`, que se adivinó y Dropi rechazó. La diferencia
+    // es que aquel fallaba a la vista y este no.
+    //
+    // Responde tres preguntas:
+    //   1. ¿Cómo viaja la variante en una línea del pedido? (¿tiene id propio?)
+    //   2. ¿El `id` de la línea es el del PRODUCTO o el de la VARIANTE? Si es el
+    //      de la variante, cambiar de talla es cambiar ese id — y el camino de
+    //      recrear-con-edición que ya existe serviría tal cual.
+    //   3. ¿Qué variantes tiene disponibles ese producto?
+    if (body.mode === "variants") {
+      try {
+        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+      } catch (e) {
+        if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
+        throw e;
+      }
+
+      const ord = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, externalId);
+      const objs = ((ord.body as Record<string, unknown>)?.objects ?? {}) as Record<string, unknown>;
+      const detalles = (Array.isArray(objs.orderdetails) ? objs.orderdetails : []) as Record<string, unknown>[];
+
+      // Se devuelven las CLAVES además de los valores: si Dropi renombró el
+      // contenedor de la variante, se ve en la lista de claves aunque el valor
+      // venga vacío. Un `undefined` silencioso no diría nada.
+      const lineas = detalles.map((p) => {
+        const prod = (p.product ?? {}) as Record<string, unknown>;
+        const varObj = (p.variation ?? p.product_variation ?? p.variacion ?? p.variant ?? null) as
+          Record<string, unknown> | null;
+        return {
+          claves_linea: Object.keys(p),
+          linea_id: p.id ?? null,
+          product_id: prod.id ?? null,
+          product_name: prod.name ?? null,
+          product_type: prod.type ?? null,
+          quantity: p.quantity ?? null,
+          // Los candidatos conocidos para el id de variante, todos a la vez.
+          variation_id: p.variation_id ?? p.product_variation_id ?? null,
+          claves_variacion: varObj ? Object.keys(varObj) : [],
+          variacion: varObj,
+        };
+      });
+
+      // Catálogo de variantes por producto, sin repetir consultas.
+      const idsProducto = [...new Set(
+        lineas.map((l) => Number(l.product_id)).filter((n) => Number.isFinite(n) && n > 0),
+      )];
+      const productos: Record<string, unknown>[] = [];
+      for (const pid of idsProducto.slice(0, 5)) {
+        try {
+          const { status, body: pb } = await dropiWebFetch(
+            cfg, `/api/products/productlist/v1/show/?id=${pid}`, { method: "GET" },
+          );
+          const obj = ((pb as Record<string, unknown>)?.objects ??
+            (pb as Record<string, unknown>)?.data ?? {}) as Record<string, unknown>;
+          // Se prueban los nombres conocidos del arreglo de variantes; si Dropi
+          // usa otro, `claves` lo delata sin que haya que adivinar de nuevo.
+          const arr = (obj.variations ?? obj.product_variations ?? obj.variantes ?? null) as
+            Record<string, unknown>[] | null;
+          productos.push({
+            product_id: pid,
+            httpStatus: status,
+            type: obj.type ?? null,
+            claves: Object.keys(obj),
+            nombre_arreglo_variantes: obj.variations
+              ? "variations"
+              : obj.product_variations
+                ? "product_variations"
+                : obj.variantes
+                  ? "variantes"
+                  : null,
+            variantes: Array.isArray(arr)
+              ? arr.slice(0, 20).map((v) => ({
+                claves: Object.keys(v),
+                id: v.id ?? null,
+                sku: v.sku ?? null,
+                stock: v.stock ?? null,
+                attribute_values: v.attribute_values ?? null,
+              }))
+              : null,
+          });
+        } catch (e) {
+          productos.push({ product_id: pid, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      return jsonOk({
+        ok: true,
+        externalId,
+        pedido_httpStatus: ord.httpStatus,
+        claves_pedido: Object.keys(objs),
+        lineas,
+        productos,
+      });
     }
 
     // =========================== MODE: QUOTE ===========================
