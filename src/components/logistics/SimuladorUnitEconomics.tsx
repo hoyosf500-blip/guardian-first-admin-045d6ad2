@@ -8,6 +8,8 @@ import {
   computeRealKpis, computeSimulation, type SimulationInput,
 } from '@/lib/unitEconomics';
 import type { LogisticsCostBasis } from '@/hooks/useLogisticsCostBasis';
+import { useCostosUnitarios } from '@/hooks/useCostosUnitarios';
+import { calcularCostosUnitarios } from '@/lib/costosUnitarios';
 
 // "Indicadores & Simulador" de "/logistica → Cómo voy": KPIs de unit-economics
 // REALES (tasa de despachos, entrega, % devolución, inefectividad, ticket) + un
@@ -112,6 +114,20 @@ export default function SimuladorUnitEconomics({
   const fleteUnit = costBasis && costBasis.entregados > 0
     ? costBasis.flete_entregados / costBasis.entregados
     : 0;
+  // Cargo de devolución REAL (el que Dropi cobra aparte del flete), desde la
+  // billetera. Solo se usa si la muestra cubre la mayoría de las devoluciones
+  // del período — ver el comentario en el seed de abajo. Con la migración sin
+  // aplicar o la billetera coja queda en 0 y el simulador avisa.
+  const costosQ = useCostosUnitarios(fromDate, toDate);
+  const costosUnit = useMemo(() => calcularCostosUnitarios(costosQ.data), [costosQ.data]);
+  const cargoDevolucionUnit =
+    costosUnit?.cargoDevolucionConfiable && costosUnit.cargoPorDevolucion != null
+      ? costosUnit.cargoPorDevolucion
+      : 0;
+  /** Hay devoluciones pero su cargo no se pudo medir → el margen sale optimista. */
+  const cargoDevolucionIncompleto = Boolean(
+    costosUnit && costosUnit.devueltos > 0 && !costosUnit.cargoDevolucionConfiable,
+  );
 
   // Seeds reales para el simulador (0-1 para %, COP para montos).
   const seed = useMemo<SimulationInput>(() => ({
@@ -128,8 +144,20 @@ export default function SimuladorUnitEconomics({
     fletePct: ingresosBase > 0 ? flete / ingresosBase : 0,
     publicidadPct: ingresosBase > 0 ? pautaProrateada / ingresosBase : 0,
     adminPct: ingresosBase > 0 ? adminProrateado / ingresosBase : 0,
-    costoDevolucionUnit: round2(fleteUnit),
-  }), [generadosSinCancel, kpis, ingresosBase, cogs, flete, pautaProrateada, adminProrateado, fleteUnit]);
+    // El contrato del campo (unitEconomics.ts) es "flete perdido + CARGO", y acá
+    // se sembraba solo el flete: el cargo que Dropi cobra aparte por cada
+    // devolución no entraba nunca. Medido en Colombia, julio 2026: 64
+    // devoluciones × ~$22.000 = $1.408.000 de costo invisible en UN mes, y toda
+    // la utilidad proyectada salía inflada por esa plata.
+    //
+    // Ahora se suma el cargo real de la billetera, PERO solo cuando hay datos
+    // suficientes para creerle (`cargoDevolucionConfiable`): en Colombia la
+    // billetera tiene el cargo de ~1 de cada 10 devoluciones, y un promedio sobre
+    // 4 casos saltaba de $19.724 a $43.582 entre meses. Con la muestra coja se
+    // mantiene solo el flete y el aviso de abajo dice que falta ese costo — un
+    // número prudente y rotulado es mejor que uno inventado.
+    costoDevolucionUnit: round2(fleteUnit + cargoDevolucionUnit),
+  }), [generadosSinCancel, kpis, ingresosBase, cogs, flete, pautaProrateada, adminProrateado, fleteUnit, cargoDevolucionUnit]);
 
   const [sim, setSim] = useState<SimulationInput>(seed);
   // Re-seedear cuando llegan/cambian los datos reales (el usuario edita por encima
@@ -213,6 +241,29 @@ export default function SimuladorUnitEconomics({
             <p className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
               Faltan los costos reales (COGS y flete): aplicá la migration <code className="font-mono text-[10px]">logistics_cost_basis</code>.
               Mientras tanto podés tipear los % a mano.
+            </p>
+          </div>
+        )}
+
+        {/* Hay devoluciones pero su CARGO no se pudo medir. El "Costo devol." de
+            abajo trae solo el flete perdido, así que la utilidad sale OPTIMISTA.
+            Se dice en vez de dejar creer que el costo está completo. */}
+        {cargoDevolucionIncompleto && (
+          <div className="relative flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d">
+            <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20 glow-warning">
+              <AlertTriangle size={17} className="text-warning" aria-hidden="true" />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed flex-1 min-w-0">
+              El <strong className="text-foreground">costo por devolución</strong> de acá abajo trae
+              solo el flete perdido: el cargo que Dropi cobra aparte está en la billetera y solo
+              aparece en{' '}
+              <strong className="text-foreground">
+                {Math.round((costosUnit?.coberturaCargo ?? 0) * (costosUnit?.devueltos ?? 0))} de{' '}
+                {costosUnit?.devueltos ?? 0}
+              </strong>{' '}
+              devoluciones del período. La utilidad que ves es <strong className="text-foreground">optimista</strong>{' '}
+              hasta que se sincronice la billetera. Podés tipear el cargo a mano en “Costo devol.”.
             </p>
           </div>
         )}

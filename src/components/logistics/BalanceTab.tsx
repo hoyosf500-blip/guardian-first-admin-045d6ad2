@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useBalanceRendiciones';
 import { construirBalance, cruzarRendiciones, type Rendicion } from '@/lib/balanceRendiciones';
 import RendicionDialog from '@/components/logistics/RendicionDialog';
+import CostosUnitariosCard from '@/components/logistics/CostosUnitariosCard';
 
 // "Balance" — reemplaza el Excel que había que armar a mano para saber cómo iba
 // la operación y si la plata que salió de la billetera estaba explicada.
@@ -184,6 +185,11 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
           </table>
         </div>
       </section>
+
+      {/* ── Costos unitarios ────────────────────────────────────── */}
+      {/* Va acá, entre el mes a mes y la caja: el balance dice CUÁNTO ganaste, y
+          esto dice POR QUÉ — qué cuesta cada entrega y cada devolución. */}
+      <CostosUnitariosCard fromDate={fromDate} toDate={toDate} />
 
       {/* ── Conciliación de caja ────────────────────────────────── */}
       <section className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
