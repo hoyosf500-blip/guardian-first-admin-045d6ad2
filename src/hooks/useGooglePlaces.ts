@@ -1,16 +1,31 @@
 // src/hooks/useGooglePlaces.ts
 //
-// Cliente de Google Places que llama a la edge function `google-places-proxy`
-// en vez de cargar el script de Google Maps en el browser.
+// ⛔ GOOGLE PLACES ELIMINADO — 6-ago-2026, por decisión del dueño ("quitala ya").
 //
-// Ventajas:
-//   - GOOGLE_MAPS_API_KEY nunca se expone al cliente (solo runtime en edge).
-//   - No requiere build secret VITE_GOOGLE_MAPS_API_KEY.
-//   - Quota gating server-side via consume_google_quota.
-
-import { useRef } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { GOOGLE_PLACES_ENABLED } from '@/lib/featureFlags';
+// Este hook llamaba a la edge function `google-places-proxy`, que era un proxy
+// PURO a Google: cada llamada que entraba era plata que salía. Esa función ya no
+// existe en el repo, y acá no queda ni una línea de red.
+//
+// POR QUÉ SE BORRÓ EN VEZ DE DEJARLO APAGADO
+// Google se "apagó" el 22-may-2026 con un flag de cliente y se siguió pagando
+// MÁS DE DOS MESES: el flag cortaba `CallView` y `CrmCallView` pero no
+// `useAddressValidation`, el hook del badge que va DENTRO de esas mismas
+// pantallas. Después se agregó un candado server-side y una prueba guardiana, y
+// aun así quedaba un camino abierto — un secreto mal puesto y la canilla se abre
+// sola. La factura de Google llega un mes tarde: para cuando se nota, ya se pagó.
+//
+// Un interruptor es un PEDIDO. La única defensa que no depende de que el código
+// esté bien es que el código NO EXISTA.
+//
+// SE CONSERVA LA FIRMA a propósito: `AddressAutocomplete` la consume y ya gatea
+// sobre `available`, así que con `false` el campo de dirección queda como texto
+// libre — exactamente el comportamiento que tiene desde mayo. Borrar el archivo
+// obligaría a tocar `CallView`/`CrmCallView`, que son las pantallas más frágiles
+// del proyecto (overrides de validación, `visualDecision`, `DespachoGateButton`)
+// y no hay ninguna razón para arriesgarlas por esto.
+//
+// Si algún día se quiere volver a tener autocompletado, se escribe de nuevo a
+// conciencia — no se destapa por accidente.
 
 interface AutocompletePrediction {
   description: string;
@@ -31,104 +46,14 @@ interface GoogleApi {
   available: boolean;
 }
 
-// Cache en memoria para evitar requests repetidas durante una sesión.
-const memoryCache = new Map<string, AutocompletePrediction[]>();
-
-function memoryKey(query: string, ciudad?: string): string {
-  return `${query.trim().toLowerCase()}|${(ciudad || '').toLowerCase()}`;
-}
-
-function newSessionToken(): string {
-  // UUID v4 simple — sólo para agrupar autocomplete+details en la misma sesión de billing.
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+/** Objeto congelado a nivel módulo: misma referencia en cada render, así ningún
+ *  `useEffect` que lo tenga en sus dependencias se dispara de más. */
+const API_INERTE: GoogleApi = Object.freeze({
+  available: false,
+  autocomplete: async () => [],
+  getDetails: async () => null,
+});
 
 export function useGooglePlaces(): GoogleApi {
-  const sessionTokenRef = useRef<string | null>(null);
-
-  // Google DESACTIVADO (ver featureFlags): API inerte — autocomplete vacío,
-  // details null, available=false. AddressAutocomplete ya gatea sobre
-  // `available`, así que el campo de dirección queda como texto libre.
-  if (!GOOGLE_PLACES_ENABLED) {
-    return { available: false, autocomplete: async () => [], getDetails: async () => null };
-  }
-
-  return {
-    // Siempre disponible: el gating real es server-side (cap diario + auth).
-    available: true,
-
-    autocomplete: async (query: string, ciudadBias?: string) => {
-      const q = query.trim();
-      if (q.length < 3) return [];
-      const key = memoryKey(q, ciudadBias);
-      const cached = memoryCache.get(key);
-      if (cached) return cached;
-
-      if (!sessionTokenRef.current) {
-        sessionTokenRef.current = newSessionToken();
-      }
-
-      try {
-        const { data, error } = await supabase.functions.invoke<{ predictions: AutocompletePrediction[] }>(
-          'google-places-proxy',
-          {
-            body: {
-              op: 'autocomplete',
-              input: q,
-              ciudad: ciudadBias,
-              sessionToken: sessionTokenRef.current,
-            },
-          },
-        );
-        if (error || !data) return [];
-        const result = Array.isArray(data.predictions) ? data.predictions : [];
-        memoryCache.set(key, result);
-        return result;
-      } catch {
-        return [];
-      }
-    },
-
-    getDetails: async (place_id: string) => {
-      try {
-        const { data, error } = await supabase.functions.invoke<{ result: {
-          place_id: string;
-          formatted_address: string;
-          geometry?: { location?: { lat: number; lng: number } };
-          address_components?: Array<{ long_name: string; short_name: string; types: string[] }>;
-        } | null }>(
-          'google-places-proxy',
-          {
-            body: {
-              op: 'details',
-              place_id,
-              sessionToken: sessionTokenRef.current,
-            },
-          },
-        );
-        // Cerramos la sesión después del details (cobro consolidado).
-        sessionTokenRef.current = null;
-        if (error || !data?.result) return null;
-        const r = data.result;
-        // Adaptamos location {lat, lng} → {lat: ()=>n, lng: ()=>n} para mantener
-        // compatibilidad con parseGooglePlace (que espera el shape clásico de google.maps).
-        const loc = r.geometry?.location;
-        return {
-          place_id: r.place_id,
-          formatted_address: r.formatted_address,
-          geometry: loc
-            ? { location: { lat: () => loc.lat, lng: () => loc.lng } }
-            : undefined,
-          address_components: r.address_components,
-        };
-      } catch {
-        sessionTokenRef.current = null;
-        return null;
-      }
-    },
-  };
+  return API_INERTE;
 }

@@ -56,7 +56,6 @@ supabase functions deploy dropi-snapshot
 supabase functions deploy ai-order-assistant
 supabase functions deploy dropi-validate-address
 supabase functions deploy dropi-wallet-sync
-supabase functions deploy google-places-proxy
 supabase functions deploy shopify-push-dropi
 supabase functions deploy shopify-reconcile
 supabase functions deploy shopify-auto-push
@@ -86,15 +85,34 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 - **TypeScript is NOT strict.** `tsconfig.app.json` has `strict: false`, `noImplicitAny: false`, `noUnusedLocals: false`. Do not enforce strict-mode patterns when reviewing or refactoring — they are intentionally off.
 - **Path alias:** `@/` → `./src/`.
 - **Env vars read in `src/`:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_ENABLE_CFO` (gates the `/cfo` route + nav item; only `'true'` registers it — external clients leave it unset and `/cfo` 404s). Copy `.env.example` → `.env`.
-- **Feature flags live in `src/lib/featureFlags.ts`.** `GOOGLE_PLACES_ENABLED = false` (since 2026-05-22). El semáforo corre 100% sobre la heurística local (`src/lib/addressHeuristic.ts`).
+- **Feature flags live in `src/lib/featureFlags.ts`.** `GOOGLE_PLACES_ENABLED = false`.
 
-  **⚠️ ESTE DOC MINTIÓ DOS MESES (corregido 2026-08-04).** Decía que las edge functions de Google "no se invocan" y estaban "dormidas". **NO lo estaban:** `CallView`/`CrmCallView` sí cortocircuitaban con el flag, pero `useAddressValidation` —que usa el `AddressValidationBadge` que va DENTRO de esas mismas pantallas— llamaba a `dropi-validate-address` sin mirar nada. Esa función pega contra Google Maps y contra Anthropic (Haiku): **cada dirección que abría una asesora costaba plata desde el 22-may**. Lección: un flag de cliente es un PEDIDO, no un candado, y la factura de Google llega un mes tarde.
+  **⛔ GOOGLE ELIMINADO DEL CÓDIGO (2026-08-06).** No es un flag apagado: el camino
+  **no existe**. Se borró la edge function `google-places-proxy` (era un proxy PURO a
+  Google), las llamadas a Google Address Validation y a Haiku dentro de
+  `dropi-validate-address`, y el cuerpo de `useGooglePlaces` (queda un stub inerte con la
+  misma firma, para no tener que tocar `CallView`/`CrmCallView`). Poner el flag en `true`
+  NO reactiva nada.
 
-  Ahora hay **DOS candados independientes**:
-  1. Cliente: `GOOGLE_PLACES_ENABLED`, vigilado por `src/test/googleApagado.test.ts` — un archivo nuevo que llame a esas edge functions sin preguntar por el flag hace fallar la suite.
-  2. Servidor: `GOOGLE_ENABLED` (secreto de Supabase), **cerrado por defecto**. Sin `GOOGLE_ENABLED=true` las dos funciones no gastan un centavo aunque alguien las invoque. `dropi-validate-address` degrada a Nominatim+heurística (gratis); `google-places-proxy` devuelve 503.
+  **Por qué se borró en vez de dejarlo apagado:** se apagó el 22-may-2026 con ese flag y
+  **se siguió pagando más de dos meses** — el flag cortaba `CallView` y `CrmCallView` pero
+  no `useAddressValidation`, el hook del badge que va DENTRO de esas mismas pantallas.
+  Después se sumó un candado server-side (`GOOGLE_ENABLED`) y una prueba, y aun así
+  quedaba un camino a la tarjeta. Un interruptor es un PEDIDO; la única defensa que no
+  depende de que la configuración esté bien es que el código no exista.
 
-  La garantía DURA sigue siendo la clave: mientras `GOOGLE_MAPS_API_KEY` exista en los secretos, existe un camino a la tarjeta. Borrarla (o restringirla en Google Cloud) es lo único que no depende de que el código esté bien.
+  **Lo que NO cambió:** el semáforo verde/amarillo/rojo corre sobre la heurística local
+  (`src/lib/addressHeuristic.ts`) + Nominatim/OSM (gratis, sin clave) — es lo que viene
+  decidiendo desde mayo. Se perdieron el autocompletado (ya inactivo) y el mensaje al
+  cliente redactado por Haiku.
+
+  `src/test/googleApagado.test.ts` ahora vigila la **ausencia** del código. Ojo con su
+  helper `sinComentarios`: lleva `(?<!:)` para no confundir el `//` de `https://` con un
+  comentario — sin eso las comprobaciones negativas pasaban en verde CON el código
+  presente.
+
+  **Sigue pendiente y NO depende del código:** borrar `GOOGLE_MAPS_API_KEY` de los
+  secretos de Supabase y revocar la clave en Google Cloud.
 - **Routes are lazy-loaded** in `src/App.tsx` via `React.lazy()`. Each route is wrapped in its own `ErrorBoundary` (`route()` helper), so a crash in `/confirmar` does NOT kill `/seguimiento` or the sidebar. This is intentional — keep the per-route boundary when adding new pages.
 - **`DbOrderRow` lives in `src/integrations/supabase/types.ts`** (auto-generated from Supabase schema), not in `orderUtils.ts`. The mapper `dbToOrderData()` in `orderUtils.ts` consumes it.
 
@@ -249,9 +267,9 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 
   **NO apagar el cron de pedidos (hoy cada 15 min)** hasta ver el webhook andando varios días en paralelo.
 - `dropi-snapshot` — proxy server-side de auditoría: recibe `{store_id, from, to}`, pagina `/integrations/orders/myorders` (PAGE_SIZE 200, MAX_PAGES 30, backoff 2s/4s/8s en 429), filtra por `dropi_winning_status_filter` con fallback a "FECHA DE CAMBIO DE ESTATUS", devuelve `{orders, partial, message}`. Llamado por `DropiAuditModal` para comparar Dropi vs Guardian guía-por-guía. Existe por CORS — `api.dropi.co/ec` no permite fetch desde el browser.
-- `dropi-validate-address` — multi-layer address validator (Google Places + Haiku optional). Quota gating via `consume_google_quota`. **APAGADA POR DOBLE CANDADO** (cliente `GOOGLE_PLACES_ENABLED` + servidor `GOOGLE_ENABLED`, este último cerrado por defecto). Sin `GOOGLE_ENABLED=true` degrada a Nominatim+heurística sin gastar. Ojo: hasta el 2026-08-04 este doc decía "dormant" y NO lo estaba — ver la nota de featureFlags arriba.
+- `dropi-validate-address` — validador de direcciones **100% GRATIS desde el 2026-08-06**: heurística regex + Nominatim/OSM (sin clave). Se le quitaron las llamadas a Google Address Validation y a Haiku, y con ellas el `consume_google_quota`. Devuelve el mismo contrato (`decision`/`missing_fields`/`suggested_*` quedan en su valor neutro) para no tocar `CallView`/`CrmCallView`.
 - `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. **Credencial (desde 2026-07-29):** cadena session token (via `ensureFreshSessionToken`, con UN re-login forzado si Dropi lo revocó o el guardado está corrupto) → api_key de fallback — Dropi dejó de aceptar la api_key en ese endpoint (401 "Token not issued to this api", ambas cuentas a la vez). Decodifica `payload.sub` del token QUE USA cada intento para el query `user_id`. Todos los fallos (incl. parseo XLSX y config faltante) escriben fila en `sync_logs`, y una corrida sana con 0 movimientos TAMBIÉN (contrato del badge). `ok:false` si el upsert RPC falla — nada de "Sync OK" en verde con la RPC rota.
-- `google-places-proxy` — proxy server-side a Google Places autocomplete + details. Quota gating + cache en `address_autocomplete_cache`. **APAGADA POR DOBLE CANDADO**: sin `GOOGLE_ENABLED=true` en los secretos devuelve 503 sin llamar a Google. Es un proxy PURO, así que cada llamada que entra es plata que sale.
+- ~~`google-places-proxy`~~ — **ELIMINADA el 2026-08-06.** Era un proxy PURO a Google: cada llamada que entraba era plata que salía. Ya no existe en el repo; si quedó desplegada en Supabase, borrarla ahí también.
 - `ai-order-assistant` — Claude-powered order assistant
 - `shopify-push-dropi` — sube un pedido de Shopify a Dropi (anti-fuga). Resuelve el producto Dropi leyendo el metafield `dropi/_dropi_product` que Dropify deja en cada producto Shopify. `mode: "preview"` arma cliente+productos+total sin crear nada; `"confirm"` crea la orden (`POST /integrations/orders/myorders`) y registra en `shopify_pushed_orders` (idempotente). Auth = JWT de miembro de la tienda. La secuencia de cotización web (A–D: product/show → locations → getOriginCity → cotizaEnvioTransportadoraV2) vive en `_shared/dropiWebQuote.ts` (`quoteCarriers`) y la comparte con `dropi-change-carrier`; al crear sigue eligiendo la más barata ≠ VELOCES.
 - `shopify-reconcile` — detecta pedidos de Shopify que NUNCA llegaron a Dropi cruzando por TELÉFONO (últimos 9 dígitos) contra `orders`. Body `{store_id, days?=3}`. Alimenta la cola anti-fuga.
@@ -308,7 +326,7 @@ El bot "renta el caño, no el cerebro": el inbox + la IA viven en Guardian; el t
 - `logistics_by_city(from_date, to_date, min_orders, limit)` — top ciudades por tasa de devolución
 - `logistics_by_product(from_date, to_date, min_orders, limit)` — top productos con peor tasa de entrega
 - Todas SECURITY DEFINER + admin-only. Ver migration 20260427130000.
-- `consume_google_quota()` — atomic daily-cap check for Google Places calls (FOR UPDATE row lock to avoid races). Used by `dropi-validate-address` and `google-places-proxy`. Cap configured in `app_settings.google_quota_daily_cap`. See migration `20260501000000_validador_direcciones.sql`.
+- `consume_google_quota()` — **ya no la llama nadie** (Google eliminado el 2026-08-06). La RPC y la tabla `address_autocomplete_cache` siguen en la base sin uso; borrarlas es opcional y no urgente.
 - `cleanup_expired_autocomplete_cache()` — purges `address_autocomplete_cache` rows past TTL. Scheduled via pg_cron (migration `20260501010000_validador_direcciones_cron.sql`).
 - `financial_summary(p_from_date, p_to_date)` — KPIs financieros del período (utilidad bruta contable). Versión actual = v6 (migration `20260502000008_financial_summary_v6_devoluciones.sql`). Fórmula: `ingresos − cogs − flete_entregadas − pérdida_devoluciones − comisión_referidos − mantenimiento_tarjeta + indemnizaciones`. Usado por hook `useFinancialSummary`. NO incluye gasto pauta (Fase B pendiente).
 - `wallet_summary(from, to)` y `wallet_daily_series(from, to)` — KPIs y serie temporal del wallet de Dropi. Admin-only, security definer.
