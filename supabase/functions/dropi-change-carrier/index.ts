@@ -1392,6 +1392,59 @@ Deno.serve(async (req: Request) => {
         lines: [{ dropiId: productId, quantity: 1, price: precio }],
         total: precio,
       });
+
+      // RE-COTIZAR INCLUYENDO LA VARIANTE.
+      //
+      // La primera corrida cotizó sin variante y creó con ella, y Dropi
+      // contestó "las existencias han variado mientras cotizabas" en 3 de 4
+      // transportadoras. La talla pedida tiene 55 unidades, así que no era
+      // falta de inventario: Dropi valida que lo que se crea coincida con lo
+      // que se cotizó, y el `variation_id` cambia esa comparación.
+      //
+      // Esa queja ya es media respuesta —si Dropi ignorara el campo, habría
+      // creado la orden sin chistar—, pero para medirlo bien hay que cotizar y
+      // crear con LA MISMA variante.
+      //
+      // La cotización se arma acá y no en `_shared/dropiWebQuote.ts` a
+      // propósito: ese módulo lo comparten el cambio de transportadora y el
+      // push de Shopify, que hoy funcionan. Una prueba no toca código vivo.
+      const cotizaBody = {
+        peso: 1, largo: 1, ancho: 1, alto: 1,
+        ciudad_remitente: ctx.origin.cityRemitente,
+        ciudad_destino: {
+          id: destCity.cityId, name: destCity.name,
+          department_id: destCity.departmentId, cod_dane: destCity.codDane,
+        },
+        EnvioConCobro: true,
+        ValorDeclarado: precio,
+        insurance: false,
+        products: ctx.products.map((p) => ({
+          id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price,
+          type: p.productType, variation_id: pedida,
+        })),
+        warehouse: ctx.origin.warehouse,
+        warehouse_id: ctx.origin.warehouseId,
+        zip_code: "", colonia: "",
+      };
+      const cot = await dropiWebFetch(
+        cfg, `/api/orders/cotizaEnvioTransportadoraV2`, { method: "POST", body: cotizaBody },
+      );
+      const cotObjs = (Array.isArray(cot.body?.objects) ? cot.body.objects : []) as Record<string, unknown>[];
+      const opcionesConVariante = cotObjs
+        .filter((o) => !o?.error && Number((o?.objects as Record<string, unknown>)?.precioEnvio) >= 0)
+        .map((o) => {
+          const oo = (o.objects ?? {}) as Record<string, unknown>;
+          const dc = (oo.distributionCompany ?? {}) as Record<string, unknown>;
+          return {
+            id: Number(dc.id), name: String(dc.name || ""),
+            typeService: String(oo.typeService || "normal"),
+            shippingAmount: Number(oo.precioEnvio) || 0,
+          };
+        })
+        .filter((o) => o.id && o.name);
+      // Si la cotización con variante devuelve opciones, mandan ésas: son las
+      // que Dropi acaba de validar contra ese inventario concreto.
+      if (opcionesConVariante.length > 0) ctx.options = opcionesConVariante;
       // Orden de intento: PRIMERO la transportadora que el pedido base ya usa
       // —está probada para esa ruta con recaudo—, después el resto.
       //
