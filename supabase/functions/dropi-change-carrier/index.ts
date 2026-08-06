@@ -1392,11 +1392,25 @@ Deno.serve(async (req: Request) => {
         lines: [{ dropiId: productId, quantity: 1, price: precio }],
         total: precio,
       });
-      const elegida = ctx.options[0];
-      if (!elegida) return jsonOk({ ok: false, error: "Ninguna transportadora cotizó esta ruta." });
+      // Orden de intento: PRIMERO la transportadora que el pedido base ya usa
+      // —está probada para esa ruta con recaudo—, después el resto.
+      //
+      // Antes se tomaba `options[0]` a secas y Dropi devolvió: "La ciudad no
+      // tiene habilitado el método de envío: CON RECAUDO — SAN PEDRO DE LOS
+      // MILAGROS-ANTIOQUIA-ENVIA-[SIN RECAUDO]". O sea: la cotización ofrece
+      // transportadoras que después el create RECHAZA para esa ciudad. Si la
+      // prueba se quedaba en la primera, un "no se pudo crear" se habría
+      // confundido con "Dropi rechaza variation_id", que es justo lo contrario
+      // de lo que hay que medir.
+      const actual = normUp(String(orderRow.transportadora || ""));
+      const candidatas = [...ctx.options].sort((a, b) =>
+        (normUp(b.name) === actual ? 1 : 0) - (normUp(a.name) === actual ? 1 : 0));
+      if (candidatas.length === 0) {
+        return jsonOk({ ok: false, error: "Ninguna transportadora cotizó esta ruta." });
+      }
 
       const MARCA = "PRUEBA GUARDIAN - NO DESPACHAR - CANCELAR";
-      const orderBody: Record<string, unknown> = {
+      const armarBody = (c: { id: number | string; name: string; typeService: string; shippingAmount: number }) => ({
         name: "PRUEBA", surname: "GUARDIAN",
         dir: "PRUEBA TECNICA - CANCELAR", country,
         state: ctx.dest.stateName, city: ctx.dest.cityName,
@@ -1412,23 +1426,31 @@ Deno.serve(async (req: Request) => {
           id: p.dropiId, uid: p.dropiId, quantity: p.quantity, price: p.price,
           type: p.productType, variation_id: pedida,
         })),
-        distributionCompany: { id: elegida.id, name: elegida.name },
-        type_service: elegida.typeService || "normal",
-        shipping_amount: elegida.shippingAmount,
+        distributionCompany: { id: c.id, name: c.name },
+        type_service: c.typeService || "normal",
+        shipping_amount: c.shippingAmount,
         zip_code: null, colonia: "", shop_id: null, dni: "", dni_type: null,
         insurance: false, shalom_data: null,
         warehouses_selected_id: ctx.origin.warehouseId,
-      };
+      });
 
-      const post = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: orderBody });
-      const nuevoId = String(
-        (post.body?.objects as Record<string, unknown>)?.id ?? post.body?.id ?? "",
-      );
+      let nuevoId = "";
+      let usada = "";
+      const rechazos: Array<{ transportadora: string; motivo: string }> = [];
+      for (const c of candidatas) {
+        const post = await dropiWebFetch(cfg, `/api/orders/myorders`, { method: "POST", body: armarBody(c) });
+        const id = String((post.body?.objects as Record<string, unknown>)?.id ?? post.body?.id ?? "");
+        if (id) { nuevoId = id; usada = c.name; break; }
+        rechazos.push({
+          transportadora: c.name,
+          motivo: String(post.body?.message || post.body?.error || `HTTP ${post.status}`).slice(0, 220),
+        });
+      }
       if (!nuevoId) {
         return jsonOk({
-          ok: false, paso: "crear", httpStatus: post.status,
-          error: "Dropi no creó la orden de prueba (o no devolvió id).",
-          detalle: post.body, tipoProducto, pedida,
+          ok: false, paso: "crear",
+          error: "Dropi rechazó la orden de prueba con TODAS las transportadoras.",
+          rechazos, tipoProducto, pedida,
         });
       }
 
@@ -1464,6 +1486,11 @@ Deno.serve(async (req: Request) => {
         variacion_pedida: pedida,
         variacion_obtenida: obtenida,
         etiqueta_pedida: etiqueta(vars.find((v) => Number(v.id) === pedida) ?? {}),
+        transportadora_usada: usada,
+        // Transportadoras que la COTIZACIÓN ofrece y el CREATE rechaza. No es
+        // ruido de la prueba: es lo que le pasa a la asesora cuando elige la
+        // más barata de la lista y Dropi no la acepta para esa ciudad.
+        transportadoras_rechazadas: rechazos,
         orden_de_prueba: nuevoId,
         cancelada,
         cancel_detalle: cancelDetalle,
