@@ -2851,6 +2851,20 @@ export type Database = {
       cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
+      costos_unitarios: {
+        Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
+        Returns: {
+          cargo_devolucion_total: number
+          cogs_entregados: number
+          devoluciones_con_cargo: number
+          devueltos: number
+          entregados: number
+          flete_devueltos: number
+          flete_entregados: number
+          ingresos_entregados: number
+          pauta_periodo: number
+        }[]
+      }
       create_my_store: {
         Args: { p_country_code?: string; p_name: string }
         Returns: string
