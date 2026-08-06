@@ -1669,6 +1669,88 @@ export type Database = {
           },
         ]
       }
+      store_rendicion_items: {
+        Row: {
+          concepto: string
+          created_at: string
+          fecha: string | null
+          id: string
+          monto: number
+          plataforma: string | null
+          rendicion_id: string
+        }
+        Insert: {
+          concepto: string
+          created_at?: string
+          fecha?: string | null
+          id?: string
+          monto?: number
+          plataforma?: string | null
+          rendicion_id: string
+        }
+        Update: {
+          concepto?: string
+          created_at?: string
+          fecha?: string | null
+          id?: string
+          monto?: number
+          plataforma?: string | null
+          rendicion_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_rendicion_items_rendicion_id_fkey"
+            columns: ["rendicion_id"]
+            isOneToOne: false
+            referencedRelation: "store_rendiciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_rendiciones: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          fecha: string
+          id: string
+          monto_retirado: number
+          notas: string | null
+          responsable: string | null
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          fecha: string
+          id?: string
+          monto_retirado?: number
+          notas?: string | null
+          responsable?: string | null
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          fecha?: string
+          id?: string
+          monto_retirado?: number
+          notas?: string | null
+          responsable?: string | null
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_rendiciones_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_shopify_config: {
         Row: {
           active: boolean
@@ -2680,6 +2762,20 @@ export type Database = {
         }[]
       }
       auth_store_ids: { Args: never; Returns: string[] }
+      balance_mensual: {
+        Args: { p_desde: string; p_hasta: string; p_store_id: string }
+        Returns: {
+          admin: number
+          devueltos: number
+          entregados: number
+          operativo: number
+          pauta: number
+          pedidos: number
+          rendido: number
+          retirado: number
+          year_month: string
+        }[]
+      }
       cancel_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       cancel_orphan_pending_orders: { Args: never; Returns: number }
       categorize_personal_movement: {
@@ -2772,6 +2868,7 @@ export type Database = {
         Args: { p_id: string; p_store_id: string }
         Returns: undefined
       }
+      delete_rendicion: { Args: { p_id: string }; Returns: boolean }
       delete_shopify_product_dropi_map: {
         Args: { p_shopify_product_id: number; p_store_id: string }
         Returns: undefined
@@ -3358,6 +3455,10 @@ export type Database = {
       release_all_my_locks: { Args: never; Returns: number }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      rendiciones_range: {
+        Args: { p_from: string; p_store_id: string; p_to: string }
+        Returns: Json
+      }
       report_app_version: {
         Args: { p_store_id?: string; p_version: string }
         Returns: undefined
@@ -3553,6 +3654,18 @@ export type Database = {
           p_knowledge: string
           p_label: string
           p_match_text?: string
+          p_store_id: string
+        }
+        Returns: string
+      }
+      upsert_rendicion: {
+        Args: {
+          p_fecha: string
+          p_id?: string
+          p_items: Json
+          p_monto_retirado: number
+          p_notas: string
+          p_responsable: string
           p_store_id: string
         }
         Returns: string
