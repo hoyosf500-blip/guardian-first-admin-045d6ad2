@@ -2850,7 +2850,6 @@ export type Database = {
       cleanup_expired_autocomplete_cache: { Args: never; Returns: number }
       cleanup_old_logs: { Args: never; Returns: Json }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
-      consume_google_quota: { Args: { p_amount_usd: number }; Returns: boolean }
       costos_unitarios: {
         Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
         Returns: {
