@@ -9,21 +9,58 @@ reportes de Meta. No es un ejercicio teórico: reconstruye una pérdida real de 
 
 ## 1. Qué pasó, en datos
 
-Dos cuentas de Dropi. La vieja hasta febrero; la actual desde marzo.
+Dos cuentas de Dropi. La vieja hasta febrero; la actual desde marzo. **Falta TikTok**
+(abr–jun), que también se pagó con tarjeta: todos los resultados de abajo son un techo.
 
-| | ene–feb 2026 | marzo 2026 |
+| mes | billetera real | pauta Meta | fijos | resultado |
+|---|---:|---:|---:|---:|
+| ene–feb | +16.147.122 | −22.213.337 | −6.160.000 | **−12.226.215** |
+| marzo | +7.307.176 | −13.873.490 | −3.080.000 | **−9.646.314** |
+| abril | +17.781.134 | −13.458.353 | −3.080.000 | +1.242.781 |
+| mayo | +4.787.706 | −4.402.083 | −3.080.000 | −2.694.377 |
+| junio | +8.742.101 | −4.668.205 | −3.080.000 | +993.896 |
+| julio | +8.977.230 | −4.114.595 | −3.080.000 | **+1.782.635** |
+| **total** | **+63.742.469** | **−62.730.063** | **−21.560.000** | **−20.547.594** |
+
+**En siete meses la pauta se llevó el 98,4% de todo lo que el negocio generó.** La operación
+entera existió para pagarle a Facebook; los costos fijos los puso la tarjeta de crédito.
+
+De enero a febrero, $4.770.000 de esa "billetera real" son **comisiones de referidos**, no la
+tienda — el único ingreso del período que no costaba pauta (4.770 comisiones contra 347 pedidos
+entregados propios).
+
+Fuentes: exports "historial de cartera" de Dropi (5.164 · 232 · 727 · 267 · 289 · 334
+movimientos), panel de Dropi, e informes de Meta Ads (`business_id=103894218445762` para
+landing; cuenta `cp 1` para WhatsApp).
+
+### El giro: cambiar de canal, no de operación
+
+| | ene–marzo (landing) | jun–julio (WhatsApp) |
 |---|---:|---:|
-| Pedidos generados | 701 | 477 |
-| Pedidos entregados | 347 | 252 |
-| Vendido (panel Dropi) | $48.959.719 | $43.382.636 |
-| **Entró de verdad a la billetera** | **+$16.147.122** | **+$7.307.176** |
-| — de eso, comisión de referidos | $4.770.000 | $0 |
-| Pauta Facebook | −$22.213.337 | −$13.873.490 |
-| Costos fijos (≈$3,08M/mes) | −$6.160.000 | −$3.080.000 |
-| **Resultado** | **−$12.226.215** | **−$9.646.314** |
+| CPA por ENTREGA | $55.053–$64.015 | **$17.201** |
+| Margen por pedido | −$26.056 | **+$22.698** |
+| Tasa de equilibrio | 115–122% | **46%** (entregando 76%) |
+| Resultado mensual | ≈ −$5M | **≈ +$1,4M** |
 
-Fuentes: export "historial de cartera" de Dropi (5.164 y 232 movimientos), panel de Dropi,
-e informe de Meta Ads (`business_id=103894218445762`, 15 cuentas publicitarias).
+Mayo es el contraejemplo útil: **la pauta fue rentable (equilibrio 52%, entrega 67%) y el mes
+igual perdió**, porque el volumen se derrumbó de 911 a 279 pedidos y los costos fijos no bajan.
+Problema distinto, arreglo distinto — de ahí que el KPI 3 deba mostrarse con y sin costos
+fijos.
+
+### El patrón de caja que vació la tarjeta
+
+| mes | generó la operación | retiró |
+|---|---:|---:|
+| marzo | $7.307.176 | $6.098.000 |
+| abril | $17.781.134 | $16.320.000 |
+| mayo | $4.787.706 | **$9.030.000** |
+| junio | $8.742.101 | $9.980.000 |
+| julio | $8.977.230 | $4.858.000 |
+| **total** | **$47.595.347** | **$46.286.000** |
+
+Retiró el 97% de lo que entró, todos los meses, incluso los que perdían. **El negocio nunca
+acumuló caja propia**: cada mes arrancaba de cero y la tarjeta cubría el hueco. La tarjeta no
+financiaba la pauta — financiaba los retiros. Por eso se acabó el crédito antes que la caja.
 
 ### El hallazgo central
 
@@ -164,6 +201,26 @@ KPI 1–6 excluyan lo personal.
 `SALIDA POR RECARGA DE TARJETA DE CREDITO` (36 movimientos, $5.521.200 en ene–feb caen en
 `otro`). Es justamente el movimiento que financia la pauta. Necesita su categoría
 `recarga_tarjeta` — tesorería, no gasto operativo — para que el KPI 5 sea calculable.
+
+### KPI 8 — Pauta activa sin pedidos ("campaña fantasma")
+
+```
+gasto_del_canal_en_los_ultimos_N_dias > 0  Y  pedidos_atribuibles ≈ 0
+```
+
+**Caso real, jun–jul 2026:** la campaña `suplemento test - Copia` se reactivó **sola** al pagar
+la tarjeta de crédito y corrió **más de cinco semanas sin que nadie lo notara**. Gastó
+**$1.005.108 en junio + $244.249 en julio = $1.249.357 con CERO compras** (39 pagos iniciados,
+ninguno cerrado). Es casi la mitad de la utilidad de esos dos meses juntos.
+
+Es distinto a los KPI 1–6: no mide rentabilidad, mide **plata saliendo sin nada del otro
+lado**. Se dispara en días, no en cierres de mes, y no necesita atribución perfecta — basta
+comparar el gasto del canal contra los pedidos que entraron en la misma ventana. Con el gasto
+diario cargado (`store_ad_spend_daily` ya es diario) esto se caza a los 3 días.
+
+**Regla:** una campaña que gasta y no genera pedidos es una alarma, no una métrica más de la
+tabla. Y la reactivación automática al pagar la tarjeta es un modo de falla conocido — el
+gasto puede reaparecer sin ninguna acción del dueño.
 
 ---
 
