@@ -7,11 +7,13 @@ import { Button } from '@/components/ui/button';
 import { formatCOP } from '@/lib/utils';
 import { useStore } from '@/contexts/StoreContext';
 import {
-  useBalanceMensual, useRendiciones, useBorrarRendicion,
+  useBalanceMensual, useKpisMensuales, useRendiciones, useBorrarRendicion,
 } from '@/hooks/useBalanceRendiciones';
 import { construirBalance, cruzarRendiciones, type Rendicion } from '@/lib/balanceRendiciones';
+import { useSessionState } from '@/hooks/useSessionState';
 import RendicionDialog from '@/components/logistics/RendicionDialog';
 import CostosUnitariosCard from '@/components/logistics/CostosUnitariosCard';
+import KpisMensualesTable from '@/components/logistics/KpisMensualesTable';
 
 // "Balance" — reemplaza el Excel que había que armar a mano para saber cómo iba
 // la operación y si la plata que salió de la billetera estaba explicada.
@@ -48,6 +50,12 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
   const balanceQ = useBalanceMensual(desde, hasta);
   const rendQ = useRendiciones(fromDate, toDate);
   const borrar = useBorrarRendicion();
+
+  // "Mes a mes" tiene dos lecturas del mismo período: la corta (¿ganamos?) y la
+  // completa (¿por qué?). La completa son 19 columnas y su propio RPC, así que
+  // solo se consulta cuando alguien la abre.
+  const [vista, setVista] = useSessionState<'basico' | 'completo'>('balance:vista', 'basico');
+  const kpisQ = useKpisMensuales(desde, hasta, vista === 'completo');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editando, setEditando] = useState<Rendicion | null>(null);
@@ -121,9 +129,55 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
 
       {/* ── Mes a mes ───────────────────────────────────────────── */}
       <section className="rounded-2xl border border-border bg-card/40 shadow-card3d hairline-top overflow-hidden">
-        <header className="px-5 py-3 border-b border-border">
+        <header className="px-5 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
           <h4 className="hud-label">Mes a mes</h4>
+          <div
+            role="group"
+            aria-label="Nivel de detalle de la tabla"
+            className="flex rounded-lg border border-border overflow-hidden text-[11px]"
+          >
+            {([
+              ['basico', 'Básico', 'Lo esencial: cuánto entró, cuánto se invirtió y cuánto quedó.'],
+              ['completo', 'Completo', 'Los 18 indicadores del mes: volumen, cancelación, entrega, ticket, CPA, lo que deja cada entrega y el punto de equilibrio.'],
+            ] as const).map(([v, label, ayuda]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVista(v)}
+                title={ayuda}
+                aria-pressed={vista === v}
+                className={`px-3 py-1.5 min-h-[32px] cursor-pointer transition-colors ${
+                  vista === v
+                    ? 'bg-accent/15 text-accent font-semibold'
+                    : 'text-muted-foreground hover:bg-foreground/[0.04]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </header>
+
+        {vista === 'completo' ? (
+          kpisQ.data === null && !kpisQ.isLoading ? (
+            <p className="px-5 py-6 text-[13px] text-muted-foreground flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-px shrink-0 text-warning" />
+              <span>
+                Falta aplicar{' '}
+                <code className="font-mono text-[11px]">20260807160000_kpis_mensuales.sql</code>.
+                La vista Básico sigue funcionando mientras tanto.
+              </span>
+            </p>
+          ) : kpisQ.isError ? (
+            <p className="px-5 py-6 text-[13px] text-danger">
+              No se pudieron cargar los indicadores. {(kpisQ.error as Error)?.message}
+            </p>
+          ) : kpisQ.isLoading ? (
+            <div className="m-5 h-48 rounded-xl bg-muted/30 animate-pulse" />
+          ) : (
+            <KpisMensualesTable filas={kpisQ.data ?? []} />
+          )
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs tabular-nums">
             <thead>
@@ -184,6 +238,7 @@ export default function BalanceTab({ fromDate, toDate }: Props) {
             </tfoot>
           </table>
         </div>
+        )}
       </section>
 
       {/* ── Costos unitarios ────────────────────────────────────── */}

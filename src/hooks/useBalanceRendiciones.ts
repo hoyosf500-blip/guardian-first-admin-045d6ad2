@@ -4,6 +4,7 @@ import { useActiveStoreId } from '@/contexts/StoreContext';
 import { isRpcMissing } from '@/lib/rpcError';
 import { toast } from 'sonner';
 import type { MesCrudo, Rendicion } from '@/lib/balanceRendiciones';
+import type { KpiMesCrudo } from '@/lib/kpisMensuales';
 
 // Balance mes a mes + rendiciones (migration 20260806140000).
 //
@@ -51,6 +52,55 @@ export function useBalanceMensual(desde: string, hasta: string) {
         pedidos: num(r.pedidos),
         entregados: num(r.entregados),
         devueltos: num(r.devueltos),
+      }));
+    },
+  });
+}
+
+// ── KPIs mes a mes (migration 20260807160000) ──────────────────────────────
+//
+// Función SEPARADA de balance_mensual a propósito: ésta devuelve las ~18 columnas
+// crudas del mes (pedidos, unidades, cancelados, valores, ganancia bruta) para que
+// src/lib/kpisMensuales.ts derive las tasas. Misma degradación a `null` cuando la
+// migración no está aplicada.
+//
+// `enabled` viene de afuera para que la consulta NO se dispare mientras la tabla
+// está en modo básico: son 18 columnas por mes que nadie está mirando.
+
+export function useKpisMensuales(desde: string, hasta: string, enabled = true) {
+  const storeId = useActiveStoreId();
+  return useQuery<KpiMesCrudo[] | null>({
+    queryKey: ['kpis-mensuales', storeId ?? 'none', desde, hasta],
+    enabled: Boolean(enabled && storeId && desde && hasta),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await rpc()('kpis_mensuales', {
+        p_store_id: storeId, p_desde: desde, p_hasta: hasta,
+      });
+      if (error) {
+        if (isRpcMissing(error)) return null;   // migration pendiente
+        throw error;
+      }
+      return ((data as Record<string, unknown>[]) ?? []).map((r) => ({
+        year_month: String(r.year_month ?? ''),
+        dias: num(r.dias),
+        generados: num(r.generados),
+        unidades: num(r.unidades),
+        cancelados: num(r.cancelados),
+        entregados: num(r.entregados),
+        devueltos: num(r.devueltos),
+        rechazados: num(r.rechazados),
+        en_calle: num(r.en_calle),
+        valor_no_cancelado: num(r.valor_no_cancelado),
+        valor_entregado: num(r.valor_entregado),
+        valor_en_calle: num(r.valor_en_calle),
+        ganancia_bruta: num(r.ganancia_bruta),
+        entradas: num(r.entradas),
+        salidas: num(r.salidas),
+        operativo: num(r.operativo),
+        pauta: num(r.pauta),
+        admin: num(r.admin),
+        retirado: num(r.retirado),
       }));
     },
   });
