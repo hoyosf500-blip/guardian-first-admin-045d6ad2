@@ -157,11 +157,25 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
   julio cambiaron**: antes se veía menos de un cuarto de la operación.
 - **Un pedido BORRADO en Dropi NO es una cancelación del cliente.** `dropi-nightly-reconcile`
   los marcaba `CANCELADO` e inflaba la tasa de cancelación. Ahora marca **`ARCHIVADO GHOST`
-  — CON ESPACIO**: es la escritura que reconoce `_estado_bucket` en SQL; con guion bajo
-  (`ARCHIVADO_GHOST`) **NO se excluye** y vuelve a contaminar la métrica. Ojo: el guion bajo sí
-  aparece en varios mapas de TS (`estadoBuckets.ts`, `segStatus.ts`) por compatibilidad, pero
-  **lo que se ESCRIBE es con espacio**. Tras corregir 126 filas, julio EC quedó: cancelados
-  250 → 152 contra 154 de Dropi; entregados 216 = 216; devoluciones 70 = 70.
+  — CON ESPACIO**, que es la escritura canónica: los dos sitios que escriben
+  (`dropi-nightly-reconcile/index.ts:388` y `:459`) usan espacio. Tras corregir 126 filas,
+  julio EC quedó: cancelados 250 → 152 contra 154 de Dropi; entregados 216 = 216;
+  devoluciones 70 = 70.
+
+  **Corrección (2026-08-07): la justificación que había acá era falsa.** Este doc afirmaba
+  que con guion bajo (`ARCHIVADO_GHOST`) "NO se excluye". **Sí se excluye:**
+  `_estado_bucket` normaliza `_` → espacio ANTES del `CASE`
+  (`20260707160000_estado_bucket_ec_states.sql:27-30`), así que las dos escrituras caen en
+  el bucket `'borrado'`. La convención de escribir con espacio sigue en pie, pero **no
+  dependas de ella como si fuera la única defensa** — y no gastes tiempo cazando guiones
+  bajos creyendo que contaminan las métricas.
+
+  **Dónde SÍ se cuela un fantasma** (y esto no lo arregla ninguna normalización): los
+  filtros que comparan a mano contra `'REEMPLAZADA'` en vez de usar `_estado_bucket`.
+  `20260718120000_daily_reports_total_inflow.sql:46` filtra solo REEMPLAZADA, y por el
+  `ELSE 'conf'` de la línea 58 los `ARCHIVADO GHOST` entran al inflow **contados como
+  confirmados** → infla la tasa de confirmación del día. Mismo hueco en
+  `src/hooks/useDataLoader.ts:144` y `src/components/tabs/ConfirmarTab.tsx:214`.
 - **Ficha de producto: UN solo componente.** `ProductoTile.tsx` dibuja talla/color (desde
   `orders.productos_detalle`, jsonb por línea, que llena `dropi-cron`) y lo usan **Confirmar y
   Seguimiento**. Antes eran dos copias y se arregló una sola — el bug reapareció en la otra
