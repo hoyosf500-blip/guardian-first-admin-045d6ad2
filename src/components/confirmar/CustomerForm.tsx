@@ -321,6 +321,15 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
                   )}
                 </div>
               )
+            ) : isGT ? (
+              // Guatemala: municipio como texto libre. El desplegable quedaría
+              // vacío (no hay catálogo de municipios) y dejaría al operador sin
+              // poder cargar la ciudad.
+              <Input
+                value={form.ciudad}
+                onChange={e => onChange(f => ({ ...f, ciudad: e.target.value }))}
+                placeholder="Ej. Quetzaltenango"
+              />
             ) : (
               <Select
                 value={form.ciudad || undefined}
