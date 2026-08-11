@@ -3013,6 +3013,30 @@ export type Database = {
       is_store_manager: { Args: { p_store_id: string }; Returns: boolean }
       is_store_member: { Args: { p_store_id: string }; Returns: boolean }
       is_store_owner: { Args: { p_store_id: string }; Returns: boolean }
+      kpis_mensuales: {
+        Args: { p_desde: string; p_hasta: string; p_store_id: string }
+        Returns: {
+          admin: number
+          cancelados: number
+          devueltos: number
+          dias: number
+          en_calle: number
+          entradas: number
+          entregados: number
+          ganancia_bruta: number
+          generados: number
+          operativo: number
+          pauta: number
+          rechazados: number
+          retirado: number
+          salidas: number
+          unidades: number
+          valor_en_calle: number
+          valor_entregado: number
+          valor_no_cancelado: number
+          year_month: string
+        }[]
+      }
       list_cfo_retrospectives: {
         Args: never
         Returns: {
