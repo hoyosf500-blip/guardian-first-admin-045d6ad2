@@ -3,7 +3,7 @@ import { Store, Loader2, Package, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import OnboardingStepper from '@/components/onboarding/OnboardingStepper';
-import { validarNombreTienda, validarPais, MAX_NOMBRE } from '@/lib/onboardingValidacion';
+import { validarNombreTienda, validarPais, normalizarPais, MAX_NOMBRE, type PaisTienda } from '@/lib/onboardingValidacion';
 
 /**
  * PASO 1 del onboarding: un usuario registrado SIN tiendas crea la suya y queda
@@ -19,7 +19,7 @@ export default function CreateStoreScreen({ onCreated, onSignOut }: {
   onSignOut: () => void;
 }) {
   const [name, setName] = useState('');
-  const [country, setCountry] = useState<'CO' | 'EC'>('CO');
+  const [country, setCountry] = useState<PaisTienda>('CO');
   const [busy, setBusy] = useState(false);
   /** Se muestra el error recién cuando el campo se tocó o se intentó avanzar:
    *  arrancar en rojo con el formulario vacío es hostil. */
@@ -100,11 +100,12 @@ export default function CreateStoreScreen({ onCreated, onSignOut }: {
             <select
               id="store-country"
               value={country}
-              onChange={(e) => setCountry(e.target.value === 'EC' ? 'EC' : 'CO')}
+              onChange={(e) => setCountry(normalizarPais(e.target.value))}
               className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none cursor-pointer"
             >
               <option value="CO">Colombia (Dropi CO)</option>
               <option value="EC">Ecuador (Dropi EC)</option>
+              <option value="GT">Guatemala (Dropi GT)</option>
             </select>
             <p className="mt-1 text-[11px] text-muted-foreground">
               Define contra qué Dropi se conecta la tienda. Elegí bien: mezclar países

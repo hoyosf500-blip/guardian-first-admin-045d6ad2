@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { panelDropiUrl } from '@/lib/dropiPais';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import {
   Package, Loader2, CheckCircle2, ExternalLink, XCircle,
-  AlertTriangle, MinusCircle, ShieldCheck, ChevronDown, AlertCircle,
+  AlertTriangle, MinusCircle, RefreshCw, ShieldCheck, ChevronDown, AlertCircle,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,7 @@ import { validarSetup, hayErrores } from '@/lib/onboardingValidacion';
 import {
   interpretarChequeos, puedeContinuar, estaCompleto, resumen,
   type ChequeoCrudo, type ChequeoLegible,
+  mensajeReintento,
 } from '@/lib/verificacionCredenciales';
 
 type ClaveCampo =
@@ -91,6 +93,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
    *  ahí, no con el formulario en blanco. */
   const [tocados, setTocados] = useState<Record<string, boolean>>({});
   const [intentoEnvio, setIntentoEnvio] = useState(false);
+  /** Cuántas veces se probó contra Dropi. Sirve para no repetir el mismo
+   *  mensaje al tercer intento fallido y ofrecer la salida correcta. */
+  const [intentosVerif, setIntentosVerif] = useState(0);
 
 
   /** Token de sesión tal como estaba en la base al abrir. Se reenvía si el
@@ -166,6 +171,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   async function verificar(storeId: string) {
     setFase('verificando');
     setErrorVerif('');
+    setIntentosVerif(n => n + 1);
     try {
       const { data, error } = await supabase.functions.invoke('dropi-verify-credentials', {
         body: { store_id: storeId },
@@ -280,6 +286,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             errorVerif={errorVerif}
             listo={listo}
             puede={puede}
+            intentos={intentosVerif}
             onVolver={() => setFase('form')}
             onReintentar={() => void verificar(activeStore.id)}
             onContinuar={onDone}
@@ -349,7 +356,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
             <div className="pt-3 border-t border-border flex items-center justify-between gap-3">
               <a
-                href={activeStore.country_code === 'EC' ? 'https://app.dropi.ec' : 'https://app.dropi.co'}
+                href={panelDropiUrl(activeStore.country_code)}
                 target="_blank" rel="noreferrer"
                 className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 min-h-11"
               >
@@ -376,13 +383,15 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 }
 
 function ResultadoVerificacion({
-  fase, chequeos, errorVerif, listo, puede, onVolver, onReintentar, onContinuar, onIrAdmin,
+  fase, chequeos, errorVerif, listo, puede, intentos, onVolver, onReintentar, onContinuar, onIrAdmin,
 }: {
   fase: Fase;
   chequeos: ChequeoLegible[];
   errorVerif: string;
   listo: boolean;
   puede: boolean;
+  /** Número de prueba contra Dropi (1 = la primera). */
+  intentos: number;
   onVolver: () => void;
   onReintentar: () => void;
   onContinuar: () => void;
@@ -420,9 +429,19 @@ function ResultadoVerificacion({
           </div>
         </div>
 
-        {errorVerif && (
-          <div className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg p-3">
-            Tus datos quedaron guardados, pero la prueba no se pudo correr: {errorVerif}
+        {(errorVerif || !listo) && (
+          <div className={`text-xs rounded-lg p-3 border ${
+            errorVerif || !puede
+              ? 'text-danger bg-danger/5 border-danger/25'
+              : 'text-foreground/80 bg-warning/5 border-warning/25'
+          }`} role="alert">
+            {errorVerif && (
+              <p className="mb-1">Tus datos quedaron guardados, pero la prueba no se pudo correr: {errorVerif}</p>
+            )}
+            <p>{mensajeReintento(intentos, errorVerif, chequeos)}</p>
+            <p className="mt-1 opacity-70">
+              Intento {intentos} {intentos === 1 ? 'de verificación' : 'de verificación (ninguno salió en verde)'}
+            </p>
           </div>
         )}
 
@@ -463,34 +482,53 @@ function ResultadoVerificacion({
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      {/* Mientras no esté todo en verde, la acción PRINCIPAL es reintentar.
+          Entrar al CRM sigue existiendo solo cuando no hay una falla que lo
+          deje vacío (`puede`), pero como botón chico y con el aviso arriba:
+          bloquearlo del todo dejaría encerrada a una cuenta con verificación
+          en dos pasos, que nunca puede llegar al verde completo. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button" onClick={onVolver}
           className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
         >
           Corregir datos
         </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button" onClick={onReintentar}
-            className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
-          >
-            Volver a probar
-          </button>
-          {listo && (
+        <div className="flex flex-wrap items-center gap-2">
+          {!listo && (
             <button
-              type="button" onClick={onContinuar}
-              className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+              type="button" onClick={onReintentar}
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition cursor-pointer"
             >
-              Ir a pedidos
+              <RefreshCw size={15} />
+              Volver a probar
             </button>
           )}
-          <button
-            type="button" onClick={onIrAdmin} disabled={!puede}
-            className="px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {listo ? 'Ir a Configuración' : 'Entrar igual'}
-          </button>
+          {listo ? (
+            <>
+              <button
+                type="button" onClick={onContinuar}
+                className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+              >
+                Ir a pedidos
+              </button>
+              <button
+                type="button" onClick={onIrAdmin}
+                className="px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition cursor-pointer"
+              >
+                Ir a Configuración
+              </button>
+            </>
+          ) : (
+            puede && (
+              <button
+                type="button" onClick={onIrAdmin}
+                className="px-4 h-11 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:bg-muted/50 transition cursor-pointer"
+              >
+                Entrar con avisos pendientes
+              </button>
+            )
+          )}
         </div>
       </div>
 

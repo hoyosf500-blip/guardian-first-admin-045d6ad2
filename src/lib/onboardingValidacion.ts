@@ -33,8 +33,21 @@ export function validarNombreTienda(valor: string): ResultadoCampo {
   return OK;
 }
 
+/** Países donde la operación está activa hoy. La lista vive acá y la copia
+ *  server-side está en `create_my_store` — si se agrega uno, van los dos. */
+export const PAISES_ACTIVOS = ['CO', 'EC', 'GT'] as const;
+export type PaisTienda = (typeof PAISES_ACTIVOS)[number];
+
+/** Nunca devuelve un país inválido: lo que no reconoce cae a Colombia. */
+export function normalizarPais(valor: string | null | undefined): PaisTienda {
+  const v = String(valor ?? '').trim().toUpperCase();
+  return (PAISES_ACTIVOS as readonly string[]).includes(v) ? (v as PaisTienda) : 'CO';
+}
+
 export function validarPais(valor: string): ResultadoCampo {
-  return valor === 'CO' || valor === 'EC' ? OK : mal('Elegí Colombia o Ecuador.');
+  return (PAISES_ACTIVOS as readonly string[]).includes(valor)
+    ? OK
+    : mal('Elegí Colombia, Ecuador o Guatemala.');
 }
 
 /** La API Key de integraciones de Dropi es un JWT: tres partes separadas por punto.
