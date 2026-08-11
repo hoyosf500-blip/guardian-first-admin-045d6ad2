@@ -197,12 +197,19 @@ export default function AuthPage() {
   const fieldIconCls = 'absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none';
   const ctaCls = 'btn-accent-3d w-full min-h-11 py-3 rounded-xl font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed mt-1 cursor-pointer inline-flex items-center justify-center gap-2 shadow-glow3d focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
+  // El alta de dueño manda sobre la de invitado solo cuando NO hay invitación
+  // válida: si vino con link de invitación, se respeta ese flujo.
+  const nuevoDueno = selfSignup && !invite?.valid;
+
   const title = view === 'login' ? 'Bienvenido de nuevo'
     : view === 'forgot' ? 'Recuperar contraseña'
+    : nuevoDueno ? 'Creá tu cuenta y tu tienda'
     : 'Crear tu cuenta';
   const subtitle = view === 'login' ? 'Ingresa tus datos para continuar'
     : view === 'forgot' ? 'Ingresa tu correo y te enviamos el link para resetearla'
+    : nuevoDueno ? 'Vas a ser el dueño de tu tienda: tus pedidos y tus datos son privados'
     : 'Completá tus datos para unirte a la tienda';
+
 
   return (
     <div className="flex min-h-screen bg-background">
