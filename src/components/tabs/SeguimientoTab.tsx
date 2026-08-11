@@ -652,6 +652,15 @@ export default function SeguimientoTab() {
           </div>
         </motion.header>
 
+        {/* Búsqueda en la BASE (todo el histórico de la tienda). La lista de
+            abajo solo puede filtrar lo descargado; esto evita concluir "no
+            existe" cuando el pedido está fuera de la ventana de fechas. */}
+        {search.trim() && (
+          <GlobalOrderSearchPanel storeId={activeStoreId} query={search} />
+        )}
+
+
+
         {/* ─────────────────────────────────────────────────────────────
             HERO — "cómo voy hoy" antes que cualquier filtro.
             El contador diario vivía ENTERRADO debajo de los chips y del
