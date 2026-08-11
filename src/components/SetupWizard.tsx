@@ -15,6 +15,7 @@ import { validarSetup, hayErrores } from '@/lib/onboardingValidacion';
 import {
   interpretarChequeos, puedeContinuar, estaCompleto, resumen,
   type ChequeoCrudo, type ChequeoLegible,
+  mensajeReintento,
 } from '@/lib/verificacionCredenciales';
 
 type ClaveCampo =
