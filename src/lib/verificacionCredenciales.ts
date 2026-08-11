@@ -222,3 +222,35 @@ export function resumen(chequeos: ChequeoLegible[]): string {
   const pendientes = chequeos.filter((c) => c.estado === 'falla' || c.estado === 'aviso');
   return `Podés entrar, pero quedan ${pendientes.length} cosa(s) sin resolver.`;
 }
+
+/** Qué decirle al cliente cuando la prueba NO salió verde, según cuántas veces
+ *  ya probó.
+ *
+ *  Repetir el mismo cartel al tercer intento es lo que hace que la gente
+ *  cambie una clave que estaba bien: si nada cambia en pantalla, asume que lo
+ *  que escribió está mal. A partir del tercer intento fallido dejamos de
+ *  sugerir "probá de nuevo" y mandamos a mirar la causa concreta.
+ *
+ *  `errorVerif` es el caso peor: la prueba ni corrió (se cayó la red o la
+ *  función). Ahí las credenciales no están en duda y no hay que insinuarlo. */
+export function mensajeReintento(
+  intentos: number,
+  errorVerif: string,
+  chequeos: ChequeoLegible[],
+): string {
+  if (errorVerif) {
+    return intentos >= 3
+      ? 'La prueba sigue sin poder correr. Tus datos están guardados: no los borres ni los cambies. Esperá unos minutos y volvé a entrar; si sigue igual, escribinos.'
+      : 'No pudimos correr la prueba (no es tu clave). Tus datos quedaron guardados. Probá de nuevo en unos segundos.';
+  }
+  if (estaCompleto(chequeos)) return '';
+
+  const transitorio = chequeos.some((c) => c.estado === 'aviso' && /lento|frenó|respondió/i.test(c.detalle));
+  if (transitorio) {
+    return 'Dropi está respondiendo lento. Esperá un minuto y volvé a probar — no cambies las claves por esto.';
+  }
+  if (intentos >= 3) {
+    return 'Ya probamos varias veces con el mismo resultado. Reintentar de nuevo no va a cambiar nada: corregí lo que está marcado en rojo arriba y guardá otra vez.';
+  }
+  return 'Corregí lo marcado y volvé a probar. Nada se habilita hasta que esté todo en verde.';
+}
