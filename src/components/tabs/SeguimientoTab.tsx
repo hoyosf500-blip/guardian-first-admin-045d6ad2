@@ -16,6 +16,7 @@ import { estaGestionadoHoy, contarGestionadosHoy, estaDetenido, asesorasEnSeguim
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
+import GlobalOrderSearchPanel from '@/components/seguimiento/GlobalOrderSearchPanel';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -650,6 +651,15 @@ export default function SeguimientoTab() {
             </div>
           </div>
         </motion.header>
+
+        {/* Búsqueda en la BASE (todo el histórico de la tienda). La lista de
+            abajo solo puede filtrar lo descargado; esto evita concluir "no
+            existe" cuando el pedido está fuera de la ventana de fechas. */}
+        {search.trim() && (
+          <GlobalOrderSearchPanel storeId={activeStoreId} query={search} />
+        )}
+
+
 
         {/* ─────────────────────────────────────────────────────────────
             HERO — "cómo voy hoy" antes que cualquier filtro.
