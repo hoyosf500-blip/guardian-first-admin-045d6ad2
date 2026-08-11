@@ -3,11 +3,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import {
   Package, Loader2, CheckCircle2, ExternalLink, XCircle,
-  AlertTriangle, MinusCircle, ShieldCheck, ChevronDown,
+  AlertTriangle, MinusCircle, ShieldCheck, ChevronDown, AlertCircle,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import OnboardingStepper from '@/components/onboarding/OnboardingStepper';
+import { validarSetup, hayErrores } from '@/lib/onboardingValidacion';
 import {
   interpretarChequeos, puedeContinuar, estaCompleto, resumen,
   type ChequeoCrudo, type ChequeoLegible,
