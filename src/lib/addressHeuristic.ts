@@ -9,6 +9,7 @@
 // edge function — son la misma lógica intencionalmente duplicada.
 
 import { mapAddressKind } from './mapAddressKind';
+import { registrarResultadoHeuristica } from './addressHeuristicMetrics';
 
 export type AddressKind = 'urban' | 'rural' | 'pickup_office' | 'unknown';
 
@@ -42,6 +43,14 @@ const CANONICAL_PLACA_REGEX = /#?\s*\d+[a-z]?\s*[-–]\s*\d+[a-z]?/i;
 const COMPLEMENT_NO_NUMBER = /\b(?:apto|apartamento|apt|ap|torre|tor|manzana|mz|casa|cs|lote|lt|interior|int|bloque|bl)\b\.?\s*(?!\s*\d)/i;
 
 export function heuristicValidate(direccion: string, countryCode?: string): HeuristicResult {
+  const res = evaluarHeuristica(direccion, countryCode);
+  // Registro mínimo de analítica (en memoria, sin datos personales) para
+  // detectar en CI y en producción si un cambio rompe CO, EC o GT.
+  registrarResultadoHeuristica(countryCode, res);
+  return res;
+}
+
+function evaluarHeuristica(direccion: string, countryCode?: string): HeuristicResult {
   const issues: string[] = [];
   let score = 0;
   const dir = (direccion || '').trim();
