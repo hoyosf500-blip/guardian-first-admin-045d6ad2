@@ -428,9 +428,19 @@ function ResultadoVerificacion({
           </div>
         </div>
 
-        {errorVerif && (
-          <div className="text-xs text-muted-foreground bg-muted/40 border border-border rounded-lg p-3">
-            Tus datos quedaron guardados, pero la prueba no se pudo correr: {errorVerif}
+        {(errorVerif || !listo) && (
+          <div className={`text-xs rounded-lg p-3 border ${
+            errorVerif || !puede
+              ? 'text-danger bg-danger/5 border-danger/25'
+              : 'text-foreground/80 bg-warning/5 border-warning/25'
+          }`} role="alert">
+            {errorVerif && (
+              <p className="mb-1">Tus datos quedaron guardados, pero la prueba no se pudo correr: {errorVerif}</p>
+            )}
+            <p>{mensajeReintento(intentos, errorVerif, chequeos)}</p>
+            <p className="mt-1 opacity-70">
+              Intento {intentos} {intentos === 1 ? 'de verificación' : 'de verificación (ninguno salió en verde)'}
+            </p>
           </div>
         )}
 
