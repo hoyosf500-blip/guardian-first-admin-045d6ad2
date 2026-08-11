@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import {
@@ -77,6 +78,7 @@ type Fase = 'form' | 'verificando' | 'resultado';
  * ownership server-side) y DESPUÉS verifica contra Dropi de verdad.
  */
 export default function SetupWizard({ onDone }: { onDone: () => void }) {
+  const navigate = useNavigate();
   const { activeStore, isOwnerOfActive, refresh } = useStore();
   const [vals, setVals] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
