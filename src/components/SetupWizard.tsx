@@ -251,8 +251,10 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   return (
     <div className="min-h-screen bg-background overflow-y-auto">
       <div className="max-w-2xl mx-auto p-6 sm:p-10">
-        <header className="mb-8 space-y-2">
+        <header className="mb-8 space-y-3">
+          <OnboardingStepper actual={fase === 'resultado' && listo ? 3 : 2} />
           <div className="flex items-center gap-3">
+
             <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
               <Package size={20} className="text-accent-foreground" />
             </div>
