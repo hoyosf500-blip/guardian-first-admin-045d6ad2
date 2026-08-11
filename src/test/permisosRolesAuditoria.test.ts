@@ -20,16 +20,19 @@ import { resolve } from 'node:path';
 const URL_BASE = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '');
 const ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
-function tablasDeLosTipos(): string[] {
+/** [tabla, primera columna] — la columna sirve para armar un WHERE válido. */
+function tablasDeLosTipos(): Array<[string, string]> {
   const ruta = resolve(process.cwd(), 'src/integrations/supabase/types.ts');
   const src = readFileSync(ruta, 'utf8');
   const ini = src.indexOf('Tables: {');
   const fin = src.indexOf('Views: {', ini);
   if (ini === -1 || fin === -1) return [];
   const bloque = src.slice(ini, fin);
-  const nombres = new Set<string>();
-  for (const m of bloque.matchAll(/^ {6}(\w+): \{$/gm)) nombres.add(m[1]);
-  return [...nombres].sort();
+  const salida: Array<[string, string]> = [];
+  for (const m of bloque.matchAll(/^ {6}(\w+): \{\n {8}Row: \{\n {10}(\w+):/gm)) {
+    salida.push([m[1], m[2]]);
+  }
+  return salida.sort((a, b) => a[0].localeCompare(b[0]));
 }
 
 const TABLAS = tablasDeLosTipos();
@@ -62,7 +65,7 @@ d('auditoría — anon no puede escribir en ninguna tabla', () => {
     }
   }, 20_000);
 
-  for (const tabla of TABLAS) {
+  for (const [tabla, col] of TABLAS) {
     it(`anon no puede insertar en ${tabla}`, async () => {
       if (!hayRed) return; // sin red: no afirmamos nada (skip visible, no falso verde)
       const r = await rest(tabla, {
@@ -79,9 +82,10 @@ d('auditoría — anon no puede escribir en ninguna tabla', () => {
 
     it(`anon no puede borrar en ${tabla}`, async () => {
       if (!hayRed) return;
-      // Filtro imposible: si el permiso estuviera abierto, igual no borraría nada,
+      // PostgREST exige un WHERE en los DELETE: usamos un filtro imposible sobre
+      // la primera columna. Si el permiso estuviera abierto, no borraría nada,
       // pero la respuesta delataría el GRANT.
-      const r = await rest(`${tabla}?select=*&limit=1`, { method: 'DELETE' });
+      const r = await rest(`${tabla}?${col}=is.null&${col}=not.is.null`, { method: 'DELETE' });
       const cuerpo = await r.text();
       expect(
         [401, 403].includes(r.status),
