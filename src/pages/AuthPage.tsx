@@ -501,9 +501,19 @@ export default function AuthPage() {
           </motion.div>
 
           {view === 'login' && !invite?.valid && (
-            <motion.p {...fadeUp(0.18)} className="mt-6 text-xs text-muted-foreground text-center">
-              Las cuentas se crean desde el panel de administración o por link de invitación.
-            </motion.p>
+            <motion.div {...fadeUp(0.18)} className="mt-6 text-xs text-muted-foreground text-center space-y-2">
+              {nuevoDueno ? (
+                <button
+                  type="button"
+                  onClick={() => setView('signup')}
+                  className="font-semibold text-accent hover:text-accent/80 transition-colors duration-200 cursor-pointer"
+                >
+                  ¿No tenés cuenta? Creá la tuya y tu tienda →
+                </button>
+              ) : (
+                <p>Las cuentas se crean desde el panel de administración o por link de invitación.</p>
+              )}
+            </motion.div>
           )}
         </div>
       </div>
