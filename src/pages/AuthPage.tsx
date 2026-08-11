@@ -79,6 +79,18 @@ export default function AuthPage() {
   });
   const [invite, setInvite] = useState<InvitePreview | null>(null);
 
+  // Alta de DUEÑO nuevo (link público que se le manda a otra tienda):
+  // `/registro` o `/auth?registro=1`. Se registra, crea SU tienda (queda de
+  // owner = admin de su tienda) y desde /admin invita a su equipo.
+  // Sin este parámetro la pantalla sigue siendo solo login (nada cambia para
+  // quien entra al dominio pelado).
+  const [selfSignup] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return q.get('registro') === '1' || q.get('signup') === '1';
+  });
+  useEffect(() => { if (selfSignup && !inviteToken) setView('signup'); }, [selfSignup, inviteToken]);
+
+
   // Preview de la invitación: nombre de tienda + validez (RPC anon).
   useEffect(() => {
     if (!inviteToken) return;
@@ -185,12 +197,19 @@ export default function AuthPage() {
   const fieldIconCls = 'absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none';
   const ctaCls = 'btn-accent-3d w-full min-h-11 py-3 rounded-xl font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed mt-1 cursor-pointer inline-flex items-center justify-center gap-2 shadow-glow3d focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
+  // El alta de dueño manda sobre la de invitado solo cuando NO hay invitación
+  // válida: si vino con link de invitación, se respeta ese flujo.
+  const nuevoDueno = selfSignup && !invite?.valid;
+
   const title = view === 'login' ? 'Bienvenido de nuevo'
     : view === 'forgot' ? 'Recuperar contraseña'
+    : nuevoDueno ? 'Creá tu cuenta y tu tienda'
     : 'Crear tu cuenta';
   const subtitle = view === 'login' ? 'Ingresa tus datos para continuar'
     : view === 'forgot' ? 'Ingresa tu correo y te enviamos el link para resetearla'
+    : nuevoDueno ? 'Vas a ser el dueño de tu tienda: tus pedidos y tus datos son privados'
     : 'Completá tus datos para unirte a la tienda';
+
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -272,6 +291,20 @@ export default function AuthPage() {
                     Te unís a <span className="font-semibold">{invite.store_name}</span>
                     {invite.country_code ? ` (${invite.country_code})` : ''} como{' '}
                     <span className="font-semibold">{invite.role === 'owner' ? 'dueño' : invite.role === 'supervisor' ? 'supervisor' : 'operadora'}</span>.
+                  </p>
+                </div>
+              )}
+
+              {/* Banner de alta de dueño nuevo (link público de registro) */}
+              {view === 'signup' && nuevoDueno && (
+                <div className="tilt-layer-1 relative mb-5 flex items-start gap-2.5 rounded-2xl border border-accent/30 bg-accent/10 px-4 pl-5 py-3 shadow-card3d">
+                  <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-accent" aria-hidden="true" />
+                  <span className="w-9 h-9 rounded-xl bg-accent/20 glow-accent flex items-center justify-center flex-shrink-0 text-accent" aria-hidden="true">
+                    <StoreIcon size={17} />
+                  </span>
+                  <p className="flex-1 min-w-0 text-xs text-foreground leading-relaxed self-center">
+                    Creás tu cuenta y en el paso siguiente <span className="font-semibold">tu tienda</span>: quedás
+                    como <span className="font-semibold">dueño</span>, conectás tu Dropi y podés invitar a tu equipo.
                   </p>
                 </div>
               )}
@@ -418,7 +451,7 @@ export default function AuthPage() {
                       </div>
                     </div>
                     <button type="submit" disabled={loading} className={ctaCls}>
-                      {loading ? 'Creando cuenta…' : 'Crear cuenta y unirme'}
+                      {loading ? 'Creando cuenta…' : nuevoDueno ? 'Crear cuenta y mi tienda' : 'Crear cuenta y unirme'}
                     </button>
                     <button
                       type="button"
@@ -468,9 +501,19 @@ export default function AuthPage() {
           </motion.div>
 
           {view === 'login' && !invite?.valid && (
-            <motion.p {...fadeUp(0.18)} className="mt-6 text-xs text-muted-foreground text-center">
-              Las cuentas se crean desde el panel de administración o por link de invitación.
-            </motion.p>
+            <motion.div {...fadeUp(0.18)} className="mt-6 text-xs text-muted-foreground text-center space-y-2">
+              {nuevoDueno ? (
+                <button
+                  type="button"
+                  onClick={() => setView('signup')}
+                  className="font-semibold text-accent hover:text-accent/80 transition-colors duration-200 cursor-pointer"
+                >
+                  ¿No tenés cuenta? Creá la tuya y tu tienda →
+                </button>
+              ) : (
+                <p>Las cuentas se crean desde el panel de administración o por link de invitación.</p>
+              )}
+            </motion.div>
           )}
         </div>
       </div>

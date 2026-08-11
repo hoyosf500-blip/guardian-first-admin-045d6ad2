@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { MotionConfig } from "framer-motion";
@@ -71,6 +71,8 @@ const App = () => (
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/auth" element={route(<AuthPage />)} />
+                {/* Link público para dueños nuevos: /registro → alta de cuenta + tienda propia. */}
+                <Route path="/registro" element={<Navigate to="/auth?registro=1" replace />} />
                 <Route path="/reset-password" element={route(<ResetPasswordPage />)} />
                 <Route element={<ProtectedLayout />}>
                   <Route path="/" element={<IndexRedirect />} />
