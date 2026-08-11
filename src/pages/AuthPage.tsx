@@ -451,7 +451,7 @@ export default function AuthPage() {
                       </div>
                     </div>
                     <button type="submit" disabled={loading} className={ctaCls}>
-                      {loading ? 'Creando cuenta…' : 'Crear cuenta y unirme'}
+                      {loading ? 'Creando cuenta…' : nuevoDueno ? 'Crear cuenta y mi tienda' : 'Crear cuenta y unirme'}
                     </button>
                     <button
                       type="button"
