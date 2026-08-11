@@ -264,24 +264,36 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
           />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6 sm:p-8">
-            {FIELDS.map(f => (
-              <div key={f.key} className="space-y-1.5">
-                <Label htmlFor={f.key} className="text-sm font-semibold">
-                  {f.label}
-                  {f.required && <span className="text-danger ml-1" aria-hidden>*</span>}
-                </Label>
-                <Input
-                  id={f.key}
-                  type={f.type ?? 'text'}
-                  value={vals[f.key] ?? ''}
-                  onChange={(e) => setVals(v => ({ ...v, [f.key]: e.target.value }))}
-                  autoComplete={f.key === 'dropi_login_password' ? 'new-password' : 'off'}
-                  spellCheck={false}
-                  className="h-11"
-                />
-                {f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>}
-              </div>
-            ))}
+            {FIELDS.map(f => {
+              const err = (tocados[f.key] || intentoEnvio) ? errores[f.key] : undefined;
+              return (
+                <div key={f.key} className="space-y-1.5">
+                  <Label htmlFor={f.key} className="text-sm font-semibold">
+                    {f.label}
+                    {f.required && <span className="text-danger ml-1" aria-hidden>*</span>}
+                  </Label>
+                  <Input
+                    id={f.key}
+                    type={f.type ?? 'text'}
+                    value={vals[f.key] ?? ''}
+                    onChange={(e) => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+                    onBlur={() => setTocados(t => ({ ...t, [f.key]: true }))}
+                    autoComplete={f.key === 'dropi_login_password' ? 'new-password' : 'off'}
+                    spellCheck={false}
+                    aria-invalid={Boolean(err)}
+                    aria-describedby={err ? `${f.key}-error` : undefined}
+                    className={`h-11 ${err ? 'border-danger focus-visible:ring-danger' : ''}`}
+                  />
+                  {err ? (
+                    <p id={`${f.key}-error`} className="flex items-center gap-1 text-xs text-danger">
+                      <AlertCircle size={12} aria-hidden /> {err}
+                    </p>
+                  ) : (
+                    f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>
+                  )}
+                </div>
+              );
+            })}
 
             <div className="pt-1">
               <button
