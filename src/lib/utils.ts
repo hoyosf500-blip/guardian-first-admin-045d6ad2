@@ -18,26 +18,38 @@ export function bogotaToday(): string {
 // sin threading del countryCode. EC opera en USD CON CENTAVOS — formatearlo
 // como COP sin decimales borraba los centavos de cada cifra (auditoría
 // 2026-07-02: imposible cuadrar contra Dropi que sí muestra $4.734,53).
-let _activeCurrencyCountry: 'CO' | 'EC' = 'CO';
+// GT opera en quetzales (GTQ, con centavos) — mismo motivo que EC: formatearlo
+// como COP entero borraría los centavos y nada cuadraría contra Dropi.
+export type PaisMoneda = 'CO' | 'EC' | 'GT';
 
 export function setCurrencyCountry(country?: string | null): void {
-  _activeCurrencyCountry = country === 'EC' ? 'EC' : 'CO';
+  const cc = String(country || '').toUpperCase();
+  _activeCurrencyCountry = cc === 'EC' ? 'EC' : cc === 'GT' ? 'GT' : 'CO';
 }
 
-export function getCurrencyCountry(): 'CO' | 'EC' {
+export function getCurrencyCountry(): PaisMoneda {
   return _activeCurrencyCountry;
 }
 
 // OLD-4: formatea un número como la moneda de la tienda activa (COP entero para
-// CO, USD con 2 decimales para EC). Usar siempre este helper en vez de
-// `valor.toLocaleString()` solo — el segundo respeta el locale del navegador
-// (en-US imprime "1,500,000" en vez de "$1.500.000" para COP).
+// CO, USD con 2 decimales para EC, GTQ con 2 decimales para GT). Usar siempre
+// este helper en vez de `valor.toLocaleString()` solo — el segundo respeta el
+// locale del navegador (en-US imprime "1,500,000" en vez de "$1.500.000").
 export function formatCOP(n: number | null | undefined): string {
   if (_activeCurrencyCountry === 'EC') {
     if (n == null || !isFinite(n)) return '$0,00';
     return new Intl.NumberFormat('es-EC', {
       style: 'currency',
       currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n);
+  }
+  if (_activeCurrencyCountry === 'GT') {
+    if (n == null || !isFinite(n)) return 'Q0.00';
+    return new Intl.NumberFormat('es-GT', {
+      style: 'currency',
+      currency: 'GTQ',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(n);
@@ -49,3 +61,4 @@ export function formatCOP(n: number | null | undefined): string {
     maximumFractionDigits: 0,
   }).format(n);
 }
+
