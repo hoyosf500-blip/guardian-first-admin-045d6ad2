@@ -16,6 +16,7 @@ import { estaGestionadoHoy, contarGestionadosHoy, estaDetenido, asesorasEnSeguim
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import SegCounterBar from '@/components/SegCounterBar';
 import WaInbox from '@/components/seguimiento/WaInbox';
+import GlobalOrderSearchPanel from '@/components/seguimiento/GlobalOrderSearchPanel';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
