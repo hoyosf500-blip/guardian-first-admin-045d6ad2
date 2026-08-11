@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import {
   Package, Loader2, CheckCircle2, ExternalLink, XCircle,
-  AlertTriangle, MinusCircle, ShieldCheck, ChevronDown,
+  AlertTriangle, MinusCircle, ShieldCheck, ChevronDown, AlertCircle,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import OnboardingStepper from '@/components/onboarding/OnboardingStepper';
+import { validarSetup, hayErrores } from '@/lib/onboardingValidacion';
 import {
   interpretarChequeos, puedeContinuar, estaCompleto, resumen,
   type ChequeoCrudo, type ChequeoLegible,
@@ -75,6 +78,7 @@ type Fase = 'form' | 'verificando' | 'resultado';
  * ownership server-side) y DESPUÉS verifica contra Dropi de verdad.
  */
 export default function SetupWizard({ onDone }: { onDone: () => void }) {
+  const navigate = useNavigate();
   const { activeStore, isOwnerOfActive, refresh } = useStore();
   const [vals, setVals] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -83,6 +87,11 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   const [chequeos, setChequeos] = useState<ChequeoLegible[]>([]);
   const [errorVerif, setErrorVerif] = useState('');
   const [verAvanzado, setVerAvanzado] = useState(false);
+  /** Campos ya visitados + si ya apretó "Guardar": los errores aparecen recién
+   *  ahí, no con el formulario en blanco. */
+  const [tocados, setTocados] = useState<Record<string, boolean>>({});
+  const [intentoEnvio, setIntentoEnvio] = useState(false);
+
 
   /** Token de sesión tal como estaba en la base al abrir. Se reenvía si el
    *  campo quedó vacío: guardar el wizard NUNCA debe borrar un token que hoy
@@ -132,8 +141,12 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     );
   }
 
-  const missing = FIELDS.filter(f => f.required && !(vals[f.key] ?? '').trim()).map(f => f.key);
-  const canSubmit = missing.length === 0 && !saving;
+  // Validación de FORMA antes de gastar un viaje a Dropi: una API Key cortada o
+  // un correo mal escrito se avisan acá, no después de un "guardado" que falla
+  // en silencio.
+  const errores = validarSetup(vals);
+  const canSubmit = !hayErrores(errores) && !saving;
+  const cantidadErrores = Object.keys(errores).length;
 
   type RpcRes = { error: { message: string } | null };
   const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
@@ -177,8 +190,15 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || !activeStore) return;
+    setIntentoEnvio(true);
+    if (!activeStore || saving) return;
+    // Nada viaja a Dropi si la forma de los datos ya está mal.
+    if (!canSubmit) {
+      toast.error('Revisá los campos marcados en rojo antes de continuar.');
+      return;
+    }
     setSaving(true);
+
 
     const { error: brandErr } = await rpc('update_store_branding', {
       p_store_id: activeStore.id,
@@ -233,8 +253,10 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   return (
     <div className="min-h-screen bg-background overflow-y-auto">
       <div className="max-w-2xl mx-auto p-6 sm:p-10">
-        <header className="mb-8 space-y-2">
+        <header className="mb-8 space-y-3">
+          <OnboardingStepper actual={fase === 'resultado' && listo ? 3 : 2} />
           <div className="flex items-center gap-3">
+
             <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
               <Package size={20} className="text-accent-foreground" />
             </div>
@@ -261,27 +283,40 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             onVolver={() => setFase('form')}
             onReintentar={() => void verificar(activeStore.id)}
             onContinuar={onDone}
+            onIrAdmin={() => { onDone(); navigate('/admin'); }}
           />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6 sm:p-8">
-            {FIELDS.map(f => (
-              <div key={f.key} className="space-y-1.5">
-                <Label htmlFor={f.key} className="text-sm font-semibold">
-                  {f.label}
-                  {f.required && <span className="text-danger ml-1" aria-hidden>*</span>}
-                </Label>
-                <Input
-                  id={f.key}
-                  type={f.type ?? 'text'}
-                  value={vals[f.key] ?? ''}
-                  onChange={(e) => setVals(v => ({ ...v, [f.key]: e.target.value }))}
-                  autoComplete={f.key === 'dropi_login_password' ? 'new-password' : 'off'}
-                  spellCheck={false}
-                  className="h-11"
-                />
-                {f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>}
-              </div>
-            ))}
+            {FIELDS.map(f => {
+              const err = (tocados[f.key] || intentoEnvio) ? errores[f.key] : undefined;
+              return (
+                <div key={f.key} className="space-y-1.5">
+                  <Label htmlFor={f.key} className="text-sm font-semibold">
+                    {f.label}
+                    {f.required && <span className="text-danger ml-1" aria-hidden>*</span>}
+                  </Label>
+                  <Input
+                    id={f.key}
+                    type={f.type ?? 'text'}
+                    value={vals[f.key] ?? ''}
+                    onChange={(e) => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+                    onBlur={() => setTocados(t => ({ ...t, [f.key]: true }))}
+                    autoComplete={f.key === 'dropi_login_password' ? 'new-password' : 'off'}
+                    spellCheck={false}
+                    aria-invalid={Boolean(err)}
+                    aria-describedby={err ? `${f.key}-error` : undefined}
+                    className={`h-11 ${err ? 'border-danger focus-visible:ring-danger' : ''}`}
+                  />
+                  {err ? (
+                    <p id={`${f.key}-error`} className="flex items-center gap-1 text-xs text-danger">
+                      <AlertCircle size={12} aria-hidden /> {err}
+                    </p>
+                  ) : (
+                    f.hint && <p className="text-xs text-muted-foreground">{f.hint}</p>
+                  )}
+                </div>
+              );
+            })}
 
             <div className="pt-1">
               <button
@@ -321,16 +356,16 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                 Ir a Dropi <ExternalLink size={11} />
               </a>
               <button
-                type="submit" disabled={!canSubmit}
+                type="submit" disabled={saving || (intentoEnvio && !canSubmit)}
                 className="inline-flex items-center gap-2 px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold shadow-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {saving ? <Loader2 className="animate-spin" size={15} /> : <ShieldCheck size={15} />}
                 Guardar y verificar
               </button>
             </div>
-            {missing.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Faltan {missing.length} campo(s) requerido(s).
+            {cantidadErrores > 0 && (intentoEnvio || Object.keys(tocados).length > 0) && (
+              <p className="text-xs text-danger" role="status">
+                Revisá {cantidadErrores} {cantidadErrores === 1 ? 'campo' : 'campos'} antes de continuar.
               </p>
             )}
           </form>
@@ -341,7 +376,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 }
 
 function ResultadoVerificacion({
-  fase, chequeos, errorVerif, listo, puede, onVolver, onReintentar, onContinuar,
+  fase, chequeos, errorVerif, listo, puede, onVolver, onReintentar, onContinuar, onIrAdmin,
 }: {
   fase: Fase;
   chequeos: ChequeoLegible[];
@@ -351,6 +386,8 @@ function ResultadoVerificacion({
   onVolver: () => void;
   onReintentar: () => void;
   onContinuar: () => void;
+  /** Paso 3: cierra el asistente y deja al dueño en /admin. */
+  onIrAdmin: () => void;
 }) {
   if (fase === 'verificando') {
     return (
@@ -413,10 +450,16 @@ function ResultadoVerificacion({
         </ul>
 
         {listo && (
-          <p className="text-xs text-muted-foreground border-t border-border pt-4">
-            Ya empezamos a traer tus pedidos y tu billetera. Se van a ir llenando solos en los
-            próximos minutos.
-          </p>
+          <div className="border-t border-border pt-4 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Ya empezamos a traer tus pedidos y tu billetera. Se van a ir llenando solos en los
+              próximos minutos.
+            </p>
+            <p className="text-xs text-foreground/80">
+              <strong>Paso 3:</strong> entrá a <strong>Configuración</strong> para invitar a tu
+              equipo y ajustar horarios. Tus datos son privados de tu tienda.
+            </p>
+          </div>
         )}
       </div>
 
@@ -434,14 +477,23 @@ function ResultadoVerificacion({
           >
             Volver a probar
           </button>
+          {listo && (
+            <button
+              type="button" onClick={onContinuar}
+              className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+            >
+              Ir a pedidos
+            </button>
+          )}
           <button
-            type="button" onClick={onContinuar} disabled={!puede}
+            type="button" onClick={onIrAdmin} disabled={!puede}
             className="px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            {listo ? 'Entrar a Guardian' : 'Entrar igual'}
+            {listo ? 'Ir a Configuración' : 'Entrar igual'}
           </button>
         </div>
       </div>
+
     </div>
   );
 }
