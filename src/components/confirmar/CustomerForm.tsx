@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { OrderData } from '@/lib/orderUtils';
 import { DEPARTAMENTOS_NOMBRES, getCiudadesDe } from '@/lib/colombiaGeo';
+import { DEPARTAMENTOS_GUATEMALA } from '@/lib/guatemalaGeo';
 import { PROVINCIAS_ECUADOR } from '@/lib/ecuadorGeo';
 import { useDropiCityCatalog } from '@/hooks/useDropiCityCatalog';
 import { optionsPreservingCurrent } from '@/lib/geoCatalog';
@@ -104,8 +105,12 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
   // Colombia usa el catálogo DANE (dropdown depto + ciudad); Ecuador usa las 24
   // provincias (con sugerencias) y la ciudad/cantón como texto libre.
   const { activeStore } = useStore();
-  const isEC = (activeStore?.country_code || 'CO').toUpperCase() === 'EC';
-  const DEPTOS = isEC ? PROVINCIAS_ECUADOR : DEPARTAMENTOS_NOMBRES;
+  const pais = (activeStore?.country_code || 'CO').toUpperCase();
+  const isEC = pais === 'EC';
+  // Guatemala: 22 departamentos propios + municipio como texto libre. Sin esto
+  // caía al catálogo DANE de Colombia (el mismo bug que tuvo Ecuador).
+  const isGT = pais === 'GT';
+  const DEPTOS = isEC ? PROVINCIAS_ECUADOR : isGT ? DEPARTAMENTOS_GUATEMALA : DEPARTAMENTOS_NOMBRES;
 
   // Build depto option list. Si el depto del pedido matchea la lista canónica
   // case-insensitive, se normaliza al casing canónico para que el Select lo
@@ -122,7 +127,7 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
   useEffect(() => {
     // Solo normalizamos casing en Colombia (dropdown canónico). En EC la ciudad es
     // texto libre y no queremos re-casificar la provincia guardada.
-    if (isEC || !form.departamento) return;
+    if (isEC || isGT || !form.departamento) return;
     const canonical = DEPARTAMENTOS_NOMBRES.find(
       d => d.toLowerCase() === form.departamento.toLowerCase(),
     );
@@ -132,7 +137,10 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.departamento]);
 
-  const ciudades = useMemo(() => (isEC ? [] : getCiudadesDe(form.departamento)), [form.departamento, isEC]);
+  const ciudades = useMemo(
+    () => (isEC || isGT ? [] : getCiudadesDe(form.departamento)),
+    [form.departamento, isEC, isGT],
+  );
 
   const ciudadOptions = useMemo(() => {
     const list = [...ciudades];
