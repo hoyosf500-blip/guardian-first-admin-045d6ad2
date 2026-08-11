@@ -132,8 +132,12 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     );
   }
 
-  const missing = FIELDS.filter(f => f.required && !(vals[f.key] ?? '').trim()).map(f => f.key);
-  const canSubmit = missing.length === 0 && !saving;
+  // Validación de FORMA antes de gastar un viaje a Dropi: una API Key cortada o
+  // un correo mal escrito se avisan acá, no después de un "guardado" que falla
+  // en silencio.
+  const errores = validarSetup(vals);
+  const canSubmit = !hayErrores(errores) && !saving;
+  const cantidadErrores = Object.keys(errores).length;
 
   type RpcRes = { error: { message: string } | null };
   const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
