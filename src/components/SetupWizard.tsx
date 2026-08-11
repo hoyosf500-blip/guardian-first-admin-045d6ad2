@@ -353,7 +353,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                 Ir a Dropi <ExternalLink size={11} />
               </a>
               <button
-                type="submit" disabled={!canSubmit}
+                type="submit" disabled={saving || (intentoEnvio && !canSubmit)}
                 className="inline-flex items-center gap-2 px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold shadow-sm hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {saving ? <Loader2 className="animate-spin" size={15} /> : <ShieldCheck size={15} />}
