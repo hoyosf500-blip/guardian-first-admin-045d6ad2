@@ -281,6 +281,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             onVolver={() => setFase('form')}
             onReintentar={() => void verificar(activeStore.id)}
             onContinuar={onDone}
+            onIrAdmin={() => { onDone(); navigate('/admin'); }}
           />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6 sm:p-8">
