@@ -445,10 +445,16 @@ function ResultadoVerificacion({
         </ul>
 
         {listo && (
-          <p className="text-xs text-muted-foreground border-t border-border pt-4">
-            Ya empezamos a traer tus pedidos y tu billetera. Se van a ir llenando solos en los
-            próximos minutos.
-          </p>
+          <div className="border-t border-border pt-4 space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Ya empezamos a traer tus pedidos y tu billetera. Se van a ir llenando solos en los
+              próximos minutos.
+            </p>
+            <p className="text-xs text-foreground/80">
+              <strong>Paso 3:</strong> entrá a <strong>Configuración</strong> para invitar a tu
+              equipo y ajustar horarios. Tus datos son privados de tu tienda.
+            </p>
+          </div>
         )}
       </div>
 
@@ -466,14 +472,23 @@ function ResultadoVerificacion({
           >
             Volver a probar
           </button>
+          {listo && (
+            <button
+              type="button" onClick={onContinuar}
+              className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+            >
+              Ir a pedidos
+            </button>
+          )}
           <button
-            type="button" onClick={onContinuar} disabled={!puede}
+            type="button" onClick={onIrAdmin} disabled={!puede}
             className="px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            {listo ? 'Entrar a Guardian' : 'Entrar igual'}
+            {listo ? 'Ir a Configuración' : 'Entrar igual'}
           </button>
         </div>
       </div>
+
     </div>
   );
 }
