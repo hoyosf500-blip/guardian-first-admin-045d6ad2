@@ -362,15 +362,18 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
     return () => { cancelled = true; };
   }, [currentPhone, currentOrderId, activeStoreId]);
 
-  // Fetch Dropi fingerprint (global cross-store data)
+  // Huella Dropi. Via edge function (misma que FingerprintBadge): lee las
+  // credenciales DE ESTA tienda y valida membresia. El RPC viejo
+  // `dropi_fingerprint` usaba el token global del dueño de la plataforma para
+  // cualquier tienda (fuga entre inquilinos) y quedó revocado.
   useEffect(() => {
-    if (!currentPhone) return;
+    if (!currentPhone || !activeStoreId) return;
     let cancelled = false;
     (async () => {
       setFpLoading(true);
       try {
-        const { data: raw, error } = await supabase.rpc('dropi_fingerprint', {
-          p_phone: currentPhone,
+        const { data: raw, error } = await supabase.functions.invoke('dropi-fingerprint', {
+          body: { phone: currentPhone, storeId: activeStoreId },
         });
         const d = raw as Record<string, unknown> | null;
         if (!cancelled && !error && d?.ok && (d.fingerprint as DropiFingerprint)?.found) {
@@ -383,7 +386,7 @@ export default function CustomerHistoryCard({ currentPhone, currentOrderId }: Pr
       }
     })();
     return () => { cancelled = true; };
-  }, [currentPhone]);
+  }, [currentPhone, activeStoreId]);
 
   // ── Derived stats ──────────────────────────────────────────────
 
