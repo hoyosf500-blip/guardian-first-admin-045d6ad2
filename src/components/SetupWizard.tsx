@@ -85,6 +85,11 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   const [chequeos, setChequeos] = useState<ChequeoLegible[]>([]);
   const [errorVerif, setErrorVerif] = useState('');
   const [verAvanzado, setVerAvanzado] = useState(false);
+  /** Campos ya visitados + si ya apretó "Guardar": los errores aparecen recién
+   *  ahí, no con el formulario en blanco. */
+  const [tocados, setTocados] = useState<Record<string, boolean>>({});
+  const [intentoEnvio, setIntentoEnvio] = useState(false);
+
 
   /** Token de sesión tal como estaba en la base al abrir. Se reenvía si el
    *  campo quedó vacío: guardar el wizard NUNCA debe borrar un token que hoy
