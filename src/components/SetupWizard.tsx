@@ -351,9 +351,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                 Guardar y verificar
               </button>
             </div>
-            {missing.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Faltan {missing.length} campo(s) requerido(s).
+            {cantidadErrores > 0 && (intentoEnvio || Object.keys(tocados).length > 0) && (
+              <p className="text-xs text-danger" role="status">
+                Revisá {cantidadErrores} {cantidadErrores === 1 ? 'campo' : 'campos'} antes de continuar.
               </p>
             )}
           </form>
