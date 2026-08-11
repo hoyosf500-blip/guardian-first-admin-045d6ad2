@@ -373,7 +373,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 }
 
 function ResultadoVerificacion({
-  fase, chequeos, errorVerif, listo, puede, onVolver, onReintentar, onContinuar,
+  fase, chequeos, errorVerif, listo, puede, onVolver, onReintentar, onContinuar, onIrAdmin,
 }: {
   fase: Fase;
   chequeos: ChequeoLegible[];
@@ -383,6 +383,8 @@ function ResultadoVerificacion({
   onVolver: () => void;
   onReintentar: () => void;
   onContinuar: () => void;
+  /** Paso 3: cierra el asistente y deja al dueño en /admin. */
+  onIrAdmin: () => void;
 }) {
   if (fase === 'verificando') {
     return (
