@@ -82,7 +82,9 @@ function hallazgos(): string[] {
       const tabla = m[1];
       if (!TABLAS_POR_TIENDA.includes(tabla)) continue;
       const fin = src.indexOf(';', m.index);
-      const sentencia = src.slice(m.index, fin < 0 ? src.length : fin);
+      // La ventana pasa la sentencia: el filtro por tienda a veces se encadena
+      // después (`let q = supabase.from(...); if (storeId) q = q.eq('store_id',…)`).
+      const sentencia = src.slice(m.index, (fin < 0 ? src.length : fin) + 400);
       if (/store_id/.test(sentencia) || FILTRO_POR_ID.test(sentencia)) continue;
       const clave = `${f.split('\\').join('/')}::${tabla}`;
       if (ALLOWLIST[clave]) continue;
