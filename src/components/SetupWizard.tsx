@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { panelDropiUrl } from '@/lib/dropiPais';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import {
@@ -91,6 +92,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
    *  ahí, no con el formulario en blanco. */
   const [tocados, setTocados] = useState<Record<string, boolean>>({});
   const [intentoEnvio, setIntentoEnvio] = useState(false);
+  /** Cuántas veces se probó contra Dropi. Sirve para no repetir el mismo
+   *  mensaje al tercer intento fallido y ofrecer la salida correcta. */
+  const [intentosVerif, setIntentosVerif] = useState(0);
 
 
   /** Token de sesión tal como estaba en la base al abrir. Se reenvía si el
@@ -166,6 +170,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   async function verificar(storeId: string) {
     setFase('verificando');
     setErrorVerif('');
+    setIntentosVerif(n => n + 1);
     try {
       const { data, error } = await supabase.functions.invoke('dropi-verify-credentials', {
         body: { store_id: storeId },
@@ -280,6 +285,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             errorVerif={errorVerif}
             listo={listo}
             puede={puede}
+            intentos={intentosVerif}
             onVolver={() => setFase('form')}
             onReintentar={() => void verificar(activeStore.id)}
             onContinuar={onDone}
@@ -349,7 +355,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
             <div className="pt-3 border-t border-border flex items-center justify-between gap-3">
               <a
-                href={activeStore.country_code === 'EC' ? 'https://app.dropi.ec' : 'https://app.dropi.co'}
+                href={panelDropiUrl(activeStore.country_code)}
                 target="_blank" rel="noreferrer"
                 className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 min-h-11"
               >
@@ -376,13 +382,15 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 }
 
 function ResultadoVerificacion({
-  fase, chequeos, errorVerif, listo, puede, onVolver, onReintentar, onContinuar, onIrAdmin,
+  fase, chequeos, errorVerif, listo, puede, intentos, onVolver, onReintentar, onContinuar, onIrAdmin,
 }: {
   fase: Fase;
   chequeos: ChequeoLegible[];
   errorVerif: string;
   listo: boolean;
   puede: boolean;
+  /** Número de prueba contra Dropi (1 = la primera). */
+  intentos: number;
   onVolver: () => void;
   onReintentar: () => void;
   onContinuar: () => void;
