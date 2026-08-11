@@ -22,6 +22,8 @@ export function bogotaToday(): string {
 // como COP entero borraría los centavos y nada cuadraría contra Dropi.
 export type PaisMoneda = 'CO' | 'EC' | 'GT';
 
+let _activeCurrencyCountry: PaisMoneda = 'CO';
+
 export function setCurrencyCountry(country?: string | null): void {
   const cc = String(country || '').toUpperCase();
   _activeCurrencyCountry = cc === 'EC' ? 'EC' : cc === 'GT' ? 'GT' : 'CO';
