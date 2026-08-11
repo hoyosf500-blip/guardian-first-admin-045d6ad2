@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import {
   Package, Loader2, CheckCircle2, ExternalLink, XCircle,
-  AlertTriangle, MinusCircle, ShieldCheck, ChevronDown, AlertCircle,
+  AlertTriangle, MinusCircle, RefreshCw, ShieldCheck, ChevronDown, AlertCircle,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -497,13 +497,11 @@ function ResultadoVerificacion({
         <div className="flex flex-wrap items-center gap-2">
           {!listo && (
             <button
-              type="button" onClick={onReintentar} disabled={fase === 'verificando'}
-              className="inline-flex items-center gap-2 px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              type="button" onClick={onReintentar}
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition cursor-pointer"
             >
-              {fase === 'verificando'
-                ? <Loader2 className="animate-spin" size={15} />
-                : <RefreshCw size={15} />}
-              {fase === 'verificando' ? 'Probando…' : 'Volver a probar'}
+              <RefreshCw size={15} />
+              Volver a probar
             </button>
           )}
           {listo ? (
