@@ -577,11 +577,30 @@ export function isValidEcuadorianPhone(phone: string): boolean {
   return normalizeEcuadorianPhone(phone) !== null;
 }
 
+/**
+ * Normaliza un móvil guatemalteco a sus 8 dígitos canónicos (sin el 502).
+ * Los móviles de Guatemala arrancan en 3, 4 o 5 y no llevan trunk 0.
+ *   "50231234567" no existe: el país usa 8 dígitos, no 10.
+ *   "31234567"      → "31234567"
+ *   "+502 4123 4567" → "41234567"
+ */
+export function normalizeGuatemalanPhone(phone: string): string | null {
+  let d = (phone || '').replace(/\D/g, '');
+  if (d.length > 8 && d.startsWith('502')) d = d.slice(3);
+  return d.length === 8 && /^[345]/.test(d) ? d : null;
+}
+
+/** Validez de móvil guatemalteco. */
+export function isValidGuatemalanPhone(phone: string): boolean {
+  return normalizeGuatemalanPhone(phone) !== null;
+}
+
 /** Normaliza según el país de la tienda (default CO). */
 export function normalizePhoneForCountry(phone: string, countryCode?: string | null): string | null {
-  return (countryCode || 'CO').toUpperCase() === 'EC'
-    ? normalizeEcuadorianPhone(phone)
-    : normalizeColombianPhone(phone);
+  const cc = (countryCode || 'CO').toUpperCase();
+  if (cc === 'EC') return normalizeEcuadorianPhone(phone);
+  if (cc === 'GT') return normalizeGuatemalanPhone(phone);
+  return normalizeColombianPhone(phone);
 }
 
 /** Validez de móvil según el país de la tienda (default CO). */
@@ -590,8 +609,14 @@ export function isValidPhoneForCountry(phone: string, countryCode?: string | nul
 }
 
 /** Normalize a phone for wa.me/ links (country code prefix exactly once).
- *  countryCode de la tienda activa: 'EC' usa 593, default 'CO' usa 57. */
+ *  countryCode de la tienda activa: 'EC' usa 593, 'GT' usa 502, default 'CO' 57. */
 export function getWhatsAppPhone(phone: string, countryCode?: string | null): string {
+  if ((countryCode || 'CO').toUpperCase() === 'GT') {
+    const n = normalizeGuatemalanPhone(phone);
+    if (n) return `502${n}`;
+    const d = phone.replace(/[^0-9]/g, '');
+    return d.startsWith('502') ? d : `502${d}`;
+  }
   if ((countryCode || 'CO').toUpperCase() === 'EC') {
     const n = normalizeEcuadorianPhone(phone);
     if (n) return `593${n}`;
