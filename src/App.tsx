@@ -71,6 +71,8 @@ const App = () => (
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/auth" element={route(<AuthPage />)} />
+                {/* Link público para dueños nuevos: /registro → alta de cuenta + tienda propia. */}
+                <Route path="/registro" element={<Navigate to="/auth?registro=1" replace />} />
                 <Route path="/reset-password" element={route(<ResetPasswordPage />)} />
                 <Route element={<ProtectedLayout />}>
                   <Route path="/" element={<IndexRedirect />} />
