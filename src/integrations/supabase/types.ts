@@ -3475,6 +3475,7 @@ export type Database = {
           utilidad_real: number
         }[]
       }
+      purge_old_logs: { Args: never; Returns: Json }
       recategorize_personal_movements: { Args: never; Returns: Json }
       record_inactivity_warning: {
         Args: { p_lost_seconds: number; p_store_id: string }
