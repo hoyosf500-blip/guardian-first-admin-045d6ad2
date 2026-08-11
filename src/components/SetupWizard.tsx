@@ -188,8 +188,15 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || !activeStore) return;
+    setIntentoEnvio(true);
+    if (!activeStore || saving) return;
+    // Nada viaja a Dropi si la forma de los datos ya está mal.
+    if (!canSubmit) {
+      toast.error('Revisá los campos marcados en rojo antes de continuar.');
+      return;
+    }
     setSaving(true);
+
 
     const { error: brandErr } = await rpc('update_store_branding', {
       p_store_id: activeStore.id,
