@@ -79,6 +79,18 @@ export default function AuthPage() {
   });
   const [invite, setInvite] = useState<InvitePreview | null>(null);
 
+  // Alta de DUEÑO nuevo (link público que se le manda a otra tienda):
+  // `/registro` o `/auth?registro=1`. Se registra, crea SU tienda (queda de
+  // owner = admin de su tienda) y desde /admin invita a su equipo.
+  // Sin este parámetro la pantalla sigue siendo solo login (nada cambia para
+  // quien entra al dominio pelado).
+  const [selfSignup] = useState(() => {
+    const q = new URLSearchParams(window.location.search);
+    return q.get('registro') === '1' || q.get('signup') === '1';
+  });
+  useEffect(() => { if (selfSignup && !inviteToken) setView('signup'); }, [selfSignup, inviteToken]);
+
+
   // Preview de la invitación: nombre de tienda + validez (RPC anon).
   useEffect(() => {
     if (!inviteToken) return;
