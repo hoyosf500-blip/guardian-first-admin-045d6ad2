@@ -3501,11 +3501,28 @@ export type Database = {
         Args: { p_store_id?: string; p_version: string }
         Returns: undefined
       }
+      search_orders: {
+        Args: { p_limit?: number; p_q: string; p_store_id: string }
+        Returns: {
+          ciudad: string
+          estado: string
+          external_id: string
+          fecha: string
+          guia: string
+          nombre: string
+          phone: string
+          producto: string
+          transportadora: string
+          valor: number
+        }[]
+      }
       set_active_store: { Args: { p_store_id: string }; Returns: undefined }
       set_store_shopify_auto_push: {
         Args: { p_enabled: boolean; p_store_id: string }
         Returns: undefined
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       snapshot_cfo_diagnostico: {
         Args: { p_year_month: string }
         Returns: {
