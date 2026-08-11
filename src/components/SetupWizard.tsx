@@ -482,34 +482,55 @@ function ResultadoVerificacion({
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      {/* Mientras no esté todo en verde, la acción PRINCIPAL es reintentar.
+          Entrar al CRM sigue existiendo solo cuando no hay una falla que lo
+          deje vacío (`puede`), pero como botón chico y con el aviso arriba:
+          bloquearlo del todo dejaría encerrada a una cuenta con verificación
+          en dos pasos, que nunca puede llegar al verde completo. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button" onClick={onVolver}
           className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
         >
           Corregir datos
         </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button" onClick={onReintentar}
-            className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
-          >
-            Volver a probar
-          </button>
-          {listo && (
+        <div className="flex flex-wrap items-center gap-2">
+          {!listo && (
             <button
-              type="button" onClick={onContinuar}
-              className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+              type="button" onClick={onReintentar} disabled={fase === 'verificando'}
+              className="inline-flex items-center gap-2 px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              Ir a pedidos
+              {fase === 'verificando'
+                ? <Loader2 className="animate-spin" size={15} />
+                : <RefreshCw size={15} />}
+              {fase === 'verificando' ? 'Probando…' : 'Volver a probar'}
             </button>
           )}
-          <button
-            type="button" onClick={onIrAdmin} disabled={!puede}
-            className="px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {listo ? 'Ir a Configuración' : 'Entrar igual'}
-          </button>
+          {listo ? (
+            <>
+              <button
+                type="button" onClick={onContinuar}
+                className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+              >
+                Ir a pedidos
+              </button>
+              <button
+                type="button" onClick={onIrAdmin}
+                className="px-4 h-11 rounded-lg bg-accent text-accent-foreground text-sm font-semibold hover:opacity-90 transition cursor-pointer"
+              >
+                Ir a Configuración
+              </button>
+            </>
+          ) : (
+            puede && (
+              <button
+                type="button" onClick={onIrAdmin}
+                className="px-4 h-11 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:bg-muted/50 transition cursor-pointer"
+              >
+                Entrar con avisos pendientes
+              </button>
+            )
+          )}
         </div>
       </div>
 
