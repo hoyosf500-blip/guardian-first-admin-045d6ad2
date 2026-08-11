@@ -295,6 +295,20 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {/* Banner de alta de dueño nuevo (link público de registro) */}
+              {view === 'signup' && nuevoDueno && (
+                <div className="tilt-layer-1 relative mb-5 flex items-start gap-2.5 rounded-2xl border border-accent/30 bg-accent/10 px-4 pl-5 py-3 shadow-card3d">
+                  <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-accent" aria-hidden="true" />
+                  <span className="w-9 h-9 rounded-xl bg-accent/20 glow-accent flex items-center justify-center flex-shrink-0 text-accent" aria-hidden="true">
+                    <StoreIcon size={17} />
+                  </span>
+                  <p className="flex-1 min-w-0 text-xs text-foreground leading-relaxed self-center">
+                    Creás tu cuenta y en el paso siguiente <span className="font-semibold">tu tienda</span>: quedás
+                    como <span className="font-semibold">dueño</span>, conectás tu Dropi y podés invitar a tu equipo.
+                  </p>
+                </div>
+              )}
+
               {/* Aviso de invitación inválida */}
               {inviteInvalidMsg && view !== 'signup' && (
                 <div className="tilt-layer-1 relative mb-5 flex items-start gap-2.5 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
