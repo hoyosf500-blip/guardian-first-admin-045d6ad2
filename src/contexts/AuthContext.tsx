@@ -23,7 +23,7 @@ interface AuthState {
    */
   profileLoaded: boolean;
   loading: boolean;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null; needsConfirmation: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
@@ -160,11 +160,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, displayName: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { data: { display_name: displayName }, emailRedirectTo: window.location.origin }
     });
-    return { error: translateAuthError(error?.message) };
+    // Con confirmación por email ACTIVA, Supabase crea el usuario pero NO devuelve
+    // sesión hasta que hace click en el link del correo (data.session === null con
+    // data.user presente). Lo señalamos para que la pantalla diga "revisá tu correo"
+    // en vez del mensaje ambiguo. Con confirmación OFF hay sesión → needsConfirmation
+    // = false. (Si el email ya existía, Supabase también devuelve user sin sesión y
+    // sin error, para no filtrar si estaba registrado — cae en el mismo mensaje, que
+    // es seguro.)
+    const needsConfirmation = !error && !!data?.user && !data?.session;
+    return { error: translateAuthError(error?.message), needsConfirmation };
   };
 
   const signIn = async (email: string, password: string) => {

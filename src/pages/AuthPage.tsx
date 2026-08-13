@@ -135,13 +135,17 @@ export default function AuthPage() {
     e.preventDefault();
     if (!name.trim()) { toast.error('Ingresá tu nombre'); return; }
     setLoading(true);
-    const { error } = await signUp(email.trim(), password, name.trim());
+    const { error, needsConfirmation } = await signUp(email.trim(), password, name.trim());
     setLoading(false);
     if (error) { toast.error(error); return; }
-    toast.success(
-      'Cuenta creada. Si te pedimos confirmar el correo, revisá tu email y luego entrá; si no, ya estás dentro.',
-      { duration: 8000 },
-    );
+    if (needsConfirmation) {
+      toast.success(
+        'Te enviamos un correo de confirmación. Hacé click en el link (mirá también el spam) y después entrá con tu cuenta.',
+        { duration: 10000 },
+      );
+    } else {
+      toast.success('¡Cuenta creada! Ya estás dentro.', { duration: 5000 });
+    }
     // Si hubo auto-login, el redirect a /dashboard + la redención de la
     // invitación ocurren solos. Si requiere confirmar email, mostramos login.
     setView('login');
