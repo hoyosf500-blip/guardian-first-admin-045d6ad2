@@ -49,7 +49,7 @@ function relTime(ms: number): string {
 }
 
 export default function SyncFreshness({ onAuditClick }: Props) {
-  const { activeStoreId, isManagerOfActive } = useStore();
+  const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
   const qc = useQueryClient();
   const [logs, setLogs] = useState<LogRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -249,7 +249,9 @@ export default function SyncFreshness({ onAuditClick }: Props) {
           </p>
         )}
       </div>
-      {isManagerOfActive && (
+      {/* Solo el DUEÑO: dropi-sync es owner-only. Un supervisor que apretaba
+          "Reintentar manual" recibía 403. */}
+      {isOwnerOfActive && (
         <button
           onClick={handleRetry}
           disabled={retrying || loading}

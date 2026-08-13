@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useActiveStoreId } from '@/contexts/StoreContext';
+import { useActiveStoreId, useStore } from '@/contexts/StoreContext';
 import { isRpcMissing } from '@/lib/rpcError';
 import { toast } from 'sonner';
 import type { MesCrudo, Rendicion } from '@/lib/balanceRendiciones';
@@ -109,10 +109,13 @@ export function useKpisMensuales(desde: string, hasta: string, enabled = true) {
 // ── Rendiciones ────────────────────────────────────────────────────────────
 
 export function useRendiciones(from: string, to: string) {
-  const storeId = useActiveStoreId();
+  const { activeStoreId: storeId, isOwnerOfActive } = useStore();
   return useQuery<Rendicion[] | null>({
     queryKey: ['rendiciones', storeId ?? 'none', from, to],
-    enabled: Boolean(storeId && from && to),
+    // Solo el DUEÑO ve las rendiciones: `rendiciones_range` es owner-only. Sin
+    // este gate un supervisor disparaba la lectura y recibía 42501 en cada carga
+    // de /logistica → Balance (la escritura ya estaba gateada, la lectura no).
+    enabled: Boolean(storeId && from && to && isOwnerOfActive),
     staleTime: 60_000,
     queryFn: async () => {
       const { data, error } = await rpc()('rendiciones_range', {

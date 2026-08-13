@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, AlertTriangle, Package, ArrowRight, PartyPopper } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useStore } from '@/contexts/StoreContext';
 import { useOrders } from '@/contexts/OrderContext';
 import { classifySegEstado } from '@/lib/segStatus';
 import { isLocallyDead } from '@/lib/duplicateOrders';
@@ -33,6 +34,7 @@ interface Props {
 export default function SiguienteColaBanner({ supersededIds }: Props) {
   const navigate = useNavigate();
   const { isAdmin, user } = useAuth();
+  const { isOwnerOfActive } = useStore();
   const { workQueue, novedadesQueue, segData, mySegTouchedToday, coverageSegError } = useOrders();
 
   // Confirmar terminado = ningún pedido ACCIONABLE de la cola sin resultado.
@@ -75,8 +77,8 @@ export default function SiguienteColaBanner({ supersededIds }: Props) {
     [segData],
   );
 
-  // No es operadora, o todavía le falta confirmar → no molestar.
-  if (isAdmin) return null;
+  // No es operadora (el jefe: admin o dueño), o todavía le falta confirmar → no molestar.
+  if (isAdmin || isOwnerOfActive) return null;
   if (confirmarPend > 0) return null;
 
   // Terminó Confirmar y NO queda nada en ninguna cola → felicitar y listo.

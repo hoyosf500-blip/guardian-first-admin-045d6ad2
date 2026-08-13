@@ -50,7 +50,7 @@ const MOUSEMOVE_THROTTLE_MS = 1000;
 
 export function useOperatorHeartbeat() {
   const { user, isAdmin, profileLoaded, loading: authLoading } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isOwnerOfActive } = useStore();
 
   // Refs (no rerenders): bucket de segundos activos/idle acumulados desde
   // el último ping al server.
@@ -75,7 +75,11 @@ export function useOperatorHeartbeat() {
     // evidencia en operator_activity_daily: una fila suya de 1 segundo, que es
     // exactamente la firma de la marca de entrada de acá abajo.
     if (authLoading || !profileLoaded) return;
-    if (!user || isAdmin) return;
+    // Ni el admin global NI el DUEÑO fichan jornada: son el jefe, no producen
+    // volumen de confirmaciones y ensuciarían su propio dashboard de Productividad
+    // (auditoría 2026-08-13: el dueño nuevo aparecía fichado como operadora con
+    // "turno iniciado"). El supervisor SÍ trabaja, así que se sigue trackeando.
+    if (!user || isAdmin || isOwnerOfActive) return;
     if (!activeStoreId) return;
 
     const onActivity = () => {
@@ -232,5 +236,5 @@ export function useOperatorHeartbeat() {
       // Flush final best-effort — no esperamos la promesa
       void flush();
     };
-  }, [user, isAdmin, profileLoaded, authLoading, activeStoreId]);
+  }, [user, isAdmin, isOwnerOfActive, profileLoaded, authLoading, activeStoreId]);
 }

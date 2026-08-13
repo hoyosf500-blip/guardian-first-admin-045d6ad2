@@ -106,7 +106,7 @@ async function leerMarcaDeEntrada(userId: string, storeId: string): Promise<stri
 
 export default function WelcomeGate({ children }: Props) {
   const { user, profile, isAdmin, profileLoaded } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isOwnerOfActive } = useStore();
   const [visible, setVisible] = useState(false);
   // Hora SELLADA POR EL SERVIDOR (operator_activity_daily.first_action_at), no
   // el reloj de esta máquina. Antes se mostraba `new Date()`, que coincide con
@@ -121,9 +121,10 @@ export default function WelcomeGate({ children }: Props) {
     if (!user || !profileLoaded) return;
     if (yaSaludadoHoy(user.id)) return;
 
-    // El dueño no ficha jornada: no hay marca que consultar. Se lo saluda igual
-    // pero sin chip de turno — la decisión la toma `decidirApertura`.
-    if (isAdmin) {
+    // El jefe (admin global o DUEÑO de la tienda) no ficha jornada: no hay marca
+    // que consultar. Se lo saluda igual pero sin chip de turno — anunciarle un
+    // turno al dueño sería mentirle. El supervisor SÍ ficha, así que ve su chip.
+    if (isAdmin || isOwnerOfActive) {
       marcarSaludado(user.id);
       setVisible(decidirApertura({ esAdmin: true, marcaEntrada: null }).saludar);
       return;
@@ -144,7 +145,7 @@ export default function WelcomeGate({ children }: Props) {
       setVisible(true);
     })();
     return () => { cancelado = true; };
-  }, [user, profileLoaded, isAdmin, activeStoreId]);
+  }, [user, profileLoaded, isAdmin, isOwnerOfActive, activeStoreId]);
 
   const cerrar = useCallback(() => setVisible(false), []);
 

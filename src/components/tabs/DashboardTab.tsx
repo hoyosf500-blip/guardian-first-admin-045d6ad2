@@ -41,7 +41,7 @@ export default function DashboardTab() {
   // "su día" sale de myCounter — ver el bloque del cierre más abajo.
   const { allOrders, counter, myCounter, workQueue } = useOrders();
   const { user, profile } = useAuth();
-  const { activeStoreId, isManagerOfActive } = useStore();
+  const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
   const [period, setPeriod] = useState(7);
   const [historyData, setHistoryData] = useState<DailyResult[]>([]);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -274,7 +274,11 @@ export default function DashboardTab() {
 
   // Audit M3: cancellation guards — evitan setState en componente desmontado.
   useEffect(() => {
-    if (!user) return;
+    // Solo manager: get_daily_operator_stats resuelve su scope con
+    // _resolve_scope_store(), que tira 42501 para una operadora pura. Sin este
+    // gate, cada montaje del Dashboard de una operadora disparaba un 42501 (que
+    // se tragaba en silencio) y el ranking nunca era para ella de todos modos.
+    if (!user || !isManagerOfActive) return;
     let cancelled = false;
     const today = bogotaToday();
     // El scope por tienda lo resuelve la RPC server-side vía
@@ -307,7 +311,7 @@ export default function DashboardTab() {
       if (!cancelled) setOperatorRanking(ranking);
     });
     return () => { cancelled = true; };
-  }, [user, counter, activeStoreId]); // re-fetch al marcar algo Y al cambiar de tienda (la RPC resuelve scope server-side)
+  }, [user, isManagerOfActive, counter, activeStoreId]); // re-fetch al marcar algo Y al cambiar de tienda (la RPC resuelve scope server-side)
 
   // Load orders from DB for dashboard stats (filtrado por tienda activa)
   useEffect(() => {
@@ -986,14 +990,20 @@ export default function DashboardTab() {
               Fuente: {lastSync?.source} · {lastSync?.synced_count ?? 0} pedidos · {lastSync ? new Date(lastSync.created_at).toLocaleString('es-CO') : ''}
             </div>
           </div>
-          <button
-            onClick={resyncNow}
-            disabled={resyncing}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card/40 border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-          >
-            <RefreshCw size={12} className={resyncing ? 'animate-spin' : ''} />
-            {resyncing ? 'Sincronizando...' : 'Forzar sync'}
-          </button>
+          {/* Solo el DUEÑO: dropi-sync es owner-only (403 para el resto). El
+              equipo ve el estado del sync pero no un botón que les da error. */}
+          {isOwnerOfActive ? (
+            <button
+              onClick={resyncNow}
+              disabled={resyncing}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-card/40 border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              <RefreshCw size={12} className={resyncing ? 'animate-spin' : ''} />
+              {resyncing ? 'Sincronizando...' : 'Forzar sync'}
+            </button>
+          ) : (
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">Lo sincroniza el dueño</span>
+          )}
         </motion.div>
       )}
 

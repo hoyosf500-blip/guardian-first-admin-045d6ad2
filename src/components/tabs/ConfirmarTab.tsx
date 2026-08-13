@@ -63,7 +63,7 @@ const fadeUp = (delay = 0) => ({
 
 export default function ConfirmarTab({ profile }: Props) {
   const { user } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isOwnerOfActive } = useStore();
   const { workQueue, allOrders, setAllOrders, buildWorkQueue, counter, resetOrders, excelLoaded, setExcelLoaded, myConfirmTouchedToday, gestionPorPedido, gestionCargada, resumenAsesorasHoy, sinRespuestaHoy, coverageConfirmError, markResult } = useOrders();
   // Persist nav state in sessionStorage so a tab discard (common on mobile
   // when operator leaves to the transportadora's tracking page) does not
@@ -113,6 +113,18 @@ export default function ConfirmarTab({ profile }: Props) {
   const storeVigenteRef = useRef<string | null>(activeStoreId);
   useEffect(() => { storeVigenteRef.current = activeStoreId; }, [activeStoreId]);
 
+  // Reintento ÚNICO ante fallo de la carga inicial. Sin esto, el error hacía
+  // setAutoLoading(false) SIN marcar excelLoaded → el efecto (autoLoading está en
+  // sus deps) se relanzaba EN EL ACTO → refetch → error → toast, en bucle
+  // martillando la DB (escenario típico de una tienda nueva con RLS a medio
+  // aplicar). Mismo patrón que useDataLoader: corta el loop marcando cargado y
+  // reintenta UNA sola vez tras 30s; se rearma al próximo montaje.
+  const autoLoadRetryTimerRef = useRef<number | null>(null);
+  const autoLoadRetriedRef = useRef(false);
+  useEffect(() => () => {
+    if (autoLoadRetryTimerRef.current != null) window.clearTimeout(autoLoadRetryTimerRef.current);
+  }, []);
+
   // Auto-load orders from DB on mount if not already loaded. Uses a strict
   // eq() match on PENDIENTE CONFIRMACION instead of ilike('%PENDIENTE%') —
   // the old filter also matched "PENDIENTE" (locally confirmed) and
@@ -151,13 +163,25 @@ export default function ConfirmarTab({ profile }: Props) {
     // eso el guard mira un ref con la tienda vigente, no el ciclo del efecto.
     const storeDeEstaCarga = activeStoreId;
     const esDeOtraTienda = () => storeVigenteRef.current !== storeDeEstaCarga;
+    // Corta el loop de reintento: marca cargado (para que el efecto no se relance
+    // en el acto) y programa UN reintento tras 30s por si fue un blip de red.
+    const onErrorCarga = (mensaje: string) => {
+      toast.error(mensaje);
+      setAutoLoading(false);
+      setExcelLoaded(true);
+      if (!autoLoadRetriedRef.current) {
+        autoLoadRetriedRef.current = true;
+        autoLoadRetryTimerRef.current = window.setTimeout(() => {
+          if (!esDeOtraTienda()) setExcelLoaded(false); // habilita un único reintento
+        }, 30000);
+      }
+    };
     fetchPendientesDeConfirmar(storeDeEstaCarga, esDeOtraTienda)
       .then(({ filas: dbOrders, error, truncado }) => {
         if (esDeOtraTienda()) return;
         if (error) {
           console.error('Error loading orders:', error);
-          toast.error('Error cargando pedidos: ' + error);
-          setAutoLoading(false);
+          onErrorCarga('Error cargando pedidos: ' + error);
           return;
         }
         if (truncado) toast.warning('Hay tantos pendientes que no caben todos en pantalla. Avisá para subir el tope.');
@@ -176,8 +200,7 @@ export default function ConfirmarTab({ profile }: Props) {
         if (esDeOtraTienda()) return;
         const msg = err instanceof Error ? err.message : String(err);
         console.error('Network error loading orders:', err);
-        toast.error('Error de red: ' + msg);
-        setAutoLoading(false);
+        onErrorCarga('Error de red: ' + msg);
       });
   }, [user, excelLoaded, today, autoLoading, activeStoreId]);
 
@@ -487,8 +510,19 @@ export default function ConfirmarTab({ profile }: Props) {
           `AperturaWizard` no se borra: queda en el repo por si el dueño quiere
           recuperar la carga manual de esos números, solo que ya no se monta. */}
 
-      {/* Pantalla vacía: UN solo camino. La cola se llena desde Dropi y nada más. */}
-      {!autoLoading && !excelLoaded && (
+      {/* Pantalla vacía: la cola se llena desde Dropi. El botón que sincroniza es
+          SOLO del dueño (dropi-sync es owner-only: a una operadora le daba
+          "Error sincronizando: Edge Function returned a non-2xx status code" =
+          "el CRM está roto" en su primer día). El equipo ve un mensaje claro. */}
+      {!autoLoading && !excelLoaded && !isOwnerOfActive && (
+        <div className="rounded-2xl bg-card/40 border border-border p-6 text-center">
+          <p className="text-sm font-semibold text-foreground">Todavía no hay pedidos para confirmar</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            El dueño de la tienda los trae desde Dropi. Apenas sincronice, aparecen acá.
+          </p>
+        </div>
+      )}
+      {!autoLoading && !excelLoaded && isOwnerOfActive && (
         <div className="space-y-3">
           <button
             onClick={async () => {

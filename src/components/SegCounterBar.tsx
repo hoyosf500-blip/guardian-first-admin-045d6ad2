@@ -33,7 +33,7 @@ interface Stats {
 
 export default function SegCounterBar() {
   const { user, isAdmin } = useAuth();
-  const { activeStoreId } = useStore();
+  const { activeStoreId, isOwnerOfActive } = useStore();
   const [stats, setStats] = useState<Stats>({
     myActions: 0, myResolved: 0, teamActions: 0, teamResolved: 0,
   });
@@ -87,7 +87,8 @@ export default function SegCounterBar() {
     };
   }, [user, activeStoreId, refetch]);
 
-  if (!user || isAdmin) return null;
+  // El jefe (admin o dueño) no ve la barra de cola personal de operadora.
+  if (!user || isAdmin || isOwnerOfActive) return null;
 
   // La consulta falló: decirlo explícitamente. Un 0 que en realidad significa
   // "no pude leer la base" es una cifra inventada — y acá se lee como "no
