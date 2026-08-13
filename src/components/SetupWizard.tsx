@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { panelDropiUrl } from '@/lib/dropiPais';
 import { supabase } from '@/integrations/supabase/client';
@@ -97,31 +97,32 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
    *  mensaje al tercer intento fallido y ofrecer la salida correcta. */
   const [intentosVerif, setIntentosVerif] = useState(0);
 
-
-  /** Token de sesión tal como estaba en la base al abrir. Se reenvía si el
-   *  campo quedó vacío: guardar el wizard NUNCA debe borrar un token que hoy
-   *  está funcionando. */
-  const tokenOriginal = useRef('');
-
   useEffect(() => {
     if (!activeStore || !isOwnerOfActive) { setLoading(false); return; }
     let cancelled = false;
     void (async () => {
-      const { data: cfg } = await supabase
-        .from('store_dropi_config')
-        .select('dropi_api_key, dropi_session_token, dropi_store_url')
-        .eq('store_id', activeStore.id)
-        .maybeSingle();
+      // Solo booleans + store_url por RPC — NUNCA los secretos. La api_key
+      // PERMANENTE y el session token dejaron de bajar al navegador: bajarlos al
+      // DOM fue justo como se filtró la clave de Ecuador. Igual que
+      // StoreCredentialsPanel. Los campos de secreto arrancan vacíos y "vacío =
+      // conservar el guardado": el upsert preserva-en-blanco
+      // (COALESCE(NULLIF(...))), verificado en vivo — StoreCredentialsPanel ya
+      // guarda así en producción sin borrar claves.
+      const { data } = await (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>,
+      ) => Promise<{ data: Array<{ store_url: string | null }> | null }>)(
+        'get_store_dropi_status', { p_store_id: activeStore.id },
+      );
       if (cancelled) return;
-      tokenOriginal.current = cfg?.dropi_session_token ?? '';
+      const row = Array.isArray(data) ? data[0] : null;
       setVals({
         name: activeStore.name,
         brand_logo_url: activeStore.brand_logo_url ?? '',
-        dropi_api_key: cfg?.dropi_api_key ?? '',
-        dropi_session_token: cfg?.dropi_session_token ?? '',
-        dropi_store_url: cfg?.dropi_store_url ?? '',
-        // El email y la clave NUNCA se leen de vuelta: son secretos y no hay
-        // ninguna razón para mandarlos al navegador.
+        // Secretos: en blanco a propósito. Pegar uno nuevo lo cambia; dejarlo
+        // vacío conserva el que ya estaba (preserve-en-blanco server-side).
+        dropi_api_key: '',
+        dropi_session_token: '',
+        dropi_store_url: row?.store_url ?? '',
         dropi_login_email: '',
         dropi_login_password: '',
       });
@@ -219,9 +220,11 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     const { error: cfgErr } = await rpc('upsert_store_dropi_config', {
       p_store_id: activeStore.id,
       p_country_code: activeStore.country_code,
+      // En blanco = conservar lo guardado. El upsert preserva-en-blanco
+      // (COALESCE(NULLIF(...))), así que ya no hace falta re-leer los secretos
+      // para no borrarlos: guardar el wizard sin tocar el campo NO vacía la clave.
       p_dropi_api_key: vals.dropi_api_key ?? '',
-      // Nunca vaciar un token que ya estaba: ver `tokenOriginal`.
-      p_dropi_session_token: (vals.dropi_session_token || tokenOriginal.current) ?? '',
+      p_dropi_session_token: vals.dropi_session_token ?? '',
       p_dropi_store_url: vals.dropi_store_url ?? '',
     });
     if (cfgErr) {
