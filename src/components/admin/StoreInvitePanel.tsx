@@ -1,10 +1,20 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { UserPlus, Loader2, Copy, Check, Link2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { TiltCard } from '@/components/ui3d';
+import { isRpcMissing } from '@/lib/rpcError';
+
+/** Invitación vigente (sin usar, sin vencer) — shape de la RPC list_store_invites. */
+interface InviteRow {
+  id: string;
+  role: string;
+  email: string | null;
+  created_at: string;
+  expires_at: string;
+}
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -20,9 +30,49 @@ export default function StoreInvitePanel() {
   const [link, setLink] = useState('');
   const [copied, setCopied] = useState(false);
   const [role, setRole] = useState<'operator' | 'supervisor'>('operator');
+  // Invitaciones vigentes de la tienda (auditoría 2026-08-13: un link generado
+  // por error quedaba vivo 7 días sin forma de anularlo). `soportado=false` =
+  // la RPC list_store_invites aún no está aplicada en la base → el panel
+  // degrada al comportamiento anterior (solo generar) sin romperse.
+  const [invites, setInvites] = useState<InviteRow[]>([]);
+  const [soportado, setSoportado] = useState(true);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  const loadInvites = useCallback(async () => {
+    if (!activeStoreId || !isOwnerOfActive) return;
+    type Res = { data: InviteRow[] | null; error: { message: string; code?: string } | null };
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<Res>)(
+      'list_store_invites',
+      { p_store_id: activeStoreId },
+    );
+    if (error) {
+      if (isRpcMissing(error)) setSoportado(false);
+      return;
+    }
+    setSoportado(true);
+    setInvites(data ?? []);
+  }, [activeStoreId, isOwnerOfActive]);
+
+  useEffect(() => { loadInvites(); }, [loadInvites]);
 
   // Solo el dueño de la tienda activa puede invitar.
   if (!activeStore || !isOwnerOfActive) return null;
+
+  async function revocar(id: string) {
+    setRevoking(id);
+    type Res = { error: { message: string; code?: string } | null };
+    const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<Res>)(
+      'revoke_store_invite',
+      { p_invite_id: id },
+    );
+    setRevoking(null);
+    if (error) {
+      toast.error('No se pudo revocar la invitación', { description: error.message });
+      return;
+    }
+    toast.success('Invitación revocada — el link ya no sirve');
+    loadInvites();
+  }
 
   async function generate() {
     if (!activeStoreId) return;
@@ -46,6 +96,7 @@ export default function StoreInvitePanel() {
     const base = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
     setLink(`${base}/auth?invite=${data}`);
     toast.success('Link de invitación generado');
+    loadInvites();
   }
 
   async function copy() {
@@ -111,6 +162,35 @@ export default function StoreInvitePanel() {
               {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
               {copied ? 'Copiado' : 'Copiar'}
             </button>
+          </div>
+        )}
+
+        {soportado && invites.length > 0 && (
+          <div className="pt-1">
+            <div className="hud-label mb-1.5">Invitaciones vigentes · {invites.length}</div>
+            <div className="space-y-1.5">
+              {invites.map(inv => {
+                const dias = Math.max(0, Math.ceil((Date.parse(inv.expires_at) - Date.now()) / 86400000));
+                return (
+                  <div key={inv.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-card/40 border border-border">
+                    <div className="min-w-0 text-xs text-foreground truncate">
+                      <span className="font-semibold">{inv.role === 'supervisor' ? 'Supervisor' : 'Operadora'}</span>
+                      <span className="text-muted-foreground"> · vence {dias === 0 ? 'hoy' : `en ${dias} día${dias === 1 ? '' : 's'}`}</span>
+                    </div>
+                    <button
+                      onClick={() => revocar(inv.id)}
+                      disabled={revoking === inv.id}
+                      className="h-8 px-2.5 rounded-lg border border-red/40 text-red hover:bg-red/5 text-[11px] font-semibold transition-colors disabled:opacity-50 flex-shrink-0"
+                    >
+                      {revoking === inv.id ? 'Revocando…' : 'Revocar'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1.5">
+              Revocar mata el link al instante — útil si lo mandaste al chat equivocado o con el rol equivocado.
+            </p>
           </div>
         )}
       </div>

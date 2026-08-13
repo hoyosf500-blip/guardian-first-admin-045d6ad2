@@ -10,6 +10,7 @@ import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import StoreInvitePanel from '@/components/admin/StoreInvitePanel';
+import { isRpcMissing } from '@/lib/rpcError';
 import CompartirGuardianPanel from '@/components/admin/CompartirGuardianPanel';
 import ProductDropiMapPanel from '@/components/admin/ProductDropiMapPanel';
 import DropiParityPanel from '@/components/admin/DropiParityPanel';
@@ -48,8 +49,10 @@ export default function AdminTab() {
   // AdminPage): un supervisor DEBE poder entrar. Solo la config GLOBAL (clave IA)
   // queda reservada al admin de plataforma.
   const { isAdmin } = useAuth();
-  const { activeStoreId, isManagerOfActive } = useStore();
+  const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
   const [operators, setOperators] = useState<Profile[]>([]);
+  // Miembro con una acción en vuelo (cambiar rol / quitar) — deshabilita sus controles.
+  const [memberBusy, setMemberBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncKey, setSyncKey] = useState(0);
   const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
@@ -186,6 +189,51 @@ export default function AdminTab() {
     // anterior — y su await alargaba el skeleton del tab en cada montaje.
     // Los cierres se ven en la pestaña "Reportes diarios".)
     setLoading(false);
+  }
+
+  // ── Miembros y accesos (auditoría 2026-08-13: no existía offboarding — una
+  // operadora despedida conservaba el acceso para siempre). Solo el DUEÑO de la
+  // tienda; el rol 'owner' nunca se gestiona desde acá (es del admin de
+  // plataforma), así una tienda jamás queda sin dueño. Las RPCs son nuevas: si
+  // el SQL aún no se aplicó, el toast lo dice en vez de un error críptico.
+  const SQL_MIEMBROS_FALTA = 'Falta aplicar el SQL del panel de miembros — pedímelo en el chat';
+  type RpcVoidRes = { error: { message: string; code?: string } | null };
+  const rpcMiembros = (fn: string, args: Record<string, unknown>) =>
+    (supabase.rpc as unknown as (f: string, a: Record<string, unknown>) => Promise<RpcVoidRes>)(fn, args);
+
+  async function cambiarRol(userId: string, rol: 'operator' | 'supervisor') {
+    if (!activeStoreId) return;
+    setMemberBusy(userId);
+    const { error } = await rpcMiembros('set_store_member_role', {
+      p_store_id: activeStoreId, p_user_id: userId, p_role: rol,
+    });
+    setMemberBusy(null);
+    if (error) {
+      toast.error(isRpcMissing(error) ? SQL_MIEMBROS_FALTA : 'No se pudo cambiar el rol', {
+        description: isRpcMissing(error) ? undefined : error.message,
+      });
+      return;
+    }
+    toast.success('Rol actualizado');
+    loadData();
+  }
+
+  async function quitarMiembro(userId: string, nombre: string) {
+    if (!activeStoreId) return;
+    if (!window.confirm(`¿Sacar a ${nombre} de la tienda? Pierde el acceso al instante.`)) return;
+    setMemberBusy(userId);
+    const { error } = await rpcMiembros('remove_store_member', {
+      p_store_id: activeStoreId, p_user_id: userId,
+    });
+    setMemberBusy(null);
+    if (error) {
+      toast.error(isRpcMissing(error) ? SQL_MIEMBROS_FALTA : 'No se pudo quitar al miembro', {
+        description: isRpcMissing(error) ? undefined : error.message,
+      });
+      return;
+    }
+    toast.success(`${nombre} ya no tiene acceso a la tienda`);
+    loadData();
   }
 
   if (!isManagerOfActive) return <div className="text-center py-10 text-muted-foreground">Acceso denegado</div>;
@@ -376,12 +424,19 @@ export default function AdminTab() {
                 <Users size={15} />
               </span>
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-foreground">Operadoras registradas</h3>
-                <p className="text-xs text-muted-foreground mt-0.5"><span className="font-mono tabular-nums">{operators.length}</span> usuarios</p>
+                <h3 className="text-sm font-semibold text-foreground">Miembros y accesos</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  <span className="font-mono tabular-nums">{operators.length}</span> usuarios
+                  {isOwnerOfActive && ' · cambiá el rol o quitá el acceso al instante'}
+                </p>
               </div>
             </div>
             <div className="p-3 space-y-2">
-              {operators.map(op => (
+              {operators.map(op => {
+                const esOwner = op.roles.includes('owner');
+                const rolActual = (op.roles[0] === 'supervisor' ? 'supervisor' : 'operator') as 'operator' | 'supervisor';
+                const busy = memberBusy === op.user_id;
+                return (
                 <div key={op.user_id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-card/40 border border-border hover:border-border-strong transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-accent-gradient flex items-center justify-center text-xs font-bold text-accent-foreground flex-shrink-0">
@@ -392,20 +447,45 @@ export default function AdminTab() {
                       <div className="text-[10px] text-muted-foreground font-mono tabular-nums">{op.user_id.slice(0, 8)}…</div>
                     </div>
                   </div>
-                  <div className="flex gap-1.5 flex-shrink-0">
-                    {op.roles.map(r => (
-                      <span
-                        key={r}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
-                          r === 'admin' || r === 'owner'
-                            ? 'bg-warning/14 border border-warning/30 text-warning'
-                            : 'bg-info/14 border border-info/30 text-info'
-                        }`}
-                      >{r}</span>
-                    ))}
-                  </div>
+                  {/* El dueño gestiona a su equipo; a él no lo gestiona nadie desde acá. */}
+                  {isOwnerOfActive && !esOwner ? (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <label className="sr-only" htmlFor={`rol-${op.user_id}`}>Rol de {op.display_name}</label>
+                      <select
+                        id={`rol-${op.user_id}`}
+                        value={rolActual}
+                        disabled={busy}
+                        onChange={e => cambiarRol(op.user_id, e.target.value as 'operator' | 'supervisor')}
+                        className="h-8 rounded-lg border border-border bg-card/40 px-2 text-[11px] text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50"
+                      >
+                        <option value="operator">operadora</option>
+                        <option value="supervisor">supervisor</option>
+                      </select>
+                      <button
+                        onClick={() => quitarMiembro(op.user_id, op.display_name)}
+                        disabled={busy}
+                        className="h-8 px-2.5 rounded-lg border border-red/40 text-red hover:bg-red/5 text-[11px] font-semibold transition-colors disabled:opacity-50"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1.5 flex-shrink-0">
+                      {op.roles.map(r => (
+                        <span
+                          key={r}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
+                            r === 'admin' || r === 'owner'
+                              ? 'bg-warning/14 border border-warning/30 text-warning'
+                              : 'bg-info/14 border border-info/30 text-info'
+                          }`}
+                        >{r === 'owner' ? 'dueño' : r}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </TiltCard>
           </motion.div>
