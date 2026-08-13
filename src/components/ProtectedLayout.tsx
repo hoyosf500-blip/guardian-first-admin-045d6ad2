@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOperatorHeartbeat } from '@/hooks/useOperatorHeartbeat';
 import { useReportAppVersion } from '@/hooks/useReportAppVersion';
+import { useVersionCheck } from '@/hooks/useVersionCheck';
 import InactivityGuard from '@/components/InactivityGuard';
 import { OrderProvider } from '@/contexts/OrderContext';
 import { StoreProvider, useStore } from '@/contexts/StoreContext';
@@ -158,6 +159,9 @@ function ProtectedLayoutInner() {
   useOperatorHeartbeat();
   // Sella qué versión del CRM tiene cargada esta pestaña → panel /plataforma.
   useReportAppVersion();
+  // Avisa (sin recargar solo) cuando se publicó una versión nueva: una pestaña
+  // abierta días seguía con el bundle viejo y sin los arreglos ya publicados.
+  useVersionCheck();
 
   // Redención de invitación por link: si el usuario llegó por
   // /auth?invite=TOKEN, AuthPage guardó el token en localStorage. Apenas hay

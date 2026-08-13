@@ -43,7 +43,7 @@ interface FieldDef {
  * el 28-jul; se descubrió el 6-ago, con los costos congelados diez días.
  */
 const FIELDS: FieldDef[] = [
-  { key: 'name', label: 'Nombre de la tienda', required: true, hint: 'Ej. "Rushmira (Colombia)" — aparece en el menú lateral.' },
+  { key: 'name', label: 'Nombre de la tienda', required: true, hint: 'Ej. "Mi Tienda (Colombia)" — aparece en el menú lateral.' },
   { key: 'dropi_api_key', label: 'API Key de Dropi', required: true, type: 'password', hint: 'En Dropi → Configuración → API. Es la clave de integraciones, no vence.' },
   { key: 'dropi_login_email', label: 'Correo de tu cuenta Dropi', required: true, type: 'email', hint: 'El mismo con el que entrás a la página de Dropi.' },
   { key: 'dropi_login_password', label: 'Clave de tu cuenta Dropi', required: true, type: 'password', hint: 'Guardian la usa para renovar el acceso solo. Sin esto, tus costos y tu billetera dejan de actualizarse.' },

@@ -586,7 +586,7 @@ export default function StoreCredentialsPanel() {
               type="url"
               value={storeUrl}
               onChange={e => { credsDirtyRef.current = true; setStoreUrl(e.target.value); }}
-              placeholder="https://rushmira.com/"
+              placeholder="https://mitienda.com/"
               className="mt-1 w-full h-10 rounded-xl border border-border bg-card/40 px-3 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
