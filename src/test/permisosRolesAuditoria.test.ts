@@ -76,8 +76,13 @@ d('auditoría — anon no puede escribir en ninguna tabla', () => {
         body: JSON.stringify({}),
       });
       const cuerpo = await r.text();
+      // 404 = la tabla figura en los tipos generados pero YA NO existe en la base.
+      // types.ts va atras del schema en este setup (Lovable regenera tarde), y a
+      // veces se dropean tablas (ej. las del bot de WhatsApp, 2026-08-13). NO es una
+      // fuga: no se puede escribir en una tabla inexistente. Una fuga real seria un
+      // 2xx. Aceptar 404 mantiene intacta la deteccion de leaks y evita rojos por drift.
       expect(
-        [401, 403].includes(r.status),
+        [401, 403, 404].includes(r.status),
         `INSERT en ${tabla} devolvió ${r.status}: ${cuerpo.slice(0, 200)}`,
       ).toBe(true);
     }, 20_000);
@@ -89,8 +94,9 @@ d('auditoría — anon no puede escribir en ninguna tabla', () => {
       // pero la respuesta delataría el GRANT.
       const r = await rest(`${tabla}?${col}=is.null&${col}=not.is.null`, { method: 'DELETE' });
       const cuerpo = await r.text();
+      // 404: misma razon que en el INSERT — tabla dropeada que aun figura en types.ts.
       expect(
-        [401, 403].includes(r.status),
+        [401, 403, 404].includes(r.status),
         `DELETE en ${tabla} devolvió ${r.status}: ${cuerpo.slice(0, 200)}`,
       ).toBe(true);
     }, 20_000);

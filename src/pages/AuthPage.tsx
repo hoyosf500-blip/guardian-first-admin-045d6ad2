@@ -257,7 +257,7 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <motion.div {...fadeUp(0.34)} className="hud-label-cased text-subtle">Colombia · Ecuador</motion.div>
+          <motion.div {...fadeUp(0.34)} className="hud-label-cased text-subtle">Colombia · Ecuador · Guatemala</motion.div>
         </div>
       </div>
 
