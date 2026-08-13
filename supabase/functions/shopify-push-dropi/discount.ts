@@ -15,12 +15,20 @@
 export function allocateOrderDiscount(
   lines: { gross: number; lineDiscount: number }[],
   orderDiscount: number,
+  /** Decimales de la moneda: 0 = COP entero (default, comportamiento original);
+   *  2 = países con centavos (EC/GT). Con 0, un descuento de $2.50 se
+   *  redondeaba a $3 — en USD/GTQ el reparto debe trabajar en CENTAVOS. */
+  decimals = 0,
 ): number[] {
+  const f = Math.pow(10, decimals);
   const out = lines.map(() => 0);
   const alreadyAllocated = lines.reduce((s, l) => s + l.lineDiscount, 0);
-  const nets = lines.map((l) => Math.max(0, l.gross - l.lineDiscount));
+  // Todo el reparto corre en la UNIDAD MÍNIMA (centavos si decimals=2): así el
+  // clamp, las proporciones y el ajuste del sobrante conservan la suma EXACTA
+  // sin perder fracciones. Al final se vuelve a la unidad de moneda.
+  const nets = lines.map((l) => Math.max(0, Math.round((l.gross - l.lineDiscount) * f)));
   const netTotal = nets.reduce((s, n) => s + n, 0);
-  let residual = Math.round((orderDiscount || 0) - alreadyAllocated);
+  let residual = Math.round(((orderDiscount || 0) - alreadyAllocated) * f);
   residual = Math.max(0, Math.min(residual, netTotal)); // clamp: nunca > neto disponible
   if (residual <= 0 || netTotal <= 0) return out;
   let assigned = 0;
@@ -35,7 +43,7 @@ export function allocateOrderDiscount(
     for (let i = 1; i < lines.length; i++) if (nets[i] > nets[maxI]) maxI = i;
     out[maxI] += diff;
   }
-  return out;
+  return out.map((v) => v / f);
 }
 
 /**

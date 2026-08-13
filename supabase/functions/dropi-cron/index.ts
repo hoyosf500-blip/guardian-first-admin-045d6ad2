@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { dropiHostFor } from "../_shared/dropiHosts.ts";
+import { dropiAppHostFor } from "../_shared/dropiCountry.ts";
 import { loadStoreConfig, type StoreDropiConfig } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { cancelOrderInDropi, dropiGetOrder, type CancelOrderResult } from "../_shared/dropiCancelOrder.ts";
@@ -635,7 +636,14 @@ Deno.serve(async (req: Request) => {
     // justo por tienda (abajo), ninguna tienda puede starvear a otra.
     activeConfigs.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
       const rank = (cc: unknown) => (String(cc || "CO") === "CO" ? 0 : 1);
-      return rank(a.country_code) - rank(b.country_code);
+      // Tiebreak por store_id: el cursor de rotación (abajo) es POSICIONAL y
+      // exige un orden TOTALMENTE determinista entre corridas. Sin esto, el
+      // orden dentro de cada grupo era el del heap de Postgres (indefinido y
+      // cambiante con cada UPDATE de store_dropi_config) → el índice N podía
+      // ser OTRA tienda en la corrida siguiente y la rotación salteaba/
+      // starveaba tiendas (revisión adversarial 2026-08-13).
+      return rank(a.country_code) - rank(b.country_code) ||
+        String(a.store_id).localeCompare(String(b.store_id));
     });
     if (activeConfigs.length === 0) {
       console.warn("dropi-cron: no hay tiendas activas con dropi_api_key");
@@ -743,12 +751,59 @@ Deno.serve(async (req: Request) => {
     // Deadline global de la corrida: ninguna tienda paginará más allá de esto,
     // así siempre queda tiempo para loguear y correr el post-proceso.
     const globalDeadline = Date.now() + GLOBAL_TIME_BUDGET_MS;
-    // Rebanada justa por tienda: reparte el presupuesto global en partes iguales
-    // para que la 1ª tienda no lo devore. Con 2 tiendas → ~60s c/u. Si una
-    // termina antes, las siguientes igual respetan su techo (no se penaliza CO).
-    const perStoreBudget = Math.floor(GLOBAL_TIME_BUDGET_MS / activeConfigs.length);
+    // Rebanada justa por tienda CON PISO (auditoría 2026-08-13): el reparto
+    // igualitario funciona con 2-3 tiendas (~60s c/u), pero con 8-10 diluye a
+    // ~12s y las últimas del loop (siempre las no-CO por el orden CO-primero)
+    // sincronizaban ~0 páginas en CADA corrida — pedidos nuevos que no aparecen
+    // en /confirmar y guías congeladas, para siempre. Ahora ninguna tienda corre
+    // con menos de MIN_STORE_BUDGET_MS: si no entran todas, esta corrida procesa
+    // una TANDA y un cursor persistido en app_settings hace que la PRÓXIMA
+    // corrida (15 min) arranque donde esta terminó — rotación justa, ninguna
+    // tienda es "siempre la última". Con ≤4 tiendas nada cambia (sin rotación).
+    const MIN_STORE_BUDGET_MS = 30_000;
+    const maxStoresThisRun = Math.max(1, Math.floor(GLOBAL_TIME_BUDGET_MS / MIN_STORE_BUDGET_MS));
+    let runConfigs = activeConfigs;
+    let deferredConfigs: Record<string, unknown>[] = [];
+    if (activeConfigs.length > maxStoresThisRun) {
+      let cursor = 0;
+      try {
+        const { data: cur } = await sb.from("app_settings")
+          .select("value").eq("key", "dropi_cron_store_cursor").maybeSingle();
+        cursor = (Math.max(0, parseInt(String(cur?.value ?? "0"), 10) || 0)) % activeConfigs.length;
+      } catch { /* primera vez / clave ausente: arranca en 0 */ }
+      const rotated = [...activeConfigs.slice(cursor), ...activeConfigs.slice(0, cursor)];
+      runConfigs = rotated.slice(0, maxStoresThisRun);
+      deferredConfigs = rotated.slice(maxStoresThisRun);
+      const nextCursor = (cursor + maxStoresThisRun) % activeConfigs.length;
+      try {
+        await sb.from("app_settings").upsert(
+          { key: "dropi_cron_store_cursor", value: String(nextCursor), updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      } catch (e) {
+        console.warn("dropi-cron: no se pudo persistir el cursor de rotación:", e);
+      }
+      console.log(`dropi-cron: rotación — ${runConfigs.length}/${activeConfigs.length} tiendas esta corrida (cursor ${cursor} → ${nextCursor})`);
+      // Las postergadas dejan CONSTANCIA: sin fila en sync_logs, el banner de
+      // frescura por tienda las vería como "cron caído" cuando es rotación.
+      for (const dcfg of deferredConfigs) {
+        try {
+          await sb.from("sync_logs").insert({
+            source: "dropi-cron",
+            status: "warn",
+            synced_count: 0,
+            duplicates_count: 0,
+            total_count: 0,
+            error_message: "Postergada en esta corrida (rotación de presupuesto entre tiendas); se sincroniza en la próxima corrida del cron.",
+            triggered_by: ownerByStore.get(String(dcfg.store_id)) ?? null,
+            store_id: String(dcfg.store_id),
+          });
+        } catch { /* best-effort */ }
+      }
+    }
+    const perStoreBudget = Math.floor(GLOBAL_TIME_BUDGET_MS / runConfigs.length);
 
-    for (const cfg of activeConfigs) {
+    for (const cfg of runConfigs) {
       const storeId = String(cfg.store_id);
       const ownerId = ownerByStore.get(storeId);
       if (!ownerId) {
@@ -760,7 +815,10 @@ Deno.serve(async (req: Request) => {
         store_id: storeId,
         country_code: String(cfg.country_code || "CO"),
         api_key: String(cfg.dropi_api_key),
-        store_url: String(cfg.dropi_store_url || "https://rushmira.com/"),
+        // Fallback SIN rushmira.com (auditoría 2026-08-13): la tienda del dueño
+        // de la plataforma no es el Origin de las tiendas de terceros. Neutro:
+        // el panel Dropi del país (app.dropi.*).
+        store_url: String(cfg.dropi_store_url || dropiAppHostFor(String(cfg.country_code || "CO"))),
         owner_id: ownerId,
       };
       console.log(`dropi-cron: sync tienda ${storeId} (${store.country_code}) — cambio_estatus ${from}→${to} + creado ${dateBack(CREATED_DAYS_BACK)}→${to}`);
@@ -897,7 +955,7 @@ Deno.serve(async (req: Request) => {
         cfgByStore.set(String(c.store_id), {
           base: dropiHostFor(String(c.country_code || "CO")),
           apiKey: String(c.dropi_api_key),
-          storeUrl: String(c.dropi_store_url || "https://rushmira.com/"),
+          storeUrl: String(c.dropi_store_url || dropiAppHostFor(String(c.country_code || "CO"))),
         });
       }
       const retryFrom = new Date();

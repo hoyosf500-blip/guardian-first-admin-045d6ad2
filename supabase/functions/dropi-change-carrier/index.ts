@@ -55,6 +55,7 @@ import {
   type QuoteLine,
 } from "../_shared/dropiWebQuote.ts";
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
+import { paisUsaCentavos } from "../_shared/dropiCountry.ts";
 import { cancelOrderInDropi } from "../_shared/dropiCancelOrder.ts";
 import {
   checkOrderLivenessWeb,
@@ -209,9 +210,10 @@ function parseOrderTotal(body: Record<string, unknown>): number | null {
   return Number.isFinite(t) ? t : null;
 }
 
-/** Redondeo por país: EC usa centavos (USD), CO pesos enteros. */
+/** Redondeo por país: EC (USD) y GT (GTQ) usan centavos, CO pesos enteros.
+ *  paisUsaCentavos reemplaza el `=== "EC"` que a GT lo redondeaba a entero. */
 function roundMoney(n: number, countryCode: string): number {
-  const f = countryCode === "EC" ? 100 : 1;
+  const f = paisUsaCentavos(countryCode) ? 100 : 1;
   return Math.round(n * f) / f;
 }
 

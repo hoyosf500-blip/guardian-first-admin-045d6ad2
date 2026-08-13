@@ -23,6 +23,7 @@
 // su copia del lookup local, sin fallback).
 
 import { dropiWebFetch, normUp, WebFallbackError, type DestCity, type DropiWebCfg } from "./dropiWebQuote.ts";
+import { dropiCountryNameFor } from "./dropiCountry.ts";
 
 /** Prefijo bidireccional normalizado (mín. 4 chars) — el MISMO criterio que usa
  *  resolveDestCityLive para ciudades ("QUITO DC" ↔ "QUITO"), aplicado a deptos. */
@@ -39,7 +40,19 @@ export async function resolveDestCity(
   city: string,
   state: string,
 ): Promise<DestCity | null> {
-  const country = countryCode === "EC" ? "EC" : "CO";
+  // País REAL de la tienda (auditoría 2026-08-13). El viejo `=== "EC" ? "EC" : "CO"`
+  // mandaba a una tienda GT a resolver sus ciudades contra el catálogo COLOMBIANO
+  // (homónimos tipo SANTA ROSA / SAN JOSÉ → city_id de Colombia), y el self-heal
+  // grababa ciudades guatemaltecas como country_code='CO', corrompiendo la
+  // resolución de TODAS las tiendas CO. Fail-closed: país sin mapeo → error claro,
+  // nunca "uso Colombia y a ver qué pasa".
+  const country = String(countryCode || "CO").toUpperCase();
+  if (!dropiCountryNameFor(country)) {
+    throw new WebFallbackError(
+      `País ${country} sin mapeo en DROPI_COUNTRY_NAMES (_shared/dropiCountry.ts) — no se puede resolver la ciudad destino.`,
+      422,
+    );
+  }
   const cityNorm = normUp(city);
   const deptNorm = normUp(state);
   if (!cityNorm) return null;
@@ -116,13 +129,20 @@ async function resolveDestCityLive(
   // deno-lint-ignore no-explicit-any
   sbAdmin: any,
   cfg: DropiWebCfg,
-  country: "EC" | "CO",
+  country: string,
   cityNorm: string,
   deptNorm: string,
 ): Promise<DestCity | null> {
+  const countryName = dropiCountryNameFor(country);
+  if (!countryName) {
+    throw new WebFallbackError(
+      `País ${country} sin mapeo en DROPI_COUNTRY_NAMES (_shared/dropiCountry.ts).`,
+      422,
+    );
+  }
   const { status, body } = await dropiWebFetch(cfg, "/api/locations", {
     method: "POST",
-    body: { country: country === "EC" ? "ECUADOR" : "COLOMBIA" },
+    body: { country: countryName },
     logBody: false,
   });
   if (status < 200 || status >= 300) {

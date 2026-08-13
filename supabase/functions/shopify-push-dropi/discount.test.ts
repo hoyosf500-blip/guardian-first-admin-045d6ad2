@@ -48,6 +48,30 @@ Deno.test("clamp cuando el descuento supera el neto", () => {
   assertEquals(50 - 0 - extras[0], 0); // precio neto no baja de 0
 });
 
+// --- Centavos (EC/GT, decimals=2) — auditoría 2026-08-13 ---
+
+// Con decimals=0 (default COP), $2.50 se redondeaba a $3. Con decimals=2 el
+// reparto trabaja en centavos y conserva el monto exacto.
+Deno.test("centavos: el descuento con decimales se reparte exacto", () => {
+  const extras = allocateOrderDiscount([{ gross: 45.5, lineDiscount: 0 }], 2.5, 2);
+  assertEquals(extras, [2.5]);
+});
+
+// 2 líneas USD: netos 30.00 y 15.00, descuento 4.50 → 3.00 y 1.50, suma exacta.
+Deno.test("centavos: reparto proporcional con suma exacta", () => {
+  const extras = allocateOrderDiscount(
+    [{ gross: 30, lineDiscount: 0 }, { gross: 15, lineDiscount: 0 }], 4.5, 2,
+  );
+  assertEquals(extras, [3, 1.5]);
+  assertEquals(Math.round((extras[0] + extras[1]) * 100) / 100, 4.5);
+});
+
+// decimals=0 sigue siendo el comportamiento original (COP entero).
+Deno.test("centavos: default decimals=0 no cambia el comportamiento COP", () => {
+  assertEquals(allocateOrderDiscount([{ gross: 90, lineDiscount: 0 }], 20), [20]);
+  assertEquals(allocateOrderDiscount([{ gross: 100, lineDiscount: 0 }, { gross: 50, lineDiscount: 0 }], 15), [10, 5]);
+});
+
 // --- Guardrail isCodOvercharge ---
 
 // El caso del bug: a cobrar 90 vs Shopify 70 → BLOQUEA.

@@ -96,12 +96,25 @@ Deno.serve(async (req) => {
     }
 
     // Normalización country-aware: CO usa prefijo 57, EC usa 593 (+ a veces un
-    // 0 inicial estilo local "0991234567"). Antes hardcodeaba /^57/ y para EC
-    // mandaba "59398..." sin limpiar → Dropi devolvía fingerprint vacío o 4xx.
+    // 0 inicial estilo local "0991234567"), GT usa 502. Antes hardcodeaba /^57/
+    // y para EC mandaba "59398..." sin limpiar → Dropi devolvía fingerprint
+    // vacío o 4xx; y a un número GT que empezara en 57 le amputaba 2 dígitos
+    // (auditoría 2026-08-13). País sin regla → número tal cual (mejor que
+    // aplicarle la regla de otro país).
     const stripped = phone.replace(/[\s\-+]/g, "");
-    const cleanPhone = (cfg.countryCode === "EC")
+    const ccFp = String(cfg.countryCode || "CO").toUpperCase();
+    // GT: los celulares locales son 8 dígitos y ARRANCAN en 3/4/5 — un número
+    // real puede empezar en "502..." (5 + 02...). Solo se quita el prefijo
+    // cuando el número viene CON código de país (11 dígitos), mismo guard que
+    // dropiPhone de shopify-push (revisión adversarial 2026-08-13: el replace
+    // sin guard amputaba números locales legítimos).
+    const cleanPhone = ccFp === "EC"
       ? stripped.replace(/^593/, "").replace(/^0/, "")
-      : stripped.replace(/^57/, "");
+      : ccFp === "GT"
+        ? (stripped.length === 11 && stripped.startsWith("502") ? stripped.slice(3) : stripped)
+        : ccFp === "CO"
+          ? stripped.replace(/^57/, "")
+          : stripped;
 
     const url = `${fingerprintBase(cfg.countryCode)}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
     // Reintento ante throttle/5xx PASAJERO de Dropi. La huella pega a Dropi EN VIVO

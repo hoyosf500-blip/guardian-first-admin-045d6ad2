@@ -55,7 +55,20 @@ const TERMINAL_STATES = new Set([
   // cancelled_external_ids). Auditoría EC 2026-07-07.
   "REEMPLAZADA", "ARCHIVADO GHOST", "ARCHIVADO_GHOST",
 ]);
-const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo
+const ORPHAN_THRESHOLD = 5000000; // external_ids < 5M son de backfill viejo — SOLO Rushmira
+// La rama "huérfano <5M → cancelar directo" codifica HISTORIA de las cuentas
+// Rushmira (CO/EC): sus ids ya van en 7-8 dígitos y todo id<5M es backfill de
+// abr-may 2026. Pero el umbral NO es una propiedad de Dropi: cada plataforma de
+// país tiene su propia secuencia, y una cuenta JOVEN (GT o cualquier tienda
+// nueva) arranca con ids BAJOS — sin este guard, TODOS sus pedidos caían en la
+// cancelación directa (sin el guard de 48h ni el barrido por FECHA DE CREADO)
+// → cancelaciones masivas erróneas (auditoría 2026-08-13; esta rama ya produjo
+// 2 incidentes reales incluso dentro de Rushmira, ver comentarios más abajo).
+// Toda tienda FUERA de esta lista trata a sus huérfanos con el camino protegido.
+const LEGACY_BACKFILL_STORES = new Set([
+  "00000000-0000-0000-0000-000000000001", // Rushmira Colombia
+  "512309c3-d5b7-4434-898a-31bed51dcd4d", // Rushmira Ecuador
+]);
 // FIX 2026-07-03 (fantasmas de pedidos BORRADOS en Dropi): Dropi permite ELIMINAR
 // pedidos y esos quedan para siempre no-terminales en Guardian (LucidBot duplica,
 // el dueño los borra a mano en Dropi → mayo=9, junio=42, julio ~27). El chequeo
@@ -285,7 +298,10 @@ async function reconcileStore(
         // "creados en [from,to]" jamás lo va a traer → se cancelaba por una
         // inferencia inválida (pasó en la 1ra corrida: 24 pedidos CO de abr/may).
         const extNum = Number(ext);
-        if (Number.isFinite(extNum) && extNum < ORPHAN_THRESHOLD) {
+        // La rama de cancelación directa SOLO aplica a las tiendas legacy con
+        // backfill real <5M (Rushmira). Una tienda nueva con ids bajos trata a
+        // TODOS sus huérfanos como candidatos (48h + ventana + barrido).
+        if (Number.isFinite(extNum) && extNum < ORPHAN_THRESHOLD && LEGACY_BACKFILL_STORES.has(storeId)) {
           orphans.push(g);
         } else if (Number.isFinite(extNum)) {
           const ageMs = g.created_at ? Date.now() - new Date(g.created_at).getTime() : 0;

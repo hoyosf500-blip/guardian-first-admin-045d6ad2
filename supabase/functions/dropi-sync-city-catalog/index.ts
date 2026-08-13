@@ -20,6 +20,7 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
 import { dropiWebFetch, normUp } from "../_shared/dropiWebQuote.ts";
+import { dropiCountryNameFor } from "../_shared/dropiCountry.ts";
 
 function jsonResp(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -65,7 +66,12 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "La tienda no tiene token de sesión Dropi para leer el catálogo." }, 400, corsHeaders);
     }
 
-    const countryParam = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+    // País REAL de la tienda (antes: todo lo no-EC pedía COLOMBIA → una tienda
+    // GT sembraba su catálogo con las ciudades de Colombia). Fail-closed.
+    const countryParam = dropiCountryNameFor(cfg.countryCode);
+    if (!countryParam) {
+      return jsonResp({ error: `País ${cfg.countryCode} sin mapeo en DROPI_COUNTRY_NAMES (_shared/dropiCountry.ts).` }, 400, corsHeaders);
+    }
     const { status, body: locBody } = await dropiWebFetch(cfg, "/api/locations", {
       method: "POST",
       body: { country: countryParam },

@@ -21,6 +21,7 @@ import { loadShopifyConfig, getShopifyAccessToken } from "../_shared/shopifyStor
 import { WebFallbackError, normUp, decodeJwtSub, dropiWebFetch, quoteCarriers } from "../_shared/dropiWebQuote.ts";
 
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
+import { dropiCountryNameFor, paisUsaCentavos } from "../_shared/dropiCountry.ts";
 import { allocateOrderDiscount, isCodOvercharge } from "./discount.ts";
 
 const SHOPIFY_API_VERSION = "2024-10";
@@ -78,11 +79,15 @@ interface Overrides {
   lines?: Record<string, { price?: number; quantity?: number }>;
 }
 
-/** Teléfono usable para Dropi: dígitos, sin código de país. CO=10 díg (3XXXXXXXXX). */
+/** Teléfono usable para Dropi: dígitos, sin código de país. CO=10 díg
+ *  (3XXXXXXXXX) · EC=9-10 · GT=8 (con +502 llega en 11). Sin la rama GT, un
+ *  número guatemalteco viajaba con el 502 pegado → Dropi lo rechazaba o la
+ *  llave anti-duplicados por teléfono no matcheaba (auditoría 2026-08-13). */
 function dropiPhone(raw: string, country: string): string {
   let d = String(raw ?? "").replace(/\D/g, "");
   if (country === "CO" && d.length === 12 && d.startsWith("57")) d = d.slice(2);
   else if (country === "EC" && d.startsWith("593")) d = d.slice(3);
+  else if (country === "GT" && d.length === 11 && d.startsWith("502")) d = d.slice(3);
   return d;
 }
 
@@ -500,7 +505,14 @@ async function createOrderViaWeb(
   sbAdmin: any,
   cfg: { base: string; sessionToken: string; storeUrl: string },
   args: {
+    /** Nombre de país para los bodies de Dropi ("GUATEMALA"), vía dropiCountryNameFor. */
     country: string;
+    /** Código ISO REAL de la tienda ("GT"). Revisión adversarial 2026-08-13:
+     *  acá vivía un ternario que RE-DERIVABA el código desde el nombre (todo
+     *  lo no-ECUADOR caía a Colombia), reconvertía GUATEMALA en CO y anulaba
+     *  el fix del caller — la ciudad GT se resolvía contra el catálogo
+     *  COLOMBIANO. NUNCA derivar el código desde el nombre: viaja explícito. */
+    countryCode: string;
     client: ClientFields;
     resolved: ResolvedLine[];
     total: number;
@@ -512,8 +524,7 @@ async function createOrderViaWeb(
   }
 
   // Ciudad destino: catálogo local + fallback vivo /api/locations (self-healing).
-  const countryCode = args.country === "ECUADOR" ? "EC" : "CO";
-  const destCity = await resolveDestCity(sbAdmin, cfg, countryCode, args.client.city, args.client.state);
+  const destCity = await resolveDestCity(sbAdmin, cfg, args.countryCode, args.client.city, args.client.state);
   if (!destCity) {
     throw new WebFallbackError(noCoverageMessage(args.client.city, args.client.state), 422);
   }
@@ -842,12 +853,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // Redondeo de dinero según país: CO opera en COP (sin centavos → entero),
-    // pero EC opera en USD CON centavos: redondear $9.99 a $10 sobre-cobra al
-    // cliente en la entrega (y la saga Releasit mostró que cobrar de más, aunque
-    // sea poco, genera rechazos del COD). isCodOvercharge no atrapa centavos
-    // (tolerancia mínima 2), así que el redondeo tiene que ser correcto acá.
+    // pero EC (USD) y GT (GTQ) operan CON centavos: redondear $9.99 a $10
+    // sobre-cobra al cliente en la entrega (y la saga Releasit mostró que cobrar
+    // de más, aunque sea poco, genera rechazos del COD). isCodOvercharge no
+    // atrapa centavos (tolerancia mínima 2), así que el redondeo va correcto acá.
+    // paisUsaCentavos reemplaza el `=== "EC"` que dejaba a GT en la rama entera.
     const roundMoney = (x: number): number =>
-      dropiCfg.countryCode === "EC" ? Math.round(x * 100) / 100 : Math.round(x);
+      paisUsaCentavos(dropiCfg.countryCode) ? Math.round(x * 100) / 100 : Math.round(x);
 
     // ¿Ya fue subido? (idempotencia / aviso en preview)
     const { data: prior } = await sb
@@ -947,6 +959,9 @@ Deno.serve(async (req: Request) => {
       const extras = allocateOrderDiscount(
         productDiscountInfo.map((p) => ({ gross: p.gross, lineDiscount: p.lineDiscount })),
         orderDiscount,
+        // En países con centavos el reparto trabaja en centavos: antes un
+        // descuento de $2.50 se redondeaba a $3 (Math.round en unidades).
+        paisUsaCentavos(dropiCfg.countryCode) ? 2 : 0,
       );
       productDiscountInfo.forEach((p, k) => {
         if (extras[k] > 0) {
@@ -1269,15 +1284,26 @@ Deno.serve(async (req: Request) => {
         (dropiRes.status === 404 || /\$type|Undefined property|no encontr|not found/i.test(detail));
 
       if (isPrivateProductSignal) {
-        const DROPI_COUNTRY = dropiCfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+        // País REAL de la tienda para el create web (antes: no-EC → "COLOMBIA",
+        // el anti-fuga de una tienda GT creaba con el país equivocado). Un país
+        // sin mapeo cae al catch como WebFallbackError (falla controlada,
+        // reintento seguro), nunca a Colombia en silencio.
+        const DROPI_COUNTRY = dropiCountryNameFor(dropiCfg.countryCode);
         // `total` (línea ~848) se calculó ANTES de foldear el envío en
         // resolved[0].price (línea ~876). Para el panel web los precios por línea
         // y total_order/ValorDeclarado deben ser coherentes, así que recalculamos
         // desde los precios YA con envío incluido.
         const webTotal = resolved.reduce((s, l) => s + l.price * l.quantity, 0);
         try {
+          if (!DROPI_COUNTRY) {
+            throw new WebFallbackError(
+              `País ${dropiCfg.countryCode} sin mapeo en DROPI_COUNTRY_NAMES (_shared/dropiCountry.ts) — no se puede crear por el panel web.`,
+              422,
+            );
+          }
           const webOrderId = await createOrderViaWeb(sb, dropiCfg, {
             country: DROPI_COUNTRY,
+            countryCode: dropiCfg.countryCode,
             client,
             resolved,
             total: webTotal,

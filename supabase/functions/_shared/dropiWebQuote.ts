@@ -148,19 +148,25 @@ export async function dropiWebFetch(
     break;
   }
   if (!res) throw new WebFallbackError(`Dropi no respondió (${path}).`, 504);
-  // logBody:false para endpoints que devuelven listados con datos de clientes
-  // (nombre/teléfono/dirección) — evita volcar PII a los logs en cada llamada.
-  console.log("[dropi-web]", {
-    url,
-    status: res.status,
-    // 1000 chars (antes 400): los rechazos de create-with-edit traen el motivo
-    // real más allá del message genérico "Error al crear la orden" — truncarlo
-    // a 400 nos dejaba ciegos para diagnosticar (bug edición 2026-07-10).
-    body: init.logBody === false ? `[omitido, ${text.length} chars]` : text.slice(0, 1000),
-  });
   // deno-lint-ignore no-explicit-any
   let body: any = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { raw: text }; }
+  // El CUERPO solo se loguea cuando Dropi FALLÓ (status>=400 o isSuccess=false):
+  // ahí trae el motivo real del rechazo (los 1000 chars siguen — el message
+  // genérico "Error al crear la orden" a 400 chars nos dejaba ciegos, bug
+  // edición 2026-07-10). Un ÉXITO trae la ficha del cliente (nombre/teléfono/
+  // dirección completa) → era PII fuera de la DB con RLS en CADA creación o
+  // edición de pedido (auditoría 2026-08-13). logBody:false sigue omitiendo todo.
+  const fallo = res.status >= 400 || body?.isSuccess === false;
+  console.log("[dropi-web]", {
+    url,
+    status: res.status,
+    body: init.logBody === false
+      ? `[omitido, ${text.length} chars]`
+      : fallo
+        ? text.slice(0, 1000)
+        : `[ok, ${text.length} chars]`,
+  });
 
   if (res.status === 401) {
     const msg = String(body?.message || body?.error || text || "");

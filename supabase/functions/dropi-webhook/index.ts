@@ -90,12 +90,41 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // 1) ¿Ya existe el pedido en Guardian? (lo normal: Guardian lo creó por la
-    //    integración, así que ya está por external_id).
+    // 0) Resolver PRIMERO la TIENDA del payload (shop_id → store_dropi_config.
+    //    dropi_integration_shop_id). CRÍTICO (auditoría 2026-08-13): los ids de
+    //    pedido de Dropi son POR PLATAFORMA de país y PUEDEN CHOCAR entre
+    //    tiendas (una cuenta GT joven arranca en ids bajos, mismo rango que el
+    //    backfill viejo y que EC). El match viejo por external_id a secas podía
+    //    pisar estado/guía/transportadora del pedido de OTRA tienda — mezcla de
+    //    países, lo prohibido #1 de esta operación. FAIL-CLOSED: sin tienda
+    //    resoluble no se toca nada (activar el webhook exige configurar
+    //    dropi_integration_shop_id en la tienda; hoy el webhook está inactivo).
+    const shopId = o.shop_id ?? (o.shop as Record<string, unknown> | null)?.id ?? null;
+    let storeId: string | null = null;
+    if (shopId != null) {
+      try {
+        const { data: cfg } = await sbAdmin
+          .from("store_dropi_config")
+          .select("store_id")
+          .eq("dropi_integration_shop_id", Number(shopId))
+          .maybeSingle();
+        storeId = cfg?.store_id ?? null;
+      } catch (e) {
+        console.warn("[dropi-webhook] no se pudo resolver tienda por shop_id (¿migración pendiente?)", String(e));
+      }
+    }
+    if (!storeId) {
+      console.warn("[dropi-webhook] sin tienda resoluble para el shop_id — fail-closed, no se toca nada", { externalId, shopId });
+      return json({ ok: true, action: "ignored_no_store", external_id: externalId }, 200, corsHeaders);
+    }
+
+    // 1) ¿Ya existe el pedido EN ESTA TIENDA? (lo normal: Guardian lo creó por
+    //    la integración, así que ya está por external_id + store_id).
     const { data: existing } = await sbAdmin
       .from("orders")
       .select("id, store_id, estado, guia, transportadora, fecha_conf")
       .eq("external_id", externalId)
+      .eq("store_id", storeId)
       .maybeSingle();
 
     if (existing) {
@@ -156,30 +185,9 @@ Deno.serve(async (req) => {
       return json({ ok: true, action: "updated", external_id: externalId, estado: status }, 200, corsHeaders);
     }
 
-    // 2) No existe → best-effort: resolver la tienda por shop_id e INSERTAR el
-    //    pedido completo. Caso borde (webhook antes de que Guardian lo inserte,
-    //    o pedido creado fuera de Guardian). Defensivo: si la columna nueva aún
-    //    no está migrada o no hay dueño, simplemente ack sin romper.
-    const shopId = o.shop_id ?? (o.shop as Record<string, unknown> | null)?.id ?? null;
-    let storeId: string | null = null;
-    if (shopId != null) {
-      try {
-        const { data: cfg } = await sbAdmin
-          .from("store_dropi_config")
-          .select("store_id")
-          .eq("dropi_integration_shop_id", Number(shopId))
-          .maybeSingle();
-        storeId = cfg?.store_id ?? null;
-      } catch (e) {
-        console.warn("[dropi-webhook] no se pudo resolver tienda por shop_id (¿migración pendiente?)", String(e));
-      }
-    }
-
-    if (!storeId) {
-      console.warn("[dropi-webhook] pedido nuevo sin tienda resoluble — se ignora", { externalId, shopId });
-      return json({ ok: true, action: "ignored_no_store", external_id: externalId }, 200, corsHeaders);
-    }
-
+    // 2) No existe EN ESTA TIENDA → best-effort: INSERTAR el pedido completo.
+    //    Caso borde (webhook antes de que Guardian lo inserte, o pedido creado
+    //    fuera de Guardian). La tienda ya quedó resuelta en el paso 0.
     // uploaded_by tiene FK a auth.users → usamos el dueño de la tienda.
     const { data: owner } = await sbAdmin
       .from("store_members")
@@ -201,12 +209,25 @@ Deno.serve(async (req) => {
     // insert-only (ignoreDuplicates): si el pedido ya existe (carrera con el sync o
     // con Guardian entre el SELECT y este upsert), NO lo pisamos con el payload PARCIAL
     // del webhook — traería flete=0 y costo_prod=0 y violaría el invariante del header.
-    const { error: insErr } = await sbAdmin
+    // NOTA colisión entre plataformas: mientras la UNIQUE de orders sea external_id
+    // GLOBAL, un id que ya exista en OTRA tienda hace que este insert se descarte en
+    // silencio (ignoreDuplicates) — seguro: jamás pisa la fila ajena. Cuando la llave
+    // pase a (store_id, external_id) (fix F3), actualizar el onConflict de acá.
+    const { data: insData, error: insErr } = await sbAdmin
       .from("orders")
-      .upsert(row, { onConflict: "external_id", ignoreDuplicates: true });
+      .upsert(row, { onConflict: "external_id", ignoreDuplicates: true })
+      .select("id");
     if (insErr) {
       console.error("[dropi-webhook] insert falló", externalId, insErr.message);
       return json({ ok: false, action: "insert_failed", external_id: externalId }, 200, corsHeaders);
+    }
+    // ignoreDuplicates puede DESCARTAR el insert en silencio (carrera con el
+    // sync, o el external_id ya vive en OTRA tienda bajo la UNIQUE global).
+    // Reportarlo como "inserted" era un log falso (revisión adversarial
+    // 2026-08-13): sin fila devuelta, no se insertó nada.
+    if (!insData || insData.length === 0) {
+      console.warn("[dropi-webhook] insert descartado por conflicto de external_id (carrera o colisión entre tiendas)", externalId, "tienda", storeId);
+      return json({ ok: true, action: "insert_ignored_conflict", external_id: externalId }, 200, corsHeaders);
     }
     console.log("[dropi-webhook] insertado nuevo", externalId, "tienda", storeId);
     return json({ ok: true, action: "inserted", external_id: externalId, estado: status }, 200, corsHeaders);
