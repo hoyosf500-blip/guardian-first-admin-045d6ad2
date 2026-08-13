@@ -104,9 +104,28 @@ Deno.serve(async (req) => {
       : stripped.replace(/^57/, "");
 
     const url = `${fingerprintBase(cfg.countryCode)}?country_code=${encodeURIComponent(cfg.countryCode)}&user_id=${dropiUserId}&phone=${encodeURIComponent(cleanPhone)}&months=0`;
-    const apiRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
+    // Reintento ante throttle/5xx PASAJERO de Dropi. La huella pega a Dropi EN VIVO
+    // en cada pedido; cuando el equipo abre muchos seguidos, Dropi devuelve 429 y
+    // —sin reintento— el operador ve "Huella no disponible" aunque un reintento
+    // manual funcione. Es SOLO lectura (GET), así que reintentar es seguro: no crea
+    // ni cancela nada. El 401 (token) y el 404 (cliente nuevo) NO se reintentan:
+    // son respuestas definitivas que el flujo de abajo maneja aparte.
+    const RETRIABLE_FP = [429, 500, 502, 503, 504];
+    let apiRes: Response | undefined;
+    for (let intento = 0; intento < 3; intento++) {
+      try {
+        apiRes = await fetch(url, { headers: { Authorization: `Bearer ${authToken}` } });
+      } catch (netErr) {
+        if (intento < 2) { await new Promise((r) => setTimeout(r, 400 * 2 ** intento)); continue; }
+        throw netErr;
+      }
+      if (RETRIABLE_FP.includes(apiRes.status) && intento < 2) {
+        await new Promise((r) => setTimeout(r, 400 * 2 ** intento));
+        continue;
+      }
+      break;
+    }
+    if (!apiRes) throw new Error("Sin respuesta de Dropi (huella)");
 
 
     if (!apiRes.ok) {

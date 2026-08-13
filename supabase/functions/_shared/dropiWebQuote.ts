@@ -65,13 +65,21 @@ export function decodeJwtSub(token: string): string {
   }
 }
 
+/** Espera N ms — backoff del reintento de LECTURAS ante throttle de Dropi. */
+function webSleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 /** fetch a /api/* con session token + log [dropi-web]. Tira WebFallbackError(422)
- *  si el endpoint responde 401 con mensaje típico de token inválido para /api/*. */
+ *  si el endpoint responde 401 con mensaje típico de token inválido para /api/*.
+ *  `retryOnThrottle` (SOLO para lecturas idempotentes: product/show, getOriginCity,
+ *  cotiza): reintenta con backoff ante 429/5xx/timeout PASAJEROS. ⚠️ NUNCA activarlo
+ *  en crear/PUT — un reintento DUPLICARÍA el pedido. */
 export async function dropiWebFetch(
   cfg: DropiWebCfg,
   path: string,
   // deno-lint-ignore no-explicit-any
-  init: { method: "GET" | "POST" | "PUT"; body?: unknown; logBody?: boolean },
+  init: { method: "GET" | "POST" | "PUT"; body?: unknown; logBody?: boolean; retryOnThrottle?: boolean },
   // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; body: any; text: string }> {
   const url = `${cfg.base}${path}`;
@@ -101,27 +109,45 @@ export async function dropiWebFetch(
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-site",
   };
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: init.method,
-      headers,
-      body: init.body != null ? JSON.stringify(init.body) : undefined,
-      // Timeout duro: sin señal de aborto, un hang de Dropi mata la función por
-      // wall-clock (a veces DESPUÉS de crear una orden) sin dejar rastro del motivo.
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (e) {
-    // AbortSignal.timeout aborta con DOMException "TimeoutError" (o "AbortError"
-    // según runtime) — se convierte en error legible, no un TypeError críptico.
-    // Status 504 y NO 0: los callers usan e.status como HTTP status de su
-    // respuesta (shopify-push-dropi hace `json(..., e.status)`) y 0 es inválido.
-    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
-      throw new WebFallbackError(`Dropi no respondió en 30s (${path}).`, 504);
+  // Reintento con backoff SOLO cuando el caller lo pide (init.retryOnThrottle), que
+  // es SOLO en las lecturas idempotentes de la cotización. Las MUTACIONES (crear/PUT)
+  // no lo pasan → `intentos = 1` → corren EXACTAMENTE como antes (reintentar un
+  // create duplicaría el pedido: por eso el interruptor).
+  const RETRIABLE_WEB = [429, 500, 502, 503, 504];
+  const intentos = init.retryOnThrottle ? 3 : 1;
+  let res: Response | undefined;
+  let text = "";
+  for (let intento = 0; intento < intentos; intento++) {
+    try {
+      res = await fetch(url, {
+        method: init.method,
+        headers,
+        body: init.body != null ? JSON.stringify(init.body) : undefined,
+        // Timeout duro: sin señal de aborto, un hang de Dropi mata la función por
+        // wall-clock (a veces DESPUÉS de crear una orden) sin dejar rastro del motivo.
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (e) {
+      // AbortSignal.timeout aborta con DOMException "TimeoutError" (o "AbortError"
+      // según runtime) — se convierte en error legible, no un TypeError críptico.
+      // Status 504 y NO 0: los callers usan e.status como HTTP status de su
+      // respuesta (shopify-push-dropi hace `json(..., e.status)`) y 0 es inválido.
+      if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+        // Timeout PASAJERO: reintentar si es lectura y quedan intentos.
+        if (init.retryOnThrottle && intento < intentos - 1) { await webSleep(400 * 2 ** intento); continue; }
+        throw new WebFallbackError(`Dropi no respondió en 30s (${path}).`, 504);
+      }
+      throw e;
     }
-    throw e;
+    text = await res.text();
+    // Throttle/5xx PASAJERO de Dropi: reintentar (solo lecturas idempotentes).
+    if (init.retryOnThrottle && intento < intentos - 1 && RETRIABLE_WEB.includes(res.status)) {
+      await webSleep(400 * 2 ** intento);
+      continue;
+    }
+    break;
   }
-  const text = await res.text();
+  if (!res) throw new WebFallbackError(`Dropi no respondió (${path}).`, 504);
   // logBody:false para endpoints que devuelven listados con datos de clientes
   // (nombre/teléfono/dirección) — evita volcar PII a los logs en cada llamada.
   console.log("[dropi-web]", {
@@ -219,7 +245,7 @@ export async function fetchWebProductInfo(
   let productType = "SIMPLE";
   let supplierId: string | null = null;
   try {
-    const { status, body } = await dropiWebFetch(cfg, `/api/products/productlist/v1/show/?id=${dropiId}`, { method: "GET" });
+    const { status, body } = await dropiWebFetch(cfg, `/api/products/productlist/v1/show/?id=${dropiId}`, { method: "GET", retryOnThrottle: true });
     if (status >= 200 && status < 300) {
       const obj = body?.objects ?? body?.data ?? {};
       if (obj?.user_id != null) supplierId = String(obj.user_id);
@@ -266,6 +292,7 @@ export async function getOriginCity(
   const { status, body } = await dropiWebFetch(cfg, `/api/orders/getOriginCityForCalculateShipping`, {
     method: "POST",
     body: { id: dropiId, destination, type: productType },
+    retryOnThrottle: true,
   });
   if (status < 200 || status >= 300) {
     // El body de Dropi viaja en el error → el caller lo expone como dropiBody.
@@ -316,7 +343,7 @@ export async function cotizaEnvioOptions(
     zip_code: "",
     colonia: "",
   };
-  const { status, body } = await dropiWebFetch(cfg, `/api/orders/cotizaEnvioTransportadoraV2`, { method: "POST", body: reqBody });
+  const { status, body } = await dropiWebFetch(cfg, `/api/orders/cotizaEnvioTransportadoraV2`, { method: "POST", body: reqBody, retryOnThrottle: true });
   if (status < 200 || status >= 300) {
     throw new WebFallbackError(`Dropi /api/orders/cotizaEnvioTransportadoraV2 respondió ${status}.`, 422, body);
   }
