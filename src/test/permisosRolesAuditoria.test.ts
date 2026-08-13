@@ -29,7 +29,9 @@ function tablasDeLosTipos(): Array<[string, string]> {
   if (ini === -1 || fin === -1) return [];
   const bloque = src.slice(ini, fin);
   const salida: Array<[string, string]> = [];
-  for (const m of bloque.matchAll(/^ {6}(\w+): \{\n {8}Row: \{\n {10}(\w+):/gm)) {
+  // \r?\n: en Windows el checkout viene con CRLF y un \n literal no matchea —
+  // con eso la lista daba 0 tablas y la suite de escrituras corría VACÍA.
+  for (const m of bloque.matchAll(/^ {6}(\w+): \{\r?\n {8}Row: \{\r?\n {10}(\w+):/gm)) {
     salida.push([m[1], m[2]]);
   }
   return salida.sort((a, b) => a[0].localeCompare(b[0]));
