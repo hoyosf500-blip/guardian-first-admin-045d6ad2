@@ -111,15 +111,29 @@ export interface ValoresSetup {
 
 export type ErroresSetup = Partial<Record<keyof ValoresSetup, string>>;
 
-/** Devuelve SOLO los campos con problema. Objeto vacío = se puede guardar. */
-export function validarSetup(vals: ValoresSetup): ErroresSetup {
+/** Qué credenciales YA están guardadas en la tienda. Cuando una lo está, dejar
+ *  su campo vacío es válido (= conservarla; el upsert preserva-en-blanco). */
+export interface CredencialesGuardadas {
+  hasApiKey?: boolean;
+  hasLogin?: boolean; // email + clave del panel Dropi ya guardados
+}
+
+/** Devuelve SOLO los campos con problema. Objeto vacío = se puede guardar.
+ *  `guardado` (default vacío = alta nueva, todo requerido): si ya hay una
+ *  credencial guardada, su campo se puede dejar en blanco para conservarla —
+ *  sin esto, al volver a corregir un dato el wizard exigía re-tipear la api_key
+ *  y la clave de Dropi que YA estaban guardadas. */
+export function validarSetup(vals: ValoresSetup, guardado: CredencialesGuardadas = {}): ErroresSetup {
   const errores: ErroresSetup = {};
   const poner = (k: keyof ValoresSetup, r: ResultadoCampo) => { if (!r.ok) errores[k] = r.error; };
 
   poner('name', validarNombreTienda(vals.name ?? ''));
-  poner('dropi_api_key', validarApiKey(vals.dropi_api_key ?? ''));
-  poner('dropi_login_email', validarEmail(vals.dropi_login_email ?? ''));
-  poner('dropi_login_password', validarPassword(vals.dropi_login_password ?? ''));
+  const apiKeyVal = vals.dropi_api_key ?? '';
+  if (!(guardado.hasApiKey && apiKeyVal.trim() === '')) poner('dropi_api_key', validarApiKey(apiKeyVal));
+  const emailVal = vals.dropi_login_email ?? '';
+  if (!(guardado.hasLogin && emailVal.trim() === '')) poner('dropi_login_email', validarEmail(emailVal));
+  const passVal = vals.dropi_login_password ?? '';
+  if (!(guardado.hasLogin && passVal.trim() === '')) poner('dropi_login_password', validarPassword(passVal));
   poner('dropi_store_url', validarUrl(vals.dropi_store_url ?? '', true, 'la URL de integración de Dropi'));
   poner('brand_logo_url', validarUrl(vals.brand_logo_url ?? '', false, 'el logo'));
 

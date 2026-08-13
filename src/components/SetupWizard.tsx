@@ -79,7 +79,7 @@ type Fase = 'form' | 'verificando' | 'resultado';
  * `upsert_store_dropi_login` y `update_store_branding` (las tres validan
  * ownership server-side) y DESPUÉS verifica contra Dropi de verdad.
  */
-export default function SetupWizard({ onDone }: { onDone: () => void }) {
+export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => void }) {
   const navigate = useNavigate();
   const { activeStore, isOwnerOfActive, refresh } = useStore();
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -96,6 +96,10 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   /** Cuántas veces se probó contra Dropi. Sirve para no repetir el mismo
    *  mensaje al tercer intento fallido y ofrecer la salida correcta. */
   const [intentosVerif, setIntentosVerif] = useState(0);
+  /** Qué credenciales YA están guardadas (booleans de get_store_dropi_status).
+   *  Al volver a corregir un dato, un campo de secreto vacío es válido =
+   *  conservar la guardada; sin esto el wizard exigía re-tipearlas. */
+  const [guardado, setGuardado] = useState<{ hasApiKey: boolean; hasLogin: boolean }>({ hasApiKey: false, hasLogin: false });
 
   useEffect(() => {
     if (!activeStore || !isOwnerOfActive) { setLoading(false); return; }
@@ -110,11 +114,12 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
       // guarda así en producción sin borrar claves.
       const { data } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>,
-      ) => Promise<{ data: Array<{ store_url: string | null }> | null }>)(
+      ) => Promise<{ data: Array<{ store_url: string | null; has_api_key: boolean; has_login_password: boolean }> | null }>)(
         'get_store_dropi_status', { p_store_id: activeStore.id },
       );
       if (cancelled) return;
       const row = Array.isArray(data) ? data[0] : null;
+      setGuardado({ hasApiKey: Boolean(row?.has_api_key), hasLogin: Boolean(row?.has_login_password) });
       setVals({
         name: activeStore.name,
         brand_logo_url: activeStore.brand_logo_url ?? '',
@@ -150,7 +155,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   // Validación de FORMA antes de gastar un viaje a Dropi: una API Key cortada o
   // un correo mal escrito se avisan acá, no después de un "guardado" que falla
   // en silencio.
-  const errores = validarSetup(vals);
+  const errores = validarSetup(vals, guardado);
   const canSubmit = !hayErrores(errores) && !saving;
   const cantidadErrores = Object.keys(errores).length;
 
@@ -182,9 +187,6 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
       if (!d?.ok) throw new Error(d?.error || 'No se pudo verificar.');
       const legibles = interpretarChequeos(d.chequeos ?? []);
       setChequeos(legibles);
-      if (legibles.some(c => c.clave === 'api_key' && c.estado === 'ok')) {
-        dispararCargaInicial(storeId);
-      }
     } catch (e) {
       // Que la verificación no ande NO puede dejar al cliente encerrado: sus
       // credenciales ya quedaron guardadas. Se lo decimos y lo dejamos pasar.
@@ -231,6 +233,13 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
       toast.error('No se pudo guardar las credenciales', { description: cfgErr.message });
       setSaving(false); return;
     }
+
+    // Backfill de 90 días AHORA, apenas la API Key quedó guardada — NO atado al
+    // resultado de la verificación. Si `dropi-verify-credentials` falla por red,
+    // las credenciales igual quedaron bien, pero el cron solo mira 3 días atrás
+    // (dropi-cron CREATED_DAYS_BACK=3): sin este disparo el dueño perdía para
+    // siempre sus ~87 días de historia sin ningún aviso.
+    dispararCargaInicial(activeStore.id);
 
     const { error: loginErr } = await rpc('upsert_store_dropi_login', {
       p_store_id: activeStore.id,
@@ -378,6 +387,18 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                 Revisá {cantidadErrores} {cantidadErrores === 1 ? 'campo' : 'campos'} antes de continuar.
               </p>
             )}
+            {/* Salida: un amigo que todavía NO tiene cuenta de Dropi no puede
+                quedar encerrado acá sin poder cerrar sesión (el wizard se
+                renderiza en lugar del layout, no hay sidebar). */}
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 min-h-11 cursor-pointer"
+              >
+                ¿Todavía no tenés tu cuenta de Dropi? Cerrá sesión y volvé cuando la tengas.
+              </button>
+            </div>
           </form>
         )}
       </div>

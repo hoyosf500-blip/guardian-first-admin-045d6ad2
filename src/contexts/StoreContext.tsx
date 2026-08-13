@@ -47,6 +47,15 @@ interface StoreState {
    * el vacío como real: solo stores.length===0 SIN esta bandera es un vacío legítimo.
    */
   storesError: boolean;
+  /**
+   * ¿El usuario tiene membresías PERO todas sus tiendas están suspendidas
+   * (ninguna `active`)? Distinto de "cero tiendas". Sin esta bandera, suspender
+   * una tienda (palanca de cobro) dejaba `stores=[]` con `storesError=false` →
+   * ProtectedLayout caía en "Creá tu tienda": callejón sin salida para el dueño
+   * suspendido, y tienda fantasma para sus operadoras. La UI muestra en su lugar
+   * una pantalla de "cuenta suspendida" con logout.
+   */
+  hasSuspendedOnly: boolean;
   setActiveStoreId: (id: string) => void;
   refresh: () => Promise<void>;
 }
@@ -99,6 +108,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [scopeSynced, setScopeSynced] = useState(true);
   // Error de carga de tiendas — ver doc en StoreState.storesError.
   const [storesError, setStoresError] = useState(false);
+  // Todas las tiendas del usuario suspendidas — ver doc en StoreState.hasSuspendedOnly.
+  const [hasSuspendedOnly, setHasSuspendedOnly] = useState(false);
   // Solo bloqueamos la UI (loading=true) en la PRIMERA carga. Refreshes
   // posteriores (token refresh al volver de pestaña, etc.) NO deben bloquear,
   // o ProtectedLayout desmonta toda la app y la operadora pierde su lugar.
@@ -145,6 +156,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Query EXITOSA con cero filas: este sí es el vacío legítimo que
       // habilita el alta autoservicio.
       setStoresError(false);
+      setHasSuspendedOnly(false);
       setStores([]); setActiveStoreIdState(null); setLoading(false);
       hasLoadedRef.current = true;
       return;
@@ -211,6 +223,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .sort((a, b) => a.name.localeCompare(b.name));
 
     setStores(list);
+    // Suspendida = tiene tiendas pero ninguna activa. Se computa sobre storeRows
+    // (que trae TODOS los estados) contra list (solo activas).
+    setHasSuspendedOnly((storeRows ?? []).length > 0 && list.length === 0);
 
     // Restaurar activa desde localStorage si sigue siendo miembro, sino primera
     const stored = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY) : null;
@@ -286,7 +301,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <StoreContext.Provider value={{
       loading, stores, activeStoreId, activeStore, isOwnerOfActive, isManagerOfActive, needsSetup,
-      scopeSynced, storesError, setActiveStoreId, refresh,
+      scopeSynced, storesError, hasSuspendedOnly, setActiveStoreId, refresh,
     }}>
       {children}
     </StoreContext.Provider>

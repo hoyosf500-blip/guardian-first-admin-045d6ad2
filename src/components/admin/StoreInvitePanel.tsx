@@ -39,7 +39,12 @@ export default function StoreInvitePanel() {
       toast.error('No se pudo generar el link', { description: error?.message });
       return;
     }
-    setLink(`${window.location.origin}/auth?invite=${data}`);
+    // Origen CANÓNICO configurable: si el dueño genera el link desde un preview
+    // de Lovable, un staging o localhost, `window.location.origin` produciría un
+    // link que su equipo no puede abrir. VITE_PUBLIC_APP_URL fija el dominio de
+    // producción; si no está seteada, cae al origen actual (comportamiento previo).
+    const base = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
+    setLink(`${base}/auth?invite=${data}`);
     toast.success('Link de invitación generado');
   }
 

@@ -101,6 +101,33 @@ function StoresErrorScreen({ onRetry, onSignOut }: { onRetry: () => Promise<void
   );
 }
 
+// Cuenta suspendida: el usuario tiene tiendas, pero TODAS están suspendidas.
+// Antes esto caía en "Creá tu tienda" — callejón sin salida para el dueño que no
+// pagó, y sus operadoras podían crear tiendas fantasma. Ahora se les dice qué
+// pasa y se les deja cerrar sesión.
+function CuentaSuspendidaScreen({ onSignOut }: { onSignOut: () => void }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-card/40 p-6 text-center shadow-card3d" role="alert">
+        <div className="w-12 h-12 rounded-xl bg-warning/14 border border-warning/30 flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle size={22} className="text-warning" aria-hidden="true" />
+        </div>
+        <h1 className="text-base font-semibold text-foreground">Tu cuenta está suspendida</h1>
+        <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+          El acceso a tu tienda está pausado. Escribile al administrador de Guardian
+          para reactivarla. Tus datos y tus pedidos siguen guardados.
+        </p>
+        <button
+          onClick={onSignOut}
+          className="mt-5 w-full h-10 rounded-xl border border-border bg-card/40 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Inner layout: tiene acceso a useStore() porque StoreProvider lo envuelve.
 function ProtectedLayoutInner() {
   const { user, profile, isAdmin, loading, signOut } = useAuth();
@@ -111,6 +138,19 @@ function ProtectedLayoutInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const store = useStore();
+
+  // Latch del wizard de setup. Una vez abierto sigue montado hasta que el dueño
+  // lo cierra desde la pantalla de resultado (onDone). SIN esto, al guardar las
+  // credenciales `needsSetup` pasa a false y ProtectedLayout desmontaba el wizard
+  // ANTES de que se viera la verificación de Dropi: el dueño era expulsado al CRM
+  // sin enterarse de si su login quedó bien (y su billetera moría en una hora sin
+  // aviso). Auditoría onboarding 2026-08-13.
+  const [wizardOpen, setWizardOpen] = useState(false);
+  useEffect(() => { if (store.needsSetup) setWizardOpen(true); }, [store.needsSetup]);
+  // Redención de invite EN VUELO: mientras se canjea el token, mostrar "uniéndote"
+  // en vez de la pantalla "Creá tu tienda" (que invitaba al invitado a abrir su
+  // propia tienda por medio segundo).
+  const [redeeming, setRedeeming] = useState(false);
 
   // Heartbeat de jornada (tracking de inicio + tiempo activo/idle). El hook
   // tiene sus propios gates: solo emite ping para no-admin con tienda activa.
@@ -130,19 +170,32 @@ function ProtectedLayoutInner() {
     try { token = localStorage.getItem('guardian.pendingInvite'); } catch { /* noop */ }
     if (!token) return;
     redeemAttempted.current = true;
+    setRedeeming(true);
     void (async () => {
       const { error } = await (supabase.rpc as unknown as (
         fn: string, args: Record<string, unknown>
       ) => Promise<{ data: string | null; error: { message: string } | null }>)(
         'redeem_store_invite', { p_token: token },
       );
-      try { localStorage.removeItem('guardian.pendingInvite'); } catch { /* noop */ }
       if (error) {
-        toast.error('No se pudo unir a la tienda', { description: error.message });
+        // Permanente (ya usada / expiró / inválida) → descartar el token, no
+        // reintentar. Transitorio (red/timeout) → CONSERVAR el token y permitir
+        // reintento en el próximo montaje: un WiFi caído no debe quemar la
+        // invitación ni mandar al invitado a "Creá tu tienda" sin acceso.
+        const permanente = /usad|expir|inv[aá]lid|no existe|not found|no encontr/i.test(error.message || '');
+        if (permanente) {
+          try { localStorage.removeItem('guardian.pendingInvite'); } catch { /* noop */ }
+          toast.error('No se pudo unir a la tienda', { description: error.message });
+        } else {
+          redeemAttempted.current = false; // reintentar al re-montar
+        }
+        setRedeeming(false);
         return;
       }
+      try { localStorage.removeItem('guardian.pendingInvite'); } catch { /* noop */ }
       toast.success('¡Listo! Te uniste a la tienda.');
       await store.refresh();
+      setRedeeming(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -168,6 +221,27 @@ function ProtectedLayoutInner() {
     return <StoresErrorScreen onRetry={() => store.refresh()} onSignOut={signOut} />;
   }
 
+  // Todas las tiendas suspendidas: pantalla propia (NO "Creá tu tienda").
+  if (store.hasSuspendedOnly) {
+    return <CuentaSuspendidaScreen onSignOut={signOut} />;
+  }
+
+  // Canje de invitación en vuelo: NO mostrar "Creá tu tienda" mientras el token
+  // se está canjeando — el invitado vería, por un instante, una pantalla que lo
+  // invita a abrir SU propia tienda en vez de unirse a la que lo invitó.
+  if (redeeming && store.stores.length === 0) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Package size={22} className="text-accent" />
+          </div>
+          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Uniéndote a la tienda…</p>
+        </div>
+      </div>
+    );
+  }
+
   // El user no es miembro de ninguna tienda → alta autoservicio: crea la SUYA
   // y queda de owner (antes era un callejón "Sin tiendas asignadas" y las
   // tiendas se creaban a mano). El camino de invitación sigue intacto: si vino
@@ -177,9 +251,11 @@ function ProtectedLayoutInner() {
   }
 
   // Gate: si la tienda activa no tiene credenciales Dropi cargadas Y el usuario
-  // es dueño, mostrar wizard por-tienda.
-  if (store.needsSetup) {
-    return <SetupWizard onDone={() => store.refresh()} />;
+  // es dueño, mostrar wizard por-tienda. El `|| wizardOpen` es el latch (arriba):
+  // mantiene el wizard montado durante la verificación aunque `needsSetup` ya
+  // haya pasado a false al guardar.
+  if (store.needsSetup || wizardOpen) {
+    return <SetupWizard onDone={() => { setWizardOpen(false); void store.refresh(); }} onSignOut={signOut} />;
   }
 
   const brandName = store.activeStore?.name ?? 'CRM';
