@@ -53,6 +53,16 @@ describe('buildActiveDupIndex + dupAlertsFor', () => {
     expect(dupAlertsFor(idx, order({}))).toHaveLength(0);
   });
 
+  it('NO marca por un ARCHIVADO GHOST (borrado en Dropi) — espacio o guion bajo', () => {
+    // Auditoría 2026-08-13: un fantasma del nightly-reconcile generaba chips
+    // DUPLICADO falsos porque TERMINAL_STATES no lo matcheaba.
+    const idx = buildActiveDupIndex([order({})], [
+      prog({ estado: 'ARCHIVADO GHOST', external_id: '203' }),
+      prog({ estado: 'ARCHIVADO_GHOST', external_id: '204' }),
+    ]);
+    expect(dupAlertsFor(idx, order({}))).toHaveLength(0);
+  });
+
   it('marca duplicado cuando el mismo teléfono aparece DOS veces en la cola', () => {
     const a = order({ externalId: '100' });
     const b = order({ externalId: '101' });

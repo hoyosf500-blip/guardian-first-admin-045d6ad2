@@ -95,6 +95,13 @@ describe('isLocallyDead', () => {
     expect(isLocallyDead('RECHAZADO')).toBe(true);
   });
 
+  it('ARCHIVADO GHOST (borrado en Dropi) también está muerto — espacio o guion bajo', () => {
+    // Auditoría 2026-08-13: sin esto, el fantasma caía en liveDups → tarjeta
+    // roja "DUPLICADO VIVO" con botón de cancelar sobre el pedido legítimo.
+    expect(isLocallyDead('ARCHIVADO GHOST')).toBe(true);
+    expect(isLocallyDead('ARCHIVADO_GHOST')).toBe(true);
+  });
+
   it('estados vivos o vacíos → false (esos NO van al panel pasivo)', () => {
     expect(isLocallyDead('PENDIENTE CONFIRMACION')).toBe(false);
     expect(isLocallyDead('PENDIENTE')).toBe(false);

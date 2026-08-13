@@ -13,7 +13,8 @@ import {
 import { Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '@/contexts/StoreContext';
-import { bogotaToday } from '@/lib/utils';
+import { bogotaToday, paisUsaCentavos } from '@/lib/utils';
+import { parseValorInput } from '@/lib/orderAlerts';
 import {
   useUpsertStoreAdSpend, useDeleteStoreAdSpend,
   type AdPlatform, type StoreAdSpendRow,
@@ -70,17 +71,22 @@ export default function StoreAdSpendDialog({ open, onOpenChange, editing }: Prop
     }
   }, [open, editing]);
 
-  // Enteros: se strippean separadores (consistente con el resto de la app, sin centavos).
-  const parseAmount = (v: string): number => {
-    const clean = v.replace(/[^\d]/g, '');
-    const n = Number(clean);
-    return isFinite(n) && n >= 0 ? n : 0;
+  // Parse tolerante a formatos locales ("45,50" EC · "59.900" miles CO) con el
+  // MISMO parser del editor de pedidos. El strip "solo dígitos" que había acá
+  // convertía "45.50" en 4550 (100x) en tiendas con centavos (EC/GT) y ese
+  // monto inflado alimentaba CPA/Neto Real/DEJA — plata falsa en los KPIs.
+  const usaCentavos = paisUsaCentavos(activeStore?.country_code);
+  const parseAmount = (v: string): number | null => {
+    const n = parseValorInput(v);
+    if (n == null || n < 0) return null;
+    return usaCentavos ? Math.round(n * 100) / 100 : Math.round(n);
   };
 
   const handleSubmit = async () => {
     if (!activeStoreId) { toast.error('Sin tienda activa'); return; }
     if (!spendDate) { toast.error('Elegí una fecha'); return; }
     const amt = parseAmount(amount);
+    if (amt == null) { toast.error('Monto inválido — revisá el número'); return; }
     try {
       await upsert.mutateAsync({
         store_id: activeStoreId,
@@ -151,10 +157,10 @@ export default function StoreAdSpendDialog({ open, onOpenChange, editing }: Prop
             <Label htmlFor="ad-amount" className="text-xs">Monto ({currencyLabel})</Label>
             <Input
               id="ad-amount"
-              inputMode="numeric"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
+              placeholder={usaCentavos ? '45.50' : '0'}
             />
           </div>
 

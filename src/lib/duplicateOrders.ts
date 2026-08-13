@@ -41,8 +41,13 @@ export interface SupersededInfo { byExternalId: string; byEstado: string | null;
  * CONFIRMACION) quedó oculto en el panel pasivo sin ningún botón — nadie podía
  * cancelarlo → riesgo de doble despacho. Ahora el que oculta debe saber si el
  * viejo está muerto: muerto → panel informativo; vivo → tarjeta accionable.
+ *
+ * ARCHIVADO GHOST (pedido BORRADO en Dropi por el nightly-reconcile) también es
+ * muerto: sin él acá, un fantasma caía en `liveDups` → tarjeta roja "DUPLICADO
+ * VIVO" con botón "Cancelar en Dropi" sobre el pedido LEGÍTIMO del cliente
+ * (auditoría 2026-08-13). El `.?` cubre la variante con guion bajo.
  */
-export const LOCALLY_DEAD_RE = /CANCELAD|REEMPLAZAD|RECHAZAD/i;
+export const LOCALLY_DEAD_RE = /CANCELAD|REEMPLAZAD|RECHAZAD|ARCHIVADO.?GHOST/i;
 
 export function isLocallyDead(estado: string | null | undefined): boolean {
   return !!estado && LOCALLY_DEAD_RE.test(estado);

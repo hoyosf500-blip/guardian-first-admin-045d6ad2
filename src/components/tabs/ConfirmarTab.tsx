@@ -235,6 +235,12 @@ export default function ConfirmarTab({ profile }: Props) {
       .not('estado', 'ilike', 'PENDIENTE CONFIRMACION')
       .neq('estado', 'CANCELADO')
       .neq('estado', 'REEMPLAZADA')
+      // ARCHIVADO GHOST = borrado en Dropi (nightly-reconcile). NO es un "pedido
+      // real más nuevo": dejarlo entrar acá ocultaba el PENDIENTE legítimo del
+      // mismo cliente y lo pintaba como "DUPLICADO VIVO" con botón de cancelar
+      // — la asesora cancelaba el ÚNICO pedido real (auditoría 2026-08-13).
+      .neq('estado', 'ARCHIVADO GHOST')
+      .neq('estado', 'ARCHIVADO_GHOST')
       .gte('created_at', since)
       .then(({ data, error }) => {
         if (cancelled || error || !data) return;

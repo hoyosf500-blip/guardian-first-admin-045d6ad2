@@ -12,8 +12,10 @@ import type { OrderData } from './orderUtils';
 import type { ProgressedOrder } from './duplicateOrders';
 
 /** Estados terminales: un pedido ENTREGADO/DEVUELTO/INDEMNIZADO/RECHAZADO viejo
- *  es una recompra o historia, NO un duplicado en riesgo de doble envío. */
-const TERMINAL_STATES = /ENTREGAD|CANCELAD|REEMPLAZ|DEVOLUCION|DEVUELT|INDEMNIZ|RECHAZAD/i;
+ *  es una recompra o historia, NO un duplicado en riesgo de doble envío.
+ *  ARCHIVADO GHOST = borrado en Dropi (nightly-reconcile): también terminal —
+ *  sin él, un fantasma generaba chips DUPLICADO falsos (auditoría 2026-08-13). */
+const TERMINAL_STATES = /ENTREGAD|CANCELAD|REEMPLAZ|DEVOLUCION|DEVUELT|INDEMNIZ|RECHAZAD|ARCHIVADO.?GHOST/i;
 
 export interface ActiveDupAlert {
   externalId: string;

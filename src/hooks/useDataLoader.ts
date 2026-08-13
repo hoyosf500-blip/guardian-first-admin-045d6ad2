@@ -146,6 +146,10 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           .not('estado', 'eq', 'DEVOLUCION')
           .not('estado', 'eq', 'DEVOLUCION EN TRANSITO')
           .not('estado', 'ilike', '%INDEMNIZADA%')
+          // Borrados en Dropi (nightly-reconcile): no son pedidos vivos — sin
+          // esto entraban al tablero de Seguimiento como si existieran.
+          .not('estado', 'eq', 'ARCHIVADO GHOST')
+          .not('estado', 'eq', 'ARCHIVADO_GHOST')
           .order('created_at', { ascending: false })
           .range(fromIdx, toIdx);
         if (error) {
