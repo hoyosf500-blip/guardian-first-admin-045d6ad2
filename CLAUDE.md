@@ -63,11 +63,6 @@ supabase functions deploy parse-bank-pdf-text
 supabase functions deploy dropi-open-incidences
 supabase functions deploy dropi-refresh-batch
 supabase functions deploy dropi-webhook
-supabase functions deploy wa-webhook
-supabase functions deploy wa-send
-supabase functions deploy wa-ai-responder
-supabase functions deploy wa-status-notifier
-supabase functions deploy wa-mine-conversations
 
 # Apply DB migrations
 supabase db push
@@ -288,7 +283,7 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `shopify-push-dropi` — sube un pedido de Shopify a Dropi (anti-fuga). Resuelve el producto Dropi leyendo el metafield `dropi/_dropi_product` que Dropify deja en cada producto Shopify. `mode: "preview"` arma cliente+productos+total sin crear nada; `"confirm"` crea la orden (`POST /integrations/orders/myorders`) y registra en `shopify_pushed_orders` (idempotente). Auth = JWT de miembro de la tienda. La secuencia de cotización web (A–D: product/show → locations → getOriginCity → cotizaEnvioTransportadoraV2) vive en `_shared/dropiWebQuote.ts` (`quoteCarriers`) y la comparte con `dropi-change-carrier`; al crear sigue eligiendo la más barata ≠ VELOCES.
 - `shopify-reconcile` — detecta pedidos de Shopify que NUNCA llegaron a Dropi cruzando por TELÉFONO (últimos 9 dígitos) contra `orders`. Body `{store_id, days?=3}`. Alimenta la cola anti-fuga.
 - `shopify-auto-push` — robot de cron (**cada 15 min**, migration `20260718140000`) que sube a Dropi solo los pedidos Shopify LIMPIOS de tiendas con `auto_push_enabled`. La selección vive en `_shared/autoPushSelect.ts`: con teléfono, pasada una gracia de 30 min (deja que Dropify lo suba primero), menos de 3 días, no existente en Dropi, sin intento previo. **Sube llamando a `shopify-push-dropi` en `mode:"confirm"`**, así siguen aplicando todos los locks (anti-duplicado por teléfono, anti-sobreprecio, idempotencia) — el robot nunca fuerza nada; lo bloqueado cae al panel manual. Auth `x-cron-secret`. Body `{store_id?, dry_run?}`.
-- `wa-webhook` · `wa-send` · `wa-ai-responder` · `wa-status-notifier` · `wa-mine-conversations` — el bot de WhatsApp; ver la sección "Bot de WhatsApp & gateway" más abajo. Dos datos operativos que no están ahí: **`wa-status-notifier`** (pg_cron ~10 min) escribe en la PRIMERA aparición de un pedido una fila baseline en `wa_order_notifications` **sin enviar nada** — así no bombardea el histórico; solo notifica transiciones posteriores. Tope `MAX_SENDS_PER_RUN = 40` y ventana `SEND_HOUR_END = 21` (08:00–21:00 Bogotá) que **aplica SOLO a envíos proactivos** — las respuestas reactivas del bot van 24/7. **`wa-send`** (botón manual de la asesora) escribe además un touchpoint `WHATSAPP: ...` con `operator_id`; el camino de la IA NO escribe touchpoints.
+- **BOT DE WHATSAPP RETIRADO (2026-08-13) — estas 5 edge functions se borraron del repo; falta borrarlas en Supabase. Ver la sección de abajo.** ~~`wa-webhook` · `wa-send` · `wa-ai-responder` · `wa-status-notifier` · `wa-mine-conversations` — el bot de WhatsApp;~~ ver la sección "Bot de WhatsApp & gateway" más abajo. Dos datos operativos que no están ahí: **`wa-status-notifier`** (pg_cron ~10 min) escribe en la PRIMERA aparición de un pedido una fila baseline en `wa_order_notifications` **sin enviar nada** — así no bombardea el histórico; solo notifica transiciones posteriores. Tope `MAX_SENDS_PER_RUN = 40` y ventana `SEND_HOUR_END = 21` (08:00–21:00 Bogotá) que **aplica SOLO a envíos proactivos** — las respuestas reactivas del bot van 24/7. **`wa-send`** (botón manual de la asesora) escribe además un touchpoint `WHATSAPP: ...` con `operator_id`; el camino de la IA NO escribe touchpoints.
 - `parse-bank-pdf-text` — recibe el TEXTO plano de un extracto Bancolombia (Mastercard/Amex) — el cliente extrae el texto con `pdfjs-dist` en `CfoPersonalCardUploader.tsx`, porque pdfjs server-side no corre bien en edge — y devuelve movimientos categorizados; opcionalmente upserta. Alimenta el módulo de tarjeta personal del CFO.
 
 Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_key` = INTEGRATIONS permanente; `dropi_session_token` = JWT de sesión legacy/fallback). Se leen en runtime vía `loadStoreConfig` (`_shared/dropiStoreConfig.ts`), NUNCA hardcoded. (El viejo `app_settings.dropi_token`/`dropi_session_token` era el modelo single-tenant previo.) Las credenciales **Shopify** viven en `store_shopify_config` y se leen vía `loadShopifyConfig` + `getShopifyAccessToken` (`_shared/shopifyStoreConfig.ts`) — usa client-credentials grant (token 24h auto-refresh; pegar un `shpss_` da 401). Todas las edge functions multi-tienda validan membresía con `isStoreMember` antes de tocar datos.
@@ -315,7 +310,22 @@ Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_ke
 
 **Si Dropi cambia el texto de un código,** el regex falla y el movimiento cae en `otro`. Diagnóstico: `SELECT codigo, COUNT(*) FROM dropi_wallet_movements WHERE categoria='otro' GROUP BY codigo;`. Después agregar pattern a `mapCategoria` Y crear migration `UPDATE` para re-categorizar movimientos viejos (patrón `20260502000005_recategorize_wallet_movements.sql`).
 
-### Bot de WhatsApp & gateway (multi-proveedor: Whapi / Evolution)
+### Bot de WhatsApp — RETIRADO (2026-08-13)
+
+> **El bot de WhatsApp se quitó por completo: no se usaba ni se iba a usar** (commit `0090a03`).
+> Se borraron sus 5 edge functions (`wa-webhook`/`wa-send`/`wa-ai-responder`/`wa-status-notifier`/
+> `wa-mine-conversations`), sus 6 librerías `_shared/wa*` (`waTransport`/`waTracking`/`waTranscribe`/
+> `waMedia`/`waChannel`/`waPhone`), el inbox de Seguimiento y los paneles de `/admin` (Canales, Bot,
+> Quick replies, Productos-bot). **`WaChatContext` quedó como STUB no-op** (misma firma
+> `useWaChat`/`WaChatProvider`, `waEnabled=false`) a propósito, para NO tocar las 6 pantallas que lo
+> consumían, varias frágiles (CallView, CrmCallView, CrmTable, NovedadView, SegBoard, OrderDetailPage);
+> sus botones ya iban gateados por `waEnabled`. **Pendiente del dueño (fuera del repo):** desagendar
+> los crons `wa-*`, DROP de las 11 tablas `wa_*` + `product_knowledge`, borrar el bucket `wa-audio` y
+> eliminar las 5 edge functions ya desplegadas en Supabase. Ver memoria `whatsapp_bot_removido`.
+>
+> **Todo lo que sigue en esta sección es HISTÓRICO y ya no aplica.**
+
+### ~~Bot de WhatsApp & gateway (multi-proveedor: Whapi / Evolution)~~ (histórico)
 
 El bot "renta el caño, no el cerebro": el inbox + la IA viven en Guardian; el transporte (conexión a WhatsApp) lo provee un gateway QR detrás de **una sola interfaz agnóstica** `supabase/functions/_shared/waTransport.ts` (`WaTransport`: `sendText` + `parseInbound`). Implementados: **`WhapiTransport`** (Whapi.cloud, base `gate.whapi.cloud`, Bearer) y **`EvolutionTransport`** (Evolution API self-host: base = server propio, header `apikey`, opera por **instancia**; `POST /message/sendText/{instance}`, webhook `messages.upsert`). `cloud_api` queda como escape hatch. Swap de proveedor = registrar el canal con otro `provider` — **NO se toca** `wa-webhook`/`wa-send`/`wa-ai-responder`/inbox/realtime (todo agnóstico, store-scoped).
 
