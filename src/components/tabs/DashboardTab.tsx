@@ -1041,7 +1041,8 @@ export default function DashboardTab() {
           </div>
           <h3 className="text-base font-semibold text-foreground mb-1">Sin datos todavía</h3>
           <p className="text-sm text-muted-foreground max-w-xs">
-            Sube un archivo Excel o comienza a gestionar pedidos para ver tus estadísticas aquí.
+            Tus pedidos se traen desde Dropi. Apenas la tienda sincronice, tus estadísticas
+            aparecen acá.
           </p>
         </motion.div>
       ) : (

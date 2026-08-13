@@ -10,6 +10,7 @@ import SyncHistory from '@/components/admin/SyncHistory';
 import SyncPanel from '@/components/admin/SyncPanel';
 import StoreCredentialsPanel from '@/components/admin/StoreCredentialsPanel';
 import StoreInvitePanel from '@/components/admin/StoreInvitePanel';
+import CompartirGuardianPanel from '@/components/admin/CompartirGuardianPanel';
 import ProductDropiMapPanel from '@/components/admin/ProductDropiMapPanel';
 import DropiParityPanel from '@/components/admin/DropiParityPanel';
 import { format } from 'date-fns';
@@ -316,6 +317,14 @@ export default function AdminTab() {
 
           {/* Invitar operadora por link (solo dueño de la tienda activa) */}
           <StoreInvitePanel />
+
+          {/* Compartir Guardian con un amigo (link /registro para dueños nuevos).
+              Solo el admin de plataforma: es quien suma tiendas nuevas. */}
+          {isAdmin && (
+            <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="md:col-span-2">
+              <CompartirGuardianPanel />
+            </motion.div>
+          )}
 
           {/* AI API Key — config GLOBAL (app_settings), solo admin de plataforma */}
           {isAdmin && (
