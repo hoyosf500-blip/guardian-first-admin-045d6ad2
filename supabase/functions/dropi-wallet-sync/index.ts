@@ -22,7 +22,13 @@
 //     limit: number }       // si > 0, corta tras N movimientos
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+// SheetJS desde su CDN oficial (0.20.3), NO esm.sh/xlsx@0.18.5: la 0.18.5 tiene
+// prototype-pollution (GHSA-4r6h-8v6p-xvw6) y ReDoS (GHSA-5pgg-2g8v-p4x9) SIN
+// parche en npm — SheetJS sacó las versiones nuevas del registro y solo las
+// publica en cdn.sheetjs.com. Misma API (XLSX.read / utils.sheet_to_json).
+// OJO: requiere redeploy (Lovable no auto-despliega edge functions); si tras el
+// deploy wallet-sync falla al leer el XLSX, revertir esta línea a esm.sh@0.18.5.
+import * as XLSX from "https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";

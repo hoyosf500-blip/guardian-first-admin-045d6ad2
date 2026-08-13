@@ -22,7 +22,7 @@ interface AuditRow {
 interface HealthRow {
   last_health_status: string | null;
   last_health_checked_at: string | null;
-  dropi_api_key: string | null;
+  has_api_key: boolean;
   country_code: string;
 }
 
@@ -39,17 +39,38 @@ export default function DropiParityPanel() {
 
   const load = useCallback(async () => {
     if (!activeStoreId) return;
-    const [h, hist] = await Promise.all([
+    const [h, status, hist] = await Promise.all([
+      // Columnas de SALUD (no secretas). La api_key permanente ya NO se baja al
+      // navegador: acá sólo hace falta el booleano "¿hay clave?", y ese viene por
+      // get_store_dropi_status. Bajarla era la misma exposición que filtró la
+      // clave de Ecuador (quedó en un volcado del DOM). Espejo de StoreCredentialsPanel.
       supabase.from('store_dropi_config')
-        .select('last_health_status, last_health_checked_at, dropi_api_key, country_code')
+        .select('last_health_status, last_health_checked_at, country_code')
         .eq('store_id', activeStoreId).maybeSingle(),
+      (supabase.rpc as unknown as (
+        fn: string, args: Record<string, unknown>,
+      ) => Promise<{ data: Array<{ has_api_key: boolean }> | null; error: { message: string } | null }>)(
+        'get_store_dropi_status', { p_store_id: activeStoreId },
+      ),
       supabase.from('audit_runs')
         .select('id, created_at, guardian_count, dropi_count, divergences_found, divergences_applied, missing_in_dropi, notes')
         .eq('store_id', activeStoreId).order('created_at', { ascending: false }).limit(5),
     ]);
-    setCfgReadFailed(Boolean(h.error));
+    // Falla de CUALQUIERA de las dos lecturas de config = estado desconocido (no
+    // "sin api_key"): mismo criterio que antes, ahora sobre las dos fuentes.
+    setCfgReadFailed(Boolean(h.error || status.error));
     setHistReadFailed(Boolean(hist.error));
-    setHealth(h.error ? null : (h.data as HealthRow | null));
+    if (h.error || status.error) {
+      setHealth(null);
+    } else {
+      const cfg = h.data as { last_health_status: string | null; last_health_checked_at: string | null; country_code: string } | null;
+      setHealth({
+        last_health_status: cfg?.last_health_status ?? null,
+        last_health_checked_at: cfg?.last_health_checked_at ?? null,
+        country_code: cfg?.country_code ?? 'CO',
+        has_api_key: Boolean(Array.isArray(status.data) ? status.data[0]?.has_api_key : false),
+      });
+    }
     setHistory(hist.error ? [] : ((hist.data as AuditRow[]) || []));
   }, [activeStoreId]);
 
@@ -61,7 +82,7 @@ export default function DropiParityPanel() {
   // Ahora la edge function dropi-snapshot usa la integration-key permanente,
   // así que basta con tener api_key configurada (que es lo mínimo para que el
   // cron y health funcionen también).
-  const canAudit = Boolean((health?.dropi_api_key || '').length > 0);
+  const canAudit = Boolean(health?.has_api_key);
   // 'read_error' se distingue de 'unknown': "Sin chequear" es una fila leída
   // con health null (nunca corrió el check); "No se pudo leer" es que la query
   // falló y el estado real es desconocido.

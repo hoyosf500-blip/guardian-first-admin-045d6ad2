@@ -29,7 +29,6 @@ export default defineConfig(({ mode }) => ({
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-charts': ['recharts'],
-          'vendor-xlsx': ['xlsx'],
           // L2: framer-motion (~100 KB) en su propio chunk para que el
           // profiler de bundle pueda aislarlo y para que rutas que no lo
           // usan no paguen el costo eager via vendor-ui.

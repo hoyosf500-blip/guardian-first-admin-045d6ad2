@@ -1,0 +1,17 @@
+# Cabeceras de seguridad HTTP para el sitio estático.
+#
+# ⚠️  Estas cabeceras SOLO tienen efecto si el hosting las aplica en el borde.
+#     Formato Netlify/Cloudflare Pages. Si Guardian se sirve desde Lovable u otro
+#     host que NO lee este archivo, hay que configurar las mismas cabeceras en el
+#     panel del host — un <meta http-equiv> NO sirve para frame-ancestors ni para
+#     X-Frame-Options (los navegadores los IGNORAN en <meta>: solo valen como
+#     cabecera HTTP real). Verificar con:  curl -I https://<tu-dominio>
+#
+# Por qué: sin esto, un sitio señuelo puede embeber el CRM en un <iframe> y hacer
+# clickjacking sobre /admin (engañar a un dueño logueado para que clickee acciones).
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'; upgrade-insecure-requests
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
