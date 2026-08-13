@@ -51,7 +51,9 @@ export default function StoreAdSpendDialog({ open, onOpenChange, editing }: Prop
   const [amount, setAmount] = useState('');
   const [notas, setNotas] = useState('');
 
-  const currencyLabel = activeStore?.country_code === 'EC' ? 'USD' : 'COP';
+  const currencyLabel = activeStore?.country_code === 'EC' ? 'USD'
+    : activeStore?.country_code === 'GT' ? 'GTQ'
+    : 'COP';
 
   useEffect(() => {
     if (!open) return;

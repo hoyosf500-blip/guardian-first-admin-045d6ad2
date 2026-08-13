@@ -186,9 +186,12 @@ export function calcPriority(order: {
   // fijos en COP dejaban a EC (USD) sin bonus jamás — un pedido de $120 USD
   // (~500k COP) quedaba ordenado igual que uno de $18 (auditoría 2026-07-31).
   const val = Number(order.valor) || 0;
-  const [valAlto, valMedio, valBase] = getCurrencyCountry() === 'EC'
+  const monedaPais = getCurrencyCountry();
+  const [valAlto, valMedio, valBase] = monedaPais === 'EC'
     ? [120, 60, 25]              // USD
-    : [200000, 100000, 50000];   // COP
+    : monedaPais === 'GT'
+      ? [900, 450, 190]          // GTQ (~7.7 GTQ/USD; sin esta rama ningún pedido GT llegaba al umbral COP y el bonus de valor nunca aplicaba)
+      : [200000, 100000, 50000];   // COP
   if (val >= valAlto) score += 10;
   else if (val >= valMedio) score += 5;
   else if (val >= valBase) score += 2;

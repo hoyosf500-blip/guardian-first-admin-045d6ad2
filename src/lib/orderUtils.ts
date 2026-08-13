@@ -1,4 +1,4 @@
-import { COL_MAP, CARRIER_TRACK, CARRIER_TRACK_EC } from './constants';
+import { COL_MAP, CARRIER_TRACK, CARRIER_TRACK_EC, CARRIER_TRACK_GT } from './constants';
 import { classifySegEstado } from './segStatus';
 import { bogotaToday } from './utils';
 
@@ -452,6 +452,34 @@ function getEcuadorianHolidays(year: number): Set<string> {
 }
 
 /**
+ * Feriados nacionales de GUATEMALA ("YYYY-MM-DD"). Sin esto, una tienda GT corría
+ * con el calendario COLOMBIANO: contaba el 20-jul/7-ago (solo CO) como festivos y
+ * le faltaban el 15-sep (Independencia GT), el 20-oct y el 30-jun — los días
+ * hábiles y las listas SLA de indemnización salían corridos varios días al año.
+ *
+ * Fijos + Semana Santa (jue/vie/sáb) por Pascua. No se modela el 15-ago (feriado
+ * solo en la capital) para no marcar hábil-perdido en el resto del país.
+ */
+function getGuatemalanHolidays(year: number): Set<string> {
+  const easter = calcEasterUTC(year);
+  const holidays = new Set<string>();
+
+  holidays.add(`${year}-01-01`); // Año Nuevo
+  holidays.add(`${year}-05-01`); // Día del Trabajo
+  holidays.add(`${year}-06-30`); // Día del Ejército
+  holidays.add(`${year}-09-15`); // Independencia
+  holidays.add(`${year}-10-20`); // Revolución de 1944
+  holidays.add(`${year}-11-01`); // Día de Todos los Santos
+  holidays.add(`${year}-12-25`); // Navidad
+
+  holidays.add(_fmtHoliday(_addDaysUTC(easter, -3))); // Jueves Santo
+  holidays.add(_fmtHoliday(_addDaysUTC(easter, -2))); // Viernes Santo
+  holidays.add(_fmtHoliday(_addDaysUTC(easter, -1))); // Sábado de Gloria
+
+  return holidays;
+}
+
+/**
  * Calendario de festivos ya calculado, por `${país}:${año}`.
  *
  * calcBusinessDays se llama miles de veces por tecla del buscador de Seguimiento
@@ -466,7 +494,9 @@ function holidaysFor(cc: string, year: number): Set<string> {
   const key = `${cc}:${year}`;
   let cached = holidayCache.get(key);
   if (!cached) {
-    cached = cc === 'EC' ? getEcuadorianHolidays(year) : getColombianHolidays(year);
+    cached = cc === 'EC' ? getEcuadorianHolidays(year)
+      : cc === 'GT' ? getGuatemalanHolidays(year)
+      : getColombianHolidays(year);
     holidayCache.set(key, cached);
   }
   return cached;
@@ -691,9 +721,12 @@ export function getTrackingUrl(carrier: string, guia: string, countryCode?: stri
   const key = (carrier || '').toUpperCase().trim();
   const cc = (countryCode || _activeTrackingCountry).toUpperCase();
   // Para Ecuador, las entradas EC pisan a las CO con el mismo nombre (ej.
-  // SERVIENTREGA tiene URL distinta por país). Para el resto (default/CO) se usa
-  // solo el mapa colombiano — comportamiento histórico intacto.
-  const map = cc === 'EC' ? { ...CARRIER_TRACK, ...CARRIER_TRACK_EC } : CARRIER_TRACK;
+  // SERVIENTREGA tiene URL distinta por país). GT usa su PROPIO mapa (no hereda el
+  // colombiano: una guía GT no debe abrir el sitio de rastreo de Colombia). Para
+  // el resto (default/CO) se usa solo el mapa colombiano — histórico intacto.
+  const map = cc === 'EC' ? { ...CARRIER_TRACK, ...CARRIER_TRACK_EC }
+    : cc === 'GT' ? CARRIER_TRACK_GT
+    : CARRIER_TRACK;
   for (const name of Object.keys(map)) {
     if (key.includes(name)) {
       const url = map[name];

@@ -85,10 +85,14 @@ export function linesDirty(quoted: EditableLine[], edited: EditableLine[]): bool
   return false;
 }
 
-/** Redondeo por país — espejo client-side de roundMoney del edge:
- *  EC cobra en USD con centavos; CO en pesos enteros. */
+/** Redondeo por país — espejo client-side de roundMoney del edge: EC (USD) y GT
+ *  (GTQ) cobran con centavos; CO en pesos enteros. Antes solo contemplaba EC, así
+ *  que en GT el total a recaudar se enviaba a Dropi sin decimales. Inline (no
+ *  import) a propósito: este módulo es puro y se testea aislado. */
 export function roundMoneyClient(n: number, countryCode?: string | null): number {
-  const f = countryCode === 'EC' ? 100 : 1;
+  const cc = String(countryCode || '').toUpperCase();
+  const usaCentavos = cc === 'EC' || cc === 'GT';
+  const f = usaCentavos ? 100 : 1;
   return Math.round(n * f) / f;
 }
 

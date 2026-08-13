@@ -3,7 +3,7 @@ import {
   Calculator, Truck, PackageCheck, Undo2, TrendingDown, Receipt, RefreshCw,
   AlertTriangle,
 } from 'lucide-react';
-import { formatCOP, getCurrencyCountry } from '@/lib/utils';
+import { formatCOP, getCurrencyCountry, paisUsaCentavos } from '@/lib/utils';
 import {
   computeRealKpis, computeSimulation, type SimulationInput,
 } from '@/lib/unitEconomics';
@@ -61,10 +61,11 @@ function pct1(x: number): string {
 }
 
 // Montos: en CO son COP enteros (descartamos todo lo no-dígito, acepta
-// "1.000.000" donde el punto es separador de miles). En EC son USD con
-// decimales: "6.49" debe ser 6.49, NO 649 — el punto/coma es decimal.
+// "1.000.000" donde el punto es separador de miles). En EC (USD) y GT (GTQ) son
+// con decimales: "6.49" debe ser 6.49, NO 649 — el punto/coma es decimal. Sin la
+// rama GT, una tienda de Guatemala que escribía "45.50" obtenía 4550 (100× off).
 function parseCop(v: string): number {
-  if (getCurrencyCountry() === 'EC') {
+  if (paisUsaCentavos(getCurrencyCountry())) {
     const n = Number(v.replace(/[^\d.,-]/g, '').replace(',', '.'));
     return isFinite(n) ? n : 0;
   }

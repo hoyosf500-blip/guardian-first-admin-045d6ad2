@@ -33,6 +33,15 @@ export function getCurrencyCountry(): PaisMoneda {
   return _activeCurrencyCountry;
 }
 
+/** ¿La moneda del país tiene CENTAVOS (2 decimales)? CO usa pesos enteros; EC
+ *  (USD) y GT (GTQ) usan centavos. Fuente única para no repetir el ternario
+ *  `=== 'EC'` por todos lados (que dejaba a Guatemala redondeando a entero y
+ *  perdiendo los centavos del total a recaudar). */
+export function paisUsaCentavos(countryCode?: string | null): boolean {
+  const cc = String(countryCode || '').toUpperCase();
+  return cc === 'EC' || cc === 'GT';
+}
+
 // OLD-4: formatea un número como la moneda de la tienda activa (COP entero para
 // CO, USD con 2 decimales para EC, GTQ con 2 decimales para GT). Usar siempre
 // este helper en vez de `valor.toLocaleString()` solo — el segundo respeta el

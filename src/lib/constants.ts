@@ -63,10 +63,23 @@ export const CARRIER_TRACK_EC: Record<string, string> = {
   'SERVIENTREGA': 'https://www.servientrega.com.ec/Tracking/?tipo=GUIA&guia=',
 };
 
+// Transportadoras de GUATEMALA (tienda GT). PENDIENTE: cargar las URLs reales de
+// rastreo (Guatex, Cargo Expreso, Forza, etc. — dato del dueño). Se deja VACÍO a
+// propósito: hasta tener las URLs correctas, un pedido GT NO muestra botón de
+// rastreo (getTrackingUrl → null), que es MEJOR que mandarlo al sitio de la
+// transportadora de OTRO país — el bug que había: GT heredaba el mapa colombiano
+// y una guía "SERVIENTREGA" abría servientrega.com.co. Las que terminen en '='
+// reciben la guía al final (mismo contrato que CO/EC).
+export const CARRIER_TRACK_GT: Record<string, string> = {
+  // 'GUATEX': 'https://www.guatex.com.gt/...guia=',
+  // 'CARGO EXPRESO': 'https://cargoexpreso.com/...',
+};
+
 // Mapa de rastreo por país (country_code de la tienda activa).
 export const CARRIER_TRACK_BY_COUNTRY: Record<string, Record<string, string>> = {
   CO: CARRIER_TRACK,
   EC: CARRIER_TRACK_EC,
+  GT: CARRIER_TRACK_GT,
 };
 
 // SEG_ACTIONS (los 7 botones planos) se reemplazó por el modelo "revisión
