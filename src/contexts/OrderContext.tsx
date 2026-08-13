@@ -936,6 +936,27 @@ export function OrderProvider({ children }: { children: ReactNode }) {
                   duration: 6000,
                   id: 'retry-available', // sonner dedup por id → nunca se apilan
                 });
+                // Notificación NATIVA, además del toast. Medido el 13-ago (bloque
+                // A del diagnóstico): el reintento vuelve a la cola a la hora
+                // exacta, pero se llama con mediana de 2,6 h — porque cuando el
+                // enfriamiento vence la asesora está en OTRA pestaña y el toast
+                // no existe fuera de esta. Es el mismo aviso que ya trae de
+                // vuelta a la operadora cuando entra un pedido nuevo (Hallazgo 7).
+                try {
+                  if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification(
+                      nuevos.length > 1
+                        ? `${nuevos.length} clientes volvieron a la cola — llamar ahora`
+                        : 'Un cliente volvió a la cola — llamar ahora',
+                      {
+                        body: 'No contestaron antes y ya cumplieron la hora de espera. Les quedan llamadas hoy.',
+                        tag: 'retry-disponible', // colapsa avisos repetidos
+                      },
+                    );
+                  }
+                } catch {
+                  // Notification puede lanzar en contextos no seguros — no romper la app.
+                }
               }
             }
 

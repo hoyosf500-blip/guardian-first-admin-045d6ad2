@@ -304,10 +304,13 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestio
                   </span>
                 );
               })()}
-              {/* Retry badge */}
+              {/* Retry badge — dice "Volvió" con todas las letras: el dato medido
+                  (13-ago, bloque A) es que el reintento vuelve a la cola a la hora
+                  pero se llama con mediana 2,6 h — el "2/3" críptico no le decía a
+                  la asesora que ESTE pedido está esperando su segunda llamada. */}
               {o.retryCount && !o.result && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold font-mono tabular-nums bg-attention/15 text-attention border border-attention/30 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Reintento ${o.retryCount} de 3`}>
-                  <RotateCcw size={9} aria-hidden="true" /> {o.retryCount}/3
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold font-mono tabular-nums bg-attention/15 text-attention border border-attention/30 inline-flex items-center gap-0.5 flex-shrink-0" aria-label={`Volvió a la cola: intento ${o.retryCount + 1} de 3`}>
+                  <RotateCcw size={9} aria-hidden="true" /> Volvió · {o.retryCount}/3 usados
                 </span>
               )}
               {/* Status badge */}
