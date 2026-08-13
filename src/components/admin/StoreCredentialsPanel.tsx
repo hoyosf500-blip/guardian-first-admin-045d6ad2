@@ -6,6 +6,7 @@ import { Key, Save, Eye, EyeOff, Loader2, Wifi, WifiOff, CheckCircle2, ExternalL
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { TiltCard } from '@/components/ui3d';
+import { panelDropiHost, apiDropiHost as apiDropiHostFor } from '@/lib/dropiPais';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -413,8 +414,10 @@ export default function StoreCredentialsPanel() {
   const brandDirty = name !== savedName || logoUrl !== savedLogo;
 
   // Host de Dropi según el país de la tienda (para las instrucciones de la huella).
-  const dropiHost = activeStore.country_code === 'EC' ? 'app.dropi.ec' : 'app.dropi.co';
-  const apiDropiHost = activeStore.country_code === 'EC' ? 'api.dropi.ec' : 'api.dropi.co';
+  // Vía dropiPais (fuente única CO/EC/GT); el ternario `=== 'EC'` le mostraba a una
+  // tienda GT instrucciones apuntando a app.dropi.co (Colombia).
+  const dropiHost = panelDropiHost(activeStore.country_code);
+  const apiDropiHost = apiDropiHostFor(activeStore.country_code);
 
   // Vencimiento REAL del token de sesión. Del token GUARDADO lo calcula el
   // server (no baja al cliente); si el dueño está pegando uno nuevo, se

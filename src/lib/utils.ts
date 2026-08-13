@@ -8,6 +8,15 @@ export function cn(...inputs: ClassValue[]) {
 // Fecha de hoy en Bogotá (YYYY-MM-DD). El servidor usa
 // (NOW() AT TIME ZONE 'America/Bogota')::date. Si el cliente usara la zona
 // del navegador, un PC con hora mal o TZ distinta descuadra stats y cierre.
+//
+// ⚠️ LÍMITE CONOCIDO (Guatemala, UTC-6): CO y EC son UTC-5 = misma hora que
+// Bogotá, así que el corte de día es correcto. GT es UTC-6: entre las 23:00 y la
+// medianoche hora GT, esto ya cuenta el día siguiente. NO se corrige acá a
+// América/Guatemala a propósito: el servidor (todas las RPC de reportes/cierre/
+// contadores) sigue clavado a 'America/Bogota', y mover SOLO el cliente crearía
+// una inconsistencia peor (el cliente marca un día, el servidor otro, para el
+// mismo pedido de las 23:30 GT). El fix correcto es coordinado cliente+servidor
+// (pasar la TZ de la tienda a esas RPC) — pendiente, ver auditoría 2026-08-13.
 export function bogotaToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
 }

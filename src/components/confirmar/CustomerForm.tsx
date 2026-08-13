@@ -121,8 +121,10 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
     const canonical = list.find(d => d.toLowerCase() === form.departamento.toLowerCase());
     if (!canonical) list.unshift(form.departamento);
     return list;
+    // isGT en deps: sin él, al cambiar de tienda (CO/EC/GT) sin remontar el
+    // componente, la lista de departamentos quedaba la del país anterior.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.departamento, isEC]);
+  }, [form.departamento, isEC, isGT]);
 
   useEffect(() => {
     // Solo normalizamos casing en Colombia (dropdown canónico). En EC la ciudad es
