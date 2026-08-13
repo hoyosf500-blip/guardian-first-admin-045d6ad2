@@ -25,14 +25,13 @@ import { join } from 'path';
 /** Tablas con columna `store_id` consultadas desde el front. */
 const TABLAS_POR_TIENDA = [
   'orders', 'touchpoints', 'order_results', 'notes', 'dropi_wallet_movements',
-  'daily_reports', 'wa_conversations', 'wa_messages', 'wa_bot_config',
-  'wa_quick_replies', 'tc_debt_snapshots', 'shopify_pushed_orders',
-  'shopify_product_dropi_map', 'shopify_manual_marks', 'product_knowledge',
+  'daily_reports', 'tc_debt_snapshots', 'shopify_pushed_orders',
+  'shopify_product_dropi_map', 'shopify_manual_marks',
   'personal_card_movements', 'order_status_history', 'order_labels',
   'operator_daily_reports', 'operator_activity_daily',
   'nightly_reconcile_results', 'monthly_business_inputs', 'monthly_ad_spend',
   'store_dropi_config', 'audit_runs', 'sync_logs', 'store_rendiciones',
-  'store_ad_spend_daily', 'cfo_monthly_retrospective', 'wa_channels',
+  'store_ad_spend_daily', 'cfo_monthly_retrospective',
 ];
 
 /** Filtros por fila única: RLS ya alcanza, el store_id sería redundante. */

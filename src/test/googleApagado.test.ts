@@ -101,10 +101,10 @@ describe('Google ELIMINADO: que no vuelva a existir el camino', () => {
       const idx = join(dir, fn, 'index.ts');
       if (!statSync(join(dir, fn)).isDirectory() || !existsSync(idx)) continue;
       const code = sinComentarios(readFileSync(idx, 'utf8'));
-      // `ai-order-assistant` y `wa-ai-responder` usan IA a propósito y con
-      // presupuesto del dueño; lo que se vigila acá es el validador de
-      // direcciones, que gastaba sin que nadie lo hubiera pedido.
-      if (fn === 'ai-order-assistant' || fn === 'wa-ai-responder' || fn === 'wa-webhook') continue;
+      // `ai-order-assistant` usa IA a propósito y con presupuesto del dueño; lo
+      // que se vigila acá es el validador de direcciones, que gastaba sin que
+      // nadie lo hubiera pedido.
+      if (fn === 'ai-order-assistant') continue;
       if (/googleapis\.com|GOOGLE_MAPS_API_KEY|api\.anthropic\.com/.test(code)) {
         culpables.push(fn);
       }

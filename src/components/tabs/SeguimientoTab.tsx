@@ -15,7 +15,6 @@ import SegBoard from '@/components/seguimiento/SegBoard';
 import { estaGestionadoHoy, contarGestionadosHoy, estaDetenido, asesorasEnSeguimientoHoy, HORAS_DETENIDO } from '@/lib/segPulso';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import SegCounterBar from '@/components/SegCounterBar';
-import WaInbox from '@/components/seguimiento/WaInbox';
 import GlobalOrderSearchPanel from '@/components/seguimiento/GlobalOrderSearchPanel';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -628,7 +627,6 @@ export default function SeguimientoTab() {
                 Dropi y segLoading son estados independientes, y fusionarlos
                 dejaría a la asesora sin saber cuál de los dos corrió. */}
             <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
-              <WaInbox storeId={activeStoreId} />
               {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
                   visibles ahora (vs "Actualizar" que solo re-lee la base). */}
               <button

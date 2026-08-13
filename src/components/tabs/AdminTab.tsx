@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
-import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff, Users, SlidersHorizontal, MessageSquare, Bot, Package, TrendingUp, ClipboardList } from 'lucide-react';
+import { CheckCircle2, Key, Save, Eye, EyeOff, Loader2, AlertTriangle, X, Sparkles, WifiOff, Users, SlidersHorizontal, TrendingUp, ClipboardList } from 'lucide-react';
 import { TiltCard, AuroraBackdrop } from '@/components/ui3d';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -19,11 +19,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProductivityDashboard from '@/components/admin/ProductivityDashboard';
 import WorkSchedulePanel from '@/components/admin/WorkSchedulePanel';
 import DailyReportsView from '@/components/admin/DailyReportsView';
-import WaBotConfigPanel from '@/components/admin/WaBotConfigPanel';
-import WaBotNotifyPanel from '@/components/admin/WaBotNotifyPanel';
-import ProductKnowledgePanel from '@/components/admin/ProductKnowledgePanel';
-import WaChannelsPanel from '@/components/admin/WaChannelsPanel';
-import WaQuickRepliesPanel from '@/components/admin/WaQuickRepliesPanel';
 
 const fadeUp = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.35, ease: 'easeOut' } };
 
@@ -223,9 +218,6 @@ export default function AdminTab() {
         <motion.div {...rise(0.05)} className="overflow-x-auto -mx-1 px-1">
           <TabsList className="mb-5 inline-flex w-full flex-wrap gap-2 h-auto bg-transparent p-0 justify-start rounded-none" aria-label="Secciones de administración">
             <TabsTrigger value="config" className={TAB_PILL}><SlidersHorizontal size={13} aria-hidden="true" /> Configuración</TabsTrigger>
-            <TabsTrigger value="canales" className={TAB_PILL}><MessageSquare size={13} aria-hidden="true" /> Canales WhatsApp</TabsTrigger>
-            <TabsTrigger value="bot" className={TAB_PILL}><Bot size={13} aria-hidden="true" /> Bot WhatsApp</TabsTrigger>
-            <TabsTrigger value="productos" className={TAB_PILL}><Package size={13} aria-hidden="true" /> Productos (bot)</TabsTrigger>
             <TabsTrigger value="productividad" className={TAB_PILL}><TrendingUp size={13} aria-hidden="true" /> Productividad</TabsTrigger>
             <TabsTrigger value="reportes" className={TAB_PILL}><ClipboardList size={13} aria-hidden="true" /> Reportes diarios</TabsTrigger>
           </TabsList>
@@ -238,20 +230,6 @@ export default function AdminTab() {
 
         <TabsContent value="reportes" className="mt-0">
           <motion.div {...rise(0.12)}><DailyReportsView /></motion.div>
-        </TabsContent>
-
-        <TabsContent value="canales" className="mt-0">
-          <motion.div {...rise(0.12)}><WaChannelsPanel /></motion.div>
-        </TabsContent>
-
-        <TabsContent value="bot" className="mt-0 space-y-5">
-          <motion.div {...rise(0.12)}><WaBotConfigPanel /></motion.div>
-          <motion.div {...rise(0.18)}><WaBotNotifyPanel /></motion.div>
-          <motion.div {...rise(0.24)}><WaQuickRepliesPanel /></motion.div>
-        </TabsContent>
-
-        <TabsContent value="productos" className="mt-0">
-          <motion.div {...rise(0.12)}><ProductKnowledgePanel /></motion.div>
         </TabsContent>
 
         <TabsContent value="config" className="mt-0 space-y-0">

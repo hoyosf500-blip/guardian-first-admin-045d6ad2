@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { ManualMark } from '@/lib/shopifyMarks';
 
 // `shopify_manual_marks` aún no está en los tipos generados (se agregan al
-// regenerar). Mismo patrón que WaChannelsPanel/ProductKnowledgePanel.
+// regenerar). Mismo patrón de cast que otros paneles con tablas nuevas.
 const sb = supabase as unknown as SupabaseClient;
 
 const MARKS_COLUMNS = 'id, shopify_order_id, shopify_name, customer, phone, total, city, marked_at';
