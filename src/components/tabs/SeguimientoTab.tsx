@@ -28,6 +28,7 @@ import {
   findSegList,
   isValidSegListSlug,
   seMuestraComoChip,
+  esAccionable,
 } from '@/lib/segLists';
 import { classifySegEstado } from '@/lib/segStatus';
 import { findSupersededInSeg } from '@/lib/duplicateOrders';
@@ -672,13 +673,21 @@ export default function SeguimientoTab() {
           // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
           // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
           const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
+          // COLA DE HOY (14-ago-2026): sin lista activa, el día ya NO se mide
+          // contra todo lo cargado — "150 por gestionar" con 120 viajando era
+          // una meta imposible y la operadora la ignoraba. Se exige en 0 lo
+          // ACCIONABLE (detenidos, agencia vencida, reparto/novedad,
+          // indemnizaciones, sin guía): la MISMA población que el guard de
+          // inactividad ya considera trabajo. El resto es monitoreo.
           const feedBase = listaActiva && !listaActiva.externalRoute
             ? counterSource.filter((o) => listaActiva.matches(o))
-            : counterSource;
+            : counterSource.filter(esAccionable);
+          const enRuta = counterSource.length;
           const total = feedBase.length;
-          // Se conserva EXACTA la condición original (`total === 0` → sin hero):
-          // no se inventa un estado vacío que afirme algo que no se midió.
-          const heroVisible = total > 0;
+          // El hero vive mientras haya pedidos cargados: una cola de hoy en 0
+          // con 150 en ruta es un LOGRO que se muestra en verde, no una pantalla
+          // vacía. Sin nada cargado, no hay hero (no se afirma lo no medido).
+          const heroVisible = enRuta > 0;
           // Gestionados por el EQUIPO, no solo por mí (arreglo 1-ago-2026).
           //
           // El tablero escondía las tarjetas que trabajó cualquiera, pero este
@@ -698,7 +707,8 @@ export default function SeguimientoTab() {
           // leían como la misma métrica que "no cuadraba".
           const detenidos = feedBase.filter((o) => estaDetenido(o)).length;
           const asesorasHoy = asesorasEnSeguimientoHoy(feedBase, gestionSegPorTelefono);
-          const pct = total > 0 ? Math.round((gestionados / total) * 100) : 0;
+          // Cola vacía = día cumplido: el aro se pinta lleno, no en 0%.
+          const pct = total > 0 ? Math.round((gestionados / total) * 100) : 100;
           const done = faltan === 0;
           const tone = done
             ? 'success'
@@ -734,8 +744,8 @@ export default function SeguimientoTab() {
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         Esto NO significa que no gestionaste nada: no se pudo leer la base. Hay{' '}
-                        <strong className="font-mono tabular-nums text-foreground">{total}</strong>{' '}
-                        {total === 1 ? 'pedido' : 'pedidos'} en la vista, pero no sabemos cuáles ya
+                        <strong className="font-mono tabular-nums text-foreground">{enRuta}</strong>{' '}
+                        {enRuta === 1 ? 'pedido' : 'pedidos'} en la vista, pero no sabemos cuáles ya
                         gestionaste — los que ya trabajaste hoy pueden aparecer de nuevo en el tablero.
                         Recargá la página; si sigue igual, avisá.
                       </p>
@@ -766,8 +776,10 @@ export default function SeguimientoTab() {
                         <CountUp value={faltan} className={`text-4xl font-extrabold leading-none ${faltanTone} ${faltanGlow}`} />
                         <span className="text-sm font-semibold text-foreground">
                           {done
-                            ? '¡Todo gestionado hoy! ✓'
-                            : `${faltan === 1 ? 'pedido' : 'pedidos'} por gestionar${listaActiva && !listaActiva.externalRoute ? ' en esta lista' : ''} hoy`}
+                            ? (listaActiva && !listaActiva.externalRoute ? '¡Lista en 0! ✓' : '¡Cola del día en 0! ✓')
+                            : listaActiva && !listaActiva.externalRoute
+                              ? `${faltan === 1 ? 'pedido' : 'pedidos'} por gestionar en esta lista`
+                              : `en la cola de HOY — se deja en 0`}
                         </span>
                       </div>
                       <div className="text-xs text-muted-foreground flex items-baseline gap-x-1.5 flex-wrap">
@@ -775,6 +787,14 @@ export default function SeguimientoTab() {
                         <strong className="font-mono tabular-nums text-foreground">{gestionados}</strong>
                         <span>de</span>
                         <strong className="font-mono tabular-nums text-foreground">{total}</strong>
+                        {!listaActiva && (
+                          <span
+                            className="cursor-help"
+                            title="La cola de HOY junta solo lo accionable: detenidos, agencia sin retirar, reparto/novedad, indemnizaciones vencidas y pendientes de guía. Un paquete viajando normal no es una tarea — se vigila, no se exige."
+                          >
+                            · {enRuta} en ruta en total
+                          </span>
+                        )}
                       </div>
                       {/* Barra de progreso del día — se llena a medida que gestionás. */}
                       <div className="h-1.5 w-full rounded-full bg-foreground/10 overflow-hidden" aria-hidden="true">
@@ -869,26 +889,40 @@ export default function SeguimientoTab() {
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-1.5 text-[11px] text-warning leading-relaxed">
-                      Nadie ha tocado Seguimiento hoy.
-                    </p>
+                    // El regaño amarillo solo tiene sentido EN horario laboral:
+                    // a las 00:47 "Nadie ha tocado Seguimiento hoy" es ruido que
+                    // grita en rojo un día que todavía no empezó (captura del
+                    // dueño, 14-ago-2026). Fuera de 9–21 baja a tono neutro.
+                    (() => {
+                      const h = new Date().getHours();
+                      return h >= 9 && h < 21;
+                    })() ? (
+                      <p className="mt-1.5 text-[11px] text-warning leading-relaxed">
+                        Nadie ha tocado Seguimiento hoy.
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
+                        Sin gestiones registradas todavía.
+                      </p>
+                    )
                   )}
                 </div>
 
-                {/* El total baja acá. No desapareció: dejó de ser titular —
-                    como titular repetía el número del hero y el del chip
-                    "Todas". Como contexto sigue explicando, junto a las tres
-                    notas de abajo, por qué la cuenta no cuadra con Dropi. */}
-                <div className="mt-3 pt-3 border-t border-border/50 flex flex-col gap-1 tilt-layer-1">
+                {/* Notas de transparencia (por qué la cuenta no cuadra con
+                    Dropi). Antes eran hasta 4 renglones apilados — el dueño
+                    pidió quitar ruido: bajan a UNA línea que envuelve, mismo
+                    contenido, mismos tooltips. La honestidad no se negocia;
+                    el espacio sí. */}
+                <div className="mt-3 pt-3 border-t border-border/50 flex flex-wrap gap-x-3 gap-y-1 tilt-layer-1">
                   <span
-                    className="text-[11px] text-muted-foreground font-mono tabular-nums"
-                    title="Todos los pedidos cargados en la vista actual (con los filtros de fecha aplicados). El número grande de la izquierda cuenta solo la lista de trabajo activa."
+                    className="text-[11px] text-muted-foreground font-mono tabular-nums cursor-help"
+                    title="Todos los pedidos cargados en la vista actual (con los filtros de fecha aplicados). El número grande de la izquierda cuenta solo la cola de trabajo activa."
                   >
-                    · {stats.total} cargados en total
+                    · {stats.total} cargados
                   </span>
                     {hiddenStaleCount > 0 && (
                       <span
-                        className="text-[11px] text-muted-foreground font-mono tabular-nums"
+                        className="text-[11px] text-muted-foreground font-mono tabular-nums cursor-help"
                         title={`${hiddenStaleCount} pedidos con más de ${DEFAULT_WINDOW_DAYS} días (fuera de la ventana por defecto de los últimos ${DEFAULT_WINDOW_DAYS} días). No se borraron — vé el histórico completo poniendo un rango de fechas.`}
                       >
                         · {hiddenStaleCount} viejos ocultos
@@ -896,18 +930,18 @@ export default function SeguimientoTab() {
                     )}
                     {hiddenSupersededCount > 0 && (
                       <span
-                        className="text-[11px] text-warning font-mono tabular-nums"
+                        className="text-[11px] text-warning font-mono tabular-nums cursor-help"
                         title={`${hiddenSupersededCount} pedido${hiddenSupersededCount > 1 ? 's' : ''} reemplazados por Dropi (mismo cliente + producto, nueva versión más reciente). Se ocultan para no duplicar la cola — el más reciente sí aparece.`}
                       >
-                        · {hiddenSupersededCount} reemplazados Dropi
+                        · {hiddenSupersededCount} reemplazados
                       </span>
                     )}
                     {hiddenClosedCount > 0 && (
                       <span
-                        className="text-[11px] text-muted-foreground font-mono tabular-nums"
+                        className="text-[11px] text-muted-foreground font-mono tabular-nums cursor-help"
                         title={`${hiddenClosedCount} pedido${hiddenClosedCount > 1 ? 's' : ''} cerrados (Resuelto/Devolución) ocultos. No se borraron — aparecen en el histórico con un rango de fechas más amplio.`}
                       >
-                        · {hiddenClosedCount} resueltos/devueltos ocultos
+                        · {hiddenClosedCount} resueltos ocultos
                       </span>
                     )}
                   </div>

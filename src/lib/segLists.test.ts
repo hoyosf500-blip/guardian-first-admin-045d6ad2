@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SEG_LISTS, findSegList, isValidSegListSlug, hasSeguimientoWork, seMuestraComoChip, ACTIONABLE_SEG_SLUGS } from './segLists';
+import { SEG_LISTS, findSegList, isValidSegListSlug, hasSeguimientoWork, seMuestraComoChip, ACTIONABLE_SEG_SLUGS, esAccionable } from './segLists';
 import type { SegListSlug } from './segLists';
 import { classifySegEstado } from './segStatus';
 import type { OrderData } from './orderUtils';
@@ -55,19 +55,22 @@ const baseOrder: OrderData = {
 };
 
 describe('SEG_LISTS — definición (embudo por prioridad)', () => {
-  it('exporta exactamente 10 listas', () => {
-    expect(SEG_LISTS).toHaveLength(10);
+  it('exporta exactamente 11 listas', () => {
+    expect(SEG_LISTS).toHaveLength(11);
   });
 
-  it('orden: confirmación → detenidos → final (oficina/reparto) → medio → inicial → otros', () => {
+  it('orden: confirmación → detenidos → agencia vencida → final (oficina/reparto) → medio → inicial → otros', () => {
     const slugs = SEG_LISTS.map((l) => l.slug);
     expect(slugs[0]).toBe('pendientes_confirmacion_2d');
     // Los detenidos van arriba: son los que se están pudriendo, sin importar
     // en qué fase estén.
     expect(slugs[1]).toBe('detenidos_3d');
-    expect(slugs[2]).toBe('en_oficina');
-    expect(slugs[3]).toBe('en_reparto_novedad');
-    expect(slugs[4]).toBe('en_transito');
+    // La agencia vencida va pegada: es la plata más fácil de perder (el
+    // courier devuelve a los ~7 días de espera).
+    expect(slugs[2]).toBe('agencia_2d');
+    expect(slugs[3]).toBe('en_oficina');
+    expect(slugs[4]).toBe('en_reparto_novedad');
+    expect(slugs[5]).toBe('en_transito');
     expect(slugs[slugs.length - 1]).toBe('otros_estados');
   });
 
@@ -79,6 +82,7 @@ describe('SEG_LISTS — definición (embudo por prioridad)', () => {
     expect(visibles).toEqual([
       'pendientes_confirmacion_2d',
       'detenidos_3d',
+      'agencia_2d',
       'indem_guia_generada_5d',
       'indem_pendientes_guia_4d',
     ]);
@@ -310,8 +314,9 @@ describe('SEG_LISTS — tramo pre-guía (CONFIRMADO / GENERADO)', () => {
 describe('SEG_LISTS — las listas son DISJUNTAS', () => {
   // Las listas de FASE se reparten el trabajo sin pisarse: si un pedido cayera
   // en dos, dos asesoras lo trabajarían por separado creyendo cada una que era
-  // suyo. `detenidos_3d` queda fuera de esta regla a propósito (ver abajo).
-  const LISTAS_DE_FASE = SEG_LISTS.filter((l) => l.slug !== 'detenidos_3d');
+  // suyo. Las dos listas de RELOJ (`detenidos_3d`, `agencia_2d`) quedan fuera
+  // de esta regla a propósito (ver abajo).
+  const LISTAS_DE_FASE = SEG_LISTS.filter((l) => l.slug !== 'detenidos_3d' && l.slug !== 'agencia_2d');
 
   // `detenidos_3d` mira el RELOJ, no la fase, así que ATRAVIESA las columnas —
   // esa es exactamente su razón de existir y por eso no puede ser disjunta.
@@ -333,6 +338,15 @@ describe('SEG_LISTS — las listas son DISJUNTAS', () => {
     expect(findSegList('detenidos_3d')!.matches(cerrado)).toBe(false);
   });
 
+  it('agencia_2d SÍ se cruza con en_oficina (y con detenidos si además está quieto 3+ días)', () => {
+    const hace4dias = new Date(Date.now() - 4 * 86400000).toISOString();
+    const vencido: OrderData = { ...baseOrder, estado: 'RECLAME EN OFICINA', guia: 'G1', fecha: '', dias: 6, lastMovementAt: hace4dias };
+    const matched = SEG_LISTS.filter((l) => l.matches(vencido)).map((l) => l.slug);
+    expect(matched).toContain('agencia_2d');
+    expect(matched).toContain('en_oficina');
+    expect(matched).toContain('detenidos_3d');
+  });
+
   it('ningún estado cae en dos listas de fase a la vez', () => {
     const estados = [
       'PENDIENTE', 'PENDIENTE CONFIRMACION', 'CONFIRMADO', 'GENERADO',
@@ -351,6 +365,57 @@ describe('SEG_LISTS — las listas son DISJUNTAS', () => {
         expect(matched.length, `${estado} (${dias}d) cayó en ${matched.join(' + ')}`).toBeLessThanOrEqual(1);
       }
     }
+  });
+});
+
+describe('agencia_2d — paquete esperando al cliente (reloj, no fase)', () => {
+  // Nace de la auditoría 14-ago-2026: 76 devoluciones de julio-EC ($2.316)
+  // fueron paquetes que vencieron en la oficina de la transportadora, con
+  // clientes yendo a retirar cuando ya iban de regreso (caso Muisne).
+  const hace3dias = new Date(Date.now() - 3 * 86400000).toISOString();
+  const hoy = new Date().toISOString();
+  const lista = () => findSegList('agencia_2d')!;
+
+  it('RETIRO/RECLAME quieto 3 días → vencido, matchea', () => {
+    for (const estado of ['RECLAME EN OFICINA', 'PARA RETIRO EN AGENCIA SERVIENTREGA', 'EN PUNTO DROOP']) {
+      const o: OrderData = { ...baseOrder, estado, guia: 'G1', fecha: '', dias: 5, lastMovementAt: hace3dias };
+      expect(lista().matches(o), estado).toBe(true);
+    }
+  });
+
+  it('recién llegado a oficina (movido hoy) NO matchea — todavía no venció', () => {
+    const o: OrderData = { ...baseOrder, estado: 'RECLAME EN OFICINA', guia: 'G1', fecha: '', dias: 5, lastMovementAt: hoy };
+    expect(lista().matches(o)).toBe(false);
+  });
+
+  it('sin lastMovementAt NO matchea: no saber cuándo llegó no es estar vencido', () => {
+    const o: OrderData = { ...baseOrder, estado: 'RECLAME EN OFICINA', guia: 'G1', fecha: '', dias: 9, lastMovementAt: null };
+    expect(lista().matches(o)).toBe(false);
+  });
+
+  it('el estado terminal EC "DEVOLUCION DE DISTRIBUCION CLIENTE SOLICITA RETIRAR EN CS" NO matchea (guard global)', () => {
+    // Contiene "RETIRAR" (huele a agencia) pero DEVOLUC lo corta el guard: ya murió.
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION DE DISTRIBUCION CLIENTE SOLICITA RETIRAR EN CS', fecha: '', dias: 9, lastMovementAt: hace3dias };
+    expect(lista().matches(o)).toBe(false);
+  });
+
+  it('quieto 3 días en fase TRÁNSITO no es agencia (eso es detenidos_3d)', () => {
+    const o: OrderData = { ...baseOrder, estado: 'EN TRANSPORTE', guia: 'G1', fecha: '', dias: 5, lastMovementAt: hace3dias };
+    expect(lista().matches(o)).toBe(false);
+  });
+});
+
+describe('esAccionable — la COLA DE HOY del hero de Seguimiento', () => {
+  it('agencia vencida y novedad cuentan; tránsito viajando normal NO', () => {
+    const hace3dias = new Date(Date.now() - 3 * 86400000).toISOString();
+    expect(esAccionable({ ...baseOrder, estado: 'RECLAME EN OFICINA', lastMovementAt: hace3dias })).toBe(true);
+    expect(esAccionable({ ...baseOrder, estado: 'NOVEDAD' })).toBe(true);
+    expect(esAccionable({ ...baseOrder, estado: 'EN TRANSPORTE', lastMovementAt: new Date().toISOString() })).toBe(false);
+  });
+
+  it('terminales nunca son cola de hoy', () => {
+    expect(esAccionable({ ...baseOrder, estado: 'ENTREGADO' })).toBe(false);
+    expect(esAccionable({ ...baseOrder, estado: 'DEVOLUCION' })).toBe(false);
   });
 });
 
@@ -381,6 +446,7 @@ describe('SEG_LISTS — días sin movimiento (lastMovementAt)', () => {
 describe('helpers', () => {
   it('isValidSegListSlug acepta slugs válidos nuevos', () => {
     expect(isValidSegListSlug('pendientes_guia')).toBe(true);
+    expect(isValidSegListSlug('agencia_2d')).toBe(true);
     expect(isValidSegListSlug('en_oficina')).toBe(true);
     expect(isValidSegListSlug('en_reparto_novedad')).toBe(true);
     expect(isValidSegListSlug('en_transito')).toBe(true);

@@ -1,7 +1,7 @@
 import type { OrderData } from './orderUtils';
 import { calcBusinessDays, parseDate } from './orderUtils';
 import { classifySegEstado } from './segStatus';
-import { estaDetenido } from './segPulso';
+import { estaDetenido, horasSinMovimiento } from './segPulso';
 
 /**
  * "Listas SLA" estilo Boostec, ORGANIZADAS POR EMBUDO DE PRIORIDAD.
@@ -44,6 +44,7 @@ import { estaDetenido } from './segPulso';
 export type SegListSlug =
   | 'pendientes_confirmacion_2d'
   | 'detenidos_3d'
+  | 'agencia_2d'
   | 'en_oficina'
   | 'en_reparto_novedad'
   | 'en_transito'
@@ -215,6 +216,29 @@ const SEG_LIST_DEFS: SegListDef[] = [
     matches: (o) => estaDetenido(o),
   },
 
+  // ── LA PLATA MÁS FÁCIL DE PERDER ────────────────────────────────────────
+  // Paquete esperando al CLIENTE en oficina/agencia hace 2+ días. La
+  // transportadora lo retiene ~7 días y lo devuelve: en julio-EC fueron 76
+  // devoluciones ($2.316), con clientes yendo a retirar cuando el paquete ya
+  // iba de regreso (auditoría 14-ago-2026). Segunda lista de RELOJ, con la
+  // misma razón de ser que detenidos_3d: la columna "En Oficina" muestra
+  // TODOS; este chip muestra los VENCIDOS, que el Tablero no puede decir.
+  // Protocolo: día 2 = recordatorio con dirección + guía; día 5 = llamada.
+  {
+    slug: 'agencia_2d',
+    label: 'En agencia sin retirar (+2 días)',
+    slaDias: 2,
+    tone: 'warning',
+    matches: (o) => {
+      if (faseDe(o) !== 'oficina') return false;
+      // Reloj real (con hora), no días calendario: mismo criterio que
+      // estaDetenido. Sin fecha de movimiento NO matchea — no saber cuándo
+      // llegó a la oficina no es lo mismo que saber que está vencido.
+      const h = horasSinMovimiento(o);
+      return h != null && h >= 48;
+    },
+  },
+
   // ── FASE FINAL (alta prioridad — pedido a punto de entregarse) ──────────
   {
     slug: 'en_oficina',
@@ -351,6 +375,7 @@ export const ACTIONABLE_SEG_SLUGS: SegListSlug[] = [
   // tiene que llamar a la transportadora. Va acá aunque no se dibuje como chip
   // en las mismas condiciones que las otras.
   'detenidos_3d',
+  'agencia_2d',
   'en_oficina',
   'en_reparto_novedad',
   'indem_guia_generada_5d',
@@ -361,7 +386,18 @@ export const ACTIONABLE_SEG_SLUGS: SegListSlug[] = [
 // Pre-computado una sola vez (constantes de módulo) — se llama por render del guard.
 const ACTIONABLE_SEG_DEFS = SEG_LISTS.filter((l) => ACTIONABLE_SEG_SLUGS.includes(l.slug));
 
+/**
+ * ¿Este pedido está en la COLA DE HOY? (unión de las listas accionables)
+ *
+ * Es la población que el hero de Seguimiento exige "dejar en 0": lo mismo que
+ * el guard de inactividad ya considera trabajo. Un paquete viajando NO entra —
+ * se vigila, no se gestiona.
+ */
+export function esAccionable(o: OrderData): boolean {
+  return ACTIONABLE_SEG_DEFS.some((d) => d.matches(o));
+}
+
 /** ¿Hay al menos un pedido de Seguimiento en una lista accionable? */
 export function hasSeguimientoWork(orders: OrderData[]): boolean {
-  return orders.some((o) => ACTIONABLE_SEG_DEFS.some((d) => d.matches(o)));
+  return orders.some(esAccionable);
 }
