@@ -10,6 +10,8 @@ import {
   Package, Phone, BarChart3, ShieldCheck, Store as StoreIcon, Mail, Lock, User,
   ArrowRight, Eye, EyeOff, Info,
 } from 'lucide-react';
+import { guardarTiendaPendiente } from '@/lib/tiendaPendiente';
+import { normalizarPais, validarNombreTienda, MAX_NOMBRE, type PaisTienda } from '@/lib/onboardingValidacion';
 
 interface InvitePreview {
   store_name: string | null;
@@ -69,6 +71,11 @@ export default function AuthPage() {
   // estados independientes; acá se sigue el mismo patrón.
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
+  // Nombre y país de la tienda, pedidos ACÁ (decisión del dueño 2026-08-13).
+  // Antes eran una segunda pantalla después de confirmar el correo; ahora se
+  // escriben una sola vez y la tienda se crea sola al entrar.
+  const [storeName, setStoreName] = useState('');
+  const [storeCountry, setStoreCountry] = useState<PaisTienda>('CO');
 
   // Lee el token del link UNA vez y lo persiste antes del posible redirect a
   // /dashboard (si ya hay sesión). La redención corre en ProtectedLayout.
@@ -134,10 +141,19 @@ export default function AuthPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) { toast.error('Ingresá tu nombre'); return; }
+    // Solo el dueño nuevo abre tienda. Quien viene por invitación se suma a una
+    // que ya existe y no debe ver ni contestar estos campos.
+    if (nuevoDueno) {
+      const errTienda = validarNombreTienda(storeName);
+      if (!errTienda.ok) { toast.error(errTienda.error); return; }
+    }
     setLoading(true);
     const { error, needsConfirmation } = await signUp(email.trim(), password, name.trim());
     setLoading(false);
     if (error) { toast.error(error); return; }
+    // Se guarda DESPUÉS de que el alta salió bien: anotarlo antes dejaría una
+    // tienda fantasma esperando por una cuenta que nunca existió.
+    if (nuevoDueno) guardarTiendaPendiente({ nombre: storeName.trim(), pais: storeCountry });
     if (needsConfirmation) {
       toast.success(
         'Te enviamos un correo de confirmación. Hacé click en el link (mirá también el spam) y después entrá con tu cuenta.',
@@ -454,6 +470,50 @@ export default function AuthPage() {
                         <PasswordToggle shown={showSignupPassword} onToggle={() => setShowSignupPassword(v => !v)} />
                       </div>
                     </div>
+                    {/* Tienda: se pide ACÁ para que el alta sea UNA sola pantalla.
+                        Con estos dos datos, al volver del correo la tienda se crea
+                        sola y el dueño cae directo en Guardian; las claves de Dropi
+                        se cargan después, desde adentro. */}
+                    {nuevoDueno && (
+                      <>
+                        <div>
+                          <label htmlFor="signup-store" className="block text-xs font-semibold text-foreground mb-1.5">
+                            Nombre de tu tienda
+                          </label>
+                          <div className="relative">
+                            <StoreIcon size={15} className={fieldIconCls} aria-hidden="true" />
+                            <input
+                              id="signup-store"
+                              type="text"
+                              placeholder="Ej: Tienda de Carlos"
+                              value={storeName}
+                              onChange={e => setStoreName(e.target.value)}
+                              required
+                              maxLength={MAX_NOMBRE}
+                              className={fieldCls}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label htmlFor="signup-country" className="block text-xs font-semibold text-foreground mb-1.5">
+                            País de operación
+                          </label>
+                          <select
+                            id="signup-country"
+                            value={storeCountry}
+                            onChange={e => setStoreCountry(normalizarPais(e.target.value))}
+                            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none cursor-pointer"
+                          >
+                            <option value="CO">Colombia (Dropi CO)</option>
+                            <option value="EC">Ecuador (Dropi EC)</option>
+                            <option value="GT">Guatemala (Dropi GT)</option>
+                          </select>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Define contra qué Dropi se conecta. Elegí bien: mezclar países descuadra los pedidos.
+                          </p>
+                        </div>
+                      </>
+                    )}
                     <button type="submit" disabled={loading} className={ctaCls}>
                       {loading ? 'Creando cuenta…' : nuevoDueno ? 'Crear cuenta y mi tienda' : 'Crear cuenta y unirme'}
                     </button>

@@ -19,6 +19,7 @@ import WelcomeGate from '@/components/WelcomeGate';
 import SetupWizard from '@/components/SetupWizard';
 import ConectarDropiBanner from '@/components/ConectarDropiBanner';
 import CreateStoreScreen from '@/components/CreateStoreScreen';
+import { leerTiendaPendiente, olvidarTiendaPendiente, type TiendaPendiente } from '@/lib/tiendaPendiente';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
 import type { LucideIcon } from 'lucide-react';
@@ -26,23 +27,25 @@ import { IconRail, HudTopbar, AuroraBackdrop } from '@/components/ui3d';
 
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
 
-/** "Lo hago después" del asistente de Dropi, recordado POR TIENDA.
+/** Crea la tienda que el dueño nombró al registrarse.
  *
- *  Va por tienda y no global: alguien puede tener su tienda de Colombia lista y
- *  abrir una de Ecuador recién ahora — la segunda merece su propio ofrecimiento.
+ *  El alta quedó en UNA pantalla: nombre, correo, clave, nombre de la tienda y
+ *  país. Como la confirmación por correo corta la sesión en el medio, el nombre
+ *  viaja por localStorage y la tienda nace acá, en el primer ingreso.
  *
- *  Envuelto en try/catch porque en modo privado de Safari `localStorage` tira
- *  excepción al escribir, y quedarse sin poder cerrar el asistente por eso
- *  sería reponer el encierro que este cambio vino a sacar. Si falla, el peor
- *  caso es que el asistente vuelva a saludar en la próxima recarga. */
-const CLAVE_POSPUESTO = (storeId: string | null) => `guardian.setupPospuesto.${storeId ?? 'sin-tienda'}`;
-
-function setupPospuesto(storeId: string | null): boolean {
-  try { return localStorage.getItem(CLAVE_POSPUESTO(storeId)) === '1'; } catch { return false; }
-}
-
-function posponerSetup(storeId: string | null): void {
-  try { localStorage.setItem(CLAVE_POSPUESTO(storeId), '1'); } catch { /* sin storage: se reabre y listo */ }
+ *  Devuelve true solo si la tienda quedó creada. Ante cualquier error se
+ *  devuelve false y se cae a `CreateStoreScreen`: un fallo no puede dejar a
+ *  nadie sin forma de abrir su tienda. */
+async function crearTiendaPendiente(t: TiendaPendiente): Promise<boolean> {
+  // Bindeado: guardar `supabase.rpc` suelto pierde `this`, ver memoria del repo.
+  type Rpc = (fn: string, p: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
+  const rpc = supabase.rpc.bind(supabase) as unknown as Rpc;
+  try {
+    const { error } = await rpc('create_my_store', { p_name: t.nombre, p_country_code: t.pais });
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 function InlineRouteLoader() {
@@ -166,18 +169,48 @@ function ProtectedLayoutInner() {
   // ANTES de que se viera la verificación de Dropi: el dueño era expulsado al CRM
   // sin enterarse de si su login quedó bien (y su billetera moría en una hora sin
   // aviso). Auditoría onboarding 2026-08-13.
+  // El asistente de Dropi NO se abre solo. Decisión del dueño (2026-08-13):
+  // "que cuando se registren los deje entrar a Guardian y adentro configuremos
+  // las APIs". El dueño entra directo y lo llama cuando quiere, desde el botón
+  // del aviso (ConectarDropiBanner) o desde Configuración.
   const [wizardOpen, setWizardOpen] = useState(false);
-  // Se abre SOLO la primera vez. Si el dueño eligió "lo hago después", queda
-  // anotado por tienda y no se le vuelve a poner encima en cada recarga: desde
-  // ahí adentro lo llama él con el botón del aviso. Decisión del dueño
-  // (2026-08-13): que el amigo entre a Guardian y configure desde adentro.
-  useEffect(() => {
-    if (store.needsSetup && !setupPospuesto(store.activeStoreId)) setWizardOpen(true);
-  }, [store.needsSetup, store.activeStoreId]);
   // Redención de invite EN VUELO: mientras se canjea el token, mostrar "uniéndote"
   // en vez de la pantalla "Creá tu tienda" (que invitaba al invitado a abrir su
   // propia tienda por medio segundo).
   const [redeeming, setRedeeming] = useState(false);
+  /** Creando la tienda que nombró al registrarse (alta de una sola pantalla). */
+  const [creandoTienda, setCreandoTienda] = useState(false);
+  const tiendaIntentada = useRef(false);
+
+  // Alta en un paso: si al registrarse dejó anotado el nombre de su tienda y
+  // todavía no tiene ninguna, se crea acá y entra directo a Guardian.
+  // El ref evita que un re-render dispare una segunda creación — sin él, dos
+  // pasadas rápidas dejarían al dueño con dos tiendas iguales, que es peor que
+  // no haber automatizado nada.
+  useEffect(() => {
+    if (!user || store.loading || tiendaIntentada.current) return;
+    if (store.stores.length > 0) return;
+    // Un invitado se suma a una tienda existente: no le abrimos una propia.
+    let hayInvite = false;
+    try { hayInvite = Boolean(localStorage.getItem('guardian.pendingInvite')); } catch { /* noop */ }
+    if (hayInvite || redeeming) return;
+    const pendiente = leerTiendaPendiente();
+    if (!pendiente) return;
+    tiendaIntentada.current = true;
+    setCreandoTienda(true);
+    void (async () => {
+      const ok = await crearTiendaPendiente(pendiente);
+      // Se olvida SIEMPRE, salga bien o mal: si falló, el respaldo es la
+      // pantalla de crear tienda, y reintentar solo en cada recarga podría
+      // crear la tienda dos veces cuando el error fue solo de red al responder.
+      olvidarTiendaPendiente();
+      if (ok) {
+        toast.success(`¡Tu tienda "${pendiente.nombre}" está lista!`);
+        await store.refresh();
+      }
+      setCreandoTienda(false);
+    })();
+  }, [user, store.loading, store.stores.length, redeeming, store]);
 
   // Heartbeat de jornada (tracking de inicio + tiempo activo/idle). El hook
   // tiene sus propios gates: solo emite ping para no-admin con tienda activa.
@@ -276,6 +309,21 @@ function ProtectedLayoutInner() {
   // y queda de owner (antes era un callejón "Sin tiendas asignadas" y las
   // tiendas se creaban a mano). El camino de invitación sigue intacto: si vino
   // con ?invite=TOKEN ya se canjeó arriba y stores.length > 0.
+  // Naciendo la tienda del alta de un paso. Es corto, pero sin este cartel el
+  // dueño vería parpadear "Creá tu tienda" justo cuando ya la había nombrado.
+  if (creandoTienda) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Package size={22} className="text-accent" />
+          </div>
+          <p className="text-sm text-muted-foreground font-semibold tracking-wide">Preparando tu tienda…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (store.stores.length === 0) {
     return <CreateStoreScreen onCreated={() => store.refresh()} onSignOut={signOut} />;
   }
@@ -289,7 +337,7 @@ function ProtectedLayoutInner() {
     return (
       <SetupWizard
         onDone={() => { setWizardOpen(false); void store.refresh(); }}
-        onLater={() => { posponerSetup(store.activeStoreId); setWizardOpen(false); }}
+        onLater={() => setWizardOpen(false)}
         onSignOut={signOut}
       />
     );

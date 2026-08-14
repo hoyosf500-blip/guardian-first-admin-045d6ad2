@@ -35,6 +35,29 @@ describe('el asistente de Dropi no vuelve a ser un portón', () => {
     expect(layout).toMatch(/store\.needsSetup\s*&&\s*<ConectarDropiBanner/);
   });
 
+  it('el asistente NO se abre solo al entrar', () => {
+    // Pedido del dueño: el amigo entra a Guardian y configura las APIs desde
+    // adentro. Ningún efecto puede volver a abrirlo por su cuenta.
+    //
+    // Se comprueba por CANTIDAD y no buscando "needsSetup cerca de abrir": la
+    // única línea que abre el asistente menciona needsSetup de forma legítima
+    // (el aviso se dibuja si falta la credencial), así que esa búsqueda marcaba
+    // como infracción justo el camino correcto.
+    const aperturas = layout.split(/\r?\n/).filter((l) => l.includes('setWizardOpen(true)'));
+    expect(aperturas).toHaveLength(1);
+    // Y la única que existe cuelga de un click del dueño, no de un efecto.
+    expect(aperturas[0]).toMatch(/onAbrir=\{\(\)\s*=>\s*setWizardOpen\(true\)\}/);
+  });
+
+  it('el alta es de UNA pantalla: el nombre de la tienda se pide al registrarse', () => {
+    const auth = readFileSync('src/pages/AuthPage.tsx', 'utf8');
+    expect(auth).toContain('guardarTiendaPendiente');
+    expect(auth).toMatch(/Nombre de tu tienda/);
+    // La tienda nace en el primer ingreso, con el nombre que ya había escrito.
+    expect(layout).toContain('crearTiendaPendiente');
+    expect(layout).toContain('leerTiendaPendiente');
+  });
+
   it('el asistente ofrece entrar a Guardian sin terminarlo', () => {
     expect(wizard).toContain('onLater');
     expect(wizard).toMatch(/Entrar a Guardian y configurar esto después/);
