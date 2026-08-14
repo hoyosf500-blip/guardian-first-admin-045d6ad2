@@ -263,7 +263,11 @@ export function resumen(chequeos: ChequeoLegible[]): string {
   if (estaCompleto(chequeos)) return 'Todo conectado y verificado.';
   const fallas = chequeos.filter((c) => c.estado === 'falla');
   if (fallas.some((c) => c.bloqueante)) {
-    return 'Falta resolver algo importante antes de poder usar Guardian.';
+    // Antes decía "antes de poder usar Guardian", y desde que el asistente dejó
+    // de ser un portón (2026-08-13) eso es falso: se entra igual. Decirle a
+    // alguien que no puede pasar cuando sí puede lo deja dando vueltas en una
+    // pantalla que ya no lo retiene.
+    return 'Falta algo importante: hasta resolverlo, tus pedidos no van a entrar.';
   }
   const pendientes = chequeos.filter((c) => c.estado === 'falla' || c.estado === 'aviso');
   return `Podés entrar, pero quedan ${pendientes.length} cosa(s) sin resolver.`;

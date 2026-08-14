@@ -79,7 +79,14 @@ type Fase = 'form' | 'verificando' | 'resultado';
  * `upsert_store_dropi_login` y `update_store_branding` (las tres validan
  * ownership server-side) y DESPUÉS verifica contra Dropi de verdad.
  */
-export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void; onSignOut: () => void }) {
+export default function SetupWizard({ onDone, onLater, onSignOut }: {
+  onDone: () => void;
+  /** Cerrar el asistente y entrar a Guardian sin haber terminado. Queda anotado
+   *  por tienda para no volver a saltar en cada recarga; el aviso del CRM sigue
+   *  llamando hasta que la clave esté cargada. */
+  onLater: () => void;
+  onSignOut: () => void;
+}) {
   const navigate = useNavigate();
   const { activeStore, isOwnerOfActive, refresh } = useStore();
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -369,6 +376,7 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
             onReintentar={() => void verificar(activeStore.id)}
             onContinuar={onDone}
             onIrAdmin={() => { onDone(); navigate('/admin'); }}
+            onSalirIgual={onLater}
           />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6 sm:p-8">
@@ -453,16 +461,24 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
                 Revisá {cantidadErrores} {cantidadErrores === 1 ? 'campo' : 'campos'} antes de continuar.
               </p>
             )}
-            {/* Salida: un amigo que todavía NO tiene cuenta de Dropi no puede
-                quedar encerrado acá sin poder cerrar sesión (el wizard se
-                renderiza en lugar del layout, no hay sidebar). */}
-            <div className="pt-2 text-center">
+            {/* Salidas. Este asistente NO es un portón: quien todavía no tiene
+                su cuenta de Dropi (o la tiene a medias) entra igual y lo resuelve
+                desde adentro, con el aviso de arriba llamándolo. Antes, sin
+                credenciales la app entera se reemplazaba por esta pantalla. */}
+            <div className="pt-2 flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={onLater}
+                className="text-sm font-semibold text-foreground hover:text-accent underline underline-offset-4 min-h-11 cursor-pointer"
+              >
+                Entrar a Guardian y configurar esto después
+              </button>
               <button
                 type="button"
                 onClick={onSignOut}
                 className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 min-h-11 cursor-pointer"
               >
-                ¿Todavía no tenés tu cuenta de Dropi? Cerrá sesión y volvé cuando la tengas.
+                Cerrar sesión
               </button>
             </div>
           </form>
@@ -473,7 +489,7 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
 }
 
 function ResultadoVerificacion({
-  fase, chequeos, errorVerif, listo, puede, intentos, onVolver, onReintentar, onContinuar, onIrAdmin,
+  fase, chequeos, errorVerif, listo, puede, intentos, onVolver, onReintentar, onContinuar, onIrAdmin, onSalirIgual,
 }: {
   fase: Fase;
   chequeos: ChequeoLegible[];
@@ -487,6 +503,9 @@ function ResultadoVerificacion({
   onContinuar: () => void;
   /** Paso 3: cierra el asistente y deja al dueño en /admin. */
   onIrAdmin: () => void;
+  /** Entrar al CRM sin haber terminado. Existe SIEMPRE, también con fallas
+   *  bloqueantes: nadie puede quedar atrapado en la pantalla de resultado. */
+  onSalirIgual: () => void;
 }) {
   if (fase === 'verificando') {
     return (
@@ -610,14 +629,17 @@ function ResultadoVerificacion({
               </button>
             </>
           ) : (
-            puede && (
-              <button
-                type="button" onClick={onIrAdmin}
-                className="px-4 h-11 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:bg-muted/50 transition cursor-pointer"
-              >
-                Entrar con avisos pendientes
-              </button>
-            )
+            // SIEMPRE, aunque haya una falla bloqueante. Antes iba detrás de
+            // `puede`, así que ante un error en el chequeo de la API Key no se
+            // dibujaba NINGUNA salida y el dueño quedaba atrapado en esta
+            // pantalla — visto en el recorrido real del 2026-08-13, cuando el
+            // chequeo daba rojo hasta con la clave correcta.
+            <button
+              type="button" onClick={onSalirIgual}
+              className="px-4 h-11 rounded-lg border border-border text-sm font-semibold text-foreground hover:bg-muted/50 transition cursor-pointer"
+            >
+              Entrar a Guardian igual
+            </button>
           )}
         </div>
       </div>

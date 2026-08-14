@@ -17,6 +17,7 @@ import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, Refre
 import CounterBar from '@/components/CounterBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import SetupWizard from '@/components/SetupWizard';
+import ConectarDropiBanner from '@/components/ConectarDropiBanner';
 import CreateStoreScreen from '@/components/CreateStoreScreen';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
@@ -24,6 +25,25 @@ import type { LucideIcon } from 'lucide-react';
 import { IconRail, HudTopbar, AuroraBackdrop } from '@/components/ui3d';
 
 const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
+
+/** "Lo hago después" del asistente de Dropi, recordado POR TIENDA.
+ *
+ *  Va por tienda y no global: alguien puede tener su tienda de Colombia lista y
+ *  abrir una de Ecuador recién ahora — la segunda merece su propio ofrecimiento.
+ *
+ *  Envuelto en try/catch porque en modo privado de Safari `localStorage` tira
+ *  excepción al escribir, y quedarse sin poder cerrar el asistente por eso
+ *  sería reponer el encierro que este cambio vino a sacar. Si falla, el peor
+ *  caso es que el asistente vuelva a saludar en la próxima recarga. */
+const CLAVE_POSPUESTO = (storeId: string | null) => `guardian.setupPospuesto.${storeId ?? 'sin-tienda'}`;
+
+function setupPospuesto(storeId: string | null): boolean {
+  try { return localStorage.getItem(CLAVE_POSPUESTO(storeId)) === '1'; } catch { return false; }
+}
+
+function posponerSetup(storeId: string | null): void {
+  try { localStorage.setItem(CLAVE_POSPUESTO(storeId), '1'); } catch { /* sin storage: se reabre y listo */ }
+}
 
 function InlineRouteLoader() {
   return (
@@ -147,7 +167,13 @@ function ProtectedLayoutInner() {
   // sin enterarse de si su login quedó bien (y su billetera moría en una hora sin
   // aviso). Auditoría onboarding 2026-08-13.
   const [wizardOpen, setWizardOpen] = useState(false);
-  useEffect(() => { if (store.needsSetup) setWizardOpen(true); }, [store.needsSetup]);
+  // Se abre SOLO la primera vez. Si el dueño eligió "lo hago después", queda
+  // anotado por tienda y no se le vuelve a poner encima en cada recarga: desde
+  // ahí adentro lo llama él con el botón del aviso. Decisión del dueño
+  // (2026-08-13): que el amigo entre a Guardian y configure desde adentro.
+  useEffect(() => {
+    if (store.needsSetup && !setupPospuesto(store.activeStoreId)) setWizardOpen(true);
+  }, [store.needsSetup, store.activeStoreId]);
   // Redención de invite EN VUELO: mientras se canjea el token, mostrar "uniéndote"
   // en vez de la pantalla "Creá tu tienda" (que invitaba al invitado a abrir su
   // propia tienda por medio segundo).
@@ -254,12 +280,19 @@ function ProtectedLayoutInner() {
     return <CreateStoreScreen onCreated={() => store.refresh()} onSignOut={signOut} />;
   }
 
-  // Gate: si la tienda activa no tiene credenciales Dropi cargadas Y el usuario
-  // es dueño, mostrar wizard por-tienda. El `|| wizardOpen` es el latch (arriba):
-  // mantiene el wizard montado durante la verificación aunque `needsSetup` ya
-  // haya pasado a false al guardar.
-  if (store.needsSetup || wizardOpen) {
-    return <SetupWizard onDone={() => { setWizardOpen(false); void store.refresh(); }} onSignOut={signOut} />;
+  // El asistente ya NO es un portón: se muestra mientras está abierto, y se
+  // cierra desde adentro con "lo hago después". Antes la condición incluía
+  // `store.needsSetup`, así que sin credenciales era IMPOSIBLE ver la app —
+  // y si la verificación fallaba, el botón de salida ni siquiera se dibujaba.
+  // Cerrado el asistente, lo que queda es el aviso de abajo (ConectarDropiBanner).
+  if (wizardOpen) {
+    return (
+      <SetupWizard
+        onDone={() => { setWizardOpen(false); void store.refresh(); }}
+        onLater={() => { posponerSetup(store.activeStoreId); setWizardOpen(false); }}
+        onSignOut={signOut}
+      />
+    );
   }
 
   const brandName = store.activeStore?.name ?? 'CRM';
@@ -445,6 +478,7 @@ function ProtectedLayoutInner() {
                     </div>
                   </div>
                 )}
+                {store.needsSetup && <ConectarDropiBanner onAbrir={() => setWizardOpen(true)} />}
                 <div className="mb-3"><SyncFreshness /></div>
                 {isConfirmar && <CounterBar />}
                 <Suspense fallback={<InlineRouteLoader />}>

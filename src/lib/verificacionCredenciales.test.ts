@@ -48,7 +48,11 @@ describe('verificación de credenciales — API Key', () => {
     expect(r[0].estado).toBe('falla');
     expect(r[0].bloqueante).toBe(true);
     expect(puedeContinuar(r)).toBe(false);
-    expect(resumen(r)).toMatch(/antes de poder usar Guardian/);
+    // El resumen habla de la CONSECUENCIA (no van a entrar pedidos), no de un
+    // permiso: desde 2026-08-13 el asistente no es un portón y se entra igual,
+    // así que decir "no podés usar Guardian" seria mentira.
+    expect(resumen(r)).toMatch(/tus pedidos no van a entrar/);
+    expect(resumen(r)).not.toMatch(/antes de poder usar Guardian/);
   });
 
   it('un 429 NO es una credencial mala y lo dice explícitamente', () => {
