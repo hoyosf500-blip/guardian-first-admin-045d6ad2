@@ -150,8 +150,15 @@ async function probarBilletera(base: string, token: string): Promise<Chequeo> {
     // Token no-JWT: dejamos que el endpoint decida en vez de fallar acá.
   }
   const hoy = hoyISO();
-  const url = `${base}/api/wallet/exportexcel?from=${hoy}&untill=${hoy}` +
-    (userId ? `&user_id=${encodeURIComponent(userId)}` : "");
+  // Los MISMOS parámetros que usa `dropi-wallet-sync`, que es el que de verdad
+  // baja la billetera todos los días. Acá el nombre del parámetro de fecha
+  // final iba mal escrito (con dos eles) y faltaba `wallet_id`: un chequeo que
+  // no llama igual que la cosa que está comprobando puede reprobar algo que
+  // funciona — es exactamente lo que pasó con el header `Origin` en el chequeo
+  // de la API Key.
+  const params = new URLSearchParams({ from: hoy, until: hoy, wallet_id: "0" });
+  if (userId) params.set("user_id", userId);
+  const url = `${base}/api/wallet/exportexcel?${params.toString()}`;
   try {
     const res = await fetch(url, {
       headers: {

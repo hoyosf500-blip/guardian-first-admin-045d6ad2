@@ -125,6 +125,16 @@ describe('multi-tienda en las edge functions (auditoría 2026-08-13)', () => {
     expect(src).toMatch(/\[ok, \$\{text\.length\} chars\]/);
   });
 
+  it('el chequeo de billetera llama igual que el sync que de verdad la baja', () => {
+    // `dropi-wallet-sync` manda `until` y `wallet_id=0`. La verificación decía
+    // `untill` (dos eles) y omitía wallet_id, así que podía reprobar una cuenta
+    // sana — el mismo error que el header Origin faltante en el chequeo de la
+    // API Key: comprobar con una llamada distinta a la que se quiere comprobar.
+    const verify = FN('dropi-verify-credentials/index.ts');
+    expect(verify).not.toMatch(/untill/);
+    expect(verify).toMatch(/wallet_id/);
+  });
+
   it('toda llamada a /integrations/orders/myorders manda el header Origin', () => {
     // Sin Origin, Dropi contesta 401 {"message":"Access denied", ..., "ip":"x"}
     // ANTES de mirar la api_key. Como el cuerpo trae la IP, parece un bloqueo
