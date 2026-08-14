@@ -1490,6 +1490,32 @@ export type Database = {
           },
         ]
       }
+      store_ai_config: {
+        Row: {
+          api_key: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          api_key: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          api_key?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_ai_config_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_dropi_config: {
         Row: {
           country_code: string
@@ -2015,6 +2041,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _assert_store_owner: { Args: { p_store_id: string }; Returns: undefined }
       _estado_bucket: { Args: { p_estado: string }; Returns: string }
       _estado_norm: { Args: { p_estado: string }; Returns: string }
       _resolve_scope_store: { Args: never; Returns: string }
@@ -2289,6 +2316,7 @@ export type Database = {
           store_id: string
         }[]
       }
+      get_store_ai_status: { Args: { p_store_id: string }; Returns: boolean }
       get_store_dropi_status: {
         Args: { p_store_id: string }
         Returns: {
@@ -2399,6 +2427,16 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      list_store_invites: {
+        Args: { p_store_id: string }
+        Returns: {
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          role: string
+        }[]
       }
       logistics_by_carrier:
         | {
@@ -2833,6 +2871,10 @@ export type Database = {
       release_all_my_locks: { Args: never; Returns: number }
       release_order: { Args: { p_order_id: string }; Returns: undefined }
       release_seg_order: { Args: { p_order_id: string }; Returns: boolean }
+      remove_store_member: {
+        Args: { p_store_id: string; p_user_id: string }
+        Returns: undefined
+      }
       rendiciones_range: {
         Args: { p_from: string; p_store_id: string; p_to: string }
         Returns: Json
@@ -2841,6 +2883,7 @@ export type Database = {
         Args: { p_store_id?: string; p_version: string }
         Returns: undefined
       }
+      revoke_store_invite: { Args: { p_invite_id: string }; Returns: undefined }
       search_orders: {
         Args: { p_limit?: number; p_q: string; p_store_id: string }
         Returns: {
@@ -2857,6 +2900,10 @@ export type Database = {
         }[]
       }
       set_active_store: { Args: { p_store_id: string }; Returns: undefined }
+      set_store_member_role: {
+        Args: { p_role: string; p_store_id: string; p_user_id: string }
+        Returns: undefined
+      }
       set_store_shopify_auto_push: {
         Args: { p_enabled: boolean; p_store_id: string }
         Returns: undefined
@@ -3099,6 +3146,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      upsert_store_ai_key: {
+        Args: { p_api_key: string; p_store_id: string }
+        Returns: undefined
       }
       upsert_store_dropi_config: {
         Args: {
