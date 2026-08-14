@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import {
   Package as PackageIcon, Wallet, ArrowRight, TrendingDown, Info,
-  Boxes, DollarSign, CheckCircle2, AlertTriangle, RefreshCw, ChevronDown,
+  Boxes, DollarSign, CheckCircle2, AlertTriangle, RefreshCw, ChevronDown, RotateCcw,
 } from 'lucide-react';
 import { AuroraBackdrop } from '@/components/ui3d';
 import { buildMesResumen, buildMesResumenFromBreakdown, type BucketTone } from '@/lib/mesResumen';
 import type { LogisticsSummary, LogisticsFilters } from '@/lib/logistics.types';
 import { useEstadoBreakdown } from '@/hooks/useEstadoBreakdown';
 import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
+import { useDevolucionesDelPeriodo } from '@/hooks/useDevolucionesDelPeriodo';
 import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletSaldoHoy } from '@/hooks/useWalletMovements';
 import { useWalletSyncHealth } from '@/hooks/useWalletSyncHealth';
@@ -91,6 +92,10 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const { data: ganancia, isLoading: gananciaLoading, isError: gananciaError } = useGananciaNetaDropi(
     filters.fromDate, filters.toDate,
   );
+  // Devoluciones LLEGADAS en el período (por devuelto_at). `null` = la RPC aún
+  // no está aplicada en la base → la tarjeta no se dibuja. Complementa (no
+  // reemplaza) a "Devueltos (perdido)" de la cascada, que va por COHORTE.
+  const devLlegadas = useDevolucionesDelPeriodo(filters.fromDate, filters.toDate);
   // Saldo real de HOY (último movimiento, sin filtro de mes) — la card decía
   // "Saldo disponible hoy" pero mostraba el saldo al cierre del mes filtrado.
   const { data: saldoHoy, isLoading: walletLoading } = useWalletSaldoHoy();
@@ -457,6 +462,43 @@ export default function MesActualResumen({ summary, filters }: Props) {
             <WaterfallRow label="Cancelados" value={-resumen.valorCancelado} tone="muted" />
             <WaterfallRow label="Valor entregado (realizado)" value={resumen.valorEntregado} tone="success" emphasis />
           </div>
+
+          {/* ── Devoluciones LLEGADAS en el período (por devuelto_at) ──
+              La cascada de arriba atribuye cada devolución al mes en que el
+              pedido se CREÓ (cohorte) — correcto para la tasa, pero hace que el
+              mes corriente siempre se vea mejor de lo que es (auditoría 14-ago,
+              artifact fa210631, mecanismo #4). Esta tarjeta contesta la otra
+              pregunta: cuántas devoluciones GOLPEARON este período, que es
+              cuando el wallet cobra el costo_devolucion. Solo se dibuja si la
+              RPC devoluciones_del_periodo está aplicada (data !== null); un
+              error transitorio tampoco la muestra — ausencia honesta antes que
+              un cero inventado. */}
+          {devLlegadas.data && (
+            <div className="rounded-2xl border border-border bg-card/40 p-4 shadow-card3d space-y-2">
+              <div className="flex items-center gap-2">
+                <RotateCcw size={13} className={devLlegadas.data.devoluciones > 0 ? 'text-danger' : 'text-success'} />
+                <span className="hud-label">Devoluciones llegadas en el período</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`text-base font-bold font-mono tabular-nums ${devLlegadas.data.devoluciones > 0 ? 'text-danger' : 'text-success'}`}>
+                  {devLlegadas.data.devoluciones.toLocaleString('es-CO')}
+                  <span className="text-xs font-sans font-medium text-muted-foreground ml-1.5">
+                    {devLlegadas.data.devoluciones === 1 ? 'pedido devuelto' : 'pedidos devueltos'}
+                  </span>
+                </span>
+                <span className="text-xs font-mono tabular-nums text-muted-foreground shrink-0">
+                  {formatCOP(devLlegadas.data.valor)} en venta perdida
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                Por fecha REAL de devolución — la fila «Devueltos» de arriba, en cambio, cuenta
+                los pedidos <strong className="text-foreground/80">creados</strong> en el período que terminaron devueltos.
+                {devLlegadas.data.deMesesPrevios > 0 && (
+                  <> {devLlegadas.data.deMesesPrevios} venía{devLlegadas.data.deMesesPrevios === 1 ? '' : 'n'} de pedidos de meses anteriores.</>
+                )}
+              </p>
+            </div>
+          )}
 
           {/* Wallet REAL */}
           <div className={`rounded-2xl border p-4 space-y-2.5 shadow-card3d ${walletStale ? 'border-warning/40 bg-warning/8' : 'border-border bg-card/40'}`}>
