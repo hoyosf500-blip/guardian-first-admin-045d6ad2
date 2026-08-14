@@ -323,8 +323,9 @@ export default function AuthPage() {
                     <StoreIcon size={17} />
                   </span>
                   <p className="flex-1 min-w-0 text-xs text-foreground leading-relaxed self-center">
-                    Creás tu cuenta y en el paso siguiente <span className="font-semibold">tu tienda</span>: quedás
-                    como <span className="font-semibold">dueño</span>, conectás tu Dropi y podés invitar a tu equipo.
+                    Acá creás tu cuenta y <span className="font-semibold">tu tienda</span>, en un solo paso:
+                    quedás como <span className="font-semibold">dueño</span>. Tu Dropi lo conectás
+                    después, ya adentro de Guardian.
                   </p>
                 </div>
               )}

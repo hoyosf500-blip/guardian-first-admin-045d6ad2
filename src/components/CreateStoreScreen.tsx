@@ -44,7 +44,7 @@ export default function CreateStoreScreen({ onCreated, onSignOut }: {
         toast.error(error.message.replace(/^.*Exception: /, ''));
         return;
       }
-      toast.success(`¡Tienda "${nombre}" creada! Paso 2: conectá tu cuenta de Dropi.`);
+      toast.success(`¡Tu tienda "${nombre}" está lista!`);
       await onCreated();
     } finally {
       setBusy(false);
@@ -63,7 +63,7 @@ export default function CreateStoreScreen({ onCreated, onSignOut }: {
           <h1 className="text-lg font-bold text-foreground">Creá tu tienda</h1>
           <p className="text-sm text-muted-foreground">
             Vas a ser el dueño: tus pedidos y tus datos son privados de tu tienda.
-            En el paso 2 te pedimos la conexión con Dropi.
+            Tu Dropi lo conectás después, ya adentro de Guardian.
           </p>
         </div>
 
