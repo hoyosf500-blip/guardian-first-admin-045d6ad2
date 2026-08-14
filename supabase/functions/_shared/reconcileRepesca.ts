@@ -28,8 +28,16 @@
 // fantasma de más contado un día más.
 
 /** Días sin movimiento para considerar a un pedido "congelado". Por debajo de esto
- *  puede estar simplemente lento, y un pedido lento NO es un fantasma. */
-export const REPESCA_FROZEN_DAYS = 30;
+ *  puede estar simplemente lento, y un pedido lento NO es un fantasma.
+ *
+ *  Bajó de 30 → 10 el 14-ago-2026 (auditoría devoluciones): la repesca dejó de
+ *  ser solo caza-fantasmas — ahora también ESCRIBE el estado fresco que el
+ *  barrido trae (ver dropi-nightly-reconcile). Con 30, una devolución de un
+ *  pedido viejo fuera de la ventana del cron EC (28d) esperaba hasta un mes
+ *  congelada como "EN REPARTO" antes de entrar acá. Con 10, entra a la
+ *  siguiente ronda de noches. El costo NO cambia: sigue siendo UN mes barrido
+ *  por corrida — el umbral solo decide QUIÉNES son candidatos. */
+export const REPESCA_FROZEN_DAYS = 10;
 
 /** Tope de archivados por corrida. Si un cambio futuro rompe la lógica, el daño
  *  queda acotado a este número y se ve en el log en vez de barrer la base entera

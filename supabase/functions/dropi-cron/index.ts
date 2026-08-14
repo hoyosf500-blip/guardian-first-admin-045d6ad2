@@ -233,8 +233,15 @@ async function fetchAllPages(
   // cortamos: lo restante es más viejo. El caller decide cuándo aplica (ver
   // buildPasses: pase creado = siempre; pase estatus = solo EC, con margen).
   stopBeforeCreated?: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<{ orders: Record<string, unknown>[]; hardError?: string }> {
+  // `hardError` (auditoría devoluciones 14-ago-2026): un error NO-429 a mitad
+  // de paginación cortaba con `break` y el caller logueaba 'success' verde con
+  // lo parcial. Como se pagina por id DESC, lo que se pierde en el corte son
+  // SIEMPRE los pedidos más viejos — exactamente las devoluciones. Ahora lo
+  // parcial se conserva (se upsertea igual) pero el corte viaja al log como
+  // 'warn' para que el banner de frescura lo pueda decir.
   const allOrders: Record<string, unknown>[] = [];
+  let hardError: string | undefined;
   let start = 0;
 
   while (true) {
@@ -300,12 +307,14 @@ async function fetchAllPages(
     if (!res || !res.ok) {
       const txt = res ? await res.text() : "no-response";
       console.error(`Dropi API error ${res?.status ?? "?"}: ${txt}`);
+      hardError = `Dropi ${res?.status ?? "sin respuesta"} en página ${Math.floor(start / PAGE_SIZE) + 1}: ${txt.slice(0, 160)}`;
       break;
     }
 
     const data = await res.json();
     if (!data.isSuccess) {
       console.error(`Dropi API not successful: ${data.message || data.error}`);
+      hardError = `Dropi isSuccess=false en página ${Math.floor(start / PAGE_SIZE) + 1}: ${String(data.message || data.error || "").slice(0, 160)}`;
       break;
     }
 
@@ -325,7 +334,7 @@ async function fetchAllPages(
     await sleep(RATE_LIMIT_MS);
   }
 
-  return allOrders;
+  return { orders: allOrders, hardError };
 }
 
 function calcDias(dateStr: string): number {
@@ -488,7 +497,7 @@ async function syncStore(
   passes: SyncPass[],
   todayStr: string,
   deadline: number,
-): Promise<{ synced: number; total: number; statusTotal: number; error?: string; throttled?: boolean }> {
+): Promise<{ synced: number; total: number; statusTotal: number; error?: string; throttled?: boolean; partialError?: string }> {
   const base = dropiHostFor(store.country_code);
   // Anti-throttle 2026-07-07: el deadline viene PRE-calculado por el caller
   // (rebanada justa de la tienda ∩ global) y es EL MISMO para la invocación
@@ -511,6 +520,11 @@ async function syncStore(
   // La misma clase de bug que congeló la billetera semanas (lección 21-jul:
   // "corrió" y "funcionó" son dos preguntas distintas).
   let upsertErrMsg: string | undefined;
+  // Primer corte de paginación por error NO-429 (14-ago-2026): lo parcial se
+  // upsertea igual, pero el corte viaja al caller para loguear 'warn' en vez
+  // del 'success' verde que escondía devoluciones (paginación desc por id: lo
+  // que se pierde en el corte son los pedidos VIEJOS).
+  let partialErrMsg: string | undefined;
 
   try {
     for (const pass of passes) {
@@ -518,9 +532,10 @@ async function syncStore(
       for (const chunk of chunks) {
         if (Date.now() > deadline) {
           console.warn(`[store ${store.store_id}] presupuesto agotado, corte parcial`);
-          return { synced, total, statusTotal, error: upsertErrMsg, throttled: true };
+          return { synced, total, statusTotal, error: upsertErrMsg, throttled: true, partialError: partialErrMsg };
         }
-        const dropiOrders = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline, pass.stopBeforeCreated);
+        const { orders: dropiOrders, hardError } = await fetchAllPages(base, store.api_key, store.store_url, chunk.from, chunk.to, pass.filterDateBy, deadline, pass.stopBeforeCreated);
+        if (hardError && !partialErrMsg) partialErrMsg = `pase ${pass.role}: ${hardError}`;
         total += dropiOrders.length;
         if (pass.role === "status") statusTotal += dropiOrders.length;
         if (dropiOrders.length === 0) continue;
@@ -546,7 +561,7 @@ async function syncStore(
     }
     // upsertErrMsg (si hubo) viaja como error: el caller loguea 'error' con el
     // mensaje real en vez de un 'success' verde con datos congelados.
-    return { synced, total, statusTotal, error: upsertErrMsg };
+    return { synced, total, statusTotal, error: upsertErrMsg, partialError: partialErrMsg };
   } catch (err) {
     // 429 sostenido NO es un fallo: la tienda sincronizó lo que pudo y el próximo
     // tick reintenta. Se devuelve como throttled (parcial) para loguear 'success'
@@ -555,7 +570,7 @@ async function syncStore(
     // rota nada se guarda aunque Dropi responda perfecto.
     if (err instanceof DropiRateLimitError) {
       console.warn(`[store ${store.store_id}] throttled por Dropi (429) — sync parcial: ${synced}/${total}`);
-      return { synced, total, statusTotal, error: upsertErrMsg, throttled: true };
+      return { synced, total, statusTotal, error: upsertErrMsg, throttled: true, partialError: partialErrMsg };
     }
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[store ${store.store_id}] sync failed:`, msg);
@@ -856,6 +871,7 @@ Deno.serve(async (req: Request) => {
             statusTotal: probe.statusTotal,
             error: probe.error,
             throttled: probe.throttled,
+            partialError: r.partialError || probe.partialError,
           };
           if (r.statusTotal > 0) {
             console.log(`dropi-cron: filter_date_by GANADOR="${variant}" (pase de estatus devolvio ${r.statusTotal} pedidos)`);
@@ -886,7 +902,11 @@ Deno.serve(async (req: Request) => {
       // 'warn' con mensaje de throttle para que SyncFreshness lo pinte amarillo
       // y ofrezca "reintenta solo" en vez de "auditar" (auditoría EC 2026-07-07).
       const statusStarved = r.throttled && r.statusTotal === 0;
-      const logStatus = r.error ? "error" : (isZombie || statusStarved ? "warn" : "success");
+      // partialError (14-ago-2026): un error NO-429 a mitad de paginación antes
+      // se tragaba en silencio → 'success' verde con los pedidos VIEJOS (las
+      // devoluciones) sin refrescar. Es 'warn', no 'error': lo que sí se trajo
+      // se upserteó y el próximo tick (15 min) reintenta solo.
+      const logStatus = r.error ? "error" : (isZombie || statusStarved || r.partialError ? "warn" : "success");
       const logMsg = r.error
         ? r.error
         : statusStarved
@@ -895,7 +915,9 @@ Deno.serve(async (req: Request) => {
             ? "Dropi throttle (429) — sincronización parcial"
             : isZombie
               ? `Dropi devolvió 0 pedidos en el pase de cambio de estatus (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o filter_date_by roto`
-              : null;
+              : r.partialError
+                ? `Paginación cortada por error de Dropi (se sincronizó lo parcial; los pedidos más viejos del rango pueden no haber refrescado): ${r.partialError}`
+                : null;
       await sb.from("sync_logs").insert({
         source: "dropi-cron",
         status: logStatus,

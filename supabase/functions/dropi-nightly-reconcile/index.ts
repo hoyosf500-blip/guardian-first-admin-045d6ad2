@@ -210,6 +210,10 @@ async function reconcileStore(
   cancelledIds: { orphans: string[]; deleted: string[] };
   /** Fantasmas rezagados (fuera de la ventana de 30d) archivados esta corrida. */
   repescaArchivados: number;
+  /** Candidatos que SÍ existen en Dropi y cuyo estado fresco (que el barrido ya
+   *  había descargado) se escribió — devoluciones de pedidos viejos dejan de
+   *  quedar congeladas (auditoría 14-ago-2026). */
+  repescaRefrescados: number;
   /** Qué decidió la repesca y por qué. `null` = no había rezagados que mirar.
    *  Se guarda aparte del contador: "0 archivados porque el barrido vino
    *  truncado" y "0 archivados porque no había fantasmas" son cosas distintas. */
@@ -430,6 +434,7 @@ async function reconcileStore(
     // la deuda se salda de a un mes por noche sin darle otro barrido entero al
     // rate-limit de EC, y una vez saldada no dispara ni un request.
     let repescaArchivados = 0;
+    let repescaRefrescados = 0;
     let repescaMotivo: string | null = null;
     try {
       const ventanaInicio = from; // los de adentro ya los cubre el barrido de arriba
@@ -480,7 +485,31 @@ async function reconcileStore(
             cancelledIds.deleted.push(...batch.map((g) => String(g.external_id)));
           }
         }
-        console.log(`reconcile ${storeId}: repesca ${plan.yearMonth} — ${repescaMotivo} · quedan ${plan.mesesRestantes} mes(es) rezagados`);
+
+        // REFRESCO de los que SÍ existen (auditoría devoluciones 14-ago-2026):
+        // el barrido del mes ya DESCARGÓ estos pedidos con su estado actual y
+        // hasta ahora se tiraba — un congelado "EN REPARTO" de abril que hoy es
+        // DEVOLUCION en Dropi seguía congelado PARA SIEMPRE: el cron no llega
+        // (fuera de su ventana) y la divergencia de arriba tampoco (solo mira
+        // RECONCILE_DAYS_BACK). Escribirlo acá cuesta CERO requests extra.
+        // Corre aunque el barrido venga incompleto (throttle): upsertear lo que
+        // Dropi SÍ devolvió es escribir verdad, no inferir ausencias — la
+        // inferencia peligrosa (archivar) sigue exigiendo barrido completo.
+        try {
+          const candidatosPorId = new Map(plan.candidatos.map((r) => [String(r.external_id), r]));
+          const vivosDelBarrido = pull.orders.filter((o) =>
+            candidatosPorId.has(String((o as { id: unknown }).id)));
+          for (let i = 0; i < vivosDelBarrido.length; i += 50) {
+            const batch = vivosDelBarrido.slice(i, i + 50)
+              .map((d) => mapDropiOrderToRow(d, ownerId, todayStr, storeId));
+            const { data: changed, error } = await sb.rpc("upsert_orders_from_dropi", { p_orders: batch });
+            if (!error) repescaRefrescados += (changed as number) || 0;
+            else console.error(`reconcile ${storeId}: repesca refresh upsert error:`, error);
+          }
+        } catch (e) {
+          console.warn(`reconcile ${storeId}: repesca refresh falló (no bloquea):`, e);
+        }
+        console.log(`reconcile ${storeId}: repesca ${plan.yearMonth} — ${repescaMotivo} · ${repescaRefrescados} refrescados con estado fresco · quedan ${plan.mesesRestantes} mes(es) rezagados`);
       }
     } catch (err) {
       // La repesca es un extra: si falla, la reconciliación de la ventana normal
@@ -489,13 +518,13 @@ async function reconcileStore(
       console.warn(`reconcile ${storeId}: ${repescaMotivo}`);
     }
 
-    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds, repescaArchivados, repescaMotivo };
+    return { divergent: divergences.length, applied, orphanCancelled, deletedCancelled, deletedCheckComplete, dropiCreatedCount, cancelledIds, repescaArchivados, repescaRefrescados, repescaMotivo };
   } catch (err) {
     return {
       divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0,
       deletedCheckComplete: null, dropiCreatedCount: null,
       cancelledIds: { orphans: [], deleted: [] },
-      repescaArchivados: 0, repescaMotivo: null,
+      repescaArchivados: 0, repescaRefrescados: 0, repescaMotivo: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }
@@ -577,7 +606,7 @@ Deno.serve(async (req) => {
       await sb.from("nightly_reconcile_results").insert(baseLog);
     }
     summary.push({ store_id: cfg.store_id, ...r });
-    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled} repesca=${r.repescaArchivados} checkComplete=${r.deletedCheckComplete}${r.repescaMotivo ? ` | ${r.repescaMotivo}` : ""}`);
+    console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled} repesca=${r.repescaArchivados} repescaRefrescados=${r.repescaRefrescados} checkComplete=${r.deletedCheckComplete}${r.repescaMotivo ? ` | ${r.repescaMotivo}` : ""}`);
   }
 
   return new Response(JSON.stringify({ ok: true, summary }), {
