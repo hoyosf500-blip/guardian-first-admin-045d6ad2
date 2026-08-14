@@ -522,7 +522,7 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         const when = new Date(t.created_at).getTime();
         const prev = latestByPhone[t.phone];
         if (!prev || when > prev.whenMs) {
-          latestByPhone[t.phone] = { action: t.action, actionDate: t.action_date, whenMs: when };
+          latestByPhone[t.phone] = { action: t.action, actionDate: t.action_date, whenMs: when, operatorId: t.operator_id };
         }
       });
 
@@ -533,7 +533,15 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
         if (!o.dbId) return;
         const hit = latestByPhone[o.phone];
         if (!hit) return;
-        if (isHiddenFromTodayList(hit, nowMs, today)) {
+        // Fix C3 (auditoría 14-ago-2026): el "No contestó" de una COMPAÑERA ya
+        // no esconde la fila al resto del equipo — mismo criterio que el
+        // Tablero aplica desde el 31-jul vía `estaGestionadoHoy`; esta vista se
+        // había quedado con la versión vieja y el cliente que no atendió a la
+        // primera se volvía invisible para todas el resto del día. Un
+        // touchpoint histórico sin operator_id se trata como propio (oculta):
+        // es el comportamiento de siempre y no inventa trabajo pendiente.
+        const esMio = !hit.operatorId || hit.operatorId === user?.id;
+        if (isHiddenFromTodayList(hit, nowMs, today, { esMio })) {
           snoozed[o.dbId] = hiddenLabel(hit);
         }
       });
@@ -557,7 +565,8 @@ export default function CrmTable({ data: dataProp, module, emptyIcon, emptyTitle
     // activeStoreId en deps: la query de touchpoints filtra por store_id, así que
     // al cambiar de tienda hay que re-fetchear (si no, snooze/owner quedan con la
     // data de la tienda anterior cuando los phones coinciden).
-  }, [phonesKey, module, activeStoreId]);
+    // user?.id en deps: el snooze ahora distingue gestión propia de ajena (C3).
+  }, [phonesKey, module, activeStoreId, user?.id]);
 
   // C3: lista de admins. Pedidos con assigned_to apuntando a admin se
   // tratan como pool libre / sin asignar.

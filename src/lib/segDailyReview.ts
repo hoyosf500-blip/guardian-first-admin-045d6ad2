@@ -11,6 +11,7 @@
  *
  * Ver spec: docs/superpowers/specs/2026-05-26-seguimiento-revision-diaria-design.md
  */
+import { esContactoEfectivo } from './segMetodosEstado';
 
 /**
  * Métodos de gestión (lo que se despliega bajo "Gestioné hoy").
@@ -59,6 +60,8 @@ export interface LatestTouch {
   actionDate: string;
   /** `created_at` en milisegundos. */
   whenMs: number;
+  /** Quién lo registró — permite distinguir gestión propia de ajena. */
+  operatorId?: string | null;
 }
 
 /**
@@ -66,16 +69,27 @@ export interface LatestTouch {
  *  - cierre: oculto mientras no pasen 30 días desde el touchpoint.
  *  - gestión (cualquier método, o labels viejos): oculto solo si el touchpoint
  *    es de hoy (Bogotá) → al cambiar el día reaparece (revisión diaria).
+ *
+ * `opts.esMio` (fix C3, auditoría 14-ago-2026): la gestión PROPIA oculta
+ * siempre —acabo de tocarlo, volver a marcarlo duplicaría el registro—; la
+ * AJENA solo si hubo CONTACTO. El "No contestó" de una compañera deja el
+ * pedido pendiente para todo el equipo: es el mismo criterio que
+ * `estaGestionadoHoy` le aplicó al Tablero el 31-jul, y la vista Lista se
+ * había quedado sin el fix — el cliente que no atendió a la primera se volvía
+ * invisible el resto del día y nadie lo volvía a llamar. Sin `opts` se
+ * conserva el comportamiento histórico (oculta sin mirar quién ni qué).
  */
 export function isHiddenFromTodayList(
   latest: LatestTouch | null | undefined,
   nowMs: number,
   todayBogota: string,
+  opts?: { esMio?: boolean },
 ): boolean {
   if (!latest) return false;
   if (isSegCloser(latest.action)) {
     return nowMs - latest.whenMs < CLOSER_SNOOZE_MS;
   }
+  if (opts?.esMio === false && !esContactoEfectivo(cleanSegAction(latest.action))) return false;
   return latest.actionDate === todayBogota;
 }
 

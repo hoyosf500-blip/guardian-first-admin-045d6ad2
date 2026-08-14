@@ -48,6 +48,27 @@ export function esContactoEfectivo(metodo: string | null | undefined): boolean {
 }
 
 /**
+ * ¿La fase del pedido admite gestión (= la tarjeta lleva botonera)?
+ *
+ * La botonera del tablero se activaba por el TONE visual de la columna
+ * (bug C2, auditoría 14-ago-2026): "Nov. Solucionada" es tone `success` y sus
+ * tarjetas salían SIN botones aunque cuentan en la cola de hoy — la cola no
+ * podía llegar a 0 porque esos pedidos no se podían gestionar desde el
+ * tablero. Y las columnas `danger` (Rechazado, Devolución, Dev. en Tránsito)
+ * tienen métodos propios acá arriba y tampoco los mostraban.
+ *
+ * La pregunta correcta no es de qué color es la columna sino si la FASE tiene
+ * trabajo: solo entregado, cancelado/borrado e indemnizada son desenlaces sin
+ * nada que registrar. Todo lo demás —incluido 'otros', el estado que Dropi
+ * invente mañana— se puede gestionar.
+ */
+const FASES_SIN_GESTION: ReadonlySet<SegStatusKey> = new Set(['entregado', 'cancelado', 'indemnizada']);
+
+export function faseConGestion(estado: string | null | undefined): boolean {
+  return !FASES_SIN_GESTION.has(classifySegEstado(estado || ''));
+}
+
+/**
  * Fallback para estados sin juego propio — incluidos los que Dropi invente
  * mañana, que caen en 'otros'.
  *

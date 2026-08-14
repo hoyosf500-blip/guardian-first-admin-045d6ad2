@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
-import { metodosRapidosParaEstado, esContactoEfectivo } from '@/lib/segMetodosEstado';
+import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento } from '@/lib/segPulso';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
@@ -503,9 +503,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
 
       {/* Acciones del ESTADO, sin salir del tablero. La primera es la propia de
           la fase (guía → "Envié la guía"; oficina → "Cliente recoge") y las dos
-          que siguen son los desenlaces reales de la llamada. Solo en fases con
-          trabajo: en entregado/cancelado/devuelto no hay nada que registrar. */}
-      {(tone === 'warning' || tone === 'accent' || tone === 'info' || tone === 'neutral' || tone == null) && o.phone && (
+          que siguen son los desenlaces reales de la llamada.
+
+          El gate es por FASE, no por tone (fix C2, auditoría 14-ago-2026): la
+          condición vieja por tone dejaba SIN botones a "Nov. Solucionada"
+          (success) — que cuenta en la cola de hoy, así que la cola no podía
+          llegar a 0 — y a Rechazado/Devolución (danger), que tienen métodos
+          propios en segMetodosEstado. Solo entregado/cancelado/indemnizada
+          quedan sin botonera: no hay nada que registrar. */}
+      {faseConGestion(o.estado) && o.phone && (
         yaGestionada ? (
           <div
             className="mt-2.5 w-full min-h-11 flex items-center gap-2 rounded-xl bg-success/15 text-success border border-success/40 font-bold text-[13px] px-2.5 py-1.5"
@@ -596,14 +602,24 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
   // en el padre, así el key de sesión es estable durante la vida del componente.
   const [focusedExtId, setFocusedExtId] = useSessionState<string | null>('seg:focusId:' + col.key, null);
   const [visible, setVisible] = useState(COLUMN_PAGE);
+  // Última posición conocida del cursor: cuando el pedido enfocado SALE de la
+  // carpeta (se gestionó con "Ocultar gestionados" activo, o cambió de fase por
+  // realtime), la operadora se quedaba en el pedido nº1 — a mitad de una
+  // carpeta de 40 eso es perder el hilo y re-recorrer lo ya visto (fix A2,
+  // auditoría 14-ago-2026). Ahora se queda en la MISMA posición: el siguiente
+  // pedido de la cola entra al lugar del que salió, que es exactamente el flujo
+  // "gestiono → sigue el próximo".
+  const lastIdxRef = useRef(0);
   const selIdx = useMemo(() => {
     if (orders.length === 0) return 0;
     if (focusedExtId) {
       const i = orders.findIndex((o) => String(o.externalId ?? '') === focusedExtId);
       if (i >= 0) return i;
+      return Math.min(lastIdxRef.current, orders.length - 1);
     }
     return 0;
   }, [orders, focusedExtId]);
+  useEffect(() => { lastIdxRef.current = selIdx; }, [selIdx]);
   const selRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const firstScrollRef = useRef(true);

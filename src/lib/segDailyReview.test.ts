@@ -52,6 +52,35 @@ describe('isHiddenFromTodayList', () => {
     expect(isHiddenFromTodayList(t, NOW, HOY)).toBe(false);
   });
 
+  // Fix C3 (auditoría 14-ago-2026): el mismo criterio que `estaGestionadoHoy`
+  // aplicó al Tablero el 31-jul — el "No contestó" AJENO no esconde la fila.
+  describe('esMio — gestión propia vs ajena (paridad con el Tablero)', () => {
+    const noContesto: LatestTouch = { action: 'SEG: No contestó', actionDate: HOY, whenMs: NOW - 3600000 };
+    const llame: LatestTouch = { action: 'SEG: Llamé', actionDate: HOY, whenMs: NOW - 3600000 };
+
+    it('mi "No contestó" de hoy SÍ oculta (acabo de tocarlo)', () => {
+      expect(isHiddenFromTodayList(noContesto, NOW, HOY, { esMio: true })).toBe(true);
+    });
+
+    it('el "No contestó" de una compañera NO oculta — el cliente sigue pendiente para todo el equipo', () => {
+      expect(isHiddenFromTodayList(noContesto, NOW, HOY, { esMio: false })).toBe(false);
+      expect(isHiddenFromTodayList({ ...noContesto, action: 'SEG: Volver a llamar' }, NOW, HOY, { esMio: false })).toBe(false);
+    });
+
+    it('el contacto EFECTIVO de una compañera SÍ oculta (ya se habló con el cliente)', () => {
+      expect(isHiddenFromTodayList(llame, NOW, HOY, { esMio: false })).toBe(true);
+    });
+
+    it('un CIERRE ajeno oculta igual — Resuelto/Devolución valen para todo el equipo', () => {
+      const cierre: LatestTouch = { action: 'SEG: Resuelto', actionDate: HOY, whenMs: NOW - 3600000 };
+      expect(isHiddenFromTodayList(cierre, NOW, HOY, { esMio: false })).toBe(true);
+    });
+
+    it('sin opts se conserva el comportamiento histórico (oculta sin mirar quién)', () => {
+      expect(isHiddenFromTodayList(noContesto, NOW, HOY)).toBe(true);
+    });
+  });
+
   it('cierre reciente (10 días) → oculto', () => {
     const t: LatestTouch = { action: 'SEG: Resuelto', actionDate: '2026-05-16', whenMs: NOW - 10 * 24 * 3600000 };
     expect(isHiddenFromTodayList(t, NOW, HOY)).toBe(true);
