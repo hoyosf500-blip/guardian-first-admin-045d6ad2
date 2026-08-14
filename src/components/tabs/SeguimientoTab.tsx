@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useChangeAlerts } from '@/hooks/useChangeAlerts';
 import { OrderData, isWithinLastDays, isClosedOutByCloser } from '@/lib/orderUtils';
 import { matchesQuery } from '@/lib/textSearch';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -117,6 +119,20 @@ export default function SeguimientoTab() {
   // Pedidos que el equipo ya CERRÓ (Resuelto/Devolución) → salen para siempre de
   // Seguimiento. Team-wide (set de phones de la tienda activa). Ver hook.
   const segClosedPhones = useSegClosedPhones(activeStoreId);
+  // Alerta de cambios (auditoría 14-ago-2026, artifact fa210631): el hook
+  // existía COMPLETO desde F6 y nadie lo montaba — el aviso "N devoluciones
+  // nuevas" era código muerto mientras el dueño reportaba "a veces no me
+  // entero de las devoluciones". Vive acá porque /rescate (su tab original) se
+  // eliminó y el trabajo de devoluciones/oficina hoy se hace en Seguimiento.
+  // El banner dice lo que ENTRÓ desde la última vez que lo diste por visto; la
+  // X marca visto (sin eso reaparecería en el próximo poll de 10 min).
+  const { user } = useAuth();
+  const { banner: alertaCambios, markSeen: marcarVisto, dismissBanner } = useChangeAlerts(user?.id, activeStoreId);
+  const descartarAlerta = useCallback(() => {
+    marcarVisto('seguimiento');
+    marcarVisto('rescate');
+    dismissBanner();
+  }, [marcarVisto, dismissBanner]);
 
   // Filter state persisted to sessionStorage so it also survives tab
   // discards (Chrome Memory Saver) and internal route navigation.
@@ -382,6 +398,49 @@ export default function SeguimientoTab() {
     });
     return best?.slug ?? null;
   }, [listCounts]);
+
+  // HERO memoizado (auditoría 14-ago-2026, A3): estas cuentas recorren miles
+  // de filas y vivían inline en el JSX — cada tecla del buscador las
+  // recalculaba enteras aunque el hero ni mira `search`. Solo se rehacen
+  // cuando cambia la data, la vista o la lista activa.
+  const hero = useMemo(() => {
+    // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
+    // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
+    const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
+    // COLA DE HOY (14-ago-2026): sin lista activa, el día NO se mide contra
+    // todo lo cargado — "150 por gestionar" con 120 viajando era una meta
+    // imposible y la operadora la ignoraba. Se exige en 0 lo ACCIONABLE
+    // (detenidos, agencia vencida, reparto/novedad, indemnizaciones, sin
+    // guía): la MISMA población que el guard de inactividad ya considera
+    // trabajo. El resto es monitoreo.
+    const feedBase = listaActiva && !listaActiva.externalRoute
+      ? counterSource.filter((o) => listaActiva.matches(o))
+      : counterSource.filter(esAccionable);
+    // "En ruta" = lo que sigue VIVO camino al cliente. Las devoluciones ahora
+    // SÍ se cargan (auditoría 14-ago) pero no van en ruta hacia nadie: tienen
+    // su chip "Se fue a devolución" — no engordan esta cifra.
+    const enRuta = counterSource.filter((o) => {
+      const f = classifySegEstado(o.estado || '');
+      return f !== 'devolucion' && f !== 'devolucion_transito' && f !== 'indemnizada';
+    }).length;
+    const total = feedBase.length;
+    // Gestionados por el EQUIPO, no solo por mí (arreglo 1-ago-2026). Sale de
+    // `estaGestionadoHoy`, la MISMA función del filtro "Ocultar gestionados":
+    // dos definiciones de "gestionado" en la misma pantalla fue justamente lo
+    // que causó el bug del contador clavado en 222.
+    const gestionados = contarGestionadosHoy(feedBase, mySegTouchedToday, gestionSegPorTelefono);
+    const faltan = Math.max(0, total - gestionados);
+    // Detenidos y asesoras se miden sobre feedBase —la misma población del
+    // hero— y no sobre todo lo cargado: las tarjetas son vecinas y con
+    // alcances distintos se leían como la misma métrica que "no cuadraba".
+    const detenidos = feedBase.filter((o) => estaDetenido(o)).length;
+    const asesorasHoy = asesorasEnSeguimientoHoy(feedBase, gestionSegPorTelefono);
+    // Cola vacía = día cumplido: el aro se pinta lleno, no en 0%.
+    const pct = total > 0 ? Math.round((gestionados / total) * 100) : 100;
+    // El hero vive mientras haya pedidos cargados: una cola de hoy en 0 con
+    // 150 en ruta es un LOGRO que se muestra en verde, no una pantalla vacía.
+    return { enRuta, total, gestionados, faltan, detenidos, asesorasHoy, pct, heroVisible: counterSource.length > 0 };
+  }, [viewMode, chipsBase, dedupedByDate, listaActiva, mySegTouchedToday, gestionSegPorTelefono]);
 
   /**
    * Unified stat tone system — same 5 tones as CrmTable so the app reads as one
@@ -651,6 +710,36 @@ export default function SeguimientoTab() {
           </div>
         </motion.header>
 
+        {/* ALERTA DE CAMBIOS — "N devoluciones / en oficina nuevas" desde la
+            última vez que se dio por visto. Es LA alerta que faltaba: un pedido
+            que se va a devolución desaparecía del tablero en silencio. */}
+        {alertaCambios && (
+          <motion.div {...fadeUp(0.02)}>
+            <div
+              role="status"
+              className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 shadow-card3d"
+            >
+              <RotateCcw size={16} className="text-danger shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="text-sm text-foreground leading-snug flex-1 min-w-0">
+                <strong className="font-semibold">{alertaCambios}</strong>{' '}
+                <span className="text-muted-foreground">
+                  desde tu última revisión. Las devoluciones aparecen en el chip
+                  «Se fue a devolución»; lo de oficina, en su columna.
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={descartarAlerta}
+                aria-label="Entendido — marcar como visto"
+                title="Entendido — marcar como visto"
+                className="p-2 -m-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {/* Búsqueda en la BASE (todo el histórico de la tienda). La lista de
             abajo solo puede filtrar lo descargado; esto evita concluir "no
             existe" cuando el pedido está fuera de la ventana de fechas. */}
@@ -670,45 +759,9 @@ export default function SeguimientoTab() {
             meta. Al lado, el Total con anatomía de StatTile.
             ───────────────────────────────────────────────────────────── */}
         {(() => {
-          // En vista Lista, el contador usa el snapshot congelado (chipsBase) para
-          // no contradecir a la tabla bufferizada; en Tablero, la data en vivo.
-          const counterSource = viewMode === 'list' ? chipsBase : dedupedByDate;
-          // COLA DE HOY (14-ago-2026): sin lista activa, el día ya NO se mide
-          // contra todo lo cargado — "150 por gestionar" con 120 viajando era
-          // una meta imposible y la operadora la ignoraba. Se exige en 0 lo
-          // ACCIONABLE (detenidos, agencia vencida, reparto/novedad,
-          // indemnizaciones, sin guía): la MISMA población que el guard de
-          // inactividad ya considera trabajo. El resto es monitoreo.
-          const feedBase = listaActiva && !listaActiva.externalRoute
-            ? counterSource.filter((o) => listaActiva.matches(o))
-            : counterSource.filter(esAccionable);
-          const enRuta = counterSource.length;
-          const total = feedBase.length;
-          // El hero vive mientras haya pedidos cargados: una cola de hoy en 0
-          // con 150 en ruta es un LOGRO que se muestra en verde, no una pantalla
-          // vacía. Sin nada cargado, no hay hero (no se afirma lo no medido).
-          const heroVisible = enRuta > 0;
-          // Gestionados por el EQUIPO, no solo por mí (arreglo 1-ago-2026).
-          //
-          // El tablero escondía las tarjetas que trabajó cualquiera, pero este
-          // contador solo sumaba las mías: las tarjetas desaparecían y el número
-          // seguía clavado en 222. Y para el dueño —que mira pero no gestiona—
-          // no bajaba NUNCA, por mucho que el equipo trabajara. Es lo que
-          // reportó: "no baja y sí se gestionan".
-          //
-          // Ahora sale de `estaGestionadoHoy`, la MISMA función que usa el
-          // filtro "Ocultar gestionados": tener dos definiciones de "gestionado"
-          // en una pantalla fue justamente lo que causó el bug.
-          const gestionados = contarGestionadosHoy(feedBase, mySegTouchedToday, gestionSegPorTelefono);
-          const faltan = Math.max(0, total - gestionados);
-          // Los que se están pudriendo, y quién los está trabajando. Se miden
-          // sobre `feedBase` —la misma población del hero— y no sobre todo lo
-          // cargado: las dos tarjetas son vecinas y con alcances distintos se
-          // leían como la misma métrica que "no cuadraba".
-          const detenidos = feedBase.filter((o) => estaDetenido(o)).length;
-          const asesorasHoy = asesorasEnSeguimientoHoy(feedBase, gestionSegPorTelefono);
-          // Cola vacía = día cumplido: el aro se pinta lleno, no en 0%.
-          const pct = total > 0 ? Math.round((gestionados / total) * 100) : 100;
+          // Las cuentas pesadas viven en el memo `hero` (arriba) — acá solo
+          // quedan derivaciones baratas de estilo.
+          const { enRuta, total, gestionados, faltan, detenidos, asesorasHoy, pct, heroVisible } = hero;
           const done = faltan === 0;
           const tone = done
             ? 'success'

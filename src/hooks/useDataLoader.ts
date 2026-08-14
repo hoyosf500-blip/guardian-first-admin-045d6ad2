@@ -131,7 +131,6 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       type Row = Parameters<typeof dbToOrderData>[0];
       const all: Row[] = [];
       let fromIdx = 0;
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         const toIdx = fromIdx + PAGE_SIZE - 1;
         const { data, error } = await supabase
@@ -186,6 +185,35 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           break;
         }
         fromIdx += PAGE_SIZE;
+      }
+      // DEVOLUCIONES RECIENTES (auditoría 14-ago-2026, artifact fa210631). Los
+      // dos filtros exactos de arriba existen porque esta query NO tiene ventana
+      // de fecha — sin ellos entraría el histórico completo de devoluciones. El
+      // costo era que "se fue a devolución" se volvía INVISIBLE: las columnas
+      // Devolución del tablero llevaban meses en 0 en Colombia (las variantes
+      // EC pasaban de casualidad por la tilde) y la tarjeta desaparecía en
+      // silencio — "se entregó" y "se me fue de vuelta" se veían idéntico.
+      // Query aparte y ACOTADA por último movimiento: trae EXACTAMENTE lo que
+      // la principal excluye (cero solape) sin cargar años de devoluciones.
+      // La misma ventana (30d) usa el chip "Se fue a devolución" de segLists.
+      try {
+        const devDesde = new Date(Date.now() - 30 * 86_400_000).toISOString();
+        const { data: devRows, error: devError } = await supabase
+          .from('orders')
+          .select(ORDER_COLUMNS)
+          .eq('store_id', storeId)
+          .in('estado', ['DEVOLUCION', 'DEVOLUCION EN TRANSITO'])
+          .gte('last_movement_at', devDesde)
+          .order('created_at', { ascending: false })
+          .limit(2000);
+        if (devError) {
+          // No-fatal: sin el extra el tablero sigue sirviendo. Avisar, no caer.
+          console.warn('Error cargando devoluciones recientes:', devError.message);
+        } else if (prevStoreRef.current === storeId) {
+          all.push(...(((devRows || []) as unknown) as Row[]));
+        }
+      } catch (e) {
+        console.warn('Error cargando devoluciones recientes:', e);
       }
       const mapped = all.map((o, idx) => dbToOrderData(o, idx));
       mapped.sort((a, b) => calcPriority(b) - calcPriority(a));

@@ -45,6 +45,7 @@ export type SegListSlug =
   | 'pendientes_confirmacion_2d'
   | 'detenidos_3d'
   | 'agencia_2d'
+  | 'devolucion_reciente'
   | 'en_oficina'
   | 'en_reparto_novedad'
   | 'en_transito'
@@ -239,6 +240,35 @@ const SEG_LIST_DEFS: SegListDef[] = [
     },
   },
 
+  // ── SE FUE A DEVOLUCIÓN ─────────────────────────────────────────────────
+  // Tercera lista de RELOJ, nacida de la queja "Dropi o Guardian no reportan
+  // las devoluciones" (auditoría 14-ago-2026, artifact fa210631): la base SÍ
+  // las tenía — la pantalla las escondía. Cuando un pedido pasaba a devolución
+  // su tarjeta desaparecía en silencio, idéntico a un entregado. Este chip
+  // junta las de los últimos 30 días (misma ventana que la carga acotada de
+  // useDataLoader) para la llamada de RECUPERACIÓN: en julio-EC, 49 pedidos
+  // cancelados se re-emitieron y 32 terminaron entregados — esa plata se
+  // rescata llamando UNA vez (el cierre "Devolución" lo saca 30 días).
+  //
+  // Trabaja sobre estados TERMINALES a propósito: está eximida del guard
+  // global (LISTAS_DE_TERMINALES) y NO es accionable — no infla la cola de
+  // hoy, porque la cadencia correcta es una llamada de rescate, no una diaria.
+  {
+    slug: 'devolucion_reciente',
+    label: 'Se fue a devolución (últimos 30 días)',
+    slaDias: 0,
+    tone: 'danger',
+    matches: (o) => {
+      const f = faseDe(o);
+      if (f !== 'devolucion' && f !== 'devolucion_transito') return false;
+      // Reloj real con hora (mismo criterio que estaDetenido / agencia_2d).
+      // Sin fecha de movimiento NO matchea: sin saber CUÁNDO se devolvió no
+      // se puede afirmar que es reciente.
+      const h = horasSinMovimiento(o);
+      return h != null && h <= 30 * 24;
+    },
+  },
+
   // ── FASE FINAL (alta prioridad — pedido a punto de entregarse) ──────────
   {
     slug: 'en_oficina',
@@ -342,15 +372,25 @@ const SEG_LIST_DEFS: SegListDef[] = [
 ];
 
 /**
+ * Listas que trabajan sobre estados TERMINALES a propósito (devoluciones): el
+ * guard global de abajo las dejaría vacías para siempre — su patrón 'DEVOLUC'
+ * es exactamente lo que estas listas buscan. Su predicado acota solo
+ * (fase de devolución + reloj de 30 días).
+ */
+const LISTAS_DE_TERMINALES: ReadonlySet<string> = new Set(['devolucion_reciente']);
+
+/**
  * Guard TERMINAL aplicado a TODAS las listas, no solo al catch-all: las
  * variantes de Ecuador ('ENTREGADO A DESTINO', 'DEVOLUCION A ORIGEN') matcheaban
  * predicados de fase y, como el estado ya no vuelve a cambiar, el pedido quedaba
  * clavado en la cola — la asesora llamaba a clientes que ya tenían el paquete.
+ * (Excepción explícita: LISTAS_DE_TERMINALES, cuyo trabajo ES el terminal.)
  */
-export const SEG_LISTS: SegListDef[] = SEG_LIST_DEFS.map((l) => ({
-  ...l,
-  matches: (o: OrderData) => !esTerminal(E(o.estado)) && l.matches(o),
-}));
+export const SEG_LISTS: SegListDef[] = SEG_LIST_DEFS.map((l) => (
+  LISTAS_DE_TERMINALES.has(l.slug)
+    ? l
+    : { ...l, matches: (o: OrderData) => !esTerminal(E(o.estado)) && l.matches(o) }
+));
 
 export function findSegList(slug: SegListSlug): SegListDef | undefined {
   return SEG_LISTS.find((l) => l.slug === slug);
@@ -374,6 +414,8 @@ export const ACTIONABLE_SEG_SLUGS: SegListSlug[] = [
   // Un pedido quieto hace 3+ días es trabajo pendiente por definición: alguien
   // tiene que llamar a la transportadora. Va acá aunque no se dibuje como chip
   // en las mismas condiciones que las otras.
+  // `devolucion_reciente` NO va: la llamada de rescate se hace UNA vez, y
+  // meterla acá la exigiría todos los días durante 30 días.
   'detenidos_3d',
   'agencia_2d',
   'en_oficina',

@@ -55,11 +55,11 @@ const baseOrder: OrderData = {
 };
 
 describe('SEG_LISTS — definición (embudo por prioridad)', () => {
-  it('exporta exactamente 11 listas', () => {
-    expect(SEG_LISTS).toHaveLength(11);
+  it('exporta exactamente 12 listas', () => {
+    expect(SEG_LISTS).toHaveLength(12);
   });
 
-  it('orden: confirmación → detenidos → agencia vencida → final (oficina/reparto) → medio → inicial → otros', () => {
+  it('orden: confirmación → detenidos → agencia vencida → devolución reciente → final (oficina/reparto) → medio → inicial → otros', () => {
     const slugs = SEG_LISTS.map((l) => l.slug);
     expect(slugs[0]).toBe('pendientes_confirmacion_2d');
     // Los detenidos van arriba: son los que se están pudriendo, sin importar
@@ -68,9 +68,12 @@ describe('SEG_LISTS — definición (embudo por prioridad)', () => {
     // La agencia vencida va pegada: es la plata más fácil de perder (el
     // courier devuelve a los ~7 días de espera).
     expect(slugs[2]).toBe('agencia_2d');
-    expect(slugs[3]).toBe('en_oficina');
-    expect(slugs[4]).toBe('en_reparto_novedad');
-    expect(slugs[5]).toBe('en_transito');
+    // Y lo que YA se fue de vuelta va antes de las fases: es la llamada de
+    // rescate (auditoría devoluciones 14-ago-2026).
+    expect(slugs[3]).toBe('devolucion_reciente');
+    expect(slugs[4]).toBe('en_oficina');
+    expect(slugs[5]).toBe('en_reparto_novedad');
+    expect(slugs[6]).toBe('en_transito');
     expect(slugs[slugs.length - 1]).toBe('otros_estados');
   });
 
@@ -83,6 +86,7 @@ describe('SEG_LISTS — definición (embudo por prioridad)', () => {
       'pendientes_confirmacion_2d',
       'detenidos_3d',
       'agencia_2d',
+      'devolucion_reciente',
       'indem_guia_generada_5d',
       'indem_pendientes_guia_4d',
     ]);
@@ -314,9 +318,11 @@ describe('SEG_LISTS — tramo pre-guía (CONFIRMADO / GENERADO)', () => {
 describe('SEG_LISTS — las listas son DISJUNTAS', () => {
   // Las listas de FASE se reparten el trabajo sin pisarse: si un pedido cayera
   // en dos, dos asesoras lo trabajarían por separado creyendo cada una que era
-  // suyo. Las dos listas de RELOJ (`detenidos_3d`, `agencia_2d`) quedan fuera
-  // de esta regla a propósito (ver abajo).
-  const LISTAS_DE_FASE = SEG_LISTS.filter((l) => l.slug !== 'detenidos_3d' && l.slug !== 'agencia_2d');
+  // suyo. Las tres listas de RELOJ (`detenidos_3d`, `agencia_2d`,
+  // `devolucion_reciente`) quedan fuera de esta regla a propósito (ver abajo).
+  const LISTAS_DE_FASE = SEG_LISTS.filter(
+    (l) => l.slug !== 'detenidos_3d' && l.slug !== 'agencia_2d' && l.slug !== 'devolucion_reciente',
+  );
 
   // `detenidos_3d` mira el RELOJ, no la fase, así que ATRAVIESA las columnas —
   // esa es exactamente su razón de existir y por eso no puede ser disjunta.
@@ -405,6 +411,48 @@ describe('agencia_2d — paquete esperando al cliente (reloj, no fase)', () => {
   });
 });
 
+describe('devolucion_reciente — se fue a devolución (reloj sobre terminales)', () => {
+  // Nace de la queja del dueño "Dropi o Guardian no reportan las devoluciones"
+  // (auditoría 14-ago-2026): la base las tenía; la pantalla las escondía. Es la
+  // ÚNICA lista eximida del guard terminal — su trabajo ES el terminal.
+  const hace2dias = new Date(Date.now() - 2 * 86400000).toISOString();
+  const hace40dias = new Date(Date.now() - 40 * 86400000).toISOString();
+  const lista = () => findSegList('devolucion_reciente')!;
+
+  it('DEVOLUCION / DEVUELTO / EN PROCESO DE DEVOLUCION con movimiento reciente → matchea', () => {
+    for (const estado of ['DEVOLUCION', 'DEVUELTO', 'DEVOLUCION EN TRANSITO', 'EN PROCESO DE DEVOLUCION']) {
+      const o: OrderData = { ...baseOrder, estado, fecha: '', dias: 8, lastMovementAt: hace2dias };
+      expect(lista().matches(o), estado).toBe(true);
+    }
+  });
+
+  it('devolución VIEJA (40 días) NO matchea — el rescate ya no tiene sentido', () => {
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: '', dias: 50, lastMovementAt: hace40dias };
+    expect(lista().matches(o)).toBe(false);
+  });
+
+  it('sin lastMovementAt NO matchea: sin saber CUÁNDO se devolvió no es "reciente"', () => {
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: '', dias: 8, lastMovementAt: null };
+    expect(lista().matches(o)).toBe(false);
+  });
+
+  it('una devolución reciente cae SOLO acá — el guard terminal corta al resto', () => {
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: '', dias: 8, lastMovementAt: hace2dias };
+    expect(SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug)).toEqual(['devolucion_reciente']);
+  });
+
+  it('NO es accionable: la llamada de rescate se hace una vez, no se exige a diario', () => {
+    const o: OrderData = { ...baseOrder, estado: 'DEVOLUCION', fecha: '', dias: 8, lastMovementAt: hace2dias };
+    expect(esAccionable(o)).toBe(false);
+    expect(hasSeguimientoWork([o])).toBe(false);
+  });
+
+  it('un pedido VIVO (EN REPARTO) jamás cae acá', () => {
+    const o: OrderData = { ...baseOrder, estado: 'EN REPARTO', fecha: '', dias: 2, lastMovementAt: hace2dias };
+    expect(lista().matches(o)).toBe(false);
+  });
+});
+
 describe('esAccionable — la COLA DE HOY del hero de Seguimiento', () => {
   it('agencia vencida y novedad cuentan; tránsito viajando normal NO', () => {
     const hace3dias = new Date(Date.now() - 3 * 86400000).toISOString();
@@ -447,6 +495,7 @@ describe('helpers', () => {
   it('isValidSegListSlug acepta slugs válidos nuevos', () => {
     expect(isValidSegListSlug('pendientes_guia')).toBe(true);
     expect(isValidSegListSlug('agencia_2d')).toBe(true);
+    expect(isValidSegListSlug('devolucion_reciente')).toBe(true);
     expect(isValidSegListSlug('en_oficina')).toBe(true);
     expect(isValidSegListSlug('en_reparto_novedad')).toBe(true);
     expect(isValidSegListSlug('en_transito')).toBe(true);
