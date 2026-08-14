@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveStoreId } from '@/contexts/StoreContext';
 
 type AiAction = 'call_script' | 'novedad_action' | 'customer_profile' | 'priority_reason';
 
@@ -18,6 +19,9 @@ interface AiResult {
 export function useAiInsight() {
   const [results, setResults] = useState<Record<string, AiResult>>({});
   const inflightRef = useRef(new Set<string>());
+  // La tienda activa viaja SIEMPRE: la edge function elige con ella la clave de
+  // IA de esa tienda (cada dueño paga la suya) además de validar la membresía.
+  const activeStoreId = useActiveStoreId();
 
   const ask = useCallback(async (
     key: string,
@@ -34,7 +38,7 @@ export function useAiInsight() {
 
     try {
       const { data, error } = await supabase.functions.invoke('ai-order-assistant', {
-        body: { action, context: context.slice(0, 3000) },
+        body: { action, context: context.slice(0, 3000), store_id: activeStoreId ?? undefined },
       });
 
       if (error) {
@@ -67,7 +71,12 @@ export function useAiInsight() {
     } finally {
       inflightRef.current.delete(key);
     }
-  }, [results]);
+    // activeStoreId va en las deps a propósito: sin él, `ask` quedaba clavado
+    // con el valor del PRIMER render — que es `null` mientras StoreContext
+    // carga. Un click rápido en "Perfil IA" mandaba store_id vacío y la edge
+    // function no encontraba la clave de la tienda (se cae al camino sin
+    // tienda). Lo cazó el lint al agregar el store_id (2026-08-13).
+  }, [results, activeStoreId]);
 
   const get = useCallback((key: string): AiResult => {
     return results[key] || { reply: '', loading: false, error: null };

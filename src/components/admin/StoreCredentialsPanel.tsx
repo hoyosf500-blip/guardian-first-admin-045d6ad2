@@ -27,9 +27,14 @@ interface DropiStatusRow {
 }
 
 /** Decodifica el `exp` (epoch en segundos) de un JWT sin verificar la firma.
- *  Lo usamos para mostrarle al dueño cuándo vence el token de sesión Dropi
- *  (la huella) — Dropi fija ese `exp` (~24 h) y no se puede alargar desde acá:
- *  el auto-refresh por login está bloqueado por el 2FA de la cuenta. */
+ *  Muestra cuándo vence el token de SESIÓN (billetera / cotizaciones /
+ *  novedades — la HUELLA no lo usa: va con la API Key permanente).
+ *
+ *  Corregido 2026-08-13: este comentario decía "(la huella)" y que el
+ *  auto-refresh estaba "bloqueado por el 2FA". Verificado en vivo contra
+ *  store_dropi_config: las DOS tiendas tienen login guardado y sus tokens se
+ *  están renovando solos. Dropi emite este token con ~1 h de vida y NO se puede
+ *  alargar; la solución es el login automático, no pegarlo a mano. */
 function decodeJwtExp(token: string): number | null {
   try {
     const parts = token.split('.');
@@ -427,6 +432,10 @@ export default function StoreCredentialsPanel() {
   const sessionHoursLeft = sessionExp != null
     ? Math.max(0, Math.round((sessionExp * 1000 - Date.now()) / 3_600_000))
     : null;
+  // Con email + clave de Dropi guardados, `ensureFreshSessionToken` entra solo y
+  // saca un token nuevo cuando el viejo vence: el vencimiento deja de ser un
+  // problema del dueño. Cambia el mensaje, no la lógica.
+  const autoLoginActivo = hasLoginPassword && Boolean((savedLoginEmail || '').trim());
 
   return (
     <>
@@ -474,7 +483,13 @@ export default function StoreCredentialsPanel() {
           </div>
           {/* Session token */}
           <div>
-            <label className="hud-label" htmlFor="cred-dropi-session">Token de sesión (JWT — para wallet & huella)</label>
+            {/* La HUELLA NO usa este token: usa la API Key permanente
+                (dropi-fingerprint hace `cfg.apiKey || cfg.sessionToken`). Decir
+                "para huella" acá hacía creer al dueño que su huella dependía de
+                un token que vence cada hora — y lo mandaba a pegar tokens a mano
+                sin necesidad (auditoría 2026-08-13). Este token es para lo que
+                pega a los endpoints /api/* del panel web. */}
+            <label className="hud-label" htmlFor="cred-dropi-session">Token de sesión (JWT — billetera, cotizaciones y novedades)</label>
             <div className="mt-1 flex gap-2">
               <div className="relative flex-1">
                 <input
@@ -496,11 +511,30 @@ export default function StoreCredentialsPanel() {
               sessionExp == null ? (
                 <p className="mt-1 text-[11px] text-muted-foreground">No se pudo leer el vencimiento de este token.</p>
               ) : sessionExpired ? (
-                <p className="mt-1 text-[11px] text-danger font-medium">Token VENCIDO — refrescalo con los pasos de abajo.</p>
+                // Vencido CON login automático puesto no es una emergencia: se
+                // renueva solo en la próxima llamada. Sin login, sí hay que pegarlo.
+                autoLoginActivo ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Vencido — se renueva solo en la próxima operación (login automático activo).
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-danger font-medium">Token VENCIDO — refrescalo con los pasos de abajo.</p>
+                )
+              ) : autoLoginActivo ? (
+                // Con auto-login, avisar "vence en ~1h" en amarillo asustaba sin
+                // motivo: Dropi SIEMPRE emite este token con 1 h de vida y el
+                // sistema entra solo a renovarlo. No hay nada que hacer.
+                <p className="mt-1 text-[11px] text-success">
+                  Se renueva solo — no tenés que hacer nada.
+                  <span className="text-muted-foreground">
+                    {' '}(Dropi lo emite con ~1 h de vida; el login automático saca uno nuevo cuando hace falta.)
+                  </span>
+                </p>
               ) : (
                 <p className={`mt-1 text-[11px] ${sessionHoursLeft !== null && sessionHoursLeft <= 3 ? 'text-warning font-medium' : 'text-muted-foreground'}`}>
                   Vence: {new Date(sessionExp * 1000).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   {sessionHoursLeft !== null && <> · en ~{sessionHoursLeft} h</>}
+                  {' '}· configurá el <strong>login automático</strong> de abajo para no volver a pegarlo a mano.
                 </p>
               )
             )}

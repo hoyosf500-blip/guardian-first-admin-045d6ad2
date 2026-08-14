@@ -124,24 +124,57 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Read API key: try env var first, then app_settings table
-    let apiKey = Deno.env.get("DASHSCOPE_API_KEY") || "";
-
-    if (!apiKey) {
-      const { data: setting } = await sb
-        .from("app_settings")
-        .select("value")
-        .eq("key", "dashscope_api_key")
+    // ── CLAVE DE IA: PRIMERO LA DE LA TIENDA (cada dueño paga lo suyo) ──────
+    // Antes había UNA sola clave global (app_settings.dashscope_api_key): al
+    // abrir Guardian a otros dueños, sus consultas de IA las pagaba el dueño de
+    // la plataforma, sin techo ni forma de medirlo (auditoría 2026-08-13).
+    // Ahora cada tienda guarda la suya en store_ai_config.
+    let apiKey = "";
+    let claveDe: "tienda" | "plataforma" = "tienda";
+    if (storeId) {
+      const { data: storeKey } = await sb
+        .from("store_ai_config")
+        .select("api_key")
+        .eq("store_id", storeId)
         .maybeSingle();
-      apiKey = setting?.value || "";
+      apiKey = storeKey?.api_key || "";
+    }
+
+    // Fallback a la clave de la PLATAFORMA solo para el admin de plataforma
+    // (sus propias tiendas, mientras migra). Para cualquier otro dueño NO hay
+    // fallback: el gasto ajeno no puede caer en la cuenta de otro en silencio.
+    if (!apiKey) {
+      const { data: esAdmin } = await sb
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", authUser.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (esAdmin) {
+        claveDe = "plataforma";
+        apiKey = Deno.env.get("DASHSCOPE_API_KEY") || "";
+        if (!apiKey) {
+          const { data: setting } = await sb
+            .from("app_settings")
+            .select("value")
+            .eq("key", "dashscope_api_key")
+            .maybeSingle();
+          apiKey = setting?.value || "";
+        }
+      }
     }
 
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ ok: false, error: "DASHSCOPE_API_KEY not configured. Set it in app_settings or as an Edge Function secret." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        JSON.stringify({
+          ok: false,
+          error: "Esta tienda todavía no tiene su clave de IA. Configurala en Admin → Clave de IA (cada tienda usa —y paga— la suya).",
+          code: "sin_clave_ia",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+    console.log(`[ai-order-assistant] usando clave de ${claveDe}`, { storeId: storeId || null, action });
 
     const systemPrompt = SYSTEM_PROMPTS[action];
     if (!systemPrompt) {

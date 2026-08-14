@@ -58,11 +58,13 @@ export default function AdminTab() {
   const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
-  // AI key state (sigue siendo global, no por tienda)
+  // Clave de IA POR TIENDA (auditoría 2026-08-13: antes era UNA global y las
+  // consultas de los dueños invitados las pagaba el dueño de la plataforma).
   const [aiKey, setAiKey] = useState('');
-  const [aiKeySaved, setAiKeySaved] = useState('');
+  const [aiKeyConfigurada, setAiKeyConfigurada] = useState(false);
   const [showAiKey, setShowAiKey] = useState(false);
   const [savingAiKey, setSavingAiKey] = useState(false);
+  const [aiSoportado, setAiSoportado] = useState(true);
   const [testingAi, setTestingAi] = useState(false);
   const [aiTestResult, setAiTestResult] = useState<'ok' | 'fail' | null>(null);
 
@@ -70,8 +72,8 @@ export default function AdminTab() {
     if (!isManagerOfActive) return;
     loadData();
     loadFailedSyncs();
-    if (isAdmin) loadAiKey(); // clave IA = config global, solo admin de plataforma
-  }, [isManagerOfActive, isAdmin, activeStoreId]);
+    if (isOwnerOfActive) loadStoreAiStatus(); // la clave de IA es del DUEÑO de la tienda
+  }, [isManagerOfActive, isOwnerOfActive, activeStoreId]);
 
 
   async function loadFailedSyncs() {
@@ -95,36 +97,43 @@ export default function AdminTab() {
   //  reemplazados por StoreCredentialsPanel multi-tenant.)
 
 
-  async function loadAiKey() {
-    const { data } = await supabase
-      .from('app_settings')
-      .select('value')
-      .eq('key', 'dashscope_api_key')
-      .maybeSingle();
-    if (data) {
-      setAiKey(data.value);
-      setAiKeySaved(data.value);
+  // La clave NUNCA baja al cliente: solo se pregunta si está configurada.
+  async function loadStoreAiStatus() {
+    if (!activeStoreId) { setAiKeyConfigurada(false); return; }
+    type Res = { data: boolean | null; error: { message: string; code?: string } | null };
+    const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<Res>)(
+      'get_store_ai_status',
+      { p_store_id: activeStoreId },
+    );
+    if (error) {
+      if (isRpcMissing(error)) setAiSoportado(false);
+      return;
     }
+    setAiSoportado(true);
+    setAiKeyConfigurada(Boolean(data));
+    setAiKey('');
   }
 
   async function saveAiKey() {
+    if (!activeStoreId) return;
     if (!aiKey.trim()) { toast.error('La clave no puede estar vacía'); return; }
     setSavingAiKey(true);
-    try {
-      if (aiKeySaved) {
-        const { error } = await supabase.from('app_settings').update({ value: aiKey.trim() }).eq('key', 'dashscope_api_key');
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('app_settings').insert({ key: 'dashscope_api_key', value: aiKey.trim() });
-        if (error) throw error;
-      }
-      setAiKeySaved(aiKey.trim());
-      toast.success('Clave AI guardada');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Error al guardar');
-    } finally {
-      setSavingAiKey(false);
+    type Res = { error: { message: string; code?: string } | null };
+    const { error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<Res>)(
+      'upsert_store_ai_key',
+      { p_store_id: activeStoreId, p_api_key: aiKey.trim() },
+    );
+    setSavingAiKey(false);
+    if (error) {
+      toast.error(isRpcMissing(error) ? 'Falta aplicar el SQL de la clave de IA por tienda' : 'No se pudo guardar', {
+        description: isRpcMissing(error) ? undefined : error.message,
+      });
+      return;
     }
+    setAiKey('');
+    setAiKeyConfigurada(true);
+    setAiTestResult(null);
+    toast.success('Clave de IA guardada para esta tienda');
   }
 
   async function testAiConnection() {
@@ -137,6 +146,9 @@ export default function AdminTab() {
         body: {
           action: 'priority_reason',
           context: 'Pedido de prueba: cliente nuevo, valor 50000, 2 dias sin movimiento.',
+          // Con store_id la prueba usa la clave de ESTA tienda (la que van a
+          // gastar sus asesoras), no la de la plataforma.
+          store_id: activeStoreId ?? undefined,
         },
       });
       const payload = data as { ok?: boolean; error?: string } | null;
@@ -352,8 +364,10 @@ export default function AdminTab() {
             </motion.div>
           )}
 
-          {/* AI API Key — config GLOBAL (app_settings), solo admin de plataforma */}
-          {isAdmin && (
+          {/* Clave de IA POR TIENDA: cada dueño pone la suya y paga su consumo.
+              Antes era una sola clave global y el gasto de todas las tiendas caía
+              en la cuenta del dueño de la plataforma (auditoría 2026-08-13). */}
+          {isOwnerOfActive && aiSoportado && (
           <motion.div {...fadeUp} transition={{ ...fadeUp.transition, delay: 0.02 }} className="md:col-span-2">
           <TiltCard className="bg-card/40 border border-border rounded-2xl shadow-card3d">
             <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
@@ -361,10 +375,13 @@ export default function AdminTab() {
                 <Sparkles size={15} />
               </span>
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-foreground">Clave API de IA (DashScope)</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Habilita guiones de llamada, sugerencias y perfiles de cliente con IA</p>
+                <h3 className="text-sm font-semibold text-foreground">Clave de IA · {activeStore?.name ?? 'esta tienda'}</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Habilita el botón <strong>Perfil IA del cliente</strong>. Es opcional y se paga por uso:
+                  esta clave es tuya y se cobra a tu cuenta de DashScope.
+                </p>
               </div>
-              {aiKeySaved && (
+              {aiKeyConfigurada && (
                 <span className="ml-auto flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-success/14 border border-success/30 text-success">
                   CONFIGURADA
                 </span>
@@ -372,11 +389,14 @@ export default function AdminTab() {
             </div>
             <div className="px-5 py-4 flex gap-3 items-center">
               <div className="relative flex-1">
+                <label className="sr-only" htmlFor="ai-key">Clave de IA de esta tienda</label>
                 <input
+                  id="ai-key"
                   type={showAiKey ? 'text' : 'password'}
                   value={aiKey}
+                  autoComplete="off"
                   onChange={e => setAiKey(e.target.value)}
-                  placeholder="Pega aquí tu clave de DashScope (sk-...)"
+                  placeholder={aiKeyConfigurada ? '•••••• (pegá una nueva para cambiarla)' : 'Pegá tu clave de DashScope (sk-...)'}
                   className="w-full h-10 rounded-xl border border-border bg-card/40 px-3 pr-10 text-sm font-mono tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/30"
                 />
                 <button type="button" onClick={() => setShowAiKey(!showAiKey)}
@@ -384,24 +404,30 @@ export default function AdminTab() {
                   {showAiKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
-              <button onClick={saveAiKey} disabled={savingAiKey || aiKey === aiKeySaved}
+              <button onClick={saveAiKey} disabled={savingAiKey || !aiKey.trim()}
                 className="btn-accent-3d h-10 px-4 rounded-xl text-sm font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                 {savingAiKey ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Guardar
               </button>
             </div>
-            {aiKeySaved && (
-              <div className="px-5 pb-4 flex items-center justify-between">
-                <span className="text-xs text-success flex items-center gap-1">
-                  <CheckCircle2 size={12} /> Clave IA configurada
-                </span>
+            <div className="px-5 pb-4 flex items-center justify-between gap-3">
+              <span className="text-xs flex items-center gap-1 min-w-0">
+                {aiKeyConfigurada ? (
+                  <><CheckCircle2 size={12} className="text-success flex-shrink-0" /> <span className="text-success">Clave configurada — la IA la cobra a esta tienda</span></>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Sin clave: el botón de IA avisa que falta configurarla. Guardian funciona igual sin esto.
+                  </span>
+                )}
+              </span>
+              {aiKeyConfigurada && (
                 <button onClick={testAiConnection} disabled={testingAi}
-                  className="h-8 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  className="h-8 px-3 rounded-xl border border-border bg-card/40 text-muted-foreground hover:text-foreground hover:border-border-strong text-xs font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
                   {testingAi ? <Loader2 size={12} className="animate-spin" /> : aiTestResult === 'ok' ? <Sparkles size={12} className="text-ai" /> : aiTestResult === 'fail' ? <WifiOff size={12} className="text-danger" /> : <Sparkles size={12} />}
                   {testingAi ? 'Probando…' : aiTestResult === 'ok' ? 'IA OK' : aiTestResult === 'fail' ? 'Falló' : 'Probar IA'}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </TiltCard>
           </motion.div>
           )}
