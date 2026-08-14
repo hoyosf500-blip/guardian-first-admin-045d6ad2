@@ -7,6 +7,7 @@ import DropiProductSearch from '@/components/DropiProductSearch';
 import { useShopifyManualMarks } from '@/hooks/useShopifyManualMarks';
 import { useShopifyPushAttempts } from '@/hooks/useShopifyPushAttempts';
 import { useDuplicatePhones } from '@/hooks/useDuplicatePhones';
+import { useAutoPushHealth } from '@/hooks/useAutoPushHealth';
 import { dupMatchesFor, isBlockedByDuplicate, uniquePhones } from '@/lib/duplicatePhones';
 import { matchesQuery } from '@/lib/textSearch';
 import { supabase } from '@/integrations/supabase/client';
@@ -99,6 +100,9 @@ function dayLabel(date: string, today?: string): string {
 export default function ShopifyPendingPanel() {
   const { activeStoreId } = useStore();
   const { data, isLoading, isFetching, refetch } = useShopifyPending(activeStoreId);
+  // Salud del robot que sube solo. Sin esto, un robot trabado se ve igual que
+  // uno sano: la cola llena y cero explicación.
+  const { data: robot } = useAutoPushHealth(activeStoreId);
   const { data: vmData, refetch: vmRefetch } = useShopifyValueMismatches(activeStoreId);
   const { confirm: confirmPush, linkProduct } = usePushToDropi(activeStoreId);
   const { markEntered } = useShopifyManualMarks(activeStoreId);
@@ -659,6 +663,43 @@ export default function ShopifyPendingPanel() {
         hacia abajo. La definición se conserva por si se quiere en una vista de
         dueño; no está borrada, está desconectada. */}
     {dupBanner}
+    {/* EL ROBOT SE TRABÓ. Va arriba de todo y en rojo porque no es un pendiente
+        más: son pedidos que el robot YA intentó subir y no pudo, así que la
+        cola no se va a vaciar sola por más que espere.
+        Medido el 2026-08-13: 386 corridas bloqueadas seguidas desde el 6-ago —
+        8 días — y el motivo vivía solo en sync_logs, que ninguna pantalla abría. */}
+    {robot?.bloqueado && (
+      <div
+        role="alert"
+        className="mb-3 flex flex-wrap items-start gap-3 rounded-2xl border border-danger/40 bg-danger/10 px-4 pl-5 py-3 shadow-card3d relative"
+      >
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+        <span className="w-9 h-9 rounded-xl bg-danger/15 border border-danger/30 text-danger flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Ban size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-danger">
+            El robot no pudo subir {robot.cuantos} {robot.cuantos === 1 ? 'pedido' : 'pedidos'} a Dropi
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Reintenta cada 15 minutos y le vuelve a pasar lo mismo: estos no se van a
+            subir solos. Hay que subirlos a mano acá abajo, o resolver el motivo.
+          </p>
+          {robot.motivos.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5">
+              {robot.motivos.map((m, i) => (
+                <li key={i} className="text-xs text-danger/90 leading-snug">· {m}</li>
+              ))}
+            </ul>
+          )}
+          {robot.cuando && (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Último intento: {robot.cuando.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+            </p>
+          )}
+        </div>
+      </div>
+    )}
     {/* No `initial` animation: el panel se re-monta cada refetch (cuando
         `data` flipa momentáneamente, o cuando el guard `!data || configured`
         cambia), y `motion.div initial=opacity:0,y:8` re-disparaba la animación
