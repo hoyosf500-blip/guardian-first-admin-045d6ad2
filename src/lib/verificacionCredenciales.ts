@@ -64,18 +64,22 @@ function esTransitorio(httpStatus?: number): boolean {
   return httpStatus === 429 || httpStatus === 502 || httpStatus === 503 || httpStatus === 504;
 }
 
-/** Dropi corta por IP el endpoint de integraciones: a quien no está en su lista
- *  blanca le contesta 401 `{"isSuccess":false,"message":"Access denied",...,"ip":"x"}`
- *  ANTES de mirar la clave. Las edge functions salen por IPs de AWS que rotan y
- *  no están whitelisteadas, así que ese 401 llega SIEMPRE — con clave buena y
- *  con clave mala por igual. Comprobado el 2026-08-13 contra la tienda de
- *  Colombia en producción, cuya clave sincroniza pedidos cada 15 minutos: el
- *  chequeo la declaró inválida (`ip 3.90.203.96`), mientras login y billetera,
- *  que NO pasan por /integrations/*, dieron verde.
+/** Dropi rechaza la consulta ANTES de mirar la clave cuando la petición no le
+ *  gusta por otra razón (típicamente le falta el header `Origin`), y contesta
+ *  401 `{"isSuccess":false,"message":"Access denied",...,"ip":"x"}`. Como el
+ *  cuerpo incluye la IP de quien llamó, parece un bloqueo por dirección —
+ *  **no lo es**, y esa confusión ya costó un diagnóstico equivocado.
  *
- *  O sea que la respuesta no distingue nada: no aporta información. Tratarla
- *  como veredicto es el error contra el que avisa el comentario de arriba —
- *  mandaba a cada dueño nuevo a cambiar una clave que estaba perfecta. */
+ *  Lo medido el 2026-08-13 con la MISMA api_key de la tienda de Colombia:
+ *  `dropi-snapshot`, que sí manda `Origin`, trajo 2.450 pedidos con HTTP 200;
+ *  `dropi-verify-credentials`, que no lo mandaba, dio 401 "Access denied". Por
+ *  eso el asistente le decía "tu API Key no es válida" a todo dueño nuevo con
+ *  la clave perfecta. El header ya se agregó del lado del servidor.
+ *
+ *  Esto queda como red de seguridad: cuando Dropi contesta así, la respuesta NO
+ *  distingue una clave buena de una mala, así que no se puede dictar veredicto.
+ *  Tratarla como falla es exactamente el error del que avisa el comentario de
+ *  arriba: hace que alguien cambie una clave que funcionaba. */
 function esBloqueoDeIp(mensaje?: string): boolean {
   const m = mensaje ?? '';
   return /"ip"\s*:/.test(m) && /access denied/i.test(m);
@@ -111,7 +115,7 @@ function leerApiKey(c: ChequeoCrudo): ChequeoLegible {
       ...base,
       bloqueante: false,
       estado: 'aviso',
-      detalle: 'No pudimos comprobar tu API Key desde acá: Dropi solo acepta consultas desde direcciones autorizadas y bloqueó la nuestra. Esto NO quiere decir que tu clave esté mal.',
+      detalle: 'No pudimos comprobar tu API Key: Dropi rechazó la consulta sin llegar a revisarla. Esto NO quiere decir que tu clave esté mal.',
       comoArreglar: 'Seguí adelante. Si en unos minutos tus pedidos no aparecen en Confirmar, ahí sí revisá la clave.',
     };
   }

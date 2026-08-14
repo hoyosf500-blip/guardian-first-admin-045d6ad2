@@ -92,12 +92,15 @@ describe('verificación de credenciales — login (el caso de Colombia)', () => 
     expect(estaCompleto(r)).toBe(false);
   });
 
-  it('el bloqueo por IP de Dropi NO se reporta como clave inválida', () => {
+  it('el "Access denied" de Dropi NO se reporta como clave inválida', () => {
     // Cuerpo LITERAL capturado el 2026-08-13 llamando a la verificación con la
     // clave BUENA de la tienda de Colombia, la que sincroniza cada 15 minutos.
-    // Dropi corta por IP antes de mirar la clave, así que este 401 les llega
-    // igual a todos. Si se cuenta como falla bloqueante, ningún dueño nuevo
-    // termina el asistente y encima le decimos que cambie una clave sana.
+    // Dropi corta la consulta antes de mirar la clave (a la petición le faltaba
+    // el header Origin) y devuelve la IP del que llamó, lo que hace parecer un
+    // bloqueo por dirección: NO lo es — `dropi-snapshot`, con la misma clave y
+    // el mismo endpoint pero con Origin, trajo 2.450 pedidos.
+    // Si esto cuenta como falla bloqueante, ningún dueño nuevo termina el
+    // asistente y encima le decimos que cambie una clave sana.
     const BLOQUEO_IP = '{"isSuccess":false,"message":"Access denied","status":401,"ip":"3.90.203.96"}';
     const r = interpretarChequeos([
       { clave: 'api_key', ok: false, httpStatus: 401, mensaje: BLOQUEO_IP },
@@ -107,6 +110,7 @@ describe('verificación de credenciales — login (el caso de Colombia)', () => 
     expect(r[0].estado).toBe('aviso');
     expect(r[0].detalle).not.toMatch(/no es válida/);
     expect(r[0].detalle).toMatch(/NO quiere decir que tu clave esté mal/);
+    expect(r[0].comoArreglar).toMatch(/Seguí adelante/);
     // Lo esencial: puede seguir…
     expect(puedeContinuar(r)).toBe(true);
     // …pero no se le miente diciendo que está todo listo.

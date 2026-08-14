@@ -47,8 +47,19 @@ function hoyISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** 1. ¿Podemos LEER SUS PEDIDOS? Lo único verdaderamente bloqueante. */
-async function probarApiKey(base: string, apiKey: string): Promise<Chequeo> {
+/** 1. ¿Podemos LEER SUS PEDIDOS? Lo único verdaderamente bloqueante.
+ *
+ *  ⚠️ El header `Origin` NO es opcional. Dropi contesta 401 `{"message":"Access
+ *  denied", ..., "ip":"..."}` sin llegar a mirar la clave cuando falta, y como
+ *  el cuerpo trae la IP parece un bloqueo por dirección — no lo es.
+ *
+ *  Medido el 2026-08-13 con la MISMA api_key de la tienda de Colombia:
+ *  `dropi-snapshot` (que sí manda Origin) trajo 2.450 pedidos con HTTP 200,
+ *  mientras esta función daba 401. Era la única diferencia entre las dos
+ *  llamadas. `dropi-sync`, `dropi-health` y `dropi-snapshot` ya lo mandaban;
+ *  esta se quedó sin él y por eso el asistente le decía "tu API Key no es
+ *  válida" a TODO dueño nuevo, con la clave buena. */
+async function probarApiKey(base: string, apiKey: string, origin: string): Promise<Chequeo> {
   if (!apiKey) {
     return { clave: "api_key", ok: false, mensaje: "No se cargó la API Key." };
   }
@@ -57,7 +68,11 @@ async function probarApiKey(base: string, apiKey: string): Promise<Chequeo> {
     `&date_from=${hoy}&date_to=${hoy}&filter_date_by=${encodeURIComponent("FECHA DE CREADO")}`;
   try {
     const res = await fetch(url, {
-      headers: { "Accept": "application/json", "dropi-integration-key": apiKey },
+      headers: {
+        "Accept": "application/json",
+        "dropi-integration-key": apiKey,
+        ...(origin ? { Origin: origin } : {}),
+      },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.status !== 200) {
@@ -212,7 +227,7 @@ Deno.serve(async (req: Request) => {
     } catch { /* sin columnas de login */ }
 
     const chequeos: Chequeo[] = [];
-    chequeos.push(await probarApiKey(cfg.base, cfg.apiKey));
+    chequeos.push(await probarApiKey(cfg.base, cfg.apiKey, cfg.storeUrl));
 
     const { chequeo: chLogin, token } = await probarLogin(
       sb,

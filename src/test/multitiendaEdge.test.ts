@@ -124,4 +124,27 @@ describe('multi-tienda en las edge functions (auditoría 2026-08-13)', () => {
     // En éxito se loguea solo el largo; el cuerpo completo queda para los fallos.
     expect(src).toMatch(/\[ok, \$\{text\.length\} chars\]/);
   });
+
+  it('toda llamada a /integrations/orders/myorders manda el header Origin', () => {
+    // Sin Origin, Dropi contesta 401 {"message":"Access denied", ..., "ip":"x"}
+    // ANTES de mirar la api_key. Como el cuerpo trae la IP, parece un bloqueo
+    // por dirección y se diagnostica mal. Medido el 2026-08-13: con la MISMA
+    // clave de Colombia, dropi-snapshot (con Origin) trajo 2.450 pedidos y
+    // dropi-verify-credentials (sin Origin) dio 401 — y por eso el asistente le
+    // decía "tu API Key no es válida" a cada dueño nuevo que tenía la correcta.
+    // Se exige `fetch(` además del endpoint: `_shared/dropiOrderMapper.ts` solo
+    // NOMBRA la URL en su comentario de cabecera y no llama a nadie — marcarlo
+    // sería el mismo falso positivo de siempre, señalar al archivo mejor
+    // documentado. Y `Origin:` con dos puntos, para no contar la palabra suelta
+    // dentro de un comentario.
+    const sinOrigin = archivosTs(RAIZ)
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8');
+        return src.includes('/integrations/orders/myorders')
+          && src.includes('fetch(')
+          && !/Origin["']?\s*:/.test(src);
+      })
+      .map((f) => f.replace(/\\/g, '/'));
+    expect(sinOrigin).toEqual([]);
+  });
 });
