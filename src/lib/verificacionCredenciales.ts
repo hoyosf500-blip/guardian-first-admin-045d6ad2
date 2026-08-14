@@ -64,6 +64,23 @@ function esTransitorio(httpStatus?: number): boolean {
   return httpStatus === 429 || httpStatus === 502 || httpStatus === 503 || httpStatus === 504;
 }
 
+/** Dropi corta por IP el endpoint de integraciones: a quien no está en su lista
+ *  blanca le contesta 401 `{"isSuccess":false,"message":"Access denied",...,"ip":"x"}`
+ *  ANTES de mirar la clave. Las edge functions salen por IPs de AWS que rotan y
+ *  no están whitelisteadas, así que ese 401 llega SIEMPRE — con clave buena y
+ *  con clave mala por igual. Comprobado el 2026-08-13 contra la tienda de
+ *  Colombia en producción, cuya clave sincroniza pedidos cada 15 minutos: el
+ *  chequeo la declaró inválida (`ip 3.90.203.96`), mientras login y billetera,
+ *  que NO pasan por /integrations/*, dieron verde.
+ *
+ *  O sea que la respuesta no distingue nada: no aporta información. Tratarla
+ *  como veredicto es el error contra el que avisa el comentario de arriba —
+ *  mandaba a cada dueño nuevo a cambiar una clave que estaba perfecta. */
+function esBloqueoDeIp(mensaje?: string): boolean {
+  const m = mensaje ?? '';
+  return /"ip"\s*:/.test(m) && /access denied/i.test(m);
+}
+
 function leerApiKey(c: ChequeoCrudo): ChequeoLegible {
   const base = { clave: 'api_key' as const, titulo: TITULOS.api_key, bloqueante: true };
   if (c.ok) {
@@ -82,6 +99,20 @@ function leerApiKey(c: ChequeoCrudo): ChequeoLegible {
       estado: 'aviso',
       detalle: `Dropi está respondiendo lento o frenó las consultas (código ${c.httpStatus}). Esto no quiere decir que tu clave esté mal.`,
       comoArreglar: 'Esperá unos minutos y volvé a verificar. No cambies la clave por esto.',
+    };
+  }
+  if (esBloqueoDeIp(c.mensaje)) {
+    // NO bloqueante y NO 'falla': no sabemos si la clave sirve. Decir "está
+    // mal" sería inventar, y dejar encerrado a alguien cuya clave anda bien.
+    // Quien sí puede responderlo es la realidad: si en unos minutos entran los
+    // pedidos, la clave servía. El cartel de frescura del CRM ya avisa cuando
+    // el sync corre y trae cero.
+    return {
+      ...base,
+      bloqueante: false,
+      estado: 'aviso',
+      detalle: 'No pudimos comprobar tu API Key desde acá: Dropi solo acepta consultas desde direcciones autorizadas y bloqueó la nuestra. Esto NO quiere decir que tu clave esté mal.',
+      comoArreglar: 'Seguí adelante. Si en unos minutos tus pedidos no aparecen en Confirmar, ahí sí revisá la clave.',
     };
   }
   if (c.httpStatus === 401 || c.httpStatus === 403) {
@@ -131,17 +162,28 @@ function leerLogin(c: ChequeoCrudo): ChequeoLegible {
       comoArreglar: 'Esperá unos minutos y volvé a verificar.',
     };
   }
-  // El caso que más veces vamos a ver en la vida real.
-  const dosPasos = /2fa|dos pasos|verificaci/i.test(c.mensaje ?? '');
+  // El caso que más veces vamos a ver en la vida real: se equivocaron al copiar
+  // la clave. NO se puede afirmar "tenés 2FA": lo verificado en vivo el
+  // 2026-08-13 es que Dropi contesta literalmente "Usuario o contraseña
+  // incorrecta" y que somos NOSOTROS quienes le pegamos la coletilla del 2FA
+  // en `dropiSessionLogin`. Buscar /2fa|verificaci/ en ese texto matcheaba
+  // SIEMPRE — la rama "rechazó el correo o la clave" era código muerto y a todo
+  // el mundo se le decía que apagara la verificación en dos pasos, o sea que
+  // debilitara la seguridad de su cuenta, por un error de tipeo.
+  //
+  // Solo Dropi puede confirmar el 2FA, y no lo hace. Así que se nombra la causa
+  // probable primero y el 2FA queda como la segunda posibilidad.
+  const dropiDijo = (c.mensaje ?? '').replace(/Si la cuenta tiene[\s\S]*$/i, '');
+  const dosPasosDeVerdad = /2fa|dos pasos|two.?factor|doble factor/i.test(dropiDijo);
   return {
     ...base,
     estado: 'falla',
-    detalle: dosPasos
+    detalle: dosPasosDeVerdad
       ? 'Tu cuenta de Dropi tiene verificación en dos pasos, y eso bloquea el acceso automático.'
-      : 'Dropi rechazó el correo o la clave.',
-    comoArreglar: dosPasos
+      : 'Dropi no aceptó el correo o la clave.',
+    comoArreglar: dosPasosDeVerdad
       ? 'Desactivá la verificación en dos pasos en Dropi, o tu billetera va a quedar desactualizada.'
-      : 'Revisá que sean exactamente los mismos con los que entrás a la página de Dropi.',
+      : 'Revisá que sean exactamente los mismos con los que entrás a la página de Dropi. Si estás seguro de que están bien, puede ser que la cuenta tenga verificación en dos pasos: desactivala.',
   };
 }
 

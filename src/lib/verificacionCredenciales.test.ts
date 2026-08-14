@@ -92,6 +92,37 @@ describe('verificación de credenciales — login (el caso de Colombia)', () => 
     expect(estaCompleto(r)).toBe(false);
   });
 
+  it('el bloqueo por IP de Dropi NO se reporta como clave inválida', () => {
+    // Cuerpo LITERAL capturado el 2026-08-13 llamando a la verificación con la
+    // clave BUENA de la tienda de Colombia, la que sincroniza cada 15 minutos.
+    // Dropi corta por IP antes de mirar la clave, así que este 401 les llega
+    // igual a todos. Si se cuenta como falla bloqueante, ningún dueño nuevo
+    // termina el asistente y encima le decimos que cambie una clave sana.
+    const BLOQUEO_IP = '{"isSuccess":false,"message":"Access denied","status":401,"ip":"3.90.203.96"}';
+    const r = interpretarChequeos([
+      { clave: 'api_key', ok: false, httpStatus: 401, mensaje: BLOQUEO_IP },
+      { clave: 'login', ok: true },
+      { clave: 'billetera', ok: true, muestra: 6526 },
+    ]);
+    expect(r[0].estado).toBe('aviso');
+    expect(r[0].detalle).not.toMatch(/no es válida/);
+    expect(r[0].detalle).toMatch(/NO quiere decir que tu clave esté mal/);
+    // Lo esencial: puede seguir…
+    expect(puedeContinuar(r)).toBe(true);
+    // …pero no se le miente diciendo que está todo listo.
+    expect(estaCompleto(r)).toBe(false);
+  });
+
+  it('una API Key de verdad inválida (sin bloqueo de IP) sí se reporta como falla', () => {
+    const r = interpretarChequeos([
+      { clave: 'api_key', ok: false, httpStatus: 401, mensaje: 'invalid token' },
+      { clave: 'login', ok: true },
+      { clave: 'billetera', ok: true },
+    ]);
+    expect(r[0].estado).toBe('falla');
+    expect(puedeContinuar(r)).toBe(false);
+  });
+
   it('detecta la verificación en dos pasos y dice qué hacer', () => {
     const r = interpretarChequeos([
       OK_API,
@@ -109,8 +140,32 @@ describe('verificación de credenciales — login (el caso de Colombia)', () => 
       { clave: 'login', ok: false, httpStatus: 401, mensaje: 'Credenciales incorrectas' },
       { clave: 'billetera', ok: false, omitido: true },
     ]);
-    expect(r[1].detalle).toMatch(/rechazó el correo o la clave/);
-    expect(r[1].comoArreglar).not.toMatch(/dos pasos/);
+    expect(r[1].detalle).toMatch(/correo o la clave/);
+    expect(r[1].detalle).not.toMatch(/tiene verificación en dos pasos/);
+  });
+
+  it('el MENSAJE REAL de Dropi ante una clave mala no acusa de 2FA', () => {
+    // Este es el texto exacto capturado en producción el 2026-08-13 con una
+    // tienda de prueba. Importa que sea LITERAL: la prueba de arriba usaba un
+    // mensaje inventado ("Credenciales incorrectas"), pasaba en verde, y aun
+    // así en la vida real TODOS los logins fallidos se reportaban como 2FA.
+    // La coletilla del 2FA la agrega `dropiSessionLogin`, no Dropi, así que
+    // buscarla en el mensaje completo matcheaba siempre.
+    const REAL =
+      'El login automático de Dropi falló [200]: Usuario o contraseña incorrecta. ' +
+      'Si la cuenta tiene verificación en dos pasos (2FA), Dropi bloquea este login — ' +
+      'desactivá el 2FA de esa cuenta o pegá un token';
+    const r = interpretarChequeos([
+      OK_API,
+      { clave: 'login', ok: false, httpStatus: 200, mensaje: REAL },
+      { clave: 'billetera', ok: false, omitido: true },
+    ]);
+    expect(r[1].estado).toBe('falla');
+    // No puede AFIRMAR que el dueño tiene 2FA: mandarlo a apagar la
+    // verificación en dos pasos por un error de tipeo es pedirle que debilite
+    // la seguridad de su cuenta de Dropi para nada.
+    expect(r[1].detalle).not.toMatch(/tiene verificación en dos pasos/);
+    expect(r[1].detalle).toMatch(/correo o la clave/);
   });
 
   it('el login roto NO impide entrar al CRM', () => {

@@ -285,11 +285,27 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
     // siempre sus ~87 días de historia sin ningún aviso.
     dispararCargaInicial(activeStore.id);
 
-    const { error: loginErr } = await rpc('upsert_store_dropi_login', {
-      p_store_id: activeStore.id,
-      p_login_email: vals.dropi_login_email ?? '',
-      p_login_password: vals.dropi_login_password ?? '',
-    });
+    // El correo y la clave son un PAR: uno solo no sirve para entrar. Y el
+    // upsert desplegado NO preserva-en-blanco simétricamente — verificado en
+    // vivo el 2026-08-13 contra una tienda de prueba: mandar los dos vacíos
+    // BORRA el correo y CONSERVA la clave, dejando la tienda en un estado
+    // medio (has_login_password sí, login_email no) donde el auto-login no
+    // arranca y la billetera se congela sin avisar. Es la misma muerte
+    // silenciosa que Colombia arrastró dos meses.
+    //
+    // El disparador era trivial: "Corregir datos" blanquea los secretos a
+    // propósito, así que quien volvía solo a arreglar la URL perdía el acceso.
+    // Regla: en blanco = "no toqué esto", no se llama la RPC.
+    const correoNuevo = (vals.dropi_login_email ?? '').trim();
+    const claveNueva = vals.dropi_login_password ?? '';
+    const tocoElAcceso = Boolean(correoNuevo || claveNueva);
+    const { error: loginErr } = tocoElAcceso
+      ? await rpc('upsert_store_dropi_login', {
+          p_store_id: activeStore.id,
+          p_login_email: correoNuevo,
+          p_login_password: claveNueva,
+        })
+      : { error: null };
     if (loginErr) {
       // No abortamos: lo esencial (API Key) ya quedó. La verificación lo va a
       // mostrar en rojo con su explicación, que es mejor que un toast suelto.

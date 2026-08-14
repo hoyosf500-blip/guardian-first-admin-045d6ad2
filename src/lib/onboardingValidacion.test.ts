@@ -108,3 +108,54 @@ describe('validarSetup — habilitación del paso 2 completo', () => {
     expect(hayErrores(validarSetup({ ...completo, brand_logo_url: '' }))).toBe(false);
   });
 });
+
+describe('volver a editar: el acceso a Dropi viaja en PAR o no viaja', () => {
+  // "Corregir datos" blanquea los secretos a propósito. Verificado en vivo el
+  // 2026-08-13 con una tienda de prueba: guardar el par vacío BORRABA el correo
+  // y CONSERVABA la clave. La tienda quedaba con medio acceso, el auto-login no
+  // arrancaba y la billetera se congelaba sin un solo aviso — la misma muerte
+  // silenciosa que Colombia arrastró dos meses. Y el disparador era arreglar
+  // una coma en la URL.
+  const yaGuardado = { hasApiKey: true, hasLogin: true };
+  const soloLoVisible = {
+    name: 'Mi Tienda',
+    dropi_api_key: '',
+    dropi_login_email: '',
+    dropi_login_password: '',
+    dropi_store_url: 'https://mitienda.com/',
+  };
+
+  it('los dos en blanco = "no toqué el acceso": deja guardar', () => {
+    expect(hayErrores(validarSetup(soloLoVisible, yaGuardado))).toBe(false);
+  });
+
+  it('solo el correo NO alcanza: pide también la clave', () => {
+    const e = validarSetup(
+      { ...soloLoVisible, dropi_login_email: 'yo@mitienda.com' },
+      yaGuardado,
+    );
+    expect(e.dropi_login_password).toBeTruthy();
+  });
+
+  it('solo la clave NO alcanza: pide también el correo', () => {
+    const e = validarSetup(
+      { ...soloLoVisible, dropi_login_password: 'MiClave123' },
+      yaGuardado,
+    );
+    expect(e.dropi_login_email).toBeTruthy();
+  });
+
+  it('cambiar el par completo se permite', () => {
+    const e = validarSetup(
+      { ...soloLoVisible, dropi_login_email: 'yo@mitienda.com', dropi_login_password: 'MiClave123' },
+      yaGuardado,
+    );
+    expect(hayErrores(e)).toBe(false);
+  });
+
+  it('en un alta NUEVA los dos siguen siendo obligatorios', () => {
+    const e = validarSetup(soloLoVisible, {});
+    expect(e.dropi_login_email).toBeTruthy();
+    expect(e.dropi_login_password).toBeTruthy();
+  });
+});

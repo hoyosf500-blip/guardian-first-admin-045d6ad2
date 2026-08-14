@@ -49,7 +49,10 @@ export default function AdminTab() {
   // AdminPage): un supervisor DEBE poder entrar. Solo la config GLOBAL (clave IA)
   // queda reservada al admin de plataforma.
   const { isAdmin } = useAuth();
-  const { activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
+  // `activeStore` se usa en el título del panel de IA. Faltaba acá y la pantalla
+  // reventaba entera con "activeStore is not defined": el `?.` NO protege contra
+  // una variable que no existe (eso es ReferenceError, no undefined).
+  const { activeStore, activeStoreId, isManagerOfActive, isOwnerOfActive } = useStore();
   const [operators, setOperators] = useState<Profile[]>([]);
   // Miembro con una acción en vuelo (cambiar rol / quitar) — deshabilita sus controles.
   const [memberBusy, setMemberBusy] = useState<string | null>(null);

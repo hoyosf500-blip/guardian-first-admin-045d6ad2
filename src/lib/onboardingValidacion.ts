@@ -130,10 +130,17 @@ export function validarSetup(vals: ValoresSetup, guardado: CredencialesGuardadas
   poner('name', validarNombreTienda(vals.name ?? ''));
   const apiKeyVal = vals.dropi_api_key ?? '';
   if (!(guardado.hasApiKey && apiKeyVal.trim() === '')) poner('dropi_api_key', validarApiKey(apiKeyVal));
+  // El correo y la clave viajan JUNTOS o no viajan. Dejar los dos en blanco es
+  // "no toqué el acceso" y conserva lo guardado; llenar uno solo dejaría a la
+  // tienda con medio acceso (clave sin correo), que es indistinguible de no
+  // tener acceso: el auto-login no arranca y la billetera se congela callada.
   const emailVal = vals.dropi_login_email ?? '';
-  if (!(guardado.hasLogin && emailVal.trim() === '')) poner('dropi_login_email', validarEmail(emailVal));
   const passVal = vals.dropi_login_password ?? '';
-  if (!(guardado.hasLogin && passVal.trim() === '')) poner('dropi_login_password', validarPassword(passVal));
+  const conservaLogin = Boolean(guardado.hasLogin) && emailVal.trim() === '' && passVal.trim() === '';
+  if (!conservaLogin) {
+    poner('dropi_login_email', validarEmail(emailVal));
+    poner('dropi_login_password', validarPassword(passVal));
+  }
   poner('dropi_store_url', validarUrl(vals.dropi_store_url ?? '', true, 'la URL de integración de Dropi'));
   poner('brand_logo_url', validarUrl(vals.brand_logo_url ?? '', false, 'el logo'));
 
