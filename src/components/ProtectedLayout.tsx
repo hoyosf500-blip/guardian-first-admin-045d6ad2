@@ -36,15 +36,18 @@ const CFO_ENABLED = import.meta.env.VITE_ENABLE_CFO === 'true';
  *  Devuelve true solo si la tienda quedó creada. Ante cualquier error se
  *  devuelve false y se cae a `CreateStoreScreen`: un fallo no puede dejar a
  *  nadie sin forma de abrir su tienda. */
-async function crearTiendaPendiente(t: TiendaPendiente): Promise<boolean> {
+async function crearTiendaPendiente(t: TiendaPendiente): Promise<{ ok: boolean; motivo?: string }> {
   // Bindeado: guardar `supabase.rpc` suelto pierde `this`, ver memoria del repo.
   type Rpc = (fn: string, p: Record<string, unknown>) => Promise<{ error: { message: string } | null }>;
   const rpc = supabase.rpc.bind(supabase) as unknown as Rpc;
   try {
     const { error } = await rpc('create_my_store', { p_name: t.nombre, p_country_code: t.pais });
-    return !error;
-  } catch {
-    return false;
+    // El motivo se DEVUELVE, no se traga. Sin esto, el dueño nuevo aterrizaba en
+    // "Creá tu tienda" sin una sola pista de por qué su nombre no se usó, que es
+    // el peor momento posible para dejar a alguien adivinando.
+    return error ? { ok: false, motivo: error.message.replace(/^.*Exception: /, '') } : { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -165,10 +168,6 @@ function ProtectedLayoutInner() {
 
   // Latch del wizard de setup. Una vez abierto sigue montado hasta que el dueño
   // lo cierra desde la pantalla de resultado (onDone). SIN esto, al guardar las
-  // credenciales `needsSetup` pasa a false y ProtectedLayout desmontaba el wizard
-  // ANTES de que se viera la verificación de Dropi: el dueño era expulsado al CRM
-  // sin enterarse de si su login quedó bien (y su billetera moría en una hora sin
-  // aviso). Auditoría onboarding 2026-08-13.
   // El asistente de Dropi NO se abre solo. Decisión del dueño (2026-08-13):
   // "que cuando se registren los deje entrar a Guardian y adentro configuremos
   // las APIs". El dueño entra directo y lo llama cuando quiere, desde el botón
@@ -199,14 +198,21 @@ function ProtectedLayoutInner() {
     tiendaIntentada.current = true;
     setCreandoTienda(true);
     void (async () => {
-      const ok = await crearTiendaPendiente(pendiente);
+      const r = await crearTiendaPendiente(pendiente);
       // Se olvida SIEMPRE, salga bien o mal: si falló, el respaldo es la
       // pantalla de crear tienda, y reintentar solo en cada recarga podría
       // crear la tienda dos veces cuando el error fue solo de red al responder.
       olvidarTiendaPendiente();
-      if (ok) {
+      if (r.ok) {
         toast.success(`¡Tu tienda "${pendiente.nombre}" está lista!`);
         await store.refresh();
+      } else if (r.motivo) {
+        // Cae a "Creá tu tienda", pero sabiendo POR QUÉ. Un formulario que
+        // reaparece sin explicación se lee como que la app perdió los datos.
+        toast.error('No pudimos crear tu tienda automáticamente', {
+          description: `${r.motivo} — cargala acá abajo.`,
+          duration: 9000,
+        });
       }
       setCreandoTienda(false);
     })();
