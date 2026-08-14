@@ -160,7 +160,16 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
   const cantidadErrores = Object.keys(errores).length;
 
   type RpcRes = { error: { message: string } | null };
-  const rpcCrudo = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
+  // ⚠️ `.bind(supabase)` NO es opcional acá. Guardar `supabase.rpc` en una
+  // variable y llamarla después DESATA el método de su cliente: adentro
+  // `this` queda undefined y supabase-js revienta con "Cannot read properties
+  // of undefined (reading 'rest')" — que es exactamente lo que rompía el
+  // asistente al apretar "Guardar y verificar" (reportado 2026-08-13 creando
+  // una cuenta nueva; el dueño no podía terminar de configurar su tienda).
+  // Los `(supabase.rpc as ...)('fn', args)` invocados DIRECTO sí preservan
+  // `this` por spec de JS y no necesitan bind — el bug aparece solo al
+  // guardar la referencia, como acá.
+  const rpcCrudo = supabase.rpc.bind(supabase) as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
 
   /**
    * RPC con TIEMPO LÍMITE. Sin esto, una llamada que nunca resuelve (red que se
@@ -175,7 +184,10 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
     let temporizador: number | undefined;
     try {
       return await Promise.race([
-        rpcCrudo(fn, args),
+        // Promise.resolve: `supabase.rpc()` devuelve un PostgrestFilterBuilder
+        // (thenable, NO Promise nativa). Envolverlo garantiza una Promise real
+        // para la carrera contra el temporizador.
+        Promise.resolve(rpcCrudo(fn, args)),
         new Promise<RpcRes>((resolve) => {
           temporizador = window.setTimeout(
             () => resolve({ error: { message: 'La conexión tardó demasiado (más de 25 s). Revisá tu internet y volvé a apretar "Guardar y verificar" — no se perdió nada de lo que escribiste.' } }),
