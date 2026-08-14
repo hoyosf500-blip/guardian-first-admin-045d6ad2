@@ -160,7 +160,37 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
   const cantidadErrores = Object.keys(errores).length;
 
   type RpcRes = { error: { message: string } | null };
-  const rpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
+  const rpcCrudo = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcRes>;
+
+  /**
+   * RPC con TIEMPO LÍMITE. Sin esto, una llamada que nunca resuelve (red que se
+   * corta a mitad, sesión que expira, lock en la base) dejaba el botón "Guardar
+   * y verificar" girando PARA SIEMPRE, con el dueño nuevo encerrado en el
+   * asistente y sin ninguna explicación — no hay forma de salir ni de reintentar
+   * salvo recargar a ciegas (reportado 2026-08-13 creando una cuenta de prueba).
+   * Un error se puede mostrar; un cuelgue infinito, no.
+   */
+  const rpc = async (fn: string, args: Record<string, unknown>): Promise<RpcRes> => {
+    const LIMITE_MS = 25_000;
+    let temporizador: number | undefined;
+    try {
+      return await Promise.race([
+        rpcCrudo(fn, args),
+        new Promise<RpcRes>((resolve) => {
+          temporizador = window.setTimeout(
+            () => resolve({ error: { message: 'La conexión tardó demasiado (más de 25 s). Revisá tu internet y volvé a apretar "Guardar y verificar" — no se perdió nada de lo que escribiste.' } }),
+            LIMITE_MS,
+          );
+        }),
+      ]);
+    } catch (e) {
+      // Una excepción cruda (red caída) también tiene que volver como error
+      // manejable, nunca propagarse y dejar el botón trabado.
+      return { error: { message: e instanceof Error ? e.message : String(e) } };
+    } finally {
+      if (temporizador != null) window.clearTimeout(temporizador);
+    }
+  };
 
   /** Carga inicial de pedidos y billetera. Se dispara SOLA en cuanto sabemos
    *  que la API Key sirve — el cliente no tiene por qué apretar nada. No se
@@ -207,8 +237,10 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
       return;
     }
     setSaving(true);
-
-
+    // TODO el guardado va dentro de try/finally: pase lo que pase (error, throw,
+    // timeout), el botón se libera. Antes, cualquier camino no previsto dejaba
+    // `saving` en true para siempre.
+    try {
     const { error: brandErr } = await rpc('update_store_branding', {
       p_store_id: activeStore.id,
       p_name: vals.name ?? '',
@@ -252,9 +284,15 @@ export default function SetupWizard({ onDone, onSignOut }: { onDone: () => void;
       toast.error('No se pudo guardar el acceso a tu cuenta', { description: loginErr.message });
     }
 
-    setSaving(false);
     await refresh();
     await verificar(activeStore.id);
+    } catch (e) {
+      toast.error('No se pudo completar el guardado', {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) {
