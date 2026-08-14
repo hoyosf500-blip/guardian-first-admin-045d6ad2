@@ -254,7 +254,13 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `dropi-relay` — generic proxy/relay to Dropi endpoints from the client (avoids CORS + hides session token)
 - `dropi-refresh-batch` — el botón "Sincronizar Dropi" de Seguimiento. **Usa el endpoint de LISTA (~1 request por 200 pedidos), NO uno por pedido** — la versión per-order disparaba 429 y sincronizaba cero (fix 2026-06-23). UPSERTea (a diferencia de `dropi-snapshot`, que es read-only), así que el realtime existente mueve el tablero solo. Ventana default 10 días por "FECHA DE CAMBIO DE ESTATUS", backoff exponencial y presupuesto de 60s.
 - `dropi-open-incidences` — devuelve los `external_id` con novedad **abierta AHORA** en Dropi. Existe porque un pedido puede quedar en estado `NOVEDAD` sin incidencia abierta (la transportadora la cerró/venció) y Dropi rechaza resolverla; Novedades usa esta lista para partir "Por gestionar" vs "Esperando transportadora". **Usa el session token web** — `/api/*` rechaza la integration-key. Siempre HTTP 200: si falla, el cliente degrada a una sola lista sin romperse.
-- `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB
+- `dropi-resolve-incidence` — resolves a novedad on Dropi and marks it in DB. **⚠️ La marca
+  LOCAL manda (decisión del dueño, 14-ago-2026):** "las novedades no se resuelven desde el CRM —
+  la operadora lo hace desde Dropi y acá solo marca la opción; Dropi tiene demasiados estatus y
+  no vale la pena ponerse en eso". `useNovedades.resolveNovedad` marca local + touchpoint y llama
+  a esta función como CORTESÍA: **si Dropi rechaza el reporte, la marca NO se revierte** (la
+  versión anterior la revertía y la novedad reaparecía en la cola → doble gestión). El único
+  rollback que queda es si el UPDATE local mismo falla.
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
 - `dropi-cron` — scheduled sync trigger. **Cada 15 min desde el 16-jul-2026** (migration `20260716144619`; verificado contra `cron.job` en vivo el 22-jul: job `dropi-cron-15min`, `*/15 * * * *`). Fue 5 min hasta esa fecha — docs y comentarios viejos que digan "cada 5 min" están desactualizados. Desde el cambio a 15 min NO hay 429 en `sync_logs`: la cuenta EC se estabilizó; no volver a 5 min sin una razón fuerte. **Resiliente a "zombie state":** intenta una cadena `STATUS_FILTER_VARIANTS` y persiste el ganador en `app_settings.dropi_winning_status_filter`. Si todos los filtros vuelven 0 sin error/throttle, marca `status='warn'` (no `success`) para que el banner de freshness pueda detectar "corre pero no trae nada". Ver `PLAN-PARITY-DROPI.md`.
 - `dropi-health` — ping read-only por tienda contra `/integrations/orders/myorders` (page=1). Escribe `last_health_status` en `store_dropi_config` cada hora. Alimenta el banner `SyncFreshness` (verde=OK 24h, amarillo=zombie, rojo=error). Usa el `dropi_winning_status_filter` calculado por `dropi-cron`.
@@ -399,7 +405,17 @@ Selector de listas pre-clasificadas estilo Boostec. Cada lista tiene un predicad
 
 **No todas las listas se dibujan como chip.** `seMuestraComoChip()` oculta las que ESPEJAN una columna del tablero (`en_oficina`, `en_transito`, `en_reparto_novedad`, `guia_generada`, `pendientes_guia`, `otros_estados`) — el dueño lo señaló: "En tránsito 72" en el chip y "72 EN TRÁNSITO" en la columna de abajo era el mismo dato dos veces. **Su definición NO se borra**: `ACTIONABLE_SEG_SLUGS` las usa para el guard de inactividad, y borrarlas haría creer al sistema que no hay trabajo mientras 35 clientes esperan en una oficina. Visibles quedan solo las que el tablero no puede decir: qué está vencido o parado.
 
-Slugs: `pendientes_confirmacion_2d` (link a `/confirmar`), `detenidos_3d`, `agencia_2d`, `en_oficina`, `en_reparto_novedad`, `en_transito`, `guia_generada`, `indem_guia_generada_5d`, `pendientes_guia`, `indem_pendientes_guia_4d`, `otros_estados`.
+**`devolucion_reciente` es la tercera lista de RELOJ** (14-ago-2026, auditoría "devoluciones
+invisibles" fa210631): fases `devolucion`/`devolucion_transito` con último movimiento ≤30 días.
+Es la ÚNICA lista eximida del guard terminal de `SEG_LISTS` (`LISTAS_DE_TERMINALES`) — su trabajo
+ES el terminal. NO es accionable (la llamada de rescate se hace una vez, no se exige a diario).
+Las devoluciones entran a la data por una **segunda query acotada en `useDataLoader`**
+(`.in('estado', ['DEVOLUCION','DEVOLUCION EN TRANSITO'])` + `last_movement_at ≥ 30d`) — la query
+principal las excluye con match exacto porque NO tiene ventana de fecha; sin ese filtro entraría
+el histórico completo. El hero descuenta las devoluciones de "en ruta", y `useChangeAlerts`
+(que era código muerto) quedó montado en SeguimientoTab como banner "Nuevos: N devoluciones".
+
+Slugs: `pendientes_confirmacion_2d` (link a `/confirmar`), `detenidos_3d`, `agencia_2d`, `devolucion_reciente`, `en_oficina`, `en_reparto_novedad`, `en_transito`, `guia_generada`, `indem_guia_generada_5d`, `pendientes_guia`, `indem_pendientes_guia_4d`, `otros_estados`.
 
 Si `OrderData.fecha` está malformada, `diasDesdeCreacion()` cae a `o.dias` como fallback (try/catch).
 

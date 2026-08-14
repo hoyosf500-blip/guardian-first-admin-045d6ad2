@@ -20,11 +20,22 @@ describe('splitNovedades', () => {
     expect(r.esperando.map(o => o.externalId)).toEqual(['20', '40']);
   });
 
-  it('set vacío → todo a esperando (Dropi dice que no hay nada abierto)', () => {
+  // H1 (auditoría 14-ago-2026): "cero incidencias abiertas con N novedades en
+  // cola" no se distingue de "Dropi cambió un literal y la consulta devuelve 0
+  // con HTTP 200". Antes esto separaba con conocido:true y TODA la cola caía a
+  // "Esperando transportadora" con check verde — trabajo real escondido.
+  it('set vacío CON cola no-vacía → sospechoso: NO se separa (todo visible como pendiente)', () => {
     const r = splitNovedades(q(['1', '2']), new Set());
+    expect(r.conocido).toBe(false);
+    expect(r.porGestionar).toHaveLength(2);
+    expect(r.esperando).toHaveLength(0);
+  });
+
+  it('set vacío con cola vacía → sin nada que decidir, el split vacío es legítimo', () => {
+    const r = splitNovedades(q([]), new Set());
     expect(r.conocido).toBe(true);
     expect(r.porGestionar).toHaveLength(0);
-    expect(r.esperando).toHaveLength(2);
+    expect(r.esperando).toHaveLength(0);
   });
 
   it('pedido sin externalId nunca puede matchear → esperando', () => {

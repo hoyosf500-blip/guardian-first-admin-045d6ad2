@@ -162,7 +162,15 @@ export const matchOficina = (e: string): boolean =>
   // y las de retiro que ya existían.
   e.includes('AGENCIA') ||
   e.startsWith('PARA RETIRO') ||
-  e.startsWith('RETIRO');
+  e.startsWith('RETIRO') ||
+  // EC: 'CLIENTE SOLICITA RETIRAR EN CS' — el cliente pidió pasar a recoger
+  // por el centro de servicio; si nadie coordina, la transportadora lo
+  // devuelve. Caía en 'otros' y no entraba ni a la cola accionable ni al reloj
+  // de agencia_2d (H7, auditoría devoluciones 14-ago-2026). El `!DEVOLUC`
+  // excluye a su primo TERMINAL 'DEVOLUCION DE DISTRIBUCION CLIENTE SOLICITA
+  // RETIRAR EN CS', que es una devolución ya consumada, no un cliente
+  // esperando en la agencia.
+  (e.includes('SOLICITA RETIRAR') && !e.includes('DEVOLUC'));
 
 /** Matchers en orden de prioridad. `otros` es el fallback y SIEMPRE va último. */
 export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: string) => boolean }> = [

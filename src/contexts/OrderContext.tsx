@@ -39,6 +39,9 @@ interface OrderState {
   // no existen — usar segData con filtros de segLists.ts.
   novedadesQueue: OrderData[];
   novedadesLoading: boolean;
+  /** Error de la ÚLTIMA carga de novedades (H4): con esto la pantalla puede
+   *  distinguir "cola vacía porque no hay" de "cola vacía porque no cargó". */
+  novedadesError: string | null;
   /** Gestiones de HOY de TODA LA TIENDA (equipo). Es lo que rotula "Equipo hoy"
    *  la CounterBar y lo que alimenta la barra de progreso de la cola compartida. */
   counter: Counter;
@@ -1482,6 +1485,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     segData: dataLoader.segData, segLoaded: dataLoader.segLoaded, segLoading: dataLoader.segLoading,
     segLastUpdate: dataLoader.segLastUpdate, loadSegData: dataLoader.loadSegData,
     novedadesQueue: novedades.novedadesQueue, novedadesLoading: novedades.novedadesLoading,
+    novedadesError: novedades.novedadesError,
     counter, myCounter, timerStart,
     loading, excelLoaded, setExcelLoaded, setAllOrders, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     loadNovedades: novedades.loadNovedades, resolveNovedad: novedades.resolveNovedad,
@@ -1491,7 +1495,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     allOrders, workQueue,
     dataLoader.segData, dataLoader.segLoaded, dataLoader.segLoading,
     dataLoader.segLastUpdate, dataLoader.loadSegData,
-    novedades.novedadesQueue, novedades.novedadesLoading,
+    novedades.novedadesQueue, novedades.novedadesLoading, novedades.novedadesError,
     counter, myCounter, timerStart,
     loading, excelLoaded, buildWorkQueue, loadWorkQueue, markResult, undoLast, lastMark, resetOrders,
     novedades.loadNovedades, novedades.resolveNovedad,

@@ -83,8 +83,17 @@ describe('classifySegEstado', () => {
       'PARA RETIRO EN AGENCIA',
       'PARA RETIRO EN OFICINA GUAYAQUIL',
       'EN PUNTO DE RETIRO',
+      // H7 (auditoría devoluciones 14-ago-2026): el cliente pidió recoger en
+      // el centro de servicio — si nadie coordina, se devuelve. Caía en
+      // 'otros' y no entraba ni a la cola accionable ni al reloj agencia_2d.
+      'CLIENTE SOLICITA RETIRAR EN CS',
     ])('clasifica %s como oficina', (e) => {
       expect(classifySegEstado(e)).toBe('oficina');
+    });
+
+    it('el primo TERMINAL "DEVOLUCION DE DISTRIBUCION CLIENTE SOLICITA RETIRAR EN CS" NO es oficina — es una devolución consumada', () => {
+      expect(matchOficina('DEVOLUCION DE DISTRIBUCION CLIENTE SOLICITA RETIRAR EN CS')).toBe(false);
+      expect(classifySegEstado('DEVOLUCION DE DISTRIBUCION CLIENTE SOLICITA RETIRAR EN CS')).not.toBe('oficina');
     });
   });
 

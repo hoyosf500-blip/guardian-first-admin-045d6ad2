@@ -22,7 +22,16 @@ export function splitNovedades<T extends { externalId?: string | null }>(
   queue: T[],
   openIds: Set<string> | null,
 ): NovedadesSplit<T> {
-  if (!openIds) {
+  // `openIds` null = "no sé" (edge caída). Y un set VACÍO con cola no-vacía es
+  // la MISMA incertidumbre disfrazada de dato (H1, auditoría 14-ago-2026): si
+  // Dropi renombra un literal de la consulta del panel, la edge devuelve 200
+  // con 0 ids y TODA la cola caía a "Esperando transportadora" con check verde
+  // — trabajo real escondido detrás de un panel plegado. "Cero incidencias
+  // abiertas con N novedades en cola" no se puede distinguir de "la consulta
+  // se rompió", así que no se separa: todo queda visible como pendiente. El
+  // error contrario (esconder trabajo) cuesta clientes; este solo cuesta que
+  // la asesora vea de más.
+  if (!openIds || (openIds.size === 0 && queue.length > 0)) {
     return { porGestionar: queue, esperando: [], conocido: false };
   }
   const porGestionar: T[] = [];

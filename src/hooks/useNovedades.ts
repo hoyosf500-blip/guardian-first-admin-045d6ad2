@@ -14,6 +14,10 @@ interface NovedadesState {
   novedadesQueue: OrderData[];
   setNovedadesQueue: React.Dispatch<React.SetStateAction<OrderData[]>>;
   novedadesLoading: boolean;
+  /** Último error de CARGA (H4, auditoría 14-ago-2026). Con la carga rota la
+   *  cola queda vacía y la pantalla pintaba el estado verde "no hay novedades
+   *  pendientes" — un toast fugaz era todo el aviso. `null` = última carga OK. */
+  novedadesError: string | null;
   loadNovedades: (force?: boolean) => Promise<void>;
   resolveNovedad: (order: OrderData, action: 'reoffer' | 'return', solution?: string) => Promise<void>;
 }
@@ -21,6 +25,7 @@ interface NovedadesState {
 export function useNovedades(user: User | null, storeId: string | null): NovedadesState {
   const [novedadesQueue, setNovedadesQueue] = useState<OrderData[]>([]);
   const [novedadesLoading, setNovedadesLoading] = useState(false);
+  const [novedadesError, setNovedadesError] = useState<string | null>(null);
   const [novedadesLoaded, setNovedadesLoaded] = useState(false);
 
   // MULTI-TENANT: mismo patrón que useDataLoader — al cambiar de tienda hay que
@@ -32,6 +37,7 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
     prevStoreRef.current = storeId;
     setNovedadesQueue([]);
     setNovedadesLoaded(false);
+    setNovedadesError(null);
   }, [storeId]);
 
   // Referencia siempre-fresca para poder relanzar desde dentro del propio load
@@ -79,9 +85,14 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
         return;
       }
       if (error) {
+        // H4: además del toast (fugaz), dejar el error en estado para que la
+        // pantalla lo pinte — sin esto la cola vacía se leía como "todo
+        // resuelto" en verde.
+        setNovedadesError(error);
         toast.error('Error cargando novedades: ' + error);
         return;
       }
+      setNovedadesError(null);
       if (truncado) toast.warning('Hay tantas novedades que no caben todas en pantalla. Avisá para subir el tope.');
       // `%NOVEDAD%` también atrapa NOVEDAD SOLUCIONADA / SOLUCION APROBADA (la
       // variante de Ecuador). Sacarlas acá y no en el SQL a propósito: la red
@@ -119,7 +130,6 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
 
     const today = bogotaToday();
     const now = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Bogota' });
-    const prevEstado = order.estado;
 
     const touchAction = action === 'reoffer'
       ? `NOVEDAD: Volver a ofrecer — ${cleanSolution.slice(0, 180)}`
@@ -148,15 +158,25 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       store_id: storeId,
     });
 
-    const rollbackNovedad = async () => {
+    // LA MARCA LOCAL SE QUEDA — decisión del dueño (14-ago-2026): "las
+    // novedades no se pueden resolver desde el CRM; la operadora lo hace desde
+    // Dropi, pero tiene que marcar la opción en el CRM". El reporte automático
+    // a Dropi es un EXTRA de cortesía: si Dropi lo rechaza ("ya resuelta",
+    // incidencia vencida/cerrada por la transportadora, un estatus de los mil
+    // que no vale la pena mapear), eso NO invalida la gestión que ella ya hizo
+    // en el panel. La versión anterior REVERTÍA la marca ante cualquier rechazo
+    // y la novedad reaparecía en la cola: doble gestión y cliente llamado dos
+    // veces. (El único camino que sí revierte es el de arriba: si el UPDATE
+    // local falla, no se marcó nada.)
+    const cerrarEnPantalla = () => {
       if (order.dbId) {
-        // Preserva el estado previo (p.ej. 'INTENTO DE ENTREGA') en lugar de
-        // sobreescribir a 'NOVEDAD' y perder el matiz original.
-        await supabase.from('orders').update({ novedad_sol: false, estado: prevEstado || 'NOVEDAD' }).eq('id', order.dbId);
+        void (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>
+        ) => Promise<unknown>)('release_order', { p_order_id: order.dbId });
       }
-      setNovedadesQueue(prev => prev.map(o =>
-        o.dbId === order.dbId ? { ...o, result: undefined, novedadSol: false } : o,
-      ));
+      setTimeout(() => {
+        setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
+      }, 800);
     };
 
     if (order.externalId) {
@@ -172,36 +192,27 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
           const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
           if (res?.error || data?.ok === false) {
             const msg = res?.error?.message || data?.error || 'Error desconocido';
-            toast.error(`Dropi falló: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
-            rollbackNovedad();
+            toast.info(
+              `Marcada en el CRM ✓. Dropi no aceptó el reporte automático (${msg}) — si la gestionaste desde el panel de Dropi, está bien así.`,
+              { id: toastId, duration: 7000 },
+            );
           } else {
             toast.success('Dropi: novedad reportada', { id: toastId, duration: 2500 });
-            // Release lock now that the novedad is resolved.
-            if (order.dbId) {
-              void (supabase.rpc as unknown as (
-                fn: string, args: Record<string, unknown>
-              ) => Promise<unknown>)('release_order', { p_order_id: order.dbId });
-            }
-            setTimeout(() => {
-              setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
-            }, 800);
           }
+          cerrarEnPantalla();
         })
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);
-          toast.error(`Dropi red: ${msg}. Novedad revertida.`, { id: toastId, duration: 8000 });
-          rollbackNovedad();
+          // Red caída ≠ gestión inválida: misma regla, la marca se queda.
+          toast.info(
+            `Marcada en el CRM ✓. No se pudo avisar a Dropi (${msg}) — si la gestionaste desde su panel, está bien así.`,
+            { id: toastId, duration: 7000 },
+          );
+          cerrarEnPantalla();
         });
     } else {
       toast.success('Novedad marcada como resuelta localmente', { duration: 2500 });
-      if (order.dbId) {
-        void (supabase.rpc as unknown as (
-          fn: string, args: Record<string, unknown>
-        ) => Promise<unknown>)('release_order', { p_order_id: order.dbId });
-      }
-      setTimeout(() => {
-        setNovedadesQueue(prev => prev.filter(o => o.dbId !== order.dbId));
-      }, 800);
+      cerrarEnPantalla();
     }
     // storeId va en deps: se usa para el store_id del touchpoint. Sin él, tras
     // cambiar de tienda resolveNovedad escribiría con el store viejo.
@@ -216,6 +227,6 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
   }, [user, novedadesLoaded, loadNovedades]);
 
   return {
-    novedadesQueue, setNovedadesQueue, novedadesLoading, loadNovedades, resolveNovedad,
+    novedadesQueue, setNovedadesQueue, novedadesLoading, novedadesError, loadNovedades, resolveNovedad,
   };
 }

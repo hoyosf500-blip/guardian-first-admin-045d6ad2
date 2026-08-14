@@ -21,7 +21,7 @@ type NovedadesView = 'pendientes' | 'seguimiento' | 'mejora' | 'causa';
 export default function NovedadesTab() {
   const { user } = useAuth();
   const { isManagerOfActive, activeStoreId } = useStore();
-  const { novedadesQueue, novedadesLoading, loadNovedades } = useOrders();
+  const { novedadesQueue, novedadesLoading, novedadesError, loadNovedades } = useOrders();
   const [search, setSearch] = useState('');
   const [showEsperando, setShowEsperando] = useState(false);
   // Incidencias ABIERTAS según Dropi (misma consulta que su panel de
@@ -268,8 +268,37 @@ export default function NovedadesTab() {
         </div>
       )}
 
+      {/* Error de carga (H4, auditoría 14-ago-2026): con la carga rota la cola
+          queda vacía y esta pantalla pintaba el check verde "todo resuelto" —
+          el único aviso era un toast que desaparecía solo. El error se queda a
+          la vista con su botón de reintento, y el verde de abajo NO se dibuja
+          mientras no sepamos la verdad. */}
+      {novedadesError && !novedadesLoading && (
+        <motion.div {...fadeUp(0.28)}>
+          <div role="alert" className="relative flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3.5 mb-3 shadow-card3d">
+            <span className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-danger" aria-hidden="true" />
+            <span className="w-9 h-9 rounded-xl bg-danger/20 glow-danger flex items-center justify-center flex-shrink-0 text-danger" aria-hidden="true">
+              <AlertTriangle size={17} />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground">No se pudieron cargar las novedades</p>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                Lo que ves puede estar incompleto o vacío SIN estar resuelto. Error: {novedadesError}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { void loadNovedades(true); }}
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-semibold text-danger hover:bg-danger/20 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <RefreshCw size={13} aria-hidden="true" /> Reintentar
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {/* Empty state */}
-      {!novedadesLoading && porGestionar.length === 0 && (
+      {!novedadesLoading && !novedadesError && porGestionar.length === 0 && (
         <motion.div {...fadeUp(0.28)}>
         <TiltCard sheen brackets className="bg-card/40 border border-border rounded-3xl p-12 shadow-card3d-lg flex flex-col items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-success/14 border border-success/30 text-success glow-success flex items-center justify-center tilt-layer-3">

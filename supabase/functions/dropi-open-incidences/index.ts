@@ -29,7 +29,12 @@ import { dropiWebFetch, WebFallbackError } from "../_shared/dropiWebQuote.ts";
 // Dropi rechaza result_number > 100 (400 isSuccess=false — ver bug dropi-snapshot).
 const PAGE_SIZE = 100;
 const MAX_PAGES = 3; // 300 incidencias abiertas es ya un escenario irreal.
-const INCIDENCE_WINDOW_DAYS = 30; // misma ventana que el panel de Dropi.
+// 60 y no 30 (H2, auditoría 14-ago-2026): la cola de Novedades del CRM muestra
+// 60 días, y con la ventana en 30 una novedad cuya ÚLTIMA incidencia quedó
+// registrada hace 31-59 días —pero sigue ABIERTA en Dropi— no aparecía en esta
+// lista → el CRM la mandaba a "Esperando transportadora" con calma falsa.
+// (El panel de Dropi usa 30; nosotros pedimos lo que nuestra cola necesita.)
+const INCIDENCE_WINDOW_DAYS = 60;
 
 function jsonResp(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
