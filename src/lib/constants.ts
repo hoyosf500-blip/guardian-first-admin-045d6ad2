@@ -22,12 +22,62 @@ export const COL_MAP: Record<string, string[]> = {
   TIENDA: ['TIENDA', 'Tienda', 'tienda', 'STORE'],
 };
 
-// Motivos de cancelación que ve la operadora en el modal de Confirmar (CallView).
-// Compartidos CO + EC. "Otro" es el sentinel: al elegirlo, el modal pide un texto
-// libre OBLIGATORIO en vez de cancelar de una (ver el modal en CallView).
-export const CANCEL_REASONS = [
-  'No contesta', 'Duplicado', 'Cambió de opinión', 'Cambio de transportadora',
-  'Mal historial', 'No pagó anticipo', 'Otro',
+/**
+ * Motivos de cancelación que ve la operadora en el modal de Confirmar (CallView).
+ * Compartidos CO + EC + GT.
+ *
+ * POR QUÉ CAMBIÓ LA LISTA (15-ago-2026)
+ * La versión anterior mezclaba tres preguntas distintas en un solo campo y por eso
+ * no servía para bajar las cancelaciones: 'No contesta' es un resultado y no un
+ * motivo, 'Cambio de transportadora' NO es una cancelación (es una edición, y ya
+ * tiene su propio camino en OrderEditorDialog → dropi-change-carrier con
+ * result='cambio_transportadora'), y 'Cambió de opinión' era el tacho de basura
+ * donde caían precio, demora, competencia y "no lo pedí" — cuatro problemas con
+ * cuatro acciones distintas, todos invisibles bajo la misma etiqueta.
+ * Cada motivo de esta lista lleva a UNA acción distinta; si no, no merece un botón.
+ *
+ * ⚠️ `value` ES LA CLAVE DEL HISTÓRICO. Se escribe tal cual en
+ * `order_results.reason` y `src/lib/cancelTaxonomy.ts` lo clasifica leyendo ese
+ * texto. Cambiar un `value` desclasifica los meses ya registrados. Para cambiar lo
+ * que LEE la operadora se cambia `label`, que es puramente de pantalla.
+ *
+ * ⚠️ El atajo va en `hotkey` y NO por posición. Antes era `CANCEL_REASONS[k-1]`:
+ * agregar o reordenar un motivo le remapeaba las teclas a la operadora en silencio,
+ * a mitad de una llamada y sin que nadie se enterara.
+ *
+ * 'Otro' es el sentinel (`kind: 'texto'`): al elegirlo, el modal pide un texto libre
+ * OBLIGATORIO en vez de cancelar de una. Ese texto es el bucle de mejora — si un
+ * motivo escrito a mano se repite, se gana un botón en la próxima versión. Que suba
+ * el uso de "Otro" NO es indisciplina: es que a la lista le falta una opción.
+ */
+export interface CancelReasonOption {
+  /** Valor CANÓNICO que se escribe en order_results.reason. NUNCA se cambia. */
+  value: string;
+  /** Lo que ve la operadora. Se puede cambiar libremente. */
+  label: string;
+  /** Tecla del atajo. EXPLÍCITA: reordenar la lista no le remapea nada a nadie. */
+  hotkey: string;
+  /** 'texto' abre el textarea obligatorio en vez de cancelar de una. */
+  kind?: 'motivo' | 'texto';
+  /**
+   * Ofrece reagendar antes de cancelar. Un cliente que dice "ahora no tengo
+   * plata" no es una venta perdida: es una venta con fecha.
+   */
+  sugiereReagenda?: boolean;
+}
+
+export const CANCEL_REASONS: CancelReasonOption[] = [
+  // La 1 queda igual a propósito: es la más usada y la memoria muscular vale.
+  { hotkey: '1', value: 'No contesta', label: 'No contesta (3 intentos)' },
+  { hotkey: '2', value: 'No reconoce el pedido', label: 'No lo pidió / no reconoce el pedido' },
+  { hotkey: '3', value: 'Precio o flete muy caro', label: 'Precio o flete muy caro' },
+  { hotkey: '4', value: 'Se arrepintió', label: 'Se arrepintió / ya no lo quiere' },
+  { hotkey: '5', value: 'No tiene dinero ahora', label: 'No tiene plata ahora', sugiereReagenda: true },
+  { hotkey: '6', value: 'Teléfono malo', label: 'Teléfono malo / no existe' },
+  { hotkey: '7', value: 'No llega a su zona', label: 'No llega a su zona' },
+  { hotkey: '8', value: 'Duplicado', label: 'Duplicado' },
+  { hotkey: '9', value: 'Mal historial', label: 'Mal historial / no le vendemos' },
+  { hotkey: '0', value: 'Otro', label: 'Otro (escribir)', kind: 'texto' },
 ];
 
 // OLD-9: intervalo de polling fallback (cuando realtime falla o se cae el

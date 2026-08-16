@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
 import { findSupersededPendingConfDetailed, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { detectDuplicatePairs } from '@/lib/duplicatePairs';
@@ -14,7 +14,7 @@ import { formatDateES, OrderData, parseDate, dbToOrderData } from '@/lib/orderUt
 import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { fetchPendientesDeConfirmar } from '@/lib/fetchPendientes';
 import { isLockedByOther } from '@/lib/callQueueNav';
-import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL } from '@/lib/confirmarQueue';
+import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL, REMIND_LOOKAHEAD_MS, estaAplazado } from '@/lib/confirmarQueue';
 import { toast } from 'sonner';
 import WorkList, { diasReales } from '@/components/WorkList';
 import CallView from '@/components/CallView';
@@ -342,7 +342,16 @@ export default function ConfirmarTab({ profile }: Props) {
   );
   const notesIndex = useOrderNotesIndex(activeStoreId, queueOrderIds);
   // "Recordatorios para hoy/ahora": recordatorio que llega en ≤1h o ya vencido.
-  const REMIND_LOOKAHEAD_MS = 60 * 60 * 1000;
+  // La constante vive en confirmarQueue para que el chip, este filtro y
+  // `estaAplazado` usen el MISMO número (antes estaba duplicada en dos archivos).
+
+  /** ¿Este pedido está aplazado (reagendado a futuro)? Necesita el notesIndex. */
+  const esAplazado = useCallback((o: OrderData, now = Date.now()) => (
+    estaAplazado(
+      { result: o.result, nextReminderAt: o.dbId ? notesIndex.get(o.dbId)?.nextReminderAt : null },
+      now,
+    )
+  ), [notesIndex]);
 
   // Memoizado: sin esto, `filteredItems` era un array nuevo en CADA render
   // (incluido cada refresh de realtime), forzando a WorkList/CallView a
@@ -377,6 +386,12 @@ export default function ConfirmarTab({ profile }: Props) {
     const listoParaReintentar = !!o.retryCount && !o.result;
     if (onlyUntouched && !coverageConfirmError && o.dbId && !listoParaReintentar
       && (gestionPorPedido.has(o.dbId) || myConfirmTouchedToday.has(o.dbId))) return false;
+    // APLAZADOS (reagendados a futuro): fuera de "Pendientes" — el cliente pidió
+    // que lo llamaran otro día y aparecer hoy es volver a llamarlo hoy. NO se
+    // pierden: tienen su propio chip con la cuenta y su propia lista, y vuelven
+    // solos al tope cuando el recordatorio vence.
+    if (filter === 'pending' && esAplazado(o)) return false;
+    if (filter === 'aplazado' && !esAplazado(o)) return false;
     if (filter === 'pending' && o.result) return false;
     if (filter === 'conf' && o.result !== 'conf') return false;
     if (filter === 'canc' && o.result !== 'canc') return false;
@@ -405,7 +420,7 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id]);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id, esAplazado]);
 
   // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
   // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente

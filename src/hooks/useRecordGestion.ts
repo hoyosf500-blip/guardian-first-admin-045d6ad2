@@ -8,7 +8,11 @@ import { bogotaToday } from '@/lib/utils';
 // LLAMADA/WHATSAPP son INTENTOS DE CONTACTO — se registran para que el trabajo
 // telefónico deje de ser invisible, pero con prefijo propio para NO contar como
 // gestión ni ocultar tarjetas (no matchean 'SEG:%' ni el módulo confirmar).
-export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD' | 'LLAMADA' | 'WHATSAPP';
+// REAGENDA es la venta APLAZADA: el cliente quiere el pedido pero después. Va con
+// prefijo propio a propósito — no es una cancelación (no escribe order_results, no
+// toca orders.estado) y tampoco es una gestión cerrada: el pedido sigue vivo y
+// vuelve solo a la cola el día del recordatorio. Lo escribe useReagendarPedido.
+export type GestionModule = 'SEG' | 'RESCUE' | 'NOVEDAD' | 'LLAMADA' | 'WHATSAPP' | 'REAGENDA';
 
 /**
  * Inserta un touchpoint de gestión `MODULE: acción` (store-scoped, con el

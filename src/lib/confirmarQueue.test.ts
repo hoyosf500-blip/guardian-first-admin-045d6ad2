@@ -7,6 +7,8 @@ import {
   realAgeDays,
   isFreshToday,
   hasDueReminder,
+  estaAplazado,
+  REMIND_LOOKAHEAD_MS,
   isRetryReady,
   resumenSinRespuestaHoy,
   mismoResumen,
@@ -362,5 +364,46 @@ describe('mismoResumen — no re-renderizar la cola 1.440 veces al día', () => 
     expect(mismoResumen(null, base)).toBe(false);
     expect(mismoResumen(base, null)).toBe(false);
     expect(mismoResumen(null, null)).toBe(true);
+  });
+});
+
+describe('estaAplazado — el pedido reagendado sale de la cola de hoy', () => {
+  const AHORA = Date.parse('2026-08-15T15:00:00-05:00');
+  const enHoras = (h: number) => new Date(AHORA + h * 3600_000).toISOString();
+
+  it('un recordatorio a días vista aplaza el pedido', () => {
+    expect(estaAplazado({ nextReminderAt: enHoras(48) }, AHORA)).toBe(true);
+  });
+
+  it('sin recordatorio NO está aplazado', () => {
+    expect(estaAplazado({}, AHORA)).toBe(false);
+    expect(estaAplazado({ nextReminderAt: null }, AHORA)).toBe(false);
+  });
+
+  it('un recordatorio ya vencido NO aplaza: hay que llamarlo YA', () => {
+    expect(estaAplazado({ nextReminderAt: enHoras(-3) }, AHORA)).toBe(false);
+  });
+
+  it('dentro de la ventana de 1 h tampoco aplaza — se trabaja hoy', () => {
+    // Esta es la frontera que evita el agujero: si "aplazado" y "recordatorio
+    // próximo" no compartieran el mismo número, un pedido podría quedar fuera
+    // de Pendientes Y fuera del chip de recordatorios al mismo tiempo.
+    expect(estaAplazado({ nextReminderAt: enHoras(0.5) }, AHORA)).toBe(false);
+    expect(hasDueReminder({ nextReminderAt: enHoras(0.5) }, AHORA, REMIND_LOOKAHEAD_MS)).toBe(true);
+  });
+
+  it('justo en el borde de la ventana no aplaza (comparación estricta)', () => {
+    const borde = new Date(AHORA + REMIND_LOOKAHEAD_MS).toISOString();
+    expect(estaAplazado({ nextReminderAt: borde }, AHORA)).toBe(false);
+  });
+
+  it('un pedido YA resuelto nunca está aplazado: ya terminó', () => {
+    expect(estaAplazado({ nextReminderAt: enHoras(48), result: 'conf' }, AHORA)).toBe(false);
+    expect(estaAplazado({ nextReminderAt: enHoras(48), result: 'canc' }, AHORA)).toBe(false);
+  });
+
+  it('una fecha corrupta no esconde el pedido', () => {
+    // Ante la duda, MOSTRAR: perder un pedido de la cola es peor que verlo de más.
+    expect(estaAplazado({ nextReminderAt: 'no-es-fecha' }, AHORA)).toBe(false);
   });
 });

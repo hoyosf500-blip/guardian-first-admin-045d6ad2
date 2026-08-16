@@ -81,3 +81,68 @@ export function summarizeReminder(
     .format(d).replace(/\./g, '').trim();
   return `${dia} ${num} ${mes}, ${hora}`;
 }
+
+/* ─────────────────────────── REAGENDA ───────────────────────────
+ * Presets para "el cliente quiere el pedido, pero después".
+ *
+ * Son DÍAS, no horas: los atajos de NotesPanel (`En 1 h`, `En 3 h`) sirven para
+ * volver a intentar una llamada; acá el cliente ya contestó y dio una fecha.
+ *
+ * `proximo_pago` es el que más se va a usar y por eso existe: en COD LATAM
+ * "ahora no tengo plata" casi siempre significa "hasta que cobre", y se cobra el
+ * 15 y el último día del mes. Hacer que la asesora calcule esa fecha a mano, en
+ * medio de la llamada, es como se pierde el reagendamiento.
+ *
+ * La hora se fija en el reloj LOCAL de quien reagenda (setHours), igual que
+ * QUICK_REMINDERS en NotesPanel: un recordatorio "a las 9" tiene que sonar a las
+ * 9 de la asesora, y CO/EC/GT no comparten offset.
+ */
+
+export type ReagendaPresetKey = 'manana' | 'en_2_dias' | 'en_3_dias' | 'proximo_pago' | 'en_1_semana';
+
+/** Hora por defecto del recordatorio: arranque del turno, no de madrugada. */
+const REAGENDA_HORA = 9;
+
+function aLasNueve(d: Date): Date {
+  d.setHours(REAGENDA_HORA, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Próxima fecha de pago quincenal: el 15, o el último día del mes, el que llegue
+ * primero DESPUÉS de hoy. Si hoy es 15 o fin de mes, salta al siguiente — un
+ * recordatorio para "hoy mismo" no es un reagendamiento.
+ */
+export function proximaFechaDePago(now: Date = new Date()): Date {
+  const d = new Date(now.getTime());
+  const dia = d.getDate();
+  const finDeMes = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  if (dia < 15) return aLasNueve(new Date(d.getFullYear(), d.getMonth(), 15));
+  if (dia < finDeMes) return aLasNueve(new Date(d.getFullYear(), d.getMonth(), finDeMes));
+  // Es el último día del mes → el 15 del mes que viene.
+  return aLasNueve(new Date(d.getFullYear(), d.getMonth() + 1, 15));
+}
+
+function enDias(now: Date, dias: number): Date {
+  const d = new Date(now.getTime());
+  d.setDate(d.getDate() + dias);
+  return aLasNueve(d);
+}
+
+export const REAGENDA_PRESETS: Array<{
+  key: ReagendaPresetKey;
+  label: string;
+  build: (now?: Date) => Date;
+}> = [
+  { key: 'manana', label: 'Mañana', build: (now = new Date()) => enDias(now, 1) },
+  { key: 'en_2_dias', label: 'En 2 días', build: (now = new Date()) => enDias(now, 2) },
+  { key: 'en_3_dias', label: 'En 3 días', build: (now = new Date()) => enDias(now, 3) },
+  { key: 'proximo_pago', label: 'Cuando cobre', build: (now = new Date()) => proximaFechaDePago(now) },
+  { key: 'en_1_semana', label: 'En 1 semana', build: (now = new Date()) => enDias(now, 7) },
+];
+
+/** Resuelve un preset por clave. Devuelve null si la clave no existe. */
+export function buildReagendaDate(key: ReagendaPresetKey, now: Date = new Date()): Date | null {
+  const p = REAGENDA_PRESETS.find(x => x.key === key);
+  return p ? p.build(now) : null;
+}

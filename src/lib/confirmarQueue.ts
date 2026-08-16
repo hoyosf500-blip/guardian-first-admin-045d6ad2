@@ -52,9 +52,48 @@ export function hasDueReminder(
   return t <= nowMs + lookaheadMs;
 }
 
+/**
+ * "Próximo" = recordatorio que llega en ≤1 h o que ya pasó (vencido).
+ *
+ * Vivía duplicado como const local en ConfirmarTab y en WorkFilters con el mismo
+ * valor. Está acá porque ahora además define la frontera de `estaAplazado`: si
+ * los tres números se separaran, un pedido podría quedar escondido de la cola Y
+ * fuera del chip de recordatorios al mismo tiempo — invisible.
+ */
+export const REMIND_LOOKAHEAD_MS = 60 * 60 * 1000;
+
 /** ¿El reintento está listo? (no-contestó con cooldown cumplido y sin resolver) */
 export function isRetryReady(o: ConfirmarQueueOrder): boolean {
   return !!o.retryCount && !o.result;
+}
+
+/**
+ * ¿El pedido está APLAZADO? = tiene recordatorio a futuro, más allá de la
+ * ventana de "próximo" (1 h).
+ *
+ * Es lo que hace real el REAGENDAMIENTO: un cliente que dijo "llamame el viernes"
+ * no puede seguir apareciendo hoy en la cola de pendientes — la asesora lo
+ * volvería a llamar hoy, que es exactamente lo que él pidió que no pasara, y de
+ * paso ensucia el conteo de "cuánto me falta hoy".
+ *
+ * ⚠️ ESCONDER TRABAJO ES PELIGROSO y en este repo ya costó caro (ver
+ * `resumenSinRespuestaHoy`: los pedidos enfriando desaparecían sin decir cuándo
+ * volvían, y el equipo daba el día por terminado con 35 clientes vivos). Por eso
+ * un aplazado NO se borra: sale del filtro "Pendientes" pero tiene su propio chip
+ * con la cuenta y su propia lista. Se puede ver siempre; simplemente no estorba.
+ *
+ * Un pedido YA resuelto (`result`) nunca es aplazado: ya terminó.
+ */
+export function estaAplazado(
+  o: ConfirmarQueueOrder,
+  nowMs: number = Date.now(),
+  lookaheadMs: number = REMIND_LOOKAHEAD_MS,
+): boolean {
+  if (o.result) return false;
+  if (!o.nextReminderAt) return false;
+  const t = Date.parse(o.nextReminderAt);
+  if (!Number.isFinite(t)) return false;
+  return t > nowMs + lookaheadMs;
 }
 
 /**

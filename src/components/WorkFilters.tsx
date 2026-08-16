@@ -1,7 +1,8 @@
 import { OrderData } from '@/lib/orderUtils';
 import { useMemo } from 'react';
-import { Search, CheckCircle2, XCircle, PhoneOff, Clock, LayoutGrid, Bell } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, PhoneOff, Clock, LayoutGrid, Bell, CalendarClock } from 'lucide-react';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
+import { REMIND_LOOKAHEAD_MS, estaAplazado } from '@/lib/confirmarQueue';
 
 interface Props {
   workQueue: OrderData[];
@@ -20,23 +21,37 @@ const filterMeta: Record<string, { icon: typeof Clock; color: string }> = {
   canc:    { icon: XCircle,      color: 'text-danger' },
   noresp:  { icon: PhoneOff,     color: 'text-warning' },
   remind:  { icon: Bell,         color: 'text-warning' },
+  aplazado:{ icon: CalendarClock, color: 'text-accent' },
   all:     { icon: LayoutGrid,   color: 'text-muted-foreground' },
 };
 
-/** "Próximo" = recordatorio que llega en ≤1h o que ya pasó (vencido). */
-const REMIND_LOOKAHEAD_MS = 60 * 60 * 1000;
+// REMIND_LOOKAHEAD_MS y estaAplazado vienen de confirmarQueue: el chip, el filtro
+// de ConfirmarTab y la regla de aplazado tienen que usar el MISMO número, o un
+// pedido puede quedar escondido de la cola y fuera del chip a la vez.
 
 export default function WorkFilters({ workQueue, filter, setFilter, search, setSearch, notesIndex }: Props) {
   const counts = useMemo(() => {
     const confCount = workQueue.filter(o => o.result === 'conf').length;
     const cancCount = workQueue.filter(o => o.result === 'canc').length;
     const nrCount = workQueue.filter(o => o.result === 'noresp').length;
-    const pendCount = workQueue.filter(o => !o.result).length;
 
     const now = Date.now();
+    const reminderDe = (o: OrderData) =>
+      (notesIndex && o.dbId ? notesIndex.get(o.dbId)?.nextReminderAt : null) ?? null;
+
+    // Aplazados = reagendados a futuro. Salen de "Pendientes" (el cliente pidió
+    // otro día), así que se descuentan del conteo o el chip prometería trabajo
+    // que la cola no entrega — el desfase que ya pasó con los "no contestó"
+    // enfriando (ver resumenSinRespuestaHoy).
+    const aplazadoCount = notesIndex
+      ? workQueue.filter(o => estaAplazado({ result: o.result, nextReminderAt: reminderDe(o) }, now)).length
+      : 0;
+    const pendCount = workQueue.filter(o =>
+      !o.result && !estaAplazado({ result: o.result, nextReminderAt: reminderDe(o) }, now)).length;
+
     const remindCount = notesIndex
       ? workQueue.filter(o => {
-          const r = o.dbId ? notesIndex.get(o.dbId)?.nextReminderAt : null;
+          const r = reminderDe(o);
           if (!r) return false;
           const t = Date.parse(r);
           return Number.isFinite(t) && t <= now + REMIND_LOOKAHEAD_MS;
@@ -49,12 +64,14 @@ export default function WorkFilters({ workQueue, filter, setFilter, search, setS
       .filter(p => { if (!p || seen[p]) return false; seen[p] = true; return true; })
       .sort();
 
-    return { confCount, cancCount, nrCount, pendCount, remindCount, products };
+    return { confCount, cancCount, nrCount, pendCount, remindCount, aplazadoCount, products };
   }, [workQueue, notesIndex]);
 
   const filters = [
     { id: 'pending', label: 'Pendientes', count: counts.pendCount },
     ...(counts.remindCount ? [{ id: 'remind', label: 'Recordatorios', count: counts.remindCount }] : []),
+    // Aplazados: el chip existe justamente para que reagendar no sea "esconder".
+    ...(counts.aplazadoCount ? [{ id: 'aplazado', label: 'Aplazados', count: counts.aplazadoCount }] : []),
     ...(counts.confCount ? [{ id: 'conf', label: 'Confirmados', count: counts.confCount }] : []),
     ...(counts.cancCount ? [{ id: 'canc', label: 'Cancelados', count: counts.cancCount }] : []),
     ...(counts.nrCount ? [{ id: 'noresp', label: 'No respondió', count: counts.nrCount }] : []),

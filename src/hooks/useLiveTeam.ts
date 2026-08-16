@@ -82,6 +82,7 @@ function accionTouchpoint(action: string): string {
   if (action.startsWith('RESCUE:')) return 'rescate';
   if (action.startsWith('LLAMADA:')) return 'llamó';
   if (action.startsWith('WHATSAPP:')) return 'WhatsApp';
+  if (action.startsWith('REAGENDA:')) return 'reagendó';
   return 'gestión';
 }
 

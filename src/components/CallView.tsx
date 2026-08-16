@@ -14,11 +14,13 @@ import { ORDER_COLUMNS } from '@/lib/orderColumns';
 import { toast } from 'sonner';
 import { copyToClipboard } from '@/lib/clipboard';
 import { hotkeysHabilitados } from '@/lib/hotkeys';
-import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, PhoneOff, Phone, MapPin, DollarSign, Tag, AlertTriangle, ChevronLeft, ChevronRight, Mail, RotateCcw, Star, Lock, UserCog, MessageSquare, Loader2, CalendarClock } from 'lucide-react';
 import FingerprintBadge from '@/components/FingerprintBadge';
 import AddressValidationBadge from '@/components/AddressValidationBadge';
 import { ProductoTile } from '@/components/ProductoTile';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
+import { useReagendarPedido } from '@/hooks/useReagendarPedido';
+import { REAGENDA_PRESETS, summarizeReminder } from '@/lib/reminders';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import AttemptHistory from '@/components/confirmar/AttemptHistory';
 import { MAX_DAILY_ATTEMPTS, COOLDOWN_LABEL } from '@/lib/confirmarQueue';
@@ -160,6 +162,15 @@ export default function CallView({ items, alerts }: Props) {
   // mostramos un campo de texto OBLIGATORIO en vez de cancelar de una.
   const [cancelOtroMode, setCancelOtroMode] = useState(false);
   const [cancelOtroText, setCancelOtroText] = useState('');
+  // REAGENDAR: el cliente quiere el pedido pero después. Es una salida del mismo
+  // modal que NO cancela (ver useReagendarPedido). `reagendaMode` guarda el
+  // `value` CANÓNICO del motivo que la trajo ('manual' si se entró por el botón
+  // de arriba): así queda escrito en la nota sin volver a preguntar, y si al
+  // final igual hay que cancelar, se cancela con el motivo correcto.
+  const [reagendaMode, setReagendaMode] = useState<string | null>(null);
+  const [reagendaFecha, setReagendaFecha] = useState<Date | null>(null);
+  const [reagendaTexto, setReagendaTexto] = useState('');
+  const reagendarPedido = useReagendarPedido();
   // Edición de orden unificada (datos + transportadora + producto + valor).
   // `suggestedTotal` viene del chip de sobreprecio (total de Shopify).
   const [editorState, setEditorState] = useState<{ order: OrderData; suggestedTotal?: number } | null>(null);
@@ -171,6 +182,9 @@ export default function CallView({ items, alerts }: Props) {
     setShowCancelModal(false);
     setCancelOtroMode(false);
     setCancelOtroText('');
+    setReagendaMode(null);
+    setReagendaFecha(null);
+    setReagendaTexto('');
   }, [callOrderId]);
   const [vip, setVip] = useState<VipInfo | null>(null);
   // Validador-direcciones: override admin-only para destrabar el gate cuando
@@ -829,6 +843,51 @@ export default function CallView({ items, alerts }: Props) {
     }
   };
 
+  /**
+   * REAGENDAR: sale del modal de cancelación pero NO cancela nada.
+   *
+   * Usa el mismo candado `markingRef` que handleMark para que un doble-click no
+   * escriba dos recordatorios, y avanza al siguiente pedido igual que un marcado
+   * — pero SIN tocar `claimedByMeRef`, para que el efecto release-on-navigate
+   * libere el lock (acá no hay markResult que lo libere server-side).
+   */
+  const handleReagendar = async () => {
+    if (markingRef.current) return;
+    if (!reagendaFecha) return;
+    markingRef.current = true;
+    setMarking(true);
+    try {
+      // 'manual' es el sentinel del botón de arriba, no algo que dijo el
+      // cliente: no tiene que terminar escrito en la nota del recordatorio.
+      const motivoLabel = reagendaMode && reagendaMode !== 'manual'
+        ? (CANCEL_REASONS.find(r => r.value === reagendaMode)?.label ?? reagendaMode)
+        : '';
+      const nota = [motivoLabel, reagendaTexto.trim()].filter(Boolean).join(' — ');
+      const res = await reagendarPedido({
+        orderId: o.dbId,
+        phone: o.phone,
+        remindAt: reagendaFecha,
+        motivo: nota,
+      });
+      if (res.ok) {
+        const nextKey = nextUnmanagedKey(items, callIdx);
+        setShowCancelModal(false);
+        setReagendaMode(null);
+        setReagendaFecha(null);
+        setReagendaTexto('');
+        if (nextKey) setCallOrderId(nextKey);
+        toast.success(`Reagendado ${res.resumen} — ${o.nombre.split(' ')[0]}`, {
+          description: 'No cuenta como cancelación. Vuelve solo al tope de la cola.',
+        });
+      } else {
+        toast.error(`No se pudo reagendar: ${res.error}`);
+      }
+    } finally {
+      markingRef.current = false;
+      setMarking(false);
+    }
+  };
+
   const doMark = async (result: string, reason?: string) => {
     // Fix 1 (2026-07-07): calcular el SIGUIENTE con la cola FRESCA de ESTE render
     // y avanzar YA — ANTES del await de markResult. Antes se hacía en un
@@ -917,14 +976,20 @@ export default function CallView({ items, alerts }: Props) {
         setShowCancelModal(false);
         setCancelOtroMode(false);
         setCancelOtroText('');
+        setReagendaMode(null);
+        setReagendaFecha(null);
+        setReagendaTexto('');
         return;
       }
-      if (!cancelOtroMode && /^[1-9]$/.test(k) && !marking) {
-        const reason = CANCEL_REASONS[Number(k) - 1];
-        if (!reason) return;
+      if (!cancelOtroMode && !reagendaMode && /^[0-9]$/.test(k) && !marking) {
+        // El atajo se busca por `hotkey`, NUNCA por posición: antes era
+        // CANCEL_REASONS[k-1] y agregar o reordenar un motivo le cambiaba la
+        // tecla a la operadora en silencio, a mitad de una llamada.
+        const opt = CANCEL_REASONS.find(r => r.hotkey === k);
+        if (!opt) return;
         e.preventDefault();
-        if (reason.trim().toLowerCase() === 'otro') setCancelOtroMode(true);
-        else void handleMark('canc', reason);
+        if (opt.kind === 'texto') setCancelOtroMode(true);
+        else void handleMark('canc', opt.value);
       }
       return;
     }
@@ -1492,33 +1557,143 @@ export default function CallView({ items, alerts }: Props) {
       {showCancelModal && (
         <div
           className="fixed inset-0 bg-black/70 z-[2000] flex items-end justify-center sm:items-center"
-          onClick={() => { setShowCancelModal(false); setCancelOtroMode(false); setCancelOtroText(''); }}
+          onClick={() => {
+            setShowCancelModal(false); setCancelOtroMode(false); setCancelOtroText('');
+            setReagendaMode(null); setReagendaFecha(null); setReagendaTexto('');
+          }}
         >
           {/* Bottom-sheet en mobile; centrado en PC (sm+), que es donde más
               trabajan las operadoras. Mismo contenido, solo cambia el anclaje. */}
           <div className="bg-card border border-border shadow-card3d-lg rounded-t-3xl sm:rounded-3xl p-6 pb-[calc(24px+env(safe-area-inset-bottom))] sm:pb-6 w-full max-w-[480px] max-h-[80vh] overflow-y-auto animate-slide-up sm:animate-none" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-bold mb-4 inline-flex items-center gap-2">
-              <XCircle size={18} className="text-danger" /> Motivo de cancelación
+              {reagendaMode
+                ? <><CalendarClock size={18} className="text-accent" /> ¿Cuándo lo volvemos a llamar?</>
+                : <><XCircle size={18} className="text-danger" /> Motivo de cancelación</>}
             </h3>
-            {!cancelOtroMode ? (
+            {reagendaMode ? (
+              /* REAGENDA — la salida que NO cancela. El pedido queda vivo, sale
+                 de la cola de hoy y vuelve solo al tope el día elegido. */
+              <div className="grid gap-3">
+                <p className="text-xs text-muted-foreground">
+                  {reagendaMode !== 'manual' && (
+                    <>El cliente dijo:{' '}
+                      <span className="font-semibold text-foreground">
+                        {CANCEL_REASONS.find(r => r.value === reagendaMode)?.label ?? reagendaMode}
+                      </span>.{' '}
+                    </>
+                  )}
+                  Esto <span className="font-semibold text-foreground">no cuenta como cancelación</span>.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {REAGENDA_PRESETS.map((p) => {
+                    const d = p.build();
+                    const activo = !!reagendaFecha && reagendaFecha.getTime() === d.getTime();
+                    return (
+                      <button
+                        key={p.key}
+                        onClick={() => setReagendaFecha(p.build())}
+                        className={`py-3 px-3 rounded-xl border font-semibold text-sm transition-colors ${
+                          activo
+                            ? 'bg-accent/20 border-accent/50 text-accent'
+                            : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
+                        }`}
+                      >
+                        {p.label}
+                        <span className="block text-[10px] font-normal opacity-70 mt-0.5">
+                          {summarizeReminder(d)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <input
+                  type="datetime-local"
+                  aria-label="Otra fecha y hora"
+                  onChange={(e) => {
+                    const d = e.target.value ? new Date(e.target.value) : null;
+                    setReagendaFecha(d && !Number.isNaN(d.getTime()) ? d : null);
+                  }}
+                  className="w-full rounded-xl border border-border bg-card/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+                />
+                <input
+                  type="text"
+                  value={reagendaTexto}
+                  onChange={(e) => setReagendaTexto(e.target.value)}
+                  placeholder="Nota para cuando vuelva (opcional)"
+                  maxLength={120}
+                  className="w-full rounded-xl border border-border bg-card/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => { setReagendaMode(null); setReagendaFecha(null); setReagendaTexto(''); }}
+                    className="py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    disabled={!reagendaFecha || marking}
+                    onClick={() => void handleReagendar()}
+                    className="py-3 px-4 rounded-xl bg-accent/15 text-accent border border-accent/40 font-bold text-sm hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                  >
+                    {marking && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+                    Reagendar
+                  </button>
+                </div>
+                {/* Salida honesta: si el cliente de verdad no lo quiere, se
+                    cancela con el motivo que ya eligió. Sin este botón, ofrecer
+                    reagendar sería obligar a reagendar. */}
+                {reagendaMode !== 'manual' && (
+                  <button
+                    disabled={marking}
+                    onClick={() => void handleMark('canc', reagendaMode!)}
+                    className="text-xs text-muted-foreground hover:text-danger underline underline-offset-2 justify-self-center disabled:opacity-40"
+                  >
+                    No, cancelar igual
+                  </button>
+                )}
+              </div>
+            ) : !cancelOtroMode ? (
               <div className="grid gap-2">
-                {CANCEL_REASONS.map((reason, i) => {
+                {/* Antes de la lista de motivos: la venta APLAZADA. Está arriba y
+                    en color de acento a propósito — la salida por defecto para
+                    "ahora no puedo" era CANCELADO, y así se tiraba a la basura
+                    una venta que seguía viva. */}
+                <button
+                  onClick={() => { setReagendaMode('manual'); setReagendaFecha(REAGENDA_PRESETS[0].build()); }}
+                  disabled={marking}
+                  className="w-full text-left py-3 px-4 rounded-xl bg-accent/10 border border-accent/35 text-accent font-semibold text-sm hover:bg-accent/18 transition-colors disabled:opacity-45 inline-flex items-center gap-2"
+                >
+                  <CalendarClock size={15} aria-hidden="true" />
+                  No lo canceles: reagendar para otro día
+                </button>
+                <div className="h-px bg-border my-1" aria-hidden="true" />
+                {CANCEL_REASONS.map((opt) => {
                   // "Otro" no cancela de una: abre un campo de texto obligatorio
                   // para que la operadora escriba el motivo real.
-                  const isOtro = reason.trim().toLowerCase() === 'otro';
+                  const isOtro = opt.kind === 'texto';
                   return (
                     <button
-                      key={reason}
-                      onClick={() => (isOtro ? setCancelOtroMode(true) : handleMark('canc', reason))}
+                      key={opt.value}
+                      // Se marca con `opt.value` (el canónico que lee la
+                      // taxonomía), NUNCA con el label de pantalla.
+                      // `sugiereReagenda` desvía a la reagenda ANTES de cancelar:
+                      // "no tiene plata ahora" es una venta con fecha, no perdida.
+                      onClick={() => {
+                        if (isOtro) return setCancelOtroMode(true);
+                        if (opt.sugiereReagenda) {
+                          setReagendaMode(opt.value);
+                          setReagendaFecha(REAGENDA_PRESETS.find(p => p.key === 'proximo_pago')!.build());
+                          return;
+                        }
+                        void handleMark('canc', opt.value);
+                      }}
                       disabled={marking}
                       className="w-full text-left py-3 px-4 rounded-xl bg-card/40 border border-border text-muted-foreground font-semibold text-sm hover:text-foreground hover:border-border-strong transition-colors disabled:opacity-45 disabled:cursor-not-allowed inline-flex items-center gap-2"
                     >
-                      {/* Hint del atajo: dentro del modal las teclas 1-9 eligen
-                          el motivo sin soltar el teléfono. Oculto en <sm. */}
-                      {i < 9 && (
-                        <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">{i + 1}</kbd>
-                      )}
-                      {reason}
+                      {/* Hint del atajo: dentro del modal las teclas eligen el
+                          motivo sin soltar el teléfono. Oculto en <sm. */}
+                      <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">{opt.hotkey}</kbd>
+                      {opt.label}
                     </button>
                   );
                 })}
