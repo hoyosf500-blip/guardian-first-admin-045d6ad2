@@ -29,6 +29,7 @@ import type { LogisticsFilters } from '@/lib/logistics.types';
 import BilleteraTab from '@/components/logistics/BilleteraTab';
 import FinanzasTab from '@/components/logistics/FinanzasTab';
 import BalanceTab from '@/components/logistics/BalanceTab';
+import CancelacionesTab from '@/components/logistics/CancelacionesTab';
 import MesActualResumen from '@/components/logistics/MesActualResumen';
 import StoreAdSpendPanel from '@/components/logistics/StoreAdSpendPanel';
 import SemaforoSalud from '@/components/logistics/SemaforoSalud';
@@ -39,7 +40,7 @@ import {
   CHART_LINE_CURSOR,
 } from '@/components/logistics/charts/chartTokens';
 import { AuroraBackdrop } from '@/components/ui3d';
-import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Layers, Scale } from 'lucide-react';
+import { Truck, MapPin, Package, RefreshCw, Activity, Info, Lightbulb, GitCompare, LayoutDashboard, DollarSign, Wallet, Coins, PieChart as PieChartIcon, LineChart as LineChartIcon, BarChart3, Layers, Scale, XCircle } from 'lucide-react';
 
 // ── Tipos del RPC `logistics_dashboard` (extra de Kimi) ────────────
 interface DashboardData {
@@ -557,6 +558,7 @@ export default function LogisticaTab() {
               <TabsTrigger value="products" className={TAB_PILL}><Package size={13} className="mr-1.5" /> Productos</TabsTrigger>
               <TabsTrigger value="decisiones" className={TAB_PILL}><Lightbulb size={13} className="mr-1.5" /> Decisiones</TabsTrigger>
               <TabsTrigger value="trazabilidad" className={TAB_PILL}><Activity size={13} className="mr-1.5" /> Trazabilidad</TabsTrigger>
+              <TabsTrigger value="cancelaciones" className={TAB_PILL}><XCircle size={13} className="mr-1.5" /> Cancelaciones</TabsTrigger>
               <TabsTrigger value="finanzas" className={TAB_PILL}><DollarSign size={13} className="mr-1.5" /> Finanzas</TabsTrigger>
               <TabsTrigger value="balance" className={TAB_PILL}><Scale size={13} className="mr-1.5" /> Balance</TabsTrigger>
             </TabsList>
@@ -734,6 +736,14 @@ export default function LogisticaTab() {
               mano. NO recibe `filters.ciudad`: la plata es de toda la tienda. */}
           <TabsContent value="balance" className="mt-4 space-y-5">
             <BalanceTab fromDate={filters.fromDate} toDate={filters.toDate} />
+          </TabsContent>
+
+          {/* Cancelaciones — por qué se pierden los pedidos y cuánta de esa
+              plata era recuperable. SÍ respeta `filters.ciudad` (va como
+              p_ciudad implícito vía el rango; el ranking de ciudades se oculta
+              cuando hay una sola seleccionada, que es lo honesto). */}
+          <TabsContent value="cancelaciones" className="mt-4 space-y-5">
+            <CancelacionesTab filters={filters} />
           </TabsContent>
         </Tabs>
         </motion.div>

@@ -213,7 +213,7 @@ y `src/lib/walletCategoria.test.ts` → `_shared/walletCategoria`.
 | `/novedades` | NovedadesPage | NovedadesTab | Resolve carrier incidences |
 | `/admin` | AdminPage | AdminTab | Config por tienda. Gated `managerOnly` (owner/supervisor de la tienda activa). |
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
-| `/logistica` | LogisticsPage | LogisticaTab | Análisis: 8 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / Billetera / Finanzas). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas. |
+| `/logistica` | LogisticsPage | LogisticaTab | Análisis: 9 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / **Cancelaciones** / Finanzas / Balance). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas **menos Finanzas y Balance** (avisado con banner naranja). |
 | `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. **Triple gate:** ruta solo se registra si `VITE_ENABLE_CFO==='true'`, nav item es `adminOnly` (global `isAdmin`, no rol de tienda), y se oculta si `activeStore.country_code !== 'CO'`. RLS admin-only en la DB es el backstop. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
 | `/plataforma` | PlataformaPage | — | Panel multi-inquilino del operador de la plataforma (listado de tiendas, suscripción, activar/desactivar). **La ruta se registra SIEMPRE**; el gate real está en la DB: las RPC `platform_stores_overview` / `platform_set_subscription` / `platform_set_store_status` tiran 42501 si el que llama no es admin global, y la página rebota a `/dashboard`. No confiar en el nav para esconderla. |
 | `/pedido/:externalId` | OrderDetailPage | order-detail/* | Single-order drill-down (param es `:externalId`, no `:id`) |
@@ -381,6 +381,7 @@ El bot "renta el caño, no el cerebro": el inbox + la IA viven en Guardian; el t
 - `cleanup_expired_autocomplete_cache()` — purges `address_autocomplete_cache` rows past TTL. Scheduled via pg_cron (migration `20260501010000_validador_direcciones_cron.sql`).
 - `financial_summary(p_from_date, p_to_date)` — KPIs financieros del período (utilidad bruta contable). Versión actual = v6 (migration `20260502000008_financial_summary_v6_devoluciones.sql`). Fórmula: `ingresos − cogs − flete_entregadas − pérdida_devoluciones − comisión_referidos − mantenimiento_tarjeta + indemnizaciones`. Usado por hook `useFinancialSummary`. NO incluye gasto pauta (Fase B pendiente).
 - `devoluciones_del_periodo(p_store_id, p_from, p_to)` — devoluciones LLEGADAS en el rango por `devuelto_at` (fecha Bogotá), con `de_meses_previos`. ADITIVA (14-ago-2026): las tasas por cohorte NO se tocaron — esta contesta "¿cuántas me golpearon ESTE período?" (cuando el wallet cobra). Membership check propio (owner/supervisor de esa tienda o admin), fail-closed. La consume `useDevolucionesDelPeriodo` → tarjeta en `/logistica → Resumen`; si la RPC no está aplicada la tarjeta no se dibuja. OJO: probarla en el SQL editor da 42501 (sin `auth.uid()`) — verificar EN LA APP.
+- `cancelaciones_analisis(p_store_id, p_desde, p_hasta, p_limite)` — **una fila CRUDA por pedido cancelado** del período (cohorte por `orders.fecha`, misma población que `kpis_mensuales.cancelados` — tiene que cuadrar al pedido con esa columna). `is_store_manager` + 42501. La clasificación y las tasas NO están acá: viven en `src/lib/cancelTaxonomy.ts` + `src/lib/cancelacionesResumen.ts` (puros y testeados), para poder reclasificar el histórico sin migración. `origen='guardian'|'externo'` marca si hubo motivo capturado — `externo` = cancelado en el panel de Dropi / por la reconciliación nocturna, sin motivo posible. `total_periodo` y `generados_periodo` viajan en cada fila (calculados antes del LIMIT) → nunca se trunca en silencio y la tasa sale del mismo query. Ver "Módulo Cancelaciones" abajo.
 - `wallet_summary(from, to)` y `wallet_daily_series(from, to)` — KPIs y serie temporal del wallet de Dropi. Admin-only, security definer.
 - `upsert_wallet_movements(...)` — bulk INSERT idempotente sobre `dropi_wallet_movements` con `dropi_transaction_id` UNIQUE. RLS bloquea INSERT/UPDATE directo — todo va via este RPC.
 - `operator_productivity_stats(p_range)` — KPIs por operador para `/admin → Productividad`. `p_range` ∈ `today | 7d | 30d` (ventanas alineadas a medianoche Bogotá desde la v3 `20260526140000`, NO rodantes). Tasas calculadas sobre INFLOW (entrantes en el período). Versión actual = **v4** (`20260528220000`) agrega 3 columnas de ESFUERZO sin tocar las existentes:
@@ -414,6 +415,59 @@ El bot "renta el caño, no el cerebro": el inbox + la IA viven en Guardian; el t
 - Sirve para decisión "estoy ganando plata o no".
 
 **No mezclar las dos.** Si querés ver "lo que Dropi me pagó" → Ganancia Neta. Si querés perspectiva contable/comparable con Boostec → Utilidad Bruta.
+
+### Módulo Cancelaciones — motivos, taxonomía y reagendar (15-ago-2026)
+
+Nació de "tengo cancelaciones altas y no sé por qué". Los 7 motivos viejos mezclaban tres
+preguntas en un campo: `'No contesta'` es un resultado, `'Cambio de transportadora'` no es una
+cancelación (es una edición, con su propio `result='cambio_transportadora'`), y
+`'Cambió de opinión'` era el tacho donde caían precio, demora, competencia y "no lo pedí".
+
+- **`src/lib/cancelTaxonomy.ts`** — molde exacto de `novedadTaxonomy.ts` (normalizar → `RULES[]`
+  ordenada → primera que matchea gana → catch-all). Devuelve **tres ejes**: `categoria` (qué
+  pasó) · `culpa` (de quién) · `tipo` (cuánto duele). Dos decisiones que no son cosméticas:
+  - **`tipo: 'ahorro'`** — cancelar por duplicado / mal historial EVITÓ una devolución (~$22k).
+    Meterlo en la misma tasa que una venta perdida esconde la plata.
+  - **`tipo: 'desconocido'`** — las canceladas en Dropi no tienen motivo; asignarles evitable o
+    inevitable sería inventar el dato. Ese bucket se achica solo a medida que mejora la captura,
+    y **esa reducción es el KPI del proyecto**.
+  - `cuentaEnTasa: false` para los recreados (cambio de transportadora, edición): el pedido no se
+    perdió, se rehizo con otro `external_id`. Contarlo es contar la venta dos veces.
+  - Clasifica los 7 valores viejos y el string automático de `ConfirmarTab.tsx:1072`, así que **el
+    histórico sirve sin backfill**. Dos pruebas guardianas lo fijan: ningún `value` del picklist
+    puede quedar sin regla, y el histórico no se puede desclasificar refactorizando.
+- **`CANCEL_REASONS`** (`constants.ts`) pasó de `string[]` a `CancelReasonOption[]`. **El atajo va
+  en `hotkey`, no por posición** — antes era `CANCEL_REASONS[k-1]` y agregar o reordenar un motivo
+  le remapeaba las teclas a la operadora en silencio. `value` es la clave del histórico y NO se
+  cambia; para cambiar lo que ve la asesora se cambia `label`.
+- **Reagendar** (`useReagendarPedido` + `REAGENDA_PRESETS` en `reminders.ts`) — salida del modal de
+  cancelación que NO cancela. **Cero migraciones**: escribe una nota con `remind_at` (que la
+  máquina existente `useOrderNotesIndex → hasDueReminder → BUCKET_REMINDER` sube sola al tope de la
+  cola el día que vence) más un touchpoint `REAGENDA:`.
+  - **⚠️ NO pasa por `markResult` a propósito.** Ese guard (`if (!user || order.result) return`,
+    `OrderContext.tsx:1050`) dejaría el pedido imposible de confirmar después — justo el pedido que
+    se reagendó para poder venderlo.
+  - **No se tocó el CHECK de `order_results`**: sin la migración aplicada (Lovable no las
+    auto-aplica) un `result='reagendado'` devuelve 23514 y le rompe el botón a la operadora.
+  - `estaAplazado()` saca los reagendados del filtro "Pendientes" pero **nunca los esconde**:
+    tienen chip propio con la cuenta y su lista. Es la lección de `resumenSinRespuestaHoy` (los "no
+    contestó" enfriando desaparecían sin decir cuándo volvían).
+  - **Riesgo conocido:** la tasa oficial es `conf ÷ (conf+canc+noresp)` y una reagenda no entra al
+    denominador → reagendar en vez de cancelar **sube la tasa**. Por eso la RPC devuelve
+    `reagendas` por pedido y el reporte muestra las "reagendas quemadas"; 2+ es una bandera.
+- **`/logistica → Cancelaciones`** (`CancelacionesTab.tsx` + `useCancelacionesAnalisis`). La
+  **cobertura del dato va primero, no al pie**: si el 30% tiene motivo hay que decirlo antes de
+  mostrar un gráfico. Con cobertura 0% se ocultan motivo y culpa pero **el resto sigue
+  funcionando** (sin-gestión, intentos, tiempo al primer toque, tabla) — no necesitan ni un motivo.
+  - **Denominador declarado**: pedidos CREADOS en el rango, cancelados incluidos, `borrado`
+    excluido. Coincide con `financial_summary` y **difiere a propósito de `logistics_summary`**
+    (que saca los cancelados de su total). El pie de la pantalla lo explica.
+  - **La regla discutible, explícita**: una cancelación sin NINGUNA gestión cuenta como *pérdida
+    evitable* aunque el motivo culpe al cliente — nadie verificó ese motivo. Queda contada aparte
+    en `evitablesPorSinGestion` para poder discutirla con datos (auditoría julio EC: 68 de 345).
+- **Lo que NO se hizo y sería el siguiente paso**: cruzar los cancelados contra recompras del mismo
+  teléfono ("recuperados"). En julio EC, 49 de 345 eran re-emisiones y **32 terminaron entregadas**
+  — o sea, cancelado ≠ perdido. Necesita un LATERAL más en la RPC.
 
 ### Listas SLA en `/seguimiento` (`src/lib/segLists.ts`)
 
