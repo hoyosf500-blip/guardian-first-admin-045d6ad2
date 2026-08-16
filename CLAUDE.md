@@ -30,9 +30,10 @@ CO = `00000000-0000-0000-0000-000000000001` · EC = `512309c3-d5b7-4434-898a-31b
 
 ```bash
 # Development
-npm run dev          # Start Vite dev server
-npm run build        # Production build
-npm run build:dev    # Dev-mode build (useful for debugging)
+npm run dev          # Start Vite dev server (puerto 8080)
+npm run build        # tsc --noEmit -p tsconfig.app.json && vite build  (el typecheck CORRE en build)
+npm run typecheck    # Solo el tsc --noEmit (rápido, sin bundle)
+npm run build:dev    # Dev-mode build (useful for debugging) — NO typechequea
 npm run lint         # ESLint check
 npm run test         # Run all tests once (Vitest)
 npm run test:watch   # Run tests in watch mode
@@ -63,6 +64,8 @@ supabase functions deploy parse-bank-pdf-text
 supabase functions deploy dropi-open-incidences
 supabase functions deploy dropi-refresh-batch
 supabase functions deploy dropi-webhook
+supabase functions deploy dropi-verify-credentials
+supabase functions deploy dropi-sync-city-catalog
 
 # Apply DB migrations
 supabase db push
@@ -73,13 +76,23 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
   -d '{"from":"2026-01-01","to":"2026-05-02"}'
 ```
 
+**CI** (`.github/workflows/ci.yml`, en push/PR a `main`): `tsc --noEmit` → `eslint src/lib src/hooks src/contexts --max-warnings 0` (**`continue-on-error: true`** — el lint NO tumba el build, y solo mira esas tres carpetas) → `npm test` → `npm run build`. Es decir: **typecheck y tests SÍ son bloqueantes; el lint no.**
+
+**⚠️ `npm test` NO corre las pruebas de las edge functions.** `vitest.config.ts` tiene
+`include: ["src/**/*.{test,spec}.{ts,tsx}"]`, así que
+`supabase/functions/shopify-push-dropi/discount.test.ts` **nunca se ejecuta** ni acá ni en CI.
+El patrón que SÍ funciona: dejar la lógica pura en `supabase/functions/_shared/` (la importa la
+edge function Deno) y poner **el archivo de test en `src/lib/`** importando cruzando el límite —
+así lo hacen `src/lib/autoPushSelect.test.ts` → `../../supabase/functions/_shared/autoPushSelect`
+y `src/lib/walletCategoria.test.ts` → `_shared/walletCategoria`.
+
 ## Stack & Constraints
 
 - **Frontend:** Vite + React 18 + TypeScript + Tailwind + shadcn/ui. Vite uses `@vitejs/plugin-react-swc` (SWC, not Babel). `lovable-tagger` is dev-only.
 - **Dev server runs on port 8080** (not the default 5173/3000). Configured in `vite.config.ts`.
 - **TypeScript is NOT strict.** `tsconfig.app.json` has `strict: false`, `noImplicitAny: false`, `noUnusedLocals: false`. Do not enforce strict-mode patterns when reviewing or refactoring — they are intentionally off.
 - **Path alias:** `@/` → `./src/`.
-- **Env vars read in `src/`:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, and `VITE_ENABLE_CFO` (gates the `/cfo` route + nav item; only `'true'` registers it — external clients leave it unset and `/cfo` 404s). Copy `.env.example` → `.env`.
+- **Env vars read in `src/`:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_ENABLE_CFO` (gates the `/cfo` route + nav item; only `'true'` registers it — external clients leave it unset and `/cfo` 404s), y **`VITE_PUBLIC_APP_URL`** (dominio canónico con el que se arman los links de invitación y de `/registro`; sin él se usa el origen del navegador, y en un preview/localhost sale un link que el destinatario no puede abrir). Copy `.env.example` → `.env`.
 - **Feature flags live in `src/lib/featureFlags.ts`.** `GOOGLE_PLACES_ENABLED = false`.
 
   **⛔ GOOGLE ELIMINADO DEL CÓDIGO (2026-08-06).** No es un flag apagado: el camino
@@ -202,7 +215,12 @@ curl -X POST "$SUPABASE_URL/functions/v1/dropi-wallet-sync" \
 | `/dashboard` | DashboardPage | DashboardTab | KPI metrics |
 | `/logistica` | LogisticsPage | LogisticaTab | Análisis: 8 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / Billetera / Finanzas). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas. |
 | `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. **Triple gate:** ruta solo se registra si `VITE_ENABLE_CFO==='true'`, nav item es `adminOnly` (global `isAdmin`, no rol de tienda), y se oculta si `activeStore.country_code !== 'CO'`. RLS admin-only en la DB es el backstop. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
+| `/plataforma` | PlataformaPage | — | Panel multi-inquilino del operador de la plataforma (listado de tiendas, suscripción, activar/desactivar). **La ruta se registra SIEMPRE**; el gate real está en la DB: las RPC `platform_stores_overview` / `platform_set_subscription` / `platform_set_store_status` tiran 42501 si el que llama no es admin global, y la página rebota a `/dashboard`. No confiar en el nav para esconderla. |
 | `/pedido/:externalId` | OrderDetailPage | order-detail/* | Single-order drill-down (param es `:externalId`, no `:id`) |
+
+Rutas públicas (fuera de `ProtectedLayout`): `/auth`, `/reset-password`, y **`/registro`** — que es
+solo un `<Navigate>` a `/auth?registro=1` (alta de dueño nuevo + su tienda). Es el link que se
+comparte por WhatsApp, así que depende de `VITE_PUBLIC_APP_URL`.
 
 All authenticated routes share `ProtectedLayout`, which nests `StoreProvider → ProtectedLayoutInner → OrderProvider`. `ProtectedLayoutInner`:
 - Blocks render while `auth.loading || store.loading` (first load only — see "single-app-mount" note below).
@@ -225,15 +243,16 @@ So: Admin/Logística → `managerOnly` (store role). CFO → `adminOnly` (global
 
 `activeStoreId` persists in `localStorage('guardian.activeStoreId')`. RLS on `orders` and most tables is now **store-scoped** (`store_id` + membership), layered on top of the older `auth.uid()` operator policies — see migration `20260521010000_multitienda_sp2_upsert_store_id.sql` and `20260522010000_store_supervisor_role_selfcontained.sql`.
 
-### Multi-Country (CO + EC)
+### Multi-Country (CO + EC + GT)
 
-Each store has a `stores.country_code` ∈ `'CO'` (default) · `'EC'`. The active store's country drives **carrier tracking URLs, phone normalization, and the address heuristic** — all in `src/lib/`. Pure utils stay pure: they take an optional `countryCode?` param and default to `'CO'`, so existing CO call-sites and the 55 CO tests are untouched.
+Each store has a `stores.country_code`. **Son TRES países en el código, no dos:** `'CO'` (default) · `'EC'` · `'GT'` (Guatemala). El host de la API sale de `_shared/dropiHosts.ts`, que mapea 13 países — pero solo CO/EC/GT tienen soporte de UI (geografía, teléfono, moneda, rastreo, feriados). Agregar un cuarto país es tocar TODOS esos ejes, no solo el host. The active store's country drives **carrier tracking URLs, phone normalization, currency formatting, business-day holidays, and the address heuristic** — all in `src/lib/`. Pure utils stay pure: they take an optional `countryCode?` param and default to `'CO'`, so existing CO call-sites and the CO tests are untouched.
 
-- **Tracking URLs** (`getTrackingUrl(carrier, guia, countryCode?)` in `orderUtils.ts`): `CARRIER_TRACK` (CO) is the default map; `CARRIER_TRACK_EC` (GINTRACOM, LAARCOURIER, Servientrega EC) is **merged over** it for EC. `SERVIENTREGA` exists in BOTH countries with different URLs — that collision is the whole reason tracking is country-scoped. Carriers whose URL ends in `=` get the guía appended.
-- **Module-level country state:** `getTrackingUrl` reads a module-level `_activeTrackingCountry` (default `'CO'`) when no explicit param is passed. `StoreContext` keeps it in sync via `setTrackingCountry(activeStore?.country_code)` in a `useEffect` (StoreContext.tsx:128). This is the **same module-level-state pattern** as the address-validator `Set<string>` overrides — set once from context, read by pure functions without threading the value through every call-site.
-- **Phones** (`normalizePhoneForCountry` / `isValidPhoneForCountry` / `getWhatsAppPhone`): CO prefixes `57`, EC prefixes `593` (`normalizeEcuadorianPhone` strips a leading `0`). `getWhatsAppPhone` is what builds `wa.me/` links.
-- **Address validation:** `heuristicValidate(direccion, countryCode?)` and `buildAddressSuggestion(..., countryCode?)` have EC branches. Pass the active store's `country_code` when calling from order screens.
-- **Geografía del editor de pedidos es country-aware** (`CustomerForm.tsx`, el editor unificado): CO usa el catálogo DANE `src/lib/colombiaGeo.ts` (dropdown Departamento + Ciudad); EC usa `src/lib/ecuadorGeo.ts` (`PROVINCIAS_ECUADOR`, las 24 provincias con `<datalist>` de sugerencias) + **ciudad/cantón como texto libre** (Dropi valida su lado; evita mismatch de nombres/casing). `CustomerForm` lee el país vía `useStore()`. **NO hardcodear geografía de un solo país en formularios de dirección** — este fue exactamente el bug de "Ecuador mostraba departamentos de Colombia" (commit 4289aa5). El `PushToDropiModal` NO usa este catálogo (trae ciudades del catálogo de Dropi en vivo).
+- **Tracking URLs** (`getTrackingUrl(carrier, guia, countryCode?)` in `orderUtils.ts`): `CARRIER_TRACK` (CO) is the default map; `CARRIER_TRACK_EC` (GINTRACOM, LAARCOURIER, Servientrega EC) is **merged over** it for EC. **`CARRIER_TRACK_GT` NO hereda** el mapa colombiano — se usa solo (`cc === 'GT' ? CARRIER_TRACK_GT : ...`), a propósito: una guía GT abriendo el rastreo de una transportadora colombiana es peor que no tener link. `SERVIENTREGA` exists in BOTH CO and EC with different URLs — that collision is the whole reason tracking is country-scoped. Carriers whose URL ends in `=` get the guía appended.
+- **Module-level country state — hay DOS, y las setea el mismo `useEffect`:** `getTrackingUrl` lee `_activeTrackingCountry` y `formatCOP` (`src/lib/utils.ts`) lee `_activeCurrencyCountry`, ambos default `'CO'`. `StoreContext` los sincroniza juntos con `setTrackingCountry(...)` + `setCurrencyCountry(...)` en un `useEffect` sobre `activeStore?.country_code` (`StoreContext.tsx`, buscar `setTrackingCountry` — NO por número de línea, se mueve). `formatCOP` **no es solo COP**: EC imprime USD con centavos y GT su propio formato; el nombre miente, la función no. This is the **same module-level-state pattern** as the address-validator `Set<string>` overrides — set once from context, read by pure functions without threading the value through every call-site. Los tests que tocan moneda deben restaurar (`afterEach(() => setCurrencyCountry('CO'))`) o contaminan al resto del archivo.
+- **Phones** (`normalizePhoneForCountry` / `isValidPhoneForCountry` / `getWhatsAppPhone`): CO prefixes `57`, EC `593` (`normalizeEcuadorianPhone` strips a leading `0`), GT `502`. `getWhatsAppPhone` is what builds `wa.me/` links.
+- **Días hábiles / feriados** (`orderUtils.ts`): el cálculo de días hábiles que alimenta las listas SLA usa el calendario de feriados del país — CO, EC y `getGuatemalanHolidays` (15-sep Independencia, 20-oct, 30-jun). Sin esto una tienda GT corría con los festivos colombianos y las listas SLA vencían el día equivocado.
+- **Address validation:** `heuristicValidate(direccion, countryCode?)` and `buildAddressSuggestion(..., countryCode?)` tienen ramas por país; `src/lib/addressHeuristic.paises.test.ts` cubre CO/EC/GT en un solo suite justamente para que un cambio no arregle uno rompiendo otro.
+- **Geografía del editor de pedidos es country-aware** (`CustomerForm.tsx`, el editor unificado): CO usa el catálogo DANE `src/lib/colombiaGeo.ts` (dropdown Departamento + Ciudad); EC usa `src/lib/ecuadorGeo.ts` (`PROVINCIAS_ECUADOR`, las 24 provincias con `<datalist>`) y GT `src/lib/guatemalaGeo.ts` (`DEPARTAMENTOS_GUATEMALA`), ambos con **ciudad/cantón/municipio como texto libre** (Dropi valida su lado; evita mismatch de nombres/casing). `CustomerForm` lee el país vía `useStore()`; ojo con `isGT`/`isEC` en las deps de los efectos — sin ellas, cambiar de tienda sin remontar deja el dropdown del país anterior. **NO hardcodear geografía de un solo país en formularios de dirección** — este fue exactamente el bug de "Ecuador mostraba departamentos de Colombia" (commit 4289aa5). El `PushToDropiModal` NO usa este catálogo (trae ciudades del catálogo de Dropi en vivo, ver `dropi-sync-city-catalog`).
 - **CFO is CO-only** (`activeStore.country_code === 'CO'`) — see its triple gate above.
 
 ### Key Domain Types
@@ -282,6 +301,8 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 
   **NO apagar el cron de pedidos (hoy cada 15 min)** hasta ver el webhook andando varios días en paralelo.
 - `dropi-snapshot` — proxy server-side de auditoría: recibe `{store_id, from, to}`, pagina `/integrations/orders/myorders` (PAGE_SIZE 200, MAX_PAGES 30, backoff 2s/4s/8s en 429), filtra por `dropi_winning_status_filter` con fallback a "FECHA DE CAMBIO DE ESTATUS", devuelve `{orders, partial, message}`. Llamado por `DropiAuditModal` para comparar Dropi vs Guardian guía-por-guía. Existe por CORS — `api.dropi.co/ec` no permite fetch desde el browser.
+- `dropi-verify-credentials` — prueba EN VIVO las 3 credenciales Dropi de una tienda y devuelve el HTTP crudo de cada una: (1) `api_key` contra `/integrations/orders/myorders` — **lo único bloqueante**, si falla el CRM nace vacío; (2) `login` vía `ensureFreshSessionToken(force)` — es lo que mantiene viva la billetera, sin él muere en una hora (le pasó a CO); (3) billetera con un rango de 1 día. **Owner-only, nunca devuelve tokens.** Existe porque el asistente de configuración decía "Tienda configurada" en verde sin probar nada. **La interpretación NO vive acá:** qué es bloqueante, qué es throttle y no credencial mala, y qué mensaje ve el cliente está en `src/lib/verificacionCredenciales.ts` (puro y testeado) — tocar ahí, no en la función.
+- `dropi-sync-city-catalog` — vuelca el catálogo completo de provincias/ciudades de Dropi (`POST /api/locations`, session token web) en `dropi_city_catalog`, que alimenta los desplegables del editor de orden. **Upsert con `ignoreDuplicates=true`: solo INSERTA lo que falta, nunca pisa una fila existente** (respeta las cargadas a mano con `cod_dane` real). Re-ejecutable cuando Dropi agregue destinos. Auth = JWT de miembro.
 - `dropi-validate-address` — validador de direcciones **100% GRATIS desde el 2026-08-06**: heurística regex + Nominatim/OSM (sin clave). Se le quitaron las llamadas a Google Address Validation y a Haiku, y con ellas el `consume_google_quota`. Devuelve el mismo contrato (`decision`/`missing_fields`/`suggested_*` quedan en su valor neutro) para no tocar `CallView`/`CrmCallView`.
 - `dropi-wallet-sync` — descarga XLSX desde `/api/wallet/exportexcel`, parsea con SheetJS y upserta movimientos. Usa `mapCategoria()` para clasificar cada movimiento por código (regex + `normalizeCodigo` strip-accents). Default range = últimos 30 días — pasar body `{from, to}` para histórico. **Credencial (desde 2026-07-29):** cadena session token (via `ensureFreshSessionToken`, con UN re-login forzado si Dropi lo revocó o el guardado está corrupto) → api_key de fallback — Dropi dejó de aceptar la api_key en ese endpoint (401 "Token not issued to this api", ambas cuentas a la vez). Decodifica `payload.sub` del token QUE USA cada intento para el query `user_id`. Todos los fallos (incl. parseo XLSX y config faltante) escriben fila en `sync_logs`, y una corrida sana con 0 movimientos TAMBIÉN (contrato del badge). `ok:false` si el upsert RPC falla — nada de "Sync OK" en verde con la RPC rota.
 - ~~`google-places-proxy`~~ — **ELIMINADA el 2026-08-06.** Era un proxy PURO a Google: cada llamada que entraba era plata que salía. Ya no existe en el repo; si quedó desplegada en Supabase, borrarla ahí también.
@@ -484,11 +505,12 @@ El `anon_key` se extrae del bundle JS (`fetch('/assets/index-*.js').then(r=>r.te
 
 ### Test Files
 
-Tests use Vitest + Testing Library. Test files live next to the source files they test:
+Tests use Vitest + Testing Library (~124 archivos). Test files live next to the source files they test:
 - `src/lib/*.test.ts` — pure utility unit tests (no DOM needed)
 - `src/components/**/*.test.tsx` — component tests with jsdom
 - Setup file: `src/test/setup.ts` polyfills `matchMedia` and `ResizeObserver` for jsdom. Required for any component that uses Radix primitives (most shadcn/ui components do).
-- **Do not mock the Supabase client** — tests run against the real Supabase project. The few existing component tests stub network calls inline; do not introduce a global Supabase mock.
+- **Do not mock the Supabase client** — tests run against the real Supabase project. The few existing component tests stub network calls inline; do not introduce a global Supabase mock. `src/test/aislamientoTiendasRls.test.ts` es literalmente eso: golpea la base REAL con la clave `anon` y exige que ~10 tablas (`orders`, `store_dropi_config`, `profiles`…) estén cerradas y que un DELETE sea rechazado. **Sin red o sin `.env` se SALTA (`skipped`) a propósito, no da verde** — un `pass` mentiroso acá sería peor que no tener la prueba.
+- **`src/test/*.test.ts` son PRUEBAS GUARDIANAS, no unit tests** — leen el árbol de archivos con `fs` y fallan si alguien reintroduce un error que ya costó plata o clientes. Si una de estas se pone roja, el problema es tu cambio, no la prueba: `googleApagado` (ausencia del código de Google/Haiku — ojo con su helper `sinComentarios`, lleva `(?<!:)` para no confundir el `//` de `https://`), `marcaBlancaYVersion` (ninguna pantalla `.tsx` nombra "Rushmira", la tienda del dueño de la plataforma — los comentarios en `.ts` que documentan incidentes reales sí se quedan; y `useVersionCheck` avisa pero NUNCA recarga sola, una operadora a mitad de llamada no puede perder el formulario), `aislamientoTiendasEstatico` / `multitiendaEdge` / `permisosRolesAuditoria` (nada consulta sin `store_id`, ninguna edge function salta `isStoreMember`; la lista de tablas se descubre sola, así que una tabla nueva entra a la auditoría sin que nadie la agregue), `edgeConstantesFantasma` (constantes usadas y nunca declaradas), `onboardingNoEsPorton`, `rpcBinding` (ver la memoria del `this` perdido en `supabase.rpc`), `themeContrast`.
 
 ### Design System
 
@@ -544,6 +566,9 @@ de las casillas puede mentir** — verificar contra el código, nunca contra el 
   su directorio de overrides `design-system/pages/` no existe, nada en `src/` lo referencia, y
   contradice de frente la dirección actual (aurora oscura / command center 3D). La verdad de UI son
   los tokens de `src/index.css` + el spec del rediseño 3D.
-- **`.claude/settings.local.json`** — sus ~166 reglas de permisos apuntan a
-  `c:\Users\hoyos\Desktop\...`, **otro home distinto al checkout actual** (`C:\Users\FABIAN\...`),
-  así que muchas reglas de git no matchean y vuelven a pedir permiso.
+- **`.claude/settings.local.json`** — **corregido 2026-08-15: esta advertencia ya no aplica.**
+  Decía que sus reglas de permisos apuntaban a un home distinto al checkout
+  (`C:\Users\FABIAN\...`) y que por eso no matcheaban. Verificado: TODAS las rutas del archivo
+  son `C:\Users\hoyos\...`, que ES el checkout actual. No gastes tiempo "arreglando" rutas que
+  ya están bien. (Sí conviene mirar el archivo antes de asumir por qué se pide un permiso: son
+  ~199 líneas de reglas.)
