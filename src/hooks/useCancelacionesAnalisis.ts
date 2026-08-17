@@ -90,7 +90,11 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         fn: string, args: Record<string, unknown>,
       ) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>)(
         'cancelaciones_analisis',
-        { p_store_id: activeStoreId, p_desde: fromDate, p_hasta: toDate },
+        // `p_limite` va EXPLÍCITO: el default de la RPC es 3000 y el chequeo de
+        // truncado de acá compara contra ROW_CAP. Sin esto, un rango con 3000+
+        // cancelaciones devolvía exactamente 3000 filas con `partial=false` —
+        // truncado silencioso, justo lo que este reporte no puede hacer.
+        { p_store_id: activeStoreId, p_desde: fromDate, p_hasta: toDate, p_limite: ROW_CAP },
       );
       if (seq !== seqRef.current) return;
       if (error) {

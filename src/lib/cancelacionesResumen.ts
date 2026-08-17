@@ -50,7 +50,17 @@ export interface CancelacionRow {
   motivo: string | null;
   canceladoAt: string | null;
   primerToqueAt: string | null;
-  /** Intentos de llamada ANTES de cancelar. 0 = nadie lo llamó nunca. */
+  /**
+   * Filas de `order_results` (conf/canc/noresp) ANTES de la cancelación.
+   *
+   * ⚠️ `0` NO significa "nadie lo llamó": el flujo normal de una asesora que
+   * llama, escucha "no lo quiero" y cancela deja UNA sola fila (la canc), o sea
+   * `intentosPrevios = 0` habiendo llamado. Significa "se cerró al primer
+   * registro". Para "sin gestión" hay que mirar TAMBIÉN `contactosPrevios`
+   * (los touchpoints que escriben los botones Llamar/WhatsApp) — eso hace
+   * `tuvoGestion()`, y ni así es prueba: marcar desde el celular propio sin
+   * tocar el botón no deja rastro.
+   */
   intentosPrevios: number;
   intentosNoresp: number;
   /** APROXIMADO: touchpoints se cruza por teléfono, no por pedido. */
