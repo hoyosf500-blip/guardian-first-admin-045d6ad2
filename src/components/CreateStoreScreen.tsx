@@ -40,6 +40,11 @@ export default function CreateStoreScreen({ onCreated, onSignOut }: {
       const rpc = supabase.rpc.bind(supabase) as unknown as Rpc;
       const { error } = await rpc('create_my_store', { p_name: nombre, p_country_code: country });
       if (error) {
+        if (esSesionFantasma(error.message)) {
+          toast.error(MENSAJE_SESION_FANTASMA, { duration: 10000 });
+          onSignOut();
+          return;
+        }
         // El mensaje de la RPC ya viene en español y accionable.
         toast.error(error.message.replace(/^.*Exception: /, ''));
         return;
