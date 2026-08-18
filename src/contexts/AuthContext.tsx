@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { appUrl } from '@/lib/appUrl';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -27,6 +28,7 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
+  resendConfirmation: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
 }
 
@@ -162,7 +164,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, displayName: string) => {
     const { data, error } = await supabase.auth.signUp({
       email, password,
-      options: { data: { display_name: displayName }, emailRedirectTo: window.location.origin }
+      // El link del correo se arma con el dominio CANÓNICO, no con el origen de
+      // quien está mirando: dar de alta desde un preview de Lovable mandaba un
+      // link de preview que el destinatario no puede abrir.
+      options: { data: { display_name: displayName }, emailRedirectTo: appUrl() }
     });
     // Con confirmación por email ACTIVA, Supabase crea el usuario pero NO devuelve
     // sesión hasta que hace click en el link del correo (data.session === null con
@@ -173,6 +178,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // es seguro.)
     const needsConfirmation = !error && !!data?.user && !data?.session;
     return { error: translateAuthError(error?.message), needsConfirmation };
+  };
+
+  /** Reenvía el correo de confirmación del alta.
+   *
+   *  `signUp` responde OK apenas Supabase crea el usuario: no sabe ni puede
+   *  saber si el correo se ENTREGÓ. Si el proyecto no
+   *  tiene un SMTP propio configurado, Supabase limita fuertemente el envío y el
+   *  correo simplemente no llega — la pantalla decía "te lo enviamos" igual y la
+   *  persona quedaba sin cuenta y sin salida. Esto le da una. */
+  const resendConfirmation = async (email: string) => {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: appUrl() },
+    });
+    return { error: translateAuthError(error?.message) };
   };
 
   const signIn = async (email: string, password: string) => {
@@ -201,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // temporal para llamar a updateUser.
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: appUrl('reset-password'),
     });
     return { error: translateAuthError(error?.message) };
   };
@@ -214,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, isAdmin, profileLoaded, loading, signUp, signIn, signOut, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, session, profile, isAdmin, profileLoaded, loading, signUp, signIn, signOut, resetPassword, resendConfirmation, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );

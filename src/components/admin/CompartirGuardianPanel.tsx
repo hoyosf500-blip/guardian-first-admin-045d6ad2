@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { appBaseUrl } from '@/lib/appUrl';
 import { toast } from 'sonner';
 import { Share2, Copy, Check } from 'lucide-react';
 import { TiltCard } from '@/components/ui3d';
@@ -16,7 +17,7 @@ import { TiltCard } from '@/components/ui3d';
  */
 export default function CompartirGuardianPanel() {
   const [copied, setCopied] = useState(false);
-  const base = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
+  const base = appBaseUrl();
   const link = `${base}/registro`;
 
   async function copy() {

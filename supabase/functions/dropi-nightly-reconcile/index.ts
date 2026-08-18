@@ -530,6 +530,14 @@ async function reconcileStore(
   }
 }
 
+/** Fila de store_dropi_config que consume el bucle nocturno. */
+interface StoreCfgRow {
+  store_id: string;
+  country_code: string;
+  dropi_api_key: string;
+  dropi_store_url: string | null;
+}
+
 Deno.serve(async (req) => {
   const CORS = getCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -567,8 +575,52 @@ Deno.serve(async (req) => {
     .select("value").eq("key", "dropi_winning_status_filter").maybeSingle();
   const STATUS_FILTER = (filterRow?.value as string) || "FECHA DE CAMBIO DE ESTATUS";
 
+  // ─── Orden determinista + rotación + presupuesto ───────────────────────────
+  //
+  // ANTES: este bucle recorría las tiendas en el orden que devolvía Postgres
+  // (indefinido) y SIN presupuesto de tiempo. `reconcileStore` pagina Dropi, así
+  // que con varias tiendas el edge function se moría por wall-clock a mitad del
+  // bucle: las últimas NO se verificaban y **no dejaban ni una fila** — ni de
+  // error. Silencio total.
+  //
+  // Medido el 18-ago-2026 con 4 tiendas: Rushmira (Colombia) se verificó el 10,
+  // el 12 y el 16 de agosto, y NUNCA el 11, 13, 14, 15, 17 ni 18. Ecuador corría
+  // casi todas las noches. Nadie eligió eso: dependía de qué orden le tocara esa
+  // noche. El badge quedó rojo por "hace más de un día" sin ningún error que
+  // explicara por qué, y las divergencias de Colombia se acumularon sin corregir.
+  //
+  // Empeora con cada tienda nueva, así que se arregla igual que en dropi-cron:
+  // orden TOTALMENTE determinista (el cursor es POSICIONAL: sin tiebreak estable
+  // la rotación saltea tiendas), cursor persistido para que la postergada de hoy
+  // sea la PRIMERA de mañana, y corte ENTRE tiendas — nunca a mitad de una, que
+  // dejaría una reconciliación parcial.
+  const NIGHTLY_GLOBAL_BUDGET_MS = 110_000;
+
+  const ordenadas = [...(active as unknown as StoreCfgRow[])]
+    .sort((a, b) => String(a.store_id).localeCompare(String(b.store_id)));
+
+  let cursor = 0;
+  if (ordenadas.length > 0) {
+    try {
+      const { data: cur } = await sb.from("app_settings")
+        .select("value").eq("key", "dropi_nightly_store_cursor").maybeSingle();
+      cursor = (Math.max(0, parseInt(String(cur?.value ?? "0"), 10) || 0)) % ordenadas.length;
+    } catch { /* primera vez / clave ausente: arranca en 0 */ }
+  }
+  const rotadas = [...ordenadas.slice(cursor), ...ordenadas.slice(0, cursor)];
+
+  const deadline = Date.now() + NIGHTLY_GLOBAL_BUDGET_MS;
+  const postergadas: StoreCfgRow[] = [];
+  let procesadas = 0;
+
   const summary: Array<Record<string, unknown>> = [];
-  for (const cfg of active as unknown as Array<{ store_id: string; country_code: string; dropi_api_key: string; dropi_store_url: string | null }>) {
+  for (const cfg of rotadas) {
+    // La PRIMERA siempre corre: sin esto, un presupuesto mal calculado dejaría
+    // una noche entera sin verificar ninguna tienda.
+    if (procesadas > 0 && Date.now() > deadline) {
+      postergadas.push(cfg);
+      continue;
+    }
     const ownerId = ownerByStore.get(cfg.store_id);
     if (!ownerId) continue;
     const r = await reconcileStore(
@@ -606,10 +658,46 @@ Deno.serve(async (req) => {
       await sb.from("nightly_reconcile_results").insert(baseLog);
     }
     summary.push({ store_id: cfg.store_id, ...r });
+    procesadas++;
     console.log(`reconcile ${cfg.store_id}: divergent=${r.divergent} applied=${r.applied} orphans=${r.orphanCancelled} deletedInDropi=${r.deletedCancelled} repesca=${r.repescaArchivados} repescaRefrescados=${r.repescaRefrescados} checkComplete=${r.deletedCheckComplete}${r.repescaMotivo ? ` | ${r.repescaMotivo}` : ""}`);
   }
 
-  return new Response(JSON.stringify({ ok: true, summary }), {
+  // Las postergadas dejan CONSTANCIA. Sin fila, el badge de la tienda no puede
+  // distinguir "verificada y limpia" de "nadie la miró" — que es justamente lo
+  // que dejó a Colombia sin verificar seis noches sin que nadie se enterara.
+  // `deleted_check_complete: false` (no error_message) es el estado AMARILLO
+  // "sin verificar, se reintenta": si se posterga varias noches seguidas el
+  // badge cuenta las noches y deja de ser benigno.
+  for (const d of postergadas) {
+    try {
+      await sb.from("nightly_reconcile_results").insert({
+        store_id: d.store_id,
+        divergent_count: 0,
+        applied_count: 0,
+        orphan_cancelled: 0,
+        error_message: null,
+        deleted_check_complete: false,
+      });
+    } catch (e) {
+      console.warn(`no se pudo registrar la tienda postergada ${d.store_id}:`, e);
+    }
+  }
+
+  // El cursor arranca mañana en la PRIMERA postergada de hoy.
+  if (ordenadas.length > 0) {
+    const nextCursor = (cursor + Math.max(procesadas, 1)) % ordenadas.length;
+    try {
+      await sb.from("app_settings").upsert(
+        { key: "dropi_nightly_store_cursor", value: String(nextCursor), updated_at: new Date().toISOString() },
+        { onConflict: "key" },
+      );
+    } catch (e) {
+      console.warn("no se pudo persistir el cursor de rotación del nightly:", e);
+    }
+    console.log(`nightly: ${procesadas}/${ordenadas.length} tiendas verificadas (cursor ${cursor} → ${nextCursor})${postergadas.length ? ` · postergadas: ${postergadas.map((d) => d.store_id).join(", ")}` : ""}`);
+  }
+
+  return new Response(JSON.stringify({ ok: true, summary, deferred: postergadas.map((d) => d.store_id) }), {
     status: 200,
     headers: { ...CORS, "Content-Type": "application/json" },
   });

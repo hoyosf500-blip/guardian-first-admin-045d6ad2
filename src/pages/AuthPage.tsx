@@ -56,7 +56,7 @@ export default function AuthPage() {
   // El registro público SOLO se habilita con un link de invitación válido
   // (?invite=TOKEN). Sin invitación, la página muestra únicamente login +
   // recuperación de contraseña (las cuentas internas se crean desde Admin).
-  const { signIn, signUp, resetPassword, user } = useAuth();
+  const { signIn, signUp, resetPassword, resendConfirmation, user } = useAuth();
   // Tema único oscuro: el hook ya no togglea, solo garantiza la clase.
   useTheme();
   const [email, setEmail] = useState('');
@@ -69,6 +69,12 @@ export default function AuthPage() {
   // clave revelada en login seguía revelada al pasar a "crear cuenta" — el
   // campo aparecía con la contraseña a la vista. ResetPasswordPage ya usaba dos
   // estados independientes; acá se sigue el mismo patrón.
+  // Correo que quedó esperando confirmación. Habilita el "reenviar" del login:
+  // el alta responde OK apenas se crea el usuario, pero NADIE puede saber desde
+  // acá si el correo llegó de verdad. Sin esta salida, quien no lo recibe queda
+  // con la cuenta creada y sin forma de entrar.
+  const [pendienteConfirmar, setPendienteConfirmar] = useState('');
+  const [reenviando, setReenviando] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   // Nombre y país de la tienda, pedidos ACÁ (decisión del dueño 2026-08-13).
@@ -155,9 +161,10 @@ export default function AuthPage() {
     // tienda fantasma esperando por una cuenta que nunca existió.
     if (nuevoDueno) guardarTiendaPendiente({ nombre: storeName.trim(), pais: storeCountry });
     if (needsConfirmation) {
+      setPendienteConfirmar(email.trim());
       toast.success(
-        'Te enviamos un correo de confirmación. Hacé click en el link (mirá también el spam) y después entrá con tu cuenta.',
-        { duration: 10000 },
+        'Tu cuenta se creó. Te mandamos un correo de confirmación: hacé click en el link (mirá también el spam) y después entrá. Si en unos minutos no llega, abajo tenés el botón para reenviarlo.',
+        { duration: 12000 },
       );
     } else {
       toast.success('¡Cuenta creada! Ya estás dentro.', { duration: 5000 });
@@ -165,6 +172,15 @@ export default function AuthPage() {
     // Si hubo auto-login, el redirect a /dashboard + la redención de la
     // invitación ocurren solos. Si requiere confirmar email, mostramos login.
     setView('login');
+  };
+
+  const handleReenviar = async () => {
+    if (!pendienteConfirmar) return;
+    setReenviando(true);
+    const { error } = await resendConfirmation(pendienteConfirmar);
+    setReenviando(false);
+    if (error) { toast.error(error); return; }
+    toast.success(`Correo reenviado a ${pendienteConfirmar}. Revisá también el spam.`, { duration: 8000 });
   };
 
   const handleForgot = async (e: React.FormEvent) => {
@@ -349,6 +365,23 @@ export default function AuthPage() {
               </div>
 
               <div className="tilt-layer-1">
+                {view === 'login' && pendienteConfirmar && (
+                  <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 p-3">
+                    <p className="text-xs text-foreground leading-relaxed">
+                      Te mandamos el correo de confirmación a{' '}
+                      <strong className="break-all">{pendienteConfirmar}</strong>. Sin ese click no
+                      vas a poder entrar. Mirá también el <strong>spam</strong> o correo no deseado.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleReenviar}
+                      disabled={reenviando}
+                      className="mt-2 text-xs font-semibold text-warning underline underline-offset-2 hover:brightness-125 disabled:opacity-50"
+                    >
+                      {reenviando ? 'Reenviando…' : '¿No te llegó? Reenviar correo'}
+                    </button>
+                  </div>
+                )}
                 {view === 'login' && (
                   <form onSubmit={handleSubmit} className="space-y-3.5">
                     <div>

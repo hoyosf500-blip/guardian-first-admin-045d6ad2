@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { appBaseUrl } from '@/lib/appUrl';
 import { supabase } from '@/integrations/supabase/client';
 import { useStore } from '@/contexts/StoreContext';
 import { UserPlus, Loader2, Copy, Check, Link2 } from 'lucide-react';
@@ -93,7 +94,7 @@ export default function StoreInvitePanel() {
     // de Lovable, un staging o localhost, `window.location.origin` produciría un
     // link que su equipo no puede abrir. VITE_PUBLIC_APP_URL fija el dominio de
     // producción; si no está seteada, cae al origen actual (comportamiento previo).
-    const base = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
+    const base = appBaseUrl();
     setLink(`${base}/auth?invite=${data}`);
     toast.success('Link de invitación generado');
     loadInvites();
