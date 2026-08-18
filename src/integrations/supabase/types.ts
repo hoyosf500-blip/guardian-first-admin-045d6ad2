@@ -1038,6 +1038,7 @@ export type Database = {
           costo_prod: number | null
           created_at: string
           departamento: string | null
+          devuelto_at: string | null
           dias: number | null
           dias_conf: number | null
           direccion: string | null
@@ -1089,6 +1090,7 @@ export type Database = {
           costo_prod?: number | null
           created_at?: string
           departamento?: string | null
+          devuelto_at?: string | null
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
@@ -1140,6 +1142,7 @@ export type Database = {
           costo_prod?: number | null
           created_at?: string
           departamento?: string | null
+          devuelto_at?: string | null
           dias?: number | null
           dias_conf?: number | null
           direccion?: string | null
@@ -2145,6 +2148,39 @@ export type Database = {
       }
       cancel_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       cancel_orphan_pending_orders: { Args: never; Returns: number }
+      cancelaciones_analisis: {
+        Args: {
+          p_desde: string
+          p_hasta: string
+          p_limite?: number
+          p_store_id: string
+        }
+        Returns: {
+          cancelado_at: string
+          ciudad: string
+          contactos_previos: number
+          creado_at: string
+          departamento: string
+          estado: string
+          external_id: string
+          fecha: string
+          generados_periodo: number
+          intentos_noresp: number
+          intentos_previos: number
+          motivo: string
+          operator_id: string
+          operator_name: string
+          order_id: string
+          origen: string
+          primer_toque_at: string
+          producto: string
+          reagendas: number
+          total_periodo: number
+          transportadora: string
+          validation_decision: string
+          valor: number
+        }[]
+      }
       categorize_personal_movement: {
         Args: { p_descripcion: string; p_moneda?: string }
         Returns: {
@@ -2167,6 +2203,7 @@ export type Database = {
           costo_prod: number | null
           created_at: string
           departamento: string | null
+          devuelto_at: string | null
           dias: number | null
           dias_conf: number | null
           direccion: string | null
@@ -2255,6 +2292,14 @@ export type Database = {
       }
       delete_store_ad_spend_daily: { Args: { p_id: string }; Returns: boolean }
       delete_wa_quick_reply: { Args: { p_id: string }; Returns: undefined }
+      devoluciones_del_periodo: {
+        Args: { p_from: string; p_store_id: string; p_to: string }
+        Returns: {
+          de_meses_previos: number
+          devoluciones: number
+          valor: number
+        }[]
+      }
       dropi_fingerprint: { Args: { p_phone: string }; Returns: Json }
       dropi_jwt_exp: { Args: { p_token: string }; Returns: number }
       ensure_wa_channel_secret: {
