@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import OnboardingStepper from '@/components/onboarding/OnboardingStepper';
 import { validarNombreTienda, validarPais, normalizarPais, MAX_NOMBRE, type PaisTienda } from '@/lib/onboardingValidacion';
+import { esSesionFantasma, MENSAJE_SESION_FANTASMA } from '@/lib/sesionFantasma';
 
 /**
  * PASO 1 del onboarding: un usuario registrado SIN tiendas crea la suya y queda
