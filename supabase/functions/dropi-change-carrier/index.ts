@@ -55,7 +55,7 @@ import {
   type QuoteLine,
 } from "../_shared/dropiWebQuote.ts";
 import { resolveDestCity, noCoverageMessage } from "../_shared/dropiCityCatalog.ts";
-import { paisUsaCentavos } from "../_shared/dropiCountry.ts";
+import { paisUsaCentavos, dropiCountryNameFor } from "../_shared/dropiCountry.ts";
 import { cancelOrderInDropi } from "../_shared/dropiCancelOrder.ts";
 import {
   checkOrderLivenessWeb,
@@ -208,6 +208,28 @@ function parseOrderTotal(body: Record<string, unknown>): number | null {
   const order = (body.objects ?? body.data ?? body.order ?? body) as Record<string, unknown>;
   const t = parseFloat(String(order?.total_order ?? ""));
   return Number.isFinite(t) ? t : null;
+}
+
+/** Nombre de país que viaja en el create-with-edit, FAIL-CLOSED.
+ *
+ *  Acá vivían CINCO copias del ternario de dos ramas que mandaba a toda tienda
+ *  no-EC a la rama de Colombia. La auditoría multi-tienda (13-ago-2026) lo mató
+ *  en el catálogo de ciudades y en shopify-push, pero ESTE archivo —el camino de
+ *  EDICIÓN— quedó afuera de la lista fija del test guardián, así que las 5 copias
+ *  siguieron vivas en verde: **una tienda de Guatemala recreaba sus pedidos
+ *  declarándolos COLOMBIA**. Un país sin mapeo ahora ROMPE con un mensaje que
+ *  dice qué tocar, en vez de crear el pedido en el país equivocado y que se note
+ *  semanas después. */
+function countryNameOrFail(countryCode: string | null | undefined): string {
+  const name = dropiCountryNameFor(countryCode);
+  if (!name) {
+    throw new WebFallbackError(
+      `País ${String(countryCode || "?").toUpperCase()} sin mapeo en DROPI_COUNTRY_NAMES ` +
+        `(_shared/dropiCountry.ts) — no se puede recrear el pedido sin saber su país.`,
+      422,
+    );
+  }
+  return name;
 }
 
 /** Redondeo por país: EC (USD) y GT (GTQ) usan centavos, CO pesos enteros.
@@ -1398,7 +1420,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // Contexto de envío copiado del pedido base (ciudad real = ruta con cobertura).
-      const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const country = countryNameOrFail(cfg.countryCode);
       const cityQ = String(orderRow.ciudad || objs.city || "");
       const stateQ = String(orderRow.departamento || objs.state || "");
       const destCity = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, cityQ, stateQ);
@@ -1650,7 +1672,7 @@ Deno.serve(async (req: Request) => {
       // 2) Ciudad destino: catálogo local + fallback vivo /api/locations (self-healing).
       //    El fallback vivo LANZA con errores reales (token vencido/red) en vez de
       //    devolver null — no confundir con "sin cobertura".
-      const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const country = countryNameOrFail(cfg.countryCode);
       // DESTINO A COTIZAR: la ciudad que la operadora tiene EN PANTALLA, no la
       // guardada. Antes salía siempre de `orderRow` y por eso, al cambiar la
       // ciudad en el editor, se seguía cotizando la VIEJA: la operadora elegía
@@ -1804,7 +1826,7 @@ Deno.serve(async (req: Request) => {
       // Precios de línea escalados al valor nuevo (total_order manda para el recaudo).
       const linesV = scaleLinePrices(prepV.lines, newValor, cfg.countryCode);
 
-      const countryV = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const countryV = countryNameOrFail(cfg.countryCode);
       let destCityV;
       try {
         destCityV = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, clientV.city, clientV.state);
@@ -2162,7 +2184,7 @@ Deno.serve(async (req: Request) => {
           ? sumaLineasE
           : (Number(orderRow.valor) || sumaLineasE);
 
-      const countryE = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+      const countryE = countryNameOrFail(cfg.countryCode);
       let destCityE;
       try {
         destCityE = await resolveDestCity(sbAdmin, cfg, cfg.countryCode, clientE.city, clientE.state);
@@ -2473,7 +2495,7 @@ Deno.serve(async (req: Request) => {
       return jsonOk({ ok: false, error: "Falta el nombre de la transportadora elegida (name)." });
     }
 
-    const country = cfg.countryCode === "EC" ? "ECUADOR" : "COLOMBIA";
+    const country = countryNameOrFail(cfg.countryCode);
 
     // 1) Detalle del cliente + líneas (prep compartida con apply_value).
     const prep = await resolveClientAndLines(cfg, orderRow, externalId);

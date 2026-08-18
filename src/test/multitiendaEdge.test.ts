@@ -37,16 +37,26 @@ function archivosTs(dir: string, out: string[] = []): string[] {
 }
 
 describe('multi-tienda en las edge functions (auditoría 2026-08-13)', () => {
-  it('el nombre de país Dropi sale del mapeo central, no de ternarios EC/CO', () => {
+  // La lista de archivos se DESCUBRE, no se escribe a mano. La versión anterior
+  // nombraba 3 archivos y por eso pasó en verde durante 3 días mientras
+  // dropi-change-carrier —el camino de EDICIÓN de pedidos— tenía CINCO copias
+  // del ternario prohibido: una tienda GT recreaba sus pedidos como COLOMBIA.
+  // Un guardián con lista fija solo vigila lo que ya se arregló.
+  it('ninguna edge function deriva el país con el ternario EC/CO', () => {
+    const conTernario = archivosTs(RAIZ)
+      .filter((f) => /"EC"\s*\?\s*"ECUADOR"\s*:\s*"COLOMBIA"/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.replace(/\\/g, '/'));
+    expect(conTernario, 'usar dropiCountryNameFor (mapeo central fail-closed)').toEqual([]);
+  });
+
+  it('quien nombra países de Dropi usa el mapeo central', () => {
     for (const f of [
       '_shared/dropiCityCatalog.ts',
       'dropi-sync-city-catalog/index.ts',
       'shopify-push-dropi/index.ts',
+      'dropi-change-carrier/index.ts',
     ]) {
-      const src = FN(f);
-      expect(src, `${f} debe usar dropiCountryNameFor (mapeo central)`).toMatch(/dropiCountryNameFor/);
-      expect(src, `${f} reintrodujo el ternario "EC" ? ECUADOR : COLOMBIA`)
-        .not.toMatch(/"EC"\s*\?\s*"ECUADOR"\s*:\s*"COLOMBIA"/);
+      expect(FN(f), `${f} debe usar dropiCountryNameFor (mapeo central)`).toMatch(/dropiCountryNameFor/);
     }
   });
 
