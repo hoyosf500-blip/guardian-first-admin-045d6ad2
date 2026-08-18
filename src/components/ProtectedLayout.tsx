@@ -20,6 +20,7 @@ import SetupWizard from '@/components/SetupWizard';
 import ConectarDropiBanner from '@/components/ConectarDropiBanner';
 import CreateStoreScreen from '@/components/CreateStoreScreen';
 import { leerTiendaPendiente, olvidarTiendaPendiente, type TiendaPendiente } from '@/lib/tiendaPendiente';
+import { esSesionFantasma, MENSAJE_SESION_FANTASMA } from '@/lib/sesionFantasma';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
 import type { LucideIcon } from 'lucide-react';
