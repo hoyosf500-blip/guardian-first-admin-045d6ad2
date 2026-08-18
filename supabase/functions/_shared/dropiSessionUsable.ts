@@ -31,6 +31,12 @@ export interface SessionUsableCfg {
   base: string;
   sessionToken: string;
   storeUrl: string;
+  /** Marca interna: en ESTA invocación el token ya se probó. Evita pagar el
+   *  probe más de una vez cuando un mismo request pasa por varios puntos que
+   *  aseguran la sesión — un `mode:"quote"` cruza DOS, y con el token revocado
+   *  cada uno hacía probe→login→probe: seis requests y dos logins para cotizar
+   *  una sola vez. Es exactamente la lentitud que se notó en Colombia. */
+  _sesionProbada?: boolean;
 }
 
 /** Lectura barata e idempotente para saber si el session token sirve AHORA.
@@ -69,7 +75,12 @@ export async function ensureSessionUsable(
   cfg: SessionUsableCfg,
 ): Promise<void> {
   cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
-  if ((await sessionProbe(cfg)) !== "token_malo") return;
+  // Ya validado en este request: no se vuelve a pagar el probe. Si Dropi lo
+  // revoca DESPUÉS, la llamada real igual falla con el mensaje claro de
+  // dropiWebFetch — se pierde el auto-rescate en esa ventana, a cambio de no
+  // meterle un request extra a cada paso de una edición.
+  if (cfg._sesionProbada) return;
+  if ((await sessionProbe(cfg)) !== "token_malo") { cfg._sesionProbada = true; return; }
 
   const anterior = cfg.sessionToken;
   cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg, { force: true });
@@ -93,4 +104,5 @@ export async function ensureSessionUsable(
       422,
     );
   }
+  cfg._sesionProbada = true;
 }
