@@ -1,0 +1,1 @@
+delete from auth.users where email in ('prueba.registro.13048@guardiantest.dev','prueba.registro.guardian+audit@gmail.com');
