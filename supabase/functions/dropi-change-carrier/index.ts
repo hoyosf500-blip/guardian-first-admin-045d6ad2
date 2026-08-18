@@ -44,7 +44,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
-import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
+import { ensureSessionUsable } from "../_shared/dropiSessionUsable.ts";
 import {
   quoteCarriers,
   dropiWebFetch,
@@ -1224,7 +1224,7 @@ Deno.serve(async (req: Request) => {
     // apply_value lo renueva LAZY (su camino directo PUT+verify no lo necesita).
     if (mode === "quote" || mode === "apply" || mode === "cancel") {
       try {
-        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+        await ensureSessionUsable(sbAdmin, cfg);
       } catch (e) {
         if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
         throw e;
@@ -1274,7 +1274,7 @@ Deno.serve(async (req: Request) => {
     //   3. ¿Qué variantes tiene disponibles ese producto?
     if (body.mode === "variants") {
       try {
-        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+        await ensureSessionUsable(sbAdmin, cfg);
       } catch (e) {
         if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
         throw e;
@@ -1384,7 +1384,7 @@ Deno.serve(async (req: Request) => {
     //     silencio.
     if (body.mode === "variant_probe") {
       try {
-        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+        await ensureSessionUsable(sbAdmin, cfg);
       } catch (e) {
         if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
         throw e;
@@ -1641,7 +1641,7 @@ Deno.serve(async (req: Request) => {
         realLines = parseOrderLines(ord.body);
       } else {
         try {
-          cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+          await ensureSessionUsable(sbAdmin, cfg);
           const v2q = await dropiGetOrderV2(cfg, externalId);
           if (v2q.ok) realLines = parseV2Lines(v2q.body);
         } catch (e) {
@@ -1807,7 +1807,7 @@ Deno.serve(async (req: Request) => {
 
       // ---- Camino 2: recrear como el panel (create-with-edit) ----
       try {
-        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+        await ensureSessionUsable(sbAdmin, cfg);
       } catch (e) {
         if (e instanceof WebFallbackError) {
           return jsonOk({
@@ -2140,7 +2140,7 @@ Deno.serve(async (req: Request) => {
       const oldValorE = Number(orderRow.valor) || 0;
 
       try {
-        cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+        await ensureSessionUsable(sbAdmin, cfg);
       } catch (e) {
         if (e instanceof WebFallbackError) return jsonOk({ ok: false, error: e.message });
         throw e;

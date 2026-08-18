@@ -35,6 +35,7 @@ import { settleAuditRow, deriveSettleFromPayload } from "../_shared/settleAudit.
 import { notFoundSignal, dropiGetOrder } from "../_shared/dropiCancelOrder.ts";
 import { resolveLiveSibling, retargetLocalOrder } from "../_shared/dropiConfirmOrder.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
+import { ensureSessionUsable } from "../_shared/dropiSessionUsable.ts";
 import { dropiWebFetch, WebFallbackError, normUp } from "../_shared/dropiWebQuote.ts";
 import { dropiGetOrderV2Detail } from "../_shared/dropiOrderLiveness.ts";
 import { mismoDestino } from "../_shared/destinoMatch.ts";
@@ -344,10 +345,12 @@ Deno.serve(async (req: Request) => {
         }
 
         if (botClass) {
-          // 2) Sesión web (auto-login si venció). Sin sesión no hay fallback.
+          // 2) Sesión web USABLE, no solo "no vencida": Dropi revoca tokens antes
+          //    de su exp y ahí el auto-login por fecha no se entera (18-ago-2026).
+          //    Sin sesión no hay fallback.
           let sessionOk = false;
           try {
-            cfg.sessionToken = await ensureFreshSessionToken(sbAdmin, cfg);
+            await ensureSessionUsable(sbAdmin, cfg);
             sessionOk = true;
           } catch (e) {
             const m = e instanceof WebFallbackError ? e.message : (e instanceof Error ? e.message : String(e));
