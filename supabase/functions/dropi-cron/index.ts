@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { dropiHostFor } from "../_shared/dropiHosts.ts";
+import { esZombieReal, esTiendaSinPedidosTodavia } from "../_shared/syncZombie.ts";
 import { dropiAppHostFor } from "../_shared/dropiCountry.ts";
 import { loadStoreConfig, type StoreDropiConfig } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";
@@ -894,7 +895,25 @@ Deno.serve(async (req: Request) => {
       // nuevas y enmascararía un filter_date_by roto (el bug zombie exacto).
       // Ahora se loguea como 'warn' con mensaje explícito para que el banner
       // SyncFreshness lo detecte.
-      const isZombie = !r.error && !r.throttled && r.synced === 0 && r.statusTotal === 0;
+      // Un cero NO es siempre un cero. La MISMA condición es cierta y NORMAL en
+      // una tienda recién dada de alta que todavía no vendió: el 18-ago-2026 una
+      // tienda nueva se conectó bien y lo primero que vio su dueño fue un banner
+      // ROJO acusando a su clave de Dropi de ser inválida. La diferencia está en
+      // la historia, no en el cero. El count se paga SOLO cuando estamos por dar
+      // la alarma, no en cada corrida.
+      let tienePedidos = true;
+      if (!r.error && !r.throttled && r.synced === 0 && r.statusTotal === 0) {
+        const { count } = await sb.from("orders")
+          .select("id", { count: "exact", head: true })
+          .eq("store_id", storeId);
+        tienePedidos = (count ?? 0) > 0;
+      }
+      const senales = {
+        error: r.error, throttled: r.throttled,
+        synced: r.synced, statusTotal: r.statusTotal, tienePedidos,
+      };
+      const isZombie = esZombieReal(senales);
+      const sinPedidosTodavia = esTiendaSinPedidosTodavia(senales);
       // STATUS STARVED: la cuenta throttleó y el pase de CAMBIO DE ESTATUS (el
       // pesado, ~21d) no completó (statusTotal===0), aunque el pase liviano de
       // CREADO sí trajo pedidos nuevos (synced>0). Antes esto era 'success' →
@@ -913,7 +932,9 @@ Deno.serve(async (req: Request) => {
           ? "Dropi throttle (429): el refresh de estatus quedó incompleto — las guías en curso pueden no reflejar su último estado. Reintenta solo."
           : r.throttled
             ? "Dropi throttle (429) — sincronización parcial"
-            : isZombie
+            : sinPedidosTodavia
+              ? null
+              : isZombie
               ? `Dropi devolvió 0 pedidos en el pase de cambio de estatus (filter_date_by="${chosenFilter}") — posible api_key inválida, endpoint cambiado o filter_date_by roto`
               : r.partialError
                 ? `Paginación cortada por error de Dropi (se sincronizó lo parcial; los pedidos más viejos del rango pueden no haber refrescado): ${r.partialError}`
