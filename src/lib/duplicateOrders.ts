@@ -197,3 +197,69 @@ export function findSupersededInSeg(
 
   return out;
 }
+
+/** Otro pedido del MISMO cliente que ya avanzó (tiene guía, va despachado…). */
+export interface ClienteYaDespachado {
+  /** external_id del pedido que ya avanzó. */
+  nuevoId: string;
+  estado: string | null;
+}
+
+/**
+ * Cliente en la cola que YA tiene OTRO pedido avanzado en Dropi — sin exigir
+ * que el producto coincida.
+ *
+ * POR QUÉ EXISTE (caso real Rushmira Colombia, 18-ago-2026): el pedido
+ * `86118300` quedó PENDIENTE CONFIRMACION mientras `86142163`, del mismo
+ * cliente y por la misma plata, ya tenía GUÍA GENERADA. La asesora no veía
+ * ningún aviso: iba a llamar y despachar un SEGUNDO paquete.
+ *
+ * Los dos detectores que ya existían lo dejaban pasar:
+ *  - `findSupersededPendingConfDetailed` exige que el string de `producto`
+ *    coincida EXACTO, y una edición que cambia cantidad o variante lo rompe —
+ *    que es justo cuando nace este duplicado.
+ *  - `detectDuplicatePairs` solo mira pedidos ACTIVOS (PENDIENTE / PENDIENTE
+ *    CONFIRMACION); `GUIA_GENERADA` no entra.
+ *
+ * ⚠️ Este matcher es MÁS LAXO a propósito, así que **solo AVISA, nunca oculta
+ * ni cancela**. Un cliente puede comprar dos veces de verdad; esconder o
+ * cancelar por sospecha ya hizo que se cancelara el pedido REAL de un cliente
+ * (auditoría 2026-08-13). Decide la persona, con el dato a la vista.
+ *
+ * `yaSenalados` recibe los external_id que otro aviso ya cubre, para no
+ * apilarle dos advertencias a la misma fila.
+ */
+export function findClienteYaDespachado(
+  pendingConf: OrderData[],
+  progressed: ProgressedOrder[],
+  yaSenalados: Set<string> = new Set(),
+  windowDays = 14,
+): Map<string, ClienteYaDespachado> {
+  const out = new Map<string, ClienteYaDespachado>();
+  const winMs = windowDays * DAY_MS;
+  for (const pc of pendingConf) {
+    const pcId = String(pc.externalId ?? '');
+    if (!pcId || yaSenalados.has(pcId)) continue;
+    const tel = normalizePhone(pc.phone);
+    if (!tel) continue;
+    const pcT = Date.parse(String(pc.fecha || ''));
+    let best: ProgressedOrder | null = null;
+    for (const p of progressed) {
+      if (normalizePhone(p.phone) !== tel) continue;
+      const pId = String(p.external_id ?? '');
+      if (!pId || pId === pcId) continue;
+      // Un pedido MUERTO no compite: ya lo cubre el panel pasivo.
+      if (isLocallyDead(p.estado)) continue;
+      const pT = Date.parse(String(p.fecha || ''));
+      if (!Number.isNaN(pcT) && !Number.isNaN(pT)) {
+        // Compra vieja del mismo cliente ≠ duplicado. Tolerancia de 1 día hacia
+        // atrás por si el avanzado se creó justo antes.
+        if (pT < pcT - DAY_MS) continue;
+        if (pT - pcT > winMs) continue;
+      }
+      if (!best || Number(p.external_id) > Number(best.external_id)) best = p;
+    }
+    if (best) out.set(pcId, { nuevoId: String(best.external_id), estado: best.estado ?? null });
+  }
+  return out;
+}

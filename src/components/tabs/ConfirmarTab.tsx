@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
 import { useOrders } from '@/contexts/OrderContext';
-import { findSupersededPendingConfDetailed, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
+import { findSupersededPendingConfDetailed, findClienteYaDespachado, isLocallyDead, type ProgressedOrder } from '@/lib/duplicateOrders';
 import { detectDuplicatePairs } from '@/lib/duplicatePairs';
 import { buildActiveDupIndex, type ConfirmarOrderAlerts } from '@/lib/orderAlerts';
 import { useShopifyValueMismatches } from '@/hooks/useShopifyPending';
@@ -313,6 +313,31 @@ export default function ConfirmarTab({ profile }: Props) {
     }
     return out;
   }, [visibleQueue, progressedOrders]);
+
+  // ⚠ CLIENTE CON PEDIDO YA DESPACHADO (caso real en Colombia, 18-ago-2026):
+  // #86118300 seguía PENDIENTE CONFIRMACION mientras #86142163, del mismo
+  // cliente y por la misma plata, YA tenía guía. La asesora no veía nada e iba
+  // a despachar un segundo paquete. Los dos avisos de arriba no lo agarran: uno
+  // exige que el producto coincida EXACTO (una edición de cantidad lo rompe, y
+  // es justo cuando nace el duplicado) y el otro solo mira pedidos ACTIVOS.
+  //
+  // Este matcher es MÁS LAXO, así que SOLO AVISA: no oculta la fila ni ofrece
+  // cancelar. Un cliente puede comprar dos veces de verdad, y cancelar por
+  // sospecha ya mató el pedido REAL de un cliente antes.
+  const clienteYaDespachado = useMemo(() => {
+    const yaSenalados = new Set<string>([
+      ...supersededIds,
+      ...resentOldInQueue.map(r => String(r.order.externalId ?? '')),
+    ]);
+    const m = findClienteYaDespachado(visibleQueue, progressedOrders, yaSenalados);
+    const byExt = new Map(visibleQueue.map(o => [String(o.externalId ?? ''), o]));
+    const out: Array<{ order: OrderData; otroId: string; otroEstado: string | null }> = [];
+    for (const [extId, info] of m) {
+      const row = byExt.get(extId);
+      if (row && !row.result) out.push({ order: row, otroId: info.nuevoId, otroEstado: info.estado });
+    }
+    return out;
+  }, [visibleQueue, progressedOrders, supersededIds, resentOldInQueue]);
 
   // Alertas POR PEDIDO para CallView/WorkList (chips en la ficha misma):
   //  - duplicado: cliente con OTRO pedido en curso (Dropi o repetido en la cola)
@@ -1149,6 +1174,35 @@ export default function ConfirmarTab({ profile }: Props) {
                       className="text-[9px] font-bold px-2 py-0.5 rounded-lg border bg-warning/15 text-warning border-warning/30 inline-flex items-center gap-0.5"
                     >
                       ⚠ YA REENVIADO — gestioná el #{nuevoId}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {clienteYaDespachado.length > 0 && (
+            <div className="relative mb-4 rounded-2xl border border-danger/40 bg-danger/10 shadow-card3d overflow-hidden">
+              <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
+              <div className="px-4 pl-5 py-3 flex items-center gap-3 text-xs flex-wrap">
+                <span className="w-9 h-9 rounded-xl bg-danger/20 flex items-center justify-center flex-shrink-0 text-danger" aria-hidden="true">
+                  <AlertTriangle size={17} />
+                </span>
+                <span className="font-semibold text-foreground">
+                  {clienteYaDespachado.length} cliente{clienteYaDespachado.length > 1 ? 's' : ''} con OTRO pedido ya despachado
+                </span>
+                <span className="text-muted-foreground">— revisá en Dropi antes de confirmar: puede terminar en doble envío</span>
+              </div>
+              <div className="border-t border-danger/30 divide-y divide-border">
+                {clienteYaDespachado.map(({ order, otroId, otroEstado }) => (
+                  <div key={order.externalId || order.dbId} className="px-4 pl-5 py-2 flex items-center gap-2 text-xs flex-wrap transition-colors hover:bg-danger/5">
+                    <span className="font-medium text-foreground truncate">{order.nombre}</span>
+                    <span className="font-mono tabular-nums text-[10px] text-muted-foreground">#{order.externalId}</span>
+                    <span
+                      title={`Este cliente ya tiene el pedido #${otroId} en ${otroEstado || 'curso'}. Puede ser una edición que dejó vivo el viejo, o una compra distinta: verificalo en Dropi antes de despachar.`}
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/30 inline-flex items-center gap-0.5"
+                    >
+                      ⚠ YA TIENE #{otroId} ({otroEstado || 'en curso'})
                     </span>
                   </div>
                 ))}
