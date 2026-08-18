@@ -20,6 +20,7 @@ import SetupWizard from '@/components/SetupWizard';
 import ConectarDropiBanner from '@/components/ConectarDropiBanner';
 import CreateStoreScreen from '@/components/CreateStoreScreen';
 import { leerTiendaPendiente, olvidarTiendaPendiente, type TiendaPendiente } from '@/lib/tiendaPendiente';
+import { esSesionFantasma, MENSAJE_SESION_FANTASMA } from '@/lib/sesionFantasma';
 import StoreSelector from '@/components/StoreSelector';
 import SyncFreshness from '@/components/SyncFreshness';
 import type { LucideIcon } from 'lucide-react';
@@ -206,6 +207,10 @@ function ProtectedLayoutInner() {
       if (r.ok) {
         toast.success(`¡Tu tienda "${pendiente.nombre}" está lista!`);
         await store.refresh();
+      } else if (esSesionFantasma(r.motivo)) {
+        // Token de una cuenta borrada: no hay pantalla que arregle esto.
+        toast.error(MENSAJE_SESION_FANTASMA, { duration: 10000 });
+        await signOut();
       } else if (r.motivo) {
         // Cae a "Creá tu tienda", pero sabiendo POR QUÉ. Un formulario que
         // reaparece sin explicación se lee como que la app perdió los datos.
