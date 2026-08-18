@@ -39,6 +39,7 @@ import { ensureSessionUsable } from "../_shared/dropiSessionUsable.ts";
 import { dropiWebFetch, WebFallbackError, normUp } from "../_shared/dropiWebQuote.ts";
 import { dropiGetOrderV2Detail } from "../_shared/dropiOrderLiveness.ts";
 import { mismoDestino } from "../_shared/destinoMatch.ts";
+import { estadoDeConflicto } from "../_shared/dropiEstadoConflicto.ts";
 
 interface EditPayload {
   externalId: string;
@@ -498,6 +499,36 @@ Deno.serve(async (req: Request) => {
       // 6) Todo falló → rechazo con el detalle del fallback anexado, para que
       //    la nota del panel explique por qué re-aplicar no ayuda.
       if (!fallbackVia) {
+        // Dropi puede estar rechazando porque el pedido YA está en otro estado.
+        // Ese rechazo trae el estado REAL: no es un fallo, es "tu pantalla está
+        // vieja". Sincronizamos la fila con lo que Dropi dice (es la fuente de
+        // verdad sobre sus propios pedidos) y devolvemos un mensaje que se
+        // entiende. Sin esto la asesora reintentaba a ciegas: el 12-ago-2026 el
+        // pedido 6503113 se reintentó CUATRO veces en 47 segundos.
+        const estadoReal = estadoDeConflicto(detail);
+        if (estadoReal) {
+          try {
+            await sbAdmin.from("orders")
+              .update({ estado: estadoReal })
+              .eq("external_id", externalId)
+              .eq("store_id", storeId);
+          } catch (e) {
+            console.warn("no se pudo sincronizar el estado real del pedido:", e);
+          }
+          const msgConflicto =
+            `En Dropi este pedido ya está ${estadoReal}, por eso no acepta cambios. ` +
+            `Guardian acaba de actualizarlo: refrescá y vas a verlo con su estado real.`;
+          await sbAdmin.from("sync_logs").insert({
+            source: "dropi-update-order-full",
+            status: "warn", synced_count: 0, duplicates_count: 0, total_count: 1,
+            triggered_by: user.id, store_id: storeId,
+            error_message: `Edición rechazada por conflicto de estado en ${externalId}: Dropi dice ${estadoReal}. Fila local sincronizada.`,
+          });
+          return jsonOk({
+            ok: false, code: "estado_desactualizado", error: msgConflicto,
+            estadoReal, dropiHttpStatus: dropi.httpStatus,
+          });
+        }
         const errorMsg = `Dropi rechazó el cambio [${dropi.httpStatus}]: ${detail}` +
           (fallbackDetail ? ` | fallback web: ${fallbackDetail}` : "");
         await sbAdmin.from("sync_logs").insert({
