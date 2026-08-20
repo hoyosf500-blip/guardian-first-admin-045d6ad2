@@ -166,7 +166,12 @@ export default function CustomerForm({ value: form, onChange, isAdmin }: Props) 
   // escribir (y equivocarse). Si el catálogo no cargó, cae al texto libre viejo
   // (fallback más abajo) para no dejar a nadie sin poder editar.
   const OTRA = '__OTRA__';
-  const { catalog: ecCatalog } = useDropiCityCatalog(isEC ? 'EC' : 'CO');
+  // Se pide el catalogo del PAIS DE LA TIENDA. Antes decia `isEC ? 'EC' : 'CO'`:
+  // una tienda de Guatemala disparaba la consulta paginada del catalogo
+  // COLOMBIANO en cada montaje del editor — trafico al pedo hoy, y una trampa
+  // el dia que este desplegable se generalice (le ofreceria ciudades de
+  // Colombia a un pedido guatemalteco).
+  const { catalog: ecCatalog } = useDropiCityCatalog(pais);
   const ecHasCatalog = isEC && ecCatalog.provinces.length > 0;
   const ecProv = optionsPreservingCurrent(form.departamento, ecCatalog.provinces);
   const ecCities = useMemo(() => {

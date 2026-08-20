@@ -22,6 +22,7 @@ import FinanzasHero from './finanzas/FinanzasHero';
 import EstadoOrdenesDonut from './finanzas/EstadoOrdenesDonut';
 import CashFlowChart from './finanzas/CashFlowChart';
 import ComposicionList, { type ComposicionItem } from './finanzas/ComposicionList';
+import ConciliacionDevolucionesCard from './finanzas/ConciliacionDevolucionesCard';
 
 // Fase A — Cash flow operativo Dropi.
 //
@@ -403,6 +404,12 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               Nota: <strong>Ganancia Markup</strong> aparece como referencia. Aún no se suma a la utilidad bruta hasta confirmar (con sanity check) que no genera doble conteo con `cobro_entrega`. Una vez confirmado, lo sumamos.
             </div>
           </motion.div>
+
+          {/* Conciliacion: la cifra de arriba dice CUANTO costaron las
+              devoluciones; esta dice si estan TODAS. Va pegada a proposito —
+              una perdida por devoluciones sin respaldo verificado es una cifra
+              que no se puede defender. */}
+          <ConciliacionDevolucionesCard fromDate={fromDate} toDate={toDate} />
 
           {/* 5. Volumen + ticket promedio.
               Los tres contadores eran cifras sueltas dentro de una card: dos

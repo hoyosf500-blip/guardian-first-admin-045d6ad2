@@ -1265,7 +1265,19 @@ export default function CallView({ items, alerts }: Props) {
             <span className="w-9 h-9 rounded-xl bg-info/14 border border-info/30 text-info glow-info flex items-center justify-center flex-shrink-0" aria-hidden="true">
               <Tag size={16} />
             </span>
-            Guía: <a href={getTrackingUrl(o.transportadora, o.guia, countryCode) || '#'} target="_blank" rel="noreferrer" className="font-mono tabular-nums text-sm font-semibold text-cyan hover:underline">{o.guia}</a>
+            {/* Sin URL de rastreo NO se pinta como link. El `|| '#'` de antes
+                dejaba un hipervinculo cian que no hacia nada — y para Guatemala,
+                que todavia no tiene mapa de transportadoras, eso era TODOS los
+                pedidos. El resto de las pantallas (SegBoard, CrmTable,
+                NovedadView, OrderDetailPage) ya lo resolvian condicionalmente. */}
+            Guía:{' '}
+            {(() => {
+              const url = getTrackingUrl(o.transportadora, o.guia, countryCode);
+              const clase = 'font-mono tabular-nums text-sm font-semibold';
+              return url
+                ? <a href={url} target="_blank" rel="noreferrer" className={`${clase} text-cyan hover:underline`}>{o.guia}</a>
+                : <span className={`${clase} text-foreground`} title="Esta transportadora todavía no tiene link de rastreo">{o.guia}</span>;
+            })()}
             {o.transportadora && <span className="hud-label-cased text-muted-foreground">{o.transportadora}</span>}
           </div>
         )}

@@ -165,7 +165,13 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
   // que los mismos cortes pintan rojo donde la operación puede estar sana. No se
   // inventan umbrales para EC (no los tenemos medidos): se dice de dónde salen.
   const { activeStore } = useStore();
-  const esEcuador = activeStore?.country_code === 'EC';
+  // El descargo vale para CUALQUIER pais que no sea Colombia, no solo Ecuador:
+  // los umbrales de abajo son colombianos y con otra moneda y otra estructura de
+  // flete pintan rojo sobre una operacion sana. Guatemala recibia el veredicto
+  // sin la aclaracion que si recibia Ecuador.
+  const paisTienda = (activeStore?.country_code || 'CO').toUpperCase();
+  const esOtroPais = paisTienda !== 'CO';
+  const nombrePais = paisTienda === 'EC' ? 'Ecuador' : paisTienda === 'GT' ? 'Guatemala' : 'otro país';
   const finQuery = useFinancialSummary(from, to);
   // Pauta del período: misma fuente que "Cómo voy" (tabla store_ad_spend_daily,
   // store-scoped). Sumamos todas las filas del rango (Meta + TikTok + otros).
@@ -381,9 +387,9 @@ export default function SemaforoSalud({ from, to }: { from: string; to: string }
           <p className="mt-4 text-[11px] text-muted-foreground leading-snug">
             Referencias tomadas de estándares de e-commerce COD <strong className="text-foreground">de Colombia</strong>{' '}
             (costo ≤38%, flete ≤20%, devoluciones ≤3%, margen ≥45%).
-            {esEcuador && (
+            {esOtroPais && (
               <>
-                {' '}Esta tienda es de <strong className="text-foreground">Ecuador</strong>: la estructura de
+                {' '}Esta tienda es de <strong className="text-foreground">{nombrePais}</strong>: la estructura de
                 fletes y el ticket promedio son distintos, así que los colores acá son una guía, no un veredicto.
               </>
             )}

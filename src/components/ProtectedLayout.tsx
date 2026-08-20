@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2 } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import WelcomeGate from '@/components/WelcomeGate';
+import NovedadesButton from '@/components/NovedadesButton';
 import SetupWizard from '@/components/SetupWizard';
 import ConectarDropiBanner from '@/components/ConectarDropiBanner';
 import CreateStoreScreen from '@/components/CreateStoreScreen';
@@ -499,6 +500,9 @@ function ProtectedLayoutInner() {
                     <StoreSelector />
                   </div>
                 )}
+                {/* Novedades: NUNCA se abre sola y no va en la franja de
+                    avisos de abajo — esa es para lo que exige accion. */}
+                <NovedadesButton />
                 <LiveClock />
                 <div className="w-8 h-8 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center text-xs font-bold text-accent"
                   aria-label={`Usuario: ${profile?.display_name || 'Usuario'}`}

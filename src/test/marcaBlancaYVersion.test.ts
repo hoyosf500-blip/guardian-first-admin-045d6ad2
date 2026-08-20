@@ -33,6 +33,18 @@ describe('marca blanca: ninguna pantalla nombra la tienda del dueño de la plata
       .map((f) => f.replace(/\\/g, '/'));
     expect(conMarca).toEqual([]);
   });
+
+  // `novedades.ts` es texto de PANTALLA aunque el archivo sea .ts: lo leen
+  // duenos de tiendas distintas. El barrido de arriba solo mira .tsx, asi que
+  // sin esta prueba una novedad podria nombrar la tienda del dueno de la
+  // plataforma y nadie lo veria.
+  it('el texto de novedades no nombra ninguna tienda concreta', () => {
+    const src = readFileSync('src/lib/novedades.ts', 'utf8');
+    expect(/rushmira/i.test(src)).toBe(false);
+    // Anti-pase-vacio: si el archivo se moviera o quedara vacio, la prueba
+    // pasaria por no haber mirado nada.
+    expect(src).toContain('NOVEDADES');
+  });
 });
 
 describe('aviso de versión nueva', () => {

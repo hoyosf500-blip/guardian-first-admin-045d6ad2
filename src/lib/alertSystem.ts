@@ -43,7 +43,12 @@ export function getCarrierDeadline(transportadora: string): number {
   // País por el mismo estado module-level que setea StoreContext (patrón de
   // formatCOP/getTrackingUrl): en EC NO se hereda el mapa CO — un plazo
   // colombiano aplicado a una transportadora EC es falsa precisión.
-  if (getCurrencyCountry() === 'EC') return CARRIER_DEADLINES_EC[key] || 7;
+  const pais = getCurrencyCountry();
+  if (pais === 'EC') return CARRIER_DEADLINES_EC[key] || 7;
+  // GT tampoco hereda el mapa CO: no se midieron sus plazos, y aplicarle el de
+  // una transportadora colombiana homonima seria inventar precision. Usa el
+  // default hasta que haya datos reales de Guatemala.
+  if (pais === 'GT') return 7;
   return CARRIER_DEADLINES[key] || 7;
 }
 
