@@ -38,6 +38,19 @@ function archivosTs(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * Excepciones. CADA UNA con su motivo — una excepcion sin motivo es una fuga
+ * esperando a que alguien la copie.
+ */
+const ALLOWLIST: Record<string, string> = {
+  // Su unico proposito ES deducir la tienda desde el numero, asi que no puede
+  // filtrar por tienda. Quedo AMBIGUA con la llave nueva y esta marcada para
+  // morir: hoy no explota porque sus dos callers ya mandan storeId y el
+  // fallback nunca corre. Si aparece un caller nuevo que dependa de ella, es
+  // una fuga — sacarla de acá y borrar la funcion.
+  'supabase/functions/_shared/dropiStoreConfig.ts': 'storeIdFromExternalId: derivar la tienda ES su proposito; marcada para eliminar',
+};
+
 describe('external_id es único POR TIENDA, no global', () => {
   it('la migración existe y hace los tres pasos en el orden seguro', () => {
     expect(existsSync(MIGRACION), `falta ${MIGRACION}`).toBe(true);
@@ -83,6 +96,44 @@ describe('external_id es único POR TIENDA, no global', () => {
     expect(
       culpables,
       'usar onConflict "store_id,external_id" — el número de pedido solo identifica dentro de su tienda',
+    ).toEqual([]);
+  });
+
+  it('ninguna edge function busca pedidos por external_id sin la tienda', () => {
+    // El agujero que este caso cierra: los otros guardianes miraban SOLO `src/`
+    // (aislamientoTiendasEstatico) o SOLO el webhook (multitiendaEdge), asi que
+    // los tres criticos del 20-ago vivieron en verde. Y en las edge functions es
+    // PEOR que en el front: usan service role, o sea que RLS no frena nada — un
+    // UPDATE por numero de pedido a secas le reescribe la ficha del cliente al
+    // dueno de otra empresa.
+    //
+    // Se mira una VENTANA de lineas alrededor del match, no la sentencia: el
+    // filtro puede ir encadenado (.eq(...).eq(...)) o condicional en la linea
+    // siguiente (`if (storeId) q = q.eq("store_id", storeId)`), que es como
+    // quedaron las funciones donde la tienda es opcional.
+    const VENTANA = 6;
+    const archivos = archivosTs(RAIZ);
+    expect(archivos.length).toBeGreaterThan(30);
+
+    const culpables: string[] = [];
+    let vioAlgunaConsulta = false;
+    for (const f of archivos) {
+      const rel = f.replace(/\\/g, '/');
+      if (ALLOWLIST[rel]) continue;
+      const lineas = readFileSync(f, 'utf8').split('\n');
+      lineas.forEach((linea, i) => {
+        if (!/\.eq\(\s*["']external_id["']/.test(linea)) return;
+        vioAlgunaConsulta = true;
+        const contexto = lineas.slice(Math.max(0, i - VENTANA), i + VENTANA + 1).join('\n');
+        if (!/\.eq\(\s*["']store_id["']/.test(contexto)) {
+          culpables.push(`${rel}:${i + 1}`);
+        }
+      });
+    }
+    expect(vioAlgunaConsulta, 'no se leyo ninguna consulta: el escaneo no sirvio').toBe(true);
+    expect(
+      culpables,
+      'agregar .eq("store_id", ...) — el numero de pedido NO identifica una empresa',
     ).toEqual([]);
   });
 

@@ -166,6 +166,8 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
       const { data, error } = await supabase.functions.invoke('dropi-change-carrier', {
         body: {
           externalId: order.externalId,
+          // El numero de pedido ya no identifica una empresa (20260820140000).
+          storeId: activeStoreId,
           mode: 'quote',
           // La ciudad/provincia DE PANTALLA, no la guardada. Sin esto el back
           // cotizaba siempre la ciudad vieja del pedido: al cambiarla en el
@@ -509,6 +511,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     const { data, error } = await supabase.functions.invoke('dropi-change-carrier', {
       body: {
         externalId: order.externalId,
+        storeId: activeStoreId,
         mode: 'apply_edit',
         // Settle server-authoritative por auditId (null → la edge lo ignora).
         auditId,
@@ -598,7 +601,7 @@ export default function OrderEditorDialog({ open, onOpenChange, order, suggested
     });
     const { data, error } = await supabase.functions.invoke('dropi-change-carrier', {
       // auditId → settle server-authoritative (null → la edge lo ignora).
-      body: { externalId: order.externalId, mode: 'apply_value', newValor: finalTotal, auditId },
+      body: { externalId: order.externalId, storeId: activeStoreId, mode: 'apply_value', newValor: finalTotal, auditId },
     });
     // parseInvoke: rescata el body real aunque la edge haya respondido non-2xx.
     const d = await parseInvoke<ApplyResponse>(data, error);

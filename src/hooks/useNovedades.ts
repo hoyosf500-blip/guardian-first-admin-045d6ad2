@@ -184,9 +184,12 @@ export function useNovedades(user: User | null, storeId: string | null): Novedad
       toast.loading('Dropi: reportando solución…', { id: toastId });
       supabase.functions
         .invoke('dropi-resolve-incidence', {
+          // storeId: el numero de pedido ya no identifica una empresa
+          // (20260820140000) y resolver la novedad en la tienda equivocada
+          // dispara una devolucion REAL en la transportadora de otro dueno.
           body: action === 'reoffer'
-            ? { externalId: order.externalId, action, solution: cleanSolution }
-            : { externalId: order.externalId, action },
+            ? { externalId: order.externalId, storeId, action, solution: cleanSolution }
+            : { externalId: order.externalId, storeId, action },
         })
         .then((res) => {
           const data = res?.data as { ok?: boolean; error?: string } | null | undefined;

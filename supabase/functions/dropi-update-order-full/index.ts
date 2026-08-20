@@ -43,6 +43,10 @@ import { estadoDeConflicto } from "../_shared/dropiEstadoConflicto.ts";
 
 interface EditPayload {
   externalId: string;
+  /** Tienda del pedido. Desde que external_id es unico POR TIENDA
+   *  (20260820140000) el numero solo no alcanza para identificarlo. */
+  storeId?: string;
+  store_id?: string;
   nombre?: string;
   apellido?: string;
   phone?: string;
@@ -185,11 +189,19 @@ Deno.serve(async (req: Request) => {
     if (phone && (phone.length < 7 || phone.length > 15)) return jsonErr("Teléfono inválido (7-15 dígitos)", 400);
     if (email && !isValidEmail(email)) return jsonErr("Email inválido", 400);
 
-    const { data: orderRow, error: orderErr } = await sbAdmin
+    // El numero de pedido lo asigna Dropi y cada pais tiene su secuencia: desde
+    // la migracion 20260820140000 el mismo numero puede ser un pedido de
+    // Guatemala y otro de Colombia, de EMPRESAS distintas. Deducir la tienda a
+    // partir del numero quedo ambiguo — y sbAdmin es service role, o sea que RLS
+    // no frena nada. Si el cliente manda la tienda, se FILTRA por ella.
+    const bodyStoreId = typeof body.storeId === "string" ? body.storeId.trim()
+      : typeof body.store_id === "string" ? body.store_id.trim() : "";
+    let qOrder = sbAdmin
       .from("orders")
       .select("id, store_id, assigned_to, nombre, phone, ciudad, departamento, direccion, email, external_id")
-      .eq("external_id", externalId)
-      .maybeSingle();
+      .eq("external_id", externalId);
+    if (bodyStoreId) qOrder = qOrder.eq("store_id", bodyStoreId);
+    const { data: orderRow, error: orderErr } = await qOrder.maybeSingle();
     if (orderErr || !orderRow) {
       return jsonOk({ ok: false, code: "not_found", error: `Pedido ${externalId} no encontrado` });
     }
@@ -567,8 +579,13 @@ Deno.serve(async (req: Request) => {
     // los datos del cliente en la viva por external_id para que su ficha local
     // no quede con datos viejos. En el caso normal (retargeteada o sin
     // fallback) orderRow.id ya apunta a la fila correcta.
+    // `.eq("store_id", storeId)` NO es opcional acá: sbAdmin es service role y
+    // un UPDATE por external_id a secas alcanza la fila de CUALQUIER empresa con
+    // ese numero — le escribiria nombre, direccion y TELEFONO (la llave de todo
+    // el CRM) al cliente de otro dueno. Es la unica fuga que no necesita que
+    // nadie sea miembro de las dos tiendas.
     const { error: updateErr } = await (retargetReplaced
-      ? localUpdate.eq("external_id", liveExternalId)
+      ? localUpdate.eq("external_id", liveExternalId).eq("store_id", storeId)
       : localUpdate.eq("id", orderRow.id));
 
     if (updateErr) {

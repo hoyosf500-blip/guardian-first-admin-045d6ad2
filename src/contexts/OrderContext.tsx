@@ -1225,7 +1225,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
         // Audit H4: await en .catch para evitar floating promise — si el componente
         // se desmonta entre .catch y el DB write, la marca de "failed" se perdía.
         supabase.functions
-          .invoke('dropi-update-order', { body: { externalId: order.externalId } })
+          // storeId OBLIGATORIO: desde 20260820140000 el numero de pedido es
+          // unico POR TIENDA, asi que dos empresas pueden tener el mismo. Sin
+          // esto, la confirmacion podia empujarse al pedido de otro dueno.
+          .invoke('dropi-update-order', { body: { externalId: order.externalId, storeId: activeStoreId } })
           .then(async (res) => {
             const data = res?.data as { ok?: boolean; error?: string; code?: string } | null | undefined;
             // Chequeo ESTRICTO: éxito SOLO si la función respondió ok:true.
@@ -1333,7 +1336,7 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       };
 
       supabase.functions
-        .invoke('dropi-change-carrier', { body: { mode: 'cancel', externalId: order.externalId, reason } })
+        .invoke('dropi-change-carrier', { body: { mode: 'cancel', externalId: order.externalId, storeId: activeStoreId, reason } })
         .then(async (res) => {
           const data = res?.data as { ok?: boolean; canceled?: boolean; dropiMissing?: boolean; error?: string } | null | undefined;
           // Degradación segura: solo es éxito si la función NUEVA confirmó con

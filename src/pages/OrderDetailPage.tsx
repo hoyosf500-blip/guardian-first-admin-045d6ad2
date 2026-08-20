@@ -542,9 +542,13 @@ export default function OrderDetailPage() {
 
       try {
         const res = await supabase.functions.invoke('dropi-resolve-incidence', {
+          // storeId: el numero de pedido ya no identifica una empresa
+          // (20260820140000). Resolver la novedad en la tienda equivocada
+          // dispara una re-oferta o devolucion REAL en la transportadora de
+          // otro dueno.
           body: action === 'reoffer'
-            ? { externalId: order.external_id, action, solution: cleanSolution }
-            : { externalId: order.external_id, action },
+            ? { externalId: order.external_id, storeId: activeStoreId, action, solution: cleanSolution }
+            : { externalId: order.external_id, storeId: activeStoreId, action },
         });
         const data = res?.data as { ok?: boolean; error?: string } | null | undefined;
         if (res?.error || data?.ok === false) {

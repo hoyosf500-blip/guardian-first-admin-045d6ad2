@@ -278,6 +278,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // de hoy y el dropdown de ciudades quedaban con la tienda anterior si
         // su refetch por cambio de key corría ANTES de set_active_store.
         'logistics-city-carrier-matrix', 'wallet_saldo_hoy', 'logistics-cities-list',
+        // Auditoria 2026-08-20: 'costos-unitarios' faltaba. Su RPC resuelve el
+        // scope server-side y su staleTime es de 60s, asi que si el refetch por
+        // cambio de key le ganaba la carrera a set_active_store, el dueno de la
+        // tienda B veia los costos de la tienda A durante un minuto, rotulados
+        // como suyos (se dibujan en /logistica → Resumen y en el simulador).
+        'costos-unitarios',
+        // 'logistics-recommendations' comparte el defecto (queryKey sin tienda)
+        // pero hoy no tiene ni un consumidor; se invalida igual por si vuelve.
+        'logistics-recommendations',
       ]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }

@@ -67,6 +67,10 @@ import { settleAuditRow, deriveSettleFromPayload } from "../_shared/settleAudit.
 
 interface ChangeCarrierBody {
   externalId?: string;
+  /** Tienda del pedido. Desde que external_id es unico POR TIENDA
+   *  (20260820140000) el numero solo NO identifica un pedido. */
+  storeId?: string;
+  store_id?: string;
   /** "variants" es SOLO LECTURA: devuelve la forma cruda de las variantes
    *  (talla/color) del pedido y del producto, sin tocar nada. */
   mode?: "quote" | "apply" | "apply_value" | "apply_edit" | "cancel" | "debug" | "variants" | "variant_probe";
@@ -1131,11 +1135,20 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- Resolver pedido + tienda + membresía ----
-    const { data: orderRow, error: orderErr } = await sbAdmin
+    // El numero de pedido lo asigna Dropi y cada pais tiene su secuencia: desde
+    // 20260820140000 el mismo numero puede pertenecer a DOS EMPRESAS distintas.
+    // Sin este filtro, alguien que administra varias tiendas podia CANCELAR EN
+    // DROPI el pedido de otra empresa (isStoreMember pasaba, porque es miembro
+    // de las dos) — y si NO era miembro, el maybeSingle sobre dos filas fallaba
+    // y la cancelacion no llegaba nunca a Dropi: un envio que nadie pidio.
+    const bodyStoreId = typeof body.storeId === "string" ? body.storeId.trim()
+      : typeof body.store_id === "string" ? body.store_id.trim() : "";
+    let qOrder = sbAdmin
       .from("orders")
       .select("id, store_id, nombre, phone, direccion, ciudad, departamento, valor, guia, transportadora, external_id, estado, locked_by, locked_at")
-      .eq("external_id", externalId)
-      .maybeSingle();
+      .eq("external_id", externalId);
+    if (bodyStoreId) qOrder = qOrder.eq("store_id", bodyStoreId);
+    const { data: orderRow, error: orderErr } = await qOrder.maybeSingle();
     if (orderErr || !orderRow) return jsonOk({ ok: false, error: `Pedido ${externalId} no encontrado` });
 
     const storeId = String((orderRow as { store_id: string }).store_id);

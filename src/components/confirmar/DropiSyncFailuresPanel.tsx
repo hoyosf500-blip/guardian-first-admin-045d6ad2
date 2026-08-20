@@ -200,7 +200,7 @@ export default function DropiSyncFailuresPanel() {
     try {
       if (row.result === 'conf') {
         const res = await supabase.functions.invoke('dropi-update-order', {
-          body: { externalId: row.externalId },
+          body: { externalId: row.externalId, storeId: activeStoreId },
         });
         const data = res?.data as { ok?: boolean; error?: string; code?: string } | null | undefined;
         // Mismo criterio ESTRICTO que OrderContext: éxito solo con ok:true.
@@ -223,7 +223,10 @@ export default function DropiSyncFailuresPanel() {
         }
       } else {
         const res = await supabase.functions.invoke('dropi-change-carrier', {
-          body: { mode: 'cancel', externalId: row.externalId, reason: 'Reintento manual' },
+          // storeId OBLIGATORIO: el numero de pedido ya no identifica una
+          // empresa (ver 20260820140000). Sin el, esto podia cancelar en Dropi
+          // el pedido de otro dueno con el mismo numero.
+          body: { mode: 'cancel', externalId: row.externalId, storeId: activeStoreId, reason: 'Reintento manual' },
         });
         const data = res?.data as { ok?: boolean; canceled?: boolean; error?: string } | null | undefined;
         // Éxito estricto canceled:true (edge viejo sin redeploy cae a quote → fallo).
