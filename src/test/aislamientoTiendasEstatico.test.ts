@@ -34,9 +34,21 @@ const TABLAS_POR_TIENDA = [
   'store_ad_spend_daily', 'cfo_monthly_retrospective',
 ];
 
-/** Filtros por fila única: RLS ya alcanza, el store_id sería redundante. */
+/**
+ * Filtros por fila única: RLS ya alcanza, el store_id sería redundante.
+ *
+ * ⚠️ `external_id` SALIÓ de esta lista el 20-ago-2026 y no puede volver.
+ * Era cierto mientras `orders.external_id` fuera UNIQUE GLOBAL: un número
+ * identificaba UN pedido en toda la plataforma. Desde la migración
+ * 20260820140000 la llave es `(store_id, external_id)` —porque el número lo
+ * asigna Dropi y cada país tiene su secuencia, así que el mismo número puede ser
+ * un pedido de Guatemala y otro de Colombia, de clientes distintos—. Ahora
+ * `.eq('external_id', x)` SIN store_id puede devolver el pedido de OTRA EMPRESA,
+ * y RLS no lo frena: acota a las tiendas de las que el usuario es miembro, y
+ * quien tiene dos tiendas las ve mezcladas.
+ */
 const FILTRO_POR_ID =
-  /\.eq\(\s*['"](id|order_id|external_id|conversation_id|user_id|store_id|rendicion_id)['"]/;
+  /\.eq\(\s*['"](id|order_id|conversation_id|user_id|store_id|rendicion_id)['"]/;
 
 /**
  * Excepciones vivas. Formato `archivo::tabla`. CADA UNA lleva motivo — una
