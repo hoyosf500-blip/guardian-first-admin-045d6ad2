@@ -31,14 +31,29 @@ negativos. Usar `store_id`, que es el único dato que no miente.
 
 Tiendas: CO = `00000000-0000-0000-0000-000000000001` · EC = `512309c3-d5b7-4434-898a-31bed51dcd4d`.
 
-**⛔ RIESGO ABIERTO (no verificado en la base al 20-ago-2026): `orders.external_id` es
-UNIQUE GLOBAL** (`20260415022705`), no `(store_id, external_id)`. Como
-`upsert_orders_from_dropi` hace `ON CONFLICT (external_id) DO UPDATE` **con autocura de
-`store_id`**, un pedido de una tienda con un id repetido no falla: **se apodera de la fila**
-de la otra (cliente, dirección, valor y `store_id`), y el cron del otro país lo devuelve →
-ping-pong entre tiendas. El solapamiento de rangos de arriba dice que el escenario ya es
-posible. Antes de tocar nada: leer el constraint (`\d orders`) y el `pg_get_functiondef` de
-la función desplegada — REGLA #1.
+**`orders.external_id` es único POR TIENDA desde la migración
+`20260820140000_external_id_unico_por_tienda.sql`.** Antes era UNIQUE GLOBAL
+(`orders_external_id_key`, confirmado en la base el 20-ago-2026): como
+`upsert_orders_from_dropi` hace `ON CONFLICT ... DO UPDATE` **con autocura de `store_id`**,
+un pedido con un id ya usado por otra tienda no fallaba — **se apoderaba de la fila** ajena
+(cliente, dirección, valor y `store_id`) y el cron del otro país la devolvía → una fila
+rebotando entre dos empresas, y el pedido original DESAPARECIDO del CRM de su dueño. Los
+rangos ya se solapaban: GT `1.145.315–1.219.530` está dentro de Quickly Box
+`899.315–1.239.618`; Rushmira CO `3.388.406–86.514.681` engloba a las dos tiendas de EC.
+Se verificó que el daño NO había ocurrido todavía (cero gestiones huérfanas desde jun-2026).
+
+La migración hace tres pasos EN ESE ORDEN, en una sola transacción: crear
+`orders_store_external_uk (store_id, external_id)` → apuntar la función al conflicto nuevo →
+recién ahí soltar el unique viejo. Invertirlo deja la tabla sin protección o tumba el upsert
+entero. Trae un guard fail-closed que aborta si hay algún `store_id NULL` (un NULL no lo
+restringe un índice compuesto). El cuerpo de la función salió de `pg_get_functiondef`, NO del
+repo, y solo cambió la línea del `ON CONFLICT` — REGLA #1.
+
+**Consecuencia para el código: el número de pedido YA NO identifica una tienda.** Toda
+búsqueda por `external_id` necesita `store_id` al lado. `storeIdFromExternalId`
+(`_shared/dropiStoreConfig.ts`) quedó ambigua por diseño y está marcada para morir. El
+guardián `src/test/externalIdPorTienda.test.ts` falla si alguien vuelve a upsertear con
+`onConflict: "external_id"` a secas.
 
 ## Commands
 

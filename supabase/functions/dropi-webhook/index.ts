@@ -209,24 +209,29 @@ Deno.serve(async (req) => {
     // insert-only (ignoreDuplicates): si el pedido ya existe (carrera con el sync o
     // con Guardian entre el SELECT y este upsert), NO lo pisamos con el payload PARCIAL
     // del webhook — traería flete=0 y costo_prod=0 y violaría el invariante del header.
-    // NOTA colisión entre plataformas: mientras la UNIQUE de orders sea external_id
-    // GLOBAL, un id que ya exista en OTRA tienda hace que este insert se descarte en
-    // silencio (ignoreDuplicates) — seguro: jamás pisa la fila ajena. Cuando la llave
-    // pase a (store_id, external_id) (fix F3), actualizar el onConflict de acá.
+    // Colisión entre plataformas: la llave ya es (store_id, external_id)
+    // —migración 20260820140000— porque el mismo número de pedido puede existir
+    // en GT y en CO siendo clientes distintos. Con la UNIQUE global anterior,
+    // un id que ya viviera en OTRA tienda hacía que este insert se descartara en
+    // silencio: el webhook perdía el pedido y nadie se enteraba.
+    // ⚠️ Este onConflict EXIGE esa migración aplicada: sin ella PostgREST no
+    // encuentra un unique que matchee y el insert falla (queda en el log de
+    // arriba). Desplegar esta función DESPUÉS de correr el SQL, no antes.
     const { data: insData, error: insErr } = await sbAdmin
       .from("orders")
-      .upsert(row, { onConflict: "external_id", ignoreDuplicates: true })
+      .upsert(row, { onConflict: "store_id,external_id", ignoreDuplicates: true })
       .select("id");
     if (insErr) {
       console.error("[dropi-webhook] insert falló", externalId, insErr.message);
       return json({ ok: false, action: "insert_failed", external_id: externalId }, 200, corsHeaders);
     }
-    // ignoreDuplicates puede DESCARTAR el insert en silencio (carrera con el
-    // sync, o el external_id ya vive en OTRA tienda bajo la UNIQUE global).
+    // ignoreDuplicates puede DESCARTAR el insert en silencio: ahora el único
+    // motivo posible es una carrera con el sync sobre el MISMO pedido de la
+    // MISMA tienda (antes también lo causaba un id que vivía en otra tienda).
     // Reportarlo como "inserted" era un log falso (revisión adversarial
     // 2026-08-13): sin fila devuelta, no se insertó nada.
     if (!insData || insData.length === 0) {
-      console.warn("[dropi-webhook] insert descartado por conflicto de external_id (carrera o colisión entre tiendas)", externalId, "tienda", storeId);
+      console.warn("[dropi-webhook] insert descartado por conflicto (carrera con el sync sobre el mismo pedido)", externalId, "tienda", storeId);
       return json({ ok: true, action: "insert_ignored_conflict", external_id: externalId }, 200, corsHeaders);
     }
     console.log("[dropi-webhook] insertado nuevo", externalId, "tienda", storeId);

@@ -68,11 +68,11 @@ async function loadLocalOrder(
   storeId?: string | null,
 ): Promise<LocalOrder | null> {
   // Cuando el caller sabe la tienda, se FILTRA por ella en vez de deducirla del
-  // pedido. Hoy da igual (external_id es UNIQUE global, asi que solo hay una
-  // fila posible), pero deducir la tienda a partir del pedido es justo el
-  // patron que queda ambiguo al pasar el unique a (store_id, external_id) — y
-  // ahi la funcion podria gestionar la novedad del pedido de OTRA tienda.
-  // Filtrar cuando se puede es gratis y desactiva la trampa por adelantado.
+  // pedido. Desde la migracion 20260820140000 el unique es (store_id,
+  // external_id): el MISMO numero puede existir en dos tiendas siendo pedidos
+  // de clientes distintos, asi que deducir la tienda a partir del numero quedo
+  // ambiguo — sin este filtro la funcion podria gestionar la novedad del pedido
+  // de OTRA empresa.
   let q = sb
     .from("orders")
     .select("id, store_id, external_id, nombre, phone, direccion")
