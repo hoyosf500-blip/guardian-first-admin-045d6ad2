@@ -2253,6 +2253,28 @@ export type Database = {
       claim_seg_order: { Args: { p_order_id: string }; Returns: boolean }
       cleanup_expired_autocomplete_cache: { Args: never; Returns: number }
       cleanup_old_logs: { Args: never; Returns: Json }
+      conciliacion_devoluciones_wallet: {
+        Args: {
+          p_desde: string
+          p_hasta: string
+          p_limite?: number
+          p_store_id: string
+        }
+        Returns: {
+          bucket_guardian: string
+          ciudad: string
+          estado_guardian: string
+          external_id: string
+          fecha_cobro: string
+          fecha_pedido: string
+          monto: number
+          movimiento_id: number
+          order_id: string
+          plata_periodo: number
+          producto: string
+          total_periodo: number
+        }[]
+      }
       confirm_order_locally: { Args: { p_order_id: string }; Returns: boolean }
       costos_unitarios: {
         Args: { p_ciudad?: string; p_from_date: string; p_to_date: string }
