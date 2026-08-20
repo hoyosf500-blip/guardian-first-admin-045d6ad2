@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { partirAvisos } from '@/lib/syncAvisos';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
@@ -60,6 +61,17 @@ export default function AdminTab() {
   const [syncKey, setSyncKey] = useState(0);
   const [failedSyncs, setFailedSyncs] = useState<FailedSync[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
+
+  // No todo `warn` es una falla. Cuando hay varias tiendas, el cron reparte su
+  // presupuesto y posterga alguna para la corrida siguiente — se registra a
+  // propósito (sin fila, el indicador de frescura creería que el cron murió),
+  // pero el sistema lo resuelve solo. Pintarlo de rojo bajo "Sincronización
+  // fallida" hizo que un dueño nuevo viera "5 errores" con todo sano y
+  // escribiera preguntando qué se había roto. Nada se había roto.
+  const { problemas: avisosProblema, normales: avisosNormales } = useMemo(
+    () => partirAvisos(failedSyncs.filter(f => !dismissedAlerts.has(f.id))),
+    [failedSyncs, dismissedAlerts],
+  );
 
   // Clave de IA POR TIENDA (auditoría 2026-08-13: antes era UNA global y las
   // consultas de los dueños invitados las pagaba el dueño de la plataforma).
@@ -298,7 +310,15 @@ export default function AdminTab() {
         <TabsContent value="config" className="mt-0 space-y-0">
           <div>
 
-      {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length > 0 && (
+      {avisosProblema.length === 0 && avisosNormales.length > 0 && (
+        <p className="mb-5 text-[11px] text-muted-foreground">
+          {avisosNormales.length} aviso{avisosNormales.length > 1 ? 's' : ''} normal{avisosNormales.length > 1 ? 'es' : ''} de
+          reparto entre tiendas en las últimas 24 h — el sistema los resuelve solo en la corrida siguiente.
+          No hay nada que hacer.
+        </p>
+      )}
+
+      {avisosProblema.length > 0 && (
         <motion.div {...fadeUp} className="relative mb-5 rounded-2xl border border-danger/30 bg-danger/10 px-4 pl-5 py-3 shadow-card3d">
           <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-danger" aria-hidden="true" />
           <div className="flex items-start gap-3">
@@ -308,10 +328,10 @@ export default function AdminTab() {
             <div className="flex-1 min-w-0">
               <h4 className="text-sm font-semibold text-danger">Sincronización fallida</h4>
               <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).length} error(es)/aviso(s) en las últimas 24 horas
+                {avisosProblema.length} error(es)/aviso(s) en las últimas 24 horas
               </p>
               <div className="space-y-1.5">
-                {failedSyncs.filter(f => !dismissedAlerts.has(f.id)).map(sync => (
+                {avisosProblema.map(sync => (
                   <div key={sync.id} className="flex items-center justify-between gap-2 text-xs bg-card/40 rounded-xl px-3 py-2 border border-border hover:border-border-strong transition-colors">
                     <div className="min-w-0">
                       <span className="text-muted-foreground font-mono tabular-nums">
