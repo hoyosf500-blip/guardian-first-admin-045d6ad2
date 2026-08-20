@@ -22,9 +22,23 @@ SQL**. La migración `20260721120000_scope_admin_fail_closed.sql` aplica esta mi
 el fix se puso solo en `_resolve_scope_store()` y NO en las ~5 RPCs que repiten el patrón
 NULL, precisamente para no pisar sus versiones desplegadas.
 
-Diagnóstico rápido de países cruzados: el largo del `external_id` delata el país —
-**Ecuador 7 dígitos (`6xxxxxx`), Colombia 8 (`7xxxxxxx` / `8xxxxxxx`)**. Tiendas:
-CO = `00000000-0000-0000-0000-000000000001` · EC = `512309c3-d5b7-4434-898a-31bed51dcd4d`.
+Diagnóstico rápido de países cruzados: **⚠️ la vieja regla del largo del `external_id`
+YA NO SIRVE.** Este doc decía "Ecuador 7 dígitos, Colombia 8" — medido el 20-ago-2026 sobre
+las 6 tiendas vivas, **cuatro comparten el espacio de 7 dígitos**: GT (7-7), las dos de
+Ecuador (7-7), Colombia (7-**8**, o sea también tiene de 7) y Quickly Box (6-7). Son ~16.000
+pedidos en el mismo rango numérico. Diagnosticar el país por el largo hoy da falsos
+negativos. Usar `store_id`, que es el único dato que no miente.
+
+Tiendas: CO = `00000000-0000-0000-0000-000000000001` · EC = `512309c3-d5b7-4434-898a-31bed51dcd4d`.
+
+**⛔ RIESGO ABIERTO (no verificado en la base al 20-ago-2026): `orders.external_id` es
+UNIQUE GLOBAL** (`20260415022705`), no `(store_id, external_id)`. Como
+`upsert_orders_from_dropi` hace `ON CONFLICT (external_id) DO UPDATE` **con autocura de
+`store_id`**, un pedido de una tienda con un id repetido no falla: **se apodera de la fila**
+de la otra (cliente, dirección, valor y `store_id`), y el cron del otro país lo devuelve →
+ping-pong entre tiendas. El solapamiento de rangos de arriba dice que el escenario ya es
+posible. Antes de tocar nada: leer el constraint (`\d orders`) y el `pg_get_functiondef` de
+la función desplegada — REGLA #1.
 
 ## Commands
 
