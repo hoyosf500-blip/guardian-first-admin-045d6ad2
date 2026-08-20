@@ -20,9 +20,10 @@ describe('CarrierStatsTable', () => {
     // El nombre y los % aparecen en varios lugares (insight callouts,
     // tabla, chart YAxis), por eso getAllByText. 3.2d sigue siendo único.
     expect(screen.getAllByText('Servientrega').length).toBeGreaterThan(0);
-    // Tasa MADURA: 70 entregados ÷ (70+10 devueltos) = 87.5% → "88.0%" (NO 70/100).
-    // Los 20 en tránsito ya no diluyen la tasa.
-    expect(screen.getAllByText(/88\.0%/).length).toBeGreaterThan(0);
+    // Tasa MADURA: 70 entregados ÷ (70+10 devueltos) = 87.5% → floor 87% (NO
+    // 70/100, y NO round 88: redondear hacia arriba era lo que mostraba "100%"
+    // con devoluciones reales). Los 20 en tránsito ya no diluyen la tasa.
+    expect(screen.getAllByText(/87%/).length).toBeGreaterThan(0);
     expect(screen.getByText('3.2d')).toBeInTheDocument();
   });
 

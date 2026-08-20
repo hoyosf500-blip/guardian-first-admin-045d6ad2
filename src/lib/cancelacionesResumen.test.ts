@@ -328,6 +328,31 @@ describe('producto y ciudad', () => {
     const r = summarizeCancelaciones([row({ ciudad: 'Cali', origen: 'externo', motivo: null })]);
     expect(r.porCiudad[0].topMotivo).toBeNull();
   });
+
+  // GUARDIANA (auditoría 20-ago-2026): "GOTAS RELAX", "Gotas  Relax" y
+  // "gotas relax" son EL MISMO producto. Partido en tres filas, el ranking
+  // "cuál se cancela más" corona al producto equivocado.
+  it('mayúsculas, tildes y espacios dobles NO parten un producto en dos filas', () => {
+    const r = summarizeCancelaciones([
+      row({ producto: 'GOTAS RELAX' }),
+      row({ producto: 'Gotas  Relax' }),
+      row({ producto: 'gotas relax' }),
+      row({ producto: 'Otro Producto' }),
+    ]);
+    expect(r.porProducto).toHaveLength(2);
+    expect(r.porProducto[0].cancelados).toBe(3);
+    // La etiqueta visible conserva la PRIMERA grafía vista, no el upper plano.
+    expect(r.porProducto[0].key).toBe('GOTAS RELAX');
+  });
+
+  it('la ciudad tipeada por el cliente agrupa igual: "BOGOTA" y "Bogotá" son una', () => {
+    const r = summarizeCancelaciones([
+      row({ ciudad: 'BOGOTA' }),
+      row({ ciudad: 'Bogotá' }),
+    ]);
+    expect(r.porCiudad).toHaveLength(1);
+    expect(r.porCiudad[0].cancelados).toBe(2);
+  });
 });
 
 describe('antigüedad', () => {

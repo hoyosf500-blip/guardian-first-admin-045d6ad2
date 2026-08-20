@@ -185,8 +185,15 @@ export const SEG_STATUS_MATCHERS: ReadonlyArray<{ key: SegStatusKey; match: (e: 
   // SOLUCION APROBADA = variante EC de "novedad solucionada". Antes caía en
   // 'otros' (vista en consola Rushmira Ecuador 2026-05-28).
   { key: 'novedad_sol', match: (e) => e === 'NOVEDAD SOLUCIONADA' || e === 'SOLUCION APROBADA' },
-  { key: 'devolucion_transito', match: (e) => e === 'DEVOLUCION EN TRANSITO' || e === 'EN PROCESO DE DEVOLUCION' },
-  { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e === 'DEVUELTO' },
+  // 'DEVOLUCION A ORIGEN' = variante EC: el paquete viaja de vuelta. Caía en
+  // 'otros' → el hero lo contaba como "en ruta", no entraba a la columna
+  // Devolución ni al chip de rescate de 30 días, y nadie hacía la llamada de
+  // recuperación (auditoría 20-ago-2026). Los prefijos espejan el fallback
+  // DEVOLUC%/DEVUELT% de _estado_bucket en SQL: /logistica ya los contaba como
+  // devueltos mientras /seguimiento los mostraba viajando — dos números
+  // distintos para el mismo pedido.
+  { key: 'devolucion_transito', match: (e) => e === 'DEVOLUCION EN TRANSITO' || e === 'EN PROCESO DE DEVOLUCION' || e === 'DEVOLUCION A ORIGEN' },
+  { key: 'devolucion', match: (e) => e === 'DEVOLUCION' || e.startsWith('DEVUELT') || e.startsWith('DEVOLUC') },
   { key: 'indemnizada', match: (e) => e.includes('INDEMNIZADA') },
   { key: 'entregado', match: (e) => e === 'ENTREGADO' },
   // 'ARCHIVADO GHOST' con ESPACIO es la escritura canónica (la que reconoce

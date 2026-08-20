@@ -95,6 +95,12 @@ vi.mock('@/hooks/useResumenSync', () => ({
   useResumenSync: () => resumenSyncMock,
 }));
 
+// Sin movimientos 'otro' por defecto: el banner de "sin clasificar" solo se
+// prueba aparte. (Mockearlo evita el QueryClient real en jsdom.)
+vi.mock('@/hooks/useWalletSinClasificar', () => ({
+  useWalletSinClasificar: () => ({ data: null }),
+}));
+
 const storeMock = vi.fn((): { isOwnerOfActive: boolean } => ({ isOwnerOfActive: true }));
 vi.mock('@/contexts/StoreContext', () => ({
   useStore: () => storeMock(),
@@ -241,11 +247,12 @@ describe('FinanzasTab', () => {
     expect(screen.getAllByText(/Ingresos brutos/i).length).toBeGreaterThanOrEqual(1);
     // "COGS" aparece en el label del KPI y en el banner — ambos deben estar
     expect(screen.getAllByText(/COGS/i).length).toBeGreaterThan(0);
-    // "88.0%" = tasa de entrega MADURA (70 entregadas ÷ 80 resueltas) — aparece
+    // "87%" = tasa de entrega MADURA (70 entregadas ÷ 80 resueltas = 87.5 →
+    // floor 87; round mostraba "100%" con devoluciones reales) — aparece
     // en el KPI "Tasa de entrega" Y en el centro del donut (auditoría
     // 2026-07-07: antes el donut mostraba 70/100 diluido, con pendientes y
     // canceladas en el denominador, al lado del KPI maduro).
-    expect(screen.getAllByText('88.0%').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('87%').length).toBeGreaterThanOrEqual(1);
     // Volumen de operación: contadores planos
     expect(screen.getByText('100')).toBeInTheDocument();
   });

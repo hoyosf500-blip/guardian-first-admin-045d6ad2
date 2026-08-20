@@ -326,6 +326,15 @@ export default function DashboardTab() {
         if (cancelled) return;
         const { data, error } = await supabase.from('orders').select('producto, estado, valor, ciudad, transportadora')
           .eq('store_id', activeStoreId)
+          // Borrados (REEMPLAZADA = pedido re-emitido con otro id; ARCHIVADO
+          // GHOST = borrado en Dropi) NO son pedidos: inflaban el total de cada
+          // producto (deflactando su "Efect.") y sumaban su valor a la torta.
+          // Medido en EC may-jul: 425 + 102 filas fantasma. Las RPC de
+          // /logistica ya los excluyen via _estado_bucket; el dashboard era el
+          // unico que los seguia contando.
+          .not('estado', 'eq', 'REEMPLAZADA')
+          .not('estado', 'eq', 'ARCHIVADO GHOST')
+          .not('estado', 'eq', 'ARCHIVADO_GHOST')
           .order('created_at', { ascending: false })
           .range(from, from + pageSize - 1);
         if (error) { console.error('Error loading orders:', error.message); fallo = true; break; }

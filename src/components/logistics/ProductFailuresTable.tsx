@@ -72,7 +72,9 @@ function DeliveryRateBar({ value }: { value: number }) {
   return (
     <div className="inline-flex w-full min-w-[5.5rem] max-w-[7.5rem] flex-col items-end gap-1.5 align-middle">
       <span className={`font-mono tabular-nums text-xs font-bold leading-none ${t.text}`}>
-        {value.toFixed(1)}%
+        {/* Sin decimal: la tasa madura llega como ENTERO (floor) — "99.0%"
+            aparentaba una precisión que el número no tiene. */}
+        {Math.round(value)}%
       </span>
       <div
         className="h-1.5 w-full rounded-full bg-foreground/10"
@@ -285,7 +287,19 @@ export default memo(function ProductFailuresTable({ rows }: Props) {
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums text-foreground">{r.total_pedidos.toLocaleString('es-CO')}</td>
                   <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-success">{r.entregados.toLocaleString('es-CO')}</td>
-                  <td className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger">{r.devueltos.toLocaleString('es-CO')}</td>
+                  {/* `devueltos` INCLUYE los rechazos del cliente, pero la tasa
+                      madura los EXCLUYE (decisión dueño 2026-06-24: un rechazo no
+                      mide a la transportadora). Sin esta nota, "Devueltos: 1" al
+                      lado de "100%" parecía un bug — era un rechazo. */}
+                  <td
+                    className="px-3 py-2.5 text-right font-mono tabular-nums font-bold text-danger"
+                    title={(r.rechazados ?? 0) > 0 ? `Incluye ${r.rechazados} rechazo(s) del cliente, que no bajan la tasa de entrega` : undefined}
+                  >
+                    {r.devueltos.toLocaleString('es-CO')}
+                    {(r.rechazados ?? 0) > 0 && (
+                      <span className="ml-1 text-[10px] font-normal text-muted-foreground">({r.rechazados}R)</span>
+                    )}
+                  </td>
                   {/* Sin desenlaces (0 entregados+devueltos) la tasa NO es 0% — no
                       hay dato. Mostrar 0.0% en rojo hacía ver "pésimo" a un producto
                       cuyos pedidos siguen todos en tránsito. Mismo guard que

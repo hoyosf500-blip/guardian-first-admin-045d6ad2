@@ -739,9 +739,9 @@ export default function LogisticaTab() {
           </TabsContent>
 
           {/* Cancelaciones — por qué se pierden los pedidos y cuánta de esa
-              plata era recuperable. SÍ respeta `filters.ciudad` (va como
-              p_ciudad implícito vía el rango; el ranking de ciudades se oculta
-              cuando hay una sola seleccionada, que es lo honesto). */}
+              plata era recuperable. OJO: `filters.ciudad` NO aplica — la RPC
+              cancelaciones_analisis no tiene p_ciudad, así que las cifras son
+              de toda la tienda y la pantalla lo avisa en el encabezado. */}
           <TabsContent value="cancelaciones" className="mt-4 space-y-5">
             <CancelacionesTab filters={filters} />
           </TabsContent>

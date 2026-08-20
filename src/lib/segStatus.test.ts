@@ -115,6 +115,16 @@ describe('classifySegEstado', () => {
     it('REEMPLAZADA (orden vieja soft-borrada por una edición)', () =>
       expect(classifySegEstado('REEMPLAZADA')).toBe('cancelado'));
     it('DEVOLUCION', () => expect(classifySegEstado('DEVOLUCION')).toBe('devolucion'));
+    // GUARDIANA (20-ago-2026): estas variantes EC caian en 'otros' → el hero
+    // las contaba como "en ruta" y nadie hacia la llamada de rescate. SQL ya
+    // las contaba como devueltas (DEVOLUC%/DEVUELT% en _estado_bucket): dos
+    // numeros distintos para el mismo pedido.
+    it('DEVOLUCION A ORIGEN (EC) es devolución en tránsito, no "otros"', () =>
+      expect(classifySegEstado('DEVOLUCION A ORIGEN')).toBe('devolucion_transito'));
+    it('variantes DEVUELTO/DEVOLUC con sufijo caen en devolución, no en "otros"', () => {
+      expect(classifySegEstado('DEVUELTO A ORIGEN')).toBe('devolucion');
+      expect(classifySegEstado('DEVOLUCIÓN')).toBe('devolucion');
+    });
     it('DEVOLUCION EN TRANSITO va a su categoría propia', () =>
       expect(classifySegEstado('DEVOLUCION EN TRANSITO')).toBe('devolucion_transito'));
     it('ORDEN INDEMNIZADA', () =>

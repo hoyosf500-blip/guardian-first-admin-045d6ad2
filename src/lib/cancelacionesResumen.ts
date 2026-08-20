@@ -333,6 +333,17 @@ interface Opts {
   totalPeriodo?: number | null;
 }
 
+/** Clave de agrupación insensible a mayúsculas, tildes y espacios dobles.
+ *  "GOTAS RELAX", "Gotas  Relax" y "gotas relax" son EL MISMO producto; si cada
+ *  grafía fuera su propia fila, el ranking "cuál se cancela más" coronaría al
+ *  equivocado (12+9 partidos en dos filas pierden contra uno de 15). La ciudad
+ *  la tipea el cliente ("BOGOTA" vs "Bogotá"), así que ahí la varianza es peor. */
+function claveDimension(raw: string): string {
+  return raw
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
 /** Agrupa por una dimensión (producto / ciudad) sin descartar los sin dato. */
 function agruparDimension(
   rows: CancelacionRow[],
@@ -340,13 +351,17 @@ function agruparDimension(
   totalCancelados: number,
 ): DimensionBucket[] {
   const map = new Map<string, {
+    label: string;
     cancelados: number; valor: number; evitables: number; valorEvitable: number;
     motivos: Map<string, number>;
   }>();
   for (const r of rows) {
-    const k = (keyOf(r) || '').trim() || '(sin dato)';
+    const label = (keyOf(r) || '').trim() || '(sin dato)';
+    const k = label === '(sin dato)' ? label : claveDimension(label);
     let b = map.get(k);
-    if (!b) { b = { cancelados: 0, valor: 0, evitables: 0, valorEvitable: 0, motivos: new Map() }; map.set(k, b); }
+    // La etiqueta visible es la PRIMERA grafía vista (no la normalizada en
+    // mayúsculas planas) — mismo truco que los `ejemplos` de topMotivos.
+    if (!b) { b = { label, cancelados: 0, valor: 0, evitables: 0, valorEvitable: 0, motivos: new Map() }; map.set(k, b); }
     b.cancelados += 1;
     b.valor += val(r.valor);
     const { tipo } = clasificarPerdida(r);
@@ -365,7 +380,7 @@ function agruparDimension(
       }
     }
     return {
-      key, cancelados: b.cancelados, valor: b.valor,
+      key: b.label, cancelados: b.cancelados, valor: b.valor,
       evitables: b.evitables, valorEvitable: b.valorEvitable,
       pctSobreCancelados: pct(b.cancelados, totalCancelados),
       topMotivo, topMotivoCancelados,

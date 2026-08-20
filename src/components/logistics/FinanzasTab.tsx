@@ -3,6 +3,7 @@ import { useGananciaNetaDropi } from '@/hooks/useGananciaNetaDropi';
 import { useOperativoCohorte } from '@/hooks/useOperativoCohorte';
 import { useWalletDailySeries } from '@/hooks/useWalletMovements';
 import { useResumenSync } from '@/hooks/useResumenSync';
+import { useWalletSinClasificar } from '@/hooks/useWalletSinClasificar';
 import { useStore } from '@/contexts/StoreContext';
 import type { LogisticsFilters } from '@/lib/logistics.types';
 import { deriveDeliveryMaturity } from '@/lib/logisticsRates';
@@ -52,6 +53,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
   const { fromDate, toDate } = filters;
   const { data, isLoading, isError, error } = useFinancialSummary(fromDate, toDate);
   const { data: gananciaNeta, isLoading: gananciaLoading, isError: gananciaError } = useGananciaNetaDropi(fromDate, toDate);
+  const { data: sinClasificar } = useWalletSinClasificar(fromDate, toDate);
   const { data: dailySeries, isLoading: seriesLoading } = useWalletDailySeries(fromDate, toDate);
   // Bug 3: el hero usa el OPERATIVO POR COHORTE (pedidos creados en el mes; por
   // fecha de pedido — reconcilia con la Utilidad de Dropi) en vez de la caja del
@@ -220,6 +222,30 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
         </motion.div>
       )}
 
+      {/* Movimientos del wallet SIN CLASIFICAR ('otro'): el unico modo de falla
+          que el badge de salud NO puede ver — el sync queda verde pero esos
+          movimientos NO entran a la Ganancia Neta (la RPC y el hook los
+          excluyen). Si Dropi renombra un codigo, la ganancia se desvia en
+          silencio; este banner es la alarma. Solo lo ve el admin (el SELECT
+          es admin-only por RLS y el hook devuelve null para un socio). */}
+      {(sinClasificar?.count ?? 0) > 0 && (
+        <motion.div
+          {...fadeUp(0.03)}
+          className="relative flex items-center gap-3 rounded-2xl border border-warning/30 bg-warning/10 px-4 pl-5 py-3 shadow-card3d"
+        >
+          <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 bg-warning/20">
+            <Info size={17} className="text-warning" aria-hidden="true" />
+          </div>
+          <span className="text-[11px] leading-relaxed text-foreground flex-1 min-w-0">
+            <strong>{sinClasificar!.count} movimiento(s) del wallet sin clasificar</strong> por{' '}
+            <strong>{sinClasificar!.montoParcial ? '≥ ' : ''}{formatCOP(sinClasificar!.monto)}</strong> en este rango —{' '}
+            NO están entrando a la Ganancia Neta. Suele pasar cuando Dropi cambia el texto de un código.
+            Diagnóstico: <code className="text-[10px]">SELECT codigo, COUNT(*) FROM dropi_wallet_movements WHERE categoria='otro' GROUP BY codigo</code> y agregar el patrón a mapCategoria.
+          </span>
+        </motion.div>
+      )}
+
       {loading ? (
         <>
           {/* Los skeletons calcan la GEOMETRÍA real de lo que va a llegar
@@ -334,7 +360,11 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
               value={formatCOP(data?.valor_cancelado ?? 0)}
               icon={Ban}
               tone="danger"
-              hint={`${data?.total_cancelados ?? 0} órdenes (${(data?.tasa_cancelacion_pct ?? 0).toFixed(1)}%) — valor potencial perdido`}
+              hint={`${data?.total_cancelados ?? 0} órdenes (${
+                // null/undefined → '—': si la RPC desplegada no trae el campo,
+                // "0.0%" sería un dato inventado, no un dato en cero.
+                data?.tasa_cancelacion_pct == null ? '—' : `${data.tasa_cancelacion_pct.toFixed(1)}%`
+              }) — valor potencial perdido`}
             />
             <KpiCard
               label="Utilidad bruta contable"
@@ -352,7 +382,7 @@ export default function FinanzasTab({ filters }: { filters: LogisticsFilters }) 
             />
             <KpiCard
               label="Tasa de entrega"
-              value={entregaMaturity.tasaEntregaMadura == null ? '—' : `${entregaMaturity.tasaEntregaMadura.toFixed(1)}%`}
+              value={entregaMaturity.tasaEntregaMadura == null ? '—' : `${entregaMaturity.tasaEntregaMadura}%`}
               icon={Target}
               tone={entregaMaturity.inmaduro ? 'neutral'
                 : (entregaMaturity.tasaEntregaMadura ?? 0) >= 60 ? 'success' : 'warning'}

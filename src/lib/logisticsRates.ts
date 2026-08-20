@@ -72,8 +72,13 @@ export function deriveDeliveryMaturity(
   const pctConcluido = t > 0 ? Math.round((concluidos / t) * 100) : 0;
   return {
     resueltos,
-    tasaEntregaMadura: resueltos > 0 ? Math.round((e / resueltos) * 100) : null,
-    tasaDevolucionMadura: resueltos > 0 ? Math.round((d / resueltos) * 100) : null,
+    // floor/ceil, NUNCA round: con 199 entregados + 1 devuelto, round daba
+    // "100%" de entrega (99.5 → 100) — un 100% con una devolución existente es
+    // mentira. floor solo permite 100% con CERO devueltos, y ceil solo permite
+    // 0% de devolución con CERO devueltos. (Además floor+ceil de tasas
+    // complementarias siguen sumando 100.)
+    tasaEntregaMadura: resueltos > 0 ? Math.floor((e / resueltos) * 100) : null,
+    tasaDevolucionMadura: resueltos > 0 ? Math.ceil((d / resueltos) * 100) : null,
     pctConcluido,
     inmaduro: pctConcluido < DELIVERY_MATURITY_THRESHOLD,
   };

@@ -87,7 +87,7 @@ function DataBar({ value, tone, prelim }: { value: number; tone: 'success' | 'da
         />
       </div>
       <span className="font-mono tabular-nums text-xs font-bold whitespace-nowrap" style={{ color: hsl(v) }}>
-        {value.toFixed(1)}%{prelim ? ' ·prelim.' : ''}
+        {value}%{prelim ? ' ·prelim.' : ''}
       </span>
     </div>
   );
@@ -127,10 +127,10 @@ function CompositionBar({ row, maxVolume }: { row: CarrierRow; maxVolume: number
 
   const titles: Record<string, string> = {
     // Sin tasa medida el title dice el conteo y nada más — no "(0.0%)".
-    entregados: `Entregados: ${entregados.toLocaleString('es-CO')}${row.tasa_entrega == null ? '' : ` (${row.tasa_entrega.toFixed(1)}%)`}`,
+    entregados: `Entregados: ${entregados.toLocaleString('es-CO')}${row.tasa_entrega == null ? '' : ` (${row.tasa_entrega}%)`}`,
     enTransito: `En tránsito: ${enTransito.toLocaleString('es-CO')}`,
     novedades:  `Novedades: ${novedades.toLocaleString('es-CO')}`,
-    devueltos:  `Devueltos: ${devueltos.toLocaleString('es-CO')}${row.tasa_devolucion == null ? '' : ` (${row.tasa_devolucion.toFixed(1)}%)`}`,
+    devueltos:  `Devueltos: ${devueltos.toLocaleString('es-CO')}${row.tasa_devolucion == null ? '' : ` (${row.tasa_devolucion}%)`}`,
   };
 
   return (
@@ -175,7 +175,7 @@ function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
 
   return (
     <div className="flex items-center gap-2 min-w-[140px]" title={prelim ? `Preliminar: menos de ${MIN_RESUELTOS_CONFIABLE} pedidos concluidos` : undefined}>
-      <div className="bullet flex-1" role="img" aria-label={`${rate.toFixed(1)}% vs meta ${DELIVERY_TARGET}%${prelim ? ' (preliminar)' : ''}`}>
+      <div className="bullet flex-1" role="img" aria-label={`${rate}% vs meta ${DELIVERY_TARGET}%${prelim ? ' (preliminar)' : ''}`}>
         <div
           className="bullet-fill"
           style={{
@@ -192,7 +192,7 @@ function DeliveryBullet({ rate, prelim }: { rate: number; prelim?: boolean }) {
         className="font-mono text-xs font-bold tabular-nums w-16 text-right"
         style={{ color: hsl(toneVar) }}
       >
-        {rate.toFixed(1)}%{prelim ? '·pr' : ''}
+        {rate}%{prelim ? '·pr' : ''}
       </span>
     </div>
   );

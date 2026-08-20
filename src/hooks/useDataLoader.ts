@@ -142,8 +142,15 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
           .not('estado', 'eq', 'CANCELADO')
           .not('estado', 'eq', 'REEMPLAZADA')
           .not('estado', 'eq', 'RECHAZADO')
-          .not('estado', 'eq', 'DEVOLUCION')
-          .not('estado', 'eq', 'DEVOLUCION EN TRANSITO')
+          // Prefijos, no literales exactos: 'DEVOLUCION A ORIGEN' (EC),
+          // 'DEVUELTO ...' y las variantes con tilde no estaban excluidas y
+          // entraban por ACA con el historico completo (esta query no tiene
+          // ventana de fecha) — miles de devoluciones viejas contadas como
+          // "en ruta". La familia entera entra solo por la query acotada de
+          // abajo. Espeja DEVOLUC%/DEVUELT% de _estado_bucket.
+          .not('estado', 'ilike', 'DEVOLUC%')
+          .not('estado', 'ilike', 'DEVUELT%')
+          .not('estado', 'ilike', 'EN PROCESO DE DEVOLUC%')
           .not('estado', 'ilike', '%INDEMNIZADA%')
           // Borrados en Dropi (nightly-reconcile): no son pedidos vivos — sin
           // esto entraban al tablero de Seguimiento como si existieran.
@@ -198,12 +205,18 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       // La misma ventana (30d) usa el chip "Se fue a devolución" de segLists.
       try {
         const devDesde = new Date(Date.now() - 30 * 86_400_000).toISOString();
+        // Sin last_movement_at NO se puede afirmar "reciente", pero tratarlo
+        // como "no existe" era peor: una devolucion sin fecha de movimiento no
+        // aparecia en Seguimiento NI UN DIA (la principal la excluye por estado
+        // y esta la excluia por fecha). Entra si el pedido se creo hace <90d.
+        const devCreadoDesde = new Date(Date.now() - 90 * 86_400_000).toISOString();
         const { data: devRows, error: devError } = await supabase
           .from('orders')
           .select(ORDER_COLUMNS)
           .eq('store_id', storeId)
-          .in('estado', ['DEVOLUCION', 'DEVOLUCION EN TRANSITO'])
-          .gte('last_movement_at', devDesde)
+          // La misma familia que excluye la principal (cero solape, cero hueco).
+          .or('estado.ilike.DEVOLUC%,estado.ilike.DEVUELT%,estado.ilike.EN PROCESO DE DEVOLUC%')
+          .or(`last_movement_at.gte.${devDesde},and(last_movement_at.is.null,created_at.gte.${devCreadoDesde})`)
           .order('created_at', { ascending: false })
           .limit(2000);
         if (devError) {

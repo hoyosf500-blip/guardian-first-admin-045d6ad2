@@ -180,10 +180,15 @@ y `src/lib/walletCategoria.test.ts` → `_shared/walletCategoria`.
 
   **Dónde SÍ se cuela un fantasma** (y esto no lo arregla ninguna normalización): los
   filtros que comparan a mano contra `'REEMPLAZADA'` en vez de usar `_estado_bucket`.
-  `20260718120000_daily_reports_total_inflow.sql:46` filtra solo REEMPLAZADA, y por el
-  `ELSE 'conf'` de la línea 58 los `ARCHIVADO GHOST` entran al inflow **contados como
-  confirmados** → infla la tasa de confirmación del día. Mismo hueco en
-  `src/hooks/useDataLoader.ts:144` y `src/components/tabs/ConfirmarTab.tsx:214`.
+  **Actualización 2026-08-20 — los 3 huecos que se listaban acá YA están cerrados en el
+  repo:** `daily_reports` fue superseded por `20260807030000_daily_reports_excluir_fantasmas.sql`
+  (usa `_estado_bucket <> 'borrado'`; verificar que sea la versión DESPLEGADA — regla #1),
+  y `useDataLoader.ts` / `ConfirmarTab.tsx` excluyen explícitamente `ARCHIVADO GHOST` /
+  `ARCHIVADO_GHOST`. El que quedaba sin filtro era **`/dashboard`** (`DashboardTab.tsx`
+  cargaba TODOS los estados: 425 REEMPLAZADA + 102 ghosts de EC may–jul deflactaban la
+  "Efect." por producto y engordaban la torta) — cerrado el 2026-08-20 excluyendo los
+  tres estados en la query. Al agregar una query nueva sobre `orders`, excluir SIEMPRE
+  los tres borrados o usar `_estado_bucket`.
 - **Ficha de producto: UN solo componente.** `ProductoTile.tsx` dibuja talla/color (desde
   `orders.productos_detalle`, jsonb por línea, que llena `dropi-cron`) y lo usan **Confirmar y
   Seguimiento**. Antes eran dos copias y se arregló una sola — el bug reapareció en la otra

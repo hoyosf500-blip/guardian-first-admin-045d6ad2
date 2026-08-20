@@ -177,7 +177,12 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
       <motion.div {...fadeUp(0)} className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs text-muted-foreground">
           Pedidos <span className="text-foreground font-semibold">creados</span> entre {filters.fromDate} y {filters.toDate}
-          {filters.ciudad && <> · filtrado por <span className="text-foreground font-semibold">{filters.ciudad}</span></>}
+          {/* La RPC no recibe ciudad (no tiene p_ciudad): estas cifras son de
+              TODA la tienda. Decirlo es obligatorio — antes acá decía
+              "filtrado por {ciudad}" sobre datos sin filtrar. */}
+          {filters.ciudad && (
+            <> · <span className="text-warning font-semibold">el filtro de ciudad ({filters.ciudad}) NO aplica acá — cifras de toda la tienda</span></>
+          )}
         </p>
         <div className="flex items-center gap-2">
           <button type="button" onClick={exportar} disabled={!rows.length}

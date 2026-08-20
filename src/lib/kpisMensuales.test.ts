@@ -195,8 +195,9 @@ describe('denominadores: qué entra y qué no', () => {
     const k = calcularKpisMes(
       mes({ generados: 100, entregados: 60, devueltos: 40, rechazados: 10 }),
     );
-    // Denominador = 60 + (40-10) = 90 → 67%, no 60%.
-    expect(k.tasaEntregaMadura).toBe(67);
+    // Denominador = 60 + (40-10) = 90 → 66.7 → floor 66 (nunca redondear
+    // hacia arriba: un 100% con devueltos era el bug del 20-ago), no 60%.
+    expect(k.tasaEntregaMadura).toBe(66);
     expect(k.pctConcluido).toBe(100);
   });
 });

@@ -557,12 +557,45 @@ Deno.serve(async (req: Request) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+    // Rotación + presupuesto (auditoría 20-ago-2026): el loop secuencial sin
+    // límite es el MISMO patrón que dejó a Colombia sin verificar 6 de 9 noches
+    // en dropi-nightly-reconcile — el peor caso por tienda (login 30s + 3
+    // fetches de 60s) supera por mucho el wall-clock, y la tienda del final de
+    // la lista muere por AUSENCIA de fila en sync_logs: un rojo mudo a las 24h,
+    // indistinguible de "cron caído". Con 2-3 tiendas no muerde; con el SaaS
+    // creciendo sí. Igual que el nightly: orden determinista, cursor persistido
+    // (la postergada de hoy es la PRIMERA en 6h — el umbral stale del badge es
+    // 8h, así que UNA postergación nunca alcanza a pintar amarillo) y corte
+    // ENTRE tiendas, nunca a mitad de una. A las postergadas NO se les escribe
+    // fila: una fila "success" sin sync falsificaría la frescura del badge.
+    const WALLET_GLOBAL_BUDGET_MS = 110_000;
     const activeStoreIds = (configs || [])
       .filter((c: Record<string, unknown>) => c.dropi_api_key)
-      .map((c: Record<string, unknown>) => String(c.store_id));
+      .map((c: Record<string, unknown>) => String(c.store_id))
+      .sort((a, b) => a.localeCompare(b));
+
+    let cursor = 0;
+    if (activeStoreIds.length > 0) {
+      try {
+        const { data: cur } = await sb.from("app_settings")
+          .select("value").eq("key", "dropi_wallet_store_cursor").maybeSingle();
+        cursor = (Math.max(0, parseInt(String(cur?.value ?? "0"), 10) || 0)) % activeStoreIds.length;
+      } catch { /* primera vez / clave ausente: arranca en 0 */ }
+    }
+    const rotadas = [...activeStoreIds.slice(cursor), ...activeStoreIds.slice(0, cursor)];
+
+    const deadline = Date.now() + WALLET_GLOBAL_BUDGET_MS;
+    const postergadas: string[] = [];
+    let procesadas = 0;
 
     const results: SyncStoreResult[] = [];
-    for (const sid of activeStoreIds) {
+    for (const sid of rotadas) {
+      // La PRIMERA siempre corre: un presupuesto mal calculado no puede dejar
+      // una corrida entera sin sincronizar ninguna tienda.
+      if (procesadas > 0 && Date.now() > deadline) {
+        postergadas.push(sid);
+        continue;
+      }
       // try/catch por tienda: que una con token vencido / throttle (EC) NO aborte
       // la sincronización de las demás (CO).
       try {
@@ -570,6 +603,22 @@ Deno.serve(async (req: Request) => {
       } catch (e) {
         results.push({ store_id: sid, ok: false, error: e instanceof Error ? e.message : String(e) });
       }
+      procesadas++;
+    }
+
+    if (activeStoreIds.length > 0 && !dryRun) {
+      const nextCursor = (cursor + Math.max(procesadas, 1)) % activeStoreIds.length;
+      try {
+        await sb.from("app_settings").upsert(
+          { key: "dropi_wallet_store_cursor", value: String(nextCursor), updated_at: new Date().toISOString() },
+          { onConflict: "key" },
+        );
+      } catch (e) {
+        console.warn("no se pudo persistir el cursor de rotación de wallet:", e);
+      }
+    }
+    if (postergadas.length > 0) {
+      console.warn(`wallet fan-out: ${postergadas.length} tienda(s) postergada(s) por presupuesto (van primero en la próxima corrida): ${postergadas.join(", ")}`);
     }
 
     return new Response(
@@ -577,6 +626,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         mode: "cron-fanout",
         stores: results,
+        deferred: postergadas,
         from: fromDate,
         until: toDate,
         synced_total: results.reduce((s, r) => s + (r.synced || 0), 0),

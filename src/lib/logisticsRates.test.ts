@@ -6,8 +6,8 @@ describe('deriveDeliveryMaturity', () => {
     // 80 entregados, 10 devueltos, 100 total (10 aún en tránsito)
     const m = deriveDeliveryMaturity(80, 10, 100);
     expect(m.resueltos).toBe(90);
-    expect(m.tasaEntregaMadura).toBe(89);   // 80/90 = 88.9 → 89 (NO 80/100=80)
-    expect(m.tasaDevolucionMadura).toBe(11); // 10/90
+    expect(m.tasaEntregaMadura).toBe(88);   // 80/90 = 88.9 → floor 88 (NO 80/100=80)
+    expect(m.tasaDevolucionMadura).toBe(12); // 10/90 = 11.1 → ceil 12; 88+12=100
     expect(m.pctConcluido).toBe(90);
     expect(m.inmaduro).toBe(false);
   });
@@ -17,7 +17,7 @@ describe('deriveDeliveryMaturity', () => {
     // Decisión dueño 2026-06-24: el rechazo no mide a la transportadora.
     const m = deriveDeliveryMaturity(80, 20, 110, 10);
     expect(m.resueltos).toBe(90);          // 80 + (20 − 10)
-    expect(m.tasaEntregaMadura).toBe(89);  // 80/90
+    expect(m.tasaEntregaMadura).toBe(88);  // 80/90 → floor
     // RPC vieja sin columna → rechazados omitido → comportamiento histórico.
     const legacy = deriveDeliveryMaturity(80, 20, 110);
     expect(legacy.resueltos).toBe(100);
@@ -61,6 +61,28 @@ describe('deriveDeliveryMaturity', () => {
     const m = deriveDeliveryMaturity(undefined as unknown as number, null as unknown as number, 0);
     expect(m.resueltos).toBe(0);
     expect(m.tasaEntregaMadura).toBeNull();
+  });
+
+  // GUARDIANA (auditoría 20-ago-2026, bug reportado por el dueño): un producto
+  // con una devolución REAL mostraba "100%" de entrega porque Math.round
+  // convertía 99.5 en 100. 100% solo puede significar CERO devueltos, y 0% de
+  // devolución solo puede significar CERO devueltos.
+  it('NUNCA 100% de entrega habiendo devueltos: 199+1 → 99, no 100', () => {
+    const m = deriveDeliveryMaturity(199, 1, 200);
+    expect(m.tasaEntregaMadura).toBe(99);
+    expect(m.tasaDevolucionMadura).toBe(1);
+  });
+
+  it('NUNCA 0% de devolución habiendo devueltos: 1 de 250 → 1, no 0', () => {
+    const m = deriveDeliveryMaturity(249, 1, 250);
+    expect(m.tasaDevolucionMadura).toBe(1); // 0.4% → ceil 1
+    expect(m.tasaEntregaMadura).toBe(99);   // 99.6% → floor 99
+  });
+
+  it('100% y 0% siguen existiendo cuando son verdad (cero devueltos)', () => {
+    const m = deriveDeliveryMaturity(50, 0, 60);
+    expect(m.tasaEntregaMadura).toBe(100);
+    expect(m.tasaDevolucionMadura).toBe(0);
   });
 });
 
