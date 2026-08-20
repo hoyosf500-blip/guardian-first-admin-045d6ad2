@@ -1,0 +1,5 @@
+# Codigo de terceros vendorizado: se guarda BYTE POR BYTE como lo publica el
+# proveedor. Sin esto, autocrlf le cambia los saltos de linea al hacer checkout
+# y el archivo deja de coincidir con el build oficial (el checksum que se
+# verifico al bajarlo ya no sirve para comprobar que nadie lo toco).
+supabase/functions/_shared/vendor/** -text
