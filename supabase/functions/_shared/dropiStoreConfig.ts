@@ -54,18 +54,27 @@ export async function loadStoreConfig(
 }
 
 /** Resuelve store_id a partir de un externalId (lookup en orders).
- *  Devuelve null si no se encuentra.
+ *  Devuelve null si no se encuentra O SI ES AMBIGUO.
  *
- *  ⚠️ ESTE CONTRATO DEPENDE DE QUE `orders.external_id` SEA UNIQUE GLOBAL
- *  (constraint `orders_external_id_key`, verificado en la base el 20-ago-2026).
- *  Es lo único que hace que "el external_id identifica UNA tienda" sea cierto.
+ *  ⚠️ ESTA FUNCION QUEDO AMBIGUA POR DISEÑO Y ESTA MARCADA PARA MORIR.
+ *  Hasta el 20-ago-2026 `orders.external_id` era UNIQUE GLOBAL
+ *  (`orders_external_id_key`), y ESO —no la logica de aca— era lo unico que
+ *  hacia cierto "el numero de pedido identifica UNA tienda". La migracion
+ *  20260820140000 movio la llave a `(store_id, external_id)` porque el mismo
+ *  numero puede ser un pedido de Guatemala y otro de Colombia, de empresas
+ *  distintas. Desde entonces la pregunta "de que tienda es el pedido N" NO
+ *  TIENE UNA SOLA RESPUESTA.
  *
- *  El dia que ese unique pase a `(store_id, external_id)` —que es lo correcto,
- *  porque hoy un pedido de una tienda puede SOBRESCRIBIR el de otra via el
- *  `ON CONFLICT (external_id)` del upsert— esta funcion queda AMBIGUA y hay que
- *  matarla: cada caller tiene que recibir el store_id explicito. Los rangos ya
- *  se solapan: GT, las dos tiendas de EC y parte de CO usan ids de 7 digitos.
- *  Ver la nota de external_id en CLAUDE.md antes de tocar el constraint. */
+ *  Hoy no explota porque sus dos callers (`dropi-fingerprint`) mandan siempre
+ *  el storeId explicito y nunca el externalId, o sea que este camino no corre.
+ *  Si aparece un caller que dependa de esto, la salida correcta es pasarle el
+ *  store_id, no confiar en la deduccion.
+ *
+ *  FAIL-CLOSED: ante dos tiendas con el mismo numero devuelve null (el caller
+ *  responde "falta storeId") en vez de elegir una. Elegir seria cargar las
+ *  credenciales Dropi de OTRA empresa y consultar su cuenta. Antes esto
+ *  funcionaba por accidente —`maybeSingle()` da error con dos filas— y un
+ *  accidente no es una garantia: acá es explicito. */
 export async function storeIdFromExternalId(
   sbAdmin: SupabaseClient,
   externalId: string,
@@ -74,8 +83,9 @@ export async function storeIdFromExternalId(
     .from("orders")
     .select("store_id")
     .eq("external_id", externalId)
-    .maybeSingle();
-  return data?.store_id ?? null;
+    .limit(2);
+  if (!data || data.length !== 1) return null;
+  return (data[0] as { store_id: string | null }).store_id ?? null;
 }
 
 /** Verifica que un user_id sea miembro (owner u operator) de una tienda.

@@ -326,7 +326,9 @@ async function guardReplacedOldOrder(
 
   // FILA-TUMBA anti-reimport: copia de la fila propia (que ya apunta al id nuevo)
   // con el external_id VIEJO y estado REEMPLAZADA. Si el cron vuelve a listar el
-  // id viejo, su upsert cae sobre esta fila (UNIQUE external_id) y la resucita
+  // id viejo, su upsert cae sobre esta fila (UNIQUE (store_id, external_id) desde
+  // la migración 20260820140000 — la tumba es copia de `fullRow`, así que trae el
+  // store_id puesto y el conflicto sigue disparando igual) y la resucita
   // VISIBLEMENTE en vez de crear una fila PENDIENTE duplicada. Si nunca vuelve,
   // queda REEMPLAZADA (excluida de colas y métricas — PR #111). Corre SIEMPRE,
   // también con PUT ok (el cron en vuelo no se entera del soft-delete de Dropi).
@@ -2708,9 +2710,13 @@ Deno.serve(async (req: Request) => {
     if (updErr) {
       console.error("[dropi-change-carrier] local external_id/transportadora update failed:", updErr);
       if ((updErr as { code?: string }).code === "23505") {
-        // Carrera con el cron: orders.external_id tiene UNIQUE GLOBAL y el sync ya
-        // insertó la orden nueva como fila propia en los segundos entre el create en
-        // Dropi y este UPDATE. La fila vieja quedó obsoleta (Dropi la canceló):
+        // Carrera con el cron: orders es UNIQUE (store_id, external_id) y el sync
+        // ya insertó la orden nueva como fila propia en los segundos entre el create
+        // en Dropi y este UPDATE. Desde la migración 20260820140000 el 23505 llega
+        // SOLO si el choque es dentro de la MISMA tienda, que es justo el único caso
+        // que este bloque quiere absorber (antes, un pedido con el mismo número en
+        // otra empresa también lo disparaba y marcaba REEMPLAZADA una fila sana).
+        // La fila vieja quedó obsoleta (Dropi la canceló):
         // queda REEMPLAZADA (no CANCELADO — cancelación fantasma en métricas) y
         // la auditoría se redirige a la fila NUEVA.
         const dupA = await absorbCronDuplicate(sbAdmin, {

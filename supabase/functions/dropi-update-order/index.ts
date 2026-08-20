@@ -50,7 +50,11 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { loadStoreConfig, storeIdFromExternalId, isStoreMember } from "../_shared/dropiStoreConfig.ts";
+// `storeIdFromExternalId` YA NO se importa acá: esta función dejó de deducir la
+// tienda a partir del número de pedido (11a7f56). Dejar el import vivo invita a
+// volver a usarlo, y desde la migración 20260820140000 ese número puede ser de
+// dos empresas distintas.
+import { loadStoreConfig, isStoreMember } from "../_shared/dropiStoreConfig.ts";
 import { checkOrderLivenessWeb } from "../_shared/dropiOrderLiveness.ts";
 // Fallback web + retarget a hermana viva: EXTRAÍDOS a _shared/dropiConfirmOrder
 // (2026-07-13) para compartirlos con dropi-cron y dropi-update-order-full.
@@ -309,10 +313,12 @@ Deno.serve(async (req: Request) => {
     let orderNombre = "";
     if (!dryRun) {
       // Si el cliente mando la tienda, se FILTRA por ella. Deducir la tienda a
-      // partir del pedido (lo que hace la linea de abajo) solo es correcto
-      // mientras external_id sea UNIQUE GLOBAL; con el unique compuesto
-      // (store_id, external_id) —que es hacia donde hay que ir— esta busqueda
-      // podria devolver el pedido de OTRA tienda y actualizarlo en Dropi.
+      // partir del numero de pedido era correcto mientras external_id fuera
+      // UNIQUE GLOBAL; con el unique compuesto (store_id, external_id) —vigente
+      // desde la migracion 20260820140000— esta busqueda sin filtro puede
+      // devolver el pedido de OTRA tienda y actualizarlo en Dropi.
+      // El filtro queda condicional a proposito: un caller viejo que no mande
+      // storeId sigue funcionando como antes en vez de romperse.
       // La membresia se valida despues contra el store_id resultante, asi que
       // mandar una tienda ajena no abre ninguna puerta: solo da 404.
       let q = sb
