@@ -65,11 +65,20 @@ interface LocalOrder {
 async function loadLocalOrder(
   sb: SB,
   externalId: string,
+  storeId?: string | null,
 ): Promise<LocalOrder | null> {
-  const { data, error } = await sb
+  // Cuando el caller sabe la tienda, se FILTRA por ella en vez de deducirla del
+  // pedido. Hoy da igual (external_id es UNIQUE global, asi que solo hay una
+  // fila posible), pero deducir la tienda a partir del pedido es justo el
+  // patron que queda ambiguo al pasar el unique a (store_id, external_id) — y
+  // ahi la funcion podria gestionar la novedad del pedido de OTRA tienda.
+  // Filtrar cuando se puede es gratis y desactiva la trampa por adelantado.
+  let q = sb
     .from("orders")
     .select("id, store_id, external_id, nombre, phone, direccion")
-    .eq("external_id", externalId)
+    .eq("external_id", externalId);
+  if (storeId) q = q.eq("store_id", storeId);
+  const { data, error } = await q
     .limit(1)
     .maybeSingle();
 
@@ -371,7 +380,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // ---- Load local order for store + pre-fill ----
-    const local = await loadLocalOrder(sb, externalId);
+    // Si el cliente mando la tienda, se usa para ACOTAR la busqueda (ver el
+    // comentario de loadLocalOrder). La membresia se sigue validando abajo
+    // contra la tienda del pedido, asi que mandar un store_id ajeno no abre
+    // ninguna puerta: solo hace que no se encuentre el pedido.
+    const bodyStoreId = typeof body.storeId === "string" ? body.storeId.trim()
+      : typeof body.store_id === "string" ? body.store_id.trim() : "";
+    const local = await loadLocalOrder(sb, externalId, bodyStoreId || null);
     if (!local) {
       return new Response(
         JSON.stringify({ error: `Pedido ${externalId} no encontrado` }),

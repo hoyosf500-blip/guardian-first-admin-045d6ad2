@@ -54,7 +54,18 @@ export async function loadStoreConfig(
 }
 
 /** Resuelve store_id a partir de un externalId (lookup en orders).
- *  Devuelve null si no se encuentra. */
+ *  Devuelve null si no se encuentra.
+ *
+ *  ⚠️ ESTE CONTRATO DEPENDE DE QUE `orders.external_id` SEA UNIQUE GLOBAL
+ *  (constraint `orders_external_id_key`, verificado en la base el 20-ago-2026).
+ *  Es lo único que hace que "el external_id identifica UNA tienda" sea cierto.
+ *
+ *  El dia que ese unique pase a `(store_id, external_id)` —que es lo correcto,
+ *  porque hoy un pedido de una tienda puede SOBRESCRIBIR el de otra via el
+ *  `ON CONFLICT (external_id)` del upsert— esta funcion queda AMBIGUA y hay que
+ *  matarla: cada caller tiene que recibir el store_id explicito. Los rangos ya
+ *  se solapan: GT, las dos tiendas de EC y parte de CO usan ids de 7 digitos.
+ *  Ver la nota de external_id en CLAUDE.md antes de tocar el constraint. */
 export async function storeIdFromExternalId(
   sbAdmin: SupabaseClient,
   externalId: string,

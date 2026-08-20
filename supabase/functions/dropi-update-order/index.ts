@@ -308,11 +308,19 @@ Deno.serve(async (req: Request) => {
     let orderPhone = "";
     let orderNombre = "";
     if (!dryRun) {
-      const { data: orderRow } = await sb
+      // Si el cliente mando la tienda, se FILTRA por ella. Deducir la tienda a
+      // partir del pedido (lo que hace la linea de abajo) solo es correcto
+      // mientras external_id sea UNIQUE GLOBAL; con el unique compuesto
+      // (store_id, external_id) —que es hacia donde hay que ir— esta busqueda
+      // podria devolver el pedido de OTRA tienda y actualizarlo en Dropi.
+      // La membresia se valida despues contra el store_id resultante, asi que
+      // mandar una tienda ajena no abre ninguna puerta: solo da 404.
+      let q = sb
         .from("orders")
         .select("id, store_id, phone, nombre")
-        .eq("external_id", externalId)
-        .maybeSingle();
+        .eq("external_id", externalId);
+      if (storeId) q = q.eq("store_id", storeId);
+      const { data: orderRow } = await q.maybeSingle();
       if (!orderRow) {
         return new Response(
           JSON.stringify({ error: `Pedido ${externalId} no encontrado en la base de datos` }),
