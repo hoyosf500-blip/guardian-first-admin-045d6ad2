@@ -280,10 +280,22 @@ export function buildMesResumenFromBreakdown(rows: EstadoRow[] | null | undefine
   const valorRechazos = b.rechazado.valor;
   const valorCancelado = b.cancelado.valor;
 
-  // "Total vendido" alineado a Dropi: lo despachado y NO rechazado. Dropi excluye
-  // cancelados, pendientes (sin despachar), preparación (con guía pero sin salir) y
-  // rechazos. Lo que queda = entregados + devoluciones + tránsito + novedad + otros
-  // (indemnización, etc.). En mayo CO reconcilia al peso ($23.204.742 vs $23.204.743).
+  // "Total vendido" = lo despachado y NO rechazado: se resta cancelado, pendiente
+  // (sin despachar), preparación (con guía pero sin salir) y rechazos. Lo que queda
+  // = entregados + devoluciones + tránsito + novedad + otros (indemnización, etc.).
+  //
+  // ⚠️ EMPATA CON DROPI SOLO A MES CERRADO — corregido el 20-ago-2026. El tile
+  // decía "= Dropi" y la reconciliación citada acá (mayo CO, $23.204.742 vs
+  // $23.204.743) es de un mes TERMINADO, donde pendientes y preparación ya son
+  // ~$0 y las dos fórmulas convergen solas. A mitad de mes el panel de Dropi SÍ
+  // cuenta lo que todavía no salió, así que Guardian muestra menos por exactamente
+  // esa plata: medido el 20-ago en Colombia, la brecha contra Dropi fue
+  // $4.816.900 = pendientes $1.119.200 + preparación $3.697.700, al peso.
+  // El dueño lo leyó como "el CRM perdió ventas". El tile ahora nombra ese monto
+  // en vez de prometer una paridad que la fórmula no puede cumplir hasta fin de mes.
+  //
+  // OJO con la otra cara: la resta es un catch-all, así que un estado que Guardian
+  // no sepa clasificar (bucket `otros`) NO se resta y por lo tanto SE SUMA acá.
   const totalVendido =
     valorGenerado - valorCancelado - valorPendientes - valorPreparacion - valorRechazos;
 

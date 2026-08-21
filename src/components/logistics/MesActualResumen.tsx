@@ -182,6 +182,15 @@ export default function MesActualResumen({ summary, filters }: Props) {
   const valorPreparacion = full?.valorPreparacion ?? 0;
   const valorOtros = full?.valorOtros ?? 0;
 
+  // Plata de pedidos que EXISTEN pero todavía no salieron a la calle. "Total
+  // vendido" los resta y el panel de Dropi NO: es EXACTAMENTE la brecha entre
+  // las dos pantallas a mitad de mes (medido el 20-ago-2026 en Colombia:
+  // $1.119.200 + $3.697.700 = $4.816.900, la diferencia al peso contra Dropi).
+  // A mes cerrado esto tiende a $0 y por eso la reconciliación de mayo dio
+  // exacta — el "= Dropi" que decía este tile era cierto solo para meses
+  // terminados, y a mitad de mes le hacía creer al dueño que faltaban ventas.
+  const sinDespacharAun = resumen.valorPendientes + valorPreparacion;
+
   // "Pedidos en la calle" = lo que falta CERRAR = generado − (entregado + devuelto
   // + cancelado). Lo no-cerrado (pendiente + preparación + tránsito + novedad +
   // estados sin clasificar) es lo que el dueño mira primero.
@@ -327,12 +336,19 @@ export default function MesActualResumen({ summary, filters }: Props) {
 
       {/* ── Tiles Dropi-parity ─────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-5 border-b border-border">
+        {/* El hint nombra el total CON cancelados a propósito: este tile los resta
+            y el panel de Dropi no, así que comparar este número contra el de Dropi
+            hace creer que el CRM perdió pedidos (pasó el 20-ago-2026: 178 acá vs
+            201 en Dropi, cuando el comparable eran 203). El número comparable tiene
+            que estar al lado o nadie lo va a deducir. */}
         <KpiCard
           label="Pedidos generados"
           value={generadosSinCancel.toLocaleString('es-CO')}
           icon={PackageIcon}
           tone="info"
-          hint={canceladoCount > 0 ? `${canceladoCount} cancelados aparte` : 'sin cancelados'}
+          hint={canceladoCount > 0
+            ? `${canceladoCount} cancelados aparte · ${resumen.generadoTotal.toLocaleString('es-CO')} con cancelados (así cuenta Dropi)`
+            : 'sin cancelados'}
         />
         <KpiCard
           label="Productos vendidos"
@@ -346,7 +362,9 @@ export default function MesActualResumen({ summary, filters }: Props) {
           value={totalVendido != null ? formatCOP(totalVendido) : '—'}
           icon={DollarSign}
           tone="accent"
-          hint="solo despachado (sin pend./prep./rechazo) · = Dropi"
+          hint={sinDespacharAun > 0
+            ? `solo despachado · ${formatCOP(sinDespacharAun)} sin salir aún que Dropi ya cuenta`
+            : 'solo despachado (sin pend./prep./rechazo) · empata con Dropi'}
         />
         {/* Sin NINGÚN pedido concluido no hay tasa que mostrar: un "0%" ahí sería
             0/0, no una medición, y se lee como "no entregamos nada". Y mientras
