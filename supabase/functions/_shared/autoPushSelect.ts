@@ -16,6 +16,25 @@
 //     RECOMPRA, una venta nueva que debe entrar a Dropi. El robot recibe en
 //     `dropiActivePhones` los teléfonos QUE YA TIENEN una orden activa; el
 //     caller (shopify-auto-push) decide qué cuenta como "activa" con esa regla.
+//   - ⚠️ CONTRAPARTE (arreglo 2026-08-21): la regla de arriba, SOLA, duplicaba
+//     pedidos. "Entregado ⇒ recompra" es cierto solo si la venta de Shopify es
+//     POSTERIOR a esa entrega. Si es la MISMA venta que ya se despachó y se
+//     entregó rápido, el teléfono sale del set de activos y el robot la vuelve a
+//     subir como si fuera nueva → DOS envíos al mismo cliente.
+//     Caso real (EC, 21-ago-2026): pedido creado el 19-ago 8:56, ENTREGADO al
+//     día siguiente; el 20-ago 10:03 apareció el duplicado en PENDIENTE
+//     CONFIRMACION. Por eso "no pasa con todos": solo con los que se entregan
+//     DENTRO de la ventana de `maxAgeMs` (3 días). En Colombia, con entregas de
+//     4-5 días, la venta de Shopify ya salió de la ventana antes de entregarse y
+//     el bug no se ve; en Ecuador con LAAR entregando al otro día, sí.
+//     Defensa: `contraparteDropiMs` mapea teléfono → fecha de la orden Dropi MÁS
+//     RECIENTE de ese teléfono, EN CUALQUIER ESTADO (entregadas incluidas). Si esa
+//     orden nació DESPUÉS de la venta de Shopify, ES su contraparte y no se sube.
+//     Una recompra real es al revés: su venta de Shopify es más nueva que la
+//     orden anterior, así que sigue pasando.
+//     Ojo: la idempotencia por `shopify_order_id` NO cubre esto — solo conoce lo
+//     que subió ESTE robot, y el original lo suele subir Dropify (la app de
+//     Shopify), que no deja ninguna fila nuestra.
 //   - Si ya hay un intento 'created'/'pending'/'unknown' → no reintentar
 //     (idempotencia; 'unknown' exige verificación humana, nunca automático).
 //   - Un intento 'error' se reintenta, pero con enfriamiento (`errorCooldownMs`)
@@ -59,6 +78,10 @@ export function selectAutoPushCandidates(
   dropiActivePhones: Set<string>,
   pushedByOrderId: Map<string, PushedRecord>,
   opts: SelectOpts,
+  /** Teléfono → fecha (ms) de la orden Dropi MÁS RECIENTE de ese teléfono, en
+   *  CUALQUIER estado (entregadas incluidas). Ver la nota CONTRAPARTE arriba.
+   *  Vacío = se comporta como antes del arreglo. */
+  contraparteDropiMs: Map<string, number> = new Map(),
 ): ShopifyPendingLike[] {
   const picked = orders.filter((o) => {
     if (!o.phoneLast9 || o.phoneLast9.length < 7) return false; // sin teléfono usable
@@ -66,6 +89,11 @@ export function selectAutoPushCandidates(
     if (age < opts.minAgeMs) return false;   // gracia (Dropify / carrera con el sync)
     if (age > opts.maxAgeMs) return false;   // muy viejo → manual
     if (dropiActivePhones.has(o.phoneLast9)) return false; // ya tiene orden ACTIVA → duplicado
+    // Esta venta de Shopify YA tiene contraparte en Dropi (aunque esté entregada
+    // y por eso no figure como "activa"). Sin comparar contra su propia fecha,
+    // una entrega rápida se leía como recompra y se despachaba dos veces.
+    const contraparte = contraparteDropiMs.get(o.phoneLast9);
+    if (contraparte != null && contraparte >= o.createdAtMs) return false;
     const prev = pushedByOrderId.get(o.shopify_order_id);
     if (prev && blocksRetry(prev, opts.nowMs, opts.errorCooldownMs)) return false;
     return true;

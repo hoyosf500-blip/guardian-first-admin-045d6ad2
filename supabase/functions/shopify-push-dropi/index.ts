@@ -47,6 +47,9 @@ interface ShopifyAddr {
 }
 interface ShopifyOrderFull {
   id: number; name: string; phone?: string | null; email?: string | null; note?: string | null;
+  /** Momento de la VENTA en Shopify. Se usa para distinguir una recompra real de
+   *  un duplicado por entrega rapida — ver findDuplicatesServiceRole. */
+  created_at?: string | null;
   // Descuento a NIVEL DE ORDEN (ej. "QUANTITY DISCOUNT" de Releasit COD Form).
   // total_discounts = suma de TODOS los descuentos; total_line_items_price = subtotal
   // de productos ANTES de descuentos. La resta de ambos = lo que el cliente paga por
@@ -611,10 +614,12 @@ async function findDuplicatesServiceRole(
   // deno-lint-ignore no-explicit-any
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sb: any, storeId: string, phoneNorm: string,
+  /** Momento de la venta en Shopify. Ver el bloque CONTRAPARTE abajo. */
+  shopifyCreatedAtMs?: number,
 ): Promise<Array<{ external_id?: string; estado?: string }>> {
   const since = new Date(Date.now() - 60 * 86400000).toISOString();
   const { data } = await sb.from("orders")
-    .select("external_id, estado, phone")
+    .select("external_id, estado, phone, created_at")
     .eq("store_id", storeId)
     .ilike("phone", `%${phoneNorm}`)
     .gte("created_at", since)
@@ -632,8 +637,25 @@ async function findDuplicatesServiceRole(
     if (/REEMPLAZ|ANULAD|ARCHIVADO/.test(e)) return false;
     return true;                            // cualquier otro estatus → en curso = duplicado
   };
-  return ((data || []) as Array<{ external_id: string; estado: string; phone: string }>)
-    .filter((o) => String(o.phone || "").replace(/\D/g, "").slice(-9) === phoneNorm && isActive(o.estado))
+  /** CONTRAPARTE (arreglo 2026-08-21). "ENTREGADO ⇒ recompra" es cierto solo si la
+   *  venta de Shopify es POSTERIOR a esa entrega. Si es la MISMA venta que ya se
+   *  despachó y se entregó rápido, `isActive` la deja pasar y se crea un SEGUNDO
+   *  envío al mismo cliente. Caso real EC: venta del 19-ago, entregada al día
+   *  siguiente, duplicado creado el 20-ago 10:03. Solo pasa con entregas dentro de
+   *  la ventana de candidatos (3 días) — por eso "no pasa con todos".
+   *  Una orden Dropi nacida DESPUÉS de la venta de Shopify ES su contraparte.
+   *  Las MUERTAS quedan afuera: no despacharon nada, y contarlas rebotaría ventas
+   *  legítimas como duplicado (la lección de 2026-07-18). */
+  const esContraparte = (estado: string, createdAt: string | null): boolean => {
+    if (!shopifyCreatedAtMs || !createdAt) return false;
+    const e = String(estado || "").toUpperCase();
+    if (/CANCEL|REEMPLAZ|ANULAD|ARCHIVADO/.test(e)) return false;
+    const ms = new Date(createdAt).getTime();
+    return Number.isFinite(ms) && ms >= shopifyCreatedAtMs;
+  };
+  return ((data || []) as Array<{ external_id: string; estado: string; phone: string; created_at: string | null }>)
+    .filter((o) => String(o.phone || "").replace(/\D/g, "").slice(-9) === phoneNorm
+      && (isActive(o.estado) || esContraparte(o.estado, o.created_at)))
     .map((o) => ({ external_id: o.external_id, estado: o.estado }));
 }
 
@@ -873,7 +895,7 @@ Deno.serve(async (req: Request) => {
     // DE ORDEN (total_discounts/total_line_items_price): Releasit COD Form registra
     // su "QUANTITY DISCOUNT" como descuento de orden, NO en line_items[].total_discount,
     // así que sin esto el descuento se perdía y Dropi cobraba el subtotal sin rebaja.
-    const fields = "id,name,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email,total_discounts,total_line_items_price,current_subtotal_price,subtotal_price,current_total_price,total_price";
+    const fields = "id,name,created_at,line_items,shipping_lines,shipping_address,billing_address,customer,phone,note,email,total_discounts,total_line_items_price,current_subtotal_price,subtotal_price,current_total_price,total_price";
     const ord = (await shopifyGet<{ order: ShopifyOrderFull }>(
       shopCfg.shopDomain, shopToken,
       `orders/${encodeURIComponent(shopifyOrderId)}.json?fields=${fields}`,
@@ -1103,9 +1125,18 @@ Deno.serve(async (req: Request) => {
         // Camino de cron: consulta con service role (sin auth.uid()). Camino de
         // usuario: la RPC find_duplicate_phones con el JWT del miembro.
         let list: Array<{ external_id?: string; estado?: string }> = [];
+        const ventaShopifyMs = ord.created_at ? new Date(ord.created_at).getTime() : undefined;
         if (isCron) {
-          list = await findDuplicatesServiceRole(sb, storeId, phoneNorm);
+          list = await findDuplicatesServiceRole(
+            sb, storeId, phoneNorm,
+            Number.isFinite(ventaShopifyMs) ? ventaShopifyMs : undefined,
+          );
         } else {
+          // ⚠️ El camino MANUAL sigue usando la RPC `find_duplicate_phones`, que
+          // tiene el MISMO hueco (una orden ENTREGADA no la reporta como
+          // duplicado). Acá la asesora ve la lista y decide, así que el riesgo es
+          // menor, pero el aviso puede faltarle. Arreglarlo exige leer la versión
+          // DESPLEGADA de esa RPC antes de tocarla (REGLA #1 de CLAUDE.md).
           const { data: dups, error: dupErr } = await sbUser!.rpc("find_duplicate_phones", {
             p_store_id: storeId, p_phones: [phoneNorm],
           });

@@ -150,17 +150,33 @@ async function processStore(
   // se sube (regla del dueño 2026-07-18).
   const sinceDropi = new Date(Date.now() - DROPI_LOOKBACK_DAYS * 86400000).toISOString();
   const dropiActivePhones = new Set<string>();
+  // Teléfono → fecha de su orden Dropi MÁS RECIENTE, en CUALQUIER estado vivo o
+  // entregado. Es la defensa contra el duplicado por entrega rápida: una venta de
+  // Shopify cuya contraparte en Dropi nació DESPUÉS que ella ya está despachada,
+  // aunque hoy figure ENTREGADA y por eso no cuente como "activa". Ver la nota
+  // CONTRAPARTE en _shared/autoPushSelect.ts.
+  const contraparteDropiMs = new Map<string, number>();
   const PAGE = 1000;
   for (let from = 0; from < 20000; from += PAGE) {
     const { data, error } = await sb
-      .from("orders").select("phone, estado")
+      .from("orders").select("phone, estado, created_at")
       .eq("store_id", storeId).gte("created_at", sinceDropi)
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`orders read: ${error.message}`);
-    const rows = (data || []) as { phone: string | null; estado: string | null }[];
+    const rows = (data || []) as { phone: string | null; estado: string | null; created_at: string | null }[];
     for (const r of rows) {
       const k = last9(r.phone);
-      if (k.length >= 7 && isActiveDropiEstado(r.estado)) dropiActivePhones.add(k);
+      if (k.length < 7) continue;
+      if (isActiveDropiEstado(r.estado)) dropiActivePhones.add(k);
+      // Las MUERTAS (cancelada / reemplazada / anulada / archivada) quedan fuera
+      // a propósito: no despacharon nada, así que no son contraparte de nada y
+      // seguir tratándolas como tal bloquearía una venta legítima.
+      const e = String(r.estado || "").toUpperCase();
+      if (/CANCEL|REEMPLAZ|ANULAD|ARCHIVADO/.test(e)) continue;
+      const ms = r.created_at ? new Date(r.created_at).getTime() : 0;
+      if (!Number.isFinite(ms) || ms <= 0) continue;
+      const prev = contraparteDropiMs.get(k);
+      if (prev == null || ms > prev) contraparteDropiMs.set(k, ms);
     }
     if (rows.length < PAGE) break;
   }
@@ -197,7 +213,7 @@ async function processStore(
   const picked = selectAutoPushCandidates(candidatesInput, dropiActivePhones, pushedByOrderId, {
     nowMs: Date.now(), minAgeMs: MIN_AGE_MS, maxAgeMs: MAX_AGE_MS,
     errorCooldownMs: ERROR_COOLDOWN_MS, cap: PER_STORE_CAP,
-  });
+  }, contraparteDropiMs);
 
   if (dryRun) {
     return {

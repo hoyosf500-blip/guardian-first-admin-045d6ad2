@@ -68,6 +68,44 @@ describe("selectAutoPushCandidates", () => {
     expect(out.map((o) => o.shopify_order_id)).toEqual(["A"]);
   });
 
+  // ── Duplicado por entrega rápida (caso real EC, 21-ago-2026) ──────────────
+  // El equipo reportó pedidos despachados DOS veces. Reconstrucción exacta:
+  // venta en Shopify el 19-ago 8:2x → Dropify la sube → Dropi la entrega al día
+  // siguiente → el 20-ago 10:03 el robot la volvió a subir, porque una orden
+  // ENTREGADA sale del set de "activas" y la regla la leía como recompra.
+  // Solo pasa con entregas DENTRO de la ventana de 3 días: por eso "no pasa con
+  // todos", y por eso se ve en Ecuador (LAAR entrega al otro día) y no en
+  // Colombia. La idempotencia por shopify_order_id NO lo cubre: el original lo
+  // subió Dropify, que no deja fila nuestra.
+  it("NO vuelve a subir una venta cuya orden en Dropi nació DESPUÉS que ella, aunque ya esté ENTREGADA", () => {
+    const venta = ord("A", 25 * 60);                    // vendida hace 25 h
+    const entregadaDespues = new Map([[venta.phoneLast9, venta.createdAtMs + 30 * MIN]]);
+    const out = selectAutoPushCandidates([venta], new Set(), new Map(), baseOpts(), entregadaDespues);
+    expect(out).toHaveLength(0);
+  });
+
+  it("una RECOMPRA real SÍ se sube: la venta nueva es POSTERIOR a la orden entregada", () => {
+    // Es la contracara y hay que protegerla: tratar toda entregada como bloqueo
+    // dejaba al cliente sin poder recomprar por 60 días — venta perdida en
+    // silencio (lección del 2026-07-18). El discriminador es el TIEMPO.
+    const recompra = ord("B", 60);                      // vendida hace 1 h
+    const entregadaAntes = new Map([[recompra.phoneLast9, recompra.createdAtMs - 5 * DAY]]);
+    const out = selectAutoPushCandidates([recompra], new Set(), new Map(), baseOpts(), entregadaAntes);
+    expect(out.map((o) => o.shopify_order_id)).toEqual(["B"]);
+  });
+
+  it("el empate exacto cuenta como contraparte (no se sube)", () => {
+    const venta = ord("C", 90);
+    const mismoInstante = new Map([[venta.phoneLast9, venta.createdAtMs]]);
+    const out = selectAutoPushCandidates([venta], new Set(), new Map(), baseOpts(), mismoInstante);
+    expect(out).toHaveLength(0);
+  });
+
+  it("sin el mapa de contrapartes se comporta como antes (compatibilidad)", () => {
+    const out = selectAutoPushCandidates([ord("D", 60)], new Set(), new Map(), baseOpts());
+    expect(out.map((o) => o.shopify_order_id)).toEqual(["D"]);
+  });
+
   it("NO reintenta un pedido ya 'created' (idempotencia)", () => {
     const pushed = new Map<string, PushedRecord>([["A", { status: "created", pushedAtMs: NOW - HOUR }]]);
     const out = selectAutoPushCandidates([ord("A", 45)], new Set(), pushed, baseOpts());
