@@ -144,6 +144,7 @@ describe('decidirArchivado — fail-closed ante cualquier duda', () => {
     const muchos: RepescaRow[] = Array.from({ length: 500 }, (_, i) => ({
       id: 'm' + i,
       external_id: String(7000000 + i),
+      estado: null,
       fecha: '2026-04-10',
       created_at: '2026-04-10T10:00:00Z',
     }));
