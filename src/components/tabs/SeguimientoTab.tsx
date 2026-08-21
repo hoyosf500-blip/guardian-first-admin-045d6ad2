@@ -10,9 +10,10 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useSegAsignaciones } from '@/hooks/useSegAsignaciones';
 import { turnoDelEquipo } from '@/lib/turnoDelEquipo';
 import TurnoDelEquipoPanel from '@/components/seguimiento/TurnoDelEquipoPanel';
+import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoDialog';
 import { useSegClosedPhones } from '@/hooks/useSegClosedPhones';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
@@ -163,6 +164,9 @@ export default function SeguimientoTab() {
   // "Lo que sigue" arriba de todo, el hero pasó a ser el segundo lugar donde
   // se dice lo mismo.
   const [heroAbierto, setHeroAbierto] = useSessionState<boolean>('seg:heroAbierto', false);
+  // Cierre del día. Estado local y NO de sesión: no es una preferencia, es un
+  // diálogo que se abre una vez.
+  const [cierreAbierto, setCierreAbierto] = useState(false);
   // Contador diario: por defecto OCULTAMOS del tablero los pedidos que YO ya
   // gestioné hoy (touchpoint SEG:* → mySegTouchedToday, set de phones del
   // OrderContext). Al gestionar un pedido (Contactado/Llamé/WhatsApp/… desde la
@@ -987,10 +991,22 @@ export default function SeguimientoTab() {
               <span className="text-[11px] text-muted-foreground">
                 <span className="font-mono tabular-nums">{enRuta}</span> en ruta
               </span>
+              {/* El final del día. Va acá, pegado a los números que va a
+                  firmar, y no en la barra de mando: es una acción de una vez
+                  al día y no compite con lo que se usa todo el tiempo.
+                  NO bloquea nada — ver CierreSeguimientoDialog. */}
+              <button
+                type="button"
+                onClick={() => setCierreAbierto(true)}
+                className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+                title="Deja registrado cómo terminó la cola de hoy: o quedó en cero, o queda escrito por qué no."
+              >
+                <Moon size={11} aria-hidden="true" /> Cerrar el día
+              </button>
               <button
                 type="button"
                 onClick={() => setHeroAbierto((v) => !v)}
-                className="ml-auto shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+                className="shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
               >
                 {heroAbierto ? 'Ocultar detalle' : 'Ver detalle'}
               </button>
@@ -1252,6 +1268,16 @@ export default function SeguimientoTab() {
             />
           </motion.div>
         )}
+
+        {/* El cierre del día. `gestionados` va en null si la lectura falló:
+            el diálogo se niega a firmar números que nadie midió. */}
+        <CierreSeguimientoDialog
+          open={cierreAbierto}
+          onClose={() => setCierreAbierto(false)}
+          storeId={activeStoreId}
+          cola={hero.total}
+          gestionados={coverageSegError ? null : hero.gestionados}
+        />
 
         {/* Listas de trabajo (SLA) — forma PRINCIPAL de priorizar. Reemplaza
             al viejo dropdown + banner de atrasados: una sola fila de chips
