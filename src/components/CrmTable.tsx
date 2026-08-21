@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
-import { useWhatsAppSeguimiento } from '@/hooks/useWhatsAppSeguimiento';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
 import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { isReminderDue } from '@/lib/reminders';
@@ -1244,7 +1243,6 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
   const { activeStoreId: cardActiveStoreId } = useStore();
   const { refresh: refreshOrder, isRefreshing } = useRefreshOrder();
   const { openChat, waEnabled } = useWaChat();
-  const abrirWhatsApp = useWhatsAppSeguimiento(countryCode);
   const recordContacto = useRecordGestion();
   const priority = calcPriority(o);
   const pLevel = getPriorityLevel(priority);
@@ -1647,21 +1645,16 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
               )}
 
               {/* Canales de contacto (solo abren la app — el registro de la
-                  gestión va por "Gestioné hoy", abajo).
-                  WhatsApp SIN gate de waEnabled: esa bandera quedó en false
-                  para siempre al retirar el bot (13-ago-2026) y el botón
-                  desapareció de Seguimiento. Abre wa.me con el mensaje del
-                  pedido ya redactado. */}
+                  gestión va por "Gestioné hoy", abajo). */}
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (waEnabled) { void openChat({ phone: o.phone, name: o.nombre }); return; }
-                    abrirWhatsApp(o);
-                  }}
-                  className="flex-1 text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success">
-                  <Send size={12} /> WhatsApp
-                </button>
+                {waEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
+                    className="flex-1 text-[11px] py-2.5 rounded-xl bg-success/16 border border-success/40 text-success font-semibold hover:border-success/70 inline-flex items-center justify-center gap-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success">
+                    <Send size={12} /> WhatsApp
+                  </button>
+                )}
                 <a href={'tel:+' + getWhatsAppPhone(o.phone, countryCode)}
                   onClick={() => void recordContacto(o.phone, 'LLAMADA', 'llamó')}
                   className="flex-1 text-[11px] py-2.5 rounded-xl bg-card/40 text-muted-foreground font-semibold hover:text-foreground hover:border-border-strong no-underline inline-flex items-center justify-center gap-1.5 border border-border transition-colors">

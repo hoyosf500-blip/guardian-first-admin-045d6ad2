@@ -17,7 +17,6 @@ import { useRefreshOrder } from '@/hooks/useRefreshOrder';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
-import { useWhatsAppSeguimiento } from '@/hooks/useWhatsAppSeguimiento';
 import { useSessionState } from '@/hooks/useSessionState';
 import { TiltCard } from '@/components/ui3d';
 import { cn, formatCOP } from '@/lib/utils';
@@ -208,7 +207,6 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
   const { openChat, waEnabled } = useWaChat();
-  const abrirWhatsApp = useWhatsAppSeguimiento(countryCode);
   const recordGestion = useRecordGestion();
   // Guarda la ACCIÓN elegida (no un booleano): la tarjeta confirma "Envié la
   // guía ✓" en vez de un "listo" que no dice qué se hizo.
@@ -486,22 +484,15 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
               <Phone size={14} aria-hidden="true" />
             </a>
           )}
-          {/* WhatsApp SIN gate de waEnabled. Este botón vivía detrás de
-              `waEnabled` del bot; al retirarse el bot (13-ago-2026) esa bandera
-              quedó en false para siempre y el botón DESAPARECIÓ de todo
-              Seguimiento — la asesora que trabaja "En agencia" solo podía
-              llamar. Ahora abre wa.me con el mensaje del pedido ya escrito
-              (guía, plazo, cuánto paga). Si el bot vuelve, `openChat` gana. */}
-          {waPhone && (
+          {waEnabled && waPhone && (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                if (waEnabled) { void openChat({ phone: o.phone, name: o.nombre }); return; }
-                abrirWhatsApp(o);
+                void openChat({ phone: o.phone, name: o.nombre });
               }}
-              title="Escribirle por WhatsApp (mensaje ya redactado)"
-              aria-label="Escribirle por WhatsApp"
+              title="Abrir chat de WhatsApp (ver el bot / escribir)"
+              aria-label="Abrir chat de WhatsApp"
               className="p-2 min-h-11 min-w-11 inline-flex items-center justify-center rounded-lg bg-success/12 border border-success/30 text-success hover:bg-success/20 hover:border-success/60 transition-colors"
             >
               <MessageCircle size={14} aria-hidden="true" />

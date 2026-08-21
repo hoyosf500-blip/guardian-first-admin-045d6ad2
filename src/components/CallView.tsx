@@ -5,7 +5,6 @@ import { useOrderLock } from '@/hooks/useOrderLock';
 import { OrderData, formatPhone, getTrackingUrl, truncate, dbToOrderData, isValidPhoneForCountry, getWhatsAppPhone } from '@/lib/orderUtils';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
-import { primerNombre, urlWhatsApp } from '@/lib/mensajeSeguimiento';
 import { formatCOP } from '@/lib/utils';
 import { CANCEL_REASONS } from '@/lib/constants';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -947,18 +946,7 @@ export default function CallView({ items, alerts }: Props) {
     } else {
       // Fallback wa.me externo: openChat no corre, así que registramos acá.
       void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
-      // Con el mensaje YA cargado. Abría el chat vacío y la asesora retipeaba
-      // qué dato de la dirección faltaba en cada pedido; ese texto ya lo calcula
-      // el validador (`suggestedCustomerMessage` ← buildWhatsAppMessage) y
-      // estaba escrito en la fila sin que nadie lo usara para el link.
-      // Acá es CONFIRMAR: el pedido todavía no salió, así que NO aplica el
-      // mensaje por fase de Seguimiento.
-      const nom = primerNombre(o.nombre);
-      const saludo = nom ? `Hola ${nom} 👋` : 'Hola 👋';
-      const elPedido = o.producto ? `tu pedido de ${o.producto}` : 'tu pedido';
-      const texto = (o.suggestedCustomerMessage || '').trim()
-        || `${saludo} Te escribo para confirmar ${elPedido}. ¿Es un buen momento para hablar?`;
-      window.open(urlWhatsApp(waPhone, texto) ?? `https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
+      window.open(`https://wa.me/${waPhone}`, '_blank', 'noopener,noreferrer');
     }
   };
 
