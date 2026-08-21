@@ -7,14 +7,16 @@ import { useChangeAlerts } from '@/hooks/useChangeAlerts';
 import { OrderData, isWithinLastDays, isClosedOutByCloser } from '@/lib/orderUtils';
 import { matchesQuery } from '@/lib/textSearch';
 import { useSessionState } from '@/hooks/useSessionState';
+import { useSegAsignaciones } from '@/hooks/useSegAsignaciones';
 import { useSegClosedPhones } from '@/hooks/useSegClosedPhones';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
-import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search } from 'lucide-react';
+import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users } from 'lucide-react';
+import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 import CrmTable from '@/components/CrmTable';
 import { TiltCard, CountUp, GaugeRing } from '@/components/ui3d';
 import SegBoard from '@/components/seguimiento/SegBoard';
-import { estaGestionadoHoy, contarGestionadosHoy, estaDetenido, asesorasEnSeguimientoHoy, HORAS_DETENIDO } from '@/lib/segPulso';
+import { estaGestionadoHoy, contarGestionadosHoy, estaDetenido, asesorasEnSeguimientoHoy, horasSinMovimiento, HORAS_DETENIDO } from '@/lib/segPulso';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import SegCounterBar from '@/components/SegCounterBar';
 import GlobalOrderSearchPanel from '@/components/seguimiento/GlobalOrderSearchPanel';
@@ -111,7 +113,7 @@ export default function SeguimientoTab() {
   const { segData, segLoaded, segLoading, segLastUpdate, loadSegData, mySegTouchedToday, gestionSegPorTelefono, coverageSegError } = useOrders();
   // El cutoff de "muertos" depende del país de la tienda activa (EC cicla más
   // lento que CO). Patrón de CrmCallView: leer activeStore?.country_code.
-  const { activeStore, activeStoreId } = useStore();
+  const { activeStore, activeStoreId, isManagerOfActive } = useStore();
   // Nombre de cada asesora para la tarjeta "el equipo hoy" (cache compartido:
   // una sola lectura de profiles por sesión, no una por tarjeta).
   const { nameOf: nombreDeAsesora } = useOperatorNames();
@@ -165,6 +167,10 @@ export default function SeguimientoTab() {
   // `false` viejo guardado. La LISTA (CrmTable) ya tiene su propio ocultado de
   // gestionados, por eso este filtro aplica al TABLERO.
   const [onlyUntouchedSeg, setOnlyUntouchedSeg] = useSessionState<boolean>('seg:autoHide:v2', true);
+  // Asignación del día (pieza C). Es una ETIQUETA de responsabilidad, no un
+  // candado: filtra la vista, nunca bloquea a nadie.
+  const asig = useSegAsignaciones();
+  const [soloMias, setSoloMias] = useSessionState<boolean>('seg:soloMias', false);
   // Vista: tablero Kommo (default, tarjetas en vivo por columna) o lista (CrmTable
   // clásico con búsqueda/owner/llamada). El tablero no quita features: es un toggle.
   const [viewMode, setViewMode] = useSessionState<'board' | 'list'>('seg:viewMode', 'board');
@@ -311,7 +317,21 @@ export default function SeguimientoTab() {
   // (mySegTouchedToday). El tablero no tiene la lógica de ocultado de CrmTable,
   // así que la aplicamos acá → al gestionar, la tarjeta desaparece y "Te faltan
   // N" baja. El toggle "Ocultar gestionados" del contador lo controla.
+  // "Solo las mías": filtra por la asignación del día. Se aplica ANTES del
+  // ocultado de gestionados para que "Te faltan N" hable de MI cola.
+  const displayDataMias = useMemo(
+    () => (soloMias ? displayData.filter((o) => asig.esMio(o.dbId)) : displayData),
+    [displayData, soloMias, asig],
+  );
+
+  // Cuántos me tocaron hoy — el chip solo aparece si hay alguno mío.
+  const misAsignadosHoy = useMemo(
+    () => dedupedByDate.reduce((n, o) => (asig.esMio(o.dbId) ? n + 1 : n), 0),
+    [dedupedByDate, asig],
+  );
+
   const boardData = useMemo(() => {
+    const displayData = displayDataMias;
     if (!onlyUntouchedSeg) return displayData;
     // Si la lectura de "gestionados hoy" falló, el set viene vacío y filtrar
     // con él fingiría que nada se gestionó (los pedidos YA gestionados
@@ -329,12 +349,12 @@ export default function SeguimientoTab() {
     // y esconderlo lo volvia invisible para todas hasta el dia siguiente.
     // Lo mio se sigue escondiendo igual que antes (ya lo trabaje).
     return displayData.filter((o) => !estaGestionadoHoy(o.phone, mySegTouchedToday, gestionSegPorTelefono));
-  }, [displayData, onlyUntouchedSeg, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
+  }, [displayDataMias, onlyUntouchedSeg, mySegTouchedToday, gestionSegPorTelefono, coverageSegError]);
 
   // ¿El tablero quedó vacío SOLO porque ocultamos los gestionados de hoy? (hay
   // pedidos en el feed pero todos están gestionados). Para mostrar un vacío
   // celebratorio en vez de "Sin pedidos".
-  const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayData.length > 0;
+  const allManagedToday = onlyUntouchedSeg && boardData.length === 0 && displayDataMias.length > 0;
 
   const stats = useMemo(() => {
     const s = {
@@ -1054,6 +1074,80 @@ export default function SeguimientoTab() {
           );
         })()}
 
+        {/* Asignación del día (pieza C del protocolo del turno).
+            La etiqueta es de RESPONSABILIDAD, NUNCA un candado: filtra la vista
+            y nada más. Cualquiera puede seguir gestionando cualquier pedido —
+            convertirla en bloqueo fue el error que hizo apagar la
+            auto-asignación en mayo-2026 ("Atendido por X — no puedes ejecutar
+            acciones"). Si la migración no está aplicada, `soportado` es false y
+            toda esta fila no existe, en vez de un botón que revienta. */}
+        {asig.soportado && (
+          <motion.div {...fadeUp(0.1)} className="flex flex-wrap items-center gap-2">
+            {misAsignadosHoy > 0 && (
+              <button
+                type="button"
+                onClick={() => setSoloMias((v) => !v)}
+                className={cn(
+                  'shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-semibold transition-colors',
+                  soloMias
+                    ? 'bg-accent/18 border-accent/50 text-accent'
+                    : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
+                )}
+                title="Los pedidos que te tocaron hoy. No bloquea nada: podés seguir gestionando cualquier otro."
+              >
+                <UserIcon size={12} aria-hidden="true" />
+                {soloMias ? 'Viendo solo las mías' : 'Solo las mías'}
+                <span className="font-mono tabular-nums">{misAsignadosHoy}</span>
+              </button>
+            )}
+
+            {isManagerOfActive && (
+              <button
+                type="button"
+                disabled={asig.repartiendo}
+                onClick={async () => {
+                  // Se reparte la COLA ACCIONABLE, ordenada por urgencia, para
+                  // que cada asesora reciba una mezcla parecida de urgente y
+                  // tibio en vez de que una cargue con todo lo que vence hoy.
+                  const ids = dedupedByDate
+                    .filter((o) => esAccionable(o) && o.dbId)
+                    .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
+                    .map((o) => String(o.dbId));
+                  const r = await asig.repartir(ids);
+                  if (!r) { toast.error('No se pudo repartir la cola'); return; }
+                  if (r.sinOperadores) {
+                    toast.error('No hay asesoras en esta tienda', {
+                      description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
+                    });
+                    return;
+                  }
+                  if (r.asignados === 0) {
+                    toast.success('Ya estaba todo repartido', {
+                      description: 'Ningún pedido quedó sin dueño. Volver a repartir no le quita el trabajo a nadie.',
+                    });
+                    return;
+                  }
+                  toast.success(`${r.asignados} pedido${r.asignados === 1 ? '' : 's'} repartido${r.asignados === 1 ? '' : 's'}`, {
+                    description: `Entre ${asig.operadores.length} asesora${asig.operadores.length === 1 ? '' : 's'}.`
+                      + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
+                  });
+                }}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-accent/40 bg-accent/12 text-accent text-[11px] font-semibold hover:bg-accent/20 transition-colors disabled:opacity-50"
+                title="Reparte la cola accionable de hoy entre las asesoras, equilibrando la carga. Volver a correrlo NO le quita el trabajo a quien ya lo tiene."
+              >
+                <Users size={12} aria-hidden="true" />
+                {asig.repartiendo ? 'Repartiendo…' : 'Repartir la cola de hoy'}
+              </button>
+            )}
+
+            {isManagerOfActive && asig.asignaciones.size > 0 && (
+              <span className="text-[11px] text-muted-foreground">
+                {asig.asignaciones.size} con dueño hoy
+              </span>
+            )}
+          </motion.div>
+        )}
+
         {/* Listas de trabajo (SLA) — forma PRINCIPAL de priorizar. Reemplaza
             al viejo dropdown + banner de atrasados: una sola fila de chips
             ordenados por urgencia, con conteo y un "Sugerido" hacia dónde
@@ -1246,7 +1340,7 @@ export default function SeguimientoTab() {
         />
       ) : (
         <CrmTable
-          data={displayData}
+          data={displayDataMias}
           module="SEG"
           emptyIcon={<Truck size={28} className="text-muted-foreground" />}
           emptyTitle="Sin pedidos en seguimiento"
