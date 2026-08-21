@@ -25,6 +25,7 @@ import GlobalOrderSearchPanel from '@/components/seguimiento/GlobalOrderSearchPa
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -173,6 +174,12 @@ export default function SeguimientoTab() {
   // candado: filtra la vista, nunca bloquea a nadie.
   const asig = useSegAsignaciones();
   const [soloMias, setSoloMias] = useSessionState<boolean>('seg:soloMias', false);
+
+  // Cuántos filtros están puestos. Va en el botón "Filtros" porque ahora están
+  // PLEGADOS: un filtro escondido que no se anuncia es peor que uno desplegado
+  // — la asesora concluye "no hay pedidos" cuando en realidad los está filtrando.
+  const filtrosActivos =
+    (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (statusFilter ? 1 : 0);
   // Vista: tablero Kommo (default, tarjetas en vivo por columna) o lista (CrmTable
   // clásico con búsqueda/owner/llamada). El tablero no quita features: es un toggle.
   const [viewMode, setViewMode] = useSessionState<'board' | 'list'>('seg:viewMode', 'board');
@@ -331,6 +338,35 @@ export default function SeguimientoTab() {
     () => dedupedByDate.reduce((n, o) => (asig.esMio(o.dbId) ? n + 1 : n), 0),
     [dedupedByDate, asig],
   );
+
+  // Reparto de la cola del día. Vive acá (y no dentro del panel) porque el
+  // ORDEN importa: se manda la cola accionable ordenada por urgencia, para que
+  // cada asesora reciba una mezcla parecida en vez de que una cargue con todo
+  // lo que vence hoy. El panel es presentacional y no conoce los pedidos.
+  const repartirColaDeHoy = useCallback(async () => {
+    const ids = dedupedByDate
+      .filter((o) => esAccionable(o) && o.dbId)
+      .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
+      .map((o) => String(o.dbId));
+    const r = await asig.repartir(ids);
+    if (!r) { toast.error('No se pudo repartir la cola'); return; }
+    if (r.sinOperadores) {
+      toast.error('No hay asesoras en esta tienda', {
+        description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
+      });
+      return;
+    }
+    if (r.asignados === 0) {
+      toast.success('Ya estaba todo repartido', {
+        description: 'Ningún pedido quedó sin dueño. Volver a repartir no le quita el trabajo a nadie.',
+      });
+      return;
+    }
+    toast.success(`${r.asignados} pedido${r.asignados === 1 ? '' : 's'} repartido${r.asignados === 1 ? '' : 's'}`, {
+      description: `Entre ${asig.operadores.length} asesora${asig.operadores.length === 1 ? '' : 's'}.`
+        + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
+    });
+  }, [dedupedByDate, asig]);
 
   // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
   // población que el hero y que el guard de inactividad — si midiera otra cosa,
@@ -584,29 +620,20 @@ export default function SeguimientoTab() {
               perdido al final de la fila de botones y oculto en <md — que es
               justo donde trabajan las asesoras. Sigue con su guard `&&`: si no
               hay dato NO se pinta una hora falsa. */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="min-w-0 space-y-1.5">
-              <div className="hud-label whitespace-nowrap truncate mb-1">
-                CRM · Operadora
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground leading-none flex items-center gap-3">
-                <span className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
-                  <Truck size={20} strokeWidth={2.25} />
-                </span>
-                Seguimiento
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Pedidos en ruta — todos los estados de Dropi sincronizados.
-              </p>
-            </div>
-            {segLastUpdate && (
-              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-card/40 border border-border shadow-card3d text-xs text-muted-foreground shrink-0 self-start sm:self-end">
-                <span className="w-2 h-2 rounded-full bg-success glow-success motion-safe:animate-gb-pulse" aria-hidden="true" />
-                <span className="font-mono tabular-nums">
-                  {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </span>
-            )}
+          {/* Cabecera COMPRIMIDA (21-ago-2026). Antes ocupaba cuatro renglones
+              —eyebrow, título con ícono de 44px, subtítulo y chip de reloj a la
+              derecha— y era el primero de los TRECE bloques que había que pasar
+              para ver un pedido. El subtítulo ("Pedidos en ruta — todos los
+              estados de Dropi sincronizados") no le decía nada accionable a
+              nadie, y el reloj de última sincronización bajó a la barra de
+              mando, junto a los botones que lo mueven. */}
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0" aria-hidden="true">
+              <Truck size={17} strokeWidth={2.25} />
+            </span>
+            <h1 className="text-xl font-bold tracking-tight text-foreground leading-none truncate">
+              Seguimiento
+            </h1>
           </div>
           {/* Fila de controles en TRES niveles de peso, en vez de seis grupos
               indistinguibles: (1) el modo de trabajo con superficie propia,
@@ -669,88 +696,190 @@ export default function SeguimientoTab() {
                 </button>
               )}
             </div>
-            {/* Date range filter */}
-            <div className={cn(
-              "flex items-center gap-2 rounded-xl px-2 py-1 transition-colors",
-              (dateFrom || dateTo)
-                ? "bg-accent/10 border border-accent/40 shadow-glow3d"
-                : "bg-card/40 border border-border hover:border-border-strong"
-            )}>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm" className={cn(
-                    "h-11 gap-1.5 text-[11px] font-normal px-2",
-                    !dateFrom && "text-muted-foreground"
-                  )}>
-                    <CalendarIcon size={12} />
-                    {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Desde'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
-                  <Calendar
-                    mode="single"
-                    selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
-                    onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
-                    initialFocus
-                    className="p-3 pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
-              <span className="text-[10px] text-muted-foreground/50">—</span>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm" className={cn(
-                    "h-11 gap-1.5 text-[11px] font-normal px-2",
-                    !dateTo && "text-muted-foreground"
-                  )}>
-                    <CalendarIcon size={12} />
-                    {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Hasta'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
-                  <Calendar
-                    mode="single"
-                    selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
-                    onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
-                    initialFocus
-                    className="p-3 pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  aria-label="Quitar filtro de fechas"
-                  className="h-11 w-11 p-0 text-muted-foreground hover:text-foreground">
-                  <X size={13} aria-hidden="true" />
-                </Button>
-              )}
-            </div>
+            {/* FILTROS — un solo botón (21-ago-2026).
+                Antes eran DOS filas separadas: acá dos selectores de fecha + un
+                botón de limpiar, y treinta centímetros más abajo una fila de
+                chips por estado. Las dos acotan la misma población con criterios
+                distintos, así que ahora viven juntas detrás de un control.
+                El botón lleva la cuenta de filtros activos: un filtro escondido
+                que no se anuncia es peor que uno desplegado — la asesora
+                concluye "no hay pedidos" cuando en realidad los está filtrando. */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center gap-2 h-11 rounded-xl border px-3.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                    filtrosActivos > 0
+                      ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                      : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                  )}
+                >
+                  <Filter size={14} aria-hidden="true" />
+                  <span className="hidden sm:inline">Filtros</span>
+                  {filtrosActivos > 0 && (
+                    <span className="font-mono tabular-nums text-[13px] font-bold">{filtrosActivos}</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(22rem,calc(100vw-2rem))] p-4 space-y-4" align="start">
+                <div className="space-y-2">
+                  <div className="hud-label">Rango de fechas</div>
+                  <div className="flex items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className={cn("flex-1 h-10 gap-1.5 text-xs font-normal", !dateFrom && "text-muted-foreground")}>
+                          <CalendarIcon size={12} />
+                          {dateFrom ? format(new Date(dateFrom + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Desde'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={dateFrom ? new Date(dateFrom + 'T12:00:00') : undefined}
+                          onSelect={(d) => setDateFrom(d ? d.toISOString().split('T')[0] : '')}
+                          initialFocus
+                          className="p-3 pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <span className="text-[10px] text-muted-foreground/50">—</span>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className={cn("flex-1 h-10 gap-1.5 text-xs font-normal", !dateTo && "text-muted-foreground")}>
+                          <CalendarIcon size={12} />
+                          {dateTo ? format(new Date(dateTo + 'T12:00:00'), 'dd MMM', { locale: es }) : 'Hasta'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={dateTo ? new Date(dateTo + 'T12:00:00') : undefined}
+                          onSelect={(d) => setDateTo(d ? d.toISOString().split('T')[0] : '')}
+                          initialFocus
+                          className="p-3 pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
 
-            {/* NIVEL 3 — Acciones de datos, empujadas al extremo con ml-auto
-                para que no compitan con los filtros. Se conservan los DOS
-                botones (y por lo tanto los dos indicadores de carga): isSyncing-
-                Dropi y segLoading son estados independientes, y fusionarlos
-                dejaría a la asesora sin saber cuál de los dos corrió. */}
-            <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
-              {/* Sincronizar EN VIVO con Dropi: trae el estado REAL de los pedidos
-                  visibles ahora (vs "Actualizar" que solo re-lee la base). */}
-              <button
-                onClick={() => refreshNow(activeStoreId, { force: true })}
-                disabled={isSyncingDropi}
-                title="Trae el estado real de Dropi de los pedidos recientes ahora mismo"
-                className="btn-accent-3d inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              >
-                <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />
-                <span className="hidden sm:inline">{isSyncingDropi ? 'Sincronizando...' : 'Sincronizar Dropi'}</span>
-              </button>
-              <button
-                onClick={() => loadSegData(true)}
-                disabled={segLoading}
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/40 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors duration-200 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              >
-                <RefreshCw size={14} className={segLoading ? 'animate-spin' : ''} aria-hidden="true" />
-                <span className="hidden sm:inline">{segLoading ? 'Actualizando...' : 'Actualizar'}</span>
-              </button>
+                {/* Estado: solo en LISTA. En Tablero las columnas SON el resumen
+                    por estado y se filtran solas al enfocar una — repetirlo acá
+                    era el mismo dato dos veces, que es de lo que se quejó el
+                    dueño. La salida del filtro en Tablero sigue abajo. */}
+                {viewMode === 'list' && statCards.some((c) => c.value > 0) && (
+                  <div className="space-y-2">
+                    <div className="hud-label">Estado</div>
+                    <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto [scrollbar-width:thin]" role="group" aria-label="Filtrar por estado">
+                      {statCards.filter((c) => c.value > 0).map((card) => {
+                        const isActive = statusFilter === card.key;
+                        return (
+                          <button
+                            key={card.key}
+                            type="button"
+                            aria-pressed={isActive}
+                            aria-label={`Filtrar por ${card.label}: ${card.value} pedidos`}
+                            onClick={() => setStatusFilter(isActive ? null : card.key)}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none",
+                              isActive
+                                ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
+                                : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
+                            )}
+                          >
+                            <span className="truncate max-w-[150px]">{card.label}</span>
+                            <span className="font-mono tabular-nums font-bold">{card.value}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {filtrosActivos > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(null); }}
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card/40 px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+                  >
+                    <X size={12} aria-hidden="true" /> Quitar todos los filtros
+                  </button>
+                )}
+              </PopoverContent>
+            </Popover>
+
+            {/* ACCIONES DE DATOS — un botón con menú (21-ago-2026).
+                Antes eran dos botones lado a lado, "Sincronizar Dropi" y
+                "Actualizar", que hacen cosas distintas y nadie sabía cuál
+                apretar. Ahora la acción PRINCIPAL (traer el estado real desde
+                Dropi) es el botón, y la secundaria (releer la base) vive en el
+                menú, con su explicación al lado.
+
+                Los DOS indicadores de carga se conservan: `isSyncingDropi` y
+                `segLoading` son estados independientes y fusionarlos dejaría a
+                la asesora sin saber cuál de los dos corrió. El botón muestra el
+                que esté activo, con su propio texto. */}
+            <div className="flex items-center gap-2 sm:ml-auto">
+              {segLastUpdate && (
+                <span
+                  className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0"
+                  title="Hora de la última lectura de datos"
+                >
+                  <span className="w-2 h-2 rounded-full bg-success glow-success motion-safe:animate-gb-pulse" aria-hidden="true" />
+                  <span className="font-mono tabular-nums">
+                    {segLastUpdate.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </span>
+              )}
+              <div className="inline-flex items-stretch rounded-xl overflow-hidden shadow-card3d">
+                <button
+                  onClick={() => refreshNow(activeStoreId, { force: true })}
+                  disabled={isSyncingDropi || segLoading}
+                  title="Trae el estado real de Dropi de los pedidos recientes ahora mismo"
+                  className="btn-accent-3d inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded-none"
+                >
+                  {segLoading && !isSyncingDropi
+                    ? <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+                    : <Cloud size={14} className={isSyncingDropi ? 'animate-pulse' : ''} aria-hidden="true" />}
+                  <span className="hidden sm:inline">
+                    {isSyncingDropi ? 'Sincronizando…' : segLoading ? 'Actualizando…' : 'Sincronizar'}
+                  </span>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Más opciones de datos"
+                      className="btn-accent-3d inline-flex items-center px-2 border-l border-black/15 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none rounded-none"
+                    >
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuItem
+                      disabled={isSyncingDropi}
+                      onClick={() => refreshNow(activeStoreId, { force: true })}
+                      className="flex flex-col items-start gap-0.5"
+                    >
+                      <span className="font-semibold">Sincronizar con Dropi</span>
+                      <span className="text-[11px] text-muted-foreground leading-snug">
+                        Le pregunta a Dropi el estado real de los pedidos recientes.
+                      </span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={segLoading}
+                      onClick={() => loadSegData(true)}
+                      className="flex flex-col items-start gap-0.5"
+                    >
+                      <span className="font-semibold">Volver a leer la base</span>
+                      <span className="text-[11px] text-muted-foreground leading-snug">
+                        No consulta a Dropi: solo recarga lo que Guardian ya tiene guardado.
+                      </span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </div>
         </motion.header>
@@ -758,28 +887,29 @@ export default function SeguimientoTab() {
         {/* ALERTA DE CAMBIOS — "N devoluciones / en oficina nuevas" desde la
             última vez que se dio por visto. Es LA alerta que faltaba: un pedido
             que se va a devolución desaparecía del tablero en silencio. */}
+        {/* Adelgazado a UNA línea (21-ago-2026): la explicación de dónde
+            aparecen ("en el chip Se fue a devolución; lo de oficina, en su
+            columna") pasó al `title`. El aviso es el número, no el párrafo. */}
         {alertaCambios && (
           <motion.div {...fadeUp(0.02)}>
             <div
               role="status"
-              className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 shadow-card3d"
+              title="Las devoluciones aparecen en el chip «Se fue a devolución»; lo de oficina, en su columna."
+              className="flex items-center gap-2.5 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2"
             >
-              <RotateCcw size={16} className="text-danger shrink-0 mt-0.5" aria-hidden="true" />
-              <p className="text-sm text-foreground leading-snug flex-1 min-w-0">
-                <strong className="font-semibold">{alertaCambios}</strong>{' '}
-                <span className="text-muted-foreground">
-                  desde tu última revisión. Las devoluciones aparecen en el chip
-                  «Se fue a devolución»; lo de oficina, en su columna.
-                </span>
+              <RotateCcw size={14} className="text-danger shrink-0" aria-hidden="true" />
+              <p className="text-xs text-foreground leading-snug flex-1 min-w-0 truncate">
+                <strong className="font-semibold">{alertaCambios}</strong>
+                <span className="text-muted-foreground"> desde tu última revisión</span>
               </p>
               <button
                 type="button"
                 onClick={descartarAlerta}
                 aria-label="Entendido — marcar como visto"
                 title="Entendido — marcar como visto"
-                className="p-2 -m-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="p-1.5 -m-0.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <X size={14} aria-hidden="true" />
+                <X size={13} aria-hidden="true" />
               </button>
             </div>
           </motion.div>
@@ -1100,76 +1230,20 @@ export default function SeguimientoTab() {
             auto-asignación en mayo-2026 ("Atendido por X — no puedes ejecutar
             acciones"). Si la migración no está aplicada, `soportado` es false y
             toda esta fila no existe, en vez de un botón que revienta. */}
+        {/* El botón "Repartir" se mudó DENTRO de este panel (21-ago-2026): es la
+            respuesta directa a leer «N sin dueño», y tenerlo en una fila aparte
+            obligaba a cruzar la pantalla entre el dato y su acción. Y "Solo las
+            mías" bajó a la fila de chips, que es donde viven los filtros de la
+            cola. Con eso desaparece una fila entera para la asesora, que no ve
+            este panel. */}
         {asig.soportado && isManagerOfActive && (
           <motion.div {...fadeUp(0.09)}>
-            <TurnoDelEquipoPanel resumen={resumenTurno} nombreDe={nombreDeAsesora} />
-          </motion.div>
-        )}
-
-        {asig.soportado && (
-          <motion.div {...fadeUp(0.1)} className="flex flex-wrap items-center gap-2">
-            {misAsignadosHoy > 0 && (
-              <button
-                type="button"
-                onClick={() => setSoloMias((v) => !v)}
-                className={cn(
-                  'shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-semibold transition-colors',
-                  soloMias
-                    ? 'bg-accent/18 border-accent/50 text-accent'
-                    : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong',
-                )}
-                title="Los pedidos que te tocaron hoy. No bloquea nada: podés seguir gestionando cualquier otro."
-              >
-                <UserIcon size={12} aria-hidden="true" />
-                {soloMias ? 'Viendo solo las mías' : 'Solo las mías'}
-                <span className="font-mono tabular-nums">{misAsignadosHoy}</span>
-              </button>
-            )}
-
-            {isManagerOfActive && (
-              <button
-                type="button"
-                disabled={asig.repartiendo}
-                onClick={async () => {
-                  // Se reparte la COLA ACCIONABLE, ordenada por urgencia, para
-                  // que cada asesora reciba una mezcla parecida de urgente y
-                  // tibio en vez de que una cargue con todo lo que vence hoy.
-                  const ids = dedupedByDate
-                    .filter((o) => esAccionable(o) && o.dbId)
-                    .sort((a, b) => (horasSinMovimiento(b) ?? 0) - (horasSinMovimiento(a) ?? 0))
-                    .map((o) => String(o.dbId));
-                  const r = await asig.repartir(ids);
-                  if (!r) { toast.error('No se pudo repartir la cola'); return; }
-                  if (r.sinOperadores) {
-                    toast.error('No hay asesoras en esta tienda', {
-                      description: 'Agregá operadoras en Admin → Equipo para poder repartir.',
-                    });
-                    return;
-                  }
-                  if (r.asignados === 0) {
-                    toast.success('Ya estaba todo repartido', {
-                      description: 'Ningún pedido quedó sin dueño. Volver a repartir no le quita el trabajo a nadie.',
-                    });
-                    return;
-                  }
-                  toast.success(`${r.asignados} pedido${r.asignados === 1 ? '' : 's'} repartido${r.asignados === 1 ? '' : 's'}`, {
-                    description: `Entre ${asig.operadores.length} asesora${asig.operadores.length === 1 ? '' : 's'}.`
-                      + (r.ignorados > 0 ? ` ${r.ignorados} ya tenían dueño.` : ''),
-                  });
-                }}
-                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-accent/40 bg-accent/12 text-accent text-[11px] font-semibold hover:bg-accent/20 transition-colors disabled:opacity-50"
-                title="Reparte la cola accionable de hoy entre las asesoras, equilibrando la carga. Volver a correrlo NO le quita el trabajo a quien ya lo tiene."
-              >
-                <Users size={12} aria-hidden="true" />
-                {asig.repartiendo ? 'Repartiendo…' : 'Repartir la cola de hoy'}
-              </button>
-            )}
-
-            {isManagerOfActive && asig.asignaciones.size > 0 && (
-              <span className="text-[11px] text-muted-foreground">
-                {asig.asignaciones.size} con dueño hoy
-              </span>
-            )}
+            <TurnoDelEquipoPanel
+              resumen={resumenTurno}
+              nombreDe={nombreDeAsesora}
+              onRepartir={repartirColaDeHoy}
+              repartiendo={asig.repartiendo}
+            />
           </motion.div>
         )}
 
@@ -1206,6 +1280,33 @@ export default function SeguimientoTab() {
                 !listaSlug ? "text-accent num-glow-accent" : "text-foreground",
               )}>{chipsBase.length}</span>
             </button>
+
+            {/* "Solo las mías" es un FILTRO de la cola, así que vive con los
+                demás filtros y no en una fila propia (21-ago-2026). Solo
+                aparece si hay algo asignado a quien mira: un chip en 0 que
+                nunca se puede prender es ruido.
+                No bloquea nada — la asignación es etiqueta, no candado. */}
+            {asig.soportado && misAsignadosHoy > 0 && (
+              <button
+                type="button"
+                onClick={() => setSoloMias((v) => !v)}
+                aria-pressed={soloMias}
+                title="Los pedidos que te tocaron hoy. No bloquea nada: podés seguir gestionando cualquier otro."
+                className={cn(
+                  "snap-start shrink-0 inline-flex items-center gap-2.5 rounded-xl border px-4 min-h-[44px] text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                  soloMias
+                    ? "font-semibold bg-accent/16 border-accent/40 text-accent shadow-glow3d"
+                    : "font-medium bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong",
+                )}
+              >
+                <UserIcon size={13} aria-hidden="true" />
+                Mías
+                <span className={cn(
+                  "font-mono tabular-nums text-[13px] font-bold",
+                  soloMias ? "text-accent num-glow-accent" : "text-foreground",
+                )}>{misAsignadosHoy}</span>
+              </button>
+            )}
             {SEG_LISTS
               // Fuera las que ESPEJAN el Tablero: "En tránsito 72" arriba y
               // "72 EN TRÁNSITO" en la columna de abajo era el mismo dato dos
@@ -1261,52 +1362,23 @@ export default function SeguimientoTab() {
           </div>
         </motion.div>
 
-        {/* Filtro por estado — dos vistas, dos tratamientos (1-ago-2026).
-            Antes eran 14 tarjetas grandes, y en TABLERO decían exactamente lo
-            mismo que las columnas de veinte centímetros más abajo: mismos
-            nombres, mismos números, mismos colores. Puro ruido encima del
-            trabajo real.
-            · TABLERO: no va. Las columnas SON el resumen por estado, y además
-              se filtran solas al enfocar una. Solo queda la salida si venías
-              con un filtro puesto desde Lista — sin eso el tablero se queda con
-              una sola columna y sin forma visible de volver, que es una trampa.
-            · LISTA: sí va, porque ahí no hay columnas que lo muestren. Pero
-              como fila de chips: la misma información en una línea. */}
-        {viewMode === 'board' ? (
-          statusFilter && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setStatusFilter(null)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-accent/10 border border-accent/30 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/15 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-              >
-                Mostrando solo {statCards.find((c) => c.key === statusFilter)?.label ?? statusFilter}
-                <span aria-hidden="true">·</span> Ver todas ✕
-              </button>
-            </div>
-          )
-        ) : (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por estado">
-            {statCards.filter((c) => c.value > 0).map((card) => {
-              const isActive = statusFilter === card.key;
-              return (
-                <button
-                  key={card.key}
-                  type="button"
-                  aria-pressed={isActive}
-                  aria-label={`Filtrar por ${card.label}: ${card.value} pedidos`}
-                  onClick={() => setStatusFilter(isActive ? null : card.key)}
-                  className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ${
-                    isActive
-                      ? 'bg-accent/15 border-accent/40 text-accent font-semibold'
-                      : 'bg-card/40 border-border text-muted-foreground hover:text-foreground hover:border-border-strong'
-                  }`}
-                >
-                  <span className="truncate max-w-[150px]">{card.label}</span>
-                  <span className="font-mono tabular-nums font-bold">{card.value}</span>
-                </button>
-              );
-            })}
+        {/* La fila de chips por estado se mudó DENTRO del botón "Filtros"
+            (21-ago-2026): acotaba la misma población que el rango de fechas,
+            pero vivía en otra fila y con otro tratamiento visual.
+            Lo que SÍ queda acá es la SALIDA cuando hay un estado filtrado: sin
+            este botón el tablero se queda con una sola columna y sin forma
+            visible de volver, que es una trampa. Va en las dos vistas, porque
+            ahora el filtro está plegado y hay que anunciarlo. */}
+        {statusFilter && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(null)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-accent/10 border border-accent/30 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/15 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              Mostrando solo {statCards.find((c) => c.key === statusFilter)?.label ?? statusFilter}
+              <span aria-hidden="true">·</span> Ver todas ✕
+            </button>
           </div>
         )}
       </div>
@@ -1319,25 +1391,23 @@ export default function SeguimientoTab() {
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25 }}
-          className="mb-4 rounded-2xl border border-accent/30 bg-card/40 p-4 shadow-card3d flex items-center justify-between gap-4"
+          // Adelgazado a UNA línea (21-ago-2026): era un banner de cuatro
+          // renglones con un ícono de 44px para decir "esto se hace en otra
+          // pantalla, andá". El detalle largo pasó al `title`.
+          title={`Los pedidos pendientes de confirmación se gestionan desde la cola de llamadas, en ${listaActiva.externalRoute}.`}
+          className="mb-4 rounded-xl border border-accent/30 bg-card/40 px-3.5 py-2 flex items-center gap-2.5"
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-2xl bg-accent/14 border border-accent/30 text-accent glow-accent flex items-center justify-center shrink-0">
-              <ExternalLink size={18} className="text-accent" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-bold text-foreground">{listaActiva.label}</div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Esta lista vive en {listaActiva.externalRoute} — los pedidos pendientes de confirmación se gestionan desde la cola de llamadas.
-              </p>
-            </div>
-          </div>
+          <ExternalLink size={14} className="text-accent shrink-0" aria-hidden="true" />
+          <span className="text-xs text-foreground min-w-0 flex-1 truncate">
+            <strong className="font-semibold">{listaActiva.label}</strong>
+            <span className="text-muted-foreground"> se gestiona en otra pantalla</span>
+          </span>
           <Link
             to={listaActiva.externalRoute}
-            className="btn-accent-3d inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold no-underline shrink-0"
+            className="btn-accent-3d inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold no-underline shrink-0"
           >
-            Ir a {listaActiva.externalRoute}
-            <ChevronRight size={14} aria-hidden="true" />
+            Ir
+            <ChevronRight size={13} aria-hidden="true" />
           </Link>
         </motion.div>
       )}

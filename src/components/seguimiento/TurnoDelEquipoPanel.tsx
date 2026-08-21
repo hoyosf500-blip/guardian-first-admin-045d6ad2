@@ -21,12 +21,18 @@ import type { TurnoDelEquipo } from '@/lib/turnoDelEquipo';
 interface Props {
   resumen: TurnoDelEquipo;
   nombreDe: (operatorId: string) => string;
+  /** Repartir la cola del día. El botón vive ACÁ y no en una fila propia
+   *  (21-ago-2026): repartir es la respuesta directa a leer «N sin dueño», y
+   *  tenerlo a treinta centímetros obligaba a cruzar la pantalla entre el dato
+   *  y su acción. Además le ahorra una fila entera a la asesora, que no lo ve. */
+  onRepartir?: () => void;
+  repartiendo?: boolean;
 }
 
 /** `null` = no se pudo medir. NUNCA se dibuja como 0 — ver la regla en turnoDelEquipo.ts. */
 const cifra = (n: number | null) => (n === null ? '—' : String(n));
 
-export default function TurnoDelEquipoPanel({ resumen, nombreDe }: Props) {
+export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, repartiendo }: Props) {
   const { filas, sinDueno, totalAccionable, tocadosTotal, medible } = resumen;
 
   // Sin cola accionable no hay turno que mirar. Dibujar una tabla vacía sería
@@ -50,11 +56,23 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe }: Props) {
         {sinDueno > 0 && (
           <span
             className="text-[11px] font-semibold text-warning inline-flex items-center gap-1"
-            title="Pedidos accionables que no le tocaron a nadie hoy. Nadie los va a reclamar porque no son de nadie: apretá «Repartir la cola de hoy»."
+            title="Pedidos accionables que no le tocaron a nadie hoy. Nadie los va a reclamar porque no son de nadie."
           >
             <AlertTriangle size={11} aria-hidden="true" />
             <span className="font-mono tabular-nums">{sinDueno}</span> sin dueño
           </span>
+        )}
+        {onRepartir && (
+          <button
+            type="button"
+            disabled={repartiendo}
+            onClick={onRepartir}
+            className="ml-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-accent/40 bg-accent/12 text-accent text-[11px] font-semibold hover:bg-accent/20 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            title="Reparte la cola accionable de hoy entre las asesoras, equilibrando la carga. Volver a correrlo NO le quita el trabajo a quien ya lo tiene."
+          >
+            <Users size={12} aria-hidden="true" />
+            {repartiendo ? 'Repartiendo…' : 'Repartir la cola de hoy'}
+          </button>
         )}
       </div>
 
