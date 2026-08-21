@@ -668,6 +668,38 @@ export default function ShopifyPendingPanel() {
         cola no se va a vaciar sola por más que espere.
         Medido el 2026-08-13: 386 corridas bloqueadas seguidas desde el 6-ago —
         8 días — y el motivo vivía solo en sync_logs, que ninguna pantalla abría. */}
+    {/* Robot MUDO: hace más de 3 ciclos que no reporta, teniéndolo encendido.
+        Va ANTES del de bloqueados porque es peor: un robot que reporta pedidos
+        trabados por lo menos se ve. Uno que murió a mitad de corrida no escribe
+        nada, y hasta hoy esa ausencia se leía como "todo bien" (misma forma que
+        el nightly que starvaba tiendas y que el wallet que fallaba en verde). */}
+    {robot?.mudo && (
+      <div
+        role="alert"
+        className="mb-3 flex flex-wrap items-start gap-3 rounded-2xl border border-warning/40 bg-warning/10 px-4 pl-5 py-3 shadow-card3d relative"
+      >
+        <span className="absolute left-0 top-3 bottom-3 w-1 rounded-full bg-warning" aria-hidden="true" />
+        <span className="w-9 h-9 rounded-xl bg-warning/15 border border-warning/30 text-warning flex items-center justify-center flex-shrink-0" aria-hidden="true">
+          <Ban size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-warning">
+            El robot de Shopify no está reportando
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Debería dejar señal cada 15 minutos y no lo hace hace rato. No quiere decir
+            que se hayan perdido pedidos, pero sí que nadie los está subiendo solo:
+            revisá la cola de acá abajo a mano hasta que vuelva.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {robot.cuando
+              ? `Última señal: ${robot.cuando.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}`
+              : 'Sin ninguna señal registrada.'}
+          </p>
+        </div>
+      </div>
+    )}
+
     {robot?.bloqueado && (
       <div
         role="alert"

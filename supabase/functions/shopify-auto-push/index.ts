@@ -34,6 +34,16 @@ const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // techo: no perseguir pedidos viejo
 const ERROR_COOLDOWN_MS = 2 * 60 * 60 * 1000; // reintento de 'error' no antes de 2 h
 const PER_STORE_CAP = 20;              // tope por corrida por tienda
 const PUSH_DELAY_MS = 1200;            // pausa entre pushes (gentil con Dropi)
+/** Presupuesto de pared, MISMO criterio que dropi-cron: por debajo del límite del
+ *  edge (~150 s) para que SIEMPRE alcance a escribir en `sync_logs`.
+ *
+ *  Sin esto la corrida podía morir a mitad del lote y NO dejar rastro: la fila de
+ *  `sync_logs` se escribe DESPUÉS del bucle de pushes, así que un robot muerto se
+ *  veía idéntico a un robot que nunca tuvo trabajo — y `useAutoPushHealth` lee la
+ *  última fila, que quedaba siendo la de la corrida anterior, en verde.
+ *  El lote lleno lo hacía plausible: 20 pushes × (cadena completa de cotización
+ *  Dropi ~5 s + 1,2 s de pausa) ≈ 125 s, más el fetch de Shopify. */
+const GLOBAL_TIME_BUDGET_MS = 110_000;
 const SHOPIFY_LOOKBACK_DAYS = 3;       // ventana de pedidos Shopify a revisar
 const DROPI_LOOKBACK_DAYS = 60;        // ventana de `orders` para detectar una orden ACTIVA del mismo teléfono (cubre entregas lentas; más viejas = ghost)
 
@@ -123,6 +133,8 @@ async function processStore(
   cronSecret: string,
   storeId: string,
   dryRun: boolean,
+  /** ¿Queda tiempo de pared? Ver GLOBAL_TIME_BUDGET_MS. */
+  budgetLeft: () => boolean = () => true,
 ): Promise<Record<string, unknown>> {
   const cfg = await loadShopifyConfig(sb, storeId);
   if (!cfg) return { store_id: storeId, skipped: "shopify no configurado" };
@@ -196,9 +208,17 @@ async function processStore(
   }
 
   // 5. Subir cada candidato vía shopify-push-dropi (con sus candados).
-  let pushed = 0, dup = 0, blocked = 0, errors = 0;
+  let pushed = 0, dup = 0, blocked = 0, errors = 0, sinTiempo = 0;
   const detail: Record<string, unknown>[] = [];
   for (const c of picked) {
+    // Cortar ANTES de arrancar otro push si ya no queda pared. Lo que no se
+    // intentó se cuenta y se nombra en el log: el robot corre de nuevo en 15 min
+    // y estos siguen siendo candidatos, así que no se pierde ninguno — pero
+    // callarlo haría ver una corrida a medias como una corrida completa.
+    if (!budgetLeft()) {
+      sinTiempo = picked.length - (pushed + dup + blocked + errors);
+      break;
+    }
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/shopify-push-dropi`, {
         method: "POST",
@@ -240,10 +260,12 @@ async function processStore(
   const zeroWithCandidates = picked.length > 0 && pushed === 0;
   let logStatus: "success" | "warn" = "success";
   let logError: string | null = null;
-  if (errors > 0) {
-    logStatus = "warn";
-    logError = `${errors} error(es) de red/infra en el push`;
-  } else if (zeroWithCandidates) {
+  // El desglose SIEMPRE lleva "bloqueados: N" — es la forma que lee el panel
+  // (`useAutoPushHealth`, regex /bloqueados:\s*(\d+)/). Antes la rama de error de
+  // red escribía un texto SIN esa palabra y ganaba sobre esta, así que una corrida
+  // con fallos de red Y pedidos trabados dejaba al panel en VERDE: leía 0
+  // bloqueados porque el número no estaba escrito en ningún lado.
+  if (errors > 0 || zeroWithCandidates || sinTiempo > 0) {
     logStatus = "warn";
     // Primeros 3 motivos concretos del array `detail` para diagnóstico rápido.
     const firstReasons = detail.slice(0, 3).map((d) => {
@@ -252,7 +274,10 @@ async function processStore(
       const msg = d.msg ? `: ${String(d.msg).slice(0, 80)}` : "";
       return `#${id}→${why}${msg}`;
     }).join(" | ");
-    logError = `0 de ${picked.length} subidos — bloqueados: ${blocked}, duplicados: ${dup}, errores: ${errors}. Primeros motivos: ${firstReasons || "(sin detalle)"}`;
+    const cortado = sinTiempo > 0
+      ? ` CORTADA POR TIEMPO: ${sinTiempo} sin intentar (reintenta en la próxima corrida).`
+      : "";
+    logError = `${pushed} de ${picked.length} subidos — bloqueados: ${blocked}, duplicados: ${dup}, errores: ${errors}.${cortado} Primeros motivos: ${firstReasons || "(sin detalle)"}`;
   }
   try {
     await sb.from("sync_logs").insert({
