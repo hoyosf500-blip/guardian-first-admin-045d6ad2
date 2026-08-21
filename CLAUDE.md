@@ -250,6 +250,7 @@ y `src/lib/walletCategoria.test.ts` → `_shared/walletCategoria`.
 | `/logistica` | LogisticsPage | LogisticaTab | Análisis: 9 sub-tabs (Resumen / Transportadoras / Ciudades / Productos / Decisiones / Trazabilidad / **Cancelaciones** / Finanzas / Balance). Gated `managerOnly`. Tab activa persiste en `useSessionState('logistica:tab')`. Filtros globales (fecha, ciudad) se aplican a todas **menos Finanzas y Balance** (avisado con banner naranja). |
 | `/cfo` | CfoPage | CfoTab | Vista "Cómo voy" del dueño. **Triple gate:** ruta solo se registra si `VITE_ENABLE_CFO==='true'`, nav item es `adminOnly` (global `isAdmin`, no rol de tienda), y se oculta si `activeStore.country_code !== 'CO'`. RLS admin-only en la DB es el backstop. Reusa `financial_summary` + `logistics_summary` + `wallet_summary` + `product_profitability` y combina con inputs manuales mensuales (costos fijos, deuda TC, gasto pauta) vía hooks `useCfoMonthlyInputs` + `useTcDebtSnapshots` + `useMonthlyAdSpend` para calcular UTILIDAD NETA REAL. |
 | `/plataforma` | PlataformaPage | — | Panel multi-inquilino del operador de la plataforma (listado de tiendas, suscripción, activar/desactivar). **La ruta se registra SIEMPRE**; el gate real está en la DB: las RPC `platform_stores_overview` / `platform_set_subscription` / `platform_set_store_status` tiran 42501 si el que llama no es admin global, y la página rebota a `/dashboard`. No confiar en el nav para esconderla. |
+| `/como-se-trabaja` | ComoSeTrabajaPage | — | El protocolo del turno: la escalera de prioridad, qué se hace en cada escalón, qué significa cada lista y **qué NO es trabajo**. Nav para TODOS. **No tiene texto propio**: sale de `ESCALERA` (`siguienteAccion.ts`, la misma fuente de la barra "Lo que sigue") y del `queEs`/`queHacer` de cada lista en `segLists.ts`. Guardián `comoSeTrabaja.test.ts` impide agregar un escalón o una lista sin explicarlos. |
 | `/pedido/:externalId` | OrderDetailPage | order-detail/* | Single-order drill-down (param es `:externalId`, no `:id`) |
 
 Rutas públicas (fuera de `ProtectedLayout`): `/auth`, `/reset-password`, y **`/registro`** — que es
@@ -315,7 +316,7 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
   versión anterior la revertía y la novedad reaparecía en la cola → doble gestión). El único
   rollback que queda es si el UPDATE local mismo falla.
 - `dropi-fingerprint` — generates a customer fingerprint for repeat-buyer detection
-- `dropi-cron` — scheduled sync trigger. **Cada 15 min desde el 16-jul-2026** (migration `20260716144619`; verificado contra `cron.job` en vivo el 22-jul: job `dropi-cron-15min`, `*/15 * * * *`). Fue 5 min hasta esa fecha — docs y comentarios viejos que digan "cada 5 min" están desactualizados. Desde el cambio a 15 min NO hay 429 en `sync_logs`: la cuenta EC se estabilizó; no volver a 5 min sin una razón fuerte. **Resiliente a "zombie state":** intenta una cadena `STATUS_FILTER_VARIANTS` y persiste el ganador en `app_settings.dropi_winning_status_filter`. Si todos los filtros vuelven 0 sin error/throttle, marca `status='warn'` (no `success`) para que el banner de freshness pueda detectar "corre pero no trae nada". Ver `PLAN-PARITY-DROPI.md`.
+- `dropi-cron` — scheduled sync trigger. **Medido sobre `sync_logs` el 21-ago-2026: corre cada 10 min, y como reparte el presupuesto entre tiendas, a CADA TIENDA le toca cada ~20 min.** (El repo dice 15 min por la migration `20260716144619`; la base manda — REGLA #1.) Fue 5 min hasta jul-2026. **No hardcodear la cadencia en la UI**: `SyncFreshness` la deriva de las corridas reales vía `src/lib/cadenciaSync.ts`, porque el texto fijo "cada 5 min" quedó mintiendo por meses y es lo que hace que un pedido se lea como "desactualizado". Desde el cambio a 15 min NO hay 429 en `sync_logs`: la cuenta EC se estabilizó; no volver a 5 min sin una razón fuerte. **Resiliente a "zombie state":** intenta una cadena `STATUS_FILTER_VARIANTS` y persiste el ganador en `app_settings.dropi_winning_status_filter`. Si todos los filtros vuelven 0 sin error/throttle, marca `status='warn'` (no `success`) para que el banner de freshness pueda detectar "corre pero no trae nada". Ver `PLAN-PARITY-DROPI.md`.
 - `dropi-health` — ping read-only por tienda contra `/integrations/orders/myorders` (page=1). Escribe `last_health_status` en `store_dropi_config` cada hora. Alimenta el banner `SyncFreshness` (verde=OK 24h, amarillo=zombie, rojo=error). Usa el `dropi_winning_status_filter` calculado por `dropi-cron`.
 - `dropi-nightly-reconcile` — reconciliación diaria 3am UTC. Cancela huérfanos `PENDIENTE CONFIRMACION` con `external_id < 5M` que no se mueven hace +N días y barre divergencias estado-Guardian vs Dropi. Defensa contra zombies que sobreviven al cron.
 - `dropi-webhook` — **INBOUND**: recibe los POST de cambio de estado de la **API OFICIAL de Integraciones** de Dropi (real-time, reemplaza polling para pedidos creados vía nuestra integración shop_type "Guardian"). Público (`verify_jwt=false`) pero **fail-closed** con `DROPI_WEBHOOK_SECRET` (header `x-dropi-secret`). UPDATE dirigido por `external_id` (estado/guía/transportadora, sella `fecha_conf`) sin pisar `valor/flete/costo_prod` (payload parcial); INSERT insert-only por si el pedido no existe. Siempre 200 salvo secreto inválido. La API oficial saliente (prod, IP whitelisteada) se enruta por el relay de IP fija del VPS — ver `vps/dropi-relay/README.md` y la memoria `dropi_integration_api_oficial`.
@@ -345,6 +346,7 @@ All functions are Deno (TypeScript). They live in `supabase/functions/`:
 - `shopify-reconcile` — detecta pedidos de Shopify que NUNCA llegaron a Dropi cruzando por TELÉFONO (últimos 9 dígitos) contra `orders`. Body `{store_id, days?=3}`. Alimenta la cola anti-fuga.
 - `shopify-auto-push` — robot de cron (**cada 15 min**, migration `20260718140000`) que sube a Dropi solo los pedidos Shopify LIMPIOS de tiendas con `auto_push_enabled`. La selección vive en `_shared/autoPushSelect.ts`: con teléfono, pasada una gracia de 30 min (deja que Dropify lo suba primero), menos de 3 días, no existente en Dropi, sin intento previo. **Sube llamando a `shopify-push-dropi` en `mode:"confirm"`**, así siguen aplicando todos los locks (anti-duplicado por teléfono, anti-sobreprecio, idempotencia) — el robot nunca fuerza nada; lo bloqueado cae al panel manual. Auth `x-cron-secret`. Body `{store_id?, dry_run?}`.
 - **BOT DE WHATSAPP RETIRADO (2026-08-13) — estas 5 edge functions se borraron del repo; falta borrarlas en Supabase. Ver la sección de abajo.** ~~`wa-webhook` · `wa-send` · `wa-ai-responder` · `wa-status-notifier` · `wa-mine-conversations` — el bot de WhatsApp;~~ ver la sección "Bot de WhatsApp & gateway" más abajo. Dos datos operativos que no están ahí: **`wa-status-notifier`** (pg_cron ~10 min) escribe en la PRIMERA aparición de un pedido una fila baseline en `wa_order_notifications` **sin enviar nada** — así no bombardea el histórico; solo notifica transiciones posteriores. Tope `MAX_SENDS_PER_RUN = 40` y ventana `SEND_HOUR_END = 21` (08:00–21:00 Bogotá) que **aplica SOLO a envíos proactivos** — las respuestas reactivas del bot van 24/7. **`wa-send`** (botón manual de la asesora) escribe además un touchpoint `WHATSAPP: ...` con `operator_id`; el camino de la IA NO escribe touchpoints.
+- `resumen-diario` — **el único aviso SALIENTE de Guardian** (antes no había ninguno: cero correo, cero mensajería en todo el repo). Cron 21:00 Bogotá (= `0 2 * * *` UTC, después del cierre del turno). Manda por **Resend** (`RESEND_API_KEY`; sin la clave NO finge — deja fila de error en `sync_logs`). Cuenta dos cosas SEPARADAS: lo que el equipo declaró al cerrar (`seg_cierres`) y lo que la base cuenta sola. **NO reimplementa `esAccionable` en SQL** — se apoya en el cierre firmado; una segunda definición se desincroniza sola. El contenido es puro en `_shared/resumenDiario.ts` y se testea desde `src/lib/resumenDiario.test.ts`.
 - `parse-bank-pdf-text` — recibe el TEXTO plano de un extracto Bancolombia (Mastercard/Amex) — el cliente extrae el texto con `pdfjs-dist` en `CfoPersonalCardUploader.tsx`, porque pdfjs server-side no corre bien en edge — y devuelve movimientos categorizados; opcionalmente upserta. Alimenta el módulo de tarjeta personal del CFO.
 
 Las credenciales Dropi son **por tienda** en `store_dropi_config` (`dropi_api_key` = INTEGRATIONS permanente; `dropi_session_token` = JWT de sesión legacy/fallback). Se leen en runtime vía `loadStoreConfig` (`_shared/dropiStoreConfig.ts`), NUNCA hardcoded. (El viejo `app_settings.dropi_token`/`dropi_session_token` era el modelo single-tenant previo.) Las credenciales **Shopify** viven en `store_shopify_config` y se leen vía `loadShopifyConfig` + `getShopifyAccessToken` (`_shared/shopifyStoreConfig.ts`) — usa client-credentials grant (token 24h auto-refresh; pegar un `shpss_` da 401). Todas las edge functions multi-tienda validan membresía con `isStoreMember` antes de tocar datos.
@@ -502,6 +504,54 @@ cancelación (es una edición, con su propio `result='cambio_transportadora'`), 
 - **Lo que NO se hizo y sería el siguiente paso**: cruzar los cancelados contra recompras del mismo
   teléfono ("recuperados"). En julio EC, 49 de 345 eran re-emisiones y **32 terminaron entregadas**
   — o sea, cancelado ≠ perdido. Necesita un LATERAL más en la RPC.
+
+### Protocolo del turno — las piezas y sus reglas duras
+
+Nació de *"que el colaborador nunca se quede quieto, que sepa qué hacer sin yo estar encima"*.
+El orden es **por lo que se pierde si espera un día más**, no por antigüedad.
+
+- **`src/lib/siguienteAccion.ts`** — la escalera (novedades · agencia · confirmar · detenidos ·
+  rescate · catch-all) y su copy, en `ESCALERA`, escrita UNA sola vez: la barra y
+  `/como-se-trabaja` la leen de ahí. Invariante fijado por prueba: **el guard de inactividad ve
+  trabajo ⟹ la barra NO dice "al día"** (implicación, no equivalencia). El escalón 6 existe solo
+  para sostenerla.
+- **⛔ `segCargado`** — `segData` SOLO lo cargaba `SeguimientoTab`, y la barra se esconde en esa
+  pantalla: en toda pantalla donde la barra SE VE la cola llegaba vacía y cuatro de los seis
+  escalones no podían dispararse nunca ("Todo al día" en verde con 7 detenidos y 5 paquetes en
+  agencia, medido en el Dashboard de CO el 21-ago-2026). Ahora **la barra pide la cola** y con
+  `segCargado:false` devuelve `'cargando'` y no dibuja nada.
+- **Asignación (`seg_asignaciones`)** = etiqueta de responsabilidad, **NUNCA candado**.
+- **Cierre del día (`seg_cierres` + RPC `cerrar_seguimiento`)** — el trabajo de Seguimiento no
+  tenía final; ahora **o queda en cero, o queda escrito el motivo** (CHECK en la tabla, no solo en
+  el cliente). NO bloquea a nadie. El día se calcula en el SERVIDOR en hora Bogotá.
+- **Regla transversal de todas estas piezas: cero NUNCA sustituye a "no se pudo medir".** Si la
+  lectura de gestiones falla, los conteos van en `null`/`—` y el cierre se niega a firmarse.
+  Un 0 acá es un reclamo injusto a una persona por un dato que nunca existió.
+- **Una sola definición de "gestionado"**: `estaGestionadoHoy` (`segPulso.ts`). El hero y el panel
+  del turno llegaron a decir "9 de 32" y "21 de 32" a la vez por tener dos. En el mapa de
+  Seguimiento `ultimoResult` guarda el **método** ("Envié la guía", "No contestó"), no
+  `conf/canc/noresp`.
+
+### Frescura del dato: `last_movement_at` vs `last_synced_at`
+
+Son preguntas DISTINTAS y confundirlas ya costó:
+
+- **`last_movement_at`** = cuándo se movió el pedido en Dropi. **Se pisaba con NULL**: el mapper
+  manda `updatedAt || null` y la RPC hacía `= EXCLUDED...` sin COALESCE, con el guard
+  `IS DISTINCT FROM` como gatillo. Resultado medido: 46 de 228 pedidos vivos sin fecha → fuera de
+  `estaDetenido`, fuera de las listas de estancados, al fondo del orden. Arreglado en
+  `20260821180000` (dos líneas, sobre el `pg_get_functiondef` de la función viva). **No repara el
+  histórico**: se recupera refrescando desde Dropi. La tarjeta ahora dice **"sin dato"** en la cara.
+- **`last_synced_at`** (`20260821210000`) = cuándo Guardian MIRÓ el pedido. No existía. Lo estampa
+  `_shared/marcarLeidos.ts` desde `dropi-cron` (UPDATE aparte, **no** dentro de la RPC — REGLA #1,
+  y además la RPC solo escribe si algo cambió, que es justo el caso que no interesa). Re-estampa
+  como mucho cada 6 h. **El histórico queda en NULL a propósito**: los que sigan en NULL son la
+  lista de "pedidos que ninguna ventana de refresco alcanza".
+- **La auditoría de paridad ya NO estampa hora local** en `last_movement_at`: afirmaba "se movió
+  hoy" con datos sin fecha, pintaba de verde pedidos parados hace semanas y los sacaba de la
+  repesca del nightly 10 días.
+- **Pedidos con `estado IS NULL`**: `.not('estado','eq','X')` los descarta (`NOT (NULL='X')` es
+  NULL). `useDataLoader` los trae con una query aparte. Medido: 0 hoy — es defensa, no reparación.
 
 ### Listas SLA en `/seguimiento` (`src/lib/segLists.ts`)
 

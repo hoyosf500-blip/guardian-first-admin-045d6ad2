@@ -13,6 +13,7 @@ import { confirmLiveSibling, webConfirmFallback } from "../_shared/dropiConfirmO
 // en variantLabel), pero la derivación de fecha_conf SÍ se comparte: si cron y
 // refresh calcularan fechas distintas para el mismo pedido, flapearían entre sí.
 import { deriveFechaConf } from "../_shared/dropiOrderMapper.ts";
+import { marcarLeidos } from "../_shared/marcarLeidos.ts";
 
 /**
  * dropi-cron: Automated sync triggered by pg_cron every 5 minutes.
@@ -542,6 +543,17 @@ async function syncStore(
         if (dropiOrders.length === 0) continue;
 
         const dbOrders = dropiOrders.map((o) => mapOrder(o, store.owner_id, todayStr, store.store_id));
+
+        // "Lo miramos": queda registrado que Guardian le preguntó a Dropi por
+        // estos pedidos, hayan cambiado o no. Es lo que después permite ver los
+        // que ninguna ventana de refresco alcanza — que hoy son invisibles por
+        // definición. No falla el sync si la columna todavía no existe.
+        try {
+          await marcarLeidos(sb, store.store_id, dbOrders.map((o) => String(o.external_id || "")));
+        } catch (e) {
+          console.warn("[marcarLeidos]", e instanceof Error ? e.message : String(e));
+        }
+
         for (let i = 0; i < dbOrders.length; i += 50) {
           const batch = dbOrders.slice(i, i + 50);
           const { data: changedCount, error: upsertError } = await sb.rpc(
