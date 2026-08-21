@@ -703,7 +703,7 @@ Deno.serve(async (req: Request) => {
     // Por qué: el 2026-05-21 Dropi cambió silenciosamente algo en su endpoint
     // integrations y "FECHA DE CAMBIO DE ESTATUS" empezó a devolver 0 sin
     // error. Con el chain, si vuelve a pasar, el cron auto-cura.
-    const STATUS_FILTER_VARIANTS = [
+    const STATUS_FILTER_VARIANTS: string[] = [
       "FECHA DE CAMBIO DE ESTATUS",
       "Modified Date",
       "MODIFIED_DATE",
@@ -848,7 +848,7 @@ Deno.serve(async (req: Request) => {
       );
 
       // Si ya sabemos qué filter_date_by funciona (de una tienda previa), arrancamos con ese.
-      let chosenFilter = winningStatusFilter ?? STATUS_FILTER_VARIANTS[0];
+      let chosenFilter: string = winningStatusFilter ?? STATUS_FILTER_VARIANTS[0];
       let r = await syncStore(sb, store, buildPasses(chosenFilter, store.country_code), todayStr, storeDeadline);
 
       // Fallback: si la 1ª variante devolvió 0/0 SIN error/throttle, probamos el resto.
@@ -1091,7 +1091,7 @@ Deno.serve(async (req: Request) => {
               const chk = await dropiGetOrder(cfg.base, cfg.apiKey, cfg.storeUrl, ord.external_id);
               if (chk.ok) {
                 const st = String(
-                  (chk.body?.objects ?? chk.body?.data ?? chk.body?.order ?? chk.body ?? {} as Record<string, unknown>)
+                  ((chk.body?.objects ?? chk.body?.data ?? chk.body?.order ?? chk.body ?? {}) as Record<string, unknown>)
                     ?.status ?? "",
                 ).toUpperCase();
                 if (st && !PRE_O_MUERTO_RE.test(st)) alreadyConfirmed = true;

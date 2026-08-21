@@ -85,6 +85,9 @@ interface ChangeCarrierBody {
   newValor?: number | string;
   /** mode "quote": override de líneas para re-cotizar con cantidades/precios editados. */
   lines?: Array<{ dropiId?: number | string; quantity?: number | string; price?: number | string }>;
+  /** mode "quote": ciudad/departamento destino editados en pantalla (prevalece sobre la guardada). */
+  city?: string;
+  state?: string;
   /** mode "apply_edit": líneas editadas (mismo set de dropiIds, sin agregar/quitar). */
   newLines?: Array<{ dropiId?: number | string; quantity?: number | string; price?: number | string }>;
   /** modes apply/apply_value/apply_edit: id de la fila 'pending' de order_results

@@ -49,7 +49,7 @@ import { dropiWebFetch, WebFallbackError } from "../_shared/dropiWebQuote.ts";
 const DROPI_INCIDENCE_PATH = "/api/orders/saveincidencesolution";
 const MAX_SOLUTION_LEN = 500;
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 type SB = SupabaseClient;
 
 type ResolveAction = "reoffer" | "return";

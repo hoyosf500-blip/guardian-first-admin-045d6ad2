@@ -21,7 +21,7 @@
 //  - Si el login FALLA (403/2FA, clave mala), tira WebFallbackError con un
 //    mensaje que dice exactamente qué hacer.
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { WebFallbackError } from "./dropiWebQuote.ts";
 
 /** Margen antes del vencimiento real para renovar (evita usar un token que

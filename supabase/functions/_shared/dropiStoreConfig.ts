@@ -8,7 +8,7 @@
 // Reemplaza la lectura de app_settings.dropi_token/dropi_session_token,
 // que era single-tenant.
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { dropiHostFor } from "./dropiHosts.ts";
 
 export interface StoreDropiConfig {

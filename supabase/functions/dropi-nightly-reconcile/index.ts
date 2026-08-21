@@ -262,7 +262,7 @@ async function reconcileStore(
     });
     const emptyIds = { orphans: [] as string[], deleted: [] as string[] };
     if (guardianNonTerminal.length === 0) {
-      return { divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0, deletedCheckComplete: null, dropiCreatedCount: null, cancelledIds: emptyIds };
+      return { divergent: 0, applied: 0, orphanCancelled: 0, deletedCancelled: 0, deletedCheckComplete: null, dropiCreatedCount: null, cancelledIds: emptyIds, repescaArchivados: 0, repescaRefrescados: 0, repescaMotivo: null };
     }
 
     const base = dropiHostFor(countryCode);
@@ -453,7 +453,7 @@ async function reconcileStore(
       // El filtro de terminales va client-side por el mismo motivo que arriba:
       // un `.not('estado','in',...)` descartaría también las filas con estado NULL.
       const noTerminales = (rezagados || []).filter(
-        (r) => !TERMINAL_STATES.has(String(r.estado || "").toUpperCase()),
+        (r: RepescaRow) => !TERMINAL_STATES.has(String(r.estado || "").toUpperCase()),
       );
       const plan = planRepesca(noTerminales as RepescaRow[], {
         ahoraMs: Date.now(),

@@ -1,7 +1,7 @@
 // Helper store-aware para leer credenciales de Shopify de una tienda.
 // Espejo de _shared/dropiStoreConfig.ts:loadStoreConfig pero para Shopify.
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 export interface ShopifyConfig {
   shopDomain: string;          // xxxx.myshopify.com (sin protocolo)

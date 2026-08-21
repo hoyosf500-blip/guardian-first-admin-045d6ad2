@@ -52,6 +52,7 @@ export const REPESCA_MIN_SWEEP_ORDERS = 1;
 export interface RepescaRow {
   id: string;
   external_id: string | null;
+  estado: string | null;
   /** Fecha de creación en Dropi, 'YYYY-MM-DD'. Es la que usa el barrido. */
   fecha: string | null;
   /** Timestamp de alta en Guardian (ISO). */

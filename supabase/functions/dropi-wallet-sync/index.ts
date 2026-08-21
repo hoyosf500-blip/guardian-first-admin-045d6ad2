@@ -21,7 +21,7 @@
 //     dryRun: boolean,
 //     limit: number }       // si > 0, corta tras N movimientos
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 // SheetJS VENDORIZADO (20-ago-2026). Antes se importaba de
 // https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs y el bundler del deploy
 // EMPEZO A RECHAZAR ese host ("Cannot import from cdn.sheetjs.com:443"), asi que
@@ -157,7 +157,7 @@ interface SyncStoreResult {
  * que falle (token vencido, throttle EC) no aborta a las demás.
  */
 async function syncStore(
-  sb: ReturnType<typeof createClient>,
+  sb: SupabaseClient,
   storeId: string,
   fromDate: string,
   toDate: string,
@@ -195,7 +195,7 @@ async function syncStore(
 }
 
 async function syncStoreInner(
-  sb: ReturnType<typeof createClient>,
+  sb: SupabaseClient,
   storeId: string,
   fromDate: string,
   toDate: string,

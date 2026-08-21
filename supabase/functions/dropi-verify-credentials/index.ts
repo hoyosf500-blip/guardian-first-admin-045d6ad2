@@ -22,7 +22,7 @@
 //
 // SEGURIDAD: solo el DUEÑO de la tienda. Nunca devuelve tokens ni claves.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { getCorsHeaders } from "../_shared/cors.ts";
 import { loadStoreConfig, isStoreOwner } from "../_shared/dropiStoreConfig.ts";
 import { ensureFreshSessionToken } from "../_shared/dropiSessionLogin.ts";

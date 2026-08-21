@@ -27,6 +27,7 @@ export interface ConfirmCfg {
   sessionToken: string;
   apiKey: string;
   storeUrl: string;
+  storeId: string;
 }
 
 /** Normaliza un status Dropi para comparar: mayúsculas, sin acentos,
