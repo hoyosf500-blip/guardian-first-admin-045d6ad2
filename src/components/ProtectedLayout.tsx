@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2 } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
+import SiguienteAccionBar from '@/components/SiguienteAccionBar';
 import WelcomeGate from '@/components/WelcomeGate';
 import NovedadesButton from '@/components/NovedadesButton';
 import SetupWizard from '@/components/SetupWizard';
@@ -543,6 +544,11 @@ function ProtectedLayoutInner() {
                 )}
                 {store.needsSetup && <ConectarDropiBanner onAbrir={() => setWizardOpen(true)} />}
                 <div className="mb-3"><SyncFreshness /></div>
+                {/* "Lo que sigue" — pieza A del protocolo del turno. Va DEBAJO
+                    de los banners de salud (si el sync está roto, eso manda) y
+                    ARRIBA del contador y del contenido: es lo primero que se
+                    lee al entrar a cualquier pantalla. */}
+                <SiguienteAccionBar />
                 {isConfirmar && <CounterBar />}
                 <Suspense fallback={<InlineRouteLoader />}>
                   <Outlet />
