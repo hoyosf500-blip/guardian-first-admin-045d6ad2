@@ -5,7 +5,6 @@ import { DespachoGateButton } from './DespachoGateButton';
 const baseGate = {
   validation_decision: 'green' as const,
   telefonoValido: true,
-  documentoSiCoordinadora: true,
   isAdmin: false,
   overrideChecked: false,
 };

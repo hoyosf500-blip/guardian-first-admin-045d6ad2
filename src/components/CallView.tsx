@@ -750,10 +750,13 @@ export default function CallView({ items, alerts }: Props) {
 
   // Gate de despacho COMPARTIDO por las TRES vías de confirmar: el botón
   // "Confirmó" (DespachoGateButton), el atajo VIP "Confirmar sin llamar" y la
-  // tecla 1. El atajo VIP llamaba handleMark('conf') directo y se saltaba los
-  // dos gates DUROS que sobrevivieron al retiro del gate de dirección
-  // (teléfono válido + cédula si es Coordinadora) — un pedido Coordinadora
-  // sin cédula se despachaba con un click y la guía nacía con problema.
+  // tecla 1. El atajo VIP llamaba handleMark('conf') directo y se saltaba el
+  // gate DURO que sobrevive al retiro del gate de dirección (teléfono válido).
+  //
+  // El candado de "cédula si es Coordinadora" se quitó el 21-ago-2026: exigía
+  // una columna que NADA escribía y que ninguna pantalla dejaba cargar, así que
+  // el pedido quedaba imposible de confirmar. Y en contraentrega no se pide
+  // cédula para entregar. Ver canConfirmOrder.ts.
   const despachoGate = {
     // Validador-direcciones: usar visualDecision (que aplica los overrides
     // client-side de pickup_office y stale-green ANTES de que el
@@ -761,14 +764,6 @@ export default function CallView({ items, alerts }: Props) {
     // que ve la operadora en la card.
     validation_decision: visualDecision,
     telefonoValido: validarTelefono(o.phone, countryCode),
-    // includes, NO igualdad exacta: la transportadora viene verbatim de Dropi
-    // (distribution_company.name) y puede ser "COORDINADORA MERCANTIL",
-    // "Coordinadora S.A.", etc. Con !== 'coordinadora' el gate fallaba
-    // ABIERTO (dejaba despachar sin cédula) en toda variante de nombre.
-    // Coordinadora EXIGE cédula del destinatario.
-    documentoSiCoordinadora:
-      !(o.transportadora || '').toLowerCase().includes('coordinadora') ||
-      Boolean(o.documentoDestinatario),
     isAdmin,
     overrideChecked: addressOverride,
   };
