@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { AlertTriangle, MapPin, Phone, Clock, RotateCcw, Truck, Check, ArrowRight } from 'lucide-react';
 import { useOrders } from '@/contexts/OrderContext';
@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
  */
 
 const ICONO: Record<AccionKey, typeof AlertTriangle> = {
+  cargando:    Clock,
   novedades:   AlertTriangle,
   agencia:     MapPin,
   confirmar:   Phone,
@@ -49,20 +50,37 @@ const TONO = {
 } as const;
 
 export default function SiguienteAccionBar() {
-  const { workQueue, segData, novedadesQueue } = useOrders();
+  const { workQueue, segData, segLoaded, novedadesQueue, loadSegData } = useOrders();
   const { isManagerOfActive } = useStore();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // ⛔ La barra CARGA la cola de Seguimiento (21-ago-2026, verificado en vivo).
+  //
+  // Hasta hoy `loadSegData()` lo llamaba SOLO `SeguimientoTab` — y esta barra se
+  // esconde justamente en `/seguimiento`. Resultado medido en el Dashboard de
+  // Colombia: la barra decía "Todo al día" en verde mientras había 7 pedidos
+  // detenidos y 5 paquetes esperando en una agencia. Cuatro de los seis
+  // escalones no podían dispararse nunca porque su fuente llegaba vacía.
+  //
+  // Es la misma query que ya corre en Seguimiento (~un centenar de filas, sin
+  // terminales) y `segLoaded` evita repetirla: si la asesora entra después al
+  // tablero, ya está cargada.
+  useEffect(() => { void loadSegData(); }, [loadSegData]);
 
   // Memoizado por REFERENCIA de las colas, igual que InactivityGuard: este
   // componente vive bajo OrderProvider y se re-renderiza con cada cambio del
   // context (contadores, sets de cobertura, cada push de realtime). Sin memo,
   // recorrería miles de pedidos contra los predicados SLA en cada render.
   const accion = useMemo(
-    () => siguienteAccion({ workQueue, novedadesQueue, segData }),
-    [workQueue, novedadesQueue, segData],
+    () => siguienteAccion({ workQueue, novedadesQueue, segData, segCargado: segLoaded }),
+    [workQueue, novedadesQueue, segData, segLoaded],
   );
+
+  // Todavía no se leyó la cola: no se dibuja NADA. Un "Todo al día" en verde
+  // mientras se carga es una afirmación sobre datos que no se tienen.
+  if (accion.key === 'cargando') return null;
 
   // Ya está parada en la pantalla del escalón: decírselo otra vez es ruido.
   const rutaBase = accion.ruta.split('?')[0];

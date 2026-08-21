@@ -206,3 +206,38 @@ describe('GUARDIÁN: la barra nunca dice "al día" con el guard regañando', () 
     expect(r.key).toBe('rescate');
   });
 });
+
+// ── GUARDIÁN ──────────────────────────────────────────────────────────
+// Un cero que en realidad es "todavía no leí" es una MENTIRA en verde.
+//
+// Esto no es hipotético: se midió el 21-ago-2026 en el Dashboard de Colombia.
+// `segData` solo lo cargaba `SeguimientoTab`, y esta barra se esconde en
+// `/seguimiento` — así que en toda pantalla donde la barra SE VE, la cola de
+// Seguimiento llegaba vacía. La barra decía "Todo al día" con 7 pedidos
+// detenidos y 5 paquetes esperando en una agencia.
+//
+// Misma regla que `turnoDelEquipo`: cero NUNCA sustituye a "no se pudo medir".
+describe('GUARDIÁN: sin la cola cargada, la barra no afirma "al día"', () => {
+  it('segCargado:false nunca devuelve al_dia, ni con segData vacío', () => {
+    expect(siguienteAccion({ ...vacio, segCargado: false }).key).toBe('cargando');
+    expect(hayTrabajo({ ...vacio, segCargado: false })).toBe(false);
+  });
+
+  it('lo que SÍ está cargado sigue mandando: novedades y confirmar', () => {
+    // Estas dos colas no dependen de segData — se cargan globalmente. Callarlas
+    // mientras Seguimiento llega sería el error opuesto.
+    expect(siguienteAccion({ ...vacio, novedadesQueue: [base], segCargado: false }).key).toBe('novedades');
+    expect(siguienteAccion({ ...vacio, workQueue: [porConfirm], segCargado: false }).key).toBe('confirmar');
+  });
+
+  it('con la cola cargada y trabajo de Seguimiento, la barra lo dice', () => {
+    // El caso que estaba roto en producción: agencia y detenidos invisibles.
+    expect(siguienteAccion({ ...vacio, segData: [enAgencia], segCargado: true }).key).toBe('agencia');
+    expect(siguienteAccion({ ...vacio, segData: [detenido], segCargado: true }).key).toBe('detenidos');
+  });
+
+  it('el default es "cargado": los call-sites viejos no cambian de conducta', () => {
+    expect(siguienteAccion({ ...vacio, segData: [enAgencia] }).key).toBe('agencia');
+    expect(siguienteAccion(vacio).key).toBe('al_dia');
+  });
+});

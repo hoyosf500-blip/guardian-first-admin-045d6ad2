@@ -376,13 +376,18 @@ export default function SeguimientoTab() {
       accionables: dedupedByDate.filter(esAccionable),
       asignaciones: asig.asignaciones,
       gestionEquipo: gestionSegPorTelefono,
+      // Lo que registré yo cuenta igual que lo del equipo — es la MISMA
+      // definición de "gestionado" que usa el hero de arriba y el filtro
+      // "Ocultar gestionados". Sin esto, el panel contaba distinto que el hero
+      // y la misma pantalla mostraba "9 de 32" y "21 de 32" a la vez.
+      mios: mySegTouchedToday,
       operadores: asig.operadores,
       // `coverageSegError` = la lectura de gestiones del día falló. Sin esto,
       // "0 tocados" se leería como "no trabajaron" y el dueño reclamaría por un
       // dato que nunca se pudo leer.
       gestionCargada: !coverageSegError,
     }),
-    [dedupedByDate, asig.asignaciones, asig.operadores, gestionSegPorTelefono, coverageSegError],
+    [dedupedByDate, asig.asignaciones, asig.operadores, gestionSegPorTelefono, mySegTouchedToday, coverageSegError],
   );
 
   const boardData = useMemo(() => {

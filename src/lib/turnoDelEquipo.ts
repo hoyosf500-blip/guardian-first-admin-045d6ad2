@@ -24,6 +24,7 @@
 // Puro: sin red, sin React, sin reloj.
 
 import type { OrderData } from './orderUtils';
+import { estaGestionadoHoy } from './segPulso';
 
 export interface FilaAsesora {
   operatorId: string;
@@ -33,6 +34,16 @@ export interface FilaAsesora {
   tocados: number | null;
   /** Los suyos sin gestión hoy. `null` = no se pudo medir. */
   sinTocar: number | null;
+  /**
+   * De los que le faltan, cuántos SÍ se intentaron y no hubo respuesta.
+   *
+   * Existe para no confundir esfuerzo con abandono: llamar tres veces a alguien
+   * que no contesta deja el pedido pendiente para todo el mundo —por eso no
+   * cuenta como gestionado— pero decirle a esa persona "sin tocar" es un
+   * reclamo injusto. Es la misma distinción que el dashboard ya hace entre
+   * «N/R abiertos» e «Intentos N/R». `null` = no se pudo medir.
+   */
+  intentadosSinRespuesta: number | null;
 }
 
 export interface TurnoDelEquipo {
@@ -53,8 +64,21 @@ export interface TurnoDelEquipoInput {
   accionables: readonly OrderData[];
   /** order_id → operator_id del día (`useSegAsignaciones`). */
   asignaciones: Map<string, string>;
-  /** phone → gestión de hoy del equipo (`gestionSegPorTelefono`). */
-  gestionEquipo: Map<string, { ultimoPor: string | null }> | null | undefined;
+  /**
+   * phone → gestión de hoy del equipo (`gestionSegPorTelefono`).
+   *
+   * ⛔ Se lee con `estaGestionadoHoy`, la MISMA función que usan el hero y el
+   * filtro «Ocultar gestionados» (21-ago-2026). Este panel contaba `ultimoPor`
+   * —cualquier toque— mientras el hero, treinta centímetros más arriba, contaba
+   * solo el contacto efectivo: en la tienda de Colombia se leía «9 de 32
+   * gestionados» arriba y «21 de 32 gestionados» abajo, con la misma etiqueta.
+   * Dos definiciones de "gestionado" en una misma pantalla es exactamente lo
+   * que dejó el contador clavado en 222 en agosto (ver segPulso.ts).
+   */
+  gestionEquipo: Map<string, { ultimoPor: string | null; ultimoResult: string }> | null | undefined;
+  /** Lo que registró QUIEN MIRA la pantalla (`mySegTouchedToday`). Cuenta
+   *  siempre, incluso un "no contestó": acabo de tocarlo. */
+  mios?: Set<string> | null;
   /** Asesoras del turno. Se listan aunque tengan 0 — un cero visible es
    *  información ("no le tocó nada"); una fila ausente parece un olvido. */
   operadores: readonly string[];
@@ -63,16 +87,18 @@ export interface TurnoDelEquipoInput {
 }
 
 export function turnoDelEquipo(input: TurnoDelEquipoInput): TurnoDelEquipo {
-  const { accionables, asignaciones, gestionEquipo, operadores, gestionCargada } = input;
+  const { accionables, asignaciones, gestionEquipo, operadores, gestionCargada, mios } = input;
 
   const medible = gestionCargada;
   const totalAccionable = accionables.length;
 
   const asignadosPor = new Map<string, number>();
   const tocadosPor = new Map<string, number>();
+  const intentadosPor = new Map<string, number>();
   for (const op of operadores) {
     asignadosPor.set(op, 0);
     tocadosPor.set(op, 0);
+    intentadosPor.set(op, 0);
   }
 
   let sinDueno = 0;
@@ -83,7 +109,10 @@ export function turnoDelEquipo(input: TurnoDelEquipoInput): TurnoDelEquipo {
     // Gestión de hoy: alcanza con que la haya tocado CUALQUIERA. Si la trabajó
     // una compañera, el pedido está atendido — no es una deuda del dueño
     // nominal. Lo que se mide es si el trabajo se hizo, no quién lo hizo.
-    const tocado = Boolean(o.phone && gestionEquipo?.get(o.phone)?.ultimoPor);
+    const tocado = estaGestionadoHoy(o.phone, mios, gestionEquipo);
+    // Se intentó pero no hubo contacto: no está gestionado, pero tampoco está
+    // abandonado. Se cuenta aparte para no reclamarle a quien sí llamó.
+    const intentadoSinRespuesta = !tocado && Boolean(o.phone && gestionEquipo?.get(o.phone)?.ultimoPor);
 
     if (tocado) tocadosTotal++;
 
@@ -93,6 +122,7 @@ export function turnoDelEquipo(input: TurnoDelEquipoInput): TurnoDelEquipo {
     }
     asignadosPor.set(dueno, (asignadosPor.get(dueno) ?? 0) + 1);
     if (tocado) tocadosPor.set(dueno, (tocadosPor.get(dueno) ?? 0) + 1);
+    if (intentadoSinRespuesta) intentadosPor.set(dueno, (intentadosPor.get(dueno) ?? 0) + 1);
   }
 
   const filas: FilaAsesora[] = [...asignadosPor.entries()].map(([operatorId, asignados]) => {
@@ -102,6 +132,7 @@ export function turnoDelEquipo(input: TurnoDelEquipoInput): TurnoDelEquipo {
       asignados,
       tocados,
       sinTocar: tocados === null ? null : Math.max(asignados - tocados, 0),
+      intentadosSinRespuesta: medible ? (intentadosPor.get(operatorId) ?? 0) : null,
     };
   });
 

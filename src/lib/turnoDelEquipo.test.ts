@@ -16,8 +16,12 @@ const pedido = (dbId: string, phone: string): OrderData => ({
   addressParsed: null, lastMovementAt: null,
 });
 
-const gestion = (...phones: Array<[string, string]>) =>
-  new Map(phones.map(([ph, por]) => [ph, { ultimoPor: por }]));
+// [teléfono, quién, resultado]. El resultado importa: `estaGestionadoHoy` — la
+// ÚNICA definición de "gestionado" de la pantalla — solo cuenta el contacto
+// efectivo del equipo. Un "no contestó" de una compañera deja el pedido
+// pendiente para todos.
+const gestion = (...phones: Array<[string, string] | [string, string, string]>) =>
+  new Map(phones.map(([ph, por, result]) => [ph, { ultimoPor: por, ultimoResult: result ?? 'Envié la guía' }]));
 
 const armar = (o: Partial<TurnoDelEquipoInput> = {}): TurnoDelEquipoInput => ({
   accionables: [],
@@ -25,6 +29,7 @@ const armar = (o: Partial<TurnoDelEquipoInput> = {}): TurnoDelEquipoInput => ({
   gestionEquipo: new Map(),
   operadores: [],
   gestionCargada: true,
+  mios: null,
   ...o,
 });
 
@@ -103,7 +108,9 @@ describe('turnoDelEquipo — la cuenta del turno', () => {
     expect(r.totalAccionable).toBe(0);
     expect(r.sinDueno).toBe(0);
     expect(r.tocadosTotal).toBe(0);
-    expect(r.filas).toEqual([{ operatorId: 'ana', asignados: 0, tocados: 0, sinTocar: 0 }]);
+    expect(r.filas).toEqual([
+      { operatorId: 'ana', asignados: 0, tocados: 0, sinTocar: 0, intentadosSinRespuesta: 0 },
+    ]);
   });
 });
 
@@ -161,5 +168,61 @@ describe('GUARDIÁN: cero NUNCA sustituye a "no se pudo medir"', () => {
     }));
     const asignados = r.filas.reduce((n, f) => n + f.asignados, 0);
     expect(asignados + r.sinDueno).toBe(r.totalAccionable);
+  });
+});
+
+
+// ── GUARDIÁN ──────────────────────────────────────────────────────────
+// Dos definiciones de "gestionado" en la MISMA pantalla ya rompieron el
+// contador una vez (el clavado en 222, ver segPulso.ts). Volvió a pasar el
+// 21-ago-2026: el hero decía «9 de 32 gestionados» y este panel, treinta
+// centímetros más abajo, «21 de 32 gestionados» — porque contaba cualquier
+// toque en vez del contacto efectivo.
+describe('GUARDIÁN: una sola definición de "gestionado"', () => {
+  it('el "no contestó" de una compañera NO cuenta como gestionado', () => {
+    const r = turnoDelEquipo(armar({
+      accionables: [pedido('o1', 'p1')],
+      asignaciones: new Map([['o1', 'ana']]),
+      gestionEquipo: gestion(['p1', 'bea', 'No contestó']),
+      operadores: ['ana', 'bea'],
+    }));
+    expect(r.tocadosTotal).toBe(0);
+    expect(r.filas.find((f) => f.operatorId === 'ana')!.sinTocar).toBe(1);
+  });
+
+  it('...pero se cuenta como INTENTO, para no reclamarle a quien sí llamó', () => {
+    const r = turnoDelEquipo(armar({
+      accionables: [pedido('o1', 'p1'), pedido('o2', 'p2')],
+      asignaciones: new Map([['o1', 'ana'], ['o2', 'ana']]),
+      gestionEquipo: gestion(['p1', 'ana', 'No contestó']),
+      operadores: ['ana'],
+    }));
+    const ana = r.filas[0];
+    expect(ana.sinTocar).toBe(2);
+    expect(ana.intentadosSinRespuesta).toBe(1);
+  });
+
+  it('lo que registré YO cuenta siempre, aunque no haya contestado', () => {
+    // Acabo de tocarlo: volver a marcarlo duplicaría el registro. Misma regla
+    // que `estaGestionadoHoy`.
+    const r = turnoDelEquipo(armar({
+      accionables: [pedido('o1', 'p1')],
+      asignaciones: new Map([['o1', 'ana']]),
+      gestionEquipo: gestion(['p1', 'ana', 'No contestó']),
+      mios: new Set(['p1']),
+      operadores: ['ana'],
+    }));
+    expect(r.tocadosTotal).toBe(1);
+    expect(r.filas[0].intentadosSinRespuesta).toBe(0);
+  });
+
+  it('sin poder medir, los intentos también son null (no cero)', () => {
+    const r = turnoDelEquipo(armar({
+      accionables: [pedido('o1', 'p1')],
+      asignaciones: new Map([['o1', 'ana']]),
+      operadores: ['ana'],
+      gestionCargada: false,
+    }));
+    expect(r.filas[0].intentadosSinRespuesta).toBeNull();
   });
 });

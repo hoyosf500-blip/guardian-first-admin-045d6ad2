@@ -11,16 +11,23 @@ import type { OrderData } from '@/lib/orderUtils';
 const estado = {
   workQueue: [] as OrderData[],
   segData: [] as OrderData[],
+  /** La barra pide la cola de Seguimiento al montarse: en toda pantalla donde
+   *  se la ve, nadie más la carga. Ver el guardián de siguienteAccion.test.ts. */
+  segLoaded: true,
   novedadesQueue: [] as OrderData[],
   isManagerOfActive: false,
   isAdmin: false,
 };
 
+const loadSegData = vi.fn(async () => {});
+
 vi.mock('@/contexts/OrderContext', () => ({
   useOrders: () => ({
     workQueue: estado.workQueue,
     segData: estado.segData,
+    segLoaded: estado.segLoaded,
     novedadesQueue: estado.novedadesQueue,
+    loadSegData,
   }),
 }));
 vi.mock('@/contexts/StoreContext', () => ({
@@ -54,8 +61,10 @@ const dibujar = (ruta = '/dashboard') =>
   );
 
 beforeEach(() => {
+  loadSegData.mockClear();
   estado.workQueue = [];
   estado.segData = [];
+  estado.segLoaded = true;
   estado.novedadesQueue = [];
   estado.isManagerOfActive = false;
   estado.isAdmin = false;
@@ -128,5 +137,30 @@ describe('SiguienteAccionBar', () => {
     dibujar();
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+// ── GUARDIÁN ──────────────────────────────────────────────────────────
+// La barra vive en pantallas donde NADIE más carga la cola de Seguimiento —
+// `SeguimientoTab` es el único que llamaba a `loadSegData`, y la barra se
+// esconde justamente ahí. Sin esto, cuatro de los seis escalones no podían
+// dispararse nunca (medido en el Dashboard de Colombia, 21-ago-2026).
+describe('GUARDIÁN: la barra pide la cola que necesita', () => {
+  it('pide la cola de Seguimiento al montarse', () => {
+    dibujar();
+    expect(loadSegData).toHaveBeenCalled();
+  });
+
+  it('mientras la cola no esté leída no dibuja NADA, ni "Todo al día"', () => {
+    estado.segLoaded = false;
+    const { container } = dibujar();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('lo que sí está cargado se muestra igual mientras Seguimiento llega', () => {
+    estado.segLoaded = false;
+    estado.novedadesQueue = [base];
+    dibujar();
+    expect(screen.getByText(/novedad/i)).toBeInTheDocument();
   });
 });

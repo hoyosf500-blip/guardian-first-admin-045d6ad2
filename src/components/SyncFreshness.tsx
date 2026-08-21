@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, WifiOff, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { textoCadencia } from '@/lib/cadenciaSync';
 import { useStore } from '@/contexts/StoreContext';
 import { toast } from 'sonner';
 
@@ -183,6 +184,7 @@ export default function SyncFreshness({ onAuditClick }: Props) {
   // banner solo informa que la sincronización está al día.
   if (color === 'green') {
     const lastRunMs = now - new Date(last.created_at).getTime();
+    const cadencia = textoCadencia(logs, now);
     // Cambios de la última corrida CON novedades (el synced_count de la más
     // reciente que trajo algo) — "N pedidos actualizados".
     const cambios = lastSuccess?.synced_count ?? 0;
@@ -195,7 +197,14 @@ export default function SyncFreshness({ onAuditClick }: Props) {
           {cambios > 0 && lastSuccess && (
             <> · {cambios} {cambios === 1 ? 'pedido actualizado' : 'pedidos actualizados'}</>
           )}
-          {' · '}se actualiza solo cada 5 min
+          {/* La cadencia se MIDE sobre las corridas reales de esta tienda.
+              Acá decía, en texto fijo, "se actualiza solo cada 5 min": medido
+              el 21-ago-2026, el cron corre cada 10 min y reparte el presupuesto
+              entre tiendas, o sea ~20 min por tienda. Prometer 5 es lo que hace
+              que un pedido se lea como "desactualizado": la asesora espera el
+              cambio, no llega, y culpa a Guardian. Si no se puede medir, no se
+              dice nada — ver el guardián en cadenciaSync.test.ts. */}
+          {cadencia && <> · {cadencia}</>}
         </span>
       </div>
     );

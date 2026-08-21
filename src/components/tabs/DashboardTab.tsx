@@ -53,6 +53,9 @@ export default function DashboardTab() {
   // poder decirlo en pantalla en vez de hacer pasar el corte por un total.
   const [dbOrdersCarga, setDbOrdersCarga] = useState<'ok' | 'parcial' | 'error'>('ok');
   const [lastSync, setLastSync] = useState<SyncLog | null>(null);
+  /** Última corrida que REALMENTE sincronizo (status success). Ver el comentario
+   *  de `syncStatus`: el ultimo intento puede ser una postergacion normal. */
+  const [lastOkSync, setLastOkSync] = useState<SyncLog | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());
   const [resyncing, setResyncing] = useState(false);
 
@@ -392,10 +395,16 @@ export default function DashboardTab() {
       // invisibles los syncs/fallos manuales para este chip de salud.
       .in('source', ['dropi-cron', 'dropi'])
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      // 12 filas y no 1: el ULTIMO intento puede ser una postergacion por
+      // rotacion entre tiendas (pasa en la mitad de las corridas), y con una
+      // sola fila el panel no tenia forma de saber cuando sincronizo de verdad.
+      .limit(12);
     if (error) console.error('Error loading sync log:', error.message);
-    if (data) setLastSync(data);
+    const filas = (data as SyncLog[] | null) ?? [];
+    if (filas.length) {
+      setLastSync(filas[0]);
+      setLastOkSync(filas.find((f) => f.status === 'success') ?? null);
+    }
   }, [activeStoreId]);
 
   // COST-2 2026-07-10: sync log 2 → 15 min, tick visual 30s → 2 min.
@@ -435,17 +444,30 @@ export default function DashboardTab() {
     }
   };
 
+  // ⛔ La salud se mide sobre la ultima corrida QUE SINCRONIZO, no sobre el
+  // ultimo intento (arreglo 21-ago-2026, medido en vivo).
+  //
+  // `dropi-cron` reparte su presupuesto entre tiendas: cuando a una le toca
+  // esperar, deja una fila `status='warn'` con "Postergada en esta corrida
+  // (rotacion...)". Con solo dos tiendas eso pasa en la MITAD de las corridas.
+  // La version anterior hacia `status !== 'success'` → isError, asi que el dueño
+  // veia el cartel rojo **"Sync caido"** la mitad del dia, con la sincronizacion
+  // funcionando y el banner verde de arriba diciendo lo contrario. Una alarma
+  // que grita cuando no pasa nada deja de leerse, y despues no se ve la de
+  // verdad. Rojo queda para `status='error'` o para no haber sincronizado en
+  // una hora.
   const syncStatus = useMemo(() => {
     if (!lastSync) return null;
-    const ageMs = nowTick - new Date(lastSync.created_at).getTime();
-    const ageMin = Math.floor(ageMs / 60000);
-    const isError = lastSync.status !== 'success';
-    const healthy = !isError && ageMin < 15;
-    const warning = !isError && ageMin >= 15 && ageMin < 60;
+    const ancla = lastOkSync ?? lastSync;
+    const ageMin = Math.floor((nowTick - new Date(ancla.created_at).getTime()) / 60000);
+    const isError = lastSync.status === 'error';
+    const postergada = lastSync.status === 'warn' && !lastOkSync;
+    const healthy = !isError && !postergada && ageMin < 15;
+    const warning = !isError && (postergada || (ageMin >= 15 && ageMin < 60));
     const broken = isError || ageMin >= 60;
     const ageLabel = ageMin < 1 ? 'ahora' : ageMin < 60 ? `${ageMin}m` : `${Math.floor(ageMin / 60)}h ${ageMin % 60}m`;
     return { ageMin, ageLabel, isError, healthy, warning, broken };
-  }, [lastSync, nowTick]);
+  }, [lastSync, lastOkSync, nowTick]);
 
   // ─────────────────────────────────────────────────────────────
   // FECHAS: siempre calendario BOGOTÁ, nunca UTC.
@@ -996,7 +1018,7 @@ export default function DashboardTab() {
                   : `Dropi sincronizado hace ${syncStatus.ageLabel}`}
             </div>
             <div className="text-[10px] text-muted-foreground mt-0.5 font-mono tabular-nums">
-              Fuente: {lastSync?.source} · {lastSync?.synced_count ?? 0} pedidos · {lastSync ? new Date(lastSync.created_at).toLocaleString('es-CO') : ''}
+              Fuente: {(lastOkSync ?? lastSync)?.source} · {(lastOkSync ?? lastSync)?.synced_count ?? 0} pedidos · {(lastOkSync ?? lastSync) ? new Date((lastOkSync ?? lastSync)!.created_at).toLocaleString('es-CO') : ''}
             </div>
           </div>
           {/* Solo el DUEÑO: dropi-sync es owner-only (403 para el resto). El

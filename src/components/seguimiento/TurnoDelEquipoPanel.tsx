@@ -96,6 +96,12 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
           {filas.map((f) => {
             const falta = f.sinTocar;
             const alDia = falta === 0;
+            // De lo que le falta, cuánto SÍ intentó sin que le contestaran. Un
+            // "no contestó" deja el pedido pendiente para todo el equipo (por eso
+            // no cuenta como gestionado), pero decirle "sin tocar" a quien llamó
+            // tres veces es un reclamo injusto — y este panel se mira justamente
+            // para decidir a quién reclamarle.
+            const intentos = f.intentadosSinRespuesta ?? 0;
             return (
               <li key={f.operatorId} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="min-w-0 flex-1 truncate text-xs font-semibold">
@@ -105,6 +111,15 @@ export default function TurnoDelEquipoPanel({ resumen, nombreDe, onRepartir, rep
                 <span className="shrink-0 text-[11px] text-muted-foreground font-mono tabular-nums">
                   {cifra(f.tocados)}/{f.asignados}
                 </span>
+
+                {intentos > 0 && (
+                  <span
+                    className="shrink-0 text-[10px] text-muted-foreground"
+                    title="Llamó y no le contestaron. El pedido sigue pendiente para todo el equipo, pero el intento está hecho."
+                  >
+                    <span className="font-mono tabular-nums">{intentos}</span> sin respuesta
+                  </span>
+                )}
 
                 <span
                   className={cn(

@@ -65,7 +65,10 @@ export type AccionKey =
   | 'detenidos'
   | 'rescate'
   | 'seguimiento'
-  | 'al_dia';
+  | 'al_dia'
+  /** Todavía no se sabe: la cola de Seguimiento no está cargada. NO es "al día".
+   *  Ver la regla de `segCargado` abajo. */
+  | 'cargando';
 
 export interface SiguienteAccion {
   key: AccionKey;
@@ -103,6 +106,25 @@ export interface SiguienteAccionInput {
   novedadesQueue: OrderData[];
   /** Pedidos de Seguimiento cargados. */
   segData: OrderData[];
+  /**
+   * ¿`segData` YA se leyó de la base?
+   *
+   * ⛔ **Un arreglo verificado en producción (21-ago-2026).** `segData` solo se
+   * carga cuando la persona entra a `/seguimiento`, y la barra se esconde
+   * justamente en esa pantalla. O sea: en toda pantalla donde la barra SE VE,
+   * la cola de Seguimiento llegaba vacía → cuatro de los seis escalones
+   * (agencia, detenidos, rescate y el catch-all) no podían dispararse NUNCA, y
+   * la barra decía "Todo al día" en verde con 7 detenidos y 5 paquetes
+   * esperando en una agencia. Medido en el Dashboard de Colombia.
+   *
+   * La causa de fondo se arregla cargando la cola desde el layout, pero el
+   * instante inicial —y una query caída— siguen existiendo. En ese hueco la
+   * respuesta honesta es "todavía no sé", nunca un cero: es la misma regla de
+   * `turnoDelEquipo` (cero NUNCA sustituye a "no se pudo medir").
+   *
+   * Default `true` para no cambiar los call-sites que ya pasan datos leídos.
+   */
+  segCargado?: boolean;
 }
 
 /**
@@ -111,7 +133,7 @@ export interface SiguienteAccionInput {
  * más cómoda, y la más cómoda nunca es la que vence.
  */
 export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
-  const { workQueue, novedadesQueue, segData } = input;
+  const { workQueue, novedadesQueue, segData, segCargado = true } = input;
 
   // ── 1. Novedades ──────────────────────────────────────────────────
   const novedades = novedadesQueue.length;
@@ -128,7 +150,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   }
 
   // ── 2. Agencia con reloj ──────────────────────────────────────────
-  const agencia = contarLista(segData, 'agencia_2d');
+  const agencia = segCargado ? contarLista(segData, 'agencia_2d') : 0;
   if (agencia > 0) {
     return {
       key: 'agencia',
@@ -159,7 +181,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   }
 
   // ── 4. Detenidos ──────────────────────────────────────────────────
-  const detenidos = contarLista(segData, 'detenidos_3d');
+  const detenidos = segCargado ? contarLista(segData, 'detenidos_3d') : 0;
   if (detenidos > 0) {
     return {
       key: 'detenidos',
@@ -173,7 +195,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   }
 
   // ── 5. Rescate de devoluciones ────────────────────────────────────
-  const rescate = contarLista(segData, 'devolucion_reciente');
+  const rescate = segCargado ? contarLista(segData, 'devolucion_reciente') : 0;
   if (rescate > 0) {
     return {
       key: 'rescate',
@@ -190,7 +212,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   // Sostiene el invariante: si el guard considera que hay trabajo, la barra
   // NO puede decir "al día". Sin este escalón, 20 indemnizaciones vencidas
   // dejaban la barra en verde mientras el guard regañaba.
-  const restoSeg = segData.reduce((n, o) => (esAccionable(o) ? n + 1 : n), 0);
+  const restoSeg = segCargado ? segData.reduce((n, o) => (esAccionable(o) ? n + 1 : n), 0) : 0;
   if (restoSeg > 0) {
     return {
       key: 'seguimiento',
@@ -198,6 +220,21 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       titulo: restoSeg === 1 ? 'Gestioná el pedido de Seguimiento' : `Gestioná los ${restoSeg} pedidos de Seguimiento`,
       etiqueta: restoSeg === 1 ? '1 pedido de Seguimiento sin gestionar' : `${restoSeg} pedidos de Seguimiento sin gestionar`,
       porque: 'Indemnizaciones vencidas, pendientes de guía y reparto.',
+      ruta: '/seguimiento',
+      tono: 'normal',
+    };
+  }
+
+  // ── Sin la cola de Seguimiento no se puede afirmar nada ───────────
+  // Novedades y Confirmar ya se descartaron con datos reales; lo que falta
+  // vive en `segData`. Decir "Todo al día" acá sería inventar.
+  if (!segCargado) {
+    return {
+      key: 'cargando',
+      cuantos: 0,
+      titulo: 'Revisando la cola…',
+      etiqueta: 'Revisando la cola…',
+      porque: 'Todavía no se leyó la cola de Seguimiento.',
       ruta: '/seguimiento',
       tono: 'normal',
     };
@@ -224,5 +261,6 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
  * decidir si se regaña a alguien.
  */
 export function hayTrabajo(input: SiguienteAccionInput): boolean {
-  return siguienteAccion(input).key !== 'al_dia';
+  const k = siguienteAccion(input).key;
+  return k !== 'al_dia' && k !== 'cargando';
 }
