@@ -190,9 +190,27 @@ const hoursSinceMovement = horasSinMovimiento;
  * a propósito NO lleva glow: un estado desconocido no debe brillar como los
  * medidos). El texto sigue viajando íntegro en `title` + en el `sr-only`.
  */
-function freshnessDot(o: OrderData): { cls: string; ring: string; title: string } {
+function freshnessDot(o: OrderData): { cls: string; ring: string; title: string; sinDato?: boolean } {
   const h = hoursSinceMovement(o);
-  if (h == null) return { cls: 'bg-muted-foreground/40', ring: 'ring-muted-foreground/20', title: 'Sin fecha de último movimiento' };
+  if (h == null) {
+    // ⛔ "No sé" NO es "está bien" (21-ago-2026). Medido en producción: 46 de
+    // los 228 pedidos vivos —uno de cada cinco— no tienen fecha de último
+    // movimiento. Ese pedido queda FUERA de todas las alarmas: `estaDetenido`
+    // devuelve false, no entra a ninguna lista de estancados y cae al fondo del
+    // orden. Es justo el pedido al que hay que ir a mirar y es el único que
+    // nadie ve. Hasta hoy solo lo delataba un punto gris cuyo texto vivía en el
+    // `title` — invisible en el celular, que es donde se trabaja.
+    const fase = classifySegEstado(o.estado || '');
+    const vivo = fase === 'otros' || FASES_VIVAS.has(fase);
+    return {
+      cls: 'bg-muted-foreground/40',
+      ring: 'ring-muted-foreground/20',
+      title: vivo
+        ? 'Sin fecha de último movimiento: Guardian no sabe hace cuánto está así. Refrescalo desde Dropi.'
+        : 'Sin fecha de último movimiento',
+      sinDato: vivo,
+    };
+  }
   // Un pedido que YA llegó a su desenlace no está "detenido": está terminado.
   // Pintarlo en rojo por llevar diez días quieto es una alarma falsa sobre algo
   // que nadie tiene que ir a destrabar. Además descuadraba la pantalla: el
@@ -338,6 +356,17 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
         {/* El punto es decorativo (color solo) — el estado de frescura va en texto
             para lector de pantalla, ya que en touch el `title` no se ve. */}
         <span className="sr-only">{fresh.title}</span>
+        {/* Un pedido vivo del que no sabemos hace cuánto no se mueve tiene que
+            DECIRLO en la cara. El punto gris lo susurraba en un `title` que en
+            el celular no existe, y así se veía igual que un pedido sano. */}
+        {fresh.sinDato && (
+          <span
+            className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-muted-foreground/25 text-muted-foreground"
+            title={fresh.title}
+          >
+            sin dato
+          </span>
+        )}
         <span
           className="inline-flex items-baseline gap-0.5 text-[13px] font-mono tabular-nums font-bold text-foreground"
           title="Días hábiles en este estado"

@@ -184,11 +184,23 @@ export async function applyDivergences(
   for (const d of divergences) {
     const { error } = await supabase
       .from('orders')
+      // ⛔ NO se estampa `last_movement_at` (21-ago-2026).
+      //
+      // Acá se ponía `new Date()`, o sea la hora del NAVEGADOR de quien corre
+      // la auditoría. Eso afirma "este paquete se movió hoy", que es
+      // exactamente lo que no sabemos: la respuesta de Dropi que alimenta esta
+      // pantalla trae estado, guía y transportadora, y ninguna fecha. Las
+      // consecuencias eran dos y las dos malas: un pedido parado hace semanas
+      // quedaba pintado como fresco (verde) en el tablero, y encima salía de la
+      // repesca del nightly por diez días — o sea que auditar un pedido viejo
+      // lo hacía MÁS difícil de encontrar.
+      //
+      // Lo que la auditoría sí sabe es en qué estado está, y eso es lo que
+      // escribe. La fecha real de movimiento la trae el sync, que sí la recibe.
       .update({
         estado: d.after.estado,
         guia: d.after.guia,
         transportadora: d.after.trans,
-        last_movement_at: new Date().toISOString(),
       })
       .eq('id', d.guardianId)
       .eq('store_id', storeId);

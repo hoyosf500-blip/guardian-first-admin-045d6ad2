@@ -228,6 +228,35 @@ export function useDataLoader(user: User | null, storeId: string | null): DataLo
       } catch (e) {
         console.warn('Error cargando devoluciones recientes:', e);
       }
+      // PEDIDOS SIN ESTADO — el hueco que ningun filtro de arriba puede tapar.
+      //
+      // En SQL, `NOT (NULL = 'X')` no es TRUE: es NULL, y PostgREST descarta la
+      // fila. O sea que cada `.not('estado','eq',...)` de la query principal
+      // tambien tira los pedidos con `estado IS NULL` — no aparecen en
+      // Seguimiento NUNCA, sin toast ni aviso. `dropi-nightly-reconcile`
+      // documenta esta misma trampa dos veces y por eso filtra del lado del
+      // cliente; el frontend no habia aplicado la leccion.
+      //
+      // Medido el 21-ago-2026 en las dos tiendas: CERO filas. Esto es una
+      // defensa, no una reparacion — y por eso es barata. El dia que Dropi
+      // devuelva un estado vacio, el pedido va a estar a la vista en vez de
+      // desaparecer, que es exactamente como se pierden.
+      try {
+        const { data: sinEstado, error: sinEstadoError } = await supabase
+          .from('orders')
+          .select(ORDER_COLUMNS)
+          .eq('store_id', storeId)
+          .is('estado', null)
+          .order('created_at', { ascending: false })
+          .limit(500);
+        if (sinEstadoError) {
+          console.warn('Error cargando pedidos sin estado:', sinEstadoError.message);
+        } else if (prevStoreRef.current === storeId) {
+          all.push(...(((sinEstado || []) as unknown) as Row[]));
+        }
+      } catch (e) {
+        console.warn('Error cargando pedidos sin estado:', e);
+      }
       const mapped = all.map((o, idx) => dbToOrderData(o, idx));
       mapped.sort((a, b) => calcPriority(b) - calcPriority(a));
       setSegData(prev => smartMerge(prev, mapped));
