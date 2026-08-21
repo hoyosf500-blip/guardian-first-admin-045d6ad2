@@ -124,6 +124,22 @@ const LIVE_KEYS = FASES_VIVAS;
  */
 const CATCHALL_KEYS = new Set<SegStatusKey>(['otros']);
 
+/**
+ * HISTORIA — las tres fases donde NO se puede hacer absolutamente nada.
+ *
+ * El tablero tiene 14 columnas y el dueño reportó "mucho ruido visual". De esas
+ * 14, estas tres no le dan trabajo a nadie: un pedido entregado, uno cancelado
+ * y uno ya indemnizado están cerrados. Mirarlos no cambia ningún resultado.
+ * Por defecto se pliegan detrás de un botón; nada se borra.
+ *
+ * `devolucion` y `devolucion_transito` NO van acá aunque sean terminales: ahí
+ * SÍ hay trabajo (la llamada de rescate — en julio, 32 de 49 pedidos
+ * re-emitidos terminaron entregados). Y `rechazado` tampoco: es una entrega que
+ * falló, no una historia cerrada. La regla de corte es "¿alguien puede hacer
+ * algo con esto?", no "¿está terminado?".
+ */
+export const HISTORIA_KEYS = new Set<SegStatusKey>(['entregado', 'cancelado', 'indemnizada']);
+
 // Cada tono aporta: punto con glow (acento semántico del encabezado), la barra
 // superior de la columna, el chip de conteo (color + número, nunca color solo),
 // y el color/glow de la cifra cuando el conteo toma peso de KPI en el header.
@@ -825,6 +841,8 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // string y no SegStatusKey: también se puede enfocar una columna generada por
   // estado sin mapear (key `otros:<ESTADO>`).
   const [focusedKey, setFocusedKey] = useSessionState<string | null>('seg:focusedKey', null);
+  // Historia plegada por defecto (ver HISTORIA_KEYS). Se recuerda por pestaña.
+  const [verHistoria, setVerHistoria] = useSessionState<boolean>('seg:verHistoria', false);
   // Cuántas tarjetas se muestran por columna (arranca en COLUMN_PAGE y sube con
   // "Ver más"). No se persiste: cada entrada al tablero vuelve al tope barato.
   const [colLimits, setColLimits] = useState<Record<string, number>>({});
@@ -891,7 +909,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     return groups;
   }, [data]);
 
-  const columns = useMemo(
+  // TODAS las columnas con pedidos, historia incluida. `columns` (más abajo) es
+  // el subconjunto que se dibuja; el modo enfoque busca acá para que enfocar una
+  // columna de historia siga funcionando aunque esté plegada.
+  const todasLasColumnas = useMemo(
     () => [
       ...BOARD_COLUMNS.map((c) => ({ ...c, orders: byColumn.get(c.baseKey) ?? [] })),
       // Una columna por cada estado real que no cae en las fases de arriba.
@@ -904,6 +925,22 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     [byColumn, statusFilter],
   );
 
+  // Historia plegada: si la operadora PIDIÓ un estado explícitamente
+  // (statusFilter), se le muestra aunque sea historia — pidió eso, no otra cosa.
+  const mostrarHistoria = verHistoria || !!statusFilter;
+  const historiaOculta = useMemo(
+    () => (mostrarHistoria ? [] : todasLasColumnas.filter((c) => HISTORIA_KEYS.has(c.baseKey))),
+    [todasLasColumnas, mostrarHistoria],
+  );
+  const pedidosEnHistoria = useMemo(
+    () => historiaOculta.reduce((n, c) => n + c.orders.length, 0),
+    [historiaOculta],
+  );
+  const columns = useMemo(
+    () => (mostrarHistoria ? todasLasColumnas : todasLasColumnas.filter((c) => !HISTORIA_KEYS.has(c.baseKey))),
+    [todasLasColumnas, mostrarHistoria],
+  );
+
   // Si al MONTAR la carpeta enfocada persistida quedó vacía (los pedidos cambiaron
   // de fase, o cambió la tienda/rango), no dejamos a la operadora atascada en la
   // pantalla "sin pedidos": caemos al tablero. Solo en el mount — si se vacía en
@@ -912,7 +949,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   useEffect(() => {
     if (focusCheckedRef.current) return;
     focusCheckedRef.current = true;
-    if (focusedKey && !columns.some((c) => c.key === focusedKey)) setFocusedKey(null);
+    if (focusedKey && !todasLasColumnas.some((c) => c.key === focusedKey)) setFocusedKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -921,12 +958,34 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
   // existe, ignoramos y mostramos el tablero. `key={focusedKey}` remonta limpio
   // al cambiar de carpeta (así el selIdx persistido se inicializa por columna).
   if (focusedKey) {
-    // Se busca en `columns` (no en BOARD_COLUMNS): ahí ya están las columnas
-    // generadas por estado sin mapear, y con sus pedidos.
-    const focusedCol = columns.find((c) => c.key === focusedKey);
+    // Se busca en `todasLasColumnas` (no en BOARD_COLUMNS ni en `columns`): ahí
+    // están las columnas generadas por estado sin mapear CON sus pedidos, y
+    // además las de historia — enfocar "Entregado" tiene que seguir funcionando
+    // aunque el tablero las tenga plegadas.
+    const focusedCol = todasLasColumnas.find((c) => c.key === focusedKey);
     if (focusedCol) {
       return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} onBack={() => setFocusedKey(null)} />;
     }
+  }
+
+  // Ojo: `columns` puede estar vacío solo porque la historia está plegada. En
+  // ese caso NO es "no hay nada" — hay pedidos, todos cerrados. Se despliega la
+  // historia sola para no mostrar un vacío que miente.
+  if (columns.length === 0 && pedidosEnHistoria > 0 && !mostrarHistoria) {
+    return (
+      <div className="rounded-3xl border border-border bg-card/40 px-6 py-12 shadow-card3d text-center flex flex-col items-center gap-3">
+        <p className="text-sm text-muted-foreground">
+          No queda nada por gestionar. Los {pedidosEnHistoria} pedidos que hay están cerrados.
+        </p>
+        <button
+          type="button"
+          onClick={() => setVerHistoria(true)}
+          className="text-[11px] font-semibold px-3 py-1.5 rounded-xl border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+        >
+          Ver la historia
+        </button>
+      </div>
+    );
   }
 
   if (columns.length === 0) {
@@ -991,6 +1050,10 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
       onScroll={() => sincronizar(boardRef.current, topBarRef.current)}
       className="flex gap-3 overflow-x-auto pb-3 -mx-1 px-1 [scrollbar-width:thin] items-start"
     >
+      {/* Historia plegada: el botón ocupa el lugar EXACTO donde estarían las
+          columnas, para que se lea como "acá hay más" y no como un control
+          perdido. Se dibuja al final del scroll horizontal, después de todo lo
+          que sí da trabajo. */}
       {columns.map((col, colIdx) => {
         const t = TONE[col.tone];
         const isLive = LIVE_KEYS.has(col.baseKey);
@@ -1099,6 +1162,33 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
           </Fragment>
         );
       })}
+
+      {!mostrarHistoria && pedidosEnHistoria > 0 && (
+        <button
+          type="button"
+          onClick={() => setVerHistoria(true)}
+          className="shrink-0 w-[188px] self-stretch min-h-[140px] rounded-2xl border border-dashed border-border/70 bg-card/20 px-4 py-5 text-left hover:border-border-strong hover:bg-card/40 transition-colors flex flex-col justify-center gap-1.5"
+          title="Entregados, cancelados e indemnizados. No hay nada que hacer con ellos."
+        >
+          <span className="text-[22px] font-mono tabular-nums font-bold leading-none text-muted-foreground/70">
+            {pedidosEnHistoria}
+          </span>
+          <span className="hud-label text-muted-foreground/70">Historia</span>
+          <span className="text-[10px] leading-snug text-muted-foreground/60">
+            Entregados, cancelados e indemnizados. Nada que hacer.
+          </span>
+        </button>
+      )}
+
+      {mostrarHistoria && !statusFilter && (
+        <button
+          type="button"
+          onClick={() => setVerHistoria(false)}
+          className="shrink-0 w-[132px] self-stretch min-h-[140px] rounded-2xl border border-dashed border-border/70 bg-card/20 px-4 text-[11px] font-semibold text-muted-foreground/70 hover:text-foreground hover:border-border-strong transition-colors"
+        >
+          Ocultar historia
+        </button>
+      )}
     </div>
     </>
   );

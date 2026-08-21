@@ -151,6 +151,12 @@ export default function SeguimientoTab() {
   // Owns the status filter so the stat cards act as the single source of truth
   // (no duplicate pill row below).
   const [statusFilter, setStatusFilter] = useSessionState<string | null>('seg:statusFilter', null);
+  // El hero (4 tarjetas + aro + notas) arranca PLEGADO detrás de una línea de
+  // resumen. Se construyó bien y no se borra: solo deja de ser lo primero que
+  // tapa la pantalla. El dueño reportó "mucho ruido visual", y con la barra
+  // "Lo que sigue" arriba de todo, el hero pasó a ser el segundo lugar donde
+  // se dice lo mismo.
+  const [heroAbierto, setHeroAbierto] = useSessionState<boolean>('seg:heroAbierto', false);
   // Contador diario: por defecto OCULTAMOS del tablero los pedidos que YO ya
   // gestioné hoy (touchpoint SEG:* → mySegTouchedToday, set de phones del
   // OrderContext). Al gestionar un pedido (Contactado/Llamé/WhatsApp/… desde la
@@ -773,6 +779,49 @@ export default function SeguimientoTab() {
           // sin glow en vez de inventar un token que no está definido.
           const faltanGlow = tone === 'success' ? 'num-glow-success' : tone === 'danger' ? 'num-glow-danger' : '';
           return (
+            <div className="space-y-3">
+            {/* Resumen en UNA línea. Es lo único que se ve por defecto: dice el
+                estado del día sin ocupar media pantalla. Los mismos números que
+                el hero, sin los aros ni las tarjetas. */}
+            <motion.div
+              {...fadeUp(0.05)}
+              className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl border border-border bg-card/40 px-4 py-2.5 shadow-card3d"
+            >
+              {heroVisible && !coverageSegError && (
+                <span className="flex items-baseline gap-1.5">
+                  <span className={cn('text-lg font-mono tabular-nums font-bold leading-none', faltanTone)}>{faltan}</span>
+                  <span className="text-[11px] text-muted-foreground">por gestionar hoy</span>
+                </span>
+              )}
+              {heroVisible && !coverageSegError && (
+                <span className="text-[11px] text-muted-foreground">
+                  <span className="font-mono tabular-nums font-semibold text-foreground">{gestionados}</span> de{' '}
+                  <span className="font-mono tabular-nums">{total}</span> gestionados
+                </span>
+              )}
+              {heroVisible && coverageSegError && (
+                <span className="text-[11px] text-muted-foreground">
+                  No se pudo leer lo gestionado hoy — los pedidos ya trabajados pueden reaparecer.
+                </span>
+              )}
+              {detenidos > 0 && (
+                <span className="text-[11px] text-danger font-semibold">
+                  <span className="font-mono tabular-nums">{detenidos}</span> detenidos
+                </span>
+              )}
+              <span className="text-[11px] text-muted-foreground">
+                <span className="font-mono tabular-nums">{enRuta}</span> en ruta
+              </span>
+              <button
+                type="button"
+                onClick={() => setHeroAbierto((v) => !v)}
+                className="ml-auto shrink-0 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-border-strong transition-colors"
+              >
+                {heroAbierto ? 'Ocultar detalle' : 'Ver detalle'}
+              </button>
+            </motion.div>
+
+            {heroAbierto && (
             <motion.div {...fadeUp(0.05)} className="grid grid-cols-1 md:grid-cols-12 gap-4">
               {/* HONESTIDAD: si la query de touchpoints del día falló, "Gestionados
                   0 de N" sería un cero inventado (la operadora leería "no
@@ -1000,6 +1049,8 @@ export default function SeguimientoTab() {
                   </div>
               </TiltCard>
             </motion.div>
+            )}
+            </div>
           );
         })()}
 
