@@ -8,6 +8,8 @@ import { OrderData, isWithinLastDays, isClosedOutByCloser } from '@/lib/orderUti
 import { matchesQuery } from '@/lib/textSearch';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useSegAsignaciones } from '@/hooks/useSegAsignaciones';
+import { turnoDelEquipo } from '@/lib/turnoDelEquipo';
+import TurnoDelEquipoPanel from '@/components/seguimiento/TurnoDelEquipoPanel';
 import { useSegClosedPhones } from '@/hooks/useSegClosedPhones';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users } from 'lucide-react';
@@ -328,6 +330,23 @@ export default function SeguimientoTab() {
   const misAsignadosHoy = useMemo(
     () => dedupedByDate.reduce((n, o) => (asig.esMio(o.dbId) ? n + 1 : n), 0),
     [dedupedByDate, asig],
+  );
+
+  // Vista de dueño (pieza D). Se calcula sobre la COLA ACCIONABLE, la misma
+  // población que el hero y que el guard de inactividad — si midiera otra cosa,
+  // el dueño y su equipo estarían mirando números distintos del mismo día.
+  const resumenTurno = useMemo(
+    () => turnoDelEquipo({
+      accionables: dedupedByDate.filter(esAccionable),
+      asignaciones: asig.asignaciones,
+      gestionEquipo: gestionSegPorTelefono,
+      operadores: asig.operadores,
+      // `coverageSegError` = la lectura de gestiones del día falló. Sin esto,
+      // "0 tocados" se leería como "no trabajaron" y el dueño reclamaría por un
+      // dato que nunca se pudo leer.
+      gestionCargada: !coverageSegError,
+    }),
+    [dedupedByDate, asig.asignaciones, asig.operadores, gestionSegPorTelefono, coverageSegError],
   );
 
   const boardData = useMemo(() => {
@@ -1081,6 +1100,12 @@ export default function SeguimientoTab() {
             auto-asignación en mayo-2026 ("Atendido por X — no puedes ejecutar
             acciones"). Si la migración no está aplicada, `soportado` es false y
             toda esta fila no existe, en vez de un botón que revienta. */}
+        {asig.soportado && isManagerOfActive && (
+          <motion.div {...fadeUp(0.09)}>
+            <TurnoDelEquipoPanel resumen={resumenTurno} nombreDe={nombreDeAsesora} />
+          </motion.div>
+        )}
+
         {asig.soportado && (
           <motion.div {...fadeUp(0.1)} className="flex flex-wrap items-center gap-2">
             {misAsignadosHoy > 0 && (
