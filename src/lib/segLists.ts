@@ -66,6 +66,17 @@ export interface SegListDef {
   matches: (o: OrderData) => boolean;
   /** Link externo si la lista vive en otra ruta (ej. confirmación → /confirmar) */
   externalRoute?: string;
+  /**
+   * Qué pedidos caen acá, en una frase, para quien nunca usó la pantalla.
+   *
+   * Va PEGADO al predicado a propósito: una página de ayuda escrita aparte se
+   * desincroniza en semanas y termina enseñando algo que el sistema ya no hace.
+   * Acá, quien cambia el `matches` tiene la explicación delante de los ojos.
+   * La consume `/como-se-trabaja`.
+   */
+  queEs?: string;
+  /** El protocolo de la lista: qué se hace, concretamente. */
+  queHacer?: string;
 }
 
 /**
@@ -196,6 +207,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'pendientes_confirmacion_2d',
     label: 'Pendientes de confirmación (+2 días)',
+    queEs: 'Pedidos que entraron hace más de dos días y todavía nadie confirmó. Viven en la pantalla de Confirmar; el chip es solo el atajo.',
+    queHacer: 'Se llaman antes del cuarto día: a los cuatro días Dropi los cancela solo. Si no contesta, se marca «No contestó» para que vuelvan a la cola.',
     slaDias: 2,
     tone: 'warning',
     externalRoute: '/confirmar',
@@ -212,6 +225,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'detenidos_3d',
     label: 'Detenidos (+3 días sin moverse)',
+    queEs: 'Cualquier pedido que lleva más de 72 horas sin moverse, sin importar en qué columna esté. Es la única lista que mira el RELOJ y no la fase.',
+    queHacer: 'Se le reclama a la TRANSPORTADORA con la guía. Al cliente no se lo llama: no puede hacer nada con esa información y aumenta la cancelación.',
     slaDias: 3,
     tone: 'danger',
     matches: (o) => estaDetenido(o),
@@ -228,6 +243,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'agencia_2d',
     label: 'En agencia sin retirar (+2 días)',
+    queEs: 'El paquete llegó a la agencia y el cliente no fue a retirarlo hace dos días o más. La transportadora lo guarda unos siete días y después lo devuelve.',
+    queHacer: 'Día 2: aviso al cliente con dirección de la agencia y número de guía. Día 5: llamada. Es la pérdida más cara medida: 76 devoluciones en un mes en Ecuador.',
     slaDias: 2,
     tone: 'warning',
     matches: (o) => {
@@ -256,6 +273,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'devolucion_reciente',
     label: 'Se fue a devolución (últimos 30 días)',
+    queEs: 'Pedidos que se fueron de vuelta en los últimos 30 días. No son trabajo diario: es una oportunidad de recuperar la venta.',
+    queHacer: 'Se llama UNA vez para saber qué pasó. Si el cliente todavía lo quiere, se vuelve a emitir. De 49 re-emitidos en julio, 32 terminaron entregados.',
     slaDias: 0,
     tone: 'danger',
     matches: (o) => {
@@ -273,6 +292,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'en_oficina',
     label: 'En oficina (cliente recoge)',
+    queEs: 'Todos los que están en oficina o agencia esperando que el cliente pase, recién llegados incluidos.',
+    queHacer: 'Se vigila. Los que ya llevan dos días esperando son los que urgen, y esos tienen su propia lista («En agencia sin retirar»).',
     slaDias: 0,
     tone: 'warning',
     matches: (o) => faseDe(o) === 'oficina',
@@ -280,6 +301,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'en_reparto_novedad',
     label: 'En reparto / Novedad cliente',
+    queEs: 'El repartidor los tiene hoy, o el cliente puso una novedad en la entrega.',
+    queHacer: 'El reparto se resuelve solo o vuelve como novedad. Lo que sí se trabaja son las novedades, en su propia pantalla.',
     slaDias: 0,
     tone: 'warning',
     // 'reparto' incluye los estados EC de última milla (ZONA DE ENTREGA, EN
@@ -293,6 +316,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'en_transito',
     label: 'En tránsito',
+    queEs: 'Van camino al cliente y avanzan solos.',
+    queHacer: 'No se gestionan: se vigilan. Llamar acá no acelera nada. Si se quedan quietos aparecen en «Detenidos».',
     slaDias: 7,
     tone: 'info',
     matches: (o) => faseDe(o) === 'transito',
@@ -305,6 +330,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'guia_generada',
     label: 'Guía generada',
+    queEs: 'Ya tienen guía pero la transportadora todavía no los recogió.',
+    queHacer: 'Se vigila. Si pasan días sin moverse dejan de ser espera y pasan a «Detenidos» o a la lista de indemnización.',
     slaDias: 5,
     tone: 'info',
     matches: (o) => {
@@ -316,6 +343,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'indem_guia_generada_5d',
     label: 'Indem. guía generada (+5 días)',
+    queEs: 'Llevan más de cinco días con la guía generada y sin que nadie los recoja. A esta altura ya se puede reclamar.',
+    queHacer: 'Se reclama la indemnización a la transportadora. Es plata que se pierde por no pedirla a tiempo.',
     slaDias: 5,
     tone: 'danger',
     matches: (o) => {
@@ -328,6 +357,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'pendientes_guia',
     label: 'Pendientes de guía',
+    queEs: 'Confirmados, pero todavía sin guía generada.',
+    queHacer: 'Se vigila unos días. Si se pasan de cuatro, aparecen en la lista de indemnización de pendientes.',
     slaDias: 4,
     tone: 'info',
     matches: (o) => {
@@ -339,6 +370,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'indem_pendientes_guia_4d',
     label: 'Indem. pendientes de guía (+4 días)',
+    queEs: 'Llevan más de cuatro días confirmados y sin guía.',
+    queHacer: 'Se reclama. El pedido está parado antes de salir y el cliente ya está esperando.',
     slaDias: 4,
     tone: 'danger',
     matches: (o) => {
@@ -354,6 +387,8 @@ const SEG_LIST_DEFS: SegListDef[] = [
   {
     slug: 'otros_estados',
     label: 'Otros estados',
+    queEs: 'Estados que Guardian todavía no sabe clasificar — normalmente variantes nuevas que inventó Dropi.',
+    queHacer: 'Se miran de vez en cuando. Si aparece una variante repetida, se avisa para agregarla al mapa de estados.',
     slaDias: 0,
     tone: 'neutral',
     matches: (o) => {

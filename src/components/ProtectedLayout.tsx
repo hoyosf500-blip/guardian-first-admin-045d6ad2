@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2 } from 'lucide-react';
+import { BarChart3, Phone, Package, Settings, LogOut, Menu, AlertTriangle, RefreshCw, X, Truck, DollarSign, Building2, BookOpen } from 'lucide-react';
 import CounterBar from '@/components/CounterBar';
 import SiguienteAccionBar from '@/components/SiguienteAccionBar';
 import WelcomeGate from '@/components/WelcomeGate';
@@ -72,6 +72,9 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/confirmar', icon: Phone, label: 'Confirmar', section: 'Operadora' },
   { path: '/seguimiento', icon: Package, label: 'Seguimiento', section: 'CRM' },
   { path: '/novedades', icon: AlertTriangle, label: 'Novedades', section: 'Gestión' },
+  // Para TODOS: el protocolo del turno. No hay rol que no necesite saber qué
+  // se hace primero — y hasta hoy ninguno de los ocho destinos lo explicaba.
+  { path: '/como-se-trabaja', icon: BookOpen, label: 'Cómo se trabaja', section: 'Protocolo' },
   { path: '/admin', icon: Settings, label: 'Admin', section: 'Sistema', managerOnly: true },
   { path: '/logistica', icon: Truck, label: 'Logística', section: 'Operación', managerOnly: true },
   ...(CFO_ENABLED ? [{ path: '/cfo', icon: DollarSign, label: 'CFO', section: 'Finanzas', adminOnly: true } as NavItem] : []),

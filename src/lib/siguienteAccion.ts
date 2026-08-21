@@ -99,6 +99,103 @@ function contarLista(segData: OrderData[], slug: SegListSlug): number {
 
 const rutaSeg = (slug: SegListSlug) => `/seguimiento?lista=${slug}`;
 
+/**
+ * La escalera, ESCRITA UNA SOLA VEZ.
+ *
+ * `siguienteAccion` saca de acá el "por qué" que muestra la barra, y la pantalla
+ * `/como-se-trabaja` saca de acá la explicación completa. Es a propósito: una
+ * página de ayuda escrita aparte se desincroniza del código en semanas y termina
+ * enseñando un protocolo que el sistema ya no aplica. Si mañana cambia el orden
+ * o el motivo, cambia en un solo lugar y las dos pantallas lo dicen igual.
+ *
+ * `queHacer` es lo que la ayuda agrega y la barra no tiene espacio de mostrar.
+ */
+export interface EscalonDoc {
+  key: Exclude<AccionKey, 'al_dia' | 'cargando'>;
+  /** Posición en la escalera, 1 = lo primero. */
+  orden: number;
+  /** Nombre del escalón en el idioma de la operación. */
+  nombre: string;
+  /** Por qué va antes que lo demás. Una línea — es lo que muestra la barra. */
+  porque: string;
+  /** El protocolo: qué se hace, concretamente. */
+  queHacer: string;
+  ruta: string;
+}
+
+export const ESCALERA: readonly EscalonDoc[] = [
+  {
+    key: 'novedades',
+    orden: 1,
+    nombre: 'Novedades abiertas',
+    porque: 'La transportadora tiene el paquete detenido esperando respuesta.',
+    queHacer:
+      'Se responde la novedad el mismo día. Una novedad resuelta antes del mediodía todavía sale a reparto esa tarde; una resuelta a las 6 pierde el día entero. Si la transportadora ya cerró la novedad, el pedido pasa a "Esperando transportadora" y no se toca más.',
+    ruta: '/novedades',
+  },
+  {
+    key: 'agencia',
+    orden: 2,
+    nombre: 'Paquetes esperando en la agencia',
+    porque: 'La transportadora lo guarda unos días y después lo devuelve sin avisar.',
+    queHacer:
+      'Día 2: se le avisa al cliente por el canal de siempre con la dirección de la agencia y el número de guía. Día 5: se lo llama. Después del día 7 la transportadora lo devuelve y el flete se paga igual. En julio en Ecuador se perdieron 76 pedidos así.',
+    ruta: '/seguimiento?lista=agencia_2d',
+  },
+  {
+    key: 'confirmar',
+    orden: 3,
+    nombre: 'Pedidos por confirmar',
+    porque: 'Un pedido sin confirmar a los 4 días se cancela solo.',
+    queHacer:
+      'Se llama. Si no contesta se marca "No contestó" —no "Llamé"—, porque eso lo deja en la cola para el siguiente intento en vez de esconderlo. Tres intentos en días distintos antes de cancelar, y la cancelación va con su motivo real: ese motivo es lo único que después permite bajar las cancelaciones.',
+    ruta: '/confirmar',
+  },
+  {
+    key: 'detenidos',
+    orden: 4,
+    nombre: 'Pedidos detenidos',
+    porque: 'Llevan +72 h sin moverse. Acá se le reclama a la transportadora, no al cliente.',
+    queHacer:
+      'Se reclama a la transportadora con la guía en la mano. Al cliente NO se lo llama para decirle que su pedido está trabado: no puede hacer nada con esa información y aumenta la cancelación. Si la transportadora no responde en 24 h, se escala.',
+    ruta: '/seguimiento?lista=detenidos_3d',
+  },
+  {
+    key: 'rescate',
+    orden: 5,
+    nombre: 'Rescate de devoluciones',
+    porque: 'Cancelado no es perdido: en julio, 32 de 49 pedidos re-emitidos terminaron entregados.',
+    queHacer:
+      'Se llama UNA vez y se pregunta qué pasó. Si todavía lo quiere, se vuelve a emitir. Esta llamada no se repite todos los días: se hace una vez y se deja anotado el resultado.',
+    ruta: '/seguimiento?lista=devolucion_reciente',
+  },
+  {
+    key: 'seguimiento',
+    orden: 6,
+    nombre: 'El resto de Seguimiento',
+    porque: 'Indemnizaciones vencidas, pendientes de guía y reparto.',
+    queHacer:
+      'Lo que quedó de las listas con reloj: indemnizaciones que ya se pueden reclamar, pedidos sin guía hace días. Se trabaja cuando lo de arriba está en cero.',
+    ruta: '/seguimiento',
+  },
+] as const;
+
+const doc = (k: EscalonDoc['key']): EscalonDoc => ESCALERA.find((e) => e.key === k)!;
+
+/**
+ * Lo que se VIGILA y no se gestiona.
+ *
+ * Está acá y no en la pantalla porque es la mitad menos obvia del protocolo:
+ * tener a alguien ocupado no sirve si está ocupado en lo que no vence. Un
+ * pedido en tránsito no necesita a nadie — necesita tiempo.
+ */
+export const NO_ES_TRABAJO: readonly { que: string; porque: string }[] = [
+  { que: 'En tránsito', porque: 'Va camino al cliente y avanza solo. Llamar acá no lo acelera.' },
+  { que: 'Guía generada', porque: 'La transportadora todavía no lo recogió. Se vuelve trabajo si pasan días sin moverse — y ahí aparece en "Detenidos".' },
+  { que: 'En reparto', porque: 'El repartidor lo tiene hoy. Se resuelve solo o vuelve como novedad.' },
+  { que: 'Entregado / Cancelado', porque: 'Terminaron. Se miran para entender el mes, no para trabajarlos.' },
+];
+
 export interface SiguienteAccionInput {
   /** Cola de Confirmar (se cuentan los que NO tienen `result`). */
   workQueue: OrderData[];
@@ -143,7 +240,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       cuantos: novedades,
       titulo: novedades === 1 ? 'Resolvé la novedad abierta' : `Resolvé las ${novedades} novedades abiertas`,
       etiqueta: novedades === 1 ? '1 novedad abierta' : `${novedades} novedades abiertas`,
-      porque: 'La transportadora tiene el paquete detenido esperando respuesta.',
+      porque: doc('novedades').porque,
       ruta: '/novedades',
       tono: 'urgente',
     };
@@ -159,7 +256,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
         ? 'Avisá al cliente que su paquete está en la agencia'
         : `Avisá a ${agencia} clientes que su paquete está en la agencia`,
       etiqueta: agencia === 1 ? '1 paquete esperando en la agencia' : `${agencia} paquetes esperando en la agencia`,
-      porque: 'La transportadora lo guarda unos días y después lo devuelve sin avisar.',
+      porque: doc('agencia').porque,
       ruta: rutaSeg('agencia_2d'),
       tono: 'urgente',
     };
@@ -174,7 +271,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       cuantos: porConfirmar,
       titulo: porConfirmar === 1 ? 'Confirmá el pedido pendiente' : `Confirmá los ${porConfirmar} pedidos pendientes`,
       etiqueta: porConfirmar === 1 ? '1 pedido por confirmar' : `${porConfirmar} pedidos por confirmar`,
-      porque: 'Un pedido sin confirmar a los 4 días se cancela solo.',
+      porque: doc('confirmar').porque,
       ruta: '/confirmar',
       tono: 'atencion',
     };
@@ -188,7 +285,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       cuantos: detenidos,
       titulo: detenidos === 1 ? 'Reclamá el pedido detenido' : `Reclamá los ${detenidos} pedidos detenidos`,
       etiqueta: detenidos === 1 ? '1 pedido detenido' : `${detenidos} pedidos detenidos`,
-      porque: 'Llevan +72 h sin moverse. Acá se le reclama a la transportadora, no al cliente.',
+      porque: doc('detenidos').porque,
       ruta: rutaSeg('detenidos_3d'),
       tono: 'atencion',
     };
@@ -202,7 +299,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       cuantos: rescate,
       titulo: rescate === 1 ? 'Intentá rescatar la devolución' : `Intentá rescatar ${rescate} devoluciones`,
       etiqueta: rescate === 1 ? '1 devolución para rescatar' : `${rescate} devoluciones para rescatar`,
-      porque: 'Cancelado no es perdido: en julio, 32 de 49 pedidos re-emitidos terminaron entregados.',
+      porque: doc('rescate').porque,
       ruta: rutaSeg('devolucion_reciente'),
       tono: 'normal',
     };
@@ -219,7 +316,7 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
       cuantos: restoSeg,
       titulo: restoSeg === 1 ? 'Gestioná el pedido de Seguimiento' : `Gestioná los ${restoSeg} pedidos de Seguimiento`,
       etiqueta: restoSeg === 1 ? '1 pedido de Seguimiento sin gestionar' : `${restoSeg} pedidos de Seguimiento sin gestionar`,
-      porque: 'Indemnizaciones vencidas, pendientes de guía y reparto.',
+      porque: doc('seguimiento').porque,
       ruta: '/seguimiento',
       tono: 'normal',
     };

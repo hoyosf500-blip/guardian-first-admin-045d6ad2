@@ -29,6 +29,7 @@ const CfoPage = CFO_ENABLED ? lazy(() => import("@/pages/CfoPage")) : null;
 // rebota a /dashboard si el usuario no es admin GLOBAL y las RPC `platform_*`
 // tiran 42501 en la DB — el gate real está en la base, no acá.
 const PlataformaPage = lazy(() => import("@/pages/PlataformaPage"));
+const ComoSeTrabajaPage = lazy(() => import("@/pages/ComoSeTrabajaPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const queryClient = new QueryClient({
@@ -86,6 +87,9 @@ const App = () => (
                     <Route path="/cfo" element={route(<CfoPage />)} />
                   )}
                   <Route path="/plataforma" element={route(<PlataformaPage />)} />
+                  {/* El protocolo del turno, para TODOS: no hay rol que no
+                      necesite saber qué se hace primero. */}
+                  <Route path="/como-se-trabaja" element={route(<ComoSeTrabajaPage />)} />
                   <Route path="/pedido/:externalId" element={route(<OrderDetailPage />)} />
                 </Route>
                 <Route path="*" element={<NotFound />} />

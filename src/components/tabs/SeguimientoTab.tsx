@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -105,6 +105,7 @@ const fadeUp = (delay = 0) => ({
 });
 
 export default function SeguimientoTab() {
+  const navigate = useNavigate();
   // Cached in OrderContext so the data survives route unmounts when the
   // operator navigates between CRM tabs. Without the cache they'd see
   // "Cargando seguimiento..." and lose all filter/selection state every
@@ -1260,6 +1261,18 @@ export default function SeguimientoTab() {
         <motion.div {...fadeUp(0.12)} className="space-y-2">
           <div className="flex items-center gap-1.5 hud-label">
             <Filter size={12} aria-hidden="true" /> Listas de trabajo
+            {/* Quien no sabe qué es "En agencia" lo lee sin salir de la
+                operación. Con una lista activa el link cae en SU párrafo: la
+                explicación llega donde nació la duda, no en un menú aparte. */}
+            <button
+              type="button"
+              onClick={() => navigate(
+                listaActiva ? `/como-se-trabaja#lista-${listaActiva.slug}` : '/como-se-trabaja',
+              )}
+              className="ml-1 normal-case tracking-normal text-[11px] font-normal text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+            >
+              {listaActiva ? '¿qué es esta lista?' : '¿qué significan?'}
+            </button>
           </div>
           {/* En mobile, las 8 listas apiladas (flex-wrap) ocupaban ~250px
               verticales antes del dato. Ahora un carrusel horizontal con snap
