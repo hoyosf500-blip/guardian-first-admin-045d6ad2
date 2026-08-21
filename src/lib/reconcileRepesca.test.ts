@@ -24,17 +24,17 @@ const MIN_AGE = 48 * 3600 * 1000;
 
 /** Los 11 fantasmas reales de Ecuador, verificados uno por uno contra Dropi. */
 const FANTASMAS_EC: RepescaRow[] = [
-  { id: 'a1', external_id: '5968413', fecha: '2026-07-02', created_at: '2026-07-02T15:52:01Z' },
-  { id: 'a2', external_id: '5985197', fecha: '2026-07-03', created_at: '2026-07-03T20:25:12Z' },
-  { id: 'a3', external_id: '5988261', fecha: '2026-07-03', created_at: '2026-07-04T02:07:02Z' },
-  { id: 'a4', external_id: '5991596', fecha: '2026-07-04', created_at: '2026-07-04T13:02:03Z' },
-  { id: 'a5', external_id: '5995294', fecha: '2026-07-04', created_at: '2026-07-04T18:17:06Z' },
-  { id: 'a6', external_id: '5997396', fecha: '2026-07-04', created_at: '2026-07-04T23:07:03Z' },
-  { id: 'a7', external_id: '5998320', fecha: '2026-07-04', created_at: '2026-07-05T01:07:03Z' },
-  { id: 'a8', external_id: '5998357', fecha: '2026-07-04', created_at: '2026-07-05T01:12:02Z' },
-  { id: 'a9', external_id: '5999542', fecha: '2026-07-04', created_at: '2026-07-05T03:32:03Z' },
-  { id: 'a10', external_id: '6001614', fecha: '2026-07-05', created_at: '2026-07-05T13:22:02Z' },
-  { id: 'a11', external_id: '6002104', fecha: '2026-07-05', created_at: '2026-07-05T14:17:03Z' },
+  { id: 'a1', estado: null, external_id: '5968413', fecha: '2026-07-02', created_at: '2026-07-02T15:52:01Z' },
+  { id: 'a2', estado: null, external_id: '5985197', fecha: '2026-07-03', created_at: '2026-07-03T20:25:12Z' },
+  { id: 'a3', estado: null, external_id: '5988261', fecha: '2026-07-03', created_at: '2026-07-04T02:07:02Z' },
+  { id: 'a4', estado: null, external_id: '5991596', fecha: '2026-07-04', created_at: '2026-07-04T13:02:03Z' },
+  { id: 'a5', estado: null, external_id: '5995294', fecha: '2026-07-04', created_at: '2026-07-04T18:17:06Z' },
+  { id: 'a6', estado: null, external_id: '5997396', fecha: '2026-07-04', created_at: '2026-07-04T23:07:03Z' },
+  { id: 'a7', estado: null, external_id: '5998320', fecha: '2026-07-04', created_at: '2026-07-05T01:07:03Z' },
+  { id: 'a8', estado: null, external_id: '5998357', fecha: '2026-07-04', created_at: '2026-07-05T01:12:02Z' },
+  { id: 'a9', estado: null, external_id: '5999542', fecha: '2026-07-04', created_at: '2026-07-05T03:32:03Z' },
+  { id: 'a10', estado: null, external_id: '6001614', fecha: '2026-07-05', created_at: '2026-07-05T13:22:02Z' },
+  { id: 'a11', estado: null, external_id: '6002104', fecha: '2026-07-05', created_at: '2026-07-05T14:17:03Z' },
 ];
 
 const barridoSano = (ids: string[], total: number) => ({
@@ -71,10 +71,10 @@ describe('planRepesca — elegir qué mes barrer', () => {
   it('toma el mes MÁS VIEJO primero y avisa cuántos quedan', () => {
     // Caso real de Colombia: rezagados desde abril hasta junio.
     const mezcla: RepescaRow[] = [
-      { id: 'c1', external_id: '78000001', fecha: '2026-06-20', created_at: '2026-06-20T10:00:00Z' },
-      { id: 'c2', external_id: '77000001', fecha: '2026-04-15', created_at: '2026-04-15T10:00:00Z' },
-      { id: 'c3', external_id: '77500001', fecha: '2026-05-02', created_at: '2026-05-02T10:00:00Z' },
-      { id: 'c4', external_id: '77000002', fecha: '2026-04-28', created_at: '2026-04-28T10:00:00Z' },
+      { id: 'c1', estado: null, external_id: '78000001', fecha: '2026-06-20', created_at: '2026-06-20T10:00:00Z' },
+      { id: 'c2', estado: null, external_id: '77000001', fecha: '2026-04-15', created_at: '2026-04-15T10:00:00Z' },
+      { id: 'c3', estado: null, external_id: '77500001', fecha: '2026-05-02', created_at: '2026-05-02T10:00:00Z' },
+      { id: 'c4', estado: null, external_id: '77000002', fecha: '2026-04-28', created_at: '2026-04-28T10:00:00Z' },
     ];
     const plan = planRepesca(mezcla, { ahoraMs: AHORA, minAgeMs: MIN_AGE });
     expect(plan!.yearMonth).toBe('2026-04');
@@ -85,17 +85,17 @@ describe('planRepesca — elegir qué mes barrer', () => {
 
   it('descarta lo que no se puede verificar en vez de arrastrarlo', () => {
     const basura: RepescaRow[] = [
-      { id: 'x1', external_id: null,      fecha: '2026-04-10', created_at: '2026-04-10T10:00:00Z' },
-      { id: 'x2', external_id: 'ABC-123', fecha: '2026-04-10', created_at: '2026-04-10T10:00:00Z' },
-      { id: 'x3', external_id: '77000009', fecha: null,        created_at: '2026-04-10T10:00:00Z' },
-      { id: 'x4', external_id: '77000010', fecha: '10/04/2026', created_at: '2026-04-10T10:00:00Z' },
+      { id: 'x1', estado: null, external_id: null,      fecha: '2026-04-10', created_at: '2026-04-10T10:00:00Z' },
+      { id: 'x2', estado: null, external_id: 'ABC-123', fecha: '2026-04-10', created_at: '2026-04-10T10:00:00Z' },
+      { id: 'x3', estado: null, external_id: '77000009', fecha: null,        created_at: '2026-04-10T10:00:00Z' },
+      { id: 'x4', estado: null, external_id: '77000010', fecha: '10/04/2026', created_at: '2026-04-10T10:00:00Z' },
     ];
     expect(planRepesca(basura, { ahoraMs: AHORA, minAgeMs: MIN_AGE })).toBeNull();
   });
 
   it('no toca pedidos recién dados de alta — puede ser lag del sync, no un fantasma', () => {
     const recien: RepescaRow[] = [
-      { id: 'r1', external_id: '6100000', fecha: '2026-06-01', created_at: '2026-08-05T22:00:00Z' },
+      { id: 'r1', estado: null, external_id: '6100000', fecha: '2026-06-01', created_at: '2026-08-05T22:00:00Z' },
     ];
     expect(planRepesca(recien, { ahoraMs: AHORA, minAgeMs: MIN_AGE })).toBeNull();
   });
