@@ -33,6 +33,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
+import { useWhatsAppSeguimiento } from '@/hooks/useWhatsAppSeguimiento';
 import { supabase } from '@/integrations/supabase/client';
 
 // Validador-direcciones: guard fire-once-per-order-per-session — mismo
@@ -106,6 +107,7 @@ export default function CrmCallView({
   const { openChat, waEnabled } = useWaChat();
   const recordContacto = useRecordGestion();
   const countryCode = activeStore?.country_code;
+  const abrirWhatsApp = useWhatsAppSeguimiento(countryCode);
   // Refresh on-demand desde la API de Dropi — la asesora no espera al cron
   // (que cada 5 min puede estar throttleado en EC). El realtime de orders
   // refresca el UI automáticamente cuando el upsert termina.
@@ -796,16 +798,20 @@ export default function CrmCallView({
                 {/* Hint de atajo: oculto en <sm (táctil, sin teclado). */}
                 <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">L</kbd>
               </a>
-              {waEnabled && (
-                <button
-                  type="button"
-                  onClick={() => void openChat({ phone: o.phone, name: o.nombre })}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
-                >
-                  <MessageSquare size={12} aria-hidden="true" /> WhatsApp
-                  <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
-                </button>
-              )}
+              {/* SIN gate de waEnabled (quedó en false para siempre al retirar
+                  el bot el 13-ago-2026 y este botón desapareció). Abre wa.me con
+                  el mensaje del pedido ya redactado. */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (waEnabled) { void openChat({ phone: o.phone, name: o.nombre }); return; }
+                  abrirWhatsApp(o);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl bg-gradient-to-br from-success/25 to-success/10 text-success border border-success/30 glow-success hover:brightness-110 transition-all duration-200"
+              >
+                <MessageSquare size={12} aria-hidden="true" /> WhatsApp
+                <kbd className="hidden sm:inline-block font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-md border border-current/30 bg-current/10 opacity-80" aria-hidden="true">W</kbd>
+              </button>
             </div>
 
             {/* Ciudad · producto · valor salen de la línea corrida de texto gris

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useOrders } from '@/contexts/OrderContext';
 import { useWaChat } from '@/contexts/WaChatContext';
+import { useWhatsAppSeguimiento } from '@/hooks/useWhatsAppSeguimiento';
 import { useStore } from '@/contexts/StoreContext';
 import { OrderData, formatPhone, getTrackingUrl, getWhatsAppPhone } from '@/lib/orderUtils';
 import { formatCOP } from '@/lib/utils';
@@ -55,6 +56,7 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
   const recordContacto = useRecordGestion();
   const { activeStore } = useStore();
   const countryCode = activeStore?.country_code;
+  const abrirWhatsApp = useWhatsAppSeguimiento(countryCode);
   // BUG B fix: persist by *order id*, not array index. When the queue
   // reorders or the operator returns from the carrier tab we keep showing
   // the same customer instead of jumping to a random one at that index.
@@ -135,8 +137,11 @@ export default function NovedadView({ items, stateKey = 'novedades:callOrderId' 
       // openChat ya registra el intento de contacto internamente.
       void openChat({ phone: o.phone, name: o.nombre });
     } else {
-      void recordContacto(o.phone, 'WHATSAPP', 'abrió WhatsApp');
-      window.open(`https://wa.me/${getWhatsAppPhone(o.phone, countryCode)}`, '_blank', 'noopener,noreferrer');
+      // Antes abría el chat VACÍO y la operadora retipeaba la novedad y la guía
+      // en cada pedido. `abrirWhatsApp` arma el mensaje desde la fase real del
+      // pedido (cita lo que reportó la transportadora y pide la dirección) y
+      // registra el contacto — por eso acá ya no se llama a recordContacto.
+      abrirWhatsApp(o);
     }
   };
 
