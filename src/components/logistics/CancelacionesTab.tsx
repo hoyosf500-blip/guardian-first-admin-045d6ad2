@@ -347,7 +347,9 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
   }
   if (s.status === 'error') {
     return <StatusCard tone="danger" icon={<ServerCrash size={22} />} title="No se pudo cargar"
-      body="Falló la consulta. Probá recargar; si sigue, revisá la conexión con Supabase." />;
+      body={s.diasSinLeer.length
+        ? `La consulta se cayó en ${s.diasSinLeer.length === 1 ? 'el día' : 'los días'} ${s.diasSinLeer.join(', ')}. Probá con un rango más corto.`
+        : 'Falló la consulta. Probá recargar; si sigue, revisá la conexión con Supabase.'} />;
   }
 
   const sinDatos = r.totalCancelados === 0;
@@ -361,6 +363,20 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
 
   return (
     <div className="space-y-5">
+      {/* Tramos que no se pudieron leer. Va ARRIBA y en rojo: un reporte al que
+          le faltan días y no lo dice se lee como si esos días no hubieran tenido
+          cancelaciones — cero nunca sustituye a "no se pudo medir". */}
+      {s.diasSinLeer.length > 0 && (
+        <div className="rounded-xl border border-danger/35 bg-danger/12 px-3.5 py-2.5">
+          <p className="text-xs font-semibold text-danger">
+            Faltan {s.diasSinLeer.length === 1 ? 'datos de un día' : `datos de ${s.diasSinLeer.length} tramos`}: {s.diasSinLeer.join(', ')}.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            La consulta se cayó ahí y lo que ves NO los incluye. Probá un rango más corto antes de sacar conclusiones.
+          </p>
+        </div>
+      )}
+
       <motion.div {...fadeUp(0)} className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs text-muted-foreground">
           Pedidos <span className="text-foreground font-semibold">creados</span> entre {filters.fromDate} y {filters.toDate}
