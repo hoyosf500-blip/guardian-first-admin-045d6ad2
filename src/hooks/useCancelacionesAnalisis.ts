@@ -112,9 +112,15 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
     const seq = ++seqRef.current;
     setLoading(true);
     try {
-      const rpc = (supabase.rpc as unknown as (
+      // ⛔ `.bind(supabase)` NO ES OPCIONAL. El cast es solo de tipos y no
+      // conserva el receptor: guardar `supabase.rpc` en una constante deja
+      // `this` en undefined y supabase-js tira "Cannot read properties of
+      // undefined (reading 'rest')". La invocación directa
+      // `(supabase.rpc as X)(...)` sí lo conserva — la diferencia está en
+      // guardarlo, no en el cast. Ya costó caro tres veces.
+      const rpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string, args: Record<string, unknown>,
-      ) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>);
+      ) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>;
 
       // ── Se consulta POR TRAMOS, no de una ──────────────────────────────
       // La RPC se cae por timeout en el rango por defecto (ver DIAS_POR_TRAMO).
