@@ -217,6 +217,18 @@ interface Rule {
   cuentaEnTasa?: boolean;
   /** Al menos uno de estos tokens (ya normalizados) presente. */
   any?: string[];
+  /**
+   * Al menos uno de estos tokens presente como PALABRA COMPLETA.
+   *
+   * Existe por un falso positivo caro: `'CARO'` como subcadena matchea dentro
+   * de todos los verbos en -caron. Medido, con el código real: "se
+   * equivo**caro**n de pedido", "me expli**caro**n mal el producto",
+   * "colo**caro**n mal la direccion" y "nunca lo bus**caro**n en la oficina"
+   * caían las cuatro en `precio_flete`. O sea que cuatro fallas NUESTRAS se
+   * reportaban como "el precio está caro" — y `precio_flete` es justamente la
+   * categoría que manda a cambiar el anuncio.
+   */
+  anyWord?: string[];
   /** Todos estos tokens presentes (combinable con `any`). */
   all?: string[];
 }
@@ -266,7 +278,12 @@ const RULES: Rule[] = [
     'NO LE VENDEMOS', 'CLIENTE PROBLEMA',
   ] },
   { categoria: 'sin_anticipo', culpa: 'filtro_interno', tipo: 'ahorro', any: [
-    'ANTICIPO', 'ADELANTO', 'NO CONSIGNO', 'NO HIZO EL ABONO', 'SIN ABONO',
+    // 'ADELANTO' suelto se sacó: "el cliente adelantó el viaje" y "se adelantó
+    // la entrega" caían en `sin_anticipo` → `filtro_interno` → **ahorro**. Un
+    // falso positivo acá no solo mal-clasifica: mueve plata de la columna
+    // "pérdida" a la columna "ahorro", que es la que dice que estuvo bien.
+    'ANTICIPO', 'NO ADELANTO', 'SIN ADELANTO', 'NO DIO EL ADELANTO',
+    'NO CONSIGNO', 'NO HIZO EL ABONO', 'SIN ABONO',
   ] },
 
   // ═══ NO ES PÉRDIDA — el pedido se RECREÓ, no se perdió ═══
@@ -295,8 +312,26 @@ const RULES: Rule[] = [
   { categoria: 'datos_malos', culpa: 'operacion', tipo: 'perdida_evitable', any: [
     'TELEFONO MALO', 'TELEFONO ERRADO', 'TELEFONO EQUIVOCADO', 'TELEFONO ERRONEO',
     'TELEFONO INVALIDO', 'TELEFONO NO EXISTE', 'NUMERO EQUIVOCADO', 'NUMERO ERRADO',
-    'NUMERO NO EXISTE', 'SIN TELEFONO', 'DATOS INCOMPLETOS', 'DATOS FALSOS',
-    'DIRECCION FALSA', 'NUMERO INVALIDO',
+    'NUMERO NO EXISTE', 'SIN TELEFONO', 'DATOS INCOMPLETOS', 'NUMERO INVALIDO',
+    // 'NUMERO INCORRECTO' es el texto libre más repetido de la muestra real de
+    // agosto y caía en `otro` aunque estaban ERRADO, EQUIVOCADO y ERRONEO.
+    'NUMERO INCORRECTO', 'TELEFONO INCORRECTO', 'CELULAR EQUIVOCADO',
+    // 'DATOS FALSOS' / 'DIRECCION FALSA' se fueron a `no_reconoce_pedido`: un
+    // dato FALSO no es un dato que nosotros cargamos mal, es un lead que no
+    // existe. Tenerlos acá le cobraba a la operación una pérdida de pauta.
+  ] },
+  // El número no tiene WhatsApp. La categoría existía desde el 22-ago pero SOLO
+  // se alcanzaba por la señal automática (`riesgoChat==='mudo'`): no había regla
+  // de texto, así que cuando la asesora lo escribía —y lo escribe: 3 de los 12
+  // `otro` de agosto son literalmente esto— caía en "sin clasificar".
+  //
+  // Culpa `trafico` y NO `operacion`: se decidió tratarlo igual que la señal
+  // automática, porque el desenlace es el mismo (nunca hubo cómo hablarle) y
+  // tener el mismo hecho en dos culpas distintas según quién lo detectó haría
+  // imposible leer la portada.
+  { categoria: 'sin_whatsapp', culpa: 'trafico', tipo: 'desconocido', any: [
+    'NO TIENE WHATSAPP', 'NO TIENE WHASTAPP', 'NO TIENE WHASAPP', 'NO TIENE WSP',
+    'SIN WHATSAPP', 'NO USA WHATSAPP', 'NO MANEJA WHATSAPP', 'NUMERO SIN WHATSAPP',
   ] },
   { categoria: 'sin_stock', culpa: 'operacion', tipo: 'perdida_evitable', any: [
     'SIN STOCK', 'AGOTAD', 'NO HAY INVENTARIO', 'SIN INVENTARIO', 'NO HAY UNIDADES',
@@ -304,17 +339,31 @@ const RULES: Rule[] = [
   ] },
 
   // ═══ PRECIO / OFERTA ═══
-  { categoria: 'precio_flete', culpa: 'precio_oferta', tipo: 'perdida_evitable', any: [
-    'MUY CARO', 'CARO', 'COSTOSO', 'PRECIO', 'EL FLETE', 'FLETE CARO', 'ENVIO CARO',
-    'NO ESPERABA ESE VALOR', 'PENSO QUE ERA GRATIS', 'CREIA QUE ERA GRATIS',
-    'MAS BARATO EN',
-  ] },
+  { categoria: 'precio_flete', culpa: 'precio_oferta', tipo: 'perdida_evitable',
+    // CARO/CARA/COSTOSO van por PALABRA COMPLETA: como subcadena, 'CARO'
+    // matcheaba dentro de todos los verbos en -caron ("se equivoCAROn de
+    // pedido", "me expliCAROn mal", "coloCAROn mal la direccion", "nunca lo
+    // busCAROn"). Cuatro fallas nuestras se reportaban como "está caro".
+    anyWord: ['CARO', 'CARA', 'CAROS', 'CARAS', 'COSTOSO', 'COSTOSA'],
+    any: [
+      'PRECIO', 'EL FLETE', 'FLETE CARO', 'ENVIO CARO',
+      'NO ESPERABA ESE VALOR', 'PENSO QUE ERA GRATIS', 'CREIA QUE ERA GRATIS',
+      'MAS BARATO EN',
+    ] },
   { categoria: 'compro_en_otro_lado', culpa: 'precio_oferta', tipo: 'perdida_evitable', any: [
     'YA LO COMPRO', 'LO COMPRO EN', 'LO CONSIGUIO', 'OTRA TIENDA', 'OTRA PAGINA',
     'YA LO TIENE', 'COMPRO EN OTRO',
   ] },
+  // La ÚNICA categoría que apunta al creativo, y era la que nunca corría: sus
+  // tokens exigían la frase exacta ('EL ANUNCIO DECIA', 'NO ERA LO QUE') y el
+  // vocabulario real no la usa así. Cuatro de los 12 `otro` de agosto son esto:
+  // "en la publicidad era otro modelo" · "quiere el modelo de la publicidad" ·
+  // "no le gusta el diseño, quería las gafas del anuncio" · "no ERAN lo que
+  // estaba en la publicidad" (este último fallaba por el PLURAL).
   { categoria: 'promesa_no_cumplida', culpa: 'precio_oferta', tipo: 'perdida_evitable', any: [
-    'NO ERA LO QUE', 'NO ES LO QUE ESPERABA', 'EL ANUNCIO DECIA', 'LA PUBLICIDAD DECIA',
+    'PUBLICIDAD', 'EL ANUNCIO', 'DEL ANUNCIO', 'OTRO MODELO', 'EL MODELO DE',
+    'NO ERA EL MODELO', 'NO ERAN LO QUE', 'NO ERA LO QUE', 'NO ES LO QUE ESPERABA',
+    'NO ES COMO LA FOTO', 'DISTINTO A LA FOTO', 'NO LE GUSTA EL DISENO',
     'PENSO QUE ERA OTRO', 'PENSABA QUE VENIA', 'CREYO QUE ERAN', 'OTRA CANTIDAD',
     'NO ES EL PRODUCTO',
   ] },
@@ -322,8 +371,15 @@ const RULES: Rule[] = [
   // ═══ TRÁFICO — el lead nunca fue real (plata de PAUTA, no de la operadora) ═══
   { categoria: 'no_reconoce_pedido', culpa: 'trafico', tipo: 'perdida_inevitable', any: [
     'NO HIZO EL PEDIDO', 'NO REALIZO EL PEDIDO', 'NO PIDIO', 'NUNCA ORDENO', 'NO ORDENO',
-    'NO RECONOCE', 'NO SABE DE QUE', 'FUE SIN QUERER', 'POR ERROR', 'SE EQUIVOCO AL',
+    'NO RECONOCE', 'NO SABE DE QUE', 'FUE SIN QUERER', 'SE EQUIVOCO AL',
     'NO CONOCE LA TIENDA', 'EL NINO', 'UN MENOR', 'SU HIJO LO PIDIO',
+    // Un dato FALSO lo puso el cliente, no nosotros: es plata de pauta quemada,
+    // no una falla de carga. Antes vivían en `datos_malos` (operación/evitable).
+    'DATOS FALSOS', 'DIRECCION FALSA', 'NOMBRE FALSO', 'PEDIDO FALSO',
+    // 'POR ERROR' a secas se sacó: atrapaba errores NUESTROS ("la guía se
+    // generó por error", "se canceló por error de la asesora") y se los cobraba
+    // a la pauta como inevitables.
+    'PIDIO POR ERROR', 'LO PIDIO POR ERROR', 'ORDENO POR ERROR',
   ] },
 
   // ═══ CLIENTE ═══
@@ -337,17 +393,14 @@ const RULES: Rule[] = [
     'SIN EFECTIVO', 'NO TIENE CON QUE PAGAR', 'NO LE ALCANZA', 'SIN FONDOS',
     'HASTA QUE LE PAGUEN', 'QUINCENA', 'ESPERA EL PAGO',
   ] },
-  { categoria: 'arrepentido', culpa: 'cliente', tipo: 'perdida_evitable', any: [
-    'CAMBIO DE OPINION', 'YA NO QUIERE', 'YA NO LO QUIERE', 'NO LO QUIERE', 'NO QUIERE',
-    'SE ARREPINTIO', 'ARREPINT', 'DESISTE', 'NO DESEA', 'NO LE INTERESA', 'MEJOR NO',
-    'LO PENSO MEJOR', 'CANCELA EL PEDIDO',
-  ] },
   { categoria: 'familiar_no_autoriza', culpa: 'cliente', tipo: 'perdida_inevitable', any: [
     'EL ESPOSO', 'LA ESPOSA', 'LA MAMA', 'EL PAPA', 'NO LO AUTORIZ', 'NO LO DEJAN',
     'NO LE DIERON PERMISO',
   ] },
   { categoria: 'fuerza_mayor', culpa: 'cliente', tipo: 'perdida_inevitable', any: [
-    'DE VIAJE', 'VIAJO', 'ESTA DE VIAJE', 'FALLECI', 'MURIO', 'ENFERM', 'HOSPITAL',
+    // 'VIAJE' a secas: el texto real "cancela por un viaje a Perú, vuelve en 2
+    // meses" no matcheaba 'DE VIAJE' y caía en `otro`.
+    'VIAJE', 'DE VIAJE', 'VIAJO', 'FALLECI', 'MURIO', 'ENFERM', 'HOSPITAL',
     'ACCIDENTE', 'EMERGENCIA', 'SE MUDO', 'CAMBIO DE CIUDAD', 'SE FUE DEL PAIS',
   ] },
 
@@ -356,6 +409,26 @@ const RULES: Rule[] = [
     'SIN COBERTURA', 'NO HAY COBERTURA', 'FUERA DE COBERTURA', 'NO CUBREN', 'NO LLEGAN A',
     'NO LLEGA A SU ZONA', 'ZONA ROJA', 'ORDEN PUBLICO', 'DIFICIL ACCESO',
     'NO HAY DESPACHO A', 'NO ENTREGAN EN',
+  ] },
+
+  // ⚠️ `arrepentido` va AL FINAL del bloque de cliente, después de
+  // familiar_no_autoriza / fuerza_mayor / sin_cobertura, y NO antes.
+  //
+  // Sus tokens ('NO QUIERE', 'NO DESEA', 'MEJOR NO') son la forma en que la
+  // asesora ARRANCA la frase; la causa real viene después. Estando primero se
+  // comía a las otras tres, y siempre para el mismo lado — de inevitable a
+  // EVITABLE, o sea reclamándole al equipo algo que no podía evitar. Medido
+  // con el código real:
+  //   "no quiere porque el esposo no la autoriza"   -> arrepentido (era familiar)
+  //   "cancela el pedido porque no llega a su zona" -> arrepentido (era cobertura)
+  //   "el cliente cancela el pedido, esta de viaje" -> arrepentido (era fuerza mayor)
+  //
+  // 'CANCELA EL PEDIDO' se borró del todo: no es un motivo, es lo que escribe
+  // todo el mundo antes de decir el motivo de verdad.
+  { categoria: 'arrepentido', culpa: 'cliente', tipo: 'perdida_evitable', any: [
+    'CAMBIO DE OPINION', 'YA NO QUIERE', 'YA NO LO QUIERE', 'NO LO QUIERE', 'NO QUIERE',
+    'ARREPINT', 'DESISTE', 'NO DESEA', 'NO LE INTERESA', 'MEJOR NO',
+    'LO PENSO MEJOR',
   ] },
 ];
 
@@ -372,10 +445,27 @@ function norm(text: string): string {
   return stripAccents(text).toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
+/** Escapa un token para meterlo en un RegExp de palabra completa. */
+const escapar = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 function ruleMatches(n: string, r: Rule): boolean {
+  // `all` es conjunción: todos los tokens tienen que estar.
   if (r.all && !r.all.every((t) => n.includes(t))) return false;
-  if (r.any && !r.any.some((t) => n.includes(t))) return false;
-  return !!(r.all || r.any);
+
+  // `any` y `anyWord` son ALTERNATIVAS ENTRE SÍ, no dos condiciones que se
+  // suman. Tratarlas como AND haría que una regla con las dos listas exigiera
+  // un token de cada una: `precio_flete` dejaría de matchear el texto "CARO" a
+  // secas, que es el caso más común y el que el comentario de `MIN_LEN`
+  // defiende explícitamente.
+  const hayAlternativas = !!(r.any?.length || r.anyWord?.length);
+  if (hayAlternativas) {
+    const porSubcadena = r.any?.some((t) => n.includes(t)) ?? false;
+    // Límite de palabra sobre el texto YA normalizado (mayúsculas, sin
+    // acentos): es fiable justamente porque no quedan diacríticos que lo rompan.
+    const porPalabra = r.anyWord?.some((t) => new RegExp(`\\b${escapar(t)}\\b`).test(n)) ?? false;
+    if (!porSubcadena && !porPalabra) return false;
+  }
+  return !!(r.all || hayAlternativas);
 }
 
 /**

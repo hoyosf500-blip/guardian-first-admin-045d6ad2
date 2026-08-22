@@ -337,3 +337,147 @@ describe('el que nunca usó el WhatsApp deja de ser "no sé"', () => {
     expect(cancelCategoriaLabel('sin_whatsapp').toLowerCase()).toContain('whatsapp');
   });
 });
+
+describe('los falsos positivos que inflaban las categorías equivocadas', () => {
+  // Todos estos casos se midieron ejecutando el código real antes de arreglarlo:
+  // no son hipótesis, son lo que la taxonomía devolvía.
+
+  describe('"CARO" dentro de los verbos en -caron', () => {
+    // `'CARO'` como subcadena matcheaba dentro de equivoCAROn, expliCAROn,
+    // coloCAROn, busCAROn. Cuatro fallas NUESTRAS se reportaban como "el precio
+    // está caro" — y `precio_flete` es la categoría que manda a cambiar el
+    // anuncio. Ahora va por palabra completa (`anyWord`).
+    for (const t of [
+      'se equivocaron de pedido',
+      'me explicaron mal el producto',
+      'colocaron mal la direccion',
+      'nunca lo buscaron en la oficina',
+      'ya lo sacaron de la bodega',
+    ]) {
+      it(`"${t}" NO es un problema de precio`, () => {
+        expect(classifyCancel(t).categoria).not.toBe('precio_flete');
+      });
+    }
+
+    it('pero "caro" de verdad sigue clasificando', () => {
+      // El caso que el comentario de MIN_LEN defiende: 'CARO' a secas es un
+      // motivo legítimo. Si esto se rompe, el arreglo se pasó de largo.
+      expect(classifyCancel('CARO').categoria).toBe('precio_flete');
+      expect(classifyCancel('esta caro.').categoria).toBe('precio_flete');
+      expect(classifyCancel('muy caro el flete').categoria).toBe('precio_flete');
+      expect(classifyCancel('me parece costoso').categoria).toBe('precio_flete');
+    });
+
+    it('`any` y `anyWord` son alternativas, no dos condiciones que se suman', () => {
+      // Con AND, una regla que tuviera las dos listas exigiría un token de cada
+      // una y 'CARO' solo dejaría de matchear.
+      expect(classifyCancel('CARO').categoria).toBe('precio_flete');       // solo anyWord
+      expect(classifyCancel('el precio').categoria).toBe('precio_flete');  // solo any
+    });
+  });
+
+  describe('el "no quiere" con el que arranca la frase tapaba la causa real', () => {
+    // `arrepentido` iba ANTES de familiar/fuerza_mayor/cobertura y se los comía.
+    // Siempre para el mismo lado: de inevitable a EVITABLE, o sea reclamándole
+    // al equipo algo que no podía evitar.
+    it('"no quiere porque el esposo no la autoriza" → no lo autorizan en la casa', () => {
+      const c = classifyCancel('no quiere porque el esposo no la autoriza');
+      expect(c.categoria).toBe('familiar_no_autoriza');
+      expect(c.tipo).toBe('perdida_inevitable');
+    });
+
+    it('"cancela el pedido porque no llega a su zona" → transportadora', () => {
+      const c = classifyCancel('cancela el pedido porque no llega a su zona');
+      expect(c.culpa).toBe('transportadora');
+      expect(c.tipo).toBe('perdida_inevitable');
+    });
+
+    it('"cancela el pedido, esta de viaje" → fuerza mayor', () => {
+      expect(classifyCancel('el cliente cancela el pedido, esta de viaje').categoria)
+        .toBe('fuerza_mayor');
+    });
+
+    it('un arrepentimiento sin otra causa SIGUE siendo arrepentimiento', () => {
+      expect(classifyCancel('se arrepintio').categoria).toBe('arrepentido');
+      expect(classifyCancel('cambio de opinion').categoria).toBe('arrepentido');
+    });
+  });
+
+  it('"adelanto" suelto movía plata de pérdida a AHORRO', () => {
+    // "el cliente adelantó el viaje" caía en sin_anticipo → filtro_interno →
+    // tipo 'ahorro', o sea la columna que dice que estuvo bien cancelar.
+    expect(classifyCancel('el cliente adelanto el viaje').tipo).not.toBe('ahorro');
+    // Y el anticipo de verdad sigue funcionando.
+    expect(classifyCancel('no dio el adelanto').categoria).toBe('sin_anticipo');
+    expect(classifyCancel('no pago el anticipo').categoria).toBe('sin_anticipo');
+  });
+
+  it('un dato FALSO es plata de pauta, no una falla de carga nuestra', () => {
+    // Vivían en `datos_malos` (operacion/evitable): le cobraban a la operación
+    // una pérdida que nunca fue suya.
+    for (const t of ['datos falsos', 'direccion falsa']) {
+      const c = classifyCancel(t);
+      expect(c.culpa, t).toBe('trafico');
+      expect(c.tipo, t).toBe('perdida_inevitable');
+    }
+    // Un dato mal CARGADO sigue siendo nuestro.
+    expect(classifyCancel('telefono errado').culpa).toBe('operacion');
+  });
+});
+
+describe('lo que las asesoras escriben y caía en "sin clasificar"', () => {
+  // De los 12 textos reales de agosto-EC que caían en `otro`, 8 pertenecían a
+  // categorías que YA existían. No era vocabulario exótico: eran reglas
+  // demasiado literales y una categoría sin regla de texto.
+
+  it('"NO TIENE WHATSAPP" tiene regla de texto, no solo señal automática', () => {
+    // La categoría existía desde el 22-ago pero SOLO se alcanzaba por
+    // `riesgoChat==='mudo'`. La asesora escribía el motivo que existe y el
+    // reporte lo mandaba a "Otro".
+    for (const t of ['NO TIENE WHATSAPP', 'NO TIENE WHATSAPP EL NUMERO', 'NO TIENE WHASTAPP']) {
+      expect(classifyCancel(t).categoria, t).toBe('sin_whatsapp');
+    }
+  });
+
+  it('el texto y la señal automática coinciden en culpa', () => {
+    // Si el mismo hecho cayera en dos culpas distintas según quién lo detectó,
+    // la portada "¿de qué lado está el problema?" sería ilegible.
+    const porTexto = classifyCancel('no tiene whatsapp');
+    const porSenal = classifyCancelRow({ motivo: null, origen: 'externo', riesgoChat: 'mudo' });
+    expect(porTexto.categoria).toBe(porSenal.categoria);
+    expect(porTexto.culpa).toBe(porSenal.culpa);
+  });
+
+  it('"la publicidad era otro modelo" apunta al anuncio', () => {
+    // `promesa_no_cumplida` es la ÚNICA categoría que manda a revisar el
+    // creativo, y era la que nunca corría: exigía la frase exacta
+    // 'EL ANUNCIO DECIA'. Cuatro de los 12 `otro` de agosto son esto.
+    for (const t of [
+      'Cancela por el modelo, en la publicidad era otro modelo',
+      'CANCELA, QUIERE EL MODELO DE LA PUBLICIDAD',
+      'no le gusta el diseno, queria las gafas del anuncio',
+      'ya habian pedido pero que no eran lo que estaba en la publicidad',
+    ]) {
+      const c = classifyCancel(t);
+      expect(c.categoria, t).toBe('promesa_no_cumplida');
+      expect(c.culpa, t).toBe('precio_oferta');
+    }
+  });
+
+  it('el PLURAL "no eran lo que" también matchea', () => {
+    // Fallaba por una sola letra contra 'NO ERA LO QUE'.
+    expect(classifyCancel('no eran lo que pedi').categoria).toBe('promesa_no_cumplida');
+    expect(classifyCancel('no era lo que pedi').categoria).toBe('promesa_no_cumplida');
+  });
+
+  it('"NUMERO INCORRECTO" es un dato malo', () => {
+    // El texto libre más repetido de la muestra real, y caía en `otro` aunque
+    // estaban ERRADO, EQUIVOCADO, ERRONEO e INVALIDO.
+    expect(classifyCancel('NUMERO INCORRECTO').categoria).toBe('datos_malos');
+  });
+
+  it('"un viaje a Peru" es fuerza mayor aunque no diga "de viaje"', () => {
+    expect(classifyCancel('Cliente cancela por un viaje a Peru, vuelve en 2 meses').categoria)
+      .toBe('fuerza_mayor');
+  });
+});
