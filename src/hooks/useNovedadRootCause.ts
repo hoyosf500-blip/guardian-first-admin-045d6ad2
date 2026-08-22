@@ -4,9 +4,19 @@ import { useStore } from '@/contexts/StoreContext';
 import { bogotaToday } from '@/lib/utils';
 import { bogotaDateNDaysAgo } from '@/lib/novedadGestion';
 import { summarizeRootCause, RootCauseRow, RootCauseSummary } from '@/lib/novedadRootCause';
-import { SeguimientoRange } from './useNovedadesSeguimiento';
 
-const RANGE_DAYS: Record<SeguimientoRange, number> = { today: 0, '7d': 6, '30d': 29 };
+/**
+ * Rango PROPIO, no el de la cola de novedades.
+ *
+ * La causa raíz topeaba en 30 días porque reusaba `SeguimientoRange`, y con
+ * ese tope la auditoría de julio en Ecuador —la que encontró Cuenca al 21%—
+ * NO se podía reproducir dentro de Guardian: había que salir a consultar la
+ * base a mano. Un análisis de devoluciones que no alcanza el mes pasado no
+ * sirve para decidir nada; las devoluciones tardan semanas en llegar.
+ */
+export type RootCauseRange = 'today' | '7d' | '30d' | '90d';
+
+const RANGE_DAYS: Record<RootCauseRange, number> = { today: 0, '7d': 6, '30d': 29, '90d': 89 };
 const ROW_CAP = 5000;
 
 const EMPTY: RootCauseSummary = {
@@ -14,7 +24,7 @@ const EMPTY: RootCauseSummary = {
   valorPerdidoTotal: 0, valorPerdidoEvitable: 0,
   conConfirmador: 0, sinConfirmador: 0,
   porReason: { semaforo: 0, direccion: 0, pickup: 0 },
-  porOperadora: [], porCategoria: [],
+  porOperadora: [], porCategoria: [], porCiudad: [],
 };
 
 /**
@@ -29,8 +39,8 @@ export type RootCauseStatus = 'ok' | 'forbidden' | 'not_ready' | 'error';
 export interface NovedadRootCauseData {
   loading: boolean;
   status: RootCauseStatus;
-  range: SeguimientoRange;
-  setRange: (r: SeguimientoRange) => void;
+  range: RootCauseRange;
+  setRange: (r: RootCauseRange) => void;
   refresh: () => void;
   summary: RootCauseSummary;
   /** true si la RPC llegó al tope de filas (resultado parcial). */
@@ -60,7 +70,7 @@ function mapRow(d: Record<string, unknown>): RootCauseRow {
  */
 export function useNovedadRootCause(): NovedadRootCauseData {
   const { activeStoreId } = useStore();
-  const [range, setRange] = useState<SeguimientoRange>('30d');
+  const [range, setRange] = useState<RootCauseRange>('30d');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<RootCauseStatus>('ok');
   const [summary, setSummary] = useState<RootCauseSummary>(EMPTY);

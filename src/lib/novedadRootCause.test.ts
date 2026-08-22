@@ -151,3 +151,65 @@ describe('summarizeRootCause — categorías de novedad', () => {
     expect(noresp?.evitables).toBe(0);
   });
 });
+
+describe('el sello al despachar manda sobre el semaforo vivo', () => {
+  // `validation_decision` es MUTABLE: 10 sitios la escriben y 2 la ponen en
+  // null al editar la direccion. Los pedidos MAS gestionados son justo los que
+  // perdieron la marca roja, asi que leyendo el valor vivo el semaforo se ve
+  // mejor de lo que es. Ver migracion 20260822180000.
+  it('usa el sello cuando existe, aunque el valor vivo ya se haya limpiado', () => {
+    expect(isEvitable({
+      validationDecision: null, addressKind: null,
+      validacionAlDespachar: 'red', addressKindAlDespachar: null,
+    })).toBe(true);
+  });
+
+  it('un sello sano gana sobre un valor vivo en rojo', () => {
+    expect(isEvitable({
+      validationDecision: 'red', addressKind: null,
+      validacionAlDespachar: 'green', addressKindAlDespachar: null,
+    })).toBe(false);
+  });
+
+  it('sin sello (historico) cae al valor vivo, que es lo unico que hay', () => {
+    expect(isEvitable({ validationDecision: 'yellow', addressKind: null })).toBe(true);
+    expect(isEvitable({ validationDecision: 'green', addressKind: null })).toBe(false);
+  });
+
+  it('un sello vacio es un valor sellado, no una ausencia', () => {
+    // '' quiere decir "se sello y no habia semaforo". Con `||` habria caido al
+    // valor vivo y habria vuelto a leer el dato mutable.
+    expect(isEvitable({
+      validationDecision: 'red', addressKind: null,
+      validacionAlDespachar: '', addressKindAlDespachar: '',
+    })).toBe(false);
+  });
+});
+
+describe('donde se devuelve, no por culpa de quien', () => {
+  const fila = (ciudad: string | null, valor: number, vd: string | null = null) => ({
+    orderId: `o-${ciudad}-${valor}`, novedad: null, validationDecision: vd,
+    addressKind: null, valor, transportadora: null, ciudad,
+    confirmerId: null, confirmerName: null, tieneNovedad: false,
+  });
+
+  it('agrupa por ciudad y ordena por cantidad', () => {
+    const r = summarizeRootCause([
+      fila('CUENCA', 10), fila('CUENCA', 20), fila('CUENCA', 30, 'red'),
+      fila('QUITO', 40),
+    ]);
+    expect(r.porCiudad[0].ciudad).toBe('CUENCA');
+    expect(r.porCiudad[0].devoluciones).toBe(3);
+    expect(r.porCiudad[0].valorPerdido).toBe(60);
+    expect(r.porCiudad[0].evitables).toBe(1);
+    expect(r.porCiudad[1].ciudad).toBe('QUITO');
+  });
+
+  it('los que no tienen ciudad van a un bucket VISIBLE, no se esconden', () => {
+    // Escondidos, la suma de la tabla no cuadraria con el total de arriba.
+    const r = summarizeRootCause([fila(null, 5), fila('  ', 5), fila('LOJA', 5)]);
+    const suma = r.porCiudad.reduce((n, c) => n + c.devoluciones, 0);
+    expect(suma).toBe(r.totalDevoluciones);
+    expect(r.porCiudad.map(c => c.ciudad)).toContain('Sin ciudad');
+  });
+});

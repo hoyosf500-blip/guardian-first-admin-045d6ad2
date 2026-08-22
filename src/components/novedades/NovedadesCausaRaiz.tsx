@@ -1,5 +1,4 @@
-import { useNovedadRootCause } from '@/hooks/useNovedadRootCause';
-import { SeguimientoRange } from '@/hooks/useNovedadesSeguimiento';
+import { useNovedadRootCause, type RootCauseRange } from '@/hooks/useNovedadRootCause';
 import { CULPA_LABEL, Culpa } from '@/lib/novedadTaxonomy';
 import { EvitableReason } from '@/lib/novedadRootCause';
 import { Stat } from '@/components/novedades/Stat';
@@ -11,13 +10,18 @@ import { formatCOP } from '@/lib/utils';
 import { SEMANTIC_COLORS } from '@/components/logistics/charts/chartTokens';
 import { motion } from 'framer-motion';
 import {
-  RefreshCw, TriangleAlert, Target, DollarSign, Users, Lock, Wrench, ServerCrash,
+  RefreshCw, TriangleAlert, Target, DollarSign, Users, Lock, Wrench, ServerCrash, MapPin,
 } from 'lucide-react';
 
-const RANGES: { key: SeguimientoRange; label: string }[] = [
+// 90 días: una devolución tarda semanas en llegar, así que con el tope de 30
+// el mes pasado —el único ya cerrado— quedaba afuera y este análisis no podía
+// contestar nada. La auditoría de julio en Ecuador hubo que hacerla por fuera
+// de Guardian por exactamente esto.
+const RANGES: { key: RootCauseRange; label: string }[] = [
   { key: 'today', label: 'Hoy' },
   { key: '7d', label: '7 días' },
   { key: '30d', label: '30 días' },
+  { key: '90d', label: '90 días' },
 ];
 
 const CULPA_COLOR: Record<Culpa, string> = {
@@ -71,6 +75,8 @@ export default function NovedadesCausaRaiz() {
   const maxReason = Math.max(1, ...REASON_ORDER.map((r) => summary.porReason[r]));
   const topCategorias = summary.porCategoria.slice(0, 8);
   const maxCat = topCategorias[0]?.devoluciones || 1;
+  const topCiudades = summary.porCiudad.slice(0, 8);
+  const maxCiu = topCiudades[0]?.devoluciones || 1;
 
   return (
     <div className="space-y-5">
@@ -204,6 +210,30 @@ export default function NovedadesCausaRaiz() {
                         color={CULPA_COLOR[c.culpa]}
                         dotTitle={CULPA_LABEL[c.culpa]}
                         pct={(c.devoluciones / maxCat) * 100}
+                        right={
+                          <span className="font-bold text-muted-foreground">
+                            {c.devoluciones}
+                            {c.evitables > 0 && <span className="ml-1.5 text-danger">· {c.evitables} evit</span>}
+                          </span>
+                        }
+                      />
+                    ))}
+                  </ul>
+                </NovCard>
+
+                {/* Dónde se devuelven. NO es culpa de nadie del equipo: una
+                    ciudad que devuelve el doble es cobertura, transportadora o
+                    dirección, y cada una se arregla distinto. En julio-EC
+                    Cuenca estaba al 21% y no se veía en ninguna pantalla. */}
+                <NovCard title="Ciudades donde más se devuelve" icon={MapPin} iconClass="text-muted-foreground">
+                  <ul className="space-y-1">
+                    {topCiudades.map((c, i) => (
+                      <MetricBar
+                        key={c.ciudad}
+                        rank={i + 1}
+                        label={c.ciudad}
+                        color={SEMANTIC_COLORS.info}
+                        pct={(c.devoluciones / maxCiu) * 100}
                         right={
                           <span className="font-bold text-muted-foreground">
                             {c.devoluciones}

@@ -24,6 +24,17 @@ export interface RootCauseRow {
   novedad: string | null;
   validationDecision: string | null;
   addressKind: string | null;
+  /**
+   * El semáforo CONGELADO al despachar (`orders.validacion_al_despachar`).
+   *
+   * `validationDecision` es mutable: se pisa al editar la dirección, y los
+   * pedidos MÁS gestionados son justo los que perdieron la marca roja — o sea
+   * que leyéndola se ve un semáforo mejor del que es. Cuando el sello está, se
+   * usa el sello. Ver la migración 20260822180000; el histórico anterior queda
+   * sin sello a propósito y cae al valor mutable, que es lo único que hay.
+   */
+  validacionAlDespachar?: string | null;
+  addressKindAlDespachar?: string | null;
   valor: number | null;
   transportadora: string | null;
   ciudad: string | null;
@@ -43,10 +54,13 @@ const norm = (s: string | null | undefined): string => (s || '').trim().toLowerC
 
 /** Motivos por los que una devolución se considera evitable (puede haber varios). */
 export function evitableReasons(
-  row: Pick<RootCauseRow, 'validationDecision' | 'addressKind'>,
+  row: Pick<RootCauseRow, 'validationDecision' | 'addressKind'
+    | 'validacionAlDespachar' | 'addressKindAlDespachar'>,
 ): EvitableReason[] {
-  const vd = norm(row.validationDecision);
-  const ak = norm(row.addressKind);
+  // El sello manda sobre el valor vivo. `??` y no `||`: un sello vacío ('') es
+  // un valor sellado, no una ausencia.
+  const vd = norm(row.validacionAlDespachar ?? row.validationDecision);
+  const ak = norm(row.addressKindAlDespachar ?? row.addressKind);
   const reasons: EvitableReason[] = [];
   if (vd === PICKUP || ak === PICKUP) reasons.push('pickup');
   if (SEMAFORO_RISK.has(vd)) reasons.push('semaforo');
@@ -55,7 +69,8 @@ export function evitableReasons(
 }
 
 export function isEvitable(
-  row: Pick<RootCauseRow, 'validationDecision' | 'addressKind'>,
+  row: Pick<RootCauseRow, 'validationDecision' | 'addressKind'
+    | 'validacionAlDespachar' | 'addressKindAlDespachar'>,
 ): boolean {
   return evitableReasons(row).length > 0;
 }
@@ -68,6 +83,13 @@ export interface OperatorRootCause {
   valorPerdido: number;
   valorEvitable: number;
   pctEvitable: number | null;
+}
+
+export interface CiudadRootCause {
+  ciudad: string;
+  devoluciones: number;
+  evitables: number;
+  valorPerdido: number;
 }
 
 export interface CategoriaRootCause {
@@ -89,6 +111,16 @@ export interface RootCauseSummary {
   porReason: Record<EvitableReason, number>;
   porOperadora: OperatorRootCause[];
   porCategoria: CategoriaRootCause[];
+  /**
+   * Dónde se devuelven, no por culpa de quién.
+   *
+   * La auditoría de julio en Ecuador encontró Cuenca al 21% de devolución
+   * contra el promedio de la operación, y ese hallazgo no se veía en ninguna
+   * pantalla: la causa raíz agrupaba por operadora y por categoría, nunca por
+   * ciudad. Una ciudad que devuelve el doble no es culpa de nadie del equipo —
+   * es cobertura, transportadora o dirección, y se arregla distinto.
+   */
+  porCiudad: CiudadRootCause[];
 }
 
 const NO_CONFIRMADOR = 'Carga directa / sin confirmar';
@@ -99,6 +131,7 @@ export function summarizeRootCause(rows: RootCauseRow[]): RootCauseSummary {
   const porReason: Record<EvitableReason, number> = { semaforo: 0, direccion: 0, pickup: 0 };
   const opMap = new Map<string, OperatorRootCause>();
   const catMap = new Map<string, CategoriaRootCause>();
+  const ciuMap = new Map<string, CiudadRootCause>();
 
   let evitables = 0;
   let valorPerdidoTotal = 0;
@@ -143,6 +176,19 @@ export function summarizeRootCause(rows: RootCauseRow[]): RootCauseSummary {
     cat.devoluciones += 1;
     cat.valorPerdido += v;
     if (evit) cat.evitables += 1;
+
+    // Por ciudad. Sin ciudad va a su propio bucket VISIBLE: meterlo en una
+    // ciudad real la ensuciaría, y esconderlo haría que los totales de la
+    // tabla no cuadren con el total de arriba.
+    const ciudad = (r.ciudad || '').trim() || 'Sin ciudad';
+    let ciu = ciuMap.get(ciudad);
+    if (!ciu) {
+      ciu = { ciudad, devoluciones: 0, evitables: 0, valorPerdido: 0 };
+      ciuMap.set(ciudad, ciu);
+    }
+    ciu.devoluciones += 1;
+    ciu.valorPerdido += v;
+    if (evit) ciu.evitables += 1;
   }
 
   const porOperadora = Array.from(opMap.values())
@@ -151,6 +197,10 @@ export function summarizeRootCause(rows: RootCauseRow[]): RootCauseSummary {
 
   const porCategoria = Array.from(catMap.values())
     .sort((a, b) => b.devoluciones - a.devoluciones || b.evitables - a.evitables);
+
+  const porCiudad = Array.from(ciuMap.values())
+    .sort((a, b) => b.devoluciones - a.devoluciones || b.valorPerdido - a.valorPerdido
+      || a.ciudad.localeCompare(b.ciudad));
 
   const total = rows.length;
   return {
@@ -164,5 +214,6 @@ export function summarizeRootCause(rows: RootCauseRow[]): RootCauseSummary {
     porReason,
     porOperadora,
     porCategoria,
+    porCiudad,
   };
 }
