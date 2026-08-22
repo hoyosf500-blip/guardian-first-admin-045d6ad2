@@ -4,10 +4,11 @@ import { toast } from 'sonner';
 import {
   Package, Tag, Truck, MapPin, AlertTriangle, CheckCircle, RotateCcw,
   DollarSign, Layers, ExternalLink, RefreshCw, MessageCircle, Phone,
-  ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2,
+  ChevronUp, ChevronDown, ChevronLeft, Maximize2, CheckCircle2, Building2,
 } from 'lucide-react';
 import { OrderData, getTrackingUrl, getWhatsAppPhone, calcBusinessDays, parseDate } from '@/lib/orderUtils';
 import { classifySegEstado, type SegStatusKey } from '@/lib/segStatus';
+import { estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
 import { metodosRapidosParaEstado, esContactoEfectivo, faseConGestion } from '@/lib/segMetodosEstado';
 import { haceCuanto, type GestionDelPedido } from '@/lib/gestionPorPedido';
 import { FASES_VIVAS, HORAS_DETENIDO, horasSinMovimiento } from '@/lib/segPulso';
@@ -236,7 +237,7 @@ function freshnessDot(o: OrderData): { cls: string; ring: string; title: string;
   return { cls: 'bg-danger glow-danger', ring: 'ring-danger/25', title: `Sin moverse hace ${Math.floor(h / 24)} días` };
 }
 
-const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string }) {
+const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef, onOpen, touchedTodayPhones, gestionEquipo, nombreDe, avisoMs }: { o: OrderData; countryCode?: string | null; tone?: Tone; selected?: boolean; cardRef?: React.Ref<HTMLDivElement>; onOpen?: () => void; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisoMs?: number | null }) {
   const navigate = useNavigate();
   const { refresh, isRefreshing } = useRefreshOrder();
   const { activeStoreId } = useStore();
@@ -310,6 +311,22 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
   const pConfig = PRIORITY_CONFIG[pLevel];
   const fresh = freshnessDot(o);
   const waPhone = o.phone ? getWhatsAppPhone(o.phone, countryCode) : '';
+
+  // El protocolo de la agencia, visible en el TABLERO (no solo en la Lista, que
+  // es donde vivía y casi nadie abre). Un aviso cuenta solo si es POSTERIOR a
+  // la llegada del paquete: los touchpoints matchean por teléfono, así que sin
+  // esa regla el aviso de un pedido anterior del mismo cliente saca a éste de
+  // la cola sin que nadie lo haya llamado. Sin reloj de llegada no se dibuja
+  // nada — no saber no es "sin avisar".
+  const avisoEstado = classifySegEstado(o.estado || '') === 'oficina'
+    ? estadoAvisoAgencia({
+        avisoMs,
+        llegadaMs: o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null,
+      })
+    : null;
+  const avisoDias = avisoEstado === 'avisado'
+    ? diasDesdeAviso({ avisoMs, llegadaMs: o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null }, Date.now())
+    : null;
 
   return (
     <div
@@ -406,6 +423,24 @@ const SegCard = memo(function SegCard({ o, countryCode, tone, selected, cardRef,
           </div>
         );
       })()}
+
+      {/* El cliente sabe o no sabe que su paquete lo espera en la agencia.
+          Es la falla más cara medida (76 devoluciones en un mes en EC, $2.316)
+          y hasta hoy el dato estaba guardado y no se mostraba en ninguna parte. */}
+      {avisoEstado === 'sin_avisar' && (
+        <div className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-danger/15 text-danger border-danger/35">
+          <Building2 size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">El cliente no sabe que llegó</span>
+        </div>
+      )}
+      {avisoEstado === 'avisado' && (
+        <div className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-lg border bg-success/15 text-success border-success/35">
+          <Building2 size={10} aria-hidden="true" className="shrink-0" />
+          <span className="truncate">
+            {avisoDias === null || avisoDias === 0 ? 'Avisado hoy' : avisoDias === 1 ? 'Avisado ayer' : `Avisado hace ${avisoDias} días`}
+          </span>
+        </div>
+      )}
 
       {/* Identidad: el nombre es lo ÚNICO que la asesora necesita para saber a
           quién llama, así que sube de tamaño y peso. El externalId baja a
@@ -634,7 +669,7 @@ function ColumnBody({ colKey, scrollRefs, children }: {
  * (botones + teclado) que recorre SOLO los pedidos de esa columna. Pensado para
  * que la operadora se concentre en una fase (ej. "En Reparto") y vaya uno por uno.
  */
-function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; onBack: () => void }) {
+function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, nombreDe, avisosAgencia, onBack }: { col: ColumnDef & { orders: OrderData[] }; countryCode?: string | null; touchedTodayPhones?: Set<string>; gestionEquipo?: Map<string, GestionDelPedido>; nombreDe?: (id?: string | null) => string; avisosAgencia?: Map<string, number>; onBack: () => void }) {
   const navigate = useNavigate();
   const { activeStoreId } = useStore();
   const t = TONE[col.tone];
@@ -780,6 +815,7 @@ function FocusedColumn({ col, countryCode, touchedTodayPhones, gestionEquipo, no
                 touchedTodayPhones={touchedTodayPhones}
                 gestionEquipo={gestionEquipo}
                 nombreDe={nombreDe}
+                avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                 onOpen={() => { focusByIndex(i); if (o.externalId) navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } }); }}
               />
             ))}
@@ -820,6 +856,15 @@ function saveBoardScroll(m: Map<string, number>): void {
 }
 
 interface SegBoardProps {
+  /**
+   * `phone → ms` del último «Avisé: en oficina» (de `useSegTouchIndex`).
+   *
+   * El chip de agencia vivía SOLO en la vista Lista y el tablero es la vista
+   * por defecto: la asesora no lo veía nunca. Medido el 22-ago-2026 en una
+   * tienda de Ecuador: 23 de 23 paquetes en agencia sin avisar, y el aviso
+   * invisible.
+   */
+  avisosAgencia?: Map<string, number>;
   data: OrderData[];
   countryCode?: string | null;
   /** Filtro de la fila "resumen por estado" — si está, muestra solo esa columna. */
@@ -845,7 +890,7 @@ interface SegBoardProps {
   celebratory?: boolean;
 }
 
-export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
+export default function SegBoard({ data, countryCode, statusFilter, touchedTodayPhones, gestionEquipo, avisosAgencia, celebratory = false, emptyTitle = 'Sin pedidos en seguimiento', emptyDesc = 'Los pedidos sincronizados desde Dropi aparecerán aquí, en columnas por estado.' }: SegBoardProps) {
   // Nombre de la asesora que gestionó: cache módulo-level compartido, una sola
   // lectura de profiles por sesión (no una por tarjeta).
   const { nameOf: nombreDe } = useOperatorNames();
@@ -993,7 +1038,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
     // aunque el tablero las tenga plegadas.
     const focusedCol = todasLasColumnas.find((c) => c.key === focusedKey);
     if (focusedCol) {
-      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} onBack={() => setFocusedKey(null)} />;
+      return <FocusedColumn key={focusedKey} col={focusedCol} countryCode={countryCode} touchedTodayPhones={touchedTodayPhones} gestionEquipo={gestionEquipo} nombreDe={nombreDe} avisosAgencia={avisosAgencia} onBack={() => setFocusedKey(null)} />;
     }
   }
 
@@ -1171,6 +1216,7 @@ export default function SegBoard({ data, countryCode, statusFilter, touchedToday
                   touchedTodayPhones={touchedTodayPhones}
                   gestionEquipo={gestionEquipo}
                   nombreDe={nombreDe}
+                  avisoMs={o.phone ? avisosAgencia?.get(o.phone) ?? null : null}
                   onOpen={() => o.externalId && navigate(`/pedido/${o.externalId}`, { state: { siblingIds, storeId: activeStoreId } })}
                 />
               ))}

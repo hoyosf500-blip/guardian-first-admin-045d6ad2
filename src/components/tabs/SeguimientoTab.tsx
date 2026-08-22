@@ -1463,6 +1463,7 @@ export default function SeguimientoTab() {
 
       {viewMode === 'board' ? (
         <SegBoard
+            avisosAgencia={avisosAgencia}
           data={boardData}
           countryCode={activeStore?.country_code}
           statusFilter={statusFilter}
