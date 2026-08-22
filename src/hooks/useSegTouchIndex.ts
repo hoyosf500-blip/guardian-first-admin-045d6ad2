@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isSegCloser } from '@/lib/segDailyReview';
+import { esAvisoAgencia } from '@/lib/avisoAgencia';
 
 /**
  * Ventana de búsqueda de cierres. Cubre con holgura la ventana de datos de
@@ -10,7 +11,20 @@ import { isSegCloser } from '@/lib/segDailyReview';
 const CLOSER_LOOKBACK_DAYS = 90;
 
 /**
- * Mapa `phone → timestamp(ms)` del ÚLTIMO cierre (Resuelto/Devolución) registrado
+ * Índice de lo que el equipo YA hizo en Seguimiento, leído de `touchpoints`.
+ *
+ * Devuelve DOS mapas `phone → timestamp(ms)`, sacados del MISMO SELECT:
+ *
+ *  - `closed`        → último cierre (Resuelto / Devolución).
+ *  - `avisosAgencia` → último «Avisé: en oficina». Ese touchpoint se escribía
+ *    desde hace meses y **no lo leía nadie**: el tablero no distinguía al
+ *    cliente que ya sabe que su paquete llegó del que no. Es la diferencia
+ *    entre una entrega y una devolución (76 devoluciones en un mes en EC).
+ *    Cuándo cuenta un aviso lo decide `estadoAvisoAgencia` — un aviso ANTERIOR
+ *    a la llegada del paquete es de otro pedido del mismo cliente.
+ *
+ * ── Sobre `closed` ──────────────────────────────────────────────────────────
+ * Es el ÚLTIMO cierre (Resuelto/Devolución) registrado
  * por CUALQUIER operadora de la tienda. Sirve para sacar de Seguimiento, de forma
  * permanente, los pedidos que el equipo YA resolvió o devolvió — "si ya se
  * entregó o se devolvió, no vuelve a salir" (el panel solo debe tener pedidos
@@ -26,14 +40,23 @@ const CLOSER_LOOKBACK_DAYS = 90;
  * store_switch_stale_loaders). Realtime para reflejar cierres de otras operadoras
  * en vivo, sin recargar todo.
  */
-export function useSegClosedPhones(storeId: string | null): Map<string, number> {
-  const [closed, setClosed] = useState<Map<string, number>>(new Map());
+export interface SegTouchIndex {
+  /** phone -> ms del ultimo cierre (Resuelto / Devolucion). */
+  closed: Map<string, number>;
+  /** phone -> ms del ultimo aviso \"Avise: en oficina\". */
+  avisosAgencia: Map<string, number>;
+}
+
+const VACIO: SegTouchIndex = { closed: new Map(), avisosAgencia: new Map() };
+
+export function useSegTouchIndex(storeId: string | null): SegTouchIndex {
+  const [idx, setIdx] = useState<SegTouchIndex>(VACIO);
 
   // Carga inicial + reset al cambiar de tienda. La bandera `cancelled` evita que
   // una query lenta de la tienda A pise el estado (ya en blanco) de la tienda B
   // si la operadora cambió de tienda antes de que A resolviera (race multi-tienda).
   useEffect(() => {
-    setClosed(new Map());
+    setIdx(VACIO);
     if (!storeId) return;
     let cancelled = false;
     void (async () => {
@@ -64,21 +87,28 @@ export function useSegClosedPhones(storeId: string | null): Map<string, number> 
           // Error a mitad de la paginación: nos quedamos con lo ya leído (las
           // páginas más recientes) — un mapa parcial oculta MENOS de lo debido,
           // nunca de más, y el realtime completa los cierres que sigan llegando.
-          console.warn('[useSegClosedPhones] error paginando touchpoints SEG:', error);
+          console.warn('[useSegTouchIndex] error paginando touchpoints SEG:', error);
           break;
         }
         all.push(...(data as Tp[]));
         if (data.length < PAGE_SIZE || all.length >= HARD_LIMIT) break;
         fromIdx += PAGE_SIZE;
       }
-      const map = new Map<string, number>();
+      // Una sola pasada sobre las mismas filas: los cierres y los avisos de
+      // agencia salen del mismo SELECT. Leer el aviso NO cuesta una consulta.
+      const closed = new Map<string, number>();
+      const avisosAgencia = new Map<string, number>();
+      const ultimo = (m: Map<string, number>, phone: string, ms: number) => {
+        const prev = m.get(phone);
+        if (prev === undefined || ms > prev) m.set(phone, ms);
+      };
       for (const t of all) {
-        if (!t.phone || !isSegCloser(t.action)) continue;
+        if (!t.phone) continue;
         const ms = new Date(t.created_at).getTime();
-        const prev = map.get(t.phone);
-        if (prev === undefined || ms > prev) map.set(t.phone, ms);
+        if (isSegCloser(t.action)) ultimo(closed, t.phone, ms);
+        else if (esAvisoAgencia(t.action)) ultimo(avisosAgencia, t.phone, ms);
       }
-      if (!cancelled) setClosed(map);
+      if (!cancelled) setIdx({ closed, avisosAgencia });
     })();
     return () => { cancelled = true; };
   }, [storeId]);
@@ -99,14 +129,18 @@ export function useSegClosedPhones(storeId: string | null): Map<string, number> 
         (payload) => {
           const row = payload.new as { phone?: string; action?: string; store_id?: string; created_at?: string };
           if (row.store_id !== storeId) return;
-          if (!row.phone || !row.action || !isSegCloser(row.action)) return;
+          if (!row.phone || !row.action) return;
+          const esCierre = isSegCloser(row.action);
+          const esAviso = !esCierre && esAvisoAgencia(row.action);
+          if (!esCierre && !esAviso) return;
           const ms = row.created_at ? new Date(row.created_at).getTime() : Date.now();
-          setClosed(prev => {
-            const cur = prev.get(row.phone!);
+          setIdx(prev => {
+            const clave = esCierre ? 'closed' : 'avisosAgencia';
+            const cur = prev[clave].get(row.phone!);
             if (cur !== undefined && cur >= ms) return prev;
-            const next = new Map(prev);
+            const next = new Map(prev[clave]);
             next.set(row.phone!, ms);
-            return next;
+            return { ...prev, [clave]: next };
           });
         },
       )
@@ -114,5 +148,5 @@ export function useSegClosedPhones(storeId: string | null): Map<string, number> 
     return () => { void supabase.removeChannel(channel); };
   }, [storeId]);
 
-  return closed;
+  return idx;
 }

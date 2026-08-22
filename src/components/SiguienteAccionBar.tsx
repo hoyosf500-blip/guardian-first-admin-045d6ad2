@@ -5,6 +5,7 @@ import { useOrders } from '@/contexts/OrderContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { siguienteAccion, type AccionKey } from '@/lib/siguienteAccion';
+import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { cn } from '@/lib/utils';
 
 /**
@@ -51,7 +52,7 @@ const TONO = {
 
 export default function SiguienteAccionBar() {
   const { workQueue, segData, segLoaded, novedadesQueue, loadSegData } = useOrders();
-  const { isManagerOfActive } = useStore();
+  const { isManagerOfActive, activeStoreId } = useStore();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -73,9 +74,15 @@ export default function SiguienteAccionBar() {
   // componente vive bajo OrderProvider y se re-renderiza con cada cambio del
   // context (contadores, sets de cobertura, cada push de realtime). Sin memo,
   // recorrería miles de pedidos contra los predicados SLA en cada render.
+  // El aviso de agencia («Avisé: en oficina») sale del MISMO índice de
+  // touchpoints que ya usa el tablero: sin él, la barra manda a avisar a gente
+  // a la que el equipo ya avisó, y una barra que pide trabajo hecho se aprende
+  // a ignorar.
+  const { avisosAgencia } = useSegTouchIndex(activeStoreId);
+
   const accion = useMemo(
-    () => siguienteAccion({ workQueue, novedadesQueue, segData, segCargado: segLoaded }),
-    [workQueue, novedadesQueue, segData, segLoaded],
+    () => siguienteAccion({ workQueue, novedadesQueue, segData, segCargado: segLoaded, avisosAgencia }),
+    [workQueue, novedadesQueue, segData, segLoaded, avisosAgencia],
   );
 
   // Todavía no se leyó la cola: no se dibuja NADA. Un "Todo al día" en verde

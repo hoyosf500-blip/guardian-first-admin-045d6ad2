@@ -57,6 +57,7 @@
 
 import type { OrderData } from './orderUtils';
 import { findSegList, esAccionable, type SegListSlug } from './segLists';
+import { estadoAvisoAgencia } from './avisoAgencia';
 
 export type AccionKey =
   | 'novedades'
@@ -86,6 +87,12 @@ export interface SiguienteAccion {
   ruta: string;
   /** Urgencia, para el tono visual. */
   tono: 'urgente' | 'atencion' | 'normal' | 'listo';
+}
+
+/** ¿Este pedido cae en esa lista SLA? Slug renombrado → false, nunca excepción. */
+function matchLista(o: OrderData, slug: SegListSlug): boolean {
+  const def = findSegList(slug);
+  return def ? def.matches(o) : false;
 }
 
 /** Cuenta los pedidos de `segData` que caen en una lista SLA por su slug. */
@@ -222,6 +229,15 @@ export interface SiguienteAccionInput {
    * Default `true` para no cambiar los call-sites que ya pasan datos leídos.
    */
   segCargado?: boolean;
+  /**
+   * `phone → ms` del último «Avisé: en oficina» (de `useSegTouchIndex`).
+   *
+   * Cuando viene, el escalón de aviso cuenta SOLO a los clientes que todavía no
+   * saben que su paquete llegó. Una barra que pide avisar a 20 cuando a 18 ya
+   * se les avisó enseña a ignorarla, y ese es el modo en que una barra de
+   * prioridad se muere. Ausente (default) = se cuenta todo, como antes.
+   */
+  avisosAgencia?: Map<string, number>;
 }
 
 /**
@@ -230,7 +246,7 @@ export interface SiguienteAccionInput {
  * más cómoda, y la más cómoda nunca es la que vence.
  */
 export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
-  const { workQueue, novedadesQueue, segData, segCargado = true } = input;
+  const { workQueue, novedadesQueue, segData, segCargado = true, avisosAgencia } = input;
 
   // ── 1. Novedades ──────────────────────────────────────────────────
   const novedades = novedadesQueue.length;
@@ -252,7 +268,19 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   // transportadora lo devuelva. Los que ya cruzaron los 5 días mandan sobre los
   // de 2 aunque sean menos: son los que se pierden esta semana.
   const agenciaUrge = segCargado ? contarLista(segData, 'agencia_5d') : 0;
-  const agenciaAviso = segCargado ? contarLista(segData, 'agencia_2d') : 0;
+  // El tramo de 5 días NO se filtra por aviso: ahí lo que toca es LLAMAR, se
+  // haya avisado o no. El de 2 días sí, porque su trabajo es exactamente el
+  // aviso que quizá ya se dio.
+  const agenciaAviso = segCargado
+    ? (avisosAgencia
+        ? segData.reduce((n, o) => {
+            if (!matchLista(o, 'agencia_2d')) return n;
+            const llegadaMs = o.lastMovementAt ? new Date(o.lastMovementAt).getTime() : null;
+            const avisoMs = o.phone ? avisosAgencia.get(o.phone) ?? null : null;
+            return estadoAvisoAgencia({ llegadaMs, avisoMs }) === 'sin_avisar' ? n + 1 : n;
+          }, 0)
+        : contarLista(segData, 'agencia_2d'))
+    : 0;
   if (agenciaUrge > 0) {
     return {
       key: 'agencia',

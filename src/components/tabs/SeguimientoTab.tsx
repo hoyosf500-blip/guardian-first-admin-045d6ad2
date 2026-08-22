@@ -11,7 +11,7 @@ import { useSegAsignaciones } from '@/hooks/useSegAsignaciones';
 import { turnoDelEquipo } from '@/lib/turnoDelEquipo';
 import TurnoDelEquipoPanel from '@/components/seguimiento/TurnoDelEquipoPanel';
 import CierreSeguimientoDialog from '@/components/seguimiento/CierreSeguimientoDialog';
-import { useSegClosedPhones } from '@/hooks/useSegClosedPhones';
+import { useSegTouchIndex } from '@/hooks/useSegTouchIndex';
 import { useRefreshVisibleOrders } from '@/hooks/useRefreshVisibleOrders';
 import { Truck, RefreshCw, Cloud, Package, AlertTriangle, MapPin, RotateCcw, Tag, DollarSign, CheckCircle, Layers, CalendarIcon, X, ChevronRight, ChevronDown, Filter, ExternalLink, LayoutGrid, List, Search, User as UserIcon, Users, Moon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -125,7 +125,7 @@ export default function SeguimientoTab() {
   const { refreshNow, isRefreshing: isSyncingDropi } = useRefreshVisibleOrders();
   // Pedidos que el equipo ya CERRÓ (Resuelto/Devolución) → salen para siempre de
   // Seguimiento. Team-wide (set de phones de la tienda activa). Ver hook.
-  const segClosedPhones = useSegClosedPhones(activeStoreId);
+  const { closed: segClosedPhones, avisosAgencia } = useSegTouchIndex(activeStoreId);
   // Alerta de cambios (auditoría 14-ago-2026, artifact fa210631): el hook
   // existía COMPLETO desde F6 y nadie lo montaba — el aviso "N devoluciones
   // nuevas" era código muerto mientras el dueño reportaba "a veces no me

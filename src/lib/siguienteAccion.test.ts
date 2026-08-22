@@ -278,3 +278,57 @@ describe('el escalón de la agencia escala con el reloj', () => {
     expect(hayTrabajo(input([enAgenciaUrgente]))).toBe(true);
   });
 });
+
+describe('el escalon de aviso no pide trabajo ya hecho', () => {
+  // `enAgencia` lleva 60 h en la agencia (tramo de 2 dias, todavia no 5).
+  const llegada = Date.now() - 60 * 3600 * 1000;
+  const pedido = (phone: string) => ({ ...enAgencia, phone });
+
+  it('sin el mapa de avisos cuenta todos, como antes', () => {
+    const r = siguienteAccion({ ...vacio, segData: [pedido('A'), pedido('B')] });
+    expect(r.key).toBe('agencia');
+    expect(r.cuantos).toBe(2);
+  });
+
+  it('con el mapa, solo cuenta a los que todavia no saben', () => {
+    // Una barra que pide avisar a 20 cuando a 18 ya se les aviso ensena a
+    // ignorarla, y asi es como muere una barra de prioridad.
+    const avisosAgencia = new Map([['A', llegada + 3600 * 1000]]);
+    const r = siguienteAccion({ ...vacio, segData: [pedido('A'), pedido('B')], avisosAgencia });
+    expect(r.key).toBe('agencia');
+    expect(r.cuantos).toBe(1);
+    expect(r.titulo).toContain('Avisá');
+  });
+
+  it('un aviso ANTERIOR a la llegada no cuenta: es de otro pedido del mismo cliente', () => {
+    const avisosAgencia = new Map([['A', llegada - 40 * 86400000]]);
+    const r = siguienteAccion({ ...vacio, segData: [pedido('A')], avisosAgencia });
+    expect(r.cuantos).toBe(1);
+  });
+
+  it('si a todos se les aviso, el escalon cede el turno', () => {
+    const avisosAgencia = new Map([['A', llegada + 1000], ['B', llegada + 1000]]);
+    const r = siguienteAccion({
+      ...vacio,
+      segData: [pedido('A'), pedido('B')],
+      workQueue: [porConfirm],
+      avisosAgencia,
+    });
+    expect(r.key).toBe('confirmar');
+  });
+
+  it('el tramo de 5 dias NO se filtra por aviso: ahi lo que toca es llamar', () => {
+    const urgente = { ...base, estado: 'RECLAMAR EN OFICINA', phone: 'A', lastMovementAt: hace(130) };
+    const avisosAgencia = new Map([['A', Date.now()]]);
+    const r = siguienteAccion({ ...vacio, segData: [urgente], avisosAgencia });
+    expect(r.key).toBe('agencia');
+    expect(r.cuantos).toBe(1);
+    expect(r.titulo).toContain('Llamá');
+  });
+
+  it('sin reloj de llegada el pedido no entra en agencia_2d y no se inventa aviso', () => {
+    const sinReloj = { ...base, estado: 'RECLAMAR EN OFICINA', phone: 'A', lastMovementAt: null };
+    const r = siguienteAccion({ ...vacio, segData: [sinReloj], avisosAgencia: new Map() });
+    expect(r.key).not.toBe('agencia');
+  });
+});

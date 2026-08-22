@@ -12,7 +12,7 @@ import {
   AlertTriangle, ExternalLink,
   MessageSquare, Phone as PhoneIcon, Clock, User, Copy,
   Package, Truck, MapPin, RotateCcw, Layers, DollarSign, RefreshCw,
-  Send, Tag, CheckCircle, ChevronDown, Search, List, Bell,
+  Send, Tag, CheckCircle, ChevronDown, Search, List, Bell, Building2,
 } from 'lucide-react';
 import { useStore } from '@/contexts/StoreContext';
 import { useWaChat } from '@/contexts/WaChatContext';
@@ -29,6 +29,7 @@ import { isHiddenFromTodayList, hiddenLabel, isSegCloser, cleanSegAction, type L
 import { bogotaToday } from '@/lib/utils';
 import { useRecordGestion } from '@/hooks/useRecordGestion';
 import { classifySegEstado, matchOficina, matchTransito, type SegStatusKey } from '@/lib/segStatus';
+import { esAvisoAgencia, estadoAvisoAgencia, diasDesdeAviso } from '@/lib/avisoAgencia';
 import {
   classifySegOwnership,
   classifySegOwnershipFromTps,
@@ -1250,6 +1251,30 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
 
   const isDelayed = diasEnEstatus >= 2;
 
+  // ── ¿Ya sabe el cliente que su paquete lo espera en la agencia? ───────────
+  // Se calcula acá, con los touchpoints que la tarjeta YA tiene (allTps, sin
+  // filtrar por módulo) y el reloj de llegada del pedido. Cero props nuevas,
+  // cero consultas nuevas. Ver src/lib/avisoAgencia.ts: el aviso vale solo si
+  // es POSTERIOR a la llegada — los touchpoints matchean por teléfono y un
+  // cliente que ya compró antes arrastraría el aviso del pedido anterior.
+  const enAgencia = classifySegEstado((o.estado || '').toUpperCase().trim()) === 'oficina';
+  const avisoAgenciaMs = enAgencia
+    ? allTps.reduce<number | null>((max, tp) => {
+        if (!esAvisoAgencia(tp.action)) return max;
+        const ms = new Date(tp.created_at).getTime();
+        return max === null || ms > max ? ms : max;
+      }, null)
+    : null;
+  const llegadaAgenciaMs = enAgencia && o.lastMovementAt
+    ? new Date(o.lastMovementAt).getTime()
+    : null;
+  const estadoAviso = enAgencia
+    ? estadoAvisoAgencia({ avisoMs: avisoAgenciaMs, llegadaMs: llegadaAgenciaMs })
+    : null;
+  const diasAviso = estadoAviso === 'avisado'
+    ? diasDesdeAviso({ avisoMs: avisoAgenciaMs, llegadaMs: llegadaAgenciaMs }, Date.now())
+    : null;
+
   return (
     <div
       className={`group bg-card/40 rounded-xl border border-border overflow-hidden transition-colors duration-200 hover:border-border-strong ${managed ? 'opacity-40' : ''}`}
@@ -1518,6 +1543,27 @@ const OrderCard = memo(function OrderCard({ order: o, managed, expanded, onToggl
             <Clock size={12} className={`flex-shrink-0 ${diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'}`} />
             <span className={`text-[11px] font-semibold ${diasEnEstatus >= 5 ? 'text-danger' : 'text-warning'}`}>
               <span className={`font-mono tabular-nums text-base font-bold ${diasEnEstatus >= 5 ? 'num-glow-danger' : ''}`}>{diasEnEstatus}</span>d sin movimiento — {diasEnEstatus >= 5 ? 'Posible pérdida' : diasEnEstatus >= 3 ? 'Llamar + reclamar' : 'Monitorear'}
+            </span>
+          </div>
+        )}
+
+        {/* El protocolo de la agencia, en la cara de la tarjeta.
+            «Avisé: en oficina» se guardaba desde hace meses y no lo leía nadie:
+            la asesora no podía saber a quién ya se le avisó, así que o repetía
+            o no avisaba. Sin reloj de llegada NO se dibuja nada — no saber no
+            es lo mismo que "sin avisar". */}
+        {estadoAviso === 'sin_avisar' && (
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-lg border bg-danger/14 text-danger border-danger/30">
+              <Building2 size={10} aria-hidden="true" /> El cliente no sabe que llegó
+            </span>
+          </div>
+        )}
+        {estadoAviso === 'avisado' && (
+          <div className="mt-2">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-lg border bg-success/14 text-success border-success/30">
+              <Building2 size={10} aria-hidden="true" />
+              {diasAviso === null || diasAviso === 0 ? 'Avisado hoy' : diasAviso === 1 ? 'Avisado ayer' : `Avisado hace ${diasAviso} días`}
             </span>
           </div>
         )}
