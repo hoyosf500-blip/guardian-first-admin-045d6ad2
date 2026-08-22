@@ -121,3 +121,25 @@ describe('GUARDIÁN: el silencio no se lee como "todo bien"', () => {
     expect(titularDe({ ...base, asesorasDelTurno: 0 })).not.toMatch(/nadie cerró/i);
   });
 });
+
+// ── GUARDIÁN ──────────────────────────────────────────────────────────
+// Este error se cometió acá mismo, el día que se escribió el archivo: la
+// consulta filtraba por `orders.updated_at`, una columna que NO EXISTE.
+// PostgREST devolvía error, el conteo llegaba en null y un `?? 0` lo imprimía
+// como "Entregados hoy: 0". El dueño habría leído un viernes sin una sola
+// entrega —con 88 pedidos en ruta— y no habría tenido forma de sospecharlo.
+describe('GUARDIÁN: un conteo que falló NO se imprime como cero', () => {
+  it('entregados/cancelados en null dicen "sin dato"', () => {
+    const r = construirResumen({ ...base, entregadosHoy: null, canceladosHoy: null });
+    expect(r.texto).toContain('Entregados hoy: sin dato');
+    expect(r.texto).toContain('Cancelados hoy: sin dato');
+    expect(r.texto).not.toContain('Entregados hoy: 0');
+  });
+
+  it('un cero REAL sí se imprime como cero', () => {
+    // Un día sin entregas existe. Lo que no puede pasar es confundirlo con un
+    // día que nadie contó.
+    const r = construirResumen({ ...base, entregadosHoy: 0, canceladosHoy: 0 });
+    expect(r.texto).toContain('Entregados hoy: 0');
+  });
+});

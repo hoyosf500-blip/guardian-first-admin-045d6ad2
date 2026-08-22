@@ -83,10 +83,15 @@ async function juntarDatos(sb: SB, store: { id: string; name: string }): Promise
       sb.from("store_members").select("user_id, role").eq("store_id", store.id),
       sb.from("orders").select("id", { count: "exact", head: true })
         .eq("store_id", store.id).eq("estado", "NOVEDAD"),
+      // ⛔ `last_movement_at` y NO `updated_at`: esa columna NO EXISTE en
+      // `orders` (verificado el 21-ago-2026 — la primera versión de este
+      // archivo la usaba). PostgREST devolvía error, el conteo llegaba en
+      // null y el `?? 0` lo imprimía como "Entregados hoy: 0". Un día entero
+      // de entregas convertido en un cero con cara de dato medido.
       sb.from("orders").select("id", { count: "exact", head: true })
-        .eq("store_id", store.id).eq("estado", "ENTREGADO").gte("updated_at", desdeUtc),
+        .eq("store_id", store.id).eq("estado", "ENTREGADO").gte("last_movement_at", desdeUtc),
       sb.from("orders").select("id", { count: "exact", head: true })
-        .eq("store_id", store.id).eq("estado", "CANCELADO").gte("updated_at", desdeUtc),
+        .eq("store_id", store.id).eq("estado", "CANCELADO").gte("last_movement_at", desdeUtc),
       sb.from("orders").select("id", { count: "exact", head: true })
         .eq("store_id", store.id).in("estado", VIVOS).is("last_movement_at", null),
       sb.from("sync_logs").select("created_at")
@@ -123,8 +128,10 @@ async function juntarDatos(sb: SB, store: { id: string; name: string }): Promise
     // Contarlo haría que el correo le reclame a él por no cerrar todos los días.
     asesorasDelTurno: miembros.filter((m) => m.role !== "owner").length,
     novedadesAbiertas: novedadesRes.count ?? 0,
-    entregadosHoy: entregadosRes.count ?? 0,
-    canceladosHoy: canceladosRes.count ?? 0,
+    // Si la consulta falló, va `null` y el correo dice "sin dato". Un 0 acá se
+    // lee como un día sin entregas, que es una afirmación que nadie midió.
+    entregadosHoy: entregadosRes.error ? null : (entregadosRes.count ?? 0),
+    canceladosHoy: canceladosRes.error ? null : (canceladosRes.count ?? 0),
     sinFechaDeMovimiento: sinFechaRes.count ?? 0,
     minutosDesdeSync: ultimoSync
       ? Math.floor((Date.now() - new Date(ultimoSync.created_at).getTime()) / 60_000)

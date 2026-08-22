@@ -47,8 +47,9 @@ export interface DatosResumen {
   /** Cuántas personas del equipo podrían haber cerrado. */
   asesorasDelTurno: number;
   novedadesAbiertas: number;
-  entregadosHoy: number;
-  canceladosHoy: number;
+  /** `null` = no se pudo contar. NUNCA 0 por un error — ver el guardián. */
+  entregadosHoy: number | null;
+  canceladosHoy: number | null;
   /** Pedidos vivos sin fecha de último movimiento: fuera de toda alarma. */
   sinFechaDeMovimiento: number;
   /** Minutos desde la última sincronización con Dropi. `null` = no se sabe. */
@@ -64,6 +65,9 @@ export interface Resumen {
 }
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+/** `null` = no se pudo contar. Se dice, no se maquilla de cero. */
+const cifra = (n: number | null) => (n === null ? 'sin dato' : String(n));
 
 /**
  * El titular: UNA frase con lo que el dueño necesita saber si no lee nada más.
@@ -128,8 +132,14 @@ export function construirResumen(d: DatosResumen): Resumen {
   // ── 2. Lo que la base cuenta sola ────────────────────────────────
   L.push('');
   L.push('LO QUE MIDE GUARDIAN');
-  L.push(`  Entregados hoy: ${d.entregadosHoy}`);
-  L.push(`  Cancelados hoy: ${d.canceladosHoy}`);
+  // ⛔ `null` se imprime "sin dato", nunca 0. Esto ya falló una vez, el mismo
+  // día que se escribió: la consulta filtraba por una columna que no existe
+  // (`orders.updated_at`), PostgREST devolvía error, el conteo llegaba null y
+  // un `?? 0` lo convertía en "Entregados hoy: 0" con toda la cara de dato
+  // medido. El dueño habría leído un día sin entregas que en realidad nadie
+  // contó.
+  L.push(`  Entregados hoy: ${cifra(d.entregadosHoy)}`);
+  L.push(`  Cancelados hoy: ${cifra(d.canceladosHoy)}`);
   L.push(`  Novedades abiertas ahora: ${d.novedadesAbiertas}`);
   if (d.sinFechaDeMovimiento > 0) {
     L.push(
