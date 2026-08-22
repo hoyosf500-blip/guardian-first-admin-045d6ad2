@@ -439,3 +439,67 @@ describe('REGRESIÓN: la auditoría real de julio en Ecuador', () => {
     expect(r.tasaCancelacion).toBeCloseTo(345 / 1200);
   });
 });
+
+// ── GUARDIÁN ──────────────────────────────────────────────────────────
+// Un pedido que se RECREÓ no se perdió: se rehizo con otro `external_id`.
+// Contarlo como cancelación cuenta la misma venta dos veces — una como
+// perdida y otra como nueva.
+//
+// `cuentaEnTasa` existía en la taxonomía desde el 15-ago-2026 y **no lo leía
+// nadie**: era documentación ejecutable sin ejecutor. Medido en agosto-EC:
+// 19 pedidos, ~1,6 puntos de tasa que no eran pérdidas de nadie.
+describe('GUARDIÁN: los recreados no inflan la tasa', () => {
+  const cambioTrans = 'Cambio de transportadora — se recreó el pedido';
+  const edicion = 'Recreado por edición del pedido';
+
+  it('cuenta los recreados aparte y los descuenta de la tasa real', () => {
+    const r = summarizeCancelaciones(
+      [
+        row({ motivo: cambioTrans, valor: 50_000 }),
+        row({ motivo: edicion, valor: 30_000 }),
+        row({ motivo: 'Se arrepintió' }),
+        row({ motivo: 'No contesta' }),
+      ],
+      { generados: 100, totalPeriodo: 4 },
+    );
+    expect(r.recreados).toBe(2);
+    expect(r.valorRecreados).toBe(80_000);
+    expect(r.tasaCancelacion).toBeCloseTo(0.04);      // lo que se ve hoy
+    expect(r.tasaCancelacionReal).toBeCloseTo(0.02);  // sin los recreados
+  });
+
+  it('sin recreados, las dos tasas coinciden', () => {
+    const r = summarizeCancelaciones(
+      [row({ motivo: 'Se arrepintió' }), row({ motivo: 'No contesta' })],
+      { generados: 50, totalPeriodo: 2 },
+    );
+    expect(r.recreados).toBe(0);
+    expect(r.tasaCancelacionReal).toBe(r.tasaCancelacion);
+  });
+
+  it('con la consulta truncada NO se publica la tasa real', () => {
+    // `recreados` sale de las filas cargadas y `totalPeriodo` del período
+    // entero: restar una cuenta parcial de un total completo da un número
+    // peor que no dar ninguno.
+    const r = summarizeCancelaciones(
+      [row({ motivo: cambioTrans })],
+      { generados: 100, totalPeriodo: 40 },
+    );
+    expect(r.truncado).toBe(true);
+    expect(r.tasaCancelacion).not.toBeNull();
+    expect(r.tasaCancelacionReal).toBeNull();
+  });
+
+  it('sin denominador tampoco se inventa', () => {
+    const r = summarizeCancelaciones([row({ motivo: cambioTrans })], {});
+    expect(r.tasaCancelacion).toBeNull();
+    expect(r.tasaCancelacionReal).toBeNull();
+    expect(r.recreados).toBe(1);
+  });
+
+  it('un recreado sigue siendo "ahorro", no pérdida', () => {
+    const r = summarizeCancelaciones([row({ motivo: cambioTrans })], { generados: 10, totalPeriodo: 1 });
+    expect(r.plata.ahorro.cancelados).toBe(1);
+    expect(r.plata.perdidoBruto).toBe(0);
+  });
+});

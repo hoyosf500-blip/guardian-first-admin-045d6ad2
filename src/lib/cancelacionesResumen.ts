@@ -290,6 +290,24 @@ export interface CancelacionesResumen {
   /** Pedidos creados en el período (cancelados incluidos, borrados fuera). */
   generados: number | null;
   tasaCancelacion: number | null;
+  /**
+   * La tasa SIN los pedidos que se recrearon en vez de perderse.
+   *
+   * ⛔ `cuentaEnTasa` existía en la taxonomía desde el 15-ago y **no lo leía
+   * nadie** (`cancelTaxonomy.ts:81` vs. el cálculo de acá): un cambio de
+   * transportadora y una edición de pedido salen como CANCELADO en Dropi y
+   * entran con otro `external_id`, así que la tasa contaba la misma venta dos
+   * veces — una como cancelada y otra como nueva. Medido en agosto-EC: **19
+   * pedidos, ~1,6 puntos de tasa** que no son pérdidas de nadie.
+   *
+   * `null` cuando la consulta vino truncada: `recreados` se cuenta sobre las
+   * filas cargadas y `totalPeriodo` describe el período entero — restar una
+   * cuenta parcial de un total completo daría un número peor que no darlo.
+   */
+  tasaCancelacionReal: number | null;
+  /** Cancelados que en realidad se recrearon con otro id. No son pérdida. */
+  recreados: number;
+  valorRecreados: number;
   /** generados < cancelados → dato incoherente, la tasa NO se imprime. */
   universoInconsistente: boolean;
   cobertura: CoberturaMotivo;
@@ -306,7 +324,8 @@ export interface CancelacionesResumen {
 
 export const EMPTY_RESUMEN: CancelacionesResumen = {
   totalCancelados: 0, valorCancelado: 0, mostrados: 0, totalPeriodo: 0, truncado: false,
-  generados: null, tasaCancelacion: null, universoInconsistente: false,
+  generados: null, tasaCancelacion: null, tasaCancelacionReal: null,
+  recreados: 0, valorRecreados: 0, universoInconsistente: false,
   cobertura: { total: 0, conMotivo: 0, sinMotivo: 0, pctConMotivo: null, nivel: 'nula', porOrigen: [] },
   plata: {
     valorCancelado: 0,
@@ -593,14 +612,32 @@ export function summarizeCancelaciones(
     ? null
     : pct(totalPeriodo, generados);
 
+  // ── Los que NO se perdieron: se recrearon con otro id ─────────────────────
+  // `cuentaEnTasa:false` lo pone la taxonomía en `cambio_transportadora` y
+  // `recreado_edicion`. El campo existía desde agosto y no lo leía nadie, así
+  // que esas dos salían como pérdida y contaban la misma venta dos veces.
+  const recreados = clases.filter(c => c.cuentaEnTasa === false).length;
+  const valorRecreados = list.reduce(
+    (s, r, i) => (clases[i].cuentaEnTasa === false ? s + val(r.valor) : s), 0);
+  const truncado = totalPeriodo > total;
+  // Con la consulta truncada NO se publica: `recreados` sale de las filas
+  // cargadas y `totalPeriodo` del período entero. Restar una cuenta parcial de
+  // un total completo da un número peor que no dar ninguno.
+  const tasaCancelacionReal = tasaCancelacion === null || truncado
+    ? null
+    : pct(Math.max(totalPeriodo - recreados, 0), generados as number);
+
   return {
     totalCancelados: total,
     valorCancelado,
     mostrados: total,
     totalPeriodo,
-    truncado: totalPeriodo > total,
+    truncado,
     generados,
     tasaCancelacion,
+    tasaCancelacionReal,
+    recreados,
+    valorRecreados,
     universoInconsistente,
     cobertura, plata, topMotivos, motivosCrudos, porCulpa, gestion,
     porOperadora, porProducto, porCiudad, antiguedad,

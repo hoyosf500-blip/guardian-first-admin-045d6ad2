@@ -238,10 +238,17 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
 
           {/* 1 · LA PLATA */}
           <motion.div {...fadeUp(0.08)} className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+            {/* La tasa que se muestra es la REAL: sin los pedidos que se
+                recrearon con otro id (cambio de transportadora, edición). Esos
+                no se perdieron — contarlos cuenta la misma venta dos veces. La
+                tasa cruda queda al lado para poder cuadrar con el panel de
+                Dropi, que sí los cuenta. */}
             <Stat icon={<XCircle size={16} />} label="Cancelados" value={r.totalCancelados} tone="danger"
-              hint={r.tasaCancelacion == null
-                ? (r.universoInconsistente ? 'tasa no confiable' : 'sin base comparable')
-                : `${pct(r.tasaCancelacion)} de ${r.generados} generados`} />
+              hint={r.tasaCancelacionReal != null
+                ? `${pct(r.tasaCancelacionReal)} de ${r.generados} generados`
+                : r.tasaCancelacion == null
+                  ? (r.universoInconsistente ? 'tasa no confiable' : 'sin base comparable')
+                  : `${pct(r.tasaCancelacion)} de ${r.generados} generados`} />
             <Stat icon={<DollarSign size={16} />} label="Pérdida evitable" value={formatCOP(r.plata.evitable.valor)} tone="warning"
               hint={`${r.plata.evitable.cancelados} pedidos`} />
             <Stat icon={<DollarSign size={16} />} label="Pérdida inevitable" value={formatCOP(r.plata.inevitable.valor)}
@@ -254,6 +261,20 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
             Perdido bruto del período: <span className="font-mono tabular-nums text-foreground font-bold text-sm">{formatCOP(r.plata.perdidoBruto)}</span>
             {' '}· sin clasificar: {formatCOP(r.plata.sinClasificar.valor)} ({r.plata.sinClasificar.cancelados})
             <span className="block mt-1 opacity-80">Es venta bruta no realizada, no utilidad.</span>
+            {/* Se dice SIEMPRE que hay recreados, aunque la tasa real no se
+                haya podido calcular: si el número de la pantalla difiere del
+                de Dropi, esta línea explica por qué antes de que nadie
+                sospeche del dato. */}
+            {r.recreados > 0 && (
+              <span className="block mt-1">
+                <span className="font-mono tabular-nums text-foreground">{r.recreados}</span>
+                {' '}de esos cancelados no se perdieron: se recrearon con otro número de pedido
+                (cambio de transportadora o edición).
+                {r.tasaCancelacionReal != null
+                  ? ` La tasa de arriba ya los descuenta — con ellos sería ${pct(r.tasaCancelacion)}, que es lo que muestra Dropi.`
+                  : ' No entran en la tasa de arriba.'}
+              </span>
+            )}
           </motion.div>
 
           {/* 4 · ¿SE LE HIZO SEGUIMIENTO? — arriba de motivos porque no depende
