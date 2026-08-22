@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isSegCloser } from '@/lib/segDailyReview';
 import { esAvisoAgencia } from '@/lib/avisoAgencia';
@@ -51,6 +51,14 @@ const VACIO: SegTouchIndex = { closed: new Map(), avisosAgencia: new Map() };
 
 export function useSegTouchIndex(storeId: string | null): SegTouchIndex {
   const [idx, setIdx] = useState<SegTouchIndex>(VACIO);
+  // ⛔ El nombre del canal lleva un id POR INSTANCIA (22-ago-2026, tumbó
+  // /seguimiento en producción). Este hook lo montan DOS componentes a la vez
+  // —`SeguimientoTab` y `SiguienteAccionBar`, que vive en el layout— y con un
+  // nombre fijo el segundo intentaba agregarle un callback a un canal que el
+  // primero ya había suscrito: «cannot add postgres_changes callbacks ... after
+  // subscribe()», y la pantalla entera caía en su ErrorBoundary. Cualquier hook
+  // con canal de realtime que pueda montarse dos veces necesita esto.
+  const instanciaId = useId();
 
   // Carga inicial + reset al cambiar de tienda. La bandera `cancelled` evita que
   // una query lenta de la tienda A pise el estado (ya en blanco) de la tienda B
@@ -123,7 +131,7 @@ export function useSegTouchIndex(storeId: string | null): SegTouchIndex {
   useEffect(() => {
     if (!storeId) return;
     const channel = supabase
-      .channel(`seg-closed-${storeId}`)
+      .channel(`seg-touch-${storeId}-${instanciaId}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'touchpoints', filter: `store_id=eq.${storeId}` },
         (payload) => {
@@ -146,7 +154,7 @@ export function useSegTouchIndex(storeId: string | null): SegTouchIndex {
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [storeId]);
+  }, [storeId, instanciaId]);
 
   return idx;
 }

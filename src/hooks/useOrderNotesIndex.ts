@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useId } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
@@ -25,6 +25,12 @@ export function useOrderNotesIndex(
   orderIds: string[],
 ): NoteIndex {
   const [index, setIndex] = useState<NoteIndex>(EMPTY_INDEX);
+  // Id por INSTANCIA en el nombre del canal. Hoy los dos call-sites viven en
+  // rutas distintas (Confirmar y Seguimiento) y no chocan, pero con un nombre
+  // fijo alcanza que alguien monte los dos a la vez para que el segundo tire
+  // «cannot add postgres_changes callbacks ... after subscribe()» y se lleve
+  // la pantalla entera. Ya pasó en useSegTouchIndex el 22-ago-2026.
+  const instanciaId = useId();
 
   // Firma estable: ordenamos para no refetchear cuando solo cambia la
   // referencia del array padre (caso común con buildWorkQueue/visibleQueue).
@@ -65,7 +71,7 @@ export function useOrderNotesIndex(
   useEffect(() => {
     if (!storeId) return;
     const ch = supabase
-      .channel(`notes-index-${storeId}`)
+      .channel(`notes-index-${storeId}-${instanciaId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notes', filter: `store_id=eq.${storeId}` },
@@ -73,7 +79,7 @@ export function useOrderNotesIndex(
       )
       .subscribe();
     return () => { void supabase.removeChannel(ch); };
-  }, [storeId, load]);
+  }, [storeId, load, instanciaId]);
 
   return index;
 }
