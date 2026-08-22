@@ -1055,6 +1055,7 @@ export type Database = {
           last_edit_sync_at: string | null
           last_edited_by: string | null
           last_movement_at: string | null
+          last_synced_at: string | null
           lat: number | null
           lng: number | null
           locked_at: string | null
@@ -1107,6 +1108,7 @@ export type Database = {
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
           last_movement_at?: string | null
+          last_synced_at?: string | null
           lat?: number | null
           lng?: number | null
           locked_at?: string | null
@@ -1159,6 +1161,7 @@ export type Database = {
           last_edit_sync_at?: string | null
           last_edited_by?: string | null
           last_movement_at?: string | null
+          last_synced_at?: string | null
           lat?: number | null
           lng?: number | null
           locked_at?: string | null
@@ -1316,6 +1319,98 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      seg_asignaciones: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          dia: string
+          id: string
+          operator_id: string
+          order_id: string
+          origen: string
+          store_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          dia?: string
+          id?: string
+          operator_id: string
+          order_id: string
+          origen?: string
+          store_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          dia?: string
+          id?: string
+          operator_id?: string
+          order_id?: string
+          origen?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seg_asignaciones_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seg_asignaciones_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seg_cierres: {
+        Row: {
+          cola: number
+          created_at: string
+          dia: string
+          faltaron: number
+          gestionados: number
+          id: string
+          motivo: string | null
+          operator_id: string
+          store_id: string
+        }
+        Insert: {
+          cola: number
+          created_at?: string
+          dia?: string
+          faltaron: number
+          gestionados: number
+          id?: string
+          motivo?: string | null
+          operator_id: string
+          store_id: string
+        }
+        Update: {
+          cola?: number
+          created_at?: string
+          dia?: string
+          faltaron?: number
+          gestionados?: number
+          id?: string
+          motivo?: string | null
+          operator_id?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seg_cierres_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       shopify_manual_marks: {
         Row: {
@@ -2189,6 +2284,18 @@ export type Database = {
           subcategoria: string
         }[]
       }
+      cerrar_seguimiento: {
+        Args: {
+          p_cola: number
+          p_gestionados: number
+          p_motivo?: string
+          p_store_id: string
+        }
+        Returns: {
+          dia: string
+          faltaron: number
+        }[]
+      }
       claim_order: {
         Args: { p_order_id: string }
         Returns: {
@@ -2220,6 +2327,7 @@ export type Database = {
           last_edit_sync_at: string | null
           last_edited_by: string | null
           last_movement_at: string | null
+          last_synced_at: string | null
           lat: number | null
           lng: number | null
           locked_at: string | null
