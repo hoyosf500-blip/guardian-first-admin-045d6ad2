@@ -83,15 +83,68 @@ export interface CancelClass {
   esGenerica: boolean;
 }
 
-export const CANCEL_CULPA_LABEL: Record<CancelCulpa, string> = {
-  operacion: 'Nuestra operación',
-  precio_oferta: 'Precio / oferta',
-  trafico: 'Tráfico (lead no real)',
-  cliente: 'Cliente',
-  transportadora: 'Transportadora',
-  filtro_interno: 'Filtro nuestro (a propósito)',
-  generica: 'Sin motivo anotado',
+/**
+ * Lo que ve el dueño cuando abre la pantalla y quiere saber **de qué lado está
+ * el problema**.
+ *
+ * Las etiquetas viejas describían el bucket ("Precio / oferta", "Tráfico (lead
+ * no real)"). Éstas dicen **qué pasó y dónde ir a mirar**, porque el que abre
+ * este reporte no está clasificando: está decidiendo qué toca arreglar. Cada
+ * culpa tiene obligatoriamente las dos cosas — lo fija
+ * `src/test/etiquetasCancelacion.test.ts`.
+ */
+export interface CulpaInfo {
+  /** Título del bloque. Corto: entra en una barra. */
+  label: string;
+  /** Qué significa, en una frase, sin jerga. */
+  que: string;
+  /** A dónde va el dueño con esta información. */
+  dondeMirar: string;
+}
+
+export const CANCEL_CULPA_INFO: Record<CancelCulpa, CulpaInfo> = {
+  generica: {
+    label: 'Nadie anotó por qué',
+    que: 'Se canceló fuera del CRM o sin dejar motivo.',
+    dondeMirar: 'No es una nota al pie: mientras este bloque sea el más grande, todo lo demás se decide a ciegas.',
+  },
+  precio_oferta: {
+    label: 'El anuncio prometió otra cosa',
+    que: 'El precio, el flete o lo que mostraba la publicidad no coincidió con la realidad.',
+    dondeMirar: 'El creativo del anuncio y la ficha del producto.',
+  },
+  operacion: {
+    label: 'Nosotros',
+    que: 'Llamamos tarde, se demoró el despacho, faltó stock o los datos se cargaron mal.',
+    dondeMirar: 'La cola de Confirmar y los tiempos de despacho.',
+  },
+  trafico: {
+    label: 'El pedido nunca fue real',
+    que: 'Clic accidental, número ajeno o alguien que no pidió nada. Es plata de pauta quemada.',
+    dondeMirar: 'La segmentación de la pauta y el formulario de compra.',
+  },
+  cliente: {
+    label: 'El cliente cambió de idea',
+    que: 'Se arrepintió, no tenía plata en ese momento o no se lo autorizaron en la casa.',
+    dondeMirar: 'Casi nada de esto se salva llamando más rápido.',
+  },
+  transportadora: {
+    label: 'No llegamos a su zona',
+    que: 'La transportadora no tiene cobertura en ese destino.',
+    dondeMirar: 'La cobertura por ciudad y las transportadoras alternativas.',
+  },
+  filtro_interno: {
+    label: 'Lo cancelamos a propósito',
+    que: 'Duplicado, mal historial o sin anticipo. Cancelar evitó una devolución.',
+    dondeMirar: 'Esto NO es una pérdida: es plata ahorrada.',
+  },
 };
+
+/** Etiqueta sola. Se deriva de `CANCEL_CULPA_INFO` para que no existan dos
+ *  listas que puedan separarse. */
+export const CANCEL_CULPA_LABEL: Record<CancelCulpa, string> = Object.fromEntries(
+  Object.entries(CANCEL_CULPA_INFO).map(([k, v]) => [k, v.label]),
+) as Record<CancelCulpa, string>;
 
 /**
  * Orden estable para gráficos: de lo más accionable internamente a lo menos.

@@ -7,9 +7,9 @@ import {
 import { useCancelacionesAnalisis } from '@/hooks/useCancelacionesAnalisis';
 import { useCancelacionesPorProducto } from '@/hooks/useCancelacionesPorProducto';
 import {
-  cancelCategoriaLabel, CANCEL_CULPA_LABEL, type CancelCulpa,
+  cancelCategoriaLabel, CANCEL_CULPA_INFO, type CancelCulpa,
 } from '@/lib/cancelTaxonomy';
-import type { DimensionBucket } from '@/lib/cancelacionesResumen';
+import type { DimensionBucket, CulpaBucket } from '@/lib/cancelacionesResumen';
 import { Stat } from '@/components/novedades/Stat';
 import { NovCard, MetricBar, EmptyCard } from '@/components/novedades/NovedadesChrome';
 import { fadeUp } from '@/components/novedades/chromeTokens';
@@ -112,6 +112,66 @@ function DimensionCard({
           ))}
         </ul>
       )}
+    </NovCard>
+  );
+}
+
+/**
+ * LA PORTADA: ¿de qué lado está el problema?
+ *
+ * Antes esto era la cuarta tarjeta, se llamaba "¿De quién fue?" y **solo se
+ * dibujaba si había motivos anotados** — justo al revés de lo que hace falta,
+ * porque cuando NO hay motivos el bloque "nadie anotó por qué" es la respuesta
+ * más importante de la pantalla. En agosto se llevaba el 79%.
+ *
+ * Va ordenada por tamaño, no por el orden fijo de la taxonomía: la barra más
+ * grande es a dónde hay que ir. Y cada barra dice **dónde mirar**, que es lo
+ * que convierte un porcentaje en algo que alguien puede hacer mañana.
+ */
+function LadoDelProblema({
+  porCulpa, totalCancelados, valorCancelado,
+}: { porCulpa: CulpaBucket[]; totalCancelados: number; valorCancelado: number }) {
+  const ordenadas = useMemo(
+    () => [...porCulpa].sort((a, b) => b.cancelados - a.cancelados),
+    [porCulpa],
+  );
+  if (!ordenadas.length) return null;
+  const mayor = ordenadas[0].cancelados || 1;
+
+  return (
+    <NovCard
+      title="¿De qué lado está el problema?"
+      icon={Gauge}
+      iconClass="text-warning"
+      note={`${totalCancelados} cancelados · ${formatCOP(valorCancelado)}`}
+    >
+      <ul className="space-y-3">
+        {ordenadas.map(c => {
+          const info = CANCEL_CULPA_INFO[c.culpa];
+          return (
+            <li key={c.culpa}>
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-foreground">{info.label}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {c.cancelados} · {pct(c.pctSobreTotal)} · {formatCOP(c.valor)}
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden my-1.5">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max((c.cancelados / mayor) * 100, 2)}%`,
+                    background: CULPA_COLOR[c.culpa],
+                  }}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                {info.que} <span className="text-foreground/80">{info.dondeMirar}</span>
+              </p>
+            </li>
+          );
+        })}
+      </ul>
     </NovCard>
   );
 }
@@ -363,7 +423,16 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
             </div>
           </motion.div>
 
-          {/* 1 · LA PLATA */}
+          {/* 1 · LA PORTADA — de que lado esta el problema */}
+          <motion.div {...fadeUp(0.08)}>
+            <LadoDelProblema
+              porCulpa={r.porCulpa}
+              totalCancelados={r.totalCancelados}
+              valorCancelado={r.valorCancelado}
+            />
+          </motion.div>
+
+          {/* 2 · LA PLATA */}
           <motion.div {...fadeUp(0.08)} className="grid gap-3 grid-cols-2 lg:grid-cols-4">
             {/* La tasa que se muestra es la REAL: sin los pedidos que se
                 recrearon con otro id (cambio de transportadora, edición). Esos
@@ -458,7 +527,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
 
           {/* 2 y 3 · MOTIVO y CULPA — solo si hay motivos que mostrar */}
           {hayMotivos && (
-            <motion.div {...fadeUp(0.18)} className="grid gap-4 lg:grid-cols-2">
+            <motion.div {...fadeUp(0.18)}>
               <NovCard title="¿Por qué cancelan?" icon={XCircle} iconClass="text-danger"
                 note={`sobre ${r.cobertura.conMotivo} con motivo`}>
                 <ul className="space-y-1">
@@ -468,7 +537,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                       rank={i + 1}
                       label={cancelCategoriaLabel(m.categoria)}
                       color={CULPA_COLOR[m.culpa]}
-                      dotTitle={CANCEL_CULPA_LABEL[m.culpa]}
+                      dotTitle={CANCEL_CULPA_INFO[m.culpa].label}
                       pct={(m.cancelados / maxMotivo) * 100}
                       right={
                         <span className="text-muted-foreground">
@@ -496,27 +565,6 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                 )}
               </NovCard>
 
-              <NovCard title="¿De quién fue?" icon={Users} iconClass="text-warning">
-                <ul className="space-y-1">
-                  {r.porCulpa.map(c => (
-                    <MetricBar
-                      key={c.culpa}
-                      label={CANCEL_CULPA_LABEL[c.culpa]}
-                      color={CULPA_COLOR[c.culpa]}
-                      pct={c.pctSobreTotal == null ? null : c.pctSobreTotal * 100}
-                      right={
-                        <span className="text-muted-foreground">
-                          {c.cancelados} · {pct(c.pctSobreTotal)} · {formatCOP(c.valor)}
-                        </span>
-                      }
-                    />
-                  ))}
-                </ul>
-                <p className="text-[11px] text-muted-foreground mt-3">
-                  “Sin motivo anotado” ocupa su tamaño real a propósito: esconderlo haría creer que
-                  las causas conocidas explican todo.
-                </p>
-              </NovCard>
             </motion.div>
           )}
 
