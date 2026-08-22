@@ -61,12 +61,12 @@ describe("los cuatro grupos medidos en agosto", () => {
     expect(s.apretoBotonAt).toEqual(t(9));
   });
 
-  it("escribió pero no apretó → tibio (42% cancela)", () => {
+  it("escribió pero no apretó → tibio (33,5% cancela)", () => {
     const conv = [plantilla(), escribe("¿estas gafas toman foto?")];
     expect(derivarSenal(conv, conv).riesgo).toBe("tibio");
   });
 
-  it("le llegó la plantilla, no hizo nada, pero alguna vez habló → frío (58%)", () => {
+  it("le llegó la plantilla, no hizo nada, pero alguna vez habló → frío (37,5%)", () => {
     const ventana = [plantilla()];
     const historial = [plantilla(), escribe("gracias", 20)]; // habló, pero fuera de la ventana
     const s = derivarSenal(ventana, historial);
@@ -74,7 +74,7 @@ describe("los cuatro grupos medidos en agosto", () => {
     expect(s.mudo).toBe(false);
   });
 
-  it("nunca escribió en TODA la historia → mudo (76% cancela)", () => {
+  it("nunca escribió en TODA la historia → mudo (66,2% cancela, la mitad de la plata)", () => {
     const solos = [plantilla(), plantilla(12)];
     const s = derivarSenal(solos, solos);
     expect(s.riesgo).toBe("mudo");
@@ -88,9 +88,13 @@ describe("los cuatro grupos medidos en agosto", () => {
     expect(derivarSenal(conv, conv).riesgo).toBe("confirmado");
   });
 
-  it("mudo gana sobre frío: cambia el canal, no solo la urgencia", () => {
+  it("mudo gana sobre frío: es el peor Y cambia el canal", () => {
+    // 66,2% contra 37,5%, y son 157 pedidos contra 24. Si esto se invirtiera,
+    // la cola pondría arriba al grupo chico y dejaría abajo la mitad de la
+    // plata que se pierde en el mes.
     expect(clasificar({ apreto: false, escribio: false, recibioPlantilla: true, mudo: true }))
       .toBe("mudo");
+    expect(PRIORIDAD_RIESGO.mudo).toBeLessThan(PRIORIDAD_RIESGO.frio);
   });
 });
 
@@ -119,9 +123,9 @@ describe("no se puede inventar una medición que no existe", () => {
 
 describe("la cola de trabajo", () => {
   it("ordena por lo que más se pierde, y deja lo confirmado al final", () => {
-    const orden = (["confirmado", "sin_dato", "mudo", "frio", "tibio"] as NivelRiesgo[])
+    const orden = (["confirmado", "sin_dato", "frio", "mudo", "tibio"] as NivelRiesgo[])
       .sort((a, b) => PRIORIDAD_RIESGO[a] - PRIORIDAD_RIESGO[b]);
-    expect(orden).toEqual(["frio", "mudo", "tibio", "sin_dato", "confirmado"]);
+    expect(orden).toEqual(["mudo", "frio", "tibio", "sin_dato", "confirmado"]);
   });
 
   it("sin_dato va antes que confirmado: un pedido en blanco no es un pedido tranquilo", () => {

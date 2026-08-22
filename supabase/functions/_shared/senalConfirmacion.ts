@@ -58,9 +58,12 @@ export interface SenalConfirmacion {
   recibioPlantilla: boolean;
   /**
    * El cliente NUNCA escribió nada, en NINGÚN momento de la historia del chat.
+   * Apretar un botón no cuenta como escribir.
+   *
    * Ojo: se mide sobre el historial COMPLETO, no sobre la ventana del pedido —
    * de los 87 cancelados del grupo silencioso, 83 no habían escrito jamás, ni
-   * antes ni después. Son 127 de 765 pedidos (17%) y cancelan 76%.
+   * antes ni después. Buscar solo en la ventana los daría por "no contestó
+   * todavía" y perdería que a esa persona el chat directamente no le llega.
    */
   mudo: boolean;
   /** Riesgo derivado. Ver `clasificar`. */
@@ -88,19 +91,19 @@ export const RIESGO_DOC: Record<NivelRiesgo, { que: string; tasa: string; queHac
   },
   tibio: {
     que: "Escribió, pero nunca apretó el botón",
-    tasa: "42% cancela",
+    tasa: "34% cancela",
     queHacer: "Llamalo. Está enganchado pero no cerró: casi siempre es una duda del producto.",
   },
   frio: {
-    que: "Le llegó la plantilla y no hizo nada, pero alguna vez habló",
-    tasa: "58% cancela",
-    queHacer: "Llamalo primero. Acá está el 62% de la plata que se pierde.",
+    que: "Alguna vez habló, pero con este pedido no hizo nada",
+    tasa: "38% cancela",
+    queHacer: "Escribile por el chat: ese cliente sí contesta, con este pedido todavía no.",
   },
   mudo: {
     que: "Nunca escribió nada por WhatsApp, jamás",
-    tasa: "76% cancela",
+    tasa: "66% cancela",
     queHacer:
-      "El WhatsApp no sirve con esta persona: es teléfono o nada. De los que nadie llamó, se cancelaron TODOS.",
+      "Teléfono o nada: el chat no sirve con esta persona. Es la mitad de todo lo que se cancela, y de los que nadie llamó se cancelaron TODOS.",
   },
 };
 
@@ -167,11 +170,20 @@ export function derivarSenal(
  *  1. El botón manda sobre todo lo demás. Un pedido con botón apretado cancela
  *     10% aunque el cliente después discuta; sin botón cancela 58% aunque haya
  *     conversado largo. Preguntar primero por el botón no es un detalle.
- *  2. `mudo` va antes que `frio` porque cambia el CANAL, no la prioridad:
- *     a esa persona no le sirve otro WhatsApp, hay que llamarla.
+ *  2. `mudo` va después del botón pero antes que todo lo demás. Medido sobre los
+ *     765 resueltos de agosto, con ESTA clasificación exacta:
+ *
+ *        mudo        157 pedidos → 66,2% cancela  ($3.219 = la MITAD de todo
+ *                                   lo que se pierde en el mes)
+ *        frio         24 pedidos → 37,5%
+ *        tibio       170 pedidos → 33,5%  ($1.787)
+ *        confirmado  414 pedidos → 10,4%
+ *
+ *     Además de ser el peor, cambia el CANAL: a esa persona no le sirve otro
+ *     WhatsApp, hay que llamarla por teléfono.
  *  3. Sin plantilla enviada no se puede exigir un botón que nunca se ofreció.
- *     Esos 129 pedidos cancelan 29% — el promedio, ni bien ni mal — así que
- *     caen en `tibio`/`frio` según si hablaron, nunca en `confirmado`.
+ *     Esos pedidos caen en `tibio`/`frio`/`mudo` según lo que haya hecho el
+ *     cliente, nunca en `confirmado`.
  */
 export function clasificar(x: {
   apreto: boolean;
@@ -187,8 +199,8 @@ export function clasificar(x: {
 
 /** Orden para la cola de trabajo: primero lo que más se pierde si nadie lo toca. */
 export const PRIORIDAD_RIESGO: Record<NivelRiesgo, number> = {
-  frio: 0,
-  mudo: 1,
+  mudo: 0,
+  frio: 1,
   tibio: 2,
   sin_dato: 3,
   confirmado: 4,

@@ -436,13 +436,13 @@ describe('la cola ordena por lo que hizo el cliente, no por la antigüedad', () 
     expect(compareConfirmar(viejoFrio, nuevoConfirmado, AHORA)).toBeGreaterThan(0);
   });
 
-  it('el orden completo es frío → mudo → tibio → sin leer → ya confirmó', () => {
+  it('el orden completo es mudo → frío → tibio → sin leer → ya confirmó', () => {
     const mk = (r: string) => ({ dias: 0, createdAt: hoy(2), riesgoChat: r as never });
-    const orden = ['confirmado', 'sin_dato', 'tibio', 'mudo', 'frio']
+    const orden = ['confirmado', 'sin_dato', 'tibio', 'frio', 'mudo']
       .map(mk)
       .sort((a, b) => compareConfirmar(a, b, AHORA))
       .map((o) => o.riesgoChat);
-    expect(orden).toEqual(['frio', 'mudo', 'tibio', 'sin_dato', 'confirmado']);
+    expect(orden).toEqual(['mudo', 'frio', 'tibio', 'sin_dato', 'confirmado']);
   });
 
   it('sin señal la cola se comporta EXACTAMENTE como antes', () => {

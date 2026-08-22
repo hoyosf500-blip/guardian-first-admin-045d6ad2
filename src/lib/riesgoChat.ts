@@ -14,8 +14,8 @@ export type NivelRiesgo = 'sin_dato' | 'confirmado' | 'tibio' | 'frio' | 'mudo';
 
 /** Orden de la cola: primero lo que más se pierde si nadie lo toca. */
 export const PRIORIDAD_RIESGO: Record<NivelRiesgo, number> = {
-  frio: 0,
-  mudo: 1,
+  mudo: 0,
+  frio: 1,
   tibio: 2,
   sin_dato: 3,
   confirmado: 4,
@@ -35,24 +35,24 @@ export interface RiesgoInfo {
 }
 
 export const RIESGO_INFO: Record<NivelRiesgo, RiesgoInfo> = {
-  frio: {
-    etiqueta: 'Llamar primero',
-    que: 'Le llegó la confirmación por WhatsApp y no hizo nada.',
-    tasa: '58% se cancela',
-    queHacer: 'Es el grupo donde está el 62% de la plata que se pierde.',
+  mudo: {
+    etiqueta: 'Llamar — no usa chat',
+    que: 'Nunca escribió nada por WhatsApp, jamás.',
+    tasa: '66% se cancela',
+    queHacer: 'Es la mitad de todo lo que se pierde. De los que nadie llamó, se cancelaron todos.',
     clase: 'bg-destructive/15 text-destructive border-destructive/30',
   },
-  mudo: {
-    etiqueta: 'Solo por teléfono',
-    que: 'Nunca escribió nada por WhatsApp, jamás.',
-    tasa: '76% se cancela',
-    queHacer: 'A esta persona el chat no le sirve. De los que nadie llamó, se cancelaron todos.',
+  frio: {
+    etiqueta: 'No respondió',
+    que: 'Alguna vez habló por el chat, pero con este pedido no hizo nada.',
+    tasa: '38% se cancela',
+    queHacer: 'Escribile: ese cliente sí contesta, con este pedido todavía no.',
     clase: 'bg-destructive/10 text-destructive border-destructive/25',
   },
   tibio: {
     etiqueta: 'Quedó con dudas',
     que: 'Escribió, pero nunca apretó el botón de confirmar.',
-    tasa: '42% se cancela',
+    tasa: '34% se cancela',
     queHacer: 'Casi siempre es una duda del producto. Contestala y cerrá vos.',
     clase: 'bg-warning/15 text-warning-foreground border-warning/30',
   },
