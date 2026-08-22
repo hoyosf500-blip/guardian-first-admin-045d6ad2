@@ -5,6 +5,7 @@ import {
   ShieldCheck, Users, MapPin, Package, Download, Clock, Gauge,
 } from 'lucide-react';
 import { useCancelacionesAnalisis } from '@/hooks/useCancelacionesAnalisis';
+import { useCancelacionesPorProducto } from '@/hooks/useCancelacionesPorProducto';
 import {
   cancelCategoriaLabel, CANCEL_CULPA_LABEL, type CancelCulpa,
 } from '@/lib/cancelTaxonomy';
@@ -115,8 +116,134 @@ function DimensionCard({
   );
 }
 
+/**
+ * Tasa de cancelación por producto. Reemplaza al `DimensionCard` de producto,
+ * que ordenaba por CANTIDAD de cancelaciones: con ese criterio el producto más
+ * vendido encabeza siempre y la pantalla no podía contestar "¿cuál me está
+ * cancelando más?". En agosto-2026 decía que el problema eran las Gafas (109
+ * cancelaciones, tasa 28,3%) cuando la peor era la Freidora (35 cancelaciones,
+ * tasa 39,8%).
+ *
+ * Toda la aritmética está en `src/lib/cancelacionesPorProducto.ts`.
+ */
+function TasaPorProductoCard({ data }: { data: ReturnType<typeof useCancelacionesPorProducto> }) {
+  const { status, resumen: pp } = data;
+
+  if (status === 'not_ready') {
+    return (
+      <NovCard title="Tasa por producto" icon={Package}>
+        <EmptyCard msg="Falta activar el reporte: la función cancelaciones_por_producto todavía no está en la base." />
+      </NovCard>
+    );
+  }
+  if (status === 'forbidden' || status === 'error') {
+    return (
+      <NovCard title="Tasa por producto" icon={Package}>
+        <EmptyCard msg={status === 'forbidden'
+          ? 'Solo los encargados de la tienda pueden ver esto.'
+          : 'No se pudo cargar. Volvé a intentar en un momento.'} />
+      </NovCard>
+    );
+  }
+  if (!pp.ranking.length && !pp.bajoMinimo.length) {
+    return (
+      <NovCard title="Tasa por producto" icon={Package}>
+        <EmptyCard msg="Sin pedidos en el período." />
+      </NovCard>
+    );
+  }
+
+  const peor = pp.ranking[0]?.tasa ?? 0;
+  const discrepantes = pp.hermanas.filter(h => h.discrepan);
+
+  return (
+    <NovCard
+      title="Tasa por producto"
+      icon={Package}
+      note={pp.promedioTienda == null ? 'sin promedio' : `la tienda va en ${pp.promedioTienda}%`}
+    >
+      {pp.ranking.length === 0 ? (
+        <EmptyCard msg="Ningún producto tiene todavía suficientes pedidos resueltos para una tasa." />
+      ) : (
+        <ul className="space-y-2">
+          {pp.ranking.map((f, i) => (
+            <li key={f.producto} className="text-xs">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[10px] text-muted-foreground w-4 shrink-0 tabular-nums">{i + 1}</span>
+                <span className="flex-1 min-w-0 truncate text-foreground" title={f.producto}>{f.producto}</span>
+                <span className="font-semibold tabular-nums text-danger">{f.tasa}%</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1 pl-6">
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-danger/70"
+                    style={{ width: `${peor > 0 ? Math.max((f.tasa! / peor) * 100, 2) : 0}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
+                  {f.cancelados} de {f.resueltos} · {formatCOP(f.valorCancelado)}
+                  {f.delta != null && f.delta !== 0 && (
+                    <span className={f.delta > 0 ? 'ml-1 text-danger' : 'ml-1 text-success'}>
+                      {f.delta > 0 ? '+' : ''}{f.delta} pts
+                    </span>
+                  )}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Publicaciones hermanas: el MISMO producto publicado dos veces cancela
+          distinto. Es la señal más fuerte de que el problema está en el anuncio
+          y no en el producto — y no se ve en ninguna otra parte del tablero. */}
+      {discrepantes.length > 0 && (
+        <div className="mt-4 rounded-lg border border-warning/30 bg-warning/10 p-3">
+          <p className="text-[11px] font-semibold text-foreground mb-2">
+            El mismo producto, publicado distinto, cancela distinto
+          </p>
+          <ul className="space-y-2">
+            {discrepantes.map(h => (
+              <li key={h.clave} className="text-[11px] text-muted-foreground">
+                {h.filas.filter(f => f.rankeable).map((f, i, arr) => (
+                  <span key={f.producto}>
+                    <span className="text-foreground">{f.producto}</span>{' '}
+                    <span className="tabular-nums font-semibold">{f.tasa}%</span>
+                    <span className="opacity-70"> ({f.generados} ped.)</span>
+                    {i < arr.length - 1 && <span className="mx-1 opacity-60">vs</span>}
+                  </span>
+                ))}
+                <span className="ml-1 text-warning font-semibold tabular-nums">
+                  · {h.brechaPuntos} pts de diferencia
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-muted-foreground mt-2">
+            Si fuera el producto, las dos publicaciones cancelarían igual. Mirá el anuncio de la peor.
+          </p>
+        </div>
+      )}
+
+      {/* Los de poco volumen NO se esconden: se listan sin ranking. Un producto
+          con 3 pedidos y 2 cancelaciones da 67% y encabezaría la lista con puro
+          ruido — el mismo bug que ya tuvo el ranking de transportadoras. */}
+      {pp.bajoMinimo.length > 0 && (
+        <p className="text-[10px] text-muted-foreground mt-4 pt-3 border-t border-border">
+          <span className="font-semibold">{pp.bajoMinimo.length} producto(s) con pocos pedidos resueltos</span>{' '}
+          quedan fuera del ranking porque su porcentaje todavía no significa nada:{' '}
+          {pp.bajoMinimo.slice(0, 4).map(f => `${f.producto} (${f.cancelados}/${f.resueltos})`).join(' · ')}
+          {pp.bajoMinimo.length > 4 && ` y ${pp.bajoMinimo.length - 4} más`}.
+        </p>
+      )}
+    </NovCard>
+  );
+}
+
 export default function CancelacionesTab({ filters }: { filters: LogisticsFilters }) {
   const s = useCancelacionesAnalisis({ fromDate: filters.fromDate, toDate: filters.toDate });
+  // Denominador por producto: query APARTE. Sin ella la pantalla sigue igual.
+  const porProducto = useCancelacionesPorProducto({ fromDate: filters.fromDate, toDate: filters.toDate });
   const { resumen: r, rows } = s;
   const [verTodo, setVerTodo] = useState(false);
 
@@ -427,7 +554,7 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
 
           {/* 6 · DÓNDE */}
           <motion.div {...fadeUp(0.26)} className="grid gap-4 lg:grid-cols-2">
-            <DimensionCard title="Por producto" icon={Package} rows={r.porProducto} total={r.totalCancelados} />
+            <TasaPorProductoCard data={porProducto} />
             {filters.ciudad ? (
               <NovCard title="Por ciudad" icon={MapPin}>
                 <EmptyCard msg={`Estás viendo solo ${filters.ciudad}. Quitá el filtro de ciudad para comparar entre ciudades.`} />
