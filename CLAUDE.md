@@ -550,6 +550,15 @@ Son preguntas DISTINTAS y confundirlas ya costó:
 - **La auditoría de paridad ya NO estampa hora local** en `last_movement_at`: afirmaba "se movió
   hoy" con datos sin fecha, pintaba de verde pedidos parados hace semanas y los sacaba de la
   repesca del nightly 10 días.
+- **⛔ `orders.created_at` NO es la hora en que el cliente hizo el pedido** — es la hora en que
+  el cron lo INSERTÓ, y va en UTC. Guardian **no guarda la hora de creación en ningún lado**:
+  `orders.fecha` es solo fecha. Medido el 21-ago-2026 contra `order_created_at` de ImporChat
+  (hora local EC) sobre 994 pedidos: mediana +5,15 h (= UTC−5 puro, o sea ~9 min de lag real),
+  pero **p75 +9,35 h y cola hasta +120 h**. Consecuencia práctica: **cualquier análisis por
+  franja horaria hecho con `created_at` sale corrido 5 h**, y encima con una cola sucia de
+  pedidos que el cron trajo días después. Ya produjo una conclusión falsa ("la franja de la
+  noche cancela 48%" → con hora real, dentro del turno 26,8% vs fuera 29,1%). Para hora real
+  en EC hay que ir a ImporChat; ver la memoria `cancelaciones_agosto_el_boton`.
 - **Pedidos con `estado IS NULL`**: `.not('estado','eq','X')` los descarta (`NOT (NULL='X')` es
   NULL). `useDataLoader` los trae con una query aparte. Medido: 0 hoy — es defensa, no reparación.
 
