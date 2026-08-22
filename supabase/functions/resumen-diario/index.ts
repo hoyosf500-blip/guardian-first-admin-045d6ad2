@@ -196,7 +196,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const body = await req.json().catch(() => ({})) as { store_id?: string; dry_run?: boolean };
+    const body = await req.json().catch(() => ({})) as {
+      store_id?: string; store_ids?: string[]; dry_run?: boolean;
+    };
     const dryRun = body.dry_run === true;
 
     const apiKey = Deno.env.get("RESEND_API_KEY") || "";
@@ -214,7 +216,13 @@ Deno.serve(async (req: Request) => {
     // `stores` NO tiene `is_active` ni `owner_email` (verificado contra la base
     // el 21-ago-2026): la columna de estado es `status`.
     let q = sb.from("stores").select("id, name, status");
+    // `store_ids` existe porque esto manda correo HACIA AFUERA: los dueños de
+    // las otras tiendas de la plataforma son terceros, y empezar a escribirles
+    // sin que nadie lo decida es una acción que no se puede deshacer. Con la
+    // lista, el cron se puede arrancar solo con las tiendas propias y abrirse
+    // después. Sin ninguna de las dos, sigue yendo a todas las activas.
     if (body.store_id) q = q.eq("id", body.store_id);
+    else if (body.store_ids?.length) q = q.in("id", body.store_ids);
     const { data: stores, error: storesErr } = await q;
     if (storesErr) return json({ error: storesErr.message }, 500, cors);
 
