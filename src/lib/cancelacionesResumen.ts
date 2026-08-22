@@ -73,6 +73,9 @@ export interface CancelacionRow {
    * `undefined` = la migración todavía no corrió.
    */
   recreado?: boolean;
+  /** `orders.chat_riesgo` — qué hizo el cliente con el botón del WhatsApp.
+   *  Solo se usa `'mudo'`, y solo cuando no hay motivo escrito. */
+  riesgoChat?: string | null;
 }
 
 export type NivelConfianza = 'alta' | 'media' | 'baja' | 'nula';
@@ -146,7 +149,7 @@ export function clasificarPerdida(r: CancelacionRow): {
   tipo: TipoPerdida;
   motivo: MotivoClasificacion;
 } {
-  const clase = classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado });
+  const clase = classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado, riesgoChat: r.riesgoChat });
   if (clase.tipo === 'ahorro') return { tipo: 'ahorro', motivo: 'taxonomia' };
   if (!tuvoGestion(r)) return { tipo: 'evitable', motivo: 'sin_gestion' };
   if (clase.tipo === 'desconocido') return { tipo: 'sin_clasificar', motivo: 'sin_dato' };
@@ -391,7 +394,7 @@ function agruparDimension(
     b.valor += val(r.valor);
     const { tipo } = clasificarPerdida(r);
     if (tipo === 'evitable') { b.evitables += 1; b.valorEvitable += val(r.valor); }
-    const clase = classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado });
+    const clase = classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado, riesgoChat: r.riesgoChat });
     if (!clase.esGenerica) b.motivos.set(clase.categoria, (b.motivos.get(clase.categoria) || 0) + 1);
   }
   return [...map.entries()].map(([key, b]) => {
@@ -431,7 +434,7 @@ export function summarizeCancelaciones(
   const valorCancelado = list.reduce((s, r) => s + val(r.valor), 0);
 
   // ── (a) Cobertura ─────────────────────────────────────────────────────────
-  const clases = list.map(r => classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado }));
+  const clases = list.map(r => classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado, riesgoChat: r.riesgoChat }));
   const conMotivoFlags = clases.map(c => c.categoria !== 'sin_motivo' && c.categoria !== 'externo_dropi');
   const conMotivo = conMotivoFlags.filter(Boolean).length;
   const pctCob = pct(conMotivo, total);

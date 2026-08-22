@@ -132,6 +132,41 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         }
       } catch { /* sin la migración el reporte sigue sirviendo */ }
 
+      // ── Los que nunca usaron el WhatsApp ────────────────────────────────
+      // `orders.chat_riesgo` lo llena `importchat-sync`. Le pone nombre a una
+      // parte del bucket ciego: en agosto-EC eran 157 pedidos con 66,2% de
+      // cancelación y $3.219 —la mitad de todo lo perdido en el mes— que hasta
+      // ahora caían en "nadie anotó por qué".
+      //
+      // Va en una consulta APARTE y no dentro de `cancelaciones_analisis` para
+      // no reescribir una función viva (⛔ REGLA #1), y es el mismo camino que
+      // ya usa `cancelaciones_recreadas` acá arriba. Si la columna todavía no
+      // existe, el error se ignora y el reporte queda como estaba.
+      try {
+        const ids = mapped.map(r => r.orderId).filter(Boolean);
+        if (ids.length) {
+          const { data: ch, error: chErr } = await supabase
+            .from('orders')
+            .select('id, chat_riesgo, chat_leido_at')
+            .eq('store_id', activeStoreId)
+            .in('id', ids);
+          if (!chErr && Array.isArray(ch) && ch.length) {
+            type Fila = { id: string; chat_riesgo: unknown; chat_leido_at: string | null };
+            const porId = new Map<string, string>();
+            for (const row of ch as unknown as Fila[]) {
+              // Sin `chat_leido_at` nadie miró esa conversación: no se afirma nada.
+              if (!row.chat_leido_at) continue;
+              if (row.chat_riesgo) porId.set(String(row.id), String(row.chat_riesgo));
+            }
+            if (porId.size) {
+              mapped = mapped.map(r => (
+                porId.has(r.orderId) ? { ...r, riesgoChat: porId.get(r.orderId)! } : r
+              ));
+            }
+          }
+        }
+      } catch { /* la señal es información de más, nunca un bloqueo */ }
+
       // `total_periodo` y `generados_periodo` vienen repetidos en cada fila (los
       // calcula la MISMA query, antes del LIMIT). Se leen de la primera: si no
       // hay filas, no hubo cancelaciones y no hay nada que denominar.

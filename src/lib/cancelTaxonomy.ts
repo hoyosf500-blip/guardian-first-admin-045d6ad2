@@ -201,6 +201,8 @@ export const CANCEL_CATEGORIA_LABEL: Record<string, string> = {
   no_reconoce_pedido: 'No reconoce el pedido',
   // transportadora
   sin_cobertura: 'No llega a su zona',
+  // el cliente nunca usó el chat
+  sin_whatsapp: 'Nunca usó el WhatsApp',
   // faltantes de dato
   sin_motivo: 'Canceló sin anotar motivo',
   externo_dropi: 'Cancelado fuera del CRM',
@@ -416,6 +418,16 @@ export interface CancelRowLike {
    * un falso positivo de la tasa. Medido en agosto-EC: 19 de 187 sin motivo.
    */
   recreado?: boolean;
+  /**
+   * Qué hizo el cliente con el botón de confirmar del WhatsApp
+   * (`orders.chat_riesgo`, lo llena `importchat-sync`). Solo se usa el valor
+   * `'mudo'`: el cliente NUNCA escribió nada por WhatsApp, jamás.
+   *
+   * Es lo que le pone nombre a una parte del bucket ciego. En agosto-EC eran
+   * 157 pedidos con 66,2% de cancelación y $3.219 — la mitad de todo lo que se
+   * perdió en el mes — y hasta ahora caían en "nadie anotó por qué".
+   */
+  riesgoChat?: string | null;
 }
 
 /**
@@ -430,6 +442,12 @@ export interface CancelRowLike {
  * El tamaño de `externo_dropi` es el KPI cero del proyecto: mientras sea grande,
  * ninguna conclusión sobre motivos describe a toda la operación.
  */
+/** ¿La asesora dejó un motivo que diga algo? Vacío, muy corto o ruido no cuenta. */
+function tieneMotivoUtil(motivo: string | null | undefined): boolean {
+  const n = norm(motivo || '');
+  return !!n && n.length >= MIN_LEN && !GENERIC_NOISE.has(n);
+}
+
 export function classifyCancelRow(row: CancelRowLike): CancelClass {
   // Va PRIMERO, antes que el origen: el pedido se rehizo, no se perdió. Da
   // igual quién apretó el botón — no hay venta perdida que explicar ni nadie a
@@ -444,6 +462,25 @@ export function classifyCancelRow(row: CancelRowLike): CancelClass {
       esGenerica: false,
     };
   }
+  // El cliente nunca escribió por WhatsApp. Va antes de `externo_dropi` porque
+  // le pone nombre a lo que ese bucket solo podía llamar "no sé", pero DESPUÉS
+  // de `recreado` y solo cuando NO hay motivo escrito: si una asesora anotó por
+  // qué canceló, su palabra manda sobre cualquier señal automática.
+  //
+  // Tipo `desconocido` y NO `perdida_evitable`, aunque tiente: de los 96 que
+  // nunca se confirmaron por teléfono, 63 fueron llamados hasta SEIS veces sin
+  // que nadie atendiera. Llamar más no los salvaba. Lo que sí es evitable son
+  // los 33 que no recibieron ni un intento, y eso se cuenta aparte y con su
+  // propio número — no se disfraza de categoría.
+  if (row.riesgoChat === 'mudo' && !tieneMotivoUtil(row.motivo)) {
+    return {
+      categoria: 'sin_whatsapp',
+      culpa: 'trafico',
+      tipo: 'desconocido',
+      cuentaEnTasa: true,
+      esGenerica: false,
+    };
+  }
   if (row.origen === 'externo') {
     return {
       categoria: 'externo_dropi',
@@ -453,8 +490,7 @@ export function classifyCancelRow(row: CancelRowLike): CancelClass {
       esGenerica: true,
     };
   }
-  const n = norm(row.motivo || '');
-  if (!n || n.length < MIN_LEN || GENERIC_NOISE.has(n)) {
+  if (!tieneMotivoUtil(row.motivo)) {
     return {
       categoria: 'sin_motivo',
       culpa: 'generica',

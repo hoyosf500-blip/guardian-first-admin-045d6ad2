@@ -270,3 +270,70 @@ describe('GUARDIÁN: un pedido rehecho no es una venta perdida', () => {
     expect(cancelCategoriaLabel('recreado_externo')).not.toBe('recreado_externo');
   });
 });
+
+describe('el que nunca usó el WhatsApp deja de ser "no sé"', () => {
+  // Agosto-EC: 157 pedidos, 66,2% de cancelación, $3.219 — la mitad de todo lo
+  // perdido en el mes — caían en el bucket ciego. La señal viene del botón de
+  // confirmación de ImporChat (`orders.chat_riesgo`), no de texto.
+
+  it('sin motivo escrito, "mudo" le pone nombre a la cancelación', () => {
+    const c = classifyCancelRow({ motivo: null, origen: 'externo', riesgoChat: 'mudo' });
+    expect(c.categoria).toBe('sin_whatsapp');
+    expect(c.culpa).toBe('trafico');
+    expect(c.esGenerica).toBe(false);
+  });
+
+  it('NO se declara evitable, aunque tiente', () => {
+    // De los 96 que nunca se confirmaron por teléfono, 63 fueron llamados hasta
+    // SEIS veces sin que nadie atendiera. Llamar más no los salvaba. Marcarlos
+    // evitables sería un reclamo injusto al equipo.
+    const c = classifyCancelRow({ motivo: null, origen: 'externo', riesgoChat: 'mudo' });
+    expect(c.tipo).toBe('desconocido');
+    expect(c.tipo).not.toBe('perdida_evitable');
+  });
+
+  it('sigue contando en la tasa: la venta se perdió igual', () => {
+    expect(classifyCancelRow({ motivo: null, origen: 'externo', riesgoChat: 'mudo' }).cuentaEnTasa)
+      .toBe(true);
+  });
+
+  it('la palabra de la asesora manda sobre la señal automática', () => {
+    // Si alguien se tomó el trabajo de anotar por qué, esa razón vale más que
+    // una inferencia — aunque el cliente además nunca haya usado el chat.
+    const c = classifyCancelRow({
+      motivo: 'el cliente dijo que estaba muy caro el flete',
+      origen: 'guardian',
+      riesgoChat: 'mudo',
+    });
+    expect(c.categoria).not.toBe('sin_whatsapp');
+    expect(c.culpa).toBe('precio_oferta');
+  });
+
+  it('un motivo que es puro ruido NO le gana a la señal', () => {
+    // "ok", "x", "-" no son un motivo: son una casilla llenada por llenar.
+    const c = classifyCancelRow({ motivo: 'ok', origen: 'guardian', riesgoChat: 'mudo' });
+    expect(c.categoria).toBe('sin_whatsapp');
+  });
+
+  it('un pedido recreado sigue ganando: no se perdió ninguna venta', () => {
+    const c = classifyCancelRow({
+      motivo: null, origen: 'externo', recreado: true, riesgoChat: 'mudo',
+    });
+    expect(c.categoria).toBe('recreado_externo');
+    expect(c.cuentaEnTasa).toBe(false);
+  });
+
+  it('los otros niveles de la señal NO clasifican nada', () => {
+    // Solo `mudo` afirma algo sobre el cliente. Que alguien no haya apretado el
+    // botón no explica por qué canceló, y usarlo como motivo sería inventar.
+    for (const r of ['confirmado', 'tibio', 'frio', 'sin_dato', null, undefined]) {
+      const c = classifyCancelRow({ motivo: null, origen: 'externo', riesgoChat: r as string });
+      expect(c.categoria, `${r} no debería clasificar`).toBe('externo_dropi');
+    }
+  });
+
+  it('tiene etiqueta legible', () => {
+    expect(cancelCategoriaLabel('sin_whatsapp')).not.toBe('sin_whatsapp');
+    expect(cancelCategoriaLabel('sin_whatsapp').toLowerCase()).toContain('whatsapp');
+  });
+});
