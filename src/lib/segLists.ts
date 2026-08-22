@@ -4,6 +4,21 @@ import { classifySegEstado } from './segStatus';
 import { estaDetenido, horasSinMovimiento } from './segPulso';
 
 /**
+ * El protocolo de la agencia, en horas.
+ *
+ * La transportadora retiene el paquete unos SIETE días y después lo devuelve
+ * sin avisar; el flete de ida y el de vuelta se pagan igual. Medido en julio-EC:
+ * 76 devoluciones así, $2.316.
+ *
+ * Los dos umbrales parten la espera en dos tramos disjuntos: a las 48 h se
+ * avisa, a las 120 h se llama (quedan dos días). Estaban escritos en el texto
+ * de la lista desde agosto y no existían en el código — había un solo corte de
+ * 48 h, así que el paquete de seis días se veía igual que el de dos.
+ */
+export const HORAS_AGENCIA_AVISO = 48;
+export const HORAS_AGENCIA_LLAMADA = 120;
+
+/**
  * "Listas SLA" estilo Boostec, ORGANIZADAS POR EMBUDO DE PRIORIDAD.
  *
  * Filosofía: el operador necesita atender PRIMERO los pedidos más cerca de
@@ -45,6 +60,7 @@ export type SegListSlug =
   | 'pendientes_confirmacion_2d'
   | 'detenidos_3d'
   | 'agencia_2d'
+  | 'agencia_5d'
   | 'devolucion_reciente'
   | 'en_oficina'
   | 'en_reparto_novedad'
@@ -253,7 +269,28 @@ const SEG_LIST_DEFS: SegListDef[] = [
       // estaDetenido. Sin fecha de movimiento NO matchea — no saber cuándo
       // llegó a la oficina no es lo mismo que saber que está vencido.
       const h = horasSinMovimiento(o);
-      return h != null && h >= 48;
+      return h != null && h >= HORAS_AGENCIA_AVISO && h < HORAS_AGENCIA_LLAMADA;
+    },
+  },
+  {
+    // El segundo tramo del MISMO protocolo, que hasta ahora estaba escrito en
+    // la pantalla y no existía en el código: `agencia_2d` decía "Día 2: aviso.
+    // Día 5: llamada" pero tenía un solo umbral de 48 h, así que el paquete
+    // que llevaba seis días esperando se veía igual que el que llevaba dos.
+    //
+    // Los dos tramos son DISJUNTOS (2d corta en 120 h) para que un paquete
+    // esté en uno o en el otro, nunca en los dos: si se sumaran los chips, el
+    // mismo paquete se contaría dos veces y la cola del día mentiría.
+    slug: 'agencia_5d',
+    label: 'En agencia · se devuelve pronto (+5 días)',
+    queEs: 'El paquete lleva cinco días o más esperando en la agencia. La transportadora lo guarda unos siete: a este le quedan dos días antes de que salga de vuelta.',
+    queHacer: 'Llamalo, no le escribas. Ya se le avisó y no fue. Si no lo retira, el flete de ida y el de vuelta se pagan igual y la venta se pierde entera.',
+    slaDias: 5,
+    tone: 'danger',
+    matches: (o) => {
+      if (faseDe(o) !== 'oficina') return false;
+      const h = horasSinMovimiento(o);
+      return h != null && h >= HORAS_AGENCIA_LLAMADA;
     },
   },
 
@@ -453,6 +490,12 @@ export const ACTIONABLE_SEG_SLUGS: SegListSlug[] = [
   // meterla acá la exigiría todos los días durante 30 días.
   'detenidos_3d',
   'agencia_2d',
+  // El tramo de 5 días va acá igual que el de 2: `esAccionable` es una UNIÓN
+  // (`.some`), así que un paquete que está en uno no puede estar en el otro y
+  // nada se cuenta dos veces. Omitirlo haría que el paquete más urgente —el que
+  // se devuelve pasado mañana— desapareciera de la cola del día al cruzar las
+  // 120 h, que es exactamente al revés de lo que hace falta.
+  'agencia_5d',
   'en_oficina',
   'en_reparto_novedad',
   'indem_guia_generada_5d',

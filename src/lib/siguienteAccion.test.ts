@@ -241,3 +241,40 @@ describe('GUARDIÁN: sin la cola cargada, la barra no afirma "al día"', () => {
     expect(siguienteAccion(vacio).key).toBe('al_dia');
   });
 });
+
+describe('el escalón de la agencia escala con el reloj', () => {
+  // El protocolo del dueño ("Día 2: aviso. Día 5: llamada") estaba escrito en la
+  // pantalla y no existía en el código. Ahora el escalón cambia de mensaje.
+  const enAgenciaUrgente = { ...base, estado: 'RECLAMAR EN OFICINA', lastMovementAt: hace(140) };
+  const input = (segData: OrderData[]): SiguienteAccionInput => ({
+    workQueue: [], segData, segCargado: true, novedadesQueue: [],
+  });
+
+  it('a los 2 días dice AVISAR', () => {
+    const a = siguienteAccion(input([enAgencia]));
+    expect(a.key).toBe('agencia');
+    expect(a.titulo).toMatch(/Avisá/);
+  });
+
+  it('a los 5 días dice LLAMAR y avisa que se devuelve', () => {
+    const a = siguienteAccion(input([enAgenciaUrgente]));
+    expect(a.key).toBe('agencia');
+    expect(a.titulo).toMatch(/Llamá/);
+    expect(a.titulo).toMatch(/dos días/);
+    expect(a.ruta).toContain('agencia_5d');
+  });
+
+  it('el de 5 días manda sobre el de 2 aunque sean menos', () => {
+    // Tres por avisar y uno por llamar: gana el que se pierde esta semana.
+    const a = siguienteAccion(input([enAgencia, enAgencia, enAgencia, enAgenciaUrgente]));
+    expect(a.cuantos).toBe(1);
+    expect(a.titulo).toMatch(/Llamá/);
+  });
+
+  it('un paquete de 6 días en agencia sigue contando como trabajo', () => {
+    // Si al partir la lista el tramo nuevo no fuera accionable, el paquete más
+    // urgente desaparecería de la cola justo al cruzar las 120 h.
+    expect(esAccionable(enAgenciaUrgente)).toBe(true);
+    expect(hayTrabajo(input([enAgenciaUrgente]))).toBe(true);
+  });
+});

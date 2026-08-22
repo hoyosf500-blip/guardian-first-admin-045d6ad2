@@ -55,8 +55,8 @@ const baseOrder: OrderData = {
 };
 
 describe('SEG_LISTS — definición (embudo por prioridad)', () => {
-  it('exporta exactamente 12 listas', () => {
-    expect(SEG_LISTS).toHaveLength(12);
+  it('exporta exactamente 13 listas', () => {
+    expect(SEG_LISTS).toHaveLength(13);
   });
 
   it('orden: confirmación → detenidos → agencia vencida → devolución reciente → final (oficina/reparto) → medio → inicial → otros', () => {
@@ -68,12 +68,15 @@ describe('SEG_LISTS — definición (embudo por prioridad)', () => {
     // La agencia vencida va pegada: es la plata más fácil de perder (el
     // courier devuelve a los ~7 días de espera).
     expect(slugs[2]).toBe('agencia_2d');
+    // Y pegado el segundo tramo del mismo protocolo: a los 5 días le quedan
+    // dos antes de que la transportadora lo devuelva.
+    expect(slugs[3]).toBe('agencia_5d');
     // Y lo que YA se fue de vuelta va antes de las fases: es la llamada de
     // rescate (auditoría devoluciones 14-ago-2026).
-    expect(slugs[3]).toBe('devolucion_reciente');
-    expect(slugs[4]).toBe('en_oficina');
-    expect(slugs[5]).toBe('en_reparto_novedad');
-    expect(slugs[6]).toBe('en_transito');
+    expect(slugs[4]).toBe('devolucion_reciente');
+    expect(slugs[5]).toBe('en_oficina');
+    expect(slugs[6]).toBe('en_reparto_novedad');
+    expect(slugs[7]).toBe('en_transito');
     expect(slugs[slugs.length - 1]).toBe('otros_estados');
   });
 
@@ -86,6 +89,7 @@ describe('SEG_LISTS — definición (embudo por prioridad)', () => {
       'pendientes_confirmacion_2d',
       'detenidos_3d',
       'agencia_2d',
+      'agencia_5d',
       'devolucion_reciente',
       'indem_guia_generada_5d',
       'indem_pendientes_guia_4d',
@@ -556,5 +560,72 @@ describe('hasSeguimientoWork — gate del guard de inactividad', () => {
       { ...baseOrder, estado: 'NOVEDAD' },
       { ...baseOrder, estado: 'ENTREGADO' },
     ])).toBe(true);
+  });
+});
+
+describe('agencia_5d — el segundo tramo del protocolo', () => {
+  // El texto de `agencia_2d` decía "Día 2: aviso. Día 5: llamada" desde agosto,
+  // pero el código tenía UN solo umbral de 48 h: el paquete de seis días se veía
+  // igual que el de dos, y el que estaba por devolverse no se distinguía.
+  const horasAtras = (h: number) => new Date(Date.now() - h * 3600000).toISOString();
+  const enOficina = (h: number | null): OrderData => ({
+    ...baseOrder, estado: 'RECLAME EN OFICINA', guia: 'G1', fecha: '', dias: 6,
+    lastMovementAt: h == null ? null : horasAtras(h),
+  });
+  const dosDias = () => findSegList('agencia_2d')!;
+  const cincoDias = () => findSegList('agencia_5d')!;
+
+  it('a las 72 h es aviso, no llamada', () => {
+    expect(dosDias().matches(enOficina(72))).toBe(true);
+    expect(cincoDias().matches(enOficina(72))).toBe(false);
+  });
+
+  it('a las 130 h es llamada, y YA NO aviso', () => {
+    expect(cincoDias().matches(enOficina(130))).toBe(true);
+    expect(dosDias().matches(enOficina(130))).toBe(false);
+  });
+
+  it('los dos tramos son DISJUNTOS: ningún paquete cae en los dos', () => {
+    // Si se solaparan, los chips sumarían el mismo paquete dos veces y la cola
+    // del día mentiría hacia arriba.
+    for (const h of [0, 24, 47, 48, 72, 119, 120, 121, 200, 500]) {
+      const o = enOficina(h);
+      const enAmbas = dosDias().matches(o) && cincoDias().matches(o);
+      expect(enAmbas, `${h} h cae en las dos listas`).toBe(false);
+    }
+  });
+
+  it('el corte está exactamente en 120 h', () => {
+    expect(dosDias().matches(enOficina(119))).toBe(true);
+    expect(cincoDias().matches(enOficina(119))).toBe(false);
+    expect(dosDias().matches(enOficina(120))).toBe(false);
+    expect(cincoDias().matches(enOficina(120))).toBe(true);
+  });
+
+  it('sin fecha de movimiento no matchea ninguno de los dos', () => {
+    // Mismo criterio que el tramo de 2 días: no saber cuándo llegó a la oficina
+    // no es lo mismo que saber que está vencido.
+    expect(dosDias().matches(enOficina(null))).toBe(false);
+    expect(cincoDias().matches(enOficina(null))).toBe(false);
+  });
+
+  it('un paquete de 6 días en agencia SIGUE siendo trabajo del día', () => {
+    // El riesgo de partir la lista: que el más urgente desaparezca de la cola
+    // al cruzar las 120 h. `esAccionable` es una unión, así que tiene que
+    // seguir contando — y una sola vez.
+    const o = enOficina(140);
+    expect(esAccionable(o)).toBe(true);
+    const listas = SEG_LISTS.filter((l) => l.matches(o)).map((l) => l.slug);
+    expect(listas).toContain('agencia_5d');
+    expect(listas).not.toContain('agencia_2d');
+  });
+
+  it('los dos tramos explican qué son y qué hacer', () => {
+    // `/como-se-trabaja` sale de acá: una lista sin texto deja a la operadora
+    // con un chip que no sabe qué significa.
+    for (const l of [dosDias(), cincoDias()]) {
+      expect(l.queEs?.length ?? 0).toBeGreaterThan(30);
+      expect(l.queHacer?.length ?? 0).toBeGreaterThan(30);
+    }
   });
 });

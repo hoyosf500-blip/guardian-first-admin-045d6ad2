@@ -247,15 +247,35 @@ export function siguienteAccion(input: SiguienteAccionInput): SiguienteAccion {
   }
 
   // ── 2. Agencia con reloj ──────────────────────────────────────────
-  const agencia = segCargado ? contarLista(segData, 'agencia_2d') : 0;
-  if (agencia > 0) {
+  // Dos tramos del MISMO protocolo, y el escalón escala con ellos: a las 48 h
+  // se avisa, a las 120 h se llama porque quedan dos días antes de que la
+  // transportadora lo devuelva. Los que ya cruzaron los 5 días mandan sobre los
+  // de 2 aunque sean menos: son los que se pierden esta semana.
+  const agenciaUrge = segCargado ? contarLista(segData, 'agencia_5d') : 0;
+  const agenciaAviso = segCargado ? contarLista(segData, 'agencia_2d') : 0;
+  if (agenciaUrge > 0) {
     return {
       key: 'agencia',
-      cuantos: agencia,
-      titulo: agencia === 1
+      cuantos: agenciaUrge,
+      titulo: agenciaUrge === 1
+        ? 'Llamá al cliente: su paquete se devuelve en dos días'
+        : `Llamá a ${agenciaUrge} clientes: sus paquetes se devuelven en dos días`,
+      etiqueta: agenciaUrge === 1
+        ? '1 paquete a punto de devolverse'
+        : `${agenciaUrge} paquetes a punto de devolverse`,
+      porque: doc('agencia').porque,
+      ruta: rutaSeg('agencia_5d'),
+      tono: 'urgente',
+    };
+  }
+  if (agenciaAviso > 0) {
+    return {
+      key: 'agencia',
+      cuantos: agenciaAviso,
+      titulo: agenciaAviso === 1
         ? 'Avisá al cliente que su paquete está en la agencia'
-        : `Avisá a ${agencia} clientes que su paquete está en la agencia`,
-      etiqueta: agencia === 1 ? '1 paquete esperando en la agencia' : `${agencia} paquetes esperando en la agencia`,
+        : `Avisá a ${agenciaAviso} clientes que su paquete está en la agencia`,
+      etiqueta: agenciaAviso === 1 ? '1 paquete esperando en la agencia' : `${agenciaAviso} paquetes esperando en la agencia`,
       porque: doc('agencia').porque,
       ruta: rutaSeg('agencia_2d'),
       tono: 'urgente',
