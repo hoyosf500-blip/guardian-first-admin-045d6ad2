@@ -88,6 +88,13 @@ VOLATILE
 SECURITY DEFINER
 SET search_path = public
 AS $$
+-- ⛔ SIN ESTA LÍNEA LA FUNCIÓN REVIENTA SIEMPRE (medido en producción el
+-- 22-ago-2026: 42702 «column reference "dia" is ambiguous»). El `ON CONFLICT
+-- (store_id, operator_id, dia)` de más abajo es una referencia a COLUMNA, pero
+-- `dia` también es un parámetro OUT (`RETURNS TABLE (dia date, ...)`) y plpgsql
+-- no sabe cuál es cuál. El cierre del día NUNCA se pudo firmar: el botón
+-- devolvía error contra una función que existía y nadie había ejercitado.
+#variable_conflict use_column
 DECLARE
   v_dia      date;
   v_faltaron int;
