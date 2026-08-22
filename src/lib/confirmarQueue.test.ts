@@ -407,3 +407,67 @@ describe('estaAplazado — el pedido reagendado sale de la cola de hoy', () => {
     expect(estaAplazado({ nextReminderAt: 'no-es-fecha' }, AHORA)).toBe(false);
   });
 });
+
+describe('la cola ordena por lo que hizo el cliente, no por la antigüedad', () => {
+  // La antigüedad, medida contra el reloj real, no distingue nada dentro del
+  // primer día (agosto-2026 EC, 765 pedidos resueltos): <2 h 19,3%, 2-6 h
+  // 18,4%, 6-24 h 20,1%. El botón parte esa misma población en 10,4% y 57,7%.
+  const AHORA = Date.parse('2026-08-21T15:00:00Z');
+  const hoy = (h: number) => new Date(AHORA - h * 3600_000).toISOString();
+
+  it('dentro del día, el que no apretó el botón sube por encima del que ya confirmó', () => {
+    // Este es el caso que importa: la jornada de la asesora transcurre casi
+    // entera dentro de los pedidos de hoy, y ahí la hora de entrada no dice
+    // nada (19,3% vs 20,1%) mientras el botón dice todo (10,4% vs 57,7%).
+    const entroTempranoSinBoton = { dias: 0, createdAt: hoy(9), riesgoChat: 'frio' as const };
+    const entroReciénYaConfirmó = { dias: 0, createdAt: hoy(1), riesgoChat: 'confirmado' as const };
+    expect(compareConfirmar(entroTempranoSinBoton, entroReciénYaConfirmó, AHORA)).toBeLessThan(0);
+  });
+
+  it('el riesgo ordena DENTRO del bucket, no lo atraviesa', () => {
+    // Límite conocido y deliberado: los buckets de `bucketOf` (recordatorio,
+    // reintento, frescura, D4+ al fondo) siguen mandando. El dato los respalda
+    // en lo grueso —dentro del día 20%, pasadas 24 h 36%— y cambiarlos sería
+    // una decisión de negocio distinta, no un ajuste de orden. Si algún día se
+    // quiere que un 'frío' viejo le gane a un 'confirmado' de hoy, hay que
+    // tocar `bucketOf` a propósito y esta prueba lo va a avisar.
+    const viejoFrio = { dias: 2, createdAt: hoy(40), riesgoChat: 'frio' as const };
+    const nuevoConfirmado = { dias: 0, createdAt: hoy(1), riesgoChat: 'confirmado' as const };
+    expect(compareConfirmar(viejoFrio, nuevoConfirmado, AHORA)).toBeGreaterThan(0);
+  });
+
+  it('el orden completo es frío → mudo → tibio → sin leer → ya confirmó', () => {
+    const mk = (r: string) => ({ dias: 0, createdAt: hoy(2), riesgoChat: r as never });
+    const orden = ['confirmado', 'sin_dato', 'tibio', 'mudo', 'frio']
+      .map(mk)
+      .sort((a, b) => compareConfirmar(a, b, AHORA))
+      .map((o) => o.riesgoChat);
+    expect(orden).toEqual(['frio', 'mudo', 'tibio', 'sin_dato', 'confirmado']);
+  });
+
+  it('sin señal la cola se comporta EXACTAMENTE como antes', () => {
+    // Es la garantía de que prender esto no mueve el piso hasta que haya datos.
+    const a = { dias: 0, createdAt: hoy(1) };
+    const b = { dias: 0, createdAt: hoy(5) };
+    expect(Math.sign(compareConfirmar(a, b, AHORA))).toBe(
+      Math.sign(compareConfirmar({ ...a, riesgoChat: null }, { ...b, riesgoChat: null }, AHORA)),
+    );
+    expect(compareConfirmar(a, b, AHORA)).toBeLessThan(0); // el más nuevo primero
+  });
+
+  it('un pedido sin señal no se hunde debajo de uno ya confirmado', () => {
+    // `null` es neutro, no "lo peor". Si se hundiera, prender la sincronización
+    // a medias mandaría al fondo justo a los que todavía nadie miró.
+    const sinSenal = { dias: 0, createdAt: hoy(3) };
+    const confirmado = { dias: 0, createdAt: hoy(3), riesgoChat: 'confirmado' as const };
+    expect(compareConfirmar(sinSenal, confirmado, AHORA)).toBeLessThan(0);
+  });
+
+  it('el riesgo NO le gana a un recordatorio vencido', () => {
+    // Reagendar es una promesa al cliente: "te llamo el viernes". Esa promesa
+    // manda sobre cualquier score.
+    const conRecordatorio = { dias: 0, createdAt: hoy(2), nextReminderAt: new Date(AHORA - 60_000).toISOString(), riesgoChat: 'confirmado' as const };
+    const frio = { dias: 0, createdAt: hoy(2), riesgoChat: 'frio' as const };
+    expect(compareConfirmar(conRecordatorio, frio, AHORA)).toBeLessThan(0);
+  });
+});

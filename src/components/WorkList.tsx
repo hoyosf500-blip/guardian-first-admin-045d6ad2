@@ -8,6 +8,7 @@ import { haceCuanto, etiquetaResultado, type GestionDelPedido } from '@/lib/gest
 import { MAX_DAILY_ATTEMPTS } from '@/lib/confirmarQueue';
 import { TruncatedText } from '@/components/TruncatedText';
 import LockBadge from '@/components/LockBadge';
+import { RIESGO_INFO, type NivelRiesgo } from '@/lib/riesgoChat';
 import OrderEditorDialog from '@/components/confirmar/OrderEditorDialog';
 import { useRefreshOrderRow } from '@/hooks/useRefreshOrderRow';
 import type { NoteIndex } from '@/hooks/useOrderNotesIndex';
@@ -22,6 +23,10 @@ interface Props {
    *  si no se pasa, las filas no muestran ícono de nota. Permite que la tab
    *  padre haga 1 sola query agregada en vez de N. */
   notesIndex?: NoteIndex;
+  /** Qué hizo el cliente con el botón de confirmar del WhatsApp, por order_id
+   *  (de `useRiesgoChat`). Opcional: sin él las filas no muestran el chip, que
+   *  es exactamente lo que se quiere mientras la sincronización esté apagada. */
+  riesgoIndex?: Map<string, NivelRiesgo>;
   /** Alertas por pedido (duplicado en curso + sobreprecio vs Shopify) —
    *  las computa ConfirmarTab una sola vez para toda la cola. */
   alerts?: ConfirmarOrderAlerts;
@@ -65,7 +70,7 @@ export function diasReales(o: OrderData): number {
   return Math.max(0, o.dias ?? 0);
 }
 
-export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestionEquipo }: Props) {
+export default function WorkList({ items, onOpenCall, notesIndex, riesgoIndex, alerts, gestionEquipo }: Props) {
   const [visibleCount, setVisibleCount] = useState(50);
   // Cache módulo-level compartido: no dispara una consulta por fila.
   const { nameOf } = useOperatorNames();
@@ -235,6 +240,27 @@ export default function WorkList({ items, onOpenCall, notesIndex, alerts, gestio
                   <DollarSign size={9} aria-hidden="true" /> DE MÁS
                 </span>
               )}
+              {/* Qué hizo el CLIENTE con el botón de confirmar del WhatsApp.
+                  Va PRIMERO del grupo porque es lo que más predice: medido en
+                  agosto-2026, el que aprieta el botón cancela 10% y el que no
+                  lo aprieta 58%. Lleva la tasa en el `title` para que el chip
+                  no sea una opinión sino un dato que la asesora puede leer.
+                  Si no hay señal (sincronización apagada o conversación sin
+                  leer) no se dibuja nada: un chip inventado sería peor que
+                  ninguno. */}
+              {(() => {
+                const r: NivelRiesgo | undefined = o.dbId ? riesgoIndex?.get(o.dbId) : undefined;
+                if (!r) return null;
+                const info = RIESGO_INFO[r];
+                return (
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded border flex-shrink-0 ${info.clase}`}
+                    title={`${info.que} ${info.tasa}. ${info.queHacer}`}
+                  >
+                    {info.etiqueta.toUpperCase()}
+                  </span>
+                );
+              })()}
               {/* Badge D7+ — la MISMA regla de días que alimenta el KPI
                   "N cancelar (D7+)" del header. Va aparte del badge de
                   prioridad porque ese sale de calcPriority (un score

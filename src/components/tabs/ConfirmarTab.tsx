@@ -7,6 +7,8 @@ import { useShopifyValueMismatches } from '@/hooks/useShopifyPending';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/contexts/StoreContext';
 import { useOrderNotesIndex } from '@/hooks/useOrderNotesIndex';
+import { useRiesgoChat } from '@/hooks/useRiesgoChat';
+import { compararRiesgo } from '@/lib/riesgoChat';
 import { useOperatorNames } from '@/hooks/useOperatorNames';
 import { useSessionState } from '@/hooks/useSessionState';
 import { supabase } from '@/integrations/supabase/client';
@@ -366,6 +368,11 @@ export default function ConfirmarTab({ profile }: Props) {
     [visibleQueue],
   );
   const notesIndex = useOrderNotesIndex(activeStoreId, queueOrderIds);
+  // Qué hizo el cliente con el botón de confirmar del WhatsApp. Query aparte
+  // (no va en ORDER_COLUMNS: una columna sin migrar tumba TODA pantalla que
+  // cargue pedidos). Con la sincronización apagada el índice queda vacío y
+  // nada de lo de abajo cambia. Ver `useRiesgoChat`.
+  const { index: riesgoIndex } = useRiesgoChat(activeStoreId, queueOrderIds);
   // "Recordatorios para hoy/ahora": recordatorio que llega en ≤1h o ya vencido.
   // La constante vive en confirmarQueue para que el chip, este filtro y
   // `estaAplazado` usen el MISMO número (antes estaba duplicada en dos archivos).
@@ -445,7 +452,18 @@ export default function ConfirmarTab({ profile }: Props) {
       return o.nombre.toLowerCase().includes(s) || o.phone.includes(s) || o.ciudad.toLowerCase().includes(s);
     }
     return true;
-  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id, esAplazado]);
+  }).sort((a, b) => {
+    // Reordenar por lo que hizo el CLIENTE. `buildWorkQueue` ya ordenó con
+    // `compareConfirmar`, pero esta señal llega después (query aparte), así que
+    // se aplica acá — mismo lugar donde el recordatorio se integra.
+    //
+    // Solo desempata: `compararRiesgo` trata la ausencia de señal como neutro,
+    // así que con el índice vacío devuelve 0 para todo par y `Array.sort`
+    // conserva el orden que ya venía (es estable desde ES2019).
+    const ra = a.dbId ? riesgoIndex.get(a.dbId) ?? null : null;
+    const rb = b.dbId ? riesgoIndex.get(b.dbId) ?? null : null;
+    return compararRiesgo(ra, rb);
+  }), [visibleQueue, filter, search, dateFrom, dateTo, notesIndex, riesgoIndex, onlyUntouched, myConfirmTouchedToday, gestionPorPedido, coverageConfirmError, user?.id, esAplazado]);
 
   // Si el rebuild de la cola (cambio de `filteredItems` por un refresh) tiró el
   // scroll hacia el tope, lo restauramos. Solo actúa cuando saltó claramente
@@ -1211,7 +1229,7 @@ export default function ConfirmarTab({ profile }: Props) {
           )}
 
           {view === 'list' ? (
-            <WorkList items={filteredItems} notesIndex={notesIndex} alerts={orderAlerts} gestionEquipo={gestionPorPedido} onOpenCall={(idx) => {
+            <WorkList items={filteredItems} notesIndex={notesIndex} riesgoIndex={riesgoIndex} alerts={orderAlerts} gestionEquipo={gestionPorPedido} onOpenCall={(idx) => {
               // Abrir EL pedido clickeado, no el primer pendiente. CallView lee el
               // pedido activo de sessionStorage['confirmar:callOrderId'] en su
               // inicializador de useState al montarse. useSessionState persiste en

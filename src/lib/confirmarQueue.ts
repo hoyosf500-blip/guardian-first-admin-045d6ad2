@@ -20,6 +20,8 @@
 //
 // Es country-agnostic y no toca `calcPriority` (compartido con Seguimiento).
 
+import { compararRiesgo, type NivelRiesgo } from './riesgoChat';
+
 /** Subconjunto de OrderData que el comparador necesita. Se deja laxo a
  *  propósito para poder testear con objetos mínimos sin construir un OrderData
  *  completo (TS no estricto en este repo). */
@@ -32,6 +34,10 @@ export interface ConfirmarQueueOrder {
    *  OrderContext, se integra en ConfirmarTab. Si algún día llega aquí, el
    *  comparador ya lo respeta. */
   nextReminderAt?: string | null;
+  /** Qué hizo el cliente con el botón del WhatsApp (viene de ImporChat vía
+   *  `orders.chat_riesgo`). `null`/ausente = todavía no hay señal, y el
+   *  comparador lo trata como neutro. Ver `src/lib/riesgoChat.ts`. */
+  riesgoChat?: NivelRiesgo | null;
 }
 
 /** Umbral de "por cancelar / casi perdido": D4+ va al fondo de la cola. */
@@ -193,7 +199,20 @@ export function compareConfirmar(
   const ba = bucketOf(a, nowMs);
   const bb = bucketOf(b, nowMs);
   if (ba !== bb) return ba - bb;
-  // Mismo bucket → primero por edad REAL (grueso: el más nuevo en Dropi arriba).
+  // Mismo bucket → primero por lo que hizo el CLIENTE con el WhatsApp.
+  //
+  // Va antes que la edad porque la edad, medida contra el reloj real, no
+  // distingue nada dentro del primer día: <2 h 19,3% · 2-6 h 18,4% · 6-24 h
+  // 20,1% de cancelación (agosto-2026 EC, 765 pedidos resueltos). El botón de
+  // confirmar parte esa MISMA población en 10,4% y 57,7%.
+  //
+  // La regla de frescura de abajo no se borra: sigue desempatando, y sigue
+  // siendo la que manda mientras no haya señal — un pedido sin `riesgoChat`
+  // cuenta como neutro, así que con la sincronización apagada esta línea no
+  // cambia absolutamente nada.
+  const rr = compararRiesgo(a.riesgoChat ?? null, b.riesgoChat ?? null);
+  if (rr !== 0) return rr;
+  // Mismo riesgo → primero por edad REAL (grueso: el más nuevo en Dropi arriba).
   const ra = realAgeDays(a, nowMs);
   const rb = realAgeDays(b, nowMs);
   if (ra !== rb) return ra - rb;
