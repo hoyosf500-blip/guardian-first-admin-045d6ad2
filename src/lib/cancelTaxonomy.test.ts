@@ -152,7 +152,8 @@ describe('GUARDIÁN: el histórico sigue clasificando (sin backfill)', () => {
     ['No contesta',              'no_contesta',           'perdida_evitable'],
     ['Duplicado',                'duplicado',             'ahorro'],
     ['Cambió de opinión',        'arrepentido',           'perdida_evitable'],
-    ['Cambio de transportadora', 'cambio_transportadora', 'ahorro'],
+    // 'recreado' y no 'ahorro': el pedido se rehizo, no se evitó una devolución.
+    ['Cambio de transportadora', 'cambio_transportadora', 'recreado'],
     ['Mal historial',            'mal_historial',         'ahorro'],
     ['No pagó anticipo',         'sin_anticipo',          'ahorro'],
     [MOTIVO_DUPLICADO_AUTO,      'duplicado',             'ahorro'],
@@ -206,11 +207,11 @@ describe('contratos de UI', () => {
 
   it('el orden de tipos pone lo accionable primero', () => {
     expect(CANCEL_TIPO_ORDER[0]).toBe('perdida_evitable');
-    expect(new Set(CANCEL_TIPO_ORDER).size).toBe(4);
+    expect(new Set(CANCEL_TIPO_ORDER).size).toBe(5);
   });
 
   it('cancelCategoriaLabel cae al slug crudo si falta la etiqueta', () => {
-    expect(cancelCategoriaLabel('duplicado')).toBe('Duplicado');
+    expect(cancelCategoriaLabel('duplicado')).toBe('Pedido duplicado');
     expect(cancelCategoriaLabel('inventado_xyz')).toBe('inventado_xyz');
   });
 });
@@ -245,7 +246,9 @@ describe('GUARDIÁN: un pedido rehecho no es una venta perdida', () => {
   it('recreado gana sobre el origen y sale del denominador', () => {
     const c = classifyCancelRow({ motivo: null, origen: 'externo', recreado: true });
     expect(c.categoria).toBe('recreado_externo');
-    expect(c.tipo).toBe('ahorro');
+    // 'recreado' y no 'ahorro': no evitó ninguna devolución. La tarjeta de
+    // ahorro dice "estuvo bien cancelar" y nombra duplicados/mal historial.
+    expect(c.tipo).toBe('recreado');
     expect(c.cuentaEnTasa).toBe(false);
   });
 

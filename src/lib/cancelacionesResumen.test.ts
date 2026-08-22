@@ -497,9 +497,27 @@ describe('GUARDIÁN: los recreados no inflan la tasa', () => {
     expect(r.recreados).toBe(1);
   });
 
-  it('un recreado sigue siendo "ahorro", no pérdida', () => {
+  it('un recreado NO es pérdida — pero tampoco es "ahorro"', () => {
+    // Antes caía en el bucket `ahorro`, cuya tarjeta dice "estuvo bien
+    // cancelar" y cuyo pie nombra "duplicados / mal historial". Un pedido
+    // rehecho no evitó ninguna devolución: no ahorró nada. Ahora tiene bucket
+    // propio y el de ahorro vuelve a nombrar solo a su población.
     const r = summarizeCancelaciones([row({ motivo: cambioTrans })], { generados: 10, totalPeriodo: 1 });
-    expect(r.plata.ahorro.cancelados).toBe(1);
+    expect(r.plata.recreado.cancelados).toBe(1);
+    expect(r.plata.ahorro.cancelados).toBe(0);
     expect(r.plata.perdidoBruto).toBe(0);
+  });
+
+  it('un recreado NO engorda la barra "Nosotros" de la portada', () => {
+    // Lleva `culpa:'operacion'` (es la operación la que rehace el pedido), así
+    // que sin filtrar se sumaba a la culpa que manda a revisar la cola de
+    // Confirmar — por pedidos que no son falla de nadie.
+    const r = summarizeCancelaciones([row({ motivo: cambioTrans })], { generados: 10, totalPeriodo: 1 });
+    expect(r.porCulpa.find(c => c.culpa === 'operacion')).toBeUndefined();
+  });
+
+  it('un recreado tampoco compite en el top de motivos', () => {
+    const r = summarizeCancelaciones([row({ motivo: cambioTrans })], { generados: 10, totalPeriodo: 1 });
+    expect(r.topMotivos.some(m => m.categoria === 'cambio_transportadora')).toBe(false);
   });
 });

@@ -79,7 +79,7 @@ export interface CancelacionRow {
 }
 
 export type NivelConfianza = 'alta' | 'media' | 'baja' | 'nula';
-export type TipoPerdida = 'evitable' | 'inevitable' | 'ahorro' | 'sin_clasificar';
+export type TipoPerdida = 'evitable' | 'inevitable' | 'ahorro' | 'sin_clasificar' | 'recreado';
 export type MotivoClasificacion = 'sin_gestion' | 'taxonomia' | 'sin_dato';
 export type IntentoBucket = '0' | '1' | '2' | '3+';
 
@@ -89,6 +89,13 @@ export const UMBRAL_COBERTURA_MEDIA = 0.4;
 
 /** Mínimo de cancelaciones para juzgar a una operadora. Debajo, no se pinta rojo. */
 export const MIN_MUESTRA_OPERADORA = 5;
+
+/**
+ * Intentos de llamada a partir de los cuales un "no contestó" deja de ser una
+ * pérdida evitable. Es el mismo 3 que usa el sistema de reintentos
+ * (`MAX_DAILY_ATTEMPTS`): agotar los intentos del día ES haber hecho el trabajo.
+ */
+export const INTENTOS_SUFICIENTES = 3;
 
 /** Hasta cuántos días desde el pedido una cancelación cuenta como "fresca". */
 export const ES_FRESCO_DIAS = 1;
@@ -150,9 +157,23 @@ export function clasificarPerdida(r: CancelacionRow): {
   motivo: MotivoClasificacion;
 } {
   const clase = classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado, riesgoChat: r.riesgoChat });
+  // Va PRIMERO: un pedido recreado no es ni pérdida ni ahorro, así que no puede
+  // caer en ninguno de los buckets de abajo. `cuentaEnTasa === false` es la
+  // misma marca que ya lo saca del denominador de la tasa.
+  if (clase.cuentaEnTasa === false) return { tipo: 'recreado', motivo: 'taxonomia' };
   if (clase.tipo === 'ahorro') return { tipo: 'ahorro', motivo: 'taxonomia' };
   if (!tuvoGestion(r)) return { tipo: 'evitable', motivo: 'sin_gestion' };
   if (clase.tipo === 'desconocido') return { tipo: 'sin_clasificar', motivo: 'sin_dato' };
+  // "No contestó" NO es evitable por definición: depende de cuántas veces se
+  // intentó. De los que nunca se confirmaron por teléfono, 63 fueron llamados
+  // hasta SEIS veces sin que nadie atendiera. Llamar más no los salvaba, y
+  // cobrárselo al equipo como "pérdida evitable" es un reclamo injusto. Es el
+  // mismo criterio que ya se aplicó a `sin_whatsapp`, que hasta ahora no se
+  // había aplicado acá aunque es el mismo hecho contado por la asesora en vez
+  // de por el bot — y `no_contesta` es el motivo #1 del picklist.
+  if (clase.categoria === 'no_contesta' && val(r.intentosPrevios) >= INTENTOS_SUFICIENTES) {
+    return { tipo: 'inevitable', motivo: 'taxonomia' };
+  }
   if (clase.tipo === 'perdida_evitable') return { tipo: 'evitable', motivo: 'taxonomia' };
   return { tipo: 'inevitable', motivo: 'taxonomia' };
 }
@@ -208,6 +229,16 @@ export interface PlataCancelada {
   inevitable: { cancelados: number; valor: number; pctSobreTotal: number | null };
   ahorro: { cancelados: number; valor: number; pctSobreTotal: number | null };
   sinClasificar: { cancelados: number; valor: number; pctSobreTotal: number | null };
+  /**
+   * NI pérdida NI ahorro: el pedido se recreó con otro `external_id` (cambio de
+   * transportadora, edición, o el reemplazo que detecta `cancelaciones_recreadas`).
+   *
+   * Tenía `tipo:'ahorro'` y por lo tanto entraba a la tarjeta "Ahorro (estuvo
+   * bien cancelar)", cuyo texto al pie nombra "duplicados / mal historial" —
+   * una población que no era la que contaba. No ahorró nada: no evitó ninguna
+   * devolución. Simplemente no es una cancelación.
+   */
+  recreado: { cancelados: number; valor: number; pctSobreTotal: number | null };
   /** evitable + inevitable. Es la plata que sí se fue. */
   perdidoBruto: number;
   /** Cuántas evitables lo son SOLO porque nadie llamó. */
@@ -342,6 +373,7 @@ export const EMPTY_RESUMEN: CancelacionesResumen = {
     inevitable: { cancelados: 0, valor: 0, pctSobreTotal: null },
     ahorro: { cancelados: 0, valor: 0, pctSobreTotal: null },
     sinClasificar: { cancelados: 0, valor: 0, pctSobreTotal: null },
+    recreado: { cancelados: 0, valor: 0, pctSobreTotal: null },
     perdidoBruto: 0, evitablesPorSinGestion: 0, valorEvitablePorSinGestion: 0,
   },
   topMotivos: [], motivosCrudos: [], porCulpa: [],
@@ -454,6 +486,7 @@ export function summarizeCancelaciones(
     inevitable: { cancelados: 0, valor: 0 },
     ahorro: { cancelados: 0, valor: 0 },
     sin_clasificar: { cancelados: 0, valor: 0 },
+    recreado: { cancelados: 0, valor: 0 },
   };
   let evitablesPorSinGestion = 0;
   let valorEvitablePorSinGestion = 0;
@@ -477,6 +510,7 @@ export function summarizeCancelaciones(
     inevitable: conPct(acc.inevitable),
     ahorro: conPct(acc.ahorro),
     sinClasificar: conPct(acc.sin_clasificar),
+    recreado: conPct(acc.recreado),
     perdidoBruto: acc.evitable.valor + acc.inevitable.valor,
     evitablesPorSinGestion, valorEvitablePorSinGestion,
   };
@@ -490,6 +524,10 @@ export function summarizeCancelaciones(
   list.forEach((r, i) => {
     const clase = clases[i];
     if (!conMotivoFlags[i]) return;      // sin motivo no entra al top de motivos
+    // Un pedido recreado no es un MOTIVO de cancelación: la venta siguió con
+    // otro número. Listarlo entre los motivos lo pone a competir con las
+    // pérdidas de verdad.
+    if (clase.cuentaEnTasa === false) return;
     let b = motMap.get(clase.categoria);
     if (!b) { b = { culpa: clase.culpa, cancelados: 0, valor: 0, evitables: 0, ejemplos: new Map() }; motMap.set(clase.categoria, b); }
     b.cancelados += 1;
@@ -524,6 +562,11 @@ export function summarizeCancelaciones(
   // ── (d) Por culpa — la fila "sin motivo" es OBLIGATORIA y a su tamaño real ─
   const culpaMap = new Map<CancelCulpa, { cancelados: number; valor: number }>();
   clases.forEach((c, i) => {
+    // Los recreados quedan afuera. Llevan `culpa:'operacion'` (es la operación
+    // la que rehace el pedido) y sin este filtro engordaban la barra
+    // "Nosotros" de la portada con pedidos que no son falla de nadie — la misma
+    // clase de doble conteo que ya se había corregido para la tasa.
+    if (c.cuentaEnTasa === false) return;
     const b = culpaMap.get(c.culpa) || { cancelados: 0, valor: 0 };
     b.cancelados += 1;
     b.valor += val(list[i].valor);

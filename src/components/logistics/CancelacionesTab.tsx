@@ -7,7 +7,7 @@ import {
 import { useCancelacionesAnalisis } from '@/hooks/useCancelacionesAnalisis';
 import { useCancelacionesPorProducto } from '@/hooks/useCancelacionesPorProducto';
 import {
-  cancelCategoriaLabel, CANCEL_CULPA_INFO, type CancelCulpa,
+  cancelCategoriaLabel, CANCEL_CULPA_INFO, CANCEL_TIPO_LABEL, type CancelCulpa,
 } from '@/lib/cancelTaxonomy';
 import type { DimensionBucket, CulpaBucket } from '@/lib/cancelacionesResumen';
 import { Stat } from '@/components/novedades/Stat';
@@ -445,17 +445,32 @@ export default function CancelacionesTab({ filters }: { filters: LogisticsFilter
                 : r.tasaCancelacion == null
                   ? (r.universoInconsistente ? 'tasa no confiable' : 'sin base comparable')
                   : `${pct(r.tasaCancelacion)} de ${r.generados} generados`} />
-            <Stat icon={<DollarSign size={16} />} label="Pérdida evitable" value={formatCOP(r.plata.evitable.valor)} tone="warning"
+            {/* Las etiquetas salen de CANCEL_TIPO_LABEL y ya no van a mano: la
+                constante existía y no la importaba nadie, así que 'Ahorro
+                (estuvo bien cancelar)' de acá y 'Ahorro (cancelar estuvo bien)'
+                de allá ya se habían separado. */}
+            <Stat icon={<DollarSign size={16} />} label={CANCEL_TIPO_LABEL.perdida_evitable}
+              value={formatCOP(r.plata.evitable.valor)} tone="warning"
               hint={`${r.plata.evitable.cancelados} pedidos`} />
-            <Stat icon={<DollarSign size={16} />} label="Pérdida inevitable" value={formatCOP(r.plata.inevitable.valor)}
+            <Stat icon={<DollarSign size={16} />} label={CANCEL_TIPO_LABEL.perdida_inevitable}
+              value={formatCOP(r.plata.inevitable.valor)}
               hint={`${r.plata.inevitable.cancelados} pedidos`} />
-            <Stat icon={<ShieldCheck size={16} />} label="Ahorro (estuvo bien cancelar)" value={formatCOP(r.plata.ahorro.valor)} tone="success"
+            <Stat icon={<ShieldCheck size={16} />} label={CANCEL_TIPO_LABEL.ahorro}
+              value={formatCOP(r.plata.ahorro.valor)} tone="success"
               hint={`${r.plata.ahorro.cancelados} duplicados / mal historial`} />
           </motion.div>
 
           <motion.div {...fadeUp(0.1)} className="text-xs text-muted-foreground">
             Perdido bruto del período: <span className="font-mono tabular-nums text-foreground font-bold text-sm">{formatCOP(r.plata.perdidoBruto)}</span>
             {' '}· sin clasificar: {formatCOP(r.plata.sinClasificar.valor)} ({r.plata.sinClasificar.cancelados})
+            {/* Los recreados van APARTE de los tres baldes de plata: no son
+                pérdida ni ahorro, el pedido volvió a entrar con otro número.
+                Estaban sumados en "Ahorro", cuya línea nombra duplicados y mal
+                historial — una población que no era la que contaba. */}
+            {r.plata.recreado.cancelados > 0 && (
+              <> · <span className="text-foreground">{CANCEL_TIPO_LABEL.recreado.toLowerCase()}</span>:{' '}
+                {r.plata.recreado.cancelados} ({formatCOP(r.plata.recreado.valor)}) — no cuentan como cancelación</>
+            )}
             <span className="block mt-1 opacity-80">Es venta bruta no realizada, no utilidad.</span>
             {/* Se dice SIEMPRE que hay recreados, aunque la tasa real no se
                 haya podido calcular: si el número de la pantalla difiere del

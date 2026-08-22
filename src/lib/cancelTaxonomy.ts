@@ -12,7 +12,7 @@
  * servía para decidir. Acá se separan:
  *   - `categoria` → QUÉ pasó (el motivo, cara al cliente)
  *   - `culpa`     → DE QUIÉN fue (define si se arregla la operación o el anuncio)
- *   - `tipo`      → CUÁNTO DUELE (evitable / inevitable / ahorro)
+ *   - `tipo`      → CUÁNTO DUELE (evitable / inevitable / ahorro / recreado)
  *
  * `tipo: 'ahorro'` es la clave del negocio: cancelar por "mal historial" o
  * "duplicado" EVITÓ una devolución (~$22k). Contarlo en la misma tasa que una
@@ -64,6 +64,13 @@ export type CancelTipo =
   | 'perdida_inevitable'
   /** Cancelar FUE la decisión correcta: evitó una devolución. */
   | 'ahorro'
+  /**
+   * NI pérdida NI ahorro: el pedido se recreó con otro id (cambio de
+   * transportadora, edición, reemplazo). No evitó ninguna devolución, así que
+   * llamarlo "ahorro" —como estaba— mezclaba dos cosas opuestas en la misma
+   * tarjeta, cuyo texto al pie nombra "duplicados / mal historial".
+   */
+  | 'recreado'
   /** No hay motivo → NO se inventa un bucket. */
   | 'desconocido';
 
@@ -114,7 +121,9 @@ export const CANCEL_CULPA_INFO: Record<CancelCulpa, CulpaInfo> = {
     dondeMirar: 'El creativo del anuncio y la ficha del producto.',
   },
   operacion: {
-    label: 'Nosotros',
+    // 'Nosotros' a secas era la única etiqueta de culpa que no era una oración,
+    // entre seis que sí lo son.
+    label: 'Fue de nuestro lado',
     que: 'Llamamos tarde, se demoró el despacho, faltó stock o los datos se cargaron mal.',
     dondeMirar: 'La cola de Confirmar y los tiempos de despacho.',
   },
@@ -129,7 +138,9 @@ export const CANCEL_CULPA_INFO: Record<CancelCulpa, CulpaInfo> = {
     dondeMirar: 'Casi nada de esto se salva llamando más rápido.',
   },
   transportadora: {
-    label: 'No llegamos a su zona',
+    // Decía 'No llegamos a su zona' — 1ª persona plural para algo que esta
+    // misma culpa atribuye a la TRANSPORTADORA.
+    label: 'La transportadora no llega ahí',
     que: 'La transportadora no tiene cobertura en ese destino.',
     dondeMirar: 'La cobertura por ciudad y las transportadoras alternativas.',
   },
@@ -158,7 +169,8 @@ export const CANCEL_CULPA_ORDER: CancelCulpa[] = [
 export const CANCEL_TIPO_LABEL: Record<CancelTipo, string> = {
   perdida_evitable: 'Pérdida evitable',
   perdida_inevitable: 'Pérdida inevitable',
-  ahorro: 'Ahorro (cancelar estuvo bien)',
+  ahorro: 'Ahorro (estuvo bien cancelar)',
+  recreado: 'No se perdió: se rehizo el pedido',
   desconocido: 'Sin clasificar',
 };
 
@@ -168,45 +180,62 @@ export const CANCEL_TIPO_LABEL: Record<CancelTipo, string> = {
  * a resolver, no una nota al pie.
  */
 export const CANCEL_TIPO_ORDER: CancelTipo[] = [
-  'perdida_evitable', 'desconocido', 'perdida_inevitable', 'ahorro',
+  'perdida_evitable', 'desconocido', 'perdida_inevitable', 'ahorro', 'recreado',
 ];
 
-/** Etiqueta legible por categoría. La UI NO inventa nombres: los lee de acá. */
+/**
+ * Etiqueta legible por categoría. La UI NO inventa nombres: los lee de acá.
+ *
+ * ── UNA SOLA VOZ: frase nominal, sin sujeto tácito ────────────────────────
+ * Antes convivían cuatro: el cliente en 3ª ("Se arrepintió"), nosotros en 1ª
+ * plural ("Llamamos tarde"), sustantivos sueltos ("Duplicado") y —lo peor—
+ * `sin_motivo: 'Canceló sin anotar motivo'`, donde el sujeto tácito es LA
+ * ASESORA pero se lee como si hubiera cancelado el cliente. Es el bucket más
+ * grande del reporte: que se lea al revés es caro.
+ *
+ * Tres razones para la frase nominal:
+ *   1. La etiqueta se dibuja al lado de un número, en una barra angosta. Un
+ *      sustantivo entra; una oración se corta.
+ *   2. El "de quién fue" ya lo dice `CANCEL_CULPA_INFO`, que sí es narrativo
+ *      por diseño. Repetir el sujeto acá generaba contradicciones: la categoría
+ *      decía "No llega a su zona" y su culpa "No llegamos a su zona".
+ *   3. Es la única forma de que `sin_motivo` deje de acusar al cliente.
+ */
 export const CANCEL_CATEGORIA_LABEL: Record<string, string> = {
   // filtro interno / ahorro
-  duplicado: 'Duplicado',
+  duplicado: 'Pedido duplicado',
   prueba_interna: 'Pedido de prueba',
-  mal_historial: 'Mal historial',
-  sin_anticipo: 'No pagó el anticipo',
+  mal_historial: 'Cliente con mal historial',
+  sin_anticipo: 'Anticipo no pagado',
   // no cuentan en la tasa (el pedido se recreó)
   cambio_transportadora: 'Cambio de transportadora',
-  recreado_edicion: 'Se recreó por edición',
-  recreado_externo: 'Se rehizo el pedido (volvió a entrar)',
+  recreado_edicion: 'Recreado por edición',
+  recreado_externo: 'Pedido rehecho (volvió a entrar)',
   // operación
-  llamada_tardia: 'Llamamos tarde',
-  demora_entrega: 'Se demora la entrega',
-  datos_malos: 'Teléfono / datos malos',
+  llamada_tardia: 'Llamada tardía',
+  demora_entrega: 'Demora en la entrega',
+  datos_malos: 'Teléfono o datos malos',
   sin_stock: 'Sin stock',
   // precio y oferta
-  precio_flete: 'Precio o flete muy caro',
-  compro_en_otro_lado: 'Compró en otro lado',
-  promesa_no_cumplida: 'No era lo que esperaba',
+  precio_flete: 'Precio o flete caro',
+  compro_en_otro_lado: 'Compra en otro lado',
+  promesa_no_cumplida: 'Distinto a lo del anuncio',
   // cliente
-  no_contesta: 'No contesta',
-  sin_dinero: 'No tiene plata ahora',
-  arrepentido: 'Se arrepintió',
-  familiar_no_autoriza: 'No lo autorizan en la casa',
+  no_contesta: 'Sin respuesta',
+  sin_dinero: 'Sin plata en este momento',
+  arrepentido: 'Arrepentimiento',
+  familiar_no_autoriza: 'Sin autorización en la casa',
   fuerza_mayor: 'Fuerza mayor (viaje, salud)',
   // tráfico
-  no_reconoce_pedido: 'No reconoce el pedido',
+  no_reconoce_pedido: 'Pedido no reconocido',
   // transportadora
-  sin_cobertura: 'No llega a su zona',
+  sin_cobertura: 'Zona sin cobertura',
   // el cliente nunca usó el chat
-  sin_whatsapp: 'Nunca usó el WhatsApp',
+  sin_whatsapp: 'Sin contacto por WhatsApp',
   // faltantes de dato
-  sin_motivo: 'Canceló sin anotar motivo',
+  sin_motivo: 'Cancelado sin motivo anotado',
   externo_dropi: 'Cancelado fuera del CRM',
-  otro: 'Otro / sin clasificar',
+  otro: 'Motivo escrito que no clasificó',
 };
 
 interface Rule {
@@ -287,12 +316,12 @@ const RULES: Rule[] = [
   ] },
 
   // ═══ NO ES PÉRDIDA — el pedido se RECREÓ, no se perdió ═══
-  { categoria: 'cambio_transportadora', culpa: 'operacion', tipo: 'ahorro',
+  { categoria: 'cambio_transportadora', culpa: 'operacion', tipo: 'recreado',
     cuentaEnTasa: false, any: [
     'CAMBIO DE TRANSPORTADORA', 'CAMBIO TRANSPORTADORA', 'OTRA TRANSPORTADORA',
     'CAMBIO DE CARRIER', 'CAMBIO DE TRANSPORT',
   ] },
-  { categoria: 'recreado_edicion', culpa: 'operacion', tipo: 'ahorro',
+  { categoria: 'recreado_edicion', culpa: 'operacion', tipo: 'recreado',
     cuentaEnTasa: false, any: [
     'SE RECREO', 'RECREAD', 'SE VOLVIO A CREAR', 'SE CREO DE NUEVO', 'REEMPLAZAD',
     'CAMBIO DE PRODUCTO', 'CAMBIO DE TALLA', 'CAMBIO DE COLOR',
@@ -547,7 +576,7 @@ export function classifyCancelRow(row: CancelRowLike): CancelClass {
     return {
       categoria: 'recreado_externo',
       culpa: 'operacion',
-      tipo: 'ahorro',
+      tipo: 'recreado',
       cuentaEnTasa: false,
       esGenerica: false,
     };
