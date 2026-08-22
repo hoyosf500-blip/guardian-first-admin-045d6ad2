@@ -128,6 +128,7 @@ export const CANCEL_CATEGORIA_LABEL: Record<string, string> = {
   // no cuentan en la tasa (el pedido se recreó)
   cambio_transportadora: 'Cambio de transportadora',
   recreado_edicion: 'Se recreó por edición',
+  recreado_externo: 'Se rehizo el pedido (volvió a entrar)',
   // operación
   llamada_tardia: 'Llamamos tarde',
   demora_entrega: 'Se demora la entrega',
@@ -352,6 +353,16 @@ export interface CancelRowLike {
    *              cancel_orphan_pending_orders, o por dropi-nightly-reconcile.
    */
   origen: 'guardian' | 'externo';
+  /**
+   * El pedido volvió a entrar con otro `external_id` en menos de 48 h, mismo
+   * cliente y mismo producto (RPC `cancelaciones_recreadas`).
+   *
+   * Separa un tercio del bucket ciego: hasta ahora "cancelado fuera del CRM"
+   * mezclaba **la canceló una persona** con **se rehizo el pedido**, que son
+   * problemas opuestos — uno se arregla cambiando dónde se cancela, el otro es
+   * un falso positivo de la tasa. Medido en agosto-EC: 19 de 187 sin motivo.
+   */
+  recreado?: boolean;
 }
 
 /**
@@ -367,6 +378,19 @@ export interface CancelRowLike {
  * ninguna conclusión sobre motivos describe a toda la operación.
  */
 export function classifyCancelRow(row: CancelRowLike): CancelClass {
+  // Va PRIMERO, antes que el origen: el pedido se rehizo, no se perdió. Da
+  // igual quién apretó el botón — no hay venta perdida que explicar ni nadie a
+  // quien entrenar. `cuentaEnTasa:false` lo saca del denominador, igual que a
+  // su gemelo `recreado_edicion`, que es el mismo hecho contado por texto.
+  if (row.recreado) {
+    return {
+      categoria: 'recreado_externo',
+      culpa: 'operacion',
+      tipo: 'ahorro',
+      cuentaEnTasa: false,
+      esGenerica: false,
+    };
+  }
   if (row.origen === 'externo') {
     return {
       categoria: 'externo_dropi',

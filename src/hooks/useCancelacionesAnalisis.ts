@@ -107,7 +107,31 @@ export function useCancelacionesAnalisis(filtros: CancelacionesFiltros): Cancela
         return;
       }
       const raw = data ?? [];
-      const mapped = raw.map(mapRow);
+      let mapped = raw.map(mapRow);
+
+      // ── Los que NO se perdieron: se rehicieron ──────────────────────────
+      // Segunda RPC, ADITIVA: marca los cancelados que volvieron a entrar con
+      // otro número en menos de 48 h (mismo cliente, mismo producto). Sin
+      // esto, un cambio de transportadora cuenta como venta perdida Y la
+      // venta buena entra aparte: la misma plata, dos veces.
+      //
+      // Va aparte y no dentro de `cancelaciones_analisis` para no reescribir
+      // una función viva (⛔ REGLA #1). Si la migración todavía no corrió, el
+      // error se ignora y el reporte queda como estaba: es información de
+      // más, nunca un bloqueo.
+      try {
+        const { data: rec, error: recErr } = await (supabase.rpc as unknown as (
+          fn: string, args: Record<string, unknown>,
+        ) => Promise<{ data: Record<string, unknown>[] | null; error: unknown }>)(
+          'cancelaciones_recreadas',
+          { p_store_id: activeStoreId, p_desde: fromDate, p_hasta: toDate, p_limite: ROW_CAP },
+        );
+        if (!recErr && Array.isArray(rec) && rec.length) {
+          const ids = new Set(rec.map(x => String(x.order_id)));
+          mapped = mapped.map(r => (ids.has(r.orderId) ? { ...r, recreado: true } : r));
+        }
+      } catch { /* sin la migración el reporte sigue sirviendo */ }
+
       // `total_periodo` y `generados_periodo` vienen repetidos en cada fila (los
       // calcula la MISMA query, antes del LIMIT). Se leen de la primera: si no
       // hay filas, no hubo cancelaciones y no hay nada que denominar.

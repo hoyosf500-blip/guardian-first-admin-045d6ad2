@@ -230,3 +230,43 @@ describe('pureza', () => {
     expect(classifyCancel('').tipo).toBe('desconocido');
   });
 });
+
+// ── GUARDIÁN ──────────────────────────────────────────────────────────
+// "Cancelado fuera del CRM" era UN bucket para tres hechos distintos: la
+// canceló una persona en Dropi, la canceló el bot de WhatsApp, o **el pedido
+// se rehizo**. Los dos primeros son ventas perdidas sin explicación; el
+// tercero no es una pérdida en absoluto.
+//
+// Medido en agosto-EC: 19 de 187 cancelados sin motivo volvieron a entrar con
+// otro número en menos de 48 h, mismo cliente y mismo producto. Contarlos como
+// pérdida cuenta la misma plata dos veces — una como cancelada y otra como
+// venta nueva.
+describe('GUARDIÁN: un pedido rehecho no es una venta perdida', () => {
+  it('recreado gana sobre el origen y sale del denominador', () => {
+    const c = classifyCancelRow({ motivo: null, origen: 'externo', recreado: true });
+    expect(c.categoria).toBe('recreado_externo');
+    expect(c.tipo).toBe('ahorro');
+    expect(c.cuentaEnTasa).toBe(false);
+  });
+
+  it('recreado gana incluso con motivo escrito por una asesora', () => {
+    // Si el pedido volvió a entrar, volvió a entrar. Da igual qué se anotó.
+    const c = classifyCancelRow({ motivo: 'Se arrepintió', origen: 'guardian', recreado: true });
+    expect(c.categoria).toBe('recreado_externo');
+    expect(c.cuentaEnTasa).toBe(false);
+  });
+
+  it('sin la marca, la conducta de antes NO cambia', () => {
+    // La migración puede no estar aplicada: `recreado` llega undefined y todo
+    // tiene que seguir clasificando igual que ayer.
+    expect(classifyCancelRow({ motivo: null, origen: 'externo' }).categoria).toBe('externo_dropi');
+    expect(classifyCancelRow({ motivo: null, origen: 'guardian' }).categoria).toBe('sin_motivo');
+    expect(classifyCancelRow({ motivo: 'Se arrepintió', origen: 'guardian' }).categoria).toBe('arrepentido');
+    expect(classifyCancelRow({ motivo: null, origen: 'externo', recreado: false }).categoria).toBe('externo_dropi');
+  });
+
+  it('la categoría nueva tiene etiqueta legible', () => {
+    // Sin etiqueta, la pantalla imprimiría el slug crudo al dueño.
+    expect(cancelCategoriaLabel('recreado_externo')).not.toBe('recreado_externo');
+  });
+});
