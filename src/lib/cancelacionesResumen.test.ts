@@ -521,3 +521,41 @@ describe('GUARDIÁN: los recreados no inflan la tasa', () => {
     expect(r.topMotivos.some(m => m.categoria === 'cambio_transportadora')).toBe(false);
   });
 });
+
+describe('el motivo dominante por ciudad/producto no nombra lo que el resto excluye', () => {
+  // Medido en pantalla el 22-ago-2026: Quito salia como "32 cancelaciones ·
+  // Pedido rehecho" cuando en TODO el periodo hubo 19 rehechos. El motivo
+  // dominante se calculaba sobre las filas clasificadas y se leia como si
+  // describiera las 32 — nombrando ademas una categoria que el desglose global
+  // de motivos excluye a proposito.
+  const fila = (over) => ({
+    orderId: `o${Math.random()}`, externalId: null, fecha: '2026-08-10', estado: 'CANCELADO',
+    valor: 100, producto: 'P', ciudad: 'QUITO', operatorId: null, operatorName: null,
+    origen: 'guardian', motivo: null, canceladoAt: null, primerToqueAt: null,
+    intentosPrevios: 0, intentosNoresp: 0, contactosPrevios: 0, reagendas: 0,
+    ...over,
+  });
+
+  it('un pedido rehecho NO puede ser el motivo dominante de una ciudad', () => {
+    const r = summarizeCancelaciones([
+      fila({ recreado: true }),
+      fila({ recreado: true }),
+      fila({ motivo: 'se arrepintio' }),
+    ], { generados: 100, totalPeriodo: 3 });
+    const quito = r.porCiudad.find(c => c.key === 'QUITO');
+    expect(quito?.cancelados).toBe(3);
+    expect(quito?.topMotivo).not.toBe('cambio_transportadora');
+    expect(quito?.topMotivo).toBe('arrepentido');
+  });
+
+  it('si TODO lo clasificado son rehechos, la ciudad queda sin motivo dominante', () => {
+    // Mejor sin motivo que con uno que el resto de la pantalla no cuenta.
+    const r = summarizeCancelaciones(
+      [fila({ recreado: true }), fila({ recreado: true })],
+      { generados: 100, totalPeriodo: 2 },
+    );
+    const quito = r.porCiudad.find(c => c.key === 'QUITO');
+    expect(quito?.cancelados).toBe(2);
+    expect(quito?.topMotivo).toBeNull();
+  });
+});

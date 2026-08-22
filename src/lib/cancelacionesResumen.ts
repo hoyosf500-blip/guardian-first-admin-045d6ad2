@@ -427,7 +427,15 @@ function agruparDimension(
     const { tipo } = clasificarPerdida(r);
     if (tipo === 'evitable') { b.evitables += 1; b.valorEvitable += val(r.valor); }
     const clase = classifyCancelRow({ motivo: r.motivo, origen: r.origen, recreado: r.recreado, riesgoChat: r.riesgoChat });
-    if (!clase.esGenerica) b.motivos.set(clase.categoria, (b.motivos.get(clase.categoria) || 0) + 1);
+    // `cuentaEnTasa === false` (pedido rehecho) se salta acá igual que en el
+    // desglose global de motivos. Medido en pantalla el 22-ago-2026: Quito
+    // aparecía como «32 cancelaciones · Pedido rehecho» cuando en TODO el
+    // período hubo 19 rehechos — el motivo dominante salía de un puñado de
+    // filas clasificadas y se leía como si describiera las 32. Y encima
+    // nombraba una categoría que el resto de la pantalla excluye a propósito.
+    if (!clase.esGenerica && clase.cuentaEnTasa !== false) {
+      b.motivos.set(clase.categoria, (b.motivos.get(clase.categoria) || 0) + 1);
+    }
   }
   return [...map.entries()].map(([key, b]) => {
     let topMotivo: string | null = null;
