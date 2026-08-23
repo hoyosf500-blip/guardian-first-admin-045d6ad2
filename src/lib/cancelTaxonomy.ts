@@ -576,9 +576,6 @@ export function hayMotivoEscrito(motivo: string | null | undefined): boolean {
   return !!n && n.length >= MIN_LEN && !GENERIC_NOISE.has(n);
 }
 
-/** Alias interno histórico. */
-const tieneMotivoUtil = hayMotivoEscrito;
-
 export function classifyCancelRow(row: CancelRowLike): CancelClass {
   // Va PRIMERO, antes que el origen: el pedido se rehizo, no se perdió. Da
   // igual quién apretó el botón — no hay venta perdida que explicar ni nadie a
@@ -603,7 +600,7 @@ export function classifyCancelRow(row: CancelRowLike): CancelClass {
   // que nadie atendiera. Llamar más no los salvaba. Lo que sí es evitable son
   // los 33 que no recibieron ni un intento, y eso se cuenta aparte y con su
   // propio número — no se disfraza de categoría.
-  if (row.riesgoChat === 'mudo' && !tieneMotivoUtil(row.motivo)) {
+  if (row.riesgoChat === 'mudo' && !hayMotivoEscrito(row.motivo)) {
     return {
       categoria: 'sin_whatsapp',
       culpa: 'trafico',
@@ -621,7 +618,7 @@ export function classifyCancelRow(row: CancelRowLike): CancelClass {
       esGenerica: true,
     };
   }
-  if (!tieneMotivoUtil(row.motivo)) {
+  if (!hayMotivoEscrito(row.motivo)) {
     return {
       categoria: 'sin_motivo',
       culpa: 'generica',
