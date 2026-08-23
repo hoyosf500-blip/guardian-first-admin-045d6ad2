@@ -149,7 +149,10 @@ describe('el vacio solo se afirma cuando termino de leer', () => {
     expect(def, 'no hay estado de carga propio').not.toBe('');
     expect(def.includes('s.loading') || def.includes('loading')).toBe(true);
 
-    const iLeyendo = src2.indexOf('{leyendo ?');
+    // Se busca `leyendo ?` sin la llave: la rama de carga puede venir
+    // encadenada detras de otra (hoy detras de `s.rangoAncho ?`), y anclar en
+    // `{leyendo ?` daba -1 aunque el codigo estuviera bien.
+    const iLeyendo = src2.indexOf('leyendo ? (');
     // El indexOf a secas caia en el COMENTARIO que documenta el bug (la
     // pantalla nombra el mensaje dos veces). Se busca el render, no el texto.
     const iVacio = src2.indexOf('<EmptyCard msg="No hubo cancelaciones');
