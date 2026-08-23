@@ -6,6 +6,7 @@ import {
   resumenAvisos,
   AVISO_AGENCIA_ACTION,
 } from './avisoAgencia';
+import { metodosParaEstado } from './segMetodosEstado';
 
 const H = 3600_000;
 const D = 24 * H;
@@ -106,5 +107,34 @@ describe('resumenAvisos', () => {
     expect(r.avisados).toBe(0);
     expect(r.sinAvisar).toBe(0);
     expect(r.sinDato).toBe(2);
+  });
+});
+
+describe('el botón y el detector no se pueden separar', () => {
+  // Auditoría 23-ago-2026. El texto vive DOS veces: como opción de botón en
+  // `segMetodosEstado.ts` y como literal dentro de `esAvisoAgencia`. Si alguien
+  // renombra el botón (p. ej. a «Avisé que está en oficina»), la asesora sigue
+  // pudiendo marcarlo pero el detector deja de reconocerlo: TODOS los paquetes
+  // quedan "sin avisar" para siempre y la barra «Lo que sigue» manda a avisarle
+  // a gente a la que ya se le avisó. Una barra que pide trabajo hecho se
+  // aprende a ignorar, así que el fallo sería silencioso Y caro.
+  it('la opción que ofrece la fase «oficina» la reconoce el detector', () => {
+    const metodos = metodosParaEstado('RECLAME EN OFICINA');
+    const avisos = metodos.filter((m) => esAvisoAgencia(m));
+    expect(avisos.length).toBeGreaterThan(0);
+  });
+
+  it('AVISO_AGENCIA_ACTION es una de las opciones reales de esa fase', () => {
+    expect(metodosParaEstado('RECLAME EN OFICINA')).toContain(AVISO_AGENCIA_ACTION);
+  });
+
+  it('el detector reconoce el texto tal como se guarda, con prefijo de módulo', () => {
+    // `useRecordGestion` guarda `${module}: ${action}` → «SEG: Avisé: en oficina».
+    expect(esAvisoAgencia(`SEG: ${AVISO_AGENCIA_ACTION}`)).toBe(true);
+  });
+
+  it('no confunde los otros avisos de la botonera', () => {
+    expect(esAvisoAgencia('SEG: Avisé que va en camino')).toBe(false);
+    expect(esAvisoAgencia('SEG: Avisé que llega hoy')).toBe(false);
   });
 });
