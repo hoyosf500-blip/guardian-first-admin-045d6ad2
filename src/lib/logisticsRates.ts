@@ -69,7 +69,13 @@ export function deriveDeliveryMaturity(
   // transportadora, pero tampoco están "en camino") — cuentan como concluidos
   // aunque no entren en `resueltos` (denominador de la tasa).
   const concluidos = e + dRaw;
-  const pctConcluido = t > 0 ? Math.round((concluidos / t) * 100) : 0;
+  // floor y NO round, por la misma razón que las tasas de abajo: con 199 de 200
+  // concluidos, round decía "100% concluido" con un pedido todavía viajando —
+  // y, peor, empuja `inmaduro` a false justo en el borde del umbral, o sea
+  // presenta como confiable una tasa que aún no llegó a la barra. Redondear a
+  // favor de la madurez es afirmar de más; floor solo llega a 100% cuando NO
+  // queda ningún pedido en curso.
+  const pctConcluido = t > 0 ? Math.floor((concluidos / t) * 100) : 0;
   return {
     resueltos,
     // floor/ceil, NUNCA round: con 199 entregados + 1 devuelto, round daba

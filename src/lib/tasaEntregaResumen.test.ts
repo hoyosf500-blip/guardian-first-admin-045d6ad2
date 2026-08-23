@@ -74,8 +74,11 @@ describe('tasa de entrega del Resumen — madura, no cruda', () => {
     const m = deriveDeliveryMaturity(
       c.entregados, c.devueltos + c.rechazados, despachados(c), c.rechazados,
     );
-    // 240 concluidos de 403 despachados = 60% < 70% de umbral.
-    expect(m.pctConcluido).toBe(60);
+    // 240 concluidos de 403 despachados = 59,55%, o sea 59 con floor (23-ago-2026).
+    // Antes decía 60 porque `pctConcluido` redondeaba; se pasó a floor por la
+    // misma razón que las tasas: redondear hacia arriba afirma más cohorte
+    // cerrado del que hay y apaga el aviso de preliminar antes de tiempo.
+    expect(m.pctConcluido).toBe(59);
     expect(m.pctConcluido).toBeLessThan(DELIVERY_MATURITY_THRESHOLD);
     expect(isRatePreliminary(m)).toBe(true);
   });

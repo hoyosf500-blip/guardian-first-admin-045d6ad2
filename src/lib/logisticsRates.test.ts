@@ -115,3 +115,24 @@ describe('isRatePreliminary (auditoría de confianza 2026-07-03)', () => {
     expect(isRatePreliminary(m)).toBe(true);
   });
 });
+
+describe('madurez del cohorte: nunca afirmar más concluido del que hay', () => {
+  // Auditoría 23-ago-2026. Las TASAS ya usaban floor/ceil por esto mismo, pero
+  // `pctConcluido` seguía con round: decía "100% concluido" con un pedido
+  // todavía viajando, y en el borde del umbral apagaba el aviso de preliminar
+  // sobre una tasa que aún no llegaba a la barra.
+  it('199 de 200 concluidos NO es 100%', () => {
+    const m = deriveDeliveryMaturity(199, 0, 200);
+    expect(m.pctConcluido).toBe(99);
+  });
+
+  it('100% solo cuando no queda ninguno en curso', () => {
+    expect(deriveDeliveryMaturity(200, 0, 200).pctConcluido).toBe(100);
+  });
+
+  it('no se redondea hacia arriba para cruzar el umbral de madurez', () => {
+    // 799 de 1000 = 79,9% → con round daba 80 y podía darse por maduro.
+    const m = deriveDeliveryMaturity(799, 0, 1000);
+    expect(m.pctConcluido).toBe(79);
+  });
+});
